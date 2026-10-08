@@ -1,10 +1,12 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
@@ -33,7 +35,10 @@ func TestPlannerRefusesABareNameConstraintAddition(t *testing.T) {
 		ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "aaa_fk_child_parent"}, {Name: "zzz_ck_child_amount"}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -63,7 +68,10 @@ func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql := renderPostgresNodes(c, nodes)
 

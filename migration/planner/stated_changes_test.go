@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 )
 
@@ -26,7 +29,10 @@ func TestGenerateSchemaDiffASTWithOptions_ModificationStatesItsChanges(t *testin
 				map[string]string{"type": "int -> bigint"},
 			)
 
-			nodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, dialect, planner.Options{})
+			nodes, err := planner.GenerateSchemaDiffASTWithOptions(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect, planner.Options{},
+			)
 
 			c.Assert(err, qt.IsNil)
 			alters := slices.DeleteFunc(slices.Clone(nodes), func(node ast.Node) bool {

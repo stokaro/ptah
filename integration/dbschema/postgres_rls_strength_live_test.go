@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -109,7 +110,7 @@ func TestPostgresLiveRLSStrengthConverges(t *testing.T) {
 	c.Assert(docs.RLSForced, qt.IsTrue)
 
 	// 3. The convergence assertion.
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.RLSPoliciesAdded, qt.HasLen, 0)
 	c.Assert(settled.RLSPoliciesRemoved, qt.HasLen, 0)
 	c.Assert(settled.RLSPoliciesModified, qt.HasLen, 0)
@@ -159,7 +160,7 @@ func TestPostgresLiveRLSStrengthReadsBackTheWeakerHalf(t *testing.T) {
 	c.Assert(docs.RLSEnabled, qt.IsTrue)
 	c.Assert(docs.RLSForced, qt.IsFalse)
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.RLSPoliciesModified, qt.HasLen, 0)
 }
 
@@ -198,8 +199,8 @@ func TestPostgresLiveRLSStrengthDifferenceIsPlanned(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// The declaration asks for the stronger one.
-	diff := schemadiff.CompareWithDialect(
-		rlsStrengthSchema(schemaName, true, true), live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), rlsStrengthSchema(schemaName, true, true), live, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesModified[0].Changes["as"], qt.Equals, "PERMISSIVE -> RESTRICTIVE")

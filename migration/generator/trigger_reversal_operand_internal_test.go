@@ -6,15 +6,18 @@ package generator
 // right one are both just SQL that applies.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -132,15 +135,20 @@ func TestGenerateDownMigrationSQL_RecreatesATriggerTheUpDirectionDropped(t *test
 		}},
 	}
 
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.TriggersRemoved, qt.HasLen, 1)
 	c.Assert(upDiff.TriggersAdded, qt.HasLen, 0)
 
-	up, err := generateUpMigrationSQL(upDiff, desired, platform.Postgres, capability.Postgres17())
+	up, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		upDiff, desired, platform.Postgres, capability.Postgres17(),
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, "DROP TRIGGER")
 
-	down, err := generateDownMigrationSQL(
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, database, platform.Postgres, capability.Postgres17())
 	c.Assert(err, qt.IsNil)
 	c.Assert(down, qt.Contains, "CREATE TRIGGER",
@@ -187,10 +195,13 @@ func TestGenerateDownMigrationSQL_LeavesASharedTriggerFunctionInPlace(t *testing
 	desired := sharedFunctionSchema()
 	database := &catalog.Database{}
 
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.TriggersAdded, qt.HasLen, 2)
 
-	down, err := generateDownMigrationSQL(upDiff, desired, database, platform.Postgres, capability.Postgres17())
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, desired, database, platform.Postgres, capability.Postgres17())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(down, qt.Contains, `DROP TRIGGER IF EXISTS "shared" ON "users" CASCADE;`)
@@ -231,10 +242,15 @@ func TestGenerateUpMigrationSQL_DropsATriggerButNotTheFunctionItShares(t *testin
 		},
 	}
 
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.TriggersRemoved, qt.HasLen, 2)
 
-	up, err := generateUpMigrationSQL(upDiff, desired, platform.Postgres, capability.Postgres17())
+	up, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		upDiff, desired, platform.Postgres, capability.Postgres17(),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `DROP TRIGGER IF EXISTS "shared" ON "users" CASCADE;`)

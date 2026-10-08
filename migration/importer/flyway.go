@@ -2,6 +2,7 @@ package importer
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"io/fs"
 	"path"
@@ -84,7 +85,11 @@ type flywayVersioned struct {
 // whatever sat below it, and `ptah-compat migrate import` converted the same
 // directory differently, with neither verb saying anything about the difference
 // (stokaro/ptah#2231).
-func (p flywayParser) Parse(fsys fs.FS) (*ParseResult, error) {
+func (p flywayParser) Parse(ctx context.Context, fsys fs.FS) (*ParseResult, error) {
+	return parseWithContext(ctx, func() (*ParseResult, error) { return p.parse(fsys) })
+}
+
+func (p flywayParser) parse(fsys fs.FS) (*ParseResult, error) {
 	result := &ParseResult{}
 	files, err := sourceFiles(fsys)
 	if err != nil {

@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
@@ -129,15 +131,21 @@ func pinnedOutput(c *qt.C, dialect string) string {
 	statements, err := builtin.GetOrderedCreateStatements(parsePinSchema(c, "desired"), dialect)
 	section("render: the desired schema", strings.Join(statements, "\n"), err)
 
-	diff := schemadiff.CompareSchemas(parsePinSchema(c, "desired"), parsePinSchema(c, "current"), dialect)
-	planned, err := planner.GenerateSchemaDiffSQL(diff, dialect)
+	diff := must.Must(schemadiff.CompareSchemas(c.Context(), parsePinSchema(c, "desired"), parsePinSchema(c, "current"), dialect, must.Must(builtin.New())))
+	planned, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	section("plan: the current schema to the desired one", planned, err)
 
 	statements, err = builtin.GetOrderedCreateStatements(parsePinSchema(c, "covering"), dialect)
 	section("render: a covering index", strings.Join(statements, "\n"), err)
 
-	diff = schemadiff.CompareSchemas(parsePinSchema(c, "covering"), parsePinSchema(c, "current"), dialect)
-	planned, err = planner.GenerateSchemaDiffSQL(diff, dialect)
+	diff = must.Must(schemadiff.CompareSchemas(c.Context(), parsePinSchema(c, "covering"), parsePinSchema(c, "current"), dialect, must.Must(builtin.New())))
+	planned, err = planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	section("plan: the current schema to a covering index", planned, err)
 
 	return out.String()

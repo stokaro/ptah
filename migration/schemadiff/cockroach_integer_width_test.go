@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -64,8 +66,8 @@ func TestCompareWithDatabaseInfo_CockroachIntegerWidth_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				integerColumn(test.declared), builtIntegerColumn(test.built),
-				catalog.ServerInfo{Dialect: test.dialect, Schema: "public", DefaultIntSize: test.defaultIntSize}, nil,
+				t.Context(), integerColumn(test.declared), builtIntegerColumn(test.built),
+				catalog.ServerInfo{Dialect: test.dialect, Schema: "public", DefaultIntSize: test.defaultIntSize}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -109,8 +111,8 @@ func TestCompareWithDatabaseInfo_CockroachIntegerWidth_FailurePath(t *testing.T)
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				integerColumn(test.declared), builtIntegerColumn(test.built),
-				catalog.ServerInfo{Dialect: test.dialect, Schema: "public", DefaultIntSize: test.defaultIntSize}, nil,
+				t.Context(), integerColumn(test.declared), builtIntegerColumn(test.built),
+				catalog.ServerInfo{Dialect: test.dialect, Schema: "public", DefaultIntSize: test.defaultIntSize}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)

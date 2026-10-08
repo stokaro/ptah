@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -74,9 +76,9 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 				Synonyms: []catalog.Synonym{test.synonym},
-			}, "sqlserver")
+			}, "sqlserver", must.Must(builtin.New())))
 
 			c.Assert(converted.Synonyms, qt.HasLen, 1)
 			c.Assert(converted.Synonyms[0].Target, qt.Equals, test.wantTarget)
@@ -154,9 +156,9 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 				ExtendedProperties: []catalog.ExtendedProperty{test.property},
-			}, "sqlserver")
+			}, "sqlserver", must.Must(builtin.New())))
 
 			c.Assert(converted.ExtendedProperties, qt.DeepEquals, test.want)
 		})
@@ -273,14 +275,14 @@ var unconvertedFamilies = map[string]string{
 func TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		ContinuousAggregates: []catalog.ContinuousAggregate{{
 			Schema: "public", Name: "hourly",
 			HypertableSchema: "public", HypertableName: "readings",
 			MaterializedOnly: true,
 			Definition:       "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
 		}},
-	}, "sqlserver")
+	}, "sqlserver", must.Must(builtin.New())))
 
 	c.Assert(converted.ContinuousAggregates, qt.DeepEquals, []schemamodel.ContinuousAggregate{{
 		Name: "hourly", Schema: "public", MaterializedOnly: new(true),

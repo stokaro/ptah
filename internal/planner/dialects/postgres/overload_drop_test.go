@@ -1,10 +1,12 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -16,7 +18,10 @@ import (
 func droppedRoutineSQL(c *qt.C, diff *difftypes.SchemaDiff) string {
 	c.Helper()
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 
 	var statements []string

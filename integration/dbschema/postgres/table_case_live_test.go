@@ -12,6 +12,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/core/schemamodel"
@@ -104,7 +105,7 @@ func (f tableCaseFixture) compare(c *qt.C, desired *schemamodel.Database) *difft
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 	c.Assert(err, qt.IsNil)
-	return schemadiff.CompareWithDialect(desired, live, f.dialect)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, f.dialect, must.Must(builtin.New())))
 }
 
 // assertNothingPlannedForTheFile checks the parts of a comparison the file

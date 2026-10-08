@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -18,13 +19,13 @@ import (
 // on PostgreSQL 18 and renders the rollback.
 func planConstraintCommentRollback(c *qt.C, diff *difftypes.SchemaDiff, current *catalog.Database) (*difftypes.SchemaDiff, string) {
 	c.Helper()
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{},
-		CurrentSchema: current,
-		Dialect:       platform.Postgres,
-		Capabilities:  capability.Postgres18(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{},
+			CurrentSchema: current,
+			Dialect:       platform.Postgres,
+			Capabilities:  capability.Postgres18(),
+		})
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL(platform.Postgres, plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)

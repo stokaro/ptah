@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -226,7 +228,7 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(test.desired, test.database, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.database, "postgres", must.Must(builtin.New())))
 
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)

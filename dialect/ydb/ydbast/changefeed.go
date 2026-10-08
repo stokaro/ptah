@@ -5,6 +5,7 @@ package ydbast
 import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 
 // AddChangefeed declares a new table-owned stream and its topic consumers.
 type AddChangefeed struct {
-	Changefeed ast.ChangefeedSpec `json:"changefeed"`
+	Changefeed ydbschema.ChangefeedSpec `json:"changefeed"`
 }
 
 // Kind returns the stable semantic operation identity.
@@ -54,8 +55,8 @@ func (*DropChangefeed) Effect() schemaext.Effect {
 // AlterChangefeedTopic changes retention and consumers without recreating the
 // stream. Both operands travel so removed consumers and reset defaults survive.
 type AlterChangefeedTopic struct {
-	Changefeed ast.ChangefeedSpec `json:"changefeed"`
-	Previous   ast.ChangefeedSpec `json:"previous"`
+	Changefeed ydbschema.ChangefeedSpec `json:"changefeed"`
+	Previous   ydbschema.ChangefeedSpec `json:"previous"`
 }
 
 // Kind returns the stable semantic operation identity.

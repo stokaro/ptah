@@ -6,8 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -30,18 +31,23 @@ func newSchemaMismatchError(diff *difftypes.SchemaDiff) *VerificationError {
 // also reports each declared object the comparison withheld because the
 // target read did not describe its kind. Those come after the differences, one
 // "undecided_object" mismatch each.
-func newBaselineMismatchError(diff *difftypes.SchemaDiff, undecided []coverage.Object) *VerificationError {
+func newBaselineMismatchError(diff *difftypes.SchemaDiff, undecided schemadiff.Diagnostics) *VerificationError {
 	var mismatches []Mismatch
 	if diff.HasChanges() {
 		mismatches = collectMismatches(diff)
 	}
-	for _, object := range undecided {
+	for _, object := range undecidednote.Entries(schemadiff.Diagnostics{Common: undecided.Common}, "the target database") {
 		mismatches = append(mismatches, Mismatch{
 			Kind:   "undecided_object",
 			Object: object.Name,
 			Message: fmt.Sprintf("undecided %s %s: %s",
-				object.Kind, object.Name, undecidednote.Cause(object, "the target database")),
+				object.Kind, object.Name, object.Reason),
 		})
+	}
+	for _, diagnostic := range undecided.Features {
+		row := undecidednote.Entries(schemadiff.Diagnostics{Features: []schemaext.UndecidedChange{diagnostic}}, "the target database")[0]
+		mismatches = append(mismatches, Mismatch{Kind: "undecided_feature", FeatureLimit: &diagnostic,
+			Object: row.Name, Message: fmt.Sprintf("undecided %s %s: %s", row.Kind, row.Name, row.Reason)})
 	}
 	return &VerificationError{Result: VerificationResult{Stage: "schema-match", Mismatches: mismatches}}
 }

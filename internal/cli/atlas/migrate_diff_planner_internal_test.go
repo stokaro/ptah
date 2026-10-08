@@ -8,12 +8,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -22,21 +24,21 @@ import (
 func TestCompatBidirectionalPlannerForFormat_NativeAtlasStaysForwardOnly(t *testing.T) {
 	c := qt.New(t)
 
-	planner := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatAtlas)
+	planner := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatAtlas, must.Must(builtin.New()))
 
 	c.Assert(planner, qt.IsNil)
 }
 
 func TestCompatBidirectionalPlannerForFormat_ForeignLayoutKeepsYugabyteBlockingRollback(t *testing.T) {
 	c := qt.New(t)
-	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate)
+	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate, must.Must(builtin.New()))
 	c.Assert(planFn, qt.IsNotNil)
 	diff := &difftypes.SchemaDiff{}
 	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
 		StructName: "User", Name: "idx_users_email", Fields: []string{"email"},
 	}, TableName: "users"}})
 
-	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
+	plan, err := planFn(t.Context(), atlasmigrate.BidirectionalPlanInput{
 		Diff: diff,
 		DesiredSchema: &schemamodel.Database{
 			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
@@ -64,14 +66,14 @@ func TestCompatBidirectionalPlannerForFormat_ForeignLayoutKeepsYugabyteBlockingR
 
 func TestCompatBidirectionalPlannerForFormat_ExplicitUnavailableForwardStillRefuses(t *testing.T) {
 	c := qt.New(t)
-	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate)
+	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate, must.Must(builtin.New()))
 	c.Assert(planFn, qt.IsNotNil)
 	diff := &difftypes.SchemaDiff{}
 	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
 		StructName: "User", Name: "idx_users_email", Fields: []string{"email"},
 	}, TableName: "users"}})
 
-	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
+	plan, err := planFn(t.Context(), atlasmigrate.BidirectionalPlanInput{
 		Diff:                  diff,
 		DesiredSchema:         &schemamodel.Database{},
 		CurrentSchema:         &catalog.Database{},

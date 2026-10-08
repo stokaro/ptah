@@ -1,16 +1,19 @@
 package postgres
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/deporder"
@@ -65,7 +68,7 @@ const (
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes, err := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		return err
 //	}
@@ -1684,7 +1687,7 @@ func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
 		return err
 	}
-	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
+	if err := schemaprecondition.RefuseFeatureChanges(p.targetDialect(), diff); err != nil {
 		return err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
@@ -1745,7 +1748,7 @@ func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
 //		},
 //	}
 //
-//	nodes, err := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		return err
 //	}
@@ -1782,7 +1785,20 @@ func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
 // through. Keeping that answer in one place prevents the plan path from
 // silently dropping an unsupported object while `schema render` reports it
 // differently (stokaro/ptah#929).
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) (plannedNodes []ast.Node, planErr error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			plannedNodes, planErr = nil, err
+		}
+	}()
+
+	return p.generateMigrationAST(diff)
+}
+
+func (p *Planner) generateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
 		return nil, err
 	}
@@ -1853,6 +1869,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		diff, skipped = diffpolicy.ApplyForDialect(diff, p.skip, p.targetDialect())
 		result = appendSkipComments(result, skipped)
 	}
+	// Hand-built diffs may lack identities. Resolve them before either the
+	// early dependency releases or the later replacement pairing uses them.
+	constraintscope.Normalize(diff, semantics)
 
 	// 0. Create the schemas this migration adds objects to, before anything is
 	// created in them. Every phase below can name a schema, so this cannot sit
@@ -1916,6 +1935,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// otherwise answers that the name exists, and ADD COLUMN x int UNIQUE names
 	// the key c_x_key1. Steps 11 and 12.5 skip what this drops.
 	released := keyrelease.Find(diff, p.targetDialect())
+	// Removed foreign keys must release referenced keys before any column or
+	// constraint replacement. The same identity set suppresses later re-drops,
+	// including the drop half of a foreign-key replacement.
+	result, foreignKeysReleased := p.releaseRemovedForeignKeys(result, diff)
 	result = p.releaseKeyNames(result, diff, released)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
@@ -1995,7 +2018,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
-	result, err = p.addNewConstraints(result, diff)
+	result, err = p.addNewConstraints(result, diff, foreignKeysReleased)
 	if err != nil {
 		return nil, err
 	}
@@ -2054,7 +2077,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.removeTableColumns(result, diff)
 
 	// 12.5. Remove constraints (must be done before removing tables)
-	result = p.removeConstraints(result, diff, released.ConstraintSet())
+	releasedConstraints := released.ConstraintSet()
+	maps.Copy(releasedConstraints, foreignKeysReleased)
+	result = p.removeConstraints(result, diff, releasedConstraints)
 
 	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
 	result = p.removeTriggers(result, diff)
@@ -3424,8 +3449,9 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *difftypes.SchemaDif
 //
 // # Constraint Processing Order
 //
-// Constraints are processed in the order they appear in the generated schema.
-// This method assumes that all referenced tables and columns already exist.
+// Referenced keys are added before foreign keys. Removed foreign keys have
+// already been released before any key or column replacement. This method
+// assumes that all referenced tables and columns already exist.
 //
 // # Supported Constraint Types
 //
@@ -3442,8 +3468,9 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *difftypes.SchemaDif
 //
 //	ALTER TABLE products ADD CONSTRAINT positive_price
 //	  CHECK (price > 0);
-func (p *Planner) addNewConstraints(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) addNewConstraints(result []ast.Node, diff *difftypes.SchemaDiff, released map[constraintHostKey]struct{}) ([]ast.Node, error) {
 	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+	maps.Copy(state.droppedForModify, released)
 
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, state)
 	result = p.addCheckAndUniqueConstraintsWithTables(
@@ -3496,12 +3523,6 @@ type constraintPlanState struct {
 type constraintHostKey = difftypes.ConstraintIdentity
 
 func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Semantics) constraintPlanState {
-	// One fold, at the door. A diff the comparator produced arrives with its
-	// identities resolved; one an embedder built by hand does not, and the zero
-	// identity is a single key -- every such constraint would pair with every
-	// other. Everything below this line compares identities and re-derives
-	// nothing (stokaro/ptah#1663).
-	constraintscope.Normalize(diff, semantics)
 	// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved
 	// is a modification (the comparator expresses a changed constraint as
 	// remove + add of the same name — e.g. an on_delete change on a field-level

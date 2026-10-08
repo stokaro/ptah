@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -69,8 +71,8 @@ func TestCompareWithDatabaseInfo_CockroachStringType_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				stringColumn(test.declared), builtStringColumn(test.built),
-				catalog.ServerInfo{Dialect: "cockroachdb", Schema: "public"}, nil,
+				t.Context(), stringColumn(test.declared), builtStringColumn(test.built),
+				catalog.ServerInfo{Dialect: "cockroachdb", Schema: "public"}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -101,8 +103,8 @@ func TestCompareWithDatabaseInfo_CockroachStringType_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				stringColumn(test.declared), builtStringColumn(test.built),
-				catalog.ServerInfo{Dialect: test.dialect, Schema: "public"}, nil,
+				t.Context(), stringColumn(test.declared), builtStringColumn(test.built),
+				catalog.ServerInfo{Dialect: test.dialect, Schema: "public"}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)

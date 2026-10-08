@@ -75,7 +75,9 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
@@ -524,8 +526,8 @@ func presentValues(scalars map[string]*stringScalar, name string) map[string]str
 }
 
 // buildChangefeeds reads a table's changefeeds and their consumers.
-func buildChangefeeds(table string, specs orderedMap[changefeedSpec]) ([]ast.ChangefeedSpec, error) {
-	var changefeeds []ast.ChangefeedSpec
+func buildChangefeeds(table string, specs orderedMap[changefeedSpec]) ([]ydbschema.ChangefeedSpec, error) {
+	var changefeeds []ydbschema.ChangefeedSpec
 	for _, entry := range specs {
 		changefeed, err := ydbchangefeed.ParseDeclaration(entry.Value.values(entry.Name))
 		if err != nil {
@@ -878,6 +880,12 @@ func (d document) addEnums(db *schemamodel.Database) {
 }
 
 func (d document) addTables(db *schemamodel.Database) error {
+	featureCoverage, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+	if err != nil {
+		return err
+	}
+	db.FeatureCoverage = featureCoverage
+
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
@@ -899,16 +907,21 @@ func (d document) addTables(db *schemamodel.Database) error {
 		if err != nil {
 			return err
 		}
+		for _, feed := range changefeeds {
+			db.FeatureObjects, err = db.FeatureObjects.With(ydbschema.DesiredObject(string(table.Schema), tableName, feed))
+			if err != nil {
+				return err
+			}
+		}
 		families, err := buildColumnFamilies(tableName, table.ColumnFamilies)
 		if err != nil {
 			return err
 		}
 		db.Tables = append(db.Tables, schemamodel.Table{
-			StructName:  structName,
-			Name:        tableName,
-			Schema:      string(table.Schema),
-			Changefeeds: changefeeds,
-			APIName:     string(table.APIName),
+			StructName: structName,
+			Name:       tableName,
+			Schema:     string(table.Schema),
+			APIName:    string(table.APIName),
 			APINames: schemamodel.TargetNames{
 				OpenAPI:  string(table.OpenAPIName),
 				GraphQL:  string(table.GraphQLName),

@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 )
@@ -40,7 +41,7 @@ func commentedSchema() *schemamodel.Database {
 
 // omissionSubjects renders each omission as the object it belongs to and the
 // property it lost, so a case row can carry the answer as data.
-func omissionSubjects(c *qt.C, omissions []builtin.Omission) []string {
+func omissionSubjects(c *qt.C, omissions []renderer.Omission) []string {
 	c.Helper()
 
 	subjects := make([]string, 0, len(omissions))

@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/envbool/envbooltest"
@@ -88,7 +89,9 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 			omit, gateErr := atlasInspectOmitsRefusedBlocks()
 			c.Assert(gateErr, qt.IsNil)
 			var diagnostics bytes.Buffer
-			report := atlasreport.NewSchemaInspectReport(
+			runtime, err := builtin.New()
+			c.Assert(err, qt.IsNil)
+			report, err := atlasreport.NewSchemaInspectReport(c.Context(),
 				refusedBlockGateDatabase(),
 				&catalog.Database{},
 				catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
@@ -96,8 +99,9 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 				atlasreport.SchemaInspectReportOptions{
 					OmitAtlasRefusedBlocks: omit,
 					DescribeSchemas:        true,
-				},
+				}, runtime,
 			)
+			c.Assert(err, qt.IsNil)
 
 			hcl, err := report.MarshalHCL()
 
@@ -155,7 +159,9 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 				Type:        "integer",
 				DefaultExpr: "nextval('lonely_seq'::regclass)",
 			})
-			report := atlasreport.NewSchemaInspectReport(
+			runtime, err := builtin.New()
+			c.Assert(err, qt.IsNil)
+			report, err := atlasreport.NewSchemaInspectReport(c.Context(),
 				db,
 				&catalog.Database{},
 				catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
@@ -163,8 +169,9 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 				atlasreport.SchemaInspectReportOptions{
 					OmitAtlasRefusedBlocks: omit,
 					DescribeSchemas:        true,
-				},
+				}, runtime,
 			)
+			c.Assert(err, qt.IsNil)
 
 			hcl, err := report.MarshalHCL()
 

@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -8,11 +9,13 @@ import (
 	"sync"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/internal/planner/dialects/mssql"
 	"ptah.run/internal/planner/dialects/mysql"
@@ -58,7 +61,8 @@ var plannerRegistry struct {
 //
 // # Parameters
 //
-// The diff is the whole input. Each change entry carries its own operands
+// The diff carries the schema operands. Context and runtime select the services
+// and cancellation boundary. Each change entry carries its own operands
 // (the difftypes Changes elements and Desired fields), and schema-wide
 // vocabulary travels on the diff's Declared* carries, so an implementation
 // reads everything it plans from the diff. The desired schema itself stays
@@ -73,7 +77,7 @@ var plannerRegistry struct {
 //
 // # Example Implementation Pattern
 //
-//	func (p *AcmePlanner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+//	func (p *AcmePlanner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 //		var nodes []ast.Node
 //
 //		// 1. Create enum types first (PostgreSQL-style dialects)
@@ -88,7 +92,7 @@ var plannerRegistry struct {
 //		return nodes, nil
 //	}
 type Planner interface {
-	GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error)
+	GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error)
 }
 
 // Options configures high-level planner helpers.
@@ -248,7 +252,7 @@ func RegisteredDialects() ([]string, error) {
 //	}
 //
 //	// Generate migration AST
-//	nodes, err := pgPlanner.GenerateMigrationAST(diff)
+//	nodes, err := pgPlanner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -417,6 +421,8 @@ func normalizeRegistryDialect(dialect string) string {
 //
 // # Parameters
 //
+//   - ctx: Caller context, required even for an empty change set
+//   - runtime: Selected feature planning and rendering services
 //   - diff: Schema differences identified by the schemadiff package
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
@@ -430,7 +436,7 @@ func normalizeRegistryDialect(dialect string) string {
 //	import "ptah.run/core/platform"
 //
 //	// Generate AST nodes for PostgreSQL
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
+//	nodes, err := planner.GenerateSchemaDiffAST(ctx, runtime, diff, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
@@ -445,17 +451,22 @@ func normalizeRegistryDialect(dialect string) string {
 //   - GenerateSchemaDiffSQL: For complete SQL string generation
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
-func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, dialect string) ([]ast.Node, error) {
-	return GenerateSchemaDiffASTWithOptions(diff, dialect, Options{
-		Capabilities: capability.ForDialect(dialect),
-	})
+func GenerateSchemaDiffAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, dialect string) ([]ast.Node, error) {
+	return GenerateSchemaDiffASTWithOptions(
+		ctx, runtime,
+		diff, dialect, Options{
+			Capabilities: capability.ForDialect(dialect),
+		},
+	)
 }
 
 // GenerateSchemaDiffASTWithOptions generates AST nodes with explicit planning
-// options. The refusals below hold for every package-level generation helper
+// options. The context and runtime are required; errors and cancellation return
+// no partial plan. The refusals below hold for every package-level generation helper
 // in this package.
 //
-// The diff is the whole input. The desired schema is prepared and validated
+// The diff carries the schema operands. Context and runtime select the services
+// and cancellation boundary. The desired schema is prepared and validated
 // where it is supplied, in the schemadiff package, which puts on the diff what
 // planning needs, its Declared* carries included; a caller assembling a diff
 // by hand can run schemadiff.ValidateDesiredSchema itself. Planning refuses
@@ -471,10 +482,14 @@ func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, dialect string) ([]ast.No
 // Every failure comes back as a *ptaherr.PlanError carrying the dialect, so
 // errors.As selects the structured form and errors.Is the sentinel.
 func GenerateSchemaDiffASTWithOptions(
+	ctx context.Context, runtime featureplan.Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	opts Options,
 ) ([]ast.Node, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, wrapPlanError(dialect, err)
+	}
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	if diff != nil &&
 		diff.IdentifierSemantics != nil &&
@@ -518,7 +533,10 @@ func GenerateSchemaDiffASTWithOptions(
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
-	nodes, err := planner.GenerateMigrationAST(diff)
+	nodes, err := planner.GenerateMigrationAST(
+		ctx, runtime,
+		diff,
+	)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
@@ -532,6 +550,9 @@ func GenerateSchemaDiffASTWithOptions(
 		// After the dialect planner for the reason the online request is:
 		// a pass over the result reaches every column modification.
 		omitNullBackfill(nodes)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, wrapPlanError(dialect, err)
 	}
 	return nodes, nil
 }
@@ -570,6 +591,8 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 // # Parameters
 //
+//   - ctx: Caller context, required even for an empty change set
+//   - runtime: Selected feature planning and rendering services
 //   - diff: Schema differences identified by the schemadiff package
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
@@ -595,7 +618,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //	import "ptah.run/core/platform"
 //
 //	// Generate SQL statements for MySQL
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.MySQL)
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(ctx, runtime, diff, platform.MySQL)
 //	if err != nil {
 //		return err
 //	}
@@ -616,10 +639,13 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQLStatements(diff *difftypes.SchemaDiff, dialect string) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(diff, dialect, Options{
-		Capabilities: capability.ForDialect(dialect),
-	})
+func GenerateSchemaDiffSQLStatements(ctx context.Context, runtime Runtime, diff *difftypes.SchemaDiff, dialect string) ([]string, error) {
+	output, err := GenerateSchemaDiffSQLWithOptions(
+		ctx, runtime,
+		diff, dialect, Options{
+			Capabilities: capability.ForDialect(dialect),
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -630,11 +656,15 @@ func GenerateSchemaDiffSQLStatements(diff *difftypes.SchemaDiff, dialect string)
 // GenerateSchemaDiffSQLStatementsWithOptions generates individual SQL
 // statements using explicit planning options.
 func GenerateSchemaDiffSQLStatementsWithOptions(
+	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	opts Options,
 ) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(diff, dialect, opts)
+	output, err := GenerateSchemaDiffSQLWithOptions(
+		ctx, runtime,
+		diff, dialect, opts,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -655,6 +685,8 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 // # Parameters
 //
+//   - ctx: Caller context, required even for an empty change set
+//   - runtime: Selected feature planning and rendering services
 //   - diff: Schema differences identified by the schemadiff package
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
@@ -683,7 +715,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //	import "ptah.run/core/platform"
 //
 //	// Generate complete SQL script for PostgreSQL
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+//	sql, err := planner.GenerateSchemaDiffSQL(ctx, runtime, diff, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
@@ -702,10 +734,13 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, dialect string) (string, error) {
-	return GenerateSchemaDiffSQLWithOptions(diff, dialect, Options{
-		Capabilities: capability.ForDialect(dialect),
-	})
+func GenerateSchemaDiffSQL(ctx context.Context, runtime Runtime, diff *difftypes.SchemaDiff, dialect string) (string, error) {
+	return GenerateSchemaDiffSQLWithOptions(
+		ctx, runtime,
+		diff, dialect, Options{
+			Capabilities: capability.ForDialect(dialect),
+		},
+	)
 }
 
 // GenerateSchemaDiffSQLWithOptions generates complete SQL using explicit
@@ -721,6 +756,7 @@ func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, dialect string) (string, 
 // GenerateSchemaDiffASTWithOptions); rendering failures as
 // *ptaherr.RenderError. Both carry the dialect and answer errors.As.
 func GenerateSchemaDiffSQLWithOptions(
+	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	opts Options,
@@ -735,18 +771,28 @@ func GenerateSchemaDiffSQLWithOptions(
 	// because installing is what makes them available: an extension the schema
 	// declares and the target already has is already in the capability set the
 	// connection reported (stokaro/ptah#2315).
-	caps := capability.WithDeclaredExtensions(
-		opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names(),
+	astNodes, err := GenerateSchemaDiffASTWithOptions(
+		ctx, runtime,
+		diff, dialect, opts,
 	)
-	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, dialect, opts)
 	if err != nil {
 		return "", err
 	}
-	output, err := builtin.RenderSQLWithCapabilities(dialect, caps, astNodes...)
+	caps := capability.WithDeclaredExtensions(opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
+	// The planner resolves built-in transport spellings before selecting a
+	// target. Rendering must use that same target, not reinterpret the spelling.
+	target := platform.NormalizeDialect(dialect)
+	if target == "" {
+		target = dialect
+	}
+	output, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: astNodes})
 	if err != nil {
 		return "", wrapRenderError(dialect, err)
 	}
-	return output, nil
+	if err := ctx.Err(); err != nil {
+		return "", wrapRenderError(dialect, err)
+	}
+	return output.SQL(), nil
 }
 
 func wrapPlanError(dialect string, err error) error {

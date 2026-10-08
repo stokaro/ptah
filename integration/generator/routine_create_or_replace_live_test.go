@@ -3,15 +3,18 @@
 package generator_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -51,8 +54,11 @@ func planRoutines(c *qt.C, conn *dbschema.DatabaseConnection, schemaName string,
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(routineDeclaration(version), live, platform.Postgres)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), routineDeclaration(version), live, platform.Postgres, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/migratesum"
@@ -66,7 +68,7 @@ func TestDiff_FailurePath_RefusesADevURLThatNamesTheTarget(t *testing.T) {
 				FromURLs: []string{sources[test.from]},
 				ToURLs:   []string{url},
 				DevURL:   url,
-			})
+				Runtime:  must.Must(builtin.New())})
 
 			c.Assert(err, qt.ErrorMatches, `--to database must differ from --dev-url because the dev database is reset during planning`)
 			c.Assert(report.Changes, qt.HasLen, 0)
@@ -87,7 +89,7 @@ func TestDiff_ADevURLNamingADatabaseIsAcceptedWhenNothingIsReset(t *testing.T) {
 		FromURLs: []string{url},
 		ToURLs:   []string{atlasurl.SQLiteURLFromPath(other)},
 		DevURL:   url,
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)

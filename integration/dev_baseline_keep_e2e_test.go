@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/migratesum"
@@ -207,7 +209,7 @@ func TestRehearsePlanStatementsVerifiesBesideAnExtensionInThePinnedDevSchemaLive
 	err = atlasschema.RehearsePlanStatements(c.Context(), target.conn,
 		[]string{`CREATE TABLE "added" ("id" integer NOT NULL, PRIMARY KEY ("id"))`},
 		desired,
-		atlasschema.PlanRehearsalOptions{DevURL: pinnedDevURL(c, dev.url, "public"), TargetURL: target.url, TxMode: migrator.MigrationTxModeFile})
+		atlasschema.PlanRehearsalOptions{DevURL: pinnedDevURL(c, dev.url, "public"), TargetURL: target.url, TxMode: migrator.MigrationTxModeFile, Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(installedExtensions(c, dev), qt.Equals, "citext")

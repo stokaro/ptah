@@ -215,14 +215,14 @@ func (r *validatingRenderer) VisitNode(node ast.Node) error {
 	prepared, err := prepareNode(r.dialect, r.capabilities, node)
 	if err != nil {
 		r.Reset()
-		return err
+		return nodeRefusal(r.dialect, node, err)
 	}
 	if list, ok := prepared.(*ast.StatementList); ok {
-		return r.renderPreparedList(list)
+		return nodeRefusal(r.dialect, node, r.renderPreparedList(list))
 	}
 	if err := r.inner.VisitNode(prepared); err != nil {
 		r.Reset()
-		return err
+		return nodeRefusal(r.dialect, node, err)
 	}
 	return nil
 }
@@ -274,11 +274,11 @@ func RenderSQL(dialect string, nodes ...ast.Node) (string, error) {
 // feature satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature]); an
 // unsupported dialect satisfies errors.Is with
 // [ptaherr.ErrUnsupportedDialect], and a malformed node with
-// [ptaherr.ErrInvalidSchemaDiff]. Refusals arrive as a
-// [ptaherr.CapabilityError] or a [ptaherr.RenderError] according to where
-// they were detected, and a RenderError names the offending node where the
-// reporting site held one; match the sentinel rather than the concrete type
-// or the message text.
+// [ptaherr.ErrInvalidSchemaDiff]. A [renderer.BatchRefusalError] preserves
+// declaration diagnostics and unwraps to the typed cause. A [ptaherr.RenderError]
+// identifies the caller's input node. Local declaration errors retain their
+// messages and satisfy the schema sentinel on visitor and batch entry points;
+// branch on the sentinel rather than the message text.
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error) {
 	runtime, err := New()
 	if err != nil {
@@ -287,37 +287,57 @@ func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nod
 	result, err := runtime.Render(context.Background(), renderer.Request{
 		Target: renderTarget(dialect), Capabilities: caps, Nodes: nodes,
 	})
-	return result.SQL, err
+	return result.SQL(), err
 }
 
-func visitorRenderSQL(r renderer.RenderVisitor, nodes ...ast.Node) (string, error) {
+// renderNodes preserves each input node's output boundary in a single batch.
+// Preparation keeps the outer node count and order; nested statements remain
+// within their parent's fragment and imply no transaction boundary.
+func renderNodes(ctx context.Context, r renderer.RenderVisitor, nodes ...ast.Node) (renderer.Result, error) {
 	r.Reset()
+	if err := ctx.Err(); err != nil {
+		return renderer.Result{}, err
+	}
 	if validating, ok := r.(*validatingRenderer); ok {
-		prepared, err := prepareNodes(
-			validating.dialect,
-			validating.capabilities,
-			nodes,
-		)
+		prepared, err := prepareNodes(validating.dialect, validating.capabilities, nodes)
 		if err != nil {
-			return "", err
+			return renderer.Result{}, err
 		}
 		nodes = prepared
 	}
-	for _, node := range nodes {
+	ends := make([]int, 0, len(nodes))
+	for position, node := range nodes {
+		if err := ctx.Err(); err != nil {
+			r.Reset()
+			return renderer.Result{}, err
+		}
 		if err := node.Accept(r); err != nil {
 			r.Reset()
 			if _, ok := errors.AsType[*ptaherr.RenderError](err); ok {
-				return "", err
+				return renderer.Result{}, &renderFailure{input: position, cause: err}
 			}
-			return "", &ptaherr.RenderError{
-				Dialect: r.GetDialect(),
-				Node:    node,
-				Err:     err,
-				Message: err.Error(),
-			}
+			return renderer.Result{}, &renderFailure{input: position, cause: &ptaherr.RenderError{
+				Dialect: r.GetDialect(), Node: node, Err: err, Message: err.Error(),
+			}}
 		}
+		ends = append(ends, len(r.Output()))
 	}
-	return r.Output(), nil
+	if err := ctx.Err(); err != nil {
+		r.Reset()
+		return renderer.Result{}, err
+	}
+	output := r.Output()
+	result := renderer.Result{Complete: true, Fragments: make([]string, 0, len(nodes))}
+	start := 0
+	for _, end := range ends {
+		if end < start || end > len(output) {
+			r.Reset()
+			return renderer.Result{}, fmt.Errorf("%w: renderer replaced accumulated output", renderer.ErrInvalidResult)
+		}
+		result.Fragments = append(result.Fragments, output[start:end])
+		start = end
+	}
+	return result, nil
 }
 
 func prepareNodes(
@@ -329,7 +349,7 @@ func prepareNodes(
 	for i, node := range nodes {
 		cloned, err := prepareNode(dialect, caps, node)
 		if err != nil {
-			return nil, err
+			return nil, &renderFailure{input: i, cause: nodeRefusal(dialect, node, err)}
 		}
 		prepared[i] = cloned
 	}
@@ -566,6 +586,9 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			Message: "index node is nil",
 		}
 	}
+	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+		return nil, err
+	}
 	if err := validateIndexInclude(dialect, caps, node.Name, node.Type, node.IncludeColumns); err != nil {
 		return nil, err
 	}
@@ -647,13 +670,12 @@ func prepareCreateTableNode(
 		}
 		cloned.Indexes[i] = prepared
 	}
-	if len(node.Changefeeds) > 0 {
-		subject := fmt.Sprintf("table %q declares changefeed %q", node.Name, node.Changefeeds[0].Name)
-		if err := refuseChangefeeds(dialect, caps, subject); err != nil {
-			return nil, err
-		}
+	if err := validateNamedFeatures(dialect, caps, node.OwnedObjects); err != nil {
+		return nil, err
 	}
-	cloned.Changefeeds = ast.CloneChangefeeds(node.Changefeeds)
+	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+		return nil, err
+	}
 	if err := refuseColumnFamilies(dialect, caps, declaringFamilies(node.Name), node.YDBColumnFamilies); err != nil {
 		return nil, err
 	}
@@ -1132,23 +1154,6 @@ func refuseVectorIndex(dialect string, caps capability.Capabilities, name string
 	}
 }
 
-// refuseChangefeeds refuses subject, a table's changefeeds, on a target
-// without [capability.Changefeeds]. Built without them, the table would carry
-// no stream of its changes, and nothing would report the difference.
-func refuseChangefeeds(dialect string, caps capability.Capabilities, subject string) error {
-	if caps.Has(capability.Changefeeds) {
-		return nil
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.Changefeeds),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, capability.Changefeeds, normalized),
-	}
-}
-
 // validateDeclaredYDBObjects refuses the YDB table settings and objects a
 // declaration holds that the target cannot write: a table's row deletion
 // policy and changefeeds, the secrets, and the external data sources and
@@ -1421,25 +1426,22 @@ func validateDeclaredTableSettings(dialect string, caps capability.Capabilities,
 	if err := refuseDeclaredColumnFamilies(dialect, caps, database.Tables); err != nil {
 		return err
 	}
-	if err := validateDeclaredChangefeeds(dialect, caps, database); err != nil {
+	if err := validateDeclaredFeatures(dialect, caps, database); err != nil {
 		return err
 	}
 	return validateDeclaredPartitioning(dialect, caps, database.Tables)
 }
 
-// validateDeclaredChangefeeds refuses a declared table's changefeeds on a
-// target without [capability.Changefeeds], before anything is rendered.
-func validateDeclaredChangefeeds(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	for _, table := range database.Tables {
-		if len(table.Changefeeds) == 0 {
-			continue
-		}
-		subject := fmt.Sprintf("table %q declares changefeed %q", table.QualifiedName(), table.Changefeeds[0].Name)
-		if err := refuseChangefeeds(dialect, caps, subject); err != nil {
+func validateDeclaredFeatures(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, facets := range database.FacetSlots() {
+		if err := refuseUnregisteredFacets(dialect, *facets); err != nil {
 			return err
 		}
 	}
-	return nil
+	if err := validateNamedFeatures(dialect, caps, database.FeatureObjects); err != nil {
+		return err
+	}
+	return schemaprep.ValidateFeatureParents(database, dialect)
 }
 
 func refuseTopicNode(dialect string, caps capability.Capabilities, node ast.Node) error {
@@ -1708,6 +1710,9 @@ func prepareColumnNode(
 	if node == nil {
 		return nil, nilNodeError(dialect, "column node")
 	}
+	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+		return nil, err
+	}
 	if node.Name == "" {
 		return nil, unnamedColumnError(dialect, table)
 	}
@@ -1869,6 +1874,9 @@ func prepareConstraintNode(
 ) (*ast.ConstraintNode, error) {
 	if node == nil {
 		return nil, nilNodeError(dialect, "constraint node")
+	}
+	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+		return nil, err
 	}
 	// Before the foreign-key early return, not after it: a UNIQUE or PRIMARY KEY
 	// constraint takes that return, and its INCLUDE payload is exactly what was
@@ -2095,7 +2103,7 @@ func foreignKeysUnsupportedError(dialect string) error {
 // executable. SQLite keeps foreign keys inline because it cannot add them
 // after table creation.
 //
-// The schema is scoped to dialect through [schemamodel.ScopeToDialect] before
+// The schema is scoped to dialect through [schemamodel.ScopeToTarget] before
 // it is validated: an object the document declares for other dialects only is
 // excluded from the output rather than refused, and it is never checked
 // against this target's capabilities either. Statement counts therefore differ
@@ -2245,10 +2253,11 @@ func GetOrderedCreateStatementsWithCapabilities(
 ) ([]string, error) {
 	// A nil sink drops what it is given, so the reporting variant and this one
 	// are the same render rather than two that can drift apart.
-	return orderedCreateStatements(r, dialect, caps, nil)
+	return orderedCreateStatements(context.Background(), r, dialect, caps, nil)
 }
 
 func orderedCreateStatements(
+	ctx context.Context,
 	r *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
@@ -2276,7 +2285,7 @@ func orderedCreateStatements(
 		return nil, err
 	}
 	err = modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
-		sql, err := renderNodeReporting(dialect, caps, sink, node)
+		sql, err := renderNodeReporting(ctx, dialect, caps, sink, node)
 		if err != nil {
 			return err
 		}
@@ -2310,12 +2319,13 @@ func prepareDatabaseForRendering(
 	//
 	// This is the render half of the seam. The compare half is in
 	// [ptah.run/migration/schemadiff.CompareReportingUndecidedAdditions],
-	// and both go through [schemamodel.ScopeToDialect] so `schema render` and
+	// and both go through [schemamodel.ScopeToTarget] so `schema render` and
 	// `schema apply` cannot disagree about which objects a target has.
-	database = schemamodel.ScopeToDialect(database, dialect)
-	if err := validateDatabaseDeclarations(dialect, caps, database); err != nil {
+	projected, err := prepareScopedDatabase(database, dialect, caps)
+	if err != nil {
 		return schemamodel.Database{}, err
 	}
+	database = projected
 
 	prepared := *database
 	prepared.Tables = slices.Clone(database.Tables)

@@ -3,14 +3,17 @@
 package clickhouse_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -62,7 +65,10 @@ func TestClickHouseReadRendersItsOwnRead(t *testing.T) {
 	applyStatements(c, conn, planAgainstLive(c, conn, roundTripDeclaration()))
 
 	live := readLive(c, conn)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(schemadiff.CompareWithDialect(&schemamodel.Database{}, live, platform.ClickHouse), platform.ClickHouse, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, live, platform.ClickHouse, must.Must(builtin.New()))), platform.ClickHouse, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.IsNotNil)
 }
@@ -103,9 +109,12 @@ func planAgainstLive(c *qt.C, conn *dbschema.DatabaseConnection, declared *schem
 	c.Helper()
 	live := readLive(c, conn)
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, live, info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, live, info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

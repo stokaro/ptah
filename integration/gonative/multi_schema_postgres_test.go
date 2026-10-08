@@ -3,12 +3,15 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
@@ -52,7 +55,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"),
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{
 				PolicyName: "ptah_ms_users_visible",
@@ -65,7 +68,10 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 		},
 		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "ptah_ms_auth.ptah_ms_users"}},
 	}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	migrationSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -87,7 +93,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	live = filterMultiSchemaIntegrationTables(live)
 
-	roundTripDiff := schemadiff.CompareWithDialect(desired, live, "postgres")
+	roundTripDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, "postgres", must.Must(builtin.New())))
 	c.Assert(roundTripDiff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", roundTripDiff))
 }
 

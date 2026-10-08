@@ -1,9 +1,11 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -14,7 +16,10 @@ import (
 // renderPlan plans a diff and renders what the server would be given.
 func renderPlan(c *qt.C, diff *difftypes.SchemaDiff) string {
 	c.Helper()
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

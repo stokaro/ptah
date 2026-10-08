@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -98,7 +100,7 @@ func assertOracleDomainsAreRefused(ctx context.Context, c *qt.C, conn *dbschema.
 	c.Assert(live.Domains, qt.HasLen, 0)
 
 	declared := oracleDomainDeclaration()
-	_, err = schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
+	_, err = schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "CREATE DOMAIN")
 }
@@ -110,9 +112,12 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity: the plan really carries both domains, and it carries them
@@ -136,7 +141,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 		"DOM_SCORE NUMBER(5,2) CHECK(VALUE BETWEEN 0 AND 100)",
 	})
 
-	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil)
+	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(settled.DomainsAdded.Names(), qt.HasLen, 0)
 	c.Assert(settled.DomainsRemoved.Names(), qt.HasLen, 0)
@@ -144,9 +149,12 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 
 	// And the removal direction, which has an ordering constraint of its own:
 	// measured, dropping a domain a table still uses answers ORA-11502.
-	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil)
+	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleFirstIndexOf(c, teardownStatements, "DROP TABLE") <
 		oracleFirstIndexOf(c, teardownStatements, "DROP DOMAIN"), qt.IsTrue)

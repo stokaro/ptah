@@ -9,9 +9,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -43,7 +45,7 @@ func TestServerExtensions_LiveSurviveTheComparisonAndTheCleanup(t *testing.T) {
 			live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"public"})
 			c.Assert(err, qt.IsNil)
 
-			diff, err := schemadiff.CompareWithDatabaseInfo(&schemamodel.Database{}, live, conn.Info(), nil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &schemamodel.Database{}, live, conn.Info(), nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0, qt.Commentf("installed: %v", installed))
 

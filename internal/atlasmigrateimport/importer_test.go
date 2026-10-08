@@ -58,7 +58,7 @@ func TestImportFlywayBaselineAndUndo(t *testing.T) {
 	writeFile(c, source, "V3__third_migration.sql", "ALTER TABLE baseline ADD name text;\n")
 	writeFile(c, source, "U1__initial.sql", "DROP TABLE skipped;\n")
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
 		ToURL:   "file://" + target,
 	})
@@ -83,7 +83,7 @@ func TestImportFlywayConvertsRepeatableMigrations(t *testing.T) {
 	writeFile(c, source, "V1__initial.sql", "CREATE TABLE users (id int);\n")
 	writeFile(c, source, "R__views.sql", "CREATE VIEW users_view AS SELECT * FROM users;\n")
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
 		ToURL:   "file://" + target,
 	})
@@ -108,7 +108,7 @@ func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
 	writeFile(c, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
 	writeFile(c, source, "V1.5__add_users.sql", "CREATE TABLE users (id int);\n")
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
 		ToURL:   "file://" + target,
 	})
@@ -131,7 +131,7 @@ func TestImportGolangMigrateSkipsDownFiles(t *testing.T) {
 	writeFile(c, source, "1_initial.down.sql", "DROP TABLE users;\n")
 	writeFile(c, source, "2_second.up.sql", "ALTER TABLE users ADD name text;\n")
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=golang-migrate",
 		ToURL:   "file://" + target,
 	})
@@ -202,7 +202,7 @@ two');
 			target := t.TempDir()
 			writeFile(c, source, "1_initial.sql", tt.sql)
 
-			result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+			result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 				FromURL: "file://" + source + "?format=" + tt.format,
 				ToURL:   "file://" + target,
 			})
@@ -226,7 +226,7 @@ CREATE TABLE posts (id int);
 --rollback DROP TABLE posts;
 `)
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=liquibase",
 		ToURL:   "file://" + target,
 	})
@@ -252,7 +252,7 @@ ALTER TABLE users ADD COLUMN email text;
 --rollback ALTER TABLE users DROP COLUMN email;
 `)
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=liquibase",
 		ToURL:   "file://" + target,
 	})
@@ -282,7 +282,7 @@ CREATE TABLE first_table (id int);
 CREATE TABLE second_table (id int);
 `)
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=liquibase",
 		ToURL:   "file://" + target,
 	})
@@ -309,7 +309,7 @@ CREATE TABLE numbered_table (id int);
 CREATE TABLE conventional_table (id int);
 `)
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=liquibase",
 		ToURL:   "file://" + target,
 	})
@@ -385,7 +385,7 @@ CREATE TABLE valid_table (id int);
 				writeFile(c, source, name, content)
 			}
 
-			_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+			_, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 				FromURL: "file://" + source + "?format=liquibase",
 				ToURL:   "file://" + target,
 			})
@@ -400,7 +400,7 @@ CREATE TABLE valid_table (id int);
 func TestImportRejectsRemoteSourceURL(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{FromURL: "atlas://repo/migrations?format=flyway"})
+	_, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{FromURL: "atlas://repo/migrations?format=flyway"})
 
 	c.Assert(err, qt.ErrorMatches, `import --from: only local file:// migration directories are supported`)
 }
@@ -414,7 +414,7 @@ CREATE TABLE users (id int);
 DROP TABLE users;
 `)
 
-	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	_, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + dir + "?format=goose",
 		ToURL:   "file://" + dir,
 	})
@@ -430,7 +430,7 @@ func TestImportRejectsExistingTargetFiles(t *testing.T) {
 	writeFile(c, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
 	writeFile(c, target, "1_initial.sql", "SELECT 1;\n")
 
-	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	_, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=golang-migrate",
 		ToURL:   "file://" + target,
 	})
@@ -448,7 +448,7 @@ func TestImportRejectsDuplicateFlywayVersions(t *testing.T) {
 	writeFile(c, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
 	writeFile(c, source, "V1__second.sql", "CREATE TABLE second (id int);\n")
 
-	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	_, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
 		ToURL:   "file://" + target,
 	})
@@ -466,7 +466,7 @@ func TestImportConvertsFlywayTokensThatOnlyOrderAlike(t *testing.T) {
 	writeFile(c, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
 	writeFile(c, source, "V01__second.sql", "CREATE TABLE second (id int);\n")
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
 		ToURL:   "file://" + target,
 	})
@@ -578,7 +578,7 @@ func TestImportLiquibaseSerializedChangelogs(t *testing.T) {
 			target := t.TempDir()
 			writeFile(c, source, tt.file, tt.content)
 
-			result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+			result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 				FromURL: "file://" + source + "?format=liquibase",
 				ToURL:   "file://" + target,
 			})
@@ -616,7 +616,7 @@ func TestImportLiquibaseChangelogsOrderedAcrossFiles(t *testing.T) {
 		`<databaseChangeLog><changeSet id="first" author="alice">`+
 			`<sql>CREATE TABLE users (id int);</sql></changeSet></databaseChangeLog>`)
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=liquibase",
 		ToURL:   "file://" + target,
 	})
@@ -648,7 +648,7 @@ func TestImportLiquibaseChangelogRefusalWritesNothing(t *testing.T) {
 			`<changeSet id="typed" author="bob"><createTable tableName="posts"/></changeSet>`+
 			`</databaseChangeLog>`)
 
-	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	_, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=liquibase",
 		ToURL:   "file://" + target,
 	})
@@ -677,7 +677,7 @@ func TestImportLiquibaseChangelogPadsVersionsToWidth(t *testing.T) {
 	changelog += "</databaseChangeLog>"
 	writeFile(c, source, "db.changelog.xml", changelog)
 
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=liquibase",
 		ToURL:   "file://" + target,
 	})

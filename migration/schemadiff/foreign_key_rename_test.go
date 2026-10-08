@@ -1,9 +1,11 @@
 package schemadiff_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -121,7 +123,7 @@ func removedKinds(removals difftypes.ConstraintRemovals) []string {
 func comparePostgres(desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = platform.Postgres
-	return schemadiff.CompareWithOptions(desired, current, opts)
+	return must.Must(schemadiff.CompareWithOptions(context.Background(), desired, current, opts, must.Must(builtin.New())))
 }
 
 // TestCompare_AColumnForeignKeyIsPairedByItsName covers stokaro/ptah#3718.
@@ -208,7 +210,7 @@ func TestCompare_AColumnForeignKeyUnderAnotherNameIsPairedByNameOnMySQL(t *testi
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = platform.MySQL
 
-	diff := schemadiff.CompareWithOptions(childDeclaringColumnKey(""), childHolding(live), opts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), childDeclaringColumnKey(""), childHolding(live), opts, must.Must(builtin.New())))
 
 	c.Assert(constraintNames(diff.ConstraintsAdded.Names()), qt.DeepEquals, []string{"fk_c_p_id"})
 	c.Assert(removedKinds(diff.ConstraintsRemoved), qt.DeepEquals, []string{"c_ibfk_1 FOREIGN KEY"})
@@ -221,7 +223,10 @@ func TestCompare_AColumnForeignKeyUnderAnotherNameMigrationSQL(t *testing.T) {
 	c := qt.New(t)
 	diff := comparePostgres(childDeclaringColumnKey("c_p_id_fkey"), childHolding(renamedKey))
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL(platform.Postgres, nodes...)
 	c.Assert(err, qt.IsNil)

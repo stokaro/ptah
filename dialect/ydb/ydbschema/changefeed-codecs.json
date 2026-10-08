@@ -1,5 +1,5 @@
 {
-  "$id": "ptah.run/ydb/changefeed-operations/v1",
+  "$id": "ptah.run/ydb/changefeed/v1",
   "$defs": {
     "consumer": {
       "type": "object",
@@ -32,6 +32,30 @@
         "consumers": {"type": "array", "items": {"$ref": "#/$defs/consumer"}, "ordering": "set-by-name"},
         "disabled": {"type": "boolean"}
       }
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/ydb/changefeed": {
+        "type": "object", "additionalProperties": false, "required": ["spec"],
+        "properties": {"spec": {"$ref": "#/$defs/changefeed"}}
+      }
+    },
+    "observed": {
+      "ptah.run/ydb/changefeed": {
+        "type": "object", "additionalProperties": false, "required": ["spec"],
+        "properties": {"spec": {"$ref": "#/$defs/changefeed"}}
+      }
+    }
+  },
+  "changes": {
+    "ptah.run/ydb/changefeed-change": {
+      "type": "object", "additionalProperties": false, "required": ["before", "after"],
+      "properties": {
+        "before": {"anyOf": [{"type": "null"}, {"$ref": "#/values/observed/ptah.run~1ydb~1changefeed"}]},
+        "after": {"anyOf": [{"type": "null"}, {"$ref": "#/values/desired/ptah.run~1ydb~1changefeed"}]}
+      },
+      "constraint": "At least one side is non-null; both sides must name the same stream."
     }
   },
   "operations": {

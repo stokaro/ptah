@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -101,8 +104,11 @@ func constraintCommentLines(sql string) []string {
 // plan.
 func planOrders(c *qt.C, desired *schemamodel.Database, database *catalog.Database) string {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

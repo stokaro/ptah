@@ -1,10 +1,12 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
@@ -63,7 +65,10 @@ func clearedRangeMigrationSQL(c *qt.C, declared schemamodel.Range) string {
 		SubtypeDiff: "int8_subdiff",
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationAST(schemadiff.Compare(target, current))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		must.Must(schemadiff.Compare(c.Context(), target, current, must.Must(builtin.New()))),
+	)
 	c.Assert(err, qt.IsNil)
 
 	var statements []string

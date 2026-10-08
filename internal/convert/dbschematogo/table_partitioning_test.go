@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -21,7 +23,7 @@ func TestConvert_CarriesATablesPartitioning(t *testing.T) {
 		Columns: []catalog.Column{{Name: "id", DataType: "Uint64", ColumnType: "Uint64", IsNullable: "NO",
 			IsPrimaryKey: true, OrdinalPosition: 1}}}}}
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(database, platform.YDB)
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), database, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(converted.Tables, qt.HasLen, 1)
 	c.Assert(converted.Tables[0].YDBPartitioning, qt.DeepEquals, settings)

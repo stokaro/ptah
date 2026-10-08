@@ -388,8 +388,8 @@ func ydbAccessControl(t tableSpelling) experiment {
 				}.observation(),
 				capability.GroupPrincipals: readBack{
 					accepted: createdUser.Accepted, statement: createdUser.Statement, what: "a group beside a user",
-					found: slices.Contains(db.Roles, catalog.Role{Name: group, Inherit: true, Group: true}) &&
-						slices.Contains(db.Roles, catalog.Role{Name: user, Inherit: true}),
+					found: slices.ContainsFunc(db.Roles, func(role catalog.Role) bool { return role.Name == group && role.Inherit && role.Group }) &&
+						slices.ContainsFunc(db.Roles, func(role catalog.Role) bool { return role.Name == user && role.Inherit && !role.Group }),
 				}.observation(),
 				capability.RoleMembership: readBack{
 					accepted: accepted[0], statement: statements[0], what: "the member",

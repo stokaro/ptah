@@ -10,11 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -94,8 +96,11 @@ func TestPostgresViewDependencyOrderE2E(t *testing.T) {
 				},
 			}
 
-			diff := schemadiff.CompareWithDialect(declared, read, "postgres")
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, read, "postgres", must.Must(builtin.New())))
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 
 			// The judge is the server: a plan that creates the dependent view

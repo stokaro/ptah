@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -42,9 +44,9 @@ func TestCompare_YDBViewMatchesTheQueryTheServerStores(t *testing.T) {
 		diff *difftypes.SchemaDiff
 	}{
 		{name: "against the database",
-			diff: schemadiff.CompareWithDialect(ydbViewDeclaration(authoredQuery), ydbViewCatalog(storedQuery), platform.YDB)},
+			diff: must.Must(schemadiff.CompareWithDialect(t.Context(), ydbViewDeclaration(authoredQuery), ydbViewCatalog(storedQuery), platform.YDB, must.Must(builtin.New())))},
 		{name: "against the same document",
-			diff: schemadiff.CompareSchemas(ydbViewDeclaration(authoredQuery), ydbViewDeclaration(authoredQuery), platform.YDB)},
+			diff: must.Must(schemadiff.CompareSchemas(t.Context(), ydbViewDeclaration(authoredQuery), ydbViewDeclaration(authoredQuery), platform.YDB, must.Must(builtin.New())))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -73,7 +75,7 @@ func TestCompare_YDBViewQueryChanges(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(ydbViewDeclaration(authoredQuery), ydbViewCatalog(test.stored), platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), ydbViewDeclaration(authoredQuery), ydbViewCatalog(test.stored), platform.YDB, must.Must(builtin.New())))
 
 			c.Assert(diff.ViewsModified, qt.HasLen, 1)
 			c.Assert(diff.ViewsModified[0].ViewName, qt.Equals, "shop.active")

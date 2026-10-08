@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/sqlschema"
 )
@@ -16,7 +18,7 @@ func columnNullability(c *qt.C, sql, dialect string) map[string]string {
 	desired, _, err := sqlschema.Read([]byte(sql), dialect)
 	c.Assert(err, qt.IsNil)
 	nullability := make(map[string]string)
-	for _, table := range goschematodb.ToDBSchema(&desired, dialect).Tables {
+	for _, table := range must.Must(goschematodb.ToDBSchema(c.Context(), &desired, dialect, must.Must(builtin.New()))).Tables {
 		for _, column := range table.Columns {
 			nullability[table.Name+"."+column.Name] = column.IsNullable
 		}

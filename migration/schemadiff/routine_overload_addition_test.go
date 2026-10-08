@@ -1,13 +1,16 @@
 package schemadiff_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -36,10 +39,13 @@ func TestCompare_TwoAddedOverloadsAreTwoDifferentStatements(t *testing.T) {
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 2)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -75,7 +81,7 @@ func TestCompare_AnAddedOverloadBesideAnExistingOneCarriesItsOwnDeclaration(t *t
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 1)
 	c.Assert(diff.FunctionsAdded[0].Parameters, qt.Equals, "a text",

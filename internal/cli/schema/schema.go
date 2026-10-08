@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/annotationschema"
 	"ptah.run/internal/cli/compare"
 	"ptah.run/internal/cli/drift"
@@ -540,10 +541,14 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	case exportFormatDBML:
-		rendered, err := dbmlrender.Render(db, dbmlrender.Options{
+		runtime, err := builtin.New()
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		rendered, err := dbmlrender.Render(cmd.Context(), db, dbmlrender.Options{
 			IncludeTables: opts.includeTables,
 			ExcludeTables: opts.excludeTables,
-		})
+		}, runtime)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}

@@ -1,14 +1,17 @@
 package safety_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -106,9 +109,12 @@ func singleColumnChange(desired schemamodel.Field, changes map[string]string) *d
 // comment nodes the plan carries.
 func judgedStatements(c *qt.C, diff *difftypes.SchemaDiff, dialect string) []judgedStatement {
 	c.Helper()
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, dialect, planner.Options{})
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect, planner.Options{},
+	)
 	c.Assert(err, qt.IsNil)
-	assessments, err := safety.AssessRendered(nodes, dialect)
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), nodes, dialect)
 	c.Assert(err, qt.IsNil)
 	out := make([]judgedStatement, 0, len(assessments))
 	for _, assessment := range assessments {
@@ -179,7 +185,7 @@ func TestAssessRendered_SQLServerRestatementsTakeTheNodeVerdict(t *testing.T) {
 		&ast.ModifyColumnOperation{Column: ast.NewColumn("b", "INT"), PreviousNullable: false, HasPreviousNullable: true},
 	}}
 
-	assessments, err := safety.AssessRendered([]ast.Node{node}, platform.SQLServer)
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), []ast.Node{node}, platform.SQLServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(assessments, qt.HasLen, 2)
@@ -203,7 +209,7 @@ func TestAssessRendered_PostgreSQLSingleClausesAreNotRestatements(t *testing.T) 
 		HasChanged:   true,
 	}}}
 
-	assessments, err := safety.AssessRendered([]ast.Node{node}, platform.Postgres)
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), []ast.Node{node}, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(assessments, qt.HasLen, 2)

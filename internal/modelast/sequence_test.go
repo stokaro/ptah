@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -58,7 +59,7 @@ func TestCollectDatabase_SequenceOrdering(t *testing.T) {
 		},
 	}
 
-	statements := modelast.CollectDatabase(database, platform.Postgres)
+	statements := must.Must(modelast.CollectDatabase(database, platform.Postgres))
 
 	createNode := createSequenceStatementByName(statements, "order_seq")
 	createIdx := createSequenceStatementIndexByName(statements, "order_seq")
@@ -101,7 +102,7 @@ func TestCollectDatabase_SequenceReachesTheMySQLRendererToBeRefused(t *testing.T
 		Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 	}
 
-	statements := modelast.CollectDatabase(database, platform.MySQL)
+	statements := must.Must(modelast.CollectDatabase(database, platform.MySQL))
 
 	c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
 		qt.Commentf("the declared sequence must reach the renderer"))
@@ -139,7 +140,7 @@ func TestCollectDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 				Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 			}
 
-			statements := modelast.CollectDatabase(database, spelling)
+			statements := must.Must(modelast.CollectDatabase(database, spelling))
 
 			c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
 				qt.Commentf("the declared sequence must reach the %s renderer", spelling))

@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 )
 
 // The warning is the only place a withheld addition surfaces at all: no
@@ -74,7 +75,7 @@ func TestUndecidedWarningExplainsWhyTheCurrentSideCouldNotDecide(t *testing.T) {
 			var diagnostics strings.Builder
 
 			undecidednote.Report(
-				&diagnostics, []coverage.Object{test.object}, "--from", "--to")
+				&diagnostics, schemadiff.Diagnostics{Common: []coverage.Object{test.object}}, "--from", "--to")
 
 			c.Assert(diagnostics.String(), qt.Contains, test.want)
 			c.Assert(diagnostics.String(), qt.Contains,
@@ -116,7 +117,7 @@ func TestUndecidedWarningsAreDistinctPerReason(t *testing.T) {
 	for _, limit := range limits {
 		var diagnostics strings.Builder
 		undecidednote.Report(
-			&diagnostics, []coverage.Object{withheldExtension(limit)}, "--from", "--to")
+			&diagnostics, schemadiff.Diagnostics{Common: []coverage.Object{withheldExtension(limit)}}, "--from", "--to")
 		warnings[diagnostics.String()] = struct{}{}
 	}
 
@@ -129,10 +130,10 @@ func TestUndecidedWarningsAreDistinctPerReason(t *testing.T) {
 func TestFindingsCountsTheWithheldObjects(t *testing.T) {
 	c := qt.New(t)
 
-	findings := undecidednote.Findings([]coverage.Object{
+	findings := undecidednote.Findings(schemadiff.Diagnostics{Common: []coverage.Object{
 		withheldExtension(coverage.Refused(coverage.Extension)),
 		withheldExtension(coverage.Object{Reason: coverage.OutsideScope, Provenance: coverage.Configured}),
-	})
+	}})
 
 	c.Assert(findings, qt.DeepEquals, []safety.Finding{
 		{Category: undecidednote.FindingCategory, Count: 2, Severity: safety.Warning},
@@ -144,7 +145,7 @@ func TestFindingsCountsTheWithheldObjects(t *testing.T) {
 func TestFindingsIsEmptyWhenNothingWasWithheld(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(undecidednote.Findings(nil), qt.HasLen, 0)
+	c.Assert(undecidednote.Findings(schemadiff.Diagnostics{}), qt.HasLen, 0)
 }
 
 func TestSummaryCountsTheObjects(t *testing.T) {
@@ -160,7 +161,7 @@ func TestSummaryCountsTheObjects(t *testing.T) {
 		t.Run(test.want, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(undecidednote.Summary(test.count), qt.Equals, test.want)
+			c.Assert(undecidednote.Summary(schemadiff.Diagnostics{Common: make([]coverage.Object, test.count)}), qt.Equals, test.want)
 		})
 	}
 }

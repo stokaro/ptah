@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -293,7 +294,7 @@ func TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 
 			database := shadowingDocument(test.columnType, declareShadowingEnum)
 
-			statements := modelast.CollectDatabase(*database, platform.Postgres)
+			statements := must.Must(modelast.CollectDatabase(*database, platform.Postgres))
 
 			c.Assert(statements, qt.IsNotNil)
 
@@ -325,7 +326,7 @@ func TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 // source that read `c | money | pg_catalog | b`. A base type became a domain on
 // a second engine, silently, exactly as on PostgreSQL.
 //
-// The spellings are read out of platform.NormalizeDialect's own switch rather
+// The spellings come from platform.DialectSpellings rather
 // than listed here, so this asserts over every spelling ptah accepts -- the
 // aliases `pgx`, `crdb`, `ysql` and `google_spanner` included -- and a family
 // member added to platform.IsPostgresFamily later is covered without anyone

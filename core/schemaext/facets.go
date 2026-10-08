@@ -70,6 +70,20 @@ func (f Facets) Without(kind Kind) Facets {
 	return result
 }
 
+// Merge combines independent declarations and refuses duplicate kinds, even
+// when their values compare equal. The result shares only immutable snapshots.
+func (f Facets) Merge(other Facets) (Facets, error) {
+	result := Facets{values: make(map[Kind]Value, len(f.values)+len(other.values))}
+	maps.Copy(result.values, f.values)
+	for kind, value := range other.values {
+		if _, found := result.values[kind]; found {
+			return Facets{}, fmt.Errorf("%w: facet %q", ErrDuplicate, kind)
+		}
+		result.values[kind] = value
+	}
+	return result, nil
+}
+
 // Get returns an independent value and whether kind is present. A clone error
 // returns no value; absence is never reported in place of a malformed payload.
 func (f Facets) Get(kind Kind) (Value, bool, error) {

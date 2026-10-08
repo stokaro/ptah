@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -200,8 +202,8 @@ func TestOwnershipRoundTrip_ACatalogComparedWithItselfPlansNoObject(t *testing.T
 			// dialect-aware comparator against a dialect-blind description --
 			// agreement between a pairing the product does not ship
 			// (stokaro/ptah#2606).
-			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(cell.shape), cell.dialect)
-			diff := schemadiff.CompareWithDialect(desired, ownershipCatalog(cell.shape), cell.dialect)
+			desired := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ownershipCatalog(cell.shape), cell.dialect, must.Must(builtin.New())))
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, ownershipCatalog(cell.shape), cell.dialect, must.Must(builtin.New())))
 
 			changes := objectChanges(diff)
 			c.Assert(changes, qt.HasLen, 0,
@@ -237,7 +239,7 @@ func TestOwnershipRoundTrip_ADroppedObjectIsStillReported(t *testing.T) {
 		t.Run(shape.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(shape), "")
+			desired := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ownershipCatalog(shape), "postgres", must.Must(builtin.New())))
 			desired.Indexes = nil
 			desired.Constraints = nil
 			for index := range desired.Tables {
@@ -248,7 +250,7 @@ func TestOwnershipRoundTrip_ADroppedObjectIsStillReported(t *testing.T) {
 				desired.Fields[index].Primary = false
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, ownershipCatalog(shape), "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, ownershipCatalog(shape), "postgres", must.Must(builtin.New())))
 
 			c.Assert(len(objectChanges(diff)) > 0, qt.IsTrue,
 				qt.Commentf("a desired schema declaring none of the objects planned nothing"))

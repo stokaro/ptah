@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -183,13 +184,13 @@ func TestYDBResourcePools_Rollback(t *testing.T) {
 			info := conn.Info()
 			current := readScoped(c, conn, poolSchemas)
 			declared := poolDeclaration(names, 5, nil, nil, names.rank, names.rank+1)
-			diff, err := schemadiff.CompareWithDatabaseInfo(declared, current, info, nil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, current, info, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 
-			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+			plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 				Diff: diff, DesiredSchema: declared, CurrentSchema: current,
 				Dialect: info.Dialect, Capabilities: info.Capabilities,
-			})
+				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
 			forward, err := builtin.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, plan.Forward.Nodes...)
 			c.Assert(err, qt.IsNil)

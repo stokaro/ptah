@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -36,8 +38,8 @@ func TestIgnoredExtension_RemovalIsWithheld(t *testing.T) {
 		Extensions: []catalog.Extension{{Name: ignoredExtensionName, Schema: "public"}},
 	}
 
-	diff := schemadiff.CompareWithOptions(desired, database,
-		config.WithAdditionalIgnoredExtensions(ignoredExtensionName))
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database,
+		config.WithAdditionalIgnoredExtensions(ignoredExtensionName), must.Must(builtin.New())))
 
 	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0, qt.Commentf("removed: %#v", diff.ExtensionsRemoved))
 }
@@ -52,7 +54,7 @@ func TestIgnoredExtension_RemovalIsPlannedWithoutTheList(t *testing.T) {
 		Extensions: []catalog.Extension{{Name: ignoredExtensionName, Schema: "public"}},
 	}
 
-	diff := schemadiff.CompareWithOptions(desired, database, config.DefaultCompareOptions())
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, config.DefaultCompareOptions(), must.Must(builtin.New())))
 
 	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 1, qt.Commentf("removed: %#v", diff.ExtensionsRemoved))
 }
@@ -68,8 +70,8 @@ func TestIgnoredExtension_AdditionIsWithheldToo(t *testing.T) {
 	}
 	database := &catalog.Database{}
 
-	diff := schemadiff.CompareWithOptions(desired, database,
-		config.WithAdditionalIgnoredExtensions(ignoredExtensionName))
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database,
+		config.WithAdditionalIgnoredExtensions(ignoredExtensionName), must.Must(builtin.New())))
 
 	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0, qt.Commentf("added: %#v", diff.ExtensionsAdded))
 }
@@ -84,7 +86,7 @@ func TestIgnoredExtension_AdditionIsPlannedWithoutTheList(t *testing.T) {
 	}
 	database := &catalog.Database{}
 
-	diff := schemadiff.CompareWithOptions(desired, database, config.DefaultCompareOptions())
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, config.DefaultCompareOptions(), must.Must(builtin.New())))
 
 	c.Assert(diff.ExtensionsAdded, qt.HasLen, 1, qt.Commentf("added: %#v", diff.ExtensionsAdded))
 	c.Assert(diff.ExtensionsAdded[0].Name, qt.Equals, ignoredExtensionName)
@@ -104,12 +106,12 @@ func TestIgnoredExtension_AgreesWithTheDirective(t *testing.T) {
 		Extensions: []catalog.Extension{{Name: "postgis", Schema: "public"}},
 	}
 
-	byList := schemadiff.CompareWithOptions(declared(), carried,
-		config.WithAdditionalIgnoredExtensions("postgis"))
+	byList := must.Must(schemadiff.CompareWithOptions(t.Context(), declared(), carried,
+		config.WithAdditionalIgnoredExtensions("postgis"), must.Must(builtin.New())))
 
 	described := declared()
 	described.NotDescribed = described.NotDescribed.WithObject(coverage.Extension, "postgis")
-	byDirective := schemadiff.CompareWithOptions(described, carried, config.DefaultCompareOptions())
+	byDirective := must.Must(schemadiff.CompareWithOptions(t.Context(), described, carried, config.DefaultCompareOptions(), must.Must(builtin.New())))
 
 	c.Assert(byList.ExtensionsAdded, qt.DeepEquals, byDirective.ExtensionsAdded)
 	c.Assert(byList.ExtensionsRemoved, qt.DeepEquals, byDirective.ExtensionsRemoved)
@@ -125,7 +127,7 @@ func TestIgnoredExtension_DefaultStillCoversPlpgsql(t *testing.T) {
 		Extensions: []catalog.Extension{{Name: "plpgsql", Schema: "pg_catalog"}},
 	}
 
-	diff := schemadiff.CompareWithOptions(desired, database, config.DefaultCompareOptions())
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, config.DefaultCompareOptions(), must.Must(builtin.New())))
 
 	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0, qt.Commentf("removed: %#v", diff.ExtensionsRemoved))
 }

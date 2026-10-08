@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -30,7 +32,7 @@ func TestCompareWithDatabaseInfoRefusesAGrantOptionConflict(t *testing.T) {
 				{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "orders", WithOption: true},
 			}}
 
-			diff, err := schemadiff.CompareWithDatabaseInfo(desired, &catalog.Database{}, mysqlFamilyInfo(dialect), nil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{}, mysqlFamilyInfo(dialect), nil, must.Must(builtin.New()))
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, `.*is granted INSERT on TABLE orders WITH GRANT OPTION and SELECT on the same object without it.*`)
@@ -63,7 +65,7 @@ func TestCompareWithDatabaseInfoStillComparesAgreeingGrants(t *testing.T) {
 			}
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				desired, &catalog.Database{}, catalog.ServerInfo{Dialect: test.dialect, Schema: "app"}, nil,
+				t.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: test.dialect, Schema: "app"}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)

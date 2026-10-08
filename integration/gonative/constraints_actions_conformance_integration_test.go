@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	mysqlreader "ptah.run/internal/dbschema/mysql"
 	"ptah.run/migration/schemadiff"
 )
@@ -39,7 +41,7 @@ func TestConstraintsActionsConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	liveSchema = filterConformanceSchema(liveSchema, constraintsActionsConformanceTables())
 
-	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, liveSchema, platform.MySQL, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 

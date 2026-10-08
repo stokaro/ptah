@@ -1,9 +1,11 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -23,7 +25,10 @@ func primaryKeyAdditionSQL(c *qt.C, include []string) string {
 			IncludeColumns: include,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -82,7 +87,10 @@ func declaredPrimaryKeyAdditionSQL(c *qt.C, include []string) string {
 		}},
 	}
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "covering_pkey")}
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

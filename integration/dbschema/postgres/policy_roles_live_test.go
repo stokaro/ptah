@@ -12,6 +12,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
@@ -124,7 +125,7 @@ func (f policyRoleFixture) read(c *qt.C) *catalog.Database {
 
 func (f policyRoleFixture) compare(c *qt.C, desired *schemamodel.Database) *difftypes.SchemaDiff {
 	c.Helper()
-	return schemadiff.CompareWithDialect(desired, f.read(c), f.dialect)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, f.read(c), f.dialect, must.Must(builtin.New())))
 }
 
 // TestPolicyRoles_LiveSchemaFileConverges applies each spelling and compares

@@ -1,13 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,12 +35,18 @@ func TestGenerateSchemaDiffSQL_TableModificationUsesStructuralIdentity(t *testin
 		}},
 	}
 
-	postgresSQL, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	postgresSQL, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresSQL, qt.Contains, `ALTER TABLE "tenant"."data" ALTER COLUMN "payload" TYPE BIGINT`)
 	c.Assert(postgresSQL, qt.Not(qt.Contains), `ALTER TABLE "tenant.data"`)
 
-	mysqlSQL, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
+	mysqlSQL, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MySQL,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(mysqlSQL, qt.Contains, "ALTER TABLE `tenant`.`data` MODIFY COLUMN `payload` BIGINT")
 	c.Assert(mysqlSQL, qt.Not(qt.Contains), "ALTER TABLE `tenant.data`")
@@ -53,11 +63,14 @@ func TestGenerateSchemaDiffSQL_SQLiteRebuildUsesStructuralIdentity(t *testing.T)
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "tenant.data",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "obsolete"}},
-			Desired:        difftypes.TableDeclarationFor(declared, declared.Tables[1]),
+			Desired:        difftypes.TableDeclarationFor(declared, declared.Tables[1], identifier.ForDialect("sqlite")),
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `FROM "tenant"."data"`)
@@ -88,14 +101,17 @@ func TestGenerateSchemaDiffSQL_SQLiteTableCreationUsesStructuralIdentity(t *test
 	// by that string is the ambiguity this test keeps apart.
 	diff := &difftypes.SchemaDiff{
 		TablesAdded: difftypes.TableChanges{
-			difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`),
-			difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data"),
+			difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`, identifier.ForDialect("sqlite")),
+			difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data", identifier.ForDialect("sqlite")),
 		},
 		DeclaredTables:    desired.Tables,
 		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, "CREATE TABLE"), qt.Equals, 2)
@@ -129,10 +145,11 @@ func TestGenerateSchemaDiffSQL_ForeignKeyPreservesStructuralIdentity(t *testing.
 			c := qt.New(t)
 			desired := referenceCollisionForeignKeySchema()
 			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
 				&difftypes.SchemaDiff{
 					TablesAdded: difftypes.TableChanges{
-						difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`),
-						difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data"),
+						difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`, identifier.ForDialect(tt.dialect)),
+						difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data", identifier.ForDialect(tt.dialect)),
 					},
 					DeclaredTables:    desired.Tables,
 					DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
@@ -177,7 +194,10 @@ func TestGenerateSchemaDiffSQL_MySQLSelfForeignKeyTypeChangePreservesStructuralI
 		DeclaredForeignKeys: difftypes.ForeignKeyDeclarationsOf(desired),
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `tenant`.`data` DROP FOREIGN KEY `fk_qualified_parent`")
@@ -218,7 +238,10 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TYPE "tenant.data" RENAME TO "tenant.data__ptah_old"`)
@@ -233,7 +256,10 @@ func TestGenerateSchemaDiffSQL_PostgresSequenceRemovalPreservesLiteralDotIdentit
 		SequencesRemoved: difftypes.SequenceChanges{{Name: "tenant.data"}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP SEQUENCE IF EXISTS "tenant.data"`)

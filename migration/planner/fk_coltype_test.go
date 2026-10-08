@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -57,7 +60,10 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_MySQLFamilyBrackets(t 
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 			c.Assert(err, qt.IsNil)
 			sql := strings.Join(statements, "\n")
 
@@ -93,7 +99,10 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *t
 		})
 	diff.IdentifierSemantics = &semantics
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLServer)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 
@@ -114,7 +123,10 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_PostgresUnchanged(t *t
 
 	diff, _ := fkColumnTypeChangeInputs()
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 

@@ -1,10 +1,12 @@
 package clickhouse_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -31,7 +33,10 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 		{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"},
 	}}
 
-	nodes, err := clickhouse.New().GenerateMigrationAST(withDeclaredTables(diff, desired))
+	nodes, err := clickhouse.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTables(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)

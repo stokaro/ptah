@@ -11,8 +11,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedpg"
@@ -51,10 +54,10 @@ func TestEmbedPGStoreE2E(t *testing.T) {
 	defer db.Close()
 
 	store := embedpg.NewStore(db)
-	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	c.Assert(store.EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
 	// Twice, because a worker starting is the normal time to call it and
 	// several of them start at once.
-	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	c.Assert(store.EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
 
 	// One database and one schema for all of them, because creating a database
 	// per rule is a minute of setup for tests that take a second, and every
@@ -1468,7 +1471,7 @@ func TestEmbedPGStoreMaintainNeverShortensAWindowE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 	store := embedpg.NewStore(db)
-	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	c.Assert(store.EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
 
 	_, err = store.RegisterGeneration(ctx, embedstore.Generation{
 		Identity: "maintain-1", SpecDigest: "spec-1", Dimension: 4,

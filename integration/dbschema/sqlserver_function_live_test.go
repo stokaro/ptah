@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -78,7 +79,7 @@ func TestSQLServerLiveFunctionRoundTrip(t *testing.T) {
 
 	// 3. The convergence assertion. Comparing the same description against what
 	// the server now holds must produce nothing to do.
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)

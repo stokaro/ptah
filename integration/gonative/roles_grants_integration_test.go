@@ -4,6 +4,7 @@ package gonative_test
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
@@ -40,10 +42,13 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Cleanup(func() { cleanupRolesGrantsIntegration(c, db) })
 
 	target := rolesGrantsTarget()
-	diff := schemadiff.Compare(target, &catalog.Database{})
+	diff := must.Must(schemadiff.Compare(t.Context(), target, &catalog.Database{}, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	migrationSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -56,7 +61,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	filtered := filterRolesGrantsIntegrationSchema(live)
 
-	roundTrip := schemadiff.Compare(target, filtered)
+	roundTrip := must.Must(schemadiff.Compare(t.Context(), target, filtered, must.Must(builtin.New())))
 	c.Assert(roundTrip.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", roundTrip))
 
 	_, err = db.Exec("GRANT ptah_grants_reader TO CURRENT_USER")
@@ -538,13 +543,16 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 		Roles:           live.Roles,
 		RolesOutOfScope: live.RolesOutOfScope,
 	}
-	diff := schemadiff.Compare(desired, rolesOnly)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, rolesOnly, must.Must(builtin.New())))
 
 	c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"ptah_scope_absent_137"})
 
 	// And the plan applies. Before this fix the same plan carried
 	// CREATE ROLE "ptah_scope_outside_137" and died on it.
-	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	migrationSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -723,10 +731,10 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 			{Name: "ptah_undescribed_absent_137", Login: true, Inherit: true},
 		},
 	}
-	diff := schemadiff.Compare(desired, &catalog.Database{
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, &catalog.Database{
 		Roles:           full.Roles,
 		RolesOutOfScope: full.RolesOutOfScope,
-	})
+	}, must.Must(builtin.New())))
 	c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"ptah_undescribed_absent_137"})
 }
 

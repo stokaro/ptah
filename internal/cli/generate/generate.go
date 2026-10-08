@@ -13,6 +13,10 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -161,10 +165,26 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		dialects = []string{opts.dialect}
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
 	var rendered bytes.Buffer
 	for _, d := range dialects {
-		reportDialectScopeOmissions(stderr, result, d)
-		statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(result, d, renderCapabilities(d, target))
+		renderDialect := platform.NormalizeDialect(d)
+		if renderDialect == "" {
+			return fmt.Errorf("error rendering %s schema: %w: %s", d, ptaherr.ErrUnsupportedDialect, d)
+		}
+		selected, err := runtime.ResolveTarget(d)
+		if err != nil {
+			return err
+		}
+		if err := reportDialectScopeOmissions(stderr, result, selected); err != nil {
+			return err
+		}
+		schemaSQL, err := renderer.RenderSchema(cmd.Context(), runtime, renderer.SchemaRequest{
+			Target: renderDialect, Schema: result, Capabilities: renderCapabilities(d, target), Identifiers: identifier.ForDialect(d),
+		})
 		if err != nil {
 			return fmt.Errorf("error rendering %s schema: %w", d, err)
 		}
@@ -172,8 +192,8 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		if len(dialects) > 1 {
 			fmt.Fprintf(&rendered, "-- %s schema\n\n", d)
 		}
-		for i, statement := range statements {
-			fmt.Fprintf(&rendered, "-- Statement %d/%d\n%s\n\n", i+1, len(statements), statement)
+		for i, statement := range schemaSQL.Statements {
+			fmt.Fprintf(&rendered, "-- Statement %d/%d\n%s\n\n", i+1, len(schemaSQL.Statements), statement)
 		}
 	}
 
@@ -193,11 +213,16 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 // function that was never going to appear. The report goes to stderr rather
 // than into the statement list because stdout is DDL somebody pipes into a
 // database, and a note about a declaration is not a statement.
-func reportDialectScopeOmissions(stderr io.Writer, db *schemamodel.Database, dialect string) {
-	for _, omitted := range schemamodel.OmissionsForDialect(db, dialect) {
-		fmt.Fprintf(stderr, "note: %s: %s %s is declared for %s and is not part of this target's schema\n",
-			dialect, omitted.Kind, omitted.Name, strings.Join(omitted.Dialects, ", "))
+func reportDialectScopeOmissions(stderr io.Writer, db *schemamodel.Database, target schemaext.TargetSelection) error {
+	omissions, err := schemamodel.OmissionsForTarget(db, target)
+	if err != nil {
+		return err
 	}
+	for _, omitted := range omissions {
+		fmt.Fprintf(stderr, "note: %s: %s %s is declared for %s and is not part of this target's schema\n",
+			target.Name(), omitted.Kind, omitted.Name, strings.Join(omitted.Dialects, ", "))
+	}
+	return nil
 }
 
 // resolveServerTarget maps --server-version onto the capability preset the
@@ -239,8 +264,7 @@ func resolveServerTarget(opts *options) (servertarget.Target, error) {
 
 // renderCapabilities picks the capability set one dialect renders against.
 //
-// capability.ForDialect is what renderer.GetOrderedCreateStatements passes on
-// its own, so an unpinned render is byte-identical to the call this replaced.
+// capability.ForDialect supplies the profile when no server version is pinned.
 func renderCapabilities(dialect string, target servertarget.Target) capability.Capabilities {
 	if target.Capabilities == nil {
 		return capability.ForDialect(dialect)

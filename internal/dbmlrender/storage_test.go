@@ -6,7 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dbmlrender"
 )
 
@@ -25,7 +27,7 @@ func TestRender_ReportsYDBObjectsWithoutDBMLBlocks(t *testing.T) {
 		Transfers:               []schemamodel.Transfer{{Name: "copy"}},
 	}
 
-	result, err := dbmlrender.Render(db, dbmlrender.Options{})
+	result, err := renderDBML(c, db, dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Equals, "")
@@ -43,13 +45,19 @@ func TestRender_ReportsYDBObjectsWithoutDBMLBlocks(t *testing.T) {
 	})
 }
 
-func storageSchema() *schemamodel.Database {
+func storageSchema(c *qt.C) *schemamodel.Database {
+	c.Helper()
+	objects, err := schemaext.NewObjects(
+		ydbschema.DesiredObject("", "events", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}),
+		ydbschema.DesiredObject("", "events", ydbschema.ChangefeedSpec{Name: "audit", Mode: "UPDATES", Format: "JSON"}),
+	)
+	c.Assert(err, qt.IsNil)
 	return &schemamodel.Database{
+		FeatureObjects: objects,
 		Tables: []schemamodel.Table{
 			{StructName: "Plain", Name: "plain"},
 			{
 				StructName: "Events", Name: "events",
-				Changefeeds:       []ast.ChangefeedSpec{{Name: "updates"}, {Name: "audit"}},
 				YDBColumnFamilies: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"id"}}},
 				RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P1D"},
 				YDBPartitioning:   &ast.YDBTablePartitioningSpec{MinPartitions: 4},
@@ -77,7 +85,7 @@ func storageSchema() *schemamodel.Database {
 func TestRender_ReportsStorageSettingsItLeavesOut(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := dbmlrender.Render(storageSchema(), dbmlrender.Options{})
+	result, err := renderDBML(c, storageSchema(c), dbmlrender.Options{Target: "ydb"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Contains, `"id" Int64 [pk, increment, not null]`)
@@ -101,13 +109,13 @@ func TestRender_StorageWarningsRespectTableSelection(t *testing.T) {
 		name string
 		opts dbmlrender.Options
 	}{
-		{name: "include", opts: dbmlrender.Options{IncludeTables: []string{"plain"}}},
-		{name: "exclude", opts: dbmlrender.Options{ExcludeTables: []string{"events", "archive"}}},
+		{name: "include", opts: dbmlrender.Options{Target: "ydb", IncludeTables: []string{"plain"}}},
+		{name: "exclude", opts: dbmlrender.Options{Target: "ydb", ExcludeTables: []string{"events", "archive"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result, err := dbmlrender.Render(storageSchema(), test.opts)
+			result, err := renderDBML(c, storageSchema(c), test.opts)
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Omitted, qt.HasLen, 0)
 			c.Assert(result.DBML, qt.Contains, `Table "plain"`)
@@ -126,7 +134,7 @@ func TestRender_EmptyOptionalStorageSettingsDoNotWarn(t *testing.T) {
 		Indexes: []schemamodel.Index{{StructName: "T", Name: "idx", Partitioning: &ast.IndexPartitioningSpec{}}},
 	}
 
-	result, err := dbmlrender.Render(db, dbmlrender.Options{})
+	result, err := renderDBML(c, db, dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Omitted, qt.HasLen, 0)

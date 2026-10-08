@@ -1,13 +1,16 @@
 package schemaprecondition_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -63,10 +66,34 @@ func TestPlanners_RefuseCoordinationNodes(t *testing.T) {
 		name string
 		plan func(*difftypes.SchemaDiff) error
 	}{
-		{name: "postgres", plan: func(d *difftypes.SchemaDiff) error { _, err := postgres.New().GenerateMigrationAST(d); return err }},
-		{name: "mysql", plan: func(d *difftypes.SchemaDiff) error { _, err := mysql.New().GenerateMigrationAST(d); return err }},
-		{name: "sqlite", plan: func(d *difftypes.SchemaDiff) error { _, err := sqlite.New().GenerateMigrationAST(d); return err }},
-		{name: "clickhouse", plan: func(d *difftypes.SchemaDiff) error { _, err := clickhouse.New().GenerateMigrationAST(d); return err }},
+		{name: "postgres", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
+		{name: "mysql", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := mysql.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
+		{name: "sqlite", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := sqlite.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
+		{name: "clickhouse", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := clickhouse.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

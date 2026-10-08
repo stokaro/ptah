@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 )
@@ -23,7 +25,7 @@ func notEnforcedDiffOptions(c *qt.C, devURL string) atlasschema.DiffOptions {
 		FromURLs: []string{"file://" + path},
 		ToURLs:   []string{"file://" + path},
 		DevURL:   devURL,
-	}
+		Runtime:  must.Must(builtin.New())}
 }
 
 // TestDiff_TwoDocumentsPlanForTheDevServer_HappyPath compares two documents
@@ -65,7 +67,7 @@ func TestDiff_TwoDocumentsLeaveASQLiteDevFileAlone(t *testing.T) {
 		FromURLs: []string{"file://" + path},
 		ToURLs:   []string{"file://" + path},
 		DevURL:   atlasurl.SQLiteURLFromPath(devPath),
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)

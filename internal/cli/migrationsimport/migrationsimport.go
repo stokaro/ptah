@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/servertarget"
@@ -155,7 +156,7 @@ func runImport(cmd *cobra.Command, opts *options) error {
 		parser = selecting
 	}
 
-	result, err := importer.Import(source, parser, opts.migrationsDir, importer.Options{
+	result, err := importer.Import(cmd.Context(), source, parser, opts.migrationsDir, importer.Options{
 		DryRun:       opts.dryRun,
 		AllowPartial: opts.allowPartial,
 	})
@@ -204,7 +205,11 @@ func renderingParser(cmd *cobra.Command, parser importer.Parser, opts *options) 
 	if target.Note != "" {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", target.Note)
 	}
-	rendering, err := importer.WithDialectCapabilities(parser, dialect, target.Capabilities)
+	runtime, err := builtin.New()
+	if err != nil {
+		return nil, err
+	}
+	rendering, err := importer.WithRendering(parser, dialect, target.Capabilities, runtime)
 	if err != nil {
 		return nil, fmt.Errorf("--dialect: %w", err)
 	}

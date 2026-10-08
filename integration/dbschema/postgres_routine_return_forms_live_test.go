@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -101,7 +102,7 @@ func TestPostgresLiveRoutineReturnFormsConverge(t *testing.T) {
 	c.Assert(liveReturnsOf(c, live.Functions, "fs"), qt.Equals, "SETOF integer")
 	c.Assert(liveReturnsOf(c, live.Functions, "ft"), qt.Equals, "TABLE(zz text, aa integer)")
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)

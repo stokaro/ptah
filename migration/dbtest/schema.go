@@ -9,9 +9,11 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -19,6 +21,8 @@ import (
 
 // SchemaOptions configures a single [RunSchemaTest] invocation.
 type SchemaOptions struct {
+	// Runtime selects required feature conversion and comparison services.
+	Runtime engine.SchemaRuntime
 	// Cases are the test cases to run, in order.
 	Cases []Case
 	// AllowExternalCommands authorizes [ExternalStep]. See
@@ -88,6 +92,9 @@ type SchemaOptions struct {
 // assertion failures are captured in the report, so callers should inspect
 // [Report.Failed].
 func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return nil, err
+	}
 	if err := validateCasesForRun(opts.Cases, opts.SeedDir); err != nil {
 		return nil, fmt.Errorf("invalid test cases: %w", err)
 	}
@@ -124,11 +131,12 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 		if schema == nil {
 			return nil
 		}
-		_, err := applyDesiredSchema(ctx, conn, schema)
+		_, err := applyDesiredSchema(ctx, conn, schema, opts.Runtime)
 		return err
 	}
 	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
 		r := &runner{
+			runtime:       opts.Runtime,
 			conn:          conn,
 			desiredSchema: schema,
 			seedDir:       opts.SeedDir,
@@ -185,13 +193,17 @@ func applyDesiredSchema(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	schema *schemamodel.Database,
+	runtime engine.SchemaRuntime,
 ) (bool, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return false, err
+	}
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 	if err != nil {
 		return false, fmt.Errorf("inspect test database before applying desired schema: %w", err)
 	}
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, current, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, current, nil, runtime)
 	if err != nil {
 		return false, fmt.Errorf("compare desired schema with test database: %w", err)
 	}
@@ -201,6 +213,7 @@ func applyDesiredSchema(
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+		ctx, runtime,
 		diff,
 
 		info.Dialect,

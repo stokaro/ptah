@@ -94,8 +94,10 @@ func TestValidateSchema_YDBRefusesACoordinationNodeOnAnotherObjectsPath(t *testi
 			statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(
 				test.declared, platform.YDB, capability.YDB262(),
 			)
-			diff, planErr := schemadiff.CompareWithDatabaseInfo(test.declared, test.current,
-				catalog.ServerInfo{Dialect: platform.YDB, Capabilities: capability.YDB262()}, nil)
+			runtime, err := builtin.New()
+			c.Assert(err, qt.IsNil)
+			diff, planErr := schemadiff.CompareWithDatabaseInfo(t.Context(), test.declared, test.current,
+				catalog.ServerInfo{Dialect: platform.YDB, Capabilities: capability.YDB262()}, nil, runtime)
 
 			c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(renderErr, qt.ErrorMatches, want)

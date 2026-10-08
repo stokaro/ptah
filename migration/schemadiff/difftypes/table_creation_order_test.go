@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -83,7 +84,7 @@ func TestInDependencyOrder_CarriesEveryKindOfEdgeFromAnUnfinalizedDeclaration(t 
 			desired := unfinalizedThreeEdgeSchema()
 			c.Assert(desired.Dependencies, qt.HasLen, 0)
 
-			ordered := difftypes.TableCreationsFor(desired,
+			ordered := difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"),
 				"wf2315_children", "wf2315_field_parents",
 				"wf2315_embedded_parents", "wf2315_constraint_parents",
 			).InDependencyOrder()
@@ -104,7 +105,7 @@ func TestInDependencyOrder_LeavesAnEdgeToATableItIsNotCreating(t *testing.T) {
 	c := qt.New(t)
 	desired := unfinalizedThreeEdgeSchema()
 
-	ordered := difftypes.TableCreationsFor(desired, "wf2315_children").InDependencyOrder()
+	ordered := difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "wf2315_children").InDependencyOrder()
 
 	c.Assert(ordered.Names(), qt.DeepEquals, []string{"wf2315_children"})
 }

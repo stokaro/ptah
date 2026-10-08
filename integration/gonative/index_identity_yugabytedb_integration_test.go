@@ -3,16 +3,19 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -50,7 +53,7 @@ func TestYugabyteDBSchemaScopedIndexIdentity_RoundTrip(t *testing.T) {
 
 	target := yugabyteIndexIdentityTarget()
 	live := readYugabyteIndexIdentitySchema(c, t, dsn)
-	diff := schemadiff.CompareWithDialect(target, live, platform.YugabyteDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, platform.YugabyteDB, must.Must(builtin.New())))
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: yugabyteIndexIdentityName, TableName: yugabyteIndexIdentitySchemaA + ".orders"},
 	})
@@ -61,7 +64,10 @@ func TestYugabyteDBSchemaScopedIndexIdentity_RoundTrip(t *testing.T) {
 	indexDiff := &difftypes.SchemaDiff{}
 	indexDiff.SetIndexAdditions(diff.IndexesAdded)
 	indexDiff.SetIndexRemovals(diff.IndexRemovals())
-	planned, err := planner.GenerateSchemaDiffSQLStatements(indexDiff, platform.YugabyteDB)
+	planned, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		indexDiff, platform.YugabyteDB,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(planned, qt.HasLen, 2)
 	for _, statement := range planned {
@@ -70,7 +76,7 @@ func TestYugabyteDBSchemaScopedIndexIdentity_RoundTrip(t *testing.T) {
 	}
 
 	live = readYugabyteIndexIdentitySchema(c, t, dsn)
-	finalDiff := schemadiff.CompareWithDialect(target, live, platform.YugabyteDB)
+	finalDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, platform.YugabyteDB, must.Must(builtin.New())))
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 2)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
@@ -111,7 +112,7 @@ func TestPostgresLiveViewColumnsConverge(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Views, qt.HasLen, 1)
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.ViewsAdded, qt.HasLen, 0)
 	c.Assert(settled.ViewsModified, qt.HasLen, 0)
 	c.Assert(settled.ViewsRemoved, qt.HasLen, 0)

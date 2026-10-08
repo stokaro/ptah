@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -13,17 +14,17 @@ func TestAddStatements(t *testing.T) {
 	tests := []struct {
 		name  string
 		table string
-		spec  ast.ChangefeedSpec
+		spec  ydbschema.ChangefeedSpec
 		want  []string
 	}{
 		{
 			name: "the two options YDB requires", table: "items",
-			spec: ast.ChangefeedSpec{Name: "updates", Mode: "updates", Format: "json"},
+			spec: ydbschema.ChangefeedSpec{Name: "updates", Mode: "updates", Format: "json"},
 			want: []string{"ALTER TABLE `items` ADD CHANGEFEED `updates` WITH (MODE = 'UPDATES', FORMAT = 'JSON');"},
 		},
 		{
 			name: "every option and two consumers, in a directory", table: "app.items",
-			spec: ast.ChangefeedSpec{
+			spec: ydbschema.ChangefeedSpec{
 				Name: "feed", Mode: "NEW_AND_OLD_IMAGES", Format: "JSON", VirtualTimestamps: true,
 				ResolvedTimestamps: "PT90M", RetentionPeriod: "pt12h", InitialScan: true, UserSIDs: true,
 				SchemaChanges: true, TopicAutoPartitioning: true, TopicMinActivePartitions: 2,
@@ -60,13 +61,13 @@ func TestDropStatement(t *testing.T) {
 }
 
 func TestTopicStatements(t *testing.T) {
-	spec := func(retention string, consumers ...ast.TopicConsumerSpec) ast.ChangefeedSpec {
-		return ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", RetentionPeriod: retention,
+	spec := func(retention string, consumers ...ast.TopicConsumerSpec) ydbschema.ChangefeedSpec {
+		return ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", RetentionPeriod: retention,
 			Consumers: consumers}
 	}
 	tests := []struct {
 		name              string
-		desired, previous ast.ChangefeedSpec
+		desired, previous ydbschema.ChangefeedSpec
 		want              []string
 		wantRestarted     []string
 	}{

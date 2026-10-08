@@ -3,15 +3,18 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -183,10 +186,13 @@ func planRowTTLAgainstLive(
 	c.Assert(err, qt.IsNil)
 
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, live, info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, live, info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

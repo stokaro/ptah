@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 )
@@ -46,14 +47,15 @@ func validateDrop(ctx renderer.ExtensionContext, op *ydbast.DropChangefeed) erro
 }
 
 func validateTopic(ctx renderer.ExtensionContext, op *ydbast.AlterChangefeedTopic) error {
-	if err := checkFeed(ctx, op.Changefeed); err != nil {
-		return err
-	}
 	if op.Previous.Name != op.Changefeed.Name || ydbchangefeed.Recreated(op.Changefeed, op.Previous) {
 		return &ptaherr.CapabilityError{Dialect: ctx.Target, Feature: string(op.Kind()), Err: ptaherr.ErrUnsupportedFeature,
 			Message: fmt.Sprintf("changefeed %q of %s: YDB changes no option of a changefeed in place (`MODE alter is not supported`), so the change drops the changefeed and adds it again", op.Changefeed.Name, tableref.Phrase(table(ctx)))}
 	}
-	return nil
+	// Topic operations preserve enabled state. Only ADD CHANGEFEED would need
+	// a statement to reconstruct a disabled stream.
+	spec := op.Changefeed.Clone()
+	spec.Disabled = false
+	return checkFeed(ctx, spec)
 }
 
 func checkCapability(ctx renderer.ExtensionContext) error {
@@ -64,7 +66,7 @@ func checkCapability(ctx renderer.ExtensionContext) error {
 		Message: fmt.Sprintf("changing the changefeeds of %s, which requires target capability changefeeds, unavailable on this %s target", tableref.Phrase(table(ctx)), ctx.Target)}
 }
 
-func checkFeed(ctx renderer.ExtensionContext, feed ast.ChangefeedSpec) error {
+func checkFeed(ctx renderer.ExtensionContext, feed ydbschema.ChangefeedSpec) error {
 	if err := checkCapability(ctx); err != nil {
 		return err
 	}

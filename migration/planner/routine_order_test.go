@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -115,7 +118,10 @@ func TestGenerateSchemaDiffSQL_CreatesRoutinesAfterWhatTheyName(t *testing.T) {
 			desired, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
 			c.Assert(err, qt.IsNil)
 
-			sql, err := planner.GenerateSchemaDiffSQL(schemadiff.Compare(&desired, &catalog.Database{}), platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				must.Must(schemadiff.Compare(t.Context(), &desired, &catalog.Database{}, must.Must(builtin.New()))), platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			found := positions(sql, test.order)
@@ -134,7 +140,10 @@ CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT c
 CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());`), platform.Postgres)
 	c.Assert(err, qt.IsNil)
 
-	sql, err := planner.GenerateSchemaDiffSQL(schemadiff.Compare(&desired, &catalog.Database{}), platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		must.Must(schemadiff.Compare(t.Context(), &desired, &catalog.Database{}, must.Must(builtin.New()))), platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `FUNCTION "default_pct"`), qt.Equals, 1, qt.Commentf("%s", sql))

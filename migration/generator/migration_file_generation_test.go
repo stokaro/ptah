@@ -1,12 +1,15 @@
 package generator
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -103,16 +106,22 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			c := qt.New(t)
 
 			// 1. Calculate schema diff
-			diff := schemadiff.Compare(tt.generatedSchema, tt.databaseSchema)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				tt.generatedSchema, tt.databaseSchema, "postgres", must.Must(builtin.New()),
+			))
 			c.Assert(diff.HasChanges(), qt.IsTrue)
 
 			// 2. Generate up migration SQL
-			upSQL, err := generateUpMigrationSQL(diff, tt.generatedSchema, "postgres")
+			upSQL, err := generateUpMigrationSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, tt.generatedSchema, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			upSQL = legacyRenderedSQL(upSQL)
 
 			// 3. Generate down migration SQL using the fixed reverseSchemaDiff function
-			downSQL, err := generateDownMigrationSQL(diff, tt.generatedSchema, tt.databaseSchema, "postgres")
+			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				diff, tt.generatedSchema, tt.databaseSchema, "postgres")
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -150,7 +159,9 @@ func TestReverseSchemaDiff_ExtensionFieldsPresent(t *testing.T) {
 		ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "postgis"}},
 	}
 
-	reversedDiff := reverseSchemaDiff(originalDiff)
+	reversedDiff := reverseForTest(t,
+		originalDiff, nil, nil, "postgres",
+	)
 
 	// Verify that extension fields are properly reversed
 	c.Assert(reversedDiff.ExtensionsAdded.Names(), qt.DeepEquals, originalDiff.ExtensionsRemoved.Names())
@@ -176,8 +187,13 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	}
 
 	// 1. Generate up migration (should create extension)
-	upDiff := schemadiff.Compare(generatedSchema, emptyDatabase)
-	upSQL, err := generateUpMigrationSQL(upDiff, generatedSchema, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		generatedSchema, emptyDatabase, "postgres", must.Must(builtin.New()),
+	))
+	upSQL, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		upDiff, generatedSchema, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	upSQL = legacyRenderedSQL(upSQL)
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm;")
@@ -191,7 +207,8 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 
 	// 3. Generate down migration (should drop extension)
 	// For down migration, we use the original upDiff and reverse it
-	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, databaseAfterUp, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, generatedSchema, databaseAfterUp, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS pg_trgm;")
@@ -265,7 +282,10 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 			c := qt.New(t)
 
 			// Generate up migration SQL - should return success with empty SQL for no changes
-			upSQL, err := generateUpMigrationSQL(tt.diff, tt.generatedSchema, "postgres")
+			upSQL, err := generateUpMigrationSQL(
+				context.Background(), must.Must(builtin.New()),
+				tt.diff, tt.generatedSchema, "postgres",
+			)
 			c.Assert(err, qt.IsNil, qt.Commentf("Expected success for empty migration, but got error: %v", err))
 			c.Assert(upSQL, qt.Equals, "", qt.Commentf("Expected empty SQL for no changes, but got: %s", upSQL))
 		})
@@ -288,7 +308,10 @@ func TestGenerateUpMigrationSQL_NoChangesSuccess(t *testing.T) {
 	}
 
 	// Generate up migration SQL - should return success with empty SQL
-	upSQL, err := generateUpMigrationSQL(emptyDiff, emptySchema, "postgres")
+	upSQL, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		emptyDiff, emptySchema, "postgres",
+	)
 	c.Assert(err, qt.IsNil, qt.Commentf("Expected success for empty diff, but got error: %v", err))
 	c.Assert(upSQL, qt.Equals, "", qt.Commentf("Expected empty SQL for no changes, but got: %s", upSQL))
 }

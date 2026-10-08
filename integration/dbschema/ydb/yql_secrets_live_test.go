@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 )
@@ -41,7 +43,7 @@ func TestYDBDesiredYQL_SecretsRefusedOnOlderLine(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte("CREATE SECRET first WITH (value = $PTAH_SECRET_YQL_TEST);"), 0o600), qt.IsNil)
 	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
-	_, err = schemadiff.CompareWithDatabaseInfo(desired, readScoped(c, conn, nil), conn.Info(), nil)
+	_, err = schemadiff.CompareWithDatabaseInfo(t.Context(), desired, readScoped(c, conn, nil), conn.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "secrets")
 	c.Assert(desired.Secrets, qt.DeepEquals, []schemamodel.Secret{{Name: "first", ValueEnv: "PTAH_SECRET_YQL_TEST"}})

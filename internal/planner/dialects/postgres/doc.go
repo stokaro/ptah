@@ -69,7 +69,7 @@
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes, err := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		return err
 //	}

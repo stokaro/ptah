@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 )
@@ -35,7 +36,7 @@ func indexTypeSchema(indexType string) *schemamodel.Database {
 
 // indexTypeOmissionSubjects renders each omission as the object it belongs to
 // and the property it lost, so a case row can carry the answer as data.
-func indexTypeOmissionSubjects(c *qt.C, omissions []builtin.Omission) []string {
+func indexTypeOmissionSubjects(c *qt.C, omissions []renderer.Omission) []string {
 	c.Helper()
 
 	var subjects []string

@@ -105,7 +105,7 @@ func runAtlasMigrateImport(
 	if err := policy.ValidateMigrationSource(captured.Source); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	result, err := captured.Write()
+	result, err := captured.Write(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

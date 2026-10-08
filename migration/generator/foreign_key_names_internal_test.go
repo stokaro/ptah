@@ -5,16 +5,19 @@ package generator
 // the exported migration-file API.
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -26,9 +29,14 @@ func TestGenerateUpMigrationSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T
 	fieldName := strings.Repeat("parent_", 5) + "id"
 	schema := generatorForeignKeyNameSchema(tableName, fieldName)
 	schemamodel.Finalize(schema)
-	diff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, &catalog.Database{}, platform.MySQL, must.Must(builtin.New()),
+	))
 
-	sql, err := generateUpMigrationSQL(diff, schema, platform.MySQL)
+	sql, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, schema, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	matches := generatorForeignKeyNamePattern.FindAllString(sql, -1)
@@ -48,9 +56,14 @@ func TestGenerateUpMigrationSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollisio
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
 	schemamodel.Finalize(schema)
-	diff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, &catalog.Database{}, platform.MySQL, must.Must(builtin.New()),
+	))
 
-	sql, err := generateUpMigrationSQL(diff, schema, platform.MySQL)
+	sql, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, schema, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "FK_CHILDREN_PARENT_ID")

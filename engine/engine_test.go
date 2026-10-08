@@ -24,7 +24,7 @@ func TestRuntime_ExplicitOwnership(t *testing.T) {
 	var received renderer.Request
 	service := renderingFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
 		received = request
-		return renderer.Result{SQL: "selected"}, nil
+		return renderer.Result{Complete: true, Fragments: []string{"selected"}}, nil
 	})
 	providers := []engine.Provider{{ID: "example.org/custom", Targets: []engine.Target{
 		{Name: "custom", Aliases: []string{"alternate"}, Rendering: service},
@@ -35,9 +35,9 @@ func TestRuntime_ExplicitOwnership(t *testing.T) {
 	providers[0].Targets[0].Name = "changed"
 	providers[0].Targets[0].Aliases[0] = "changed"
 	providers[0].Targets[0].Rendering = nil
-	result, err := runtime.Render(context.Background(), renderer.Request{Target: " ALTERNATE "})
+	result, err := runtime.Render(context.Background(), renderer.Request{Target: " ALTERNATE ", Nodes: []ast.Node{&ast.StatementList{}}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.SQL, qt.Equals, "selected")
+	c.Assert(result.SQL(), qt.Equals, "selected")
 	c.Assert(received.Target, qt.Equals, "custom")
 	c.Assert(runtime.Targets(), qt.DeepEquals, []string{"custom", "offline-only"})
 	names := runtime.Targets()
@@ -51,7 +51,7 @@ func TestRuntime_NoImplicitProviders(t *testing.T) {
 			c := qt.New(t)
 			result, err := runtime.Render(context.Background(), renderer.Request{Target: "postgres"})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
-			c.Assert(result, qt.Equals, renderer.Result{})
+			c.Assert(result, qt.DeepEquals, renderer.Result{})
 			c.Assert(runtime.Targets(), qt.HasLen, 0)
 		})
 	}
@@ -96,19 +96,19 @@ func TestRuntime_UnavailableRendering(t *testing.T) {
 	runtime := mustRuntime(c, engine.Provider{ID: "example.org/custom", Targets: []engine.Target{{Name: "custom"}}})
 	result, err := runtime.Render(context.Background(), renderer.Request{Target: "custom"})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(result, qt.Equals, renderer.Result{})
+	c.Assert(result, qt.DeepEquals, renderer.Result{})
 }
 
 func TestRuntime_ServiceFailureHasNoPartialSQL(t *testing.T) {
 	c := qt.New(t)
 	failure := errors.New("provider connection lost")
 	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
-		return renderer.Result{SQL: "partial"}, failure
+		return renderer.Result{Complete: true, Fragments: []string{"partial"}}, failure
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	result, err := runtime.Render(context.Background(), renderer.Request{Target: "custom"})
 	c.Assert(err, qt.ErrorIs, failure)
-	c.Assert(result, qt.Equals, renderer.Result{})
+	c.Assert(result, qt.DeepEquals, renderer.Result{})
 }
 
 func TestRuntime_CancellationBeforeDispatch(t *testing.T) {
@@ -116,14 +116,14 @@ func TestRuntime_CancellationBeforeDispatch(t *testing.T) {
 	calls := 0
 	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
 		calls++
-		return renderer.Result{SQL: "unexpected"}, nil
+		return renderer.Result{Complete: true, Fragments: []string{"unexpected"}}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	result, err := runtime.Render(ctx, renderer.Request{Target: "custom"})
 	c.Assert(err, qt.ErrorIs, context.Canceled)
-	c.Assert(result, qt.Equals, renderer.Result{})
+	c.Assert(result, qt.DeepEquals, renderer.Result{})
 	c.Assert(calls, qt.Equals, 0)
 }
 
@@ -133,12 +133,12 @@ func TestRuntime_CancellationDuringDispatch(t *testing.T) {
 	defer cancel()
 	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
 		cancel()
-		return renderer.Result{SQL: "discarded"}, nil
+		return renderer.Result{Complete: true, Fragments: []string{"discarded"}}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	result, err := runtime.Render(ctx, renderer.Request{Target: "custom"})
 	c.Assert(err, qt.ErrorIs, context.Canceled)
-	c.Assert(result, qt.Equals, renderer.Result{})
+	c.Assert(result, qt.DeepEquals, renderer.Result{})
 }
 
 func TestRuntime_RequestSliceIsolation(t *testing.T) {
@@ -147,7 +147,7 @@ func TestRuntime_RequestSliceIsolation(t *testing.T) {
 	nodes := []ast.Node{node}
 	service := renderingFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
 		request.Nodes[0] = nil
-		return renderer.Result{}, nil
+		return renderer.Result{Complete: true, Fragments: []string{""}}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	_, err := runtime.Render(context.Background(), renderer.Request{Target: "custom", Nodes: nodes})
@@ -173,10 +173,23 @@ func TestRuntime_ContextPropagation(t *testing.T) {
 	var received any
 	service := renderingFunc(func(ctx context.Context, _ renderer.Request) (renderer.Result, error) {
 		received = ctx.Value(requestKey{})
-		return renderer.Result{}, nil
+		return renderer.Result{Complete: true}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	_, err := runtime.Render(ctx, renderer.Request{Target: "custom"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(received, qt.Equals, "request")
+}
+
+func TestRuntimeRejectsIncompleteRenderingReplies(t *testing.T) {
+	c := qt.New(t)
+	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
+		return renderer.Result{Complete: true, Fragments: []string{"prefix"}}, nil
+	})
+	runtime := mustRuntime(c, renderingProvider(service))
+	result, err := runtime.Render(t.Context(), renderer.Request{
+		Target: "custom", Nodes: []ast.Node{ast.NewRawSQL("first"), ast.NewRawSQL("second")},
+	})
+	c.Assert(err, qt.ErrorIs, renderer.ErrInvalidResult)
+	c.Assert(result, qt.DeepEquals, renderer.Result{})
 }

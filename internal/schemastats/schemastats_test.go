@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemastats"
 )
 
@@ -26,7 +27,11 @@ func metricValue(c *qt.C, body, name string) string {
 func render(c *qt.C, db *schemamodel.Database, labels map[string]string) string {
 	c.Helper()
 	var out strings.Builder
-	c.Assert(schemastats.WriteOpenMetrics(&out, schemastats.Collect(db), labels), qt.IsNil)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	stats, err := schemastats.Collect(c.Context(), db, "ydb", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(schemastats.WriteOpenMetrics(&out, stats, labels), qt.IsNil)
 	return out.String()
 }
 

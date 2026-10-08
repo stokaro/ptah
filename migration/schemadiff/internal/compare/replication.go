@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -34,6 +35,8 @@ func Replications(
 	cov Coverage,
 ) {
 	diff.Replications = difftypes.ReplicationContext{
+		DesiredObjects:       desired.FeatureObjects,
+		CurrentCoverage:      database.FeatureCoverage,
 		CurrentReplications:  cloneNonEmpty(database.AsyncReplications),
 		CurrentTransfers:     cloneNonEmpty(database.Transfers),
 		DeclaredReplications: cloneNonEmpty(desired.AsyncReplications),
@@ -174,75 +177,62 @@ func AdoptTransferConsumers(
 	database *catalog.Database,
 	dialect string,
 	semantics identifier.Semantics,
-) *schemamodel.Database {
+) (*schemamodel.Database, error) {
 	if desired == nil || database == nil || len(database.Transfers) == 0 {
-		return desired
+		return desired, nil
 	}
 	adopted := *desired
-	changefeeds := adoptChangefeedConsumers(&adopted, database, dialect, semantics)
+	changefeeds, err := adoptChangefeedConsumers(&adopted, database, dialect, semantics)
+	if err != nil {
+		return nil, err
+	}
 	topics := adoptTopicConsumers(&adopted, database)
 	if !changefeeds && !topics {
-		return desired
+		return desired, nil
 	}
-	return &adopted
+	return &adopted, nil
 }
 
-// adoptChangefeedConsumers gives each changefeed of adopted's tables the
-// consumers the database's transfers read it through, and reports whether it
-// gave any. It copies the tables before it changes one, since adopted shares
-// them with the declaration.
-func adoptChangefeedConsumers(
-	adopted *schemamodel.Database,
-	database *catalog.Database,
-	dialect string,
-	semantics identifier.Semantics,
-) bool {
+// adoptChangefeedConsumers preserves consumers used by transfers without
+// mutating either source's immutable named objects.
+func adoptChangefeedConsumers(adopted *schemamodel.Database, database *catalog.Database, dialect string, semantics identifier.Semantics) (bool, error) {
 	held := make(map[tableIdentity]catalog.Table, len(database.Tables))
 	for _, table := range database.Tables {
-		if len(table.Changefeeds) > 0 {
-			held[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
-		}
+		held[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
-	declared := adopted.Tables
 	changed := false
-	for i, table := range declared {
-		current, holds := held[tableMapIdentity(table.Schema, table.Name, dialect, semantics)]
-		if !holds {
-			continue
-		}
-		changefeeds := adoptedChangefeeds(table, current, database.Transfers)
-		if changefeeds == nil {
-			continue
-		}
-		if !changed {
-			adopted.Tables = slices.Clone(declared)
-			changed = true
-		}
-		adopted.Tables[i].Changefeeds = changefeeds
-	}
-	return changed
-}
-
-// adoptedChangefeeds returns the declared table's changefeeds with the
-// consumers the transfers read them through, or nil where it adopts none.
-func adoptedChangefeeds(table schemamodel.Table, current catalog.Table, transfers []catalog.Transfer) []ast.ChangefeedSpec {
-	var changefeeds []ast.ChangefeedSpec
-	for j, changefeed := range table.Changefeeds {
-		currentFeed, found := changefeedNamed(current.Changefeeds, changefeed.Name)
+	for _, table := range adopted.Tables {
+		current, found := held[tableMapIdentity(table.Schema, table.Name, dialect, semantics)]
 		if !found {
 			continue
 		}
-		topic := ydbreplication.TablePath(table.Schema, table.Name) + "/" + changefeed.Name
-		missing := transferConsumers(transfers, topic, changefeed.Consumers, currentFeed.Consumers)
-		if len(missing) == 0 {
-			continue
+		declared, err := ydbschema.DesiredChangefeeds(adopted.FeatureObjects, table.Schema, table.Name)
+		if err != nil {
+			return false, err
 		}
-		if changefeeds == nil {
-			changefeeds = ast.CloneChangefeeds(table.Changefeeds)
+		observed, err := ydbschema.ObservedChangefeeds(database.FeatureObjects, current.Schema, current.Name)
+		if err != nil {
+			return false, err
 		}
-		changefeeds[j].Consumers = append(changefeeds[j].Consumers, missing...)
+		for _, feed := range declared {
+			heldFeed, exists := changefeedNamed(observed, feed.Name)
+			if !exists {
+				continue
+			}
+			topic := ydbreplication.TablePath(table.Schema, table.Name) + "/" + feed.Name
+			missing := transferConsumers(database.Transfers, topic, feed.Consumers, heldFeed.Consumers)
+			if len(missing) == 0 {
+				continue
+			}
+			feed.Consumers = append(feed.Consumers, missing...)
+			adopted.FeatureObjects, err = adopted.FeatureObjects.Replace(ydbschema.DesiredObject(table.Schema, table.Name, feed))
+			if err != nil {
+				return false, err
+			}
+			changed = true
+		}
 	}
-	return changefeeds
+	return changed, nil
 }
 
 // adoptTopicConsumers gives each of adopted's topics the consumers the
@@ -305,10 +295,10 @@ func transferConsumers(
 }
 
 // changefeedNamed finds a changefeed by name.
-func changefeedNamed(changefeeds []ast.ChangefeedSpec, name string) (ast.ChangefeedSpec, bool) {
-	index := slices.IndexFunc(changefeeds, func(changefeed ast.ChangefeedSpec) bool { return changefeed.Name == name })
+func changefeedNamed(changefeeds []ydbschema.ChangefeedSpec, name string) (ydbschema.ChangefeedSpec, bool) {
+	index := slices.IndexFunc(changefeeds, func(changefeed ydbschema.ChangefeedSpec) bool { return changefeed.Name == name })
 	if index < 0 {
-		return ast.ChangefeedSpec{}, false
+		return ydbschema.ChangefeedSpec{}, false
 	}
 	return changefeeds[index], true
 }

@@ -5,6 +5,7 @@
     "pipeline-builds-source-description": 0,
     "pipeline-imports-execution": 0,
     "provider-contracts-import-implementation": 0,
+    "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0
   }
 }

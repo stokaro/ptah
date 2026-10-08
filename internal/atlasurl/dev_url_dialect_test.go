@@ -1,8 +1,6 @@
 package atlasurl_test
 
 import (
-	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -13,36 +11,13 @@ import (
 	"ptah.run/internal/atlasurl"
 )
 
-// normalizeDialectSource is the file that decides which dialect spellings Ptah
-// accepts anywhere. The list below is read out of it rather than copied here,
-// which is the whole point: this test exists because a copy of that list lived
-// in DialectFromURL and drifted by fifteen spellings.
-//
-// internal/lintdialect and internal/modelast read the same switch the
-// same way, for the same reason.
-const normalizeDialectSource = "../../core/platform/constants.go"
-
-var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
-
+// acceptedSpellings reads the declaration used by built-in normalization and
+// registration, so adding an alias automatically extends these sweeps.
 func acceptedSpellings(c *qt.C) []string {
-	source, err := os.ReadFile(normalizeDialectSource)
-	c.Assert(err, qt.IsNil)
-
-	_, afterSignature, foundSignature := strings.Cut(string(source), "func NormalizeDialect(dialect string) string {")
-	c.Assert(foundSignature, qt.IsTrue, qt.Commentf("NormalizeDialect signature moved in %s", normalizeDialectSource))
-
-	body, _, foundEnd := strings.Cut(afterSignature, "\n}")
-	c.Assert(foundEnd, qt.IsTrue, qt.Commentf("NormalizeDialect body is unterminated in %s", normalizeDialectSource))
-
-	matches := quotedLiteral.FindAllStringSubmatch(body, -1)
-	spellings := make([]string, 0, len(matches))
-	for _, match := range matches {
-		spellings = append(spellings, match[1])
-	}
+	spellings := platform.DialectSpellings()
 	slices.Sort(spellings)
-	spellings = slices.Compact(spellings)
 	c.Assert(len(spellings) > 9, qt.IsTrue,
-		qt.Commentf("extracted %d spellings, so the sweep below compares nothing", len(spellings)))
+		qt.Commentf("only %d spellings, so the sweep is incomplete", len(spellings)))
 	return spellings
 }
 

@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
 )
@@ -79,7 +81,7 @@ func TestToDBSchema_ImplicitPublicExecute(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := goschematodb.ToDBSchema(test.db, test.dialect)
+			got := must.Must(goschematodb.ToDBSchema(t.Context(), test.db, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(got.Grants, qt.DeepEquals, test.want)
 		})
@@ -96,8 +98,8 @@ func TestCompareSchemas_PlansTheRevokeOfTheImplicitPrivilege(t *testing.T) {
 		{Role: "PUBLIC", Privileges: []string{"EXECUTE"}, OnRoutine: "purge", RoutineArguments: "uuid"},
 	})
 
-	diff := schemadiff.CompareSchemas(revoking, routineDocument(nil, nil), platform.Postgres)
-	same := schemadiff.CompareSchemas(revoking, revoking, platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), revoking, routineDocument(nil, nil), platform.Postgres, must.Must(builtin.New())))
+	same := must.Must(schemadiff.CompareSchemas(t.Context(), revoking, revoking, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 1)
 	c.Assert(diff.GrantsRemoved[0].Role, qt.Equals, "PUBLIC")

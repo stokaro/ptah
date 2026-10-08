@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -93,7 +94,7 @@ func (f sqliteTableIdentityFixture) assertNothingPlanned(c *qt.C) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, nil)
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(f.load(c), live, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), f.load(c), live, "sqlite", must.Must(builtin.New())))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))

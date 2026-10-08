@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -283,7 +284,7 @@ func TestQualifyDeclaredUserTypesDoesNotMutateItsInput(t *testing.T) {
 func TestCollectDatabaseQualifiesDeclaredUserTypes(t *testing.T) {
 	c := qt.New(t)
 
-	statements := modelast.CollectDatabase(*userTypeDocument("mood[]"), platform.Postgres)
+	statements := must.Must(modelast.CollectDatabase(*userTypeDocument("mood[]"), platform.Postgres))
 
 	c.Assert(statements, qt.IsNotNil)
 

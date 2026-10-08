@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -30,7 +33,7 @@ func asnSchema(n schemamodel.Field) *schemamodel.Database {
 // asnDiff compares two states of column n, the way stokaro/ptah#4020 measured
 // the plan.
 func asnDiff(desired, current schemamodel.Field) *difftypes.SchemaDiff {
-	return schemadiff.CompareSchemas(asnSchema(desired), asnSchema(current), platform.ClickHouse)
+	return must.Must(schemadiff.CompareSchemas(context.Background(), asnSchema(desired), asnSchema(current), platform.ClickHouse, must.Must(builtin.New())))
 }
 
 // A ClickHouse column change states the column's default with its type. The
@@ -94,6 +97,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_HappyPath(t *te
 			c := qt.New(t)
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				asnDiff(test.desired, test.current), platform.ClickHouse, planner.Options{Capabilities: test.caps},
 			)
 
@@ -120,6 +124,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_FailurePath(t *
 			c := qt.New(t)
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				asnDiff(schemamodel.Field{Type: "INTEGER"}, schemamodel.Field{Type: "INTEGER", Nullable: true}),
 				platform.ClickHouse,
 				planner.Options{Capabilities: test.caps},

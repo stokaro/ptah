@@ -28,6 +28,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
@@ -143,17 +144,17 @@ func (e *DeclarationError) Error() string {
 // be written in any case and is kept in capitals, as YDB folds them; a switch
 // is `true` or `false`; an interval is an ISO 8601 duration of whole seconds;
 // and a partition count is at least 1.
-func ParseDeclaration(values map[string]string) (ast.ChangefeedSpec, error) {
-	spec := ast.ChangefeedSpec{Name: strings.TrimSpace(values[AttributeName])}
+func ParseDeclaration(values map[string]string) (ydbschema.ChangefeedSpec, error) {
+	spec := ydbschema.ChangefeedSpec{Name: strings.TrimSpace(values[AttributeName])}
 	if spec.Name == "" {
-		return ast.ChangefeedSpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a changefeed needs a name"}
+		return ydbschema.ChangefeedSpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a changefeed needs a name"}
 	}
 	var err error
 	if spec.Mode, err = choice(values, AttributeMode, Modes()); err != nil {
-		return ast.ChangefeedSpec{}, err
+		return ydbschema.ChangefeedSpec{}, err
 	}
 	if spec.Format, err = format(values); err != nil {
-		return ast.ChangefeedSpec{}, err
+		return ydbschema.ChangefeedSpec{}, err
 	}
 	switches := []struct {
 		attribute string
@@ -167,19 +168,19 @@ func ParseDeclaration(values map[string]string) (ast.ChangefeedSpec, error) {
 	}
 	for _, sw := range switches {
 		if *sw.target, err = boolean(values, sw.attribute); err != nil {
-			return ast.ChangefeedSpec{}, err
+			return ydbschema.ChangefeedSpec{}, err
 		}
 	}
 	if spec.ResolvedTimestamps, err = interval(values, AttributeResolvedTimestamps); err != nil {
-		return ast.ChangefeedSpec{}, err
+		return ydbschema.ChangefeedSpec{}, err
 	}
 	if spec.RetentionPeriod, err = interval(values, AttributeRetentionPeriod); err != nil {
-		return ast.ChangefeedSpec{}, err
+		return ydbschema.ChangefeedSpec{}, err
 	}
 	if raw, ok := present(values, AttributeTopicMinActivePartitions); ok {
 		count, parseErr := strconv.ParseUint(raw, 10, 64)
 		if parseErr != nil || count == 0 {
-			return ast.ChangefeedSpec{}, &DeclarationError{Attribute: AttributeTopicMinActivePartitions, Value: raw,
+			return ydbschema.ChangefeedSpec{}, &DeclarationError{Attribute: AttributeTopicMinActivePartitions, Value: raw,
 				Reason: "takes a count of at least 1 (`topic_min_active_partitions must be greater than 0`)"}
 		}
 		spec.TopicMinActivePartitions = count
@@ -371,7 +372,7 @@ type Refusal struct {
 // same for RESOLVED_TIMESTAMPS and, on 26.2.1.14, SCHEMA_CHANGES), and a
 // disabled changefeed, since no statement disables one. A spec built by hand
 // is held to the parse's rules too, because nothing else checks it.
-func Check(table string, spec ast.ChangefeedSpec, caps capability.Capabilities) *Refusal {
+func Check(table string, spec ydbschema.ChangefeedSpec, caps capability.Capabilities) *Refusal {
 	subject := fmt.Sprintf("changefeed %q of %s", spec.Name, tableref.Phrase(table))
 	if !caps.Has(capability.Changefeeds) {
 		return &Refusal{Subject: subject, Key: capability.Changefeeds}
@@ -413,7 +414,7 @@ func Check(table string, spec ast.ChangefeedSpec, caps capability.Capabilities) 
 }
 
 // shapeRefusal says why YDB refuses spec on every line, or is empty.
-func shapeRefusal(spec ast.ChangefeedSpec) string {
+func shapeRefusal(spec ydbschema.ChangefeedSpec) string {
 	switch {
 	case strings.TrimSpace(spec.Name) == "" || strings.Contains(spec.Name, "/"):
 		return "a changefeed needs a name without a slash (`symbol '/' is not allowed in the path part`)"
@@ -473,7 +474,7 @@ func consumerRefusal(consumer ast.TopicConsumerSpec) string {
 // changefeed named after an index answers `unexpected path type ...
 // EPathTypeTableIndex`, and an index named after a changefeed the other way
 // round.
-func NameRefusal(changefeeds []ast.ChangefeedSpec, indexes []string) string {
+func NameRefusal(changefeeds []ydbschema.ChangefeedSpec, indexes []string) string {
 	seen := make(map[string]bool, len(changefeeds))
 	for _, changefeed := range changefeeds {
 		if seen[changefeed.Name] {
@@ -494,7 +495,7 @@ func NameRefusal(changefeeds []ast.ChangefeedSpec, indexes []string) string {
 // as Uint32 or Uint64: measured on 25.1.4.7 and 26.2.1.14,
 // TOPIC_MIN_ACTIVE_PARTITIONS = 2 on a Utf8 key answers `Unsupported first key
 // column type Utf8, only Uint32 and Uint64 are supported`.
-func KeyRefusal(spec ast.ChangefeedSpec, firstKeyType string) string {
+func KeyRefusal(spec ydbschema.ChangefeedSpec, firstKeyType string) string {
 	if spec.TopicMinActivePartitions <= 1 || firstKeyType == "" {
 		return ""
 	}

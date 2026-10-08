@@ -2,10 +2,24 @@ package builtin
 
 import (
 	"context"
+	"errors"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/postgres/pgproject"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbcompare"
+	"ptah.run/dialect/ydb/ydbconvert"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbplan"
+	"ptah.run/dialect/ydb/ydbreport"
+	"ptah.run/dialect/ydb/ydbreverse"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbextensions"
 )
 
@@ -16,7 +30,7 @@ import (
 func New() (*engine.Runtime, error) {
 	aliases := make(map[string][]string)
 	var names []string
-	for _, spelling := range SupportedDialects() {
+	for _, spelling := range platform.DialectSpellings() {
 		name := platform.NormalizeDialect(spelling)
 		if _, exists := aliases[name]; !exists {
 			names = append(names, name)
@@ -31,13 +45,29 @@ func New() (*engine.Runtime, error) {
 		provider := engine.Provider{
 			ID: "ptah.run/" + name,
 			Targets: []engine.Target{{
-				Name:      name,
-				Aliases:   aliases[name],
-				Rendering: renderingService{},
+				Name:            name,
+				Aliases:         aliases[name],
+				Rendering:       renderingService{},
+				SchemaRendering: schemaRenderingService{},
+				Validation:      validationService{},
 			}},
+		}
+		if name == platform.Postgres {
+			provider.Targets[0].Constraints = pgproject.Constraints{}
 		}
 		if name == platform.YDB {
 			provider.Codecs = ydbextensions.Codecs()
+			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, Service: ydbconvert.Service{}}}
+			provider.Comparisons = []engine.ObjectComparison{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, ChangeKinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbcompare.Service{}}}
+			provider.Reversals = []engine.Reversal{{Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbreverse.Service{}}}
+			provider.Planning = []engine.Planning{{
+				Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind},
+				OperationKinds: []schemaext.Kind{(&ydbast.AddChangefeed{}).Kind(), (&ydbast.DropChangefeed{}).Kind(), (&ydbast.AlterChangefeedTopic{}).Kind()},
+				Service:        ydbplan.Service{},
+			}}
+			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
+			}
 		}
 		providers = append(providers, provider)
 	}
@@ -54,11 +84,45 @@ func (renderingService) Render(ctx context.Context, request renderer.Request) (r
 	if err != nil {
 		return renderer.Result{}, err
 	}
-	sql, err := visitorRenderSQL(visitor, request.Nodes...)
+	sink := &renderdiag.Sink{}
+	if reporter, ok := visitor.(omissionReporter); ok {
+		reporter.ReportOmissionsTo(sink)
+	}
+	result, err := renderNodes(ctx, visitor, request.Nodes...)
 	if err != nil {
+		if ctx.Err() != nil {
+			return renderer.Result{}, ctx.Err()
+		}
+		if refused, ok := errors.AsType[*renderFailure](err); ok &&
+			(errors.Is(err, ptaherr.ErrInvalidSchemaDiff) || errors.Is(err, ptaherr.ErrUnsupportedFeature)) {
+			return renderer.Result{Complete: true, Diagnostics: []renderer.Diagnostic{{
+				Problem: schemaDiagnostic(refused.cause), Input: new(refused.input),
+			}}}, nil
+		}
 		return renderer.Result{}, err
 	}
-	return renderer.Result{SQL: sql}, nil
+	result.Omissions = publicOmissions(request.Target, sink)
+	return result, nil
+}
+
+// renderFailure identifies a declaration the local node pipeline refused. The
+// service converts it to diagnostic data; setup and receipt errors stay errors.
+type renderFailure struct {
+	input int
+	cause error
+}
+
+func (e *renderFailure) Error() string { return e.cause.Error() }
+func (e *renderFailure) Unwrap() error { return e.cause }
+
+// nodeRefusal gives unclassified local declaration errors the same schema
+// sentinel on visitor and batch entry points. Messages and typed causes remain.
+func nodeRefusal(target string, node ast.Node, err error) error {
+	if err == nil || errors.Is(err, ptaherr.ErrUnsupportedFeature) || errors.Is(err, ptaherr.ErrInvalidSchemaDiff) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, renderer.ErrInvalidResult) {
+		return err
+	}
+	return &ptaherr.RenderError{Dialect: target, Node: node, Err: errors.Join(ptaherr.ErrInvalidSchemaDiff, err), Message: err.Error()}
 }
 
 // renderTarget preserves an unknown spelling in the diagnostic while resolving

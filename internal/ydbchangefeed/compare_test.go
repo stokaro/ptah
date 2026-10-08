@@ -6,13 +6,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbchangefeed"
 )
 
 // base is a changefeed as a declaration states it; each row below changes one
 // thing about a copy of it.
-func base() ast.ChangefeedSpec {
-	return ast.ChangefeedSpec{
+func base() ydbschema.ChangefeedSpec {
+	return ydbschema.ChangefeedSpec{
 		Name: "feed", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H",
 		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true, SupportedCodecs: []string{"raw", "gzip"}}},
 	}
@@ -34,7 +35,7 @@ func TestEqual_ReadsAsYDBKeeps(t *testing.T) {
 	unknownPartitions.TopicMinActivePartitions = 3
 	tests := []struct {
 		name             string
-		desired, current ast.ChangefeedSpec
+		desired, current ydbschema.ChangefeedSpec
 	}{
 		{name: "case, interval spelling, codec order and the epoch", desired: base(), current: read},
 		{name: "no retention and YDB's 24 hours", desired: defaultRetention, current: readDefault},
@@ -52,24 +53,24 @@ func TestEqual_ReadsAsYDBKeeps(t *testing.T) {
 // TestRecreated_HappyPath pins each option of ADD CHANGEFEED as one whose
 // change drops and adds the changefeed.
 func TestRecreated_HappyPath(t *testing.T) {
-	change := func(edit func(*ast.ChangefeedSpec)) ast.ChangefeedSpec {
+	change := func(edit func(*ydbschema.ChangefeedSpec)) ydbschema.ChangefeedSpec {
 		spec := base()
 		edit(&spec)
 		return spec
 	}
 	tests := []struct {
 		name    string
-		current ast.ChangefeedSpec
+		current ydbschema.ChangefeedSpec
 	}{
-		{name: "mode", current: change(func(s *ast.ChangefeedSpec) { s.Mode = "KEYS_ONLY" })},
-		{name: "format", current: change(func(s *ast.ChangefeedSpec) { s.Format = "DEBEZIUM_JSON" })},
-		{name: "virtual timestamps", current: change(func(s *ast.ChangefeedSpec) { s.VirtualTimestamps = true })},
-		{name: "resolved timestamps", current: change(func(s *ast.ChangefeedSpec) { s.ResolvedTimestamps = "PT1S" })},
-		{name: "initial scan", current: change(func(s *ast.ChangefeedSpec) { s.InitialScan = true })},
-		{name: "user SIDs", current: change(func(s *ast.ChangefeedSpec) { s.UserSIDs = true })},
-		{name: "schema changes", current: change(func(s *ast.ChangefeedSpec) { s.SchemaChanges = true })},
-		{name: "auto partitioning", current: change(func(s *ast.ChangefeedSpec) { s.TopicAutoPartitioning = true })},
-		{name: "disabled", current: change(func(s *ast.ChangefeedSpec) { s.Disabled = true })},
+		{name: "mode", current: change(func(s *ydbschema.ChangefeedSpec) { s.Mode = "KEYS_ONLY" })},
+		{name: "format", current: change(func(s *ydbschema.ChangefeedSpec) { s.Format = "DEBEZIUM_JSON" })},
+		{name: "virtual timestamps", current: change(func(s *ydbschema.ChangefeedSpec) { s.VirtualTimestamps = true })},
+		{name: "resolved timestamps", current: change(func(s *ydbschema.ChangefeedSpec) { s.ResolvedTimestamps = "PT1S" })},
+		{name: "initial scan", current: change(func(s *ydbschema.ChangefeedSpec) { s.InitialScan = true })},
+		{name: "user SIDs", current: change(func(s *ydbschema.ChangefeedSpec) { s.UserSIDs = true })},
+		{name: "schema changes", current: change(func(s *ydbschema.ChangefeedSpec) { s.SchemaChanges = true })},
+		{name: "auto partitioning", current: change(func(s *ydbschema.ChangefeedSpec) { s.TopicAutoPartitioning = true })},
+		{name: "disabled", current: change(func(s *ydbschema.ChangefeedSpec) { s.Disabled = true })},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -92,7 +93,7 @@ func TestRecreated_PartitionCountBothSidesName(t *testing.T) {
 // TestTopicChanged_HappyPath pins the retention and each consumer setting as
 // changes of the topic rather than of the changefeed.
 func TestTopicChanged_HappyPath(t *testing.T) {
-	consumer := func(edit func(*ast.TopicConsumerSpec)) ast.ChangefeedSpec {
+	consumer := func(edit func(*ast.TopicConsumerSpec)) ydbschema.ChangefeedSpec {
 		spec := base()
 		edit(&spec.Consumers[0])
 		return spec
@@ -105,7 +106,7 @@ func TestTopicChanged_HappyPath(t *testing.T) {
 	renamed.Consumers = []ast.TopicConsumerSpec{{Name: "audit2", Important: true, SupportedCodecs: []string{"raw", "gzip"}}}
 	tests := []struct {
 		name    string
-		current ast.ChangefeedSpec
+		current ydbschema.ChangefeedSpec
 	}{
 		{name: "retention", current: retention},
 		{name: "a consumer added", current: added},
@@ -131,15 +132,15 @@ func TestListsEqual(t *testing.T) {
 	changed.Mode = "KEYS_ONLY"
 	tests := []struct {
 		name             string
-		desired, current []ast.ChangefeedSpec
+		desired, current []ydbschema.ChangefeedSpec
 		want             bool
 	}{
 		{name: "both empty", want: true},
-		{name: "the same two in another order", desired: []ast.ChangefeedSpec{base(), other},
-			current: []ast.ChangefeedSpec{other, base()}, want: true},
-		{name: "one missing", desired: []ast.ChangefeedSpec{base(), other}, current: []ast.ChangefeedSpec{base()}},
-		{name: "one changed", desired: []ast.ChangefeedSpec{base()}, current: []ast.ChangefeedSpec{changed}},
-		{name: "another name", desired: []ast.ChangefeedSpec{base()}, current: []ast.ChangefeedSpec{other}},
+		{name: "the same two in another order", desired: []ydbschema.ChangefeedSpec{base(), other},
+			current: []ydbschema.ChangefeedSpec{other, base()}, want: true},
+		{name: "one missing", desired: []ydbschema.ChangefeedSpec{base(), other}, current: []ydbschema.ChangefeedSpec{base()}},
+		{name: "one changed", desired: []ydbschema.ChangefeedSpec{base()}, current: []ydbschema.ChangefeedSpec{changed}},
+		{name: "another name", desired: []ydbschema.ChangefeedSpec{base()}, current: []ydbschema.ChangefeedSpec{other}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

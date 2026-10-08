@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/schemafile"
@@ -59,6 +60,10 @@ func verifyAtlasSchemaPlanFile(
 	transition atlasSchemaPlanTransitionFlags,
 	devServerDisposable bool,
 ) (verifiedAtlasSchemaPlan, error) {
+	runtime, err := builtin.New()
+	if err != nil {
+		return verifiedAtlasSchemaPlan{}, err
+	}
 	planPath, err := atlasSchemaPlanFilePath(verb, file)
 	if err != nil {
 		return verifiedAtlasSchemaPlan{}, err
@@ -101,7 +106,7 @@ func verifyAtlasSchemaPlanFile(
 	// checked; an HCL plan only when its recorded fingerprint is one Ptah can
 	// recompute, and the replay below covers the rest either way.
 	if planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
-		if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
+		if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan, runtime); err != nil {
 			return verifiedAtlasSchemaPlan{}, err
 		}
 	}
@@ -110,6 +115,7 @@ func verifyAtlasSchemaPlanFile(
 	// so what is verified here is what apply would run.
 	statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
 	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, rehearsePlanParams{
+		runtime: runtime,
 		// Never skip the replay: a matching from-fingerprint says the plan was
 		// computed against this database, not that its statements reach --to,
 		// and the second question is the one these verbs exist to answer.

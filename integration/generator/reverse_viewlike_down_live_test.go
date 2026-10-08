@@ -12,10 +12,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -206,7 +208,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 
 			// 2. The up migration under test.
 			target := tc.target()
-			upDiff := schemadiff.CompareWithDialect(target, dbPrior, "postgres")
+			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, dbPrior, "postgres", must.Must(builtin.New())))
 			c.Assert(upDiff.HasChanges(), qt.IsTrue, qt.Commentf("the up migration must have something to do"))
 
 			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)

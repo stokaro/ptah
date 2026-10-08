@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbmlrender"
 )
 
@@ -19,7 +20,7 @@ import (
 func TestRender_WritesTheSchemaItWasGiven(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := dbmlrender.Render(bookshop(), dbmlrender.Options{})
+	result, err := renderDBML(c, bookshop(), dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Equals, `Enum "public"."post_status" {
@@ -56,10 +57,10 @@ Ref "posts_author_fk": "public"."posts"."author_id" > "public"."users"."id" [del
 func TestRender_IsByteDeterministic(t *testing.T) {
 	c := qt.New(t)
 
-	first, err := dbmlrender.Render(bookshop(), dbmlrender.Options{})
+	first, err := renderDBML(c, bookshop(), dbmlrender.Options{})
 	c.Assert(err, qt.IsNil)
 	for range 8 {
-		again, againErr := dbmlrender.Render(bookshop(), dbmlrender.Options{})
+		again, againErr := renderDBML(c, bookshop(), dbmlrender.Options{})
 		c.Assert(againErr, qt.IsNil)
 		c.Assert(again.DBML, qt.Equals, first.DBML)
 	}
@@ -71,7 +72,7 @@ func TestRender_IsByteDeterministic(t *testing.T) {
 func TestRender_EndsWithExactlyOneNewlineAndUsesLF(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := dbmlrender.Render(bookshop(), dbmlrender.Options{})
+	result, err := renderDBML(c, bookshop(), dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasSuffix(result.DBML, "\n"), qt.IsTrue)
@@ -90,7 +91,7 @@ func TestRender_NamesWhatTheFormatCannotCarry(t *testing.T) {
 	db.Views = []schemamodel.View{{Name: "recent_posts"}, {Name: "active_users"}}
 	db.Triggers = []schemamodel.Trigger{{Name: "posts_audit"}}
 
-	result, err := dbmlrender.Render(db, dbmlrender.Options{})
+	result, err := renderDBML(c, db, dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Omitted, qt.DeepEquals, []string{"triggers (1)", "views (2)"})
@@ -102,7 +103,7 @@ func TestRender_NamesWhatTheFormatCannotCarry(t *testing.T) {
 func TestRender_AnEmptySchemaRendersNothing(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := dbmlrender.Render(&schemamodel.Database{}, dbmlrender.Options{})
+	result, err := renderDBML(c, &schemamodel.Database{}, dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Equals, "")
@@ -114,7 +115,7 @@ func TestRender_AnEmptySchemaRendersNothing(t *testing.T) {
 func TestRender_RefusesANilSchema(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := dbmlrender.Render(nil, dbmlrender.Options{})
+	_, err := renderDBML(c, nil, dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNotNil)
 }
@@ -129,7 +130,7 @@ func TestRender_RefusesExportMetadataBeforeRendering(t *testing.T) {
 	db.Tables[1].APIName = "Account"
 	db.Fields[5].APINames.GraphQL = "emailAddress"
 
-	result, err := dbmlrender.Render(db, dbmlrender.Options{})
+	result, err := renderDBML(c, db, dbmlrender.Options{})
 
 	c.Assert(err, qt.ErrorMatches,
 		`.*DBML cannot represent API export metadata without loss:.*api_name="Account".*graphql_name="emailAddress".*`)
@@ -142,7 +143,7 @@ func TestRender_IgnoresMetadataOnAnExcludedTable(t *testing.T) {
 	db := bookshop()
 	db.Tables[0].APIName = "articles"
 
-	result, err := dbmlrender.Render(db, dbmlrender.Options{ExcludeTables: []string{"posts"}})
+	result, err := renderDBML(c, db, dbmlrender.Options{ExcludeTables: []string{"posts"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Not(qt.Contains), `Table "public"."posts"`)
@@ -179,4 +180,11 @@ func bookshop() *schemamodel.Database {
 			{Name: "post_status", Schema: "public", Values: []string{"draft", "published"}},
 		},
 	}
+}
+
+func renderDBML(c *qt.C, db *schemamodel.Database, opts dbmlrender.Options) (dbmlrender.Result, error) {
+	c.Helper()
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	return dbmlrender.Render(c.Context(), db, opts, runtime)
 }

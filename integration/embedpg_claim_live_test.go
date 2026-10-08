@@ -19,8 +19,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedengine"
 	"ptah.run/internal/embedgen"
@@ -241,7 +244,7 @@ func claimFixture(c *qt.C, ctx context.Context) (*sql.DB, embedgen.Spec, *embedp
 	spec := liveSpec()
 	seedArticles(c, ctx, db, spec)
 	store := embedpg.NewStore(db)
-	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	c.Assert(store.EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
 	c.Assert(store.CreateRun(ctx, embedrun.Run{
 		ID: "claim-run", SpecDigest: "spec-1", GenerationIdentity: spec.Identity().Digest,
 		Environment: "test", Source: "public.articles",

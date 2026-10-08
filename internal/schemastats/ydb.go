@@ -2,18 +2,12 @@ package schemastats
 
 import "ptah.run/core/schemamodel"
 
-// Changefeed topics belong to their tables and are absent from db.Topics.
-// Count their consumers separately so neither family includes the other.
+// Standalone topic counts do not include table-owned streams. Feature reports
+// supply those metrics independently from their owning providers.
 func ydbMetrics(db *schemamodel.Database) []Metric {
-	var topicConsumers, changefeeds, changefeedConsumers, externalColumns int
+	var topicConsumers, externalColumns int
 	for _, topic := range db.Topics {
 		topicConsumers += len(topic.Spec.Consumers)
-	}
-	for _, table := range db.Tables {
-		changefeeds += len(table.Changefeeds)
-		for _, feed := range table.Changefeeds {
-			changefeedConsumers += len(feed.Consumers)
-		}
 	}
 	for _, table := range db.ExternalTables {
 		externalColumns += len(table.Columns)
@@ -21,8 +15,6 @@ func ydbMetrics(db *schemamodel.Database) []Metric {
 	return []Metric{
 		{Name: "topics", Help: "Standalone topics", Value: len(db.Topics)},
 		{Name: "topic_consumers", Help: "Consumers of standalone topics", Value: topicConsumers},
-		{Name: "changefeeds", Help: "Table changefeeds", Value: changefeeds},
-		{Name: "changefeed_consumers", Help: "Consumers of table changefeeds", Value: changefeedConsumers},
 		{Name: "coordination_nodes", Help: "Coordination nodes", Value: len(db.CoordinationNodes)},
 		{Name: "resource_pools", Help: "Resource pools", Value: len(db.ResourcePools)},
 		{Name: "resource_pool_classifiers", Help: "Resource pool classifiers", Value: len(db.ResourcePoolClassifiers)},

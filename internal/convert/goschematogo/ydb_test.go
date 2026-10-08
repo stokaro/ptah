@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -54,7 +56,7 @@ func ydbTable() *catalog.Database {
 // introspect runs the conversion `ptah introspect` runs, for a database read
 // from dialect, and returns the one generated file.
 func introspect(c *qt.C, db *catalog.Database, dialect string) string {
-	files, err := goschematogo.Render(dbschematogo.ConvertDBSchemaToGoSchema(db, dialect), goschematogo.Options{
+	files, err := goschematogo.Render(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), db, dialect, must.Must(builtin.New()))), goschematogo.Options{
 		PackageName: "models",
 		SingleFile:  true,
 		Dialect:     dialect,
@@ -96,7 +98,11 @@ func TestRender_YDBFieldsTakeTheTypeTheDriverScansInto(t *testing.T) {
 // dialect, and nothing else in the columns, that decides the types there.
 func TestRender_WithoutADialectTypeNamesReadAsSQL(t *testing.T) {
 	c := qt.New(t)
-	source := introspect(c, ydbTable(), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ydbTable(), platform.Postgres, must.Must(builtin.New())))
+	files, err := goschematogo.Render(database, goschematogo.Options{PackageName: "models", SingleFile: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	source := string(files[0].Data)
 
 	for _, line := range []string{"\tSmall int64\n", "\tRatio float64\n", "\tRaw *string\n", "\tTotal *string\n"} {
 		c.Assert(source, qt.Contains, line)
@@ -152,7 +158,7 @@ func TestRender_FailurePath_YDBNullableKeyColumn(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbschematogo.ConvertDBSchemaToGoSchema(test.db(), platform.YDB)
+			db := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), test.db(), platform.YDB, must.Must(builtin.New())))
 
 			files, err := goschematogo.Render(db, goschematogo.Options{Dialect: platform.YDB})
 

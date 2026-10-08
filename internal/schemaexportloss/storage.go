@@ -4,7 +4,6 @@ import "ptah.run/core/schemamodel"
 
 // CountTableStorage counts table properties absent from DBML and inspection JSON.
 func CountTableStorage(counts map[string]int, table schemamodel.Table) {
-	counts["changefeeds"] += len(table.Changefeeds)
 	counts["column families"] += len(table.YDBColumnFamilies)
 	if !table.RowDeletionPolicy.IsZero() {
 		counts["row deletion policies"]++

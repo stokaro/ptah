@@ -1,15 +1,18 @@
 package postgres_test
 
 import (
+	"context"
 	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -37,7 +40,10 @@ func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)
@@ -78,7 +84,10 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -106,7 +115,10 @@ func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 	}
 
 	nodes, err := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB23()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -135,7 +147,10 @@ func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testin
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -163,7 +178,10 @@ func TestPlanner_IndexRefs_SpannerKeepsDifferentSchemaIndexesIndependent(t *test
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -209,7 +227,10 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			nodes, err := postgres.NewForDialect(test.dialect, test.caps).
-				GenerateMigrationAST(withDeclaredObjects(diff, desired))
+				GenerateMigrationAST(
+					context.Background(), must.Must(builtin.New()),
+					withDeclaredObjects(diff, desired),
+				)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
@@ -264,7 +285,10 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 	var nodes []ast.Node
 	var err error
 	for range b.N {
-		nodes, err = planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		nodes, err = planner.GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	}
 	b.StopTimer()
 	c.Assert(err, qt.IsNil)

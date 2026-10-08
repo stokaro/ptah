@@ -9,8 +9,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/sqlitevirtual"
@@ -23,6 +23,8 @@ import (
 // BaselineVerifyOptions configures shadow verification before metadata
 // baselining.
 type BaselineVerifyOptions struct {
+	// Runtime selects feature services and codecs for verification. It is required.
+	Runtime schemadiff.DatabaseRuntime
 	// ShadowDatabaseURL is an ephemeral database the verification replays the
 	// history into. It must hold nothing the reset would drop when the
 	// verification starts, it is empty again when the verification returns,
@@ -76,20 +78,8 @@ type BaselineVerifyOptions struct {
 // the claim stage, before anything resets it, and the shadow database is
 // emptied again on every return. A failure to empty it is joined to the result.
 func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr error) {
-	dialect := opts.Dialect
-	if opts.TargetConn != nil {
-		dialect = opts.TargetConn.Info().Dialect
-	}
-	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
-		return baselineError(
-			"configuration",
-			"invalid_sqlite_virtual_table_drop_toggle",
-			"validate SQLite virtual-table drop toggle",
-			err,
-		)
-	}
-	if err := targetConnectionRequiredError(opts.TargetConn, "target database connection is required"); err != nil {
-		return wrapBaselineError(err)
+	if err := validateBaselineOptions(ctx, opts); err != nil {
+		return err
 	}
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
@@ -164,12 +154,17 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 	if err != nil {
 		return baselineError("re-introspect", "re_introspect_error", "read shadow schema", err)
 	}
+	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, shadowSchema, opts.TargetConn.Info().Dialect, opts.Runtime)
+	if err != nil {
+		return baselineError("schema-match", "conversion_error", "convert shadow schema", err)
+	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx,
 		opts.TargetConn,
-		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema, opts.TargetConn.Info().Dialect),
+		desired,
 		targetSchema,
 		opts.CompareOptions,
+		opts.Runtime,
 	)
 	if err != nil {
 		return baselineError(
@@ -211,8 +206,8 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 // shown to be in the target, and a baseline says the target already holds
 // everything the replayed migrations create. So it is a mismatch, as a missing
 // object is.
-func baselineMatchError(diff *difftypes.SchemaDiff, undecided []coverage.Object) error {
-	if !diff.HasChanges() && len(undecided) == 0 {
+func baselineMatchError(diff *difftypes.SchemaDiff, undecided schemadiff.Diagnostics) error {
+	if !diff.HasChanges() && undecided.Empty() {
 		return nil
 	}
 	return wrapBaselineError(newBaselineMismatchError(diff, undecided))
@@ -239,13 +234,17 @@ func validateBaselineTargetIdentifierSemantics(
 	if err != nil {
 		return nil, baselineError("target-introspect", "target_introspection_error", "read target schema", err)
 	}
-	targetGenerated := dbschematogo.ConvertDBSchemaToGoSchema(targetSchema, opts.TargetConn.Info().Dialect)
+	targetGenerated, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, targetSchema, opts.TargetConn.Info().Dialect, opts.Runtime)
+	if err != nil {
+		return nil, baselineError("target-introspect", "conversion_error", "convert target schema", err)
+	}
 	targetDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
 		opts.TargetConn,
 		targetGenerated,
 		targetSchema,
 		opts.CompareOptions,
+		opts.Runtime,
 	)
 	if err != nil {
 		return nil, baselineError(
@@ -298,4 +297,26 @@ func migrationsAtOrBelow(migrations []*migrator.Migration, version int64) []*mig
 		}
 	}
 	return out
+}
+
+func validateBaselineOptions(ctx context.Context, opts BaselineVerifyOptions) error {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return baselineError("configuration", "runtime_error", "select feature runtime", err)
+	}
+	dialect := opts.Dialect
+	if opts.TargetConn != nil {
+		dialect = opts.TargetConn.Info().Dialect
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return baselineError(
+			"configuration",
+			"invalid_sqlite_virtual_table_drop_toggle",
+			"validate SQLite virtual-table drop toggle",
+			err,
+		)
+	}
+	if err := targetConnectionRequiredError(opts.TargetConn, "target database connection is required"); err != nil {
+		return wrapBaselineError(err)
+	}
+	return nil
 }

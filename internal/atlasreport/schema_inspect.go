@@ -1,6 +1,7 @@
 package atlasreport
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,14 +12,24 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbmlrender"
 	"ptah.run/internal/schemaviz"
 )
 
+// InspectRuntime provides feature reporting and whole-schema SQL rendering
+// from one explicit selection. Format adapters do not choose built-in targets.
+type InspectRuntime interface {
+	schemaext.ReportingRuntime
+	renderer.SchemaService
+}
+
 type SchemaInspectReport struct {
+	ctx         context.Context
+	runtime     InspectRuntime
 	db          *schemamodel.Database
 	info        catalog.ServerInfo
 	diagnostics io.Writer
@@ -82,6 +93,7 @@ type atlasSchemaInspectJSONRealm struct {
 // Go emits object keys in field order, embedded fields included, so the field
 // order here is the byte order of the document a consumer diffs.
 type atlasSchemaInspectJSONSchema struct {
+	loss   *inspectJSONLoss
 	Name   string                        `json:"name"`
 	Tables []atlasSchemaInspectJSONTable `json:"tables,omitempty"`
 	atlasSchemaInspectJSONAttrs
@@ -179,15 +191,28 @@ func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInsp
 // Options.DescribeSchemas gates schema DDL out of the SQL format for a run whose scope
 // came from the connection URL; see the field's own documentation.
 func NewSchemaInspectReport(
+	ctx context.Context,
 	db *schemamodel.Database,
 	schema *catalog.Database,
 	info catalog.ServerInfo,
 	diagnostics io.Writer,
 	opts SchemaInspectReportOptions,
-) *SchemaInspectReport {
+	runtime InspectRuntime,
+) (*SchemaInspectReport, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
 	realm := atlasSchemaInspectJSON(schema, info)
 	attachYDBJSONLoss(&realm, db, schema, info, diagnostics)
+	if err := attachFeatureJSONLoss(ctx, &realm, db, info, diagnostics, runtime); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return &SchemaInspectReport{
+		ctx:                     ctx,
+		runtime:                 runtime,
 		db:                      db,
 		info:                    info,
 		diagnostics:             diagnostics,
@@ -196,7 +221,7 @@ func NewSchemaInspectReport(
 		describeSchemas:         opts.DescribeSchemas,
 		Realm:                   realm,
 		Schema:                  realm,
-	}
+	}, nil
 }
 
 func ValidateSchemaInspectTemplate(format string) error {
@@ -390,15 +415,14 @@ func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
-	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
-		r.sqlSource(),
-		r.info.Dialect,
-		r.info.Capabilities,
-	)
+	rendered, err := renderer.RenderSchema(r.ctx, r.runtime, renderer.SchemaRequest{
+		Target: r.info.Dialect, Schema: r.sqlSource(), Capabilities: r.info.Capabilities,
+		Identifiers: r.info.IdentifierSemantics,
+	})
 	if err != nil {
 		return "", fmt.Errorf("render SQL: %w", err)
 	}
-	sql := strings.Join(statements, "")
+	sql := strings.Join(rendered.Statements, "")
 	if sql == "" || len(indent) == 0 || indent[0] == "" {
 		return sql, nil
 	}
@@ -437,7 +461,7 @@ func atlasSchemaInspectSQL(report *SchemaInspectReport, indent ...string) (strin
 // of the artifact. Without the warnings the export reads as a complete
 // description of the database when it is not (stokaro/ptah#3917).
 func (r *SchemaInspectReport) MarshalDBML() (string, error) {
-	rendered, err := dbmlrender.Render(r.sqlSource(), dbmlrender.Options{})
+	rendered, err := dbmlrender.Render(r.ctx, r.sqlSource(), dbmlrender.Options{Target: r.info.Dialect}, r.runtime)
 	if err != nil {
 		return "", fmt.Errorf("render DBML: %w", err)
 	}

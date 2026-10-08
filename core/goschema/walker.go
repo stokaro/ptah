@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/goannotationsource"
 )
 
@@ -31,7 +33,7 @@ import (
 // [ParseDirRaw]; to finalize several roots together, use [ParseDirs].
 //
 // Managed-data annotations record an absolute SourceDir anchored at rootDir,
-// so [ptah.run/core/schemamodel.LoadManagedRows] resolves them from any
+// so [ptah.run/core/manageddata.LoadRows] resolves them from any
 // working directory.
 func ParseDir(rootDir string) (*schemamodel.Database, error) {
 	result, err := ParseDirRaw(rootDir)
@@ -51,7 +53,7 @@ func ParseDir(rootDir string) (*schemamodel.Database, error) {
 // One thing differs by necessity: with no host root to anchor to,
 // managed-data annotations keep the filesystem-relative SourceDir they were
 // parsed with. Resolve them by passing the host location of fsys as the
-// rootDir argument of [ptah.run/core/schemamodel.LoadManagedRows].
+// rootDir argument of [ptah.run/core/manageddata.LoadRows].
 func ParseFS(fsys fs.FS, rootDir string) (*schemamodel.Database, error) {
 	result := schemamodel.NewDatabase()
 	if err := accumulateGoFiles(result, fsys, rootDir); err != nil {
@@ -129,6 +131,13 @@ func bindManagedDataSourceRoot(result *schemamodel.Database, root string) {
 // finalizing. It is the shared, pre-finalize body of ParseFS and ParseDirs, so
 // multiple roots can accumulate into one result before a single finalize pass.
 func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string) error {
+	if result.FeatureCoverage.Representation() == "" {
+		known, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+		if err != nil {
+			return err
+		}
+		result.FeatureCoverage = known
+	}
 	var parseErrors []error
 
 	err := fs.WalkDir(fsys, rootDir, func(path string, d fs.DirEntry, err error) error {
@@ -161,7 +170,9 @@ func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string)
 			return nil
 		}
 
-		schemamodel.AppendDatabase(result, &database)
+		if err := schemamodel.AppendDatabase(result, &database); err != nil {
+			return err
+		}
 
 		return nil
 	})

@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -90,9 +92,9 @@ func TestCompareWithDialect_ConstraintCommentDifferenceIsAChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				commentedConstraints("total > 0", test.declared), reportedConstraints(test.inDatabase), platform.Postgres,
-			)
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), commentedConstraints("total > 0", test.declared), reportedConstraints(test.inDatabase), platform.Postgres, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ConstraintCommentsChanged, qt.DeepEquals, test.want)
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
@@ -107,9 +109,9 @@ func TestCompareWithDialect_ConstraintCommentDifferenceIsAChange(t *testing.T) {
 func TestCompareWithDialect_RecreatedConstraintCarriesItsCommentInTheAddition(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		commentedConstraints("total > 1", "new"), reportedConstraints("old"), platform.Postgres,
-	)
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), commentedConstraints("total > 1", "new"), reportedConstraints("old"), platform.Postgres, must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.ConstraintCommentsChanged, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
@@ -139,10 +141,10 @@ func TestCompareWithDatabaseInfo_ConstraintCommentsFollowTheTargetsCapabilities(
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				commentedConstraints("total > 0", "new"),
+				t.Context(), commentedConstraints("total > 0", "new"),
 				reportedConstraints("old"),
 				catalog.ServerInfo{Dialect: test.dialect, Capabilities: test.caps},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -168,9 +170,9 @@ func TestCompareSchemas_ConstraintCommentsSurviveTheConversion(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareSchemas(
-				commentedConstraints("total > 0", "new"), commentedConstraints("total > 0", test.previous), platform.Postgres,
-			)
+			diff := must.Must(schemadiff.CompareSchemas(
+				t.Context(), commentedConstraints("total > 0", "new"), commentedConstraints("total > 0", test.previous), platform.Postgres, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ConstraintCommentsChanged, qt.DeepEquals, test.want)
 		})

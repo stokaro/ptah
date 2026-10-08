@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/engine/builtin"
@@ -63,7 +64,7 @@ type FloatRange struct{}
 	c.Assert(live.Composites, qt.HasLen, 1)
 	c.Assert(live.Ranges, qt.HasLen, 1)
 
-	roundTrip := schemadiff.CompareWithDialect(desired, live, "postgres")
+	roundTrip := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, "postgres", must.Must(builtin.New())))
 	c.Assert(roundTrip.HasChanges(), qt.IsFalse, qt.Commentf(
 		"user types must survive apply->introspect->compare; domains+=%v ~=%v composites+=%v ~=%v ranges+=%v",
 		roundTrip.DomainsAdded, roundTrip.DomainsModified,

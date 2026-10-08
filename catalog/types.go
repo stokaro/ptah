@@ -23,6 +23,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/tableref"
 )
@@ -51,6 +52,12 @@ import (
 // NotDescribed records what the read deliberately did not look at, which is a
 // different fact from an object being absent; see that field.
 type Database struct {
+	// FeatureObjects holds individually named feature objects, including table-owned children.
+	FeatureObjects schemaext.Objects `json:"feature_objects,omitzero"`
+	// FeatureCoverage records the model definitions and scopes this source actually describes.
+	FeatureCoverage schemaext.Coverage `json:"feature_coverage,omitzero"`
+	// Facets carries typed settings owned by feature providers.
+	Facets      schemaext.Facets   `json:"facets,omitzero"`
 	Schemas     []Schema           `json:"schemas"`
 	Tables      []Table            `json:"tables"`
 	Enums       []Enum             `json:"enums"`
@@ -244,10 +251,12 @@ type VirtualTable struct {
 
 // Schema represents a database schema/namespace.
 type Schema struct {
-	Name    string `json:"name"`
-	Comment string `json:"comment,omitempty"`
-	Charset string `json:"charset,omitempty"`
-	Collate string `json:"collate,omitempty"`
+	// Facets carries typed settings owned by feature providers.
+	Facets  schemaext.Facets `json:"facets,omitzero"`
+	Name    string           `json:"name"`
+	Comment string           `json:"comment,omitempty"`
+	Charset string           `json:"charset,omitempty"`
+	Collate string           `json:"collate,omitempty"`
 }
 
 // Table represents a database table
@@ -266,12 +275,14 @@ type Schema struct {
 // PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
 // a partitioned relation with SQLSTATE 0A000.
 type Table struct {
-	Name    string `json:"name"`
-	Schema  string `json:"schema,omitempty"`
-	Type    string `json:"type"` // TABLE, VIEW, etc.
-	Comment string `json:"comment"`
-	Charset string `json:"charset,omitempty"` // MySQL/MariaDB default character set for columns declared without one
-	Collate string `json:"collate,omitempty"` // MySQL/MariaDB default collation
+	// Facets carries typed settings owned by feature providers.
+	Facets  schemaext.Facets `json:"facets,omitzero"`
+	Name    string           `json:"name"`
+	Schema  string           `json:"schema,omitempty"`
+	Type    string           `json:"type"` // TABLE, VIEW, etc.
+	Comment string           `json:"comment"`
+	Charset string           `json:"charset,omitempty"` // MySQL/MariaDB default character set for columns declared without one
+	Collate string           `json:"collate,omitempty"` // MySQL/MariaDB default collation
 	// RowFormat is the MySQL-family TABLES.ROW_FORMAT, which decides whether
 	// MySQL retains an index KEY_BLOCK_SIZE hint.
 	RowFormat       string   `json:"row_format,omitempty"`
@@ -356,11 +367,6 @@ type Table struct {
 	// here; the reader records them as not described instead, so a plan
 	// neither changes nor drops them.
 	YDBColumnFamilies []ast.YDBColumnFamilySpec `json:"ydb_column_families,omitempty"`
-	// Changefeeds are the YDB changefeeds this table carries, each with the
-	// retention and the consumers of its topic. A changefeed holding a
-	// setting Ptah does not model is not listed here; the reader records it
-	// as not described instead, so a plan neither drops nor changes it.
-	Changefeeds []ast.ChangefeedSpec `json:"changefeeds,omitempty"`
 	// YDBPartitioning is YDB's, and no other target fills it: the settings of
 	// a YDB row table that differ from what a new table is given -- how it
 	// splits into partitions, its read replicas and its key bloom filter. It
@@ -511,9 +517,11 @@ func QualifyTableName(schema, table string) string {
 // answer from DataType, which reports the base type and drops the domain's
 // constraints with it. See stokaro/ptah#1242.
 type Column struct {
-	Name     string `json:"name"`
-	DataType string `json:"data_type"`
-	UDTName  string `json:"udt_name"` // For PostgreSQL enum types
+	// Facets carries typed settings owned by feature providers.
+	Facets   schemaext.Facets `json:"facets,omitzero"`
+	Name     string           `json:"name"`
+	DataType string           `json:"data_type"`
+	UDTName  string           `json:"udt_name"` // For PostgreSQL enum types
 	// UDTSchema is the schema that holds the column's type, as
 	// information_schema reports it: pg_catalog for a built-in type, and the
 	// schema of an enum, domain or extension type. Empty from a reader that
@@ -690,7 +698,9 @@ type Column struct {
 
 // Enum represents a database enum type (PostgreSQL)
 type Enum struct {
-	Name string `json:"name"`
+	// Facets carries typed settings owned by feature providers.
+	Facets schemaext.Facets `json:"facets,omitzero"`
+	Name   string           `json:"name"`
 	// Schema owns the enum. Readers blank it for the connection's own schema,
 	// exactly as they do for tables, views and domains, so a filter or a
 	// comparison reconstructs the qualified spelling from the connection's
@@ -707,12 +717,14 @@ func (e Enum) QualifiedName() string { return QualifyTableName(e.Schema, e.Name)
 
 // Domain represents a PostgreSQL domain type read from the database.
 type Domain struct {
-	Name     string `json:"name"`
-	Schema   string `json:"schema,omitempty"`
-	BaseType string `json:"base_type"`
-	NotNull  bool   `json:"not_null"`
-	Default  string `json:"default,omitempty"`
-	Check    string `json:"check,omitempty"`
+	// Facets carries typed settings owned by feature providers.
+	Facets   schemaext.Facets `json:"facets,omitzero"`
+	Name     string           `json:"name"`
+	Schema   string           `json:"schema,omitempty"`
+	BaseType string           `json:"base_type"`
+	NotNull  bool             `json:"not_null"`
+	Default  string           `json:"default,omitempty"`
+	Check    string           `json:"check,omitempty"`
 	// CheckConstraints names each CHECK the catalog holds for this domain,
 	// alongside the expression the server stores for it. Check above is the
 	// same expressions joined with AND, which is what a renderer needs and
@@ -750,6 +762,8 @@ type CompositeField struct {
 
 // CompositeType represents a PostgreSQL composite type read from the database.
 type CompositeType struct {
+	// Facets carries typed settings owned by feature providers.
+	Facets schemaext.Facets `json:"facets,omitzero"`
 	Name   string           `json:"name"`
 	Schema string           `json:"schema,omitempty"`
 	Fields []CompositeField `json:"fields"`
@@ -767,9 +781,11 @@ func (c CompositeType) QualifiedName() string { return QualifyTableName(c.Schema
 // had nothing to compare and reported a changed range as converged
 // (stokaro/ptah#931 item 2).
 type Range struct {
-	Name    string `json:"name"`
-	Schema  string `json:"schema,omitempty"`
-	Subtype string `json:"subtype"`
+	// Facets carries typed settings owned by feature providers.
+	Facets  schemaext.Facets `json:"facets,omitzero"`
+	Name    string           `json:"name"`
+	Schema  string           `json:"schema,omitempty"`
+	Subtype string           `json:"subtype"`
 	// SubtypeOpClass is the operator class backing the subtype's ordering
 	// (pg_range.rngsubopc). Always populated by the catalog, including when the
 	// author never named one, so the comparator only consults it when the
@@ -837,10 +853,12 @@ const (
 // emitting spurious type/granularity changes for PostgreSQL or MySQL
 // indexes.
 type Index struct {
-	Name      string   `json:"name"`
-	TableName string   `json:"table_name"`
-	Schema    string   `json:"schema,omitempty"`
-	Columns   []string `json:"columns"`
+	// Facets carries typed settings owned by feature providers.
+	Facets    schemaext.Facets `json:"facets,omitzero"`
+	Name      string           `json:"name"`
+	TableName string           `json:"table_name"`
+	Schema    string           `json:"schema,omitempty"`
+	Columns   []string         `json:"columns"`
 	// Parts preserves key order and direction when the database exposes it.
 	// Empty means the reader supplied only the legacy ascending Columns form.
 	Parts      []IndexPart `json:"parts,omitempty"`
@@ -1007,6 +1025,8 @@ func (i Index) QualifiedTableName() string {
 // every fixture that happens to use that spelling and silently misses the
 // other.
 type Constraint struct {
+	// Facets carries typed settings owned by feature providers.
+	Facets schemaext.Facets `json:"facets,omitzero"`
 	// KeyBlockSize is the primary index block-size hint reported by SHOW CREATE TABLE.
 	KeyBlockSize   uint64   `json:"key_block_size,omitempty"`
 	Name           string   `json:"name"`
@@ -1179,17 +1199,19 @@ type Extension struct {
 // internal/auto dependency) are deliberately excluded so that declaring a plain
 // SERIAL column does not surface as a spurious standalone sequence.
 type Sequence struct {
-	Name      string `json:"name"`                // Sequence name
-	Schema    string `json:"schema,omitempty"`    // Schema containing the sequence
-	DataType  string `json:"data_type,omitempty"` // Underlying integer type (e.g. "bigint")
-	Start     *int64 `json:"start,omitempty"`     // START WITH value
-	Increment *int64 `json:"increment,omitempty"` // INCREMENT BY value
-	MinValue  *int64 `json:"min_value,omitempty"` // MINVALUE bound
-	MaxValue  *int64 `json:"max_value,omitempty"` // MAXVALUE bound
-	Cache     *int64 `json:"cache,omitempty"`     // CACHE size
-	Cycle     bool   `json:"cycle"`               // Whether the sequence uses CYCLE
-	OwnedBy   string `json:"owned_by,omitempty"`  // Owning table.column, if any
-	Comment   string `json:"comment,omitempty"`   // Sequence comment/description
+	// Facets carries typed settings owned by feature providers.
+	Facets    schemaext.Facets `json:"facets,omitzero"`
+	Name      string           `json:"name"`                // Sequence name
+	Schema    string           `json:"schema,omitempty"`    // Schema containing the sequence
+	DataType  string           `json:"data_type,omitempty"` // Underlying integer type (e.g. "bigint")
+	Start     *int64           `json:"start,omitempty"`     // START WITH value
+	Increment *int64           `json:"increment,omitempty"` // INCREMENT BY value
+	MinValue  *int64           `json:"min_value,omitempty"` // MINVALUE bound
+	MaxValue  *int64           `json:"max_value,omitempty"` // MAXVALUE bound
+	Cache     *int64           `json:"cache,omitempty"`     // CACHE size
+	Cycle     bool             `json:"cycle"`               // Whether the sequence uses CYCLE
+	OwnedBy   string           `json:"owned_by,omitempty"`  // Owning table.column, if any
+	Comment   string           `json:"comment,omitempty"`   // Sequence comment/description
 }
 
 // QualifiedName returns schema.sequence when Schema is set, or Name otherwise.
@@ -1362,7 +1384,9 @@ type SchemaTransaction interface {
 
 // Function represents a custom function read from the database.
 type Function struct {
-	Name string `json:"name"` // Function name
+	// Facets carries typed settings owned by feature providers.
+	Facets schemaext.Facets `json:"facets,omitzero"`
+	Name   string           `json:"name"` // Function name
 	// Kind separates a function from a procedure. Empty means function, which
 	// is what every description written before procedures existed meant.
 	Kind string `json:"kind,omitempty"`
@@ -1458,11 +1482,13 @@ func (f Function) DropIdentity() *string {
 
 // View represents a database view read from the database.
 type View struct {
-	Name        string `json:"name"`         // View name
-	Schema      string `json:"schema"`       // Schema where the view is defined
-	Body        string `json:"body"`         // SELECT query used as the view definition
-	CheckOption string `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
-	Comment     string `json:"comment"`      // View comment/description
+	// Facets carries typed settings owned by feature providers.
+	Facets      schemaext.Facets `json:"facets,omitzero"`
+	Name        string           `json:"name"`         // View name
+	Schema      string           `json:"schema"`       // Schema where the view is defined
+	Body        string           `json:"body"`         // SELECT query used as the view definition
+	CheckOption string           `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
+	Comment     string           `json:"comment"`      // View comment/description
 	// Attributes carries the view's own WITH clause -- SQL Server's
 	// SCHEMABINDING and VIEW_METADATA -- uppercased, in the order the server
 	// wrote them.
@@ -1897,10 +1923,12 @@ func (s Synonym) TargetQualifiedName() string {
 
 // MaterializedView represents a PostgreSQL materialized view read from the database.
 type MaterializedView struct {
-	Name    string `json:"name"`    // Materialized view name
-	Schema  string `json:"schema"`  // Schema where the materialized view is defined
-	Body    string `json:"body"`    // SELECT query used as the materialized view definition
-	Comment string `json:"comment"` // Materialized view comment/description
+	// Facets carries typed settings owned by feature providers.
+	Facets  schemaext.Facets `json:"facets,omitzero"`
+	Name    string           `json:"name"`    // Materialized view name
+	Schema  string           `json:"schema"`  // Schema where the materialized view is defined
+	Body    string           `json:"body"`    // SELECT query used as the materialized view definition
+	Comment string           `json:"comment"` // Materialized view comment/description
 
 	// Refresh is the ClickHouse refresh schedule read back from the server,
 	// nil for a view that has none.
@@ -1923,14 +1951,16 @@ func (v MaterializedView) QualifiedName() string {
 
 // Trigger represents a database trigger read from the database.
 type Trigger struct {
-	Name    string `json:"name"`    // Trigger name
-	Schema  string `json:"schema"`  // Schema where the trigger is defined
-	Table   string `json:"table"`   // Target table
-	Timing  string `json:"timing"`  // BEFORE, AFTER, or INSTEAD OF
-	Event   string `json:"event"`   // INSERT, UPDATE, DELETE, or TRUNCATE
-	ForEach string `json:"for"`     // ROW or STATEMENT
-	Body    string `json:"body"`    // Trigger body
-	Comment string `json:"comment"` // Trigger comment/description
+	// Facets carries typed settings owned by feature providers.
+	Facets  schemaext.Facets `json:"facets,omitzero"`
+	Name    string           `json:"name"`    // Trigger name
+	Schema  string           `json:"schema"`  // Schema where the trigger is defined
+	Table   string           `json:"table"`   // Target table
+	Timing  string           `json:"timing"`  // BEFORE, AFTER, or INSTEAD OF
+	Event   string           `json:"event"`   // INSERT, UPDATE, DELETE, or TRUNCATE
+	ForEach string           `json:"for"`     // ROW or STATEMENT
+	Body    string           `json:"body"`    // Trigger body
+	Comment string           `json:"comment"` // Trigger comment/description
 
 	// When is the condition of the trigger's WHEN clause, without its
 	// parentheses, as the server prints it back. Empty means none.
@@ -1975,6 +2005,8 @@ type RLSPolicy struct {
 
 // Role represents a PostgreSQL role read from the database
 type Role struct {
+	// Facets carries typed settings owned by feature providers.
+	Facets        schemaext.Facets  `json:"facets,omitzero"`
 	Name          string            `json:"name"`           // Role name
 	Login         bool              `json:"login"`          // Whether role can login
 	Superuser     bool              `json:"superuser"`      // Whether role is superuser

@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/devlock"
@@ -65,6 +66,9 @@ type Mismatch struct {
 	// wholly missing or extra object has none -- so a caller must handle an
 	// absent map.
 	Changes map[string]string `json:"changes,omitempty"`
+	// FeatureLimit retains a feature model's structured identity and knowledge
+	// limit. Object and Message remain display strings, not comparison keys.
+	FeatureLimit *schemaext.UndecidedChange `json:"feature_limit,omitempty"`
 	// Message is the human-readable sentence describing this mismatch. A
 	// caller rendering its own diagnostics builds them from the fields above;
 	// [VerificationError.Error] is the ready-made text form.
@@ -184,6 +188,8 @@ func validateConnection(
 
 // MigrationVerifyOptions configures [VerifyMigration].
 type MigrationVerifyOptions struct {
+	// Runtime selects feature services and codecs for verification. It is required.
+	Runtime schemadiff.DatabaseRuntime
 	// ShadowDatabaseURL is an ephemeral database the verification replays
 	// into. It must hold nothing the reset would drop when the verification
 	// starts, it is empty again when the verification returns, and its live
@@ -261,6 +267,9 @@ type Candidate struct {
 // Failures are [VerificationError] values naming the stage that stopped and
 // every mismatch found; a refused shadow database stops at the claim stage.
 func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultErr error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return newVerificationError("configuration", "runtime_error", "select feature runtime", err)
+	}
 	database, err := shadowdb.Open(ctx, opts.ShadowDatabaseURL, "")
 	if err != nil {
 		return newVerificationError("connect", "connect_error", "connect to shadow database", err)
@@ -426,6 +435,7 @@ func assertSchemaMatches(
 		opts.Generated,
 		dbSchema,
 		opts.CompareOpts,
+		opts.Runtime,
 	)
 	if err != nil {
 		return newVerificationError(

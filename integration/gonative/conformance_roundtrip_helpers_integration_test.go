@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
@@ -16,7 +17,7 @@ import (
 )
 
 func renderConformanceSQL(c *qt.C, target *schemamodel.Database, dialect string) string {
-	createAST := modelast.CollectDatabase(*target, dialect)
+	createAST := must.Must(modelast.CollectDatabase(*target, dialect))
 	createSQL, err := builtin.RenderSQL(dialect, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	return strings.TrimSpace(createSQL)

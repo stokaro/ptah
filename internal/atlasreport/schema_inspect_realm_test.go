@@ -143,7 +143,7 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			report := atlasreport.NewSchemaInspectReport(
+			report := newInspectReport(c,
 				&schemamodel.Database{},
 				test.schema,
 				test.info,

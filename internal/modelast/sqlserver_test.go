@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -77,7 +78,7 @@ func TestCollectDatabase_SQLServerIncludesViewsAndTriggers(t *testing.T) {
 		}},
 	}
 
-	statements := modelast.CollectDatabase(database, platform.SQLServer)
+	statements := must.Must(modelast.CollectDatabase(database, platform.SQLServer))
 	sql, err := builtin.RenderSQL(platform.SQLServer, statements)
 
 	c.Assert(err, qt.IsNil)

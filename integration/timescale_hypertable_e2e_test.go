@@ -9,12 +9,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -214,8 +216,11 @@ func planTimescaleReportingError(
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 
-	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
+	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
-	return planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, conn.Info().Dialect, planner.Options{Capabilities: conn.Info().Capabilities})
+	return planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, conn.Info().Dialect, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 }

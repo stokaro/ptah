@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -33,13 +34,13 @@ func TestPlanBidirectionalSchemaDiff_IndexChangesInPlaceRollBack(t *testing.T) {
 		},
 	}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{},
-		CurrentSchema: &catalog.Database{},
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB262(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{},
+			CurrentSchema: &catalog.Database{},
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB262(),
+		})
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 
@@ -80,13 +81,13 @@ func TestPlanBidirectionalSchemaDiff_IndexCommentsRollBack(t *testing.T) {
 		},
 	}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{},
-		CurrentSchema: &catalog.Database{},
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB262(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{},
+			CurrentSchema: &catalog.Database{},
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB262(),
+		})
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 

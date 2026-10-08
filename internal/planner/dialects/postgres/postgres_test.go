@@ -1,14 +1,17 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -88,7 +91,10 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -191,7 +197,10 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -263,10 +272,13 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
+			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, identifier.ForDialect("postgres"), tt.tablesAdded...)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -424,7 +436,10 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -569,7 +584,10 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -629,7 +647,10 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	}
 
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL to verify the actual output
@@ -753,7 +774,10 @@ func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -821,7 +845,10 @@ func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -866,7 +893,10 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 		Fields: []schemamodel.Field{slug},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -909,7 +939,10 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 		Fields: []schemamodel.Field{slug},
 	}
 
-	nodes, err := postgres.NewWithCapabilities(capability.Postgres16()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.NewWithCapabilities(capability.Postgres16()).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities("postgres", capability.Postgres16(), nodes...)
 	c.Assert(err, qt.IsNil)
@@ -967,7 +1000,10 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -1008,7 +1044,10 @@ func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1049,7 +1088,10 @@ func TestPlanner_GenerateMigrationSQL_EnumsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1115,10 +1157,13 @@ func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
+			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, identifier.ForDialect("postgres"), tt.tablesAdded...)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1183,7 +1228,10 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1202,7 +1250,10 @@ func TestPlanner_GenerateMigrationAST_UndescribedIndexRejected(t *testing.T) {
 		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "missing_index"}, TableName: "users"}},
 	}
 
-	nodes, err := (&postgres.Planner{}).GenerateMigrationAST(diff)
+	nodes, err := (&postgres.Planner{}).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*added index users\.missing_index is not described by the diff.*`)
@@ -1224,7 +1275,10 @@ func TestPlanner_GenerateMigrationAST_AnIndexTheDeclarationLacksIsStillCreated(t
 		}},
 	}
 
-	nodes, err := (&postgres.Planner{}).GenerateMigrationAST(diff)
+	nodes, err := (&postgres.Planner{}).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -1239,7 +1293,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionInstallationSchema(t *testing.T) 
 		Name: "pgcrypto", Schema: " Extension Store ",
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -1262,7 +1319,10 @@ func TestPlanner_GenerateMigrationAST_WhitespaceOnlyExtensionInstallationSchema(
 		Name: "pgcrypto", Schema: " ",
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -1285,7 +1345,10 @@ func TestPlanner_GenerateMigrationAST_SystemExtensionInstallationSchemaNeedsNoPr
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -1394,7 +1457,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1433,7 +1499,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}})
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
+			)
 			c.Assert(err, qt.IsNil)
 
 			rendered, renderErr := builtin.RenderSQL(platform.Postgres, nodes...)
@@ -1474,7 +1543,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}})
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
+			)
 
 			c.Assert(nodes, qt.IsNil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -1559,7 +1631,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1638,7 +1713,10 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			// Render nodes to SQL
@@ -1687,11 +1765,14 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "test_table"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "test_table"),
 	}
 
 	planner := &postgres.Planner{}
-	result, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	result, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result, qt.HasLen, 1)

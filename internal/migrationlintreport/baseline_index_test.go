@@ -44,6 +44,7 @@ func TestBuild_DevURLSuppliesTheIndexesTheUniqueRulesRead(t *testing.T) {
 	dir := writeIndexMigrations(c)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       dir,
 		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
@@ -67,6 +68,7 @@ func TestBuild_WithoutADevURLTheUniqueRulesReportFromTheTextAndSaySo(t *testing.
 	dir := writeIndexMigrations(c)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       dir,
 		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",

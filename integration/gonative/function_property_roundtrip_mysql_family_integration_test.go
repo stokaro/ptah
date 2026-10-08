@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/catalog"
@@ -107,8 +108,11 @@ func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.
 	// that `integer` and `int` are one type and that two spellings of a routine
 	// name are one routine. Production reaches the same place through
 	// CompareWithDatabase, which sets opts.Dialect from the live connection.
-	diff := schemadiff.CompareWithDialect(desired, live, dialect)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, dialect, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 
 	for _, statement := range statements {
@@ -124,7 +128,7 @@ func propertyDiff(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.Data
 	reader := mysql.NewMySQLReader(db, "")
 	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
-	return schemadiff.CompareWithDialect(desired, live, dialect)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, dialect, must.Must(builtin.New())))
 }
 
 // mysqlFamilyTargets is the pair every test in this file runs against. MariaDB
@@ -678,7 +682,7 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 			// supplied rather than in a plan that reads only the diff
 			// (stokaro/ptah#2315).
 			_, planErr := schemadiff.CompareWithDatabaseInfo(
-				colliding, live, catalog.ServerInfo{Dialect: target.dialect}, nil,
+				t.Context(), colliding, live, catalog.ServerInfo{Dialect: target.dialect}, nil, must.Must(builtin.New()),
 			)
 			c.Assert(planErr, qt.IsNotNil)
 			c.Check(planErr.Error(), qt.Contains, "Ptah_Dup_Fn")

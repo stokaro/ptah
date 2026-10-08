@@ -1,24 +1,30 @@
 package ydb_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // changefeedsChanged is a plan whose only change to items is its changefeeds.
-func changefeedsChanged(desired, current []ast.ChangefeedSpec) *difftypes.SchemaDiff {
-	return modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
-		ChangefeedsChange: &difftypes.ChangefeedsChange{Desired: desired, Current: current}})
+func changefeedsChanged(t *testing.T, desired, current []ydbschema.ChangefeedSpec) *difftypes.SchemaDiff {
+	t.Helper()
+	declaration := declaredFeeds(t, itemsDeclaration(), desired...)
+	observation := observedFeeds(t, "", "items", current...)
+	return modified(t, difftypes.TableDiff{TableName: "items", Desired: declaration, Current: observation,
+		FeatureChanges: feedChanges(t, declaration, observation)})
 }
 
 // TestGenerateMigrationAST_Changefeeds_HappyPath pins how a plan changes a
@@ -31,18 +37,18 @@ func changefeedsChanged(desired, current []ast.ChangefeedSpec) *difftypes.Schema
 func TestGenerateMigrationAST_Changefeeds_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	audit := ast.TopicConsumerSpec{Name: "audit", SupportedCodecs: []string{"raw"}}
-	current := []ast.ChangefeedSpec{
+	current := []ydbschema.ChangefeedSpec{
 		{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "reader"}}},
 		{Name: "moved", Mode: "KEYS_ONLY", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}}},
 		{Name: "kept", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H", Consumers: []ast.TopicConsumerSpec{audit}},
 	}
-	desired := []ast.ChangefeedSpec{
+	desired := []ydbschema.ChangefeedSpec{
 		{Name: "moved", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}}},
 		{Name: "kept", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "audit"}}},
 		{Name: "fresh", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON", InitialScan: true},
 	}
-	diff := changefeedsChanged(desired, current)
-	diff.TablesModified[0].Desired = itemsDeclaration(field("note", "TEXT", true))
+	diff := changefeedsChanged(t, desired, current)
+	diff.TablesModified[0].Desired.Fields = itemsDeclaration(field("note", "TEXT", true)).Fields
 	diff.TablesModified[0].ColumnsAdded = difftypes.ColumnChanges{field("note", "TEXT", true)}
 
 	got := render(c, capability.YDB251(), diff)
@@ -55,10 +61,10 @@ func TestGenerateMigrationAST_Changefeeds_HappyPath(t *testing.T) {
 		"in place. Its stream restarts: the records nobody read are lost, and consumers a, b lose their position and "+
 		"start again from the beginning of the new stream.\n"+
 		"ALTER TABLE `items` DROP CHANGEFEED `moved`;\n"+
+		"ALTER TABLE `items` ADD CHANGEFEED `fresh` WITH (MODE = 'NEW_IMAGE', FORMAT = 'DEBEZIUM_JSON', INITIAL_SCAN = TRUE);\n"+
 		"ALTER TABLE `items` ADD CHANGEFEED `moved` WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n"+
 		"ALTER TOPIC `items/moved` ADD CONSUMER `a`;\n"+
 		"ALTER TOPIC `items/moved` ADD CONSUMER `b`;\n"+
-		"ALTER TABLE `items` ADD CHANGEFEED `fresh` WITH (MODE = 'NEW_IMAGE', FORMAT = 'DEBEZIUM_JSON', INITIAL_SCAN = TRUE);\n"+
 		"-- Consumer audit of changefeed kept of table items is dropped and added again, because YDB keeps a "+
 		"consumer's codecs once it has any. It loses its position and starts again from the beginning of the stream.\n"+
 		"ALTER TOPIC `items/kept` SET (retention_period = Interval('P1D'));\n"+
@@ -73,34 +79,21 @@ func TestGenerateMigrationAST_Changefeeds_HappyPath(t *testing.T) {
 // The scratch table takes none. A plan of this shape applied on 26.2.1.14 and
 // 25.1.4.7, with rows written before and after, and read back as declared.
 func TestGenerateMigrationAST_Changefeeds_RebuildCarriesThem(t *testing.T) {
-	feed := ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON",
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON",
 		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true}}}
 	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
-	declaration.Table.Changefeeds = []ast.ChangefeedSpec{feed}
+	declaration = declaredFeeds(t, declaration, feed)
 	typeChange := []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}
 	tests := []struct {
 		name string
 		diff *difftypes.SchemaDiff
 		want string
+		note string
 	}{
 		{
 			name: "a changefeed the comparison found unchanged",
-			diff: modified(difftypes.TableDiff{TableName: "app.items", Desired: declaration, ColumnsModified: typeChange}),
-			want: "ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\n" +
-				"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n" +
-				"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n" +
-				"ALTER TABLE `app/items` ADD CHANGEFEED `updates` WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n" +
-				"ALTER TOPIC `app/items/updates` ADD CONSUMER `audit` WITH (important = TRUE);\n" +
-				"DROP TABLE `app/__ptah_replaced_items`;\n",
-		},
-		{
-			// The current side is a document whose format cannot spell a
-			// changefeed. That limit is no claim that the table carries one
-			// the plan cannot write, so the rebuild goes ahead.
-			name: "a changefeed beside a format's limit",
-			diff: notDescribing(modified(difftypes.TableDiff{TableName: "app.items", Desired: declaration,
-				ColumnsModified: typeChange}), coverage.Object{Kind: coverage.Changefeed, Reason: coverage.Unsupported,
-				Provenance: coverage.DerivedFromFact}),
+			note: "Changefeed updates of table app/items is dropped before the swap and added again after it",
+			diff: modified(t, difftypes.TableDiff{TableName: "app.items", Desired: declaration, Current: observedFeeds(t, "app", "items", feed), ColumnsModified: typeChange}),
 			want: "ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\n" +
 				"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n" +
 				"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n" +
@@ -110,11 +103,10 @@ func TestGenerateMigrationAST_Changefeeds_RebuildCarriesThem(t *testing.T) {
 		},
 		{
 			name: "a changefeed the declaration replaces",
-			diff: modified(difftypes.TableDiff{TableName: "app.items", Desired: declaration, ColumnsModified: typeChange,
-				ChangefeedsChange: &difftypes.ChangefeedsChange{
-					Desired: []ast.ChangefeedSpec{feed},
-					Current: []ast.ChangefeedSpec{{Name: "old", Mode: "KEYS_ONLY", Format: "JSON"}},
-				}}),
+			note: "Changefeed old of table app/items is dropped with its topic: the records nobody read are lost.",
+			diff: modified(t, difftypes.TableDiff{TableName: "app.items", Desired: declaration, ColumnsModified: typeChange,
+				Current: observedFeeds(t, "app", "items", ydbschema.ChangefeedSpec{Name: "old", Mode: "KEYS_ONLY", Format: "JSON"}),
+			}),
 			want: "ALTER TABLE `app/items` DROP CHANGEFEED `old`;\n" +
 				"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n" +
 				"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n" +
@@ -129,9 +121,7 @@ func TestGenerateMigrationAST_Changefeeds_RebuildCarriesThem(t *testing.T) {
 
 			got := renderRebuild(c, capability.YDB262(), test.diff)
 
-			c.Assert(got, qt.Contains, " of table app/items is dropped before the swap and added again after it, "+
-				"because YDB moves no table that carries a changefeed. Its stream restarts: the records nobody read "+
-				"are lost, and its consumers start again from the beginning of the new stream.\n")
+			c.Assert(got, qt.Contains, test.note)
 			c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n"+heldDefaults+
 				heldIndexDefaults("app/__ptah_rebuild_items", "items_label")+"INSERT INTO")
 			c.Assert(got, qt.Contains, test.want)
@@ -143,12 +133,12 @@ func TestGenerateMigrationAST_Changefeeds_RebuildCarriesThem(t *testing.T) {
 // changefeed change the target cannot make: by its key, and by the server's
 // reason where YDB refuses it on every line.
 func TestGenerateMigrationAST_Changefeeds_FailurePath(t *testing.T) {
-	plain := ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}
+	plain := ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}
 	withSIDs := plain
 	withSIDs.UserSIDs = true
 	partitioned := plain
 	partitioned.TopicMinActivePartitions = 2
-	indexed := changefeedsChanged([]ast.ChangefeedSpec{{Name: "items_label", Mode: "UPDATES", Format: "JSON"}}, nil)
+	indexed := changefeedsChanged(t, []ydbschema.ChangefeedSpec{{Name: "items_label", Mode: "UPDATES", Format: "JSON"}}, nil)
 	indexed.TablesModified[0].Desired.Indexes = []schemamodel.Index{{Name: "items_label", Fields: []string{"label"}}}
 	tests := []struct {
 		name        string
@@ -159,13 +149,13 @@ func TestGenerateMigrationAST_Changefeeds_FailurePath(t *testing.T) {
 	}{
 		{
 			name: "any change without the key", caps: capability.YDB262().With(capability.Changefeeds, false),
-			diff:        changefeedsChanged(nil, []ast.ChangefeedSpec{plain}),
+			diff:        changefeedsChanged(t, nil, []ydbschema.ChangefeedSpec{plain}),
 			wantFeature: string(capability.Changefeeds),
 			wantErr:     `changing the changefeeds of table "items", which requires target capability changefeeds, .*`,
 		},
 		{
 			name: "USER_SIDS on 25.4", caps: capability.YDB254(),
-			diff:        changefeedsChanged([]ast.ChangefeedSpec{withSIDs}, nil),
+			diff:        changefeedsChanged(t, []ydbschema.ChangefeedSpec{withSIDs}, nil),
 			wantFeature: string(capability.ChangefeedUserSIDs),
 			wantErr:     `changefeed "feed" of table "items" takes USER_SIDS, which requires target capability changefeed_user_sids, .*`,
 		},
@@ -177,7 +167,7 @@ func TestGenerateMigrationAST_Changefeeds_FailurePath(t *testing.T) {
 		},
 		{
 			name: "several topic partitions on an Int64 key", caps: capability.YDB262(),
-			diff:        changefeedsChanged([]ast.ChangefeedSpec{partitioned}, nil),
+			diff:        changefeedsChanged(t, []ydbschema.ChangefeedSpec{partitioned}, nil),
 			wantFeature: `changefeed "feed" of table "items"`,
 			wantErr:     `changefeed "feed" of table "items": its topic starts with 2 partitions, .* not Int64`,
 		},
@@ -185,7 +175,10 @@ func TestGenerateMigrationAST_Changefeeds_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			refusal, ok := errors.AsType[*ptaherr.CapabilityError](err)
 			c.Assert(ok, qt.IsTrue)
@@ -193,26 +186,4 @@ func TestGenerateMigrationAST_Changefeeds_FailurePath(t *testing.T) {
 			c.Assert(nodes, qt.IsNil)
 		})
 	}
-}
-
-// TestGenerateMigrationAST_Changefeeds_RebuildRefusesWhatItCannotSee refuses a
-// rebuild of a table carrying a changefeed the read could not describe: the
-// old table has to lose it before it moves, and the plan cannot add back the
-// settings it does not read. The record is the one the reader makes, which
-// says the same reason a format's limit says and differs from it only in
-// where the fact came from.
-func TestGenerateMigrationAST_Changefeeds_RebuildRefusesWhatItCannotSee(t *testing.T) {
-	c := qt.New(t)
-	typeChange := []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}
-	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
-	unread := notDescribing(modified(difftypes.TableDiff{TableName: "app.items", Desired: declaration,
-		ColumnsModified: typeChange}), coverage.Object{Kind: coverage.Changefeed, Name: "app.items/feed",
-		Reason: coverage.Unsupported, Provenance: coverage.Observed})
-
-	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuild(true).GenerateMigrationAST(unread)
-
-	c.Assert(err, qt.ErrorMatches,
-		`rebuilding table "app.items": the table carries changefeeds with settings Ptah does not read, .*`)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(nodes, qt.IsNil)
 }

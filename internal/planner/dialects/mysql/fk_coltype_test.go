@@ -1,10 +1,12 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -564,7 +566,10 @@ func TestPlanner_ColumnTypeChange_MariaDBGuardsDrop(t *testing.T) {
 		},
 	}
 
-	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
 	c.Assert(err, qt.IsNil)
@@ -597,7 +602,10 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 			ForeignTable: "users", ForeignColumn: "id",
 		}}
 
-		nodes, err := mysql.New().GenerateMigrationAST(diff)
+		nodes, err := mysql.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 
 		c.Assert(err, qt.IsNil)
 		sql, err := builtin.RenderSQL("mysql", nodes...)
@@ -624,7 +632,10 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 		diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
 		diff.TablesModified[0].ColumnsModified[0].Desired = desired.Fields[1]
 
-		nodes, err := mysql.New().GenerateMigrationAST(diff)
+		nodes, err := mysql.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 
 		c.Assert(err, qt.IsNil)
 		sql, err := builtin.RenderSQL("mysql", nodes...)

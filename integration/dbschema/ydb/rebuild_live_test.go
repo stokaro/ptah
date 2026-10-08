@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -67,11 +69,14 @@ func keyedByIDAndK(db *schemamodel.Database) {
 func rebuildPlan(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, allow bool) (string, error) {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readScoped(c, conn, rebuildSchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, rebuildSchemas), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	return planner.GenerateSchemaDiffSQLWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities: info.Capabilities, AllowTableRebuild: allow,
-	})
+	return planner.GenerateSchemaDiffSQLWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{
+			Capabilities: info.Capabilities, AllowTableRebuild: allow,
+		},
+	)
 }
 
 // seedRebuildItems creates the table as rebuildItems declares it and writes

@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -63,7 +66,7 @@ func desiredChildWithKeys(keys map[string]string, onDelete string) *schemamodel.
 func compareForDialect(dialect string, desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
-	return schemadiff.CompareWithOptions(desired, current, opts)
+	return must.Must(schemadiff.CompareWithOptions(context.Background(), desired, current, opts, must.Must(builtin.New())))
 }
 
 // TestCompare_MariaDBNumberedKeyIsTheUnnamedKey covers MariaDB 12.1 and later,

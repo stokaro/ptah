@@ -1,12 +1,15 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -99,7 +102,10 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Contains(plan, "DROP DOMAIN") || strings.Contains(plan, "DROP TYPE"),

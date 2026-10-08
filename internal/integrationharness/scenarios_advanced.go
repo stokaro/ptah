@@ -701,7 +701,7 @@ func validateSchemaConsistency(ctx context.Context, conn *dbschema.DatabaseConne
 		conn,
 		expectedSchema,
 		actualSchema,
-		nil,
+		nil, vem.runtime,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to compare schemas for version %s: %w", versionDir, err)

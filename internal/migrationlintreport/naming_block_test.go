@@ -24,6 +24,7 @@ func buildWithProjectNaming(
 		fsys[migrationlint.ConfigFileName] = &fstest.MapFile{Data: []byte(policy)}
 	}
 	return migrationlintreport.Build(c.TB.Context(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       "unused",
 		FS:        fsys,
 		DirFormat: string(migrationfile.DirFormatAtlas),

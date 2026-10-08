@@ -9,10 +9,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -138,7 +140,7 @@ func compareLiveRoutines(
 	}
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	return diff
 }
@@ -153,7 +155,10 @@ func applyLiveRoutines(
 	dialect string,
 ) {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, dialect, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 	for _, statement := range statements {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -260,7 +261,7 @@ func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, liveSchema, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, liveSchema, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }

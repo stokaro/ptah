@@ -73,6 +73,58 @@ func (o Objects) With(object Object) (Objects, error) {
 	return result, nil
 }
 
+// Replace captures a new value for an existing identity. A missing identity is
+// an error; replacing never silently creates another object.
+func (o Objects) Replace(object Object) (Objects, error) {
+	cloned, err := cloneObject(object)
+	if err != nil {
+		return Objects{}, err
+	}
+	if _, found := o.values[cloned.Ref.Key()]; !found {
+		return Objects{}, fmt.Errorf("%w: cannot replace missing object %s", ErrInvalidValue, cloned.Ref)
+	}
+	result := Objects{values: maps.Clone(o.values)}
+	result.values[cloned.Ref.Key()] = cloned
+	return result, nil
+}
+
+// Select returns an immutable subset selected by structured identity. The
+// predicate cannot reach payloads; the subset shares only private snapshots.
+func (o Objects) Select(keep func(objectidentity.ID) bool) Objects {
+	result := Objects{values: make(map[objectidentity.Key]Object)}
+	for key, value := range o.values {
+		if keep(value.Ref) {
+			result.values[key] = value
+		}
+	}
+	return result
+}
+
+// ForParent captures the direct children of a table identified
+// by catalog, schema, and name. It compares normalized components, never dotted
+// diagnostic strings. Parentage is derived from the single object collection.
+func (o Objects) ForParent(parent objectidentity.ID) Objects {
+	return o.Select(func(ref objectidentity.ID) bool {
+		return ref.Catalog.Normalized == parent.Catalog.Normalized &&
+			ref.Schema.Normalized == parent.Schema.Normalized &&
+			ref.Parent.Normalized != "" && ref.Parent.Normalized == parent.Name.Normalized
+	})
+}
+
+// Merge combines independently captured objects and refuses duplicate identities.
+// Both inputs and the returned collection retain immutable snapshot ownership.
+func (o Objects) Merge(other Objects) (Objects, error) {
+	result := Objects{values: make(map[objectidentity.Key]Object, len(o.values)+len(other.values))}
+	maps.Copy(result.values, o.values)
+	for key, value := range other.values {
+		if _, exists := result.values[key]; exists {
+			return Objects{}, fmt.Errorf("%w: object %s", ErrDuplicate, value.Ref)
+		}
+		result.values[key] = value
+	}
+	return result, nil
+}
+
 // Without returns a new collection without ref. It does not infer cascade rules.
 func (o Objects) Without(ref objectidentity.ID) Objects {
 	result := Objects{values: maps.Clone(o.values)}
@@ -103,6 +155,18 @@ func (o Objects) All() ([]Object, error) {
 	}
 	slices.SortFunc(result, func(a, b Object) int { return CompareRefs(a.Ref, b.Ref) })
 	return result, nil
+}
+
+// Refs returns structured identities in deterministic order without loading or
+// cloning payloads. Inventory and loss reports need identities even when they
+// do not implement a feature's concrete representation.
+func (o Objects) Refs() []objectidentity.ID {
+	result := make([]objectidentity.ID, 0, len(o.values))
+	for _, object := range o.values {
+		result = append(result, object.Ref)
+	}
+	slices.SortFunc(result, CompareRefs)
+	return result
 }
 
 // CompareRefs orders structured comparison identities component by component.

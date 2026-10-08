@@ -9,7 +9,8 @@ import (
 )
 
 // Fields returns every exported struct field reachable from
-// [schemamodel.Database], sorted, as `<package>.<Type>.<Field>`.
+// [schemamodel.Database] and the registered desired feature models, sorted
+// as `<package>.<Type>.<Field>`.
 //
 // It walks the TYPE graph, so the answer does not depend on any value: a field
 // is here because the model has it, not because a fixture happened to populate
@@ -19,6 +20,9 @@ import (
 func Fields() []string {
 	found := make(map[string]bool)
 	walkType(reflect.TypeFor[schemamodel.Database](), found, make(map[reflect.Type]bool))
+	for _, model := range featureCodecs() {
+		walkType(reflect.TypeOf(model.Codec.Prototype), found, make(map[reflect.Type]bool))
+	}
 	names := make([]string, 0, len(found))
 	for name := range found {
 		names = append(names, name)
@@ -85,7 +89,7 @@ func Populated(schema schemamodel.Database, path string) bool {
 	return populated
 }
 
-// deepCopyDatabase returns a database sharing no memory with its input.
+// deepCopyDatabase copies mutable fields and retains immutable feature snapshots.
 //
 // The copy lands in a typed variable rather than coming back through
 // reflect.Value.Interface, so there is no assertion to get wrong.
@@ -96,8 +100,8 @@ func deepCopyDatabase(schema schemamodel.Database) schemamodel.Database {
 }
 
 // Ablate returns a copy of schema with every instance of the field named by path
-// set to its zero value. The input is not modified: the copy shares no slice,
-// map or pointer with it.
+// set to its zero value. Mutable fields are copied; immutable feature snapshots
+// are replaced through their public constructors when ablation changes them.
 func Ablate(schema schemamodel.Database, path string) schemamodel.Database {
 	// The walk is handed the ADDRESS of the copy, which is what makes the
 	// fields it reaches settable; a value obtained from reflect.ValueOf is not.
@@ -121,6 +125,9 @@ func visitField(value reflect.Value, path string, visit func(reflect.Value)) {
 
 	var walk func(reflect.Value)
 	walk = func(v reflect.Value) {
+		if visitFeatures(v, walk) {
+			return
+		}
 		switch v.Kind() {
 		case reflect.Pointer, reflect.Interface:
 			if !v.IsNil() {
@@ -158,6 +165,11 @@ func visitField(value reflect.Value, path string, visit func(reflect.Value)) {
 // already wrote into the input. Measured while building this package: four host
 // fields read as unobservable for that reason alone.
 func deepCopy(value reflect.Value) reflect.Value {
+	// Feature containers own immutable private snapshots. Copy the handle;
+	// their public accessors clone before visitFeatures can change a payload.
+	if immutableFeatures(value.Type()) {
+		return value
+	}
 	switch value.Kind() {
 	case reflect.Pointer:
 		if value.IsNil() {

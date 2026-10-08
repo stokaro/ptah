@@ -1,12 +1,15 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
@@ -16,7 +19,10 @@ import (
 // planMySQL renders the plan for diff on MySQL 8.4.
 func planMySQL(c *qt.C, diff *difftypes.SchemaDiff) string {
 	c.Helper()
-	nodes, err := mysql.NewForDialect(platform.MySQL, capability.MySQL84()).GenerateMigrationAST(diff)
+	nodes, err := mysql.NewForDialect(platform.MySQL, capability.MySQL84()).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities(platform.MySQL, capability.MySQL84(), nodes...)
 	c.Assert(err, qt.IsNil)
@@ -56,7 +62,7 @@ func TestPlanner_ForeignKeysKeepTheirMatchType(t *testing.T) {
 		{
 			name: "a table the plan creates",
 			diff: withDeclaredObjects(&difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(desired, "users", "posts"),
+				TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "users", "posts"),
 			}, desired),
 			want: "FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) MATCH FULL",
 		},

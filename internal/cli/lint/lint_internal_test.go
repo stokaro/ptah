@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/migrationfile"
 )
@@ -77,6 +78,8 @@ func TestPrepareReportOptions_CapturesLocalDirectoryBeforeBuild(t *testing.T) {
 		qt.IsNil,
 	)
 
+	got.Runtime, err = builtin.New()
+	c.Assert(err, qt.IsNil)
 	report, err := migrationlintreport.Build(c.Context(), got, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)

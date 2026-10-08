@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -216,7 +218,7 @@ func TestDeduplicate_KeepsConstraintsThatDifferInHowTheyCheck(t *testing.T) {
 func TestCompareSchemas_UnnamedChecksThatDifferInEnforcementPairWithThemselves(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(oneConditionTwice(), oneConditionTwice(), platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), oneConditionTwice(), oneConditionTwice(), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -230,7 +232,7 @@ func TestCompareSchemas_UnnamedChecksThatDifferInEnforcementPairWithThemselves(t
 func TestCompareSchemas_AnUnnamedCheckAddedBesideItsEnforcedTwin(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(oneConditionTwice(), unnamedChecksDesired("hi > 0"), platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), oneConditionTwice(), unnamedChecksDesired("hi > 0"), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)

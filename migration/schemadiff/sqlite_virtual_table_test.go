@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -67,7 +69,7 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 			}
 			database := &catalog.Database{Tables: []catalog.Table{tt.dbTable}}
 
-			diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 			c.Assert(diff.TablesAdded, qt.HasLen, 0)
 			c.Assert(diff.TablesRemoved, qt.HasLen, 0)

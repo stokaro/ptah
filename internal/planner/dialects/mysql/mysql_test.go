@@ -1,12 +1,15 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
@@ -48,7 +51,10 @@ func TestPlanner_GenerateMigrationAST_EnumsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -98,7 +104,10 @@ func TestPlanner_GenerateMigrationAST_EnumsModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -174,10 +183,13 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
+			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, identifier.ForDialect("mysql"), tt.tablesAdded...)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -318,7 +330,10 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -366,7 +381,10 @@ func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -405,7 +423,10 @@ func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -439,11 +460,14 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "test_table"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "test_table"),
 	}
 
 	planner := mysql.New()
-	result, err := planner.GenerateMigrationAST(withDeclaredTables(diff, desired))
+	result, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTables(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result, qt.HasLen, 1)

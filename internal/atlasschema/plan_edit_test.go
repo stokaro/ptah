@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/safety"
 )
@@ -248,7 +250,7 @@ func TestPlanFileWithStatementsFromSQL_KeepsADeclaredRowDeletionDestructive(t *t
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Destructive, qt.IsTrue)
 
@@ -271,7 +273,7 @@ func TestPlanFileWithDirectiveHeader_KeepsADeclaredRowDeletionDestructive(t *tes
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
 	decorated := plan.WithDirectiveHeader([]atlasschema.PlanDirective{"atlas:txmode none"})

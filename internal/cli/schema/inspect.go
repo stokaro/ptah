@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -180,7 +181,12 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
+		Runtime:             runtime,
 		URLs:                sourceURLs,
 		URLFlag:             inspectSourceFlag(opts),
 		DevURL:              opts.devURL,

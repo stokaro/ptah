@@ -10,11 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -114,9 +116,12 @@ func TestPostgresLiveRoleReadBySchemaOwnerWithoutProtectedCatalogAccess(t *testi
 			Primary:    true,
 		}},
 	}
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, described, owner.Info(), nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, described, owner.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, owner.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, owner.Info().Dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 0)
 }

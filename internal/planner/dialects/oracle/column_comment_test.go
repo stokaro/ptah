@@ -1,12 +1,15 @@
 package oracle_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	oracleplanner "ptah.run/internal/planner/dialects/oracle"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -23,7 +26,10 @@ import (
 func TestPlanner_OraclePlansAColumnCommentOnItsOwn(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := oracleplanner.New().GenerateMigrationAST(columnCommentDiff("primary contact"))
+	nodes, err := oracleplanner.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		columnCommentDiff("primary contact"),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(setCommentOperations(nodes), qt.DeepEquals,
@@ -36,7 +42,10 @@ func TestPlanner_OraclePlansAColumnCommentOnItsOwn(t *testing.T) {
 func TestPlanner_OraclePlansAColumnCommentRemoval(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := oracleplanner.New().GenerateMigrationAST(columnCommentDiff(""))
+	nodes, err := oracleplanner.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		columnCommentDiff(""),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(setCommentOperations(nodes), qt.DeepEquals,
@@ -52,7 +61,10 @@ func TestPlanner_OracleStillModifiesAColumnThatChanged(t *testing.T) {
 		"nullable": "true -> false",
 	}
 
-	nodes, err := oracleplanner.New().GenerateMigrationAST(diff)
+	nodes, err := oracleplanner.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(setCommentOperations(nodes), qt.HasLen, 1)

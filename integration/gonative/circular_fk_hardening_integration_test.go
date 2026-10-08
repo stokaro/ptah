@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"  // registers the pgx driver for database/sql
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
@@ -142,7 +143,7 @@ ALTER TABLE ptah_cycle_read_137.right_nodes
 	// schema-local objects from the structured snapshot.
 	liveSchema.Roles = nil
 	liveSchema.Grants = nil
-	database := dbschematogo.ConvertDBSchemaToGoSchema(liveSchema, "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), liveSchema, "", must.Must(builtin.New())))
 	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		database,
 		conn.Info().Dialect,

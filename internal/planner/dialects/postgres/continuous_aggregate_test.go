@@ -1,12 +1,15 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -26,14 +29,17 @@ func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 	// The schema is empty on purpose. The aggregate the two halves render
 	// travels with the change, so the planner needs nothing else to write them
 	// (stokaro/ptah#2315).
-	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{
-		ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{{
-			Name: "public.hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
-			Desired: schemamodel.ContinuousAggregate{
-				Name: "hourly", Schema: "public", Body: "SELECT 2",
-			},
-		}},
-	})
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{
+			ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{{
+				Name: "public.hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
+				Desired: schemamodel.ContinuousAggregate{
+					Name: "hourly", Schema: "public", Body: "SELECT 2",
+				},
+			}},
+		},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(continuousAggregateVerbs(nodes), qt.DeepEquals, []string{"drop:hourly", "create:hourly"})
@@ -44,7 +50,10 @@ func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{Name: "public.hourly"}}})
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{Name: "public.hourly"}}},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(continuousAggregateVerbs(nodes), qt.DeepEquals, []string{"drop:public.hourly"})
@@ -60,10 +69,13 @@ func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 func TestPlanner_CreatesAnAggregateAfterTheHypertableItReads(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{
-		HypertablesAdded:          difftypes.HypertableChanges{{Table: "readings"}},
-		ContinuousAggregatesAdded: difftypes.ContinuousAggregateChanges{{Name: "hourly"}},
-	})
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{
+			HypertablesAdded:          difftypes.HypertableChanges{{Table: "readings"}},
+			ContinuousAggregatesAdded: difftypes.ContinuousAggregateChanges{{Name: "hourly"}},
+		},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(timescaleObjectOrder(nodes), qt.DeepEquals, []string{"hypertable:readings", "aggregate:hourly"})

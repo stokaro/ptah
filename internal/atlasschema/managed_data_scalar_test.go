@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -61,7 +63,7 @@ func TestPreparePlanFile_ResolvesADeclaredMomentTheWayTheRowReportDoes(t *testin
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: eventsSchema(schemamodel.ManagedValue{Tag: "timestamp", Text: "2024-03-01"}),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements, qt.HasLen, 0)
@@ -78,7 +80,7 @@ func TestPreparePlanFile_StillPlansAMomentTheDatabaseDoesNotHold(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: eventsSchema(schemamodel.ManagedValue{Tag: "timestamp", Text: "2024-03-01"}),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(planSQL(plan), qt.Contains, `UPDATE "events"`)

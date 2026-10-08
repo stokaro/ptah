@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -84,7 +85,7 @@ func TestSpannerLiveSchemaRoundTrip(t *testing.T) {
 	// 3. Convergence. Without the `character varying` fold this reports a type
 	// change on every run, and applying it fails: Spanner refuses to alter a
 	// column an index refers to.
-	settled := schemadiff.CompareWithDialect(description, live, platform.Spanner)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Spanner, must.Must(builtin.New())))
 	c.Assert(settled.TablesModified, qt.HasLen, 0,
 		qt.Commentf("a second run must have nothing to do"))
 	c.Assert(settled.TablesAdded, qt.HasLen, 0)
@@ -209,7 +210,7 @@ func TestSpannerLiveSequenceRoundTrip(t *testing.T) {
 	c.Assert(spannerLiveSequenceNames(live.Sequences), qt.Contains, name,
 		qt.Commentf("the reader must find the sequence it just applied"))
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Spanner)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Spanner, must.Must(builtin.New())))
 	c.Assert(settled.SequencesAdded, qt.HasLen, 0,
 		qt.Commentf("a second run must have nothing to do"))
 	c.Assert(settled.SequencesModified, qt.HasLen, 0)

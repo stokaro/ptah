@@ -53,9 +53,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
 )
@@ -167,7 +169,7 @@ func readScopePlan(c *qt.C, devURL string, from, to []string) []string {
 		// the measurement, not the parse.
 		IgnoreUnknownHCLNames: true,
 		Diagnostics:           io.Discard,
-	})
+		Runtime:               must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	return boundaryStripComments(readScopeStatements(diff.Changes))
 }

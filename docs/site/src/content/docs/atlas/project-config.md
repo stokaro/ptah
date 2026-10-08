@@ -142,7 +142,7 @@ env "local" {
 | `format.migrate.status` | Default `migrate status --format`. |
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.skip.drop_column` | Suppresses column drops in supported local diff/apply plans. |
-| `diff.skip.drop_index` | Suppresses standalone index drops in supported local diff/apply plans. |
+| `diff.skip.drop_index` | Suppresses standalone index drops and their comment cleanup in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
 

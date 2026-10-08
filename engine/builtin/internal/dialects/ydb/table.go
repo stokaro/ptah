@@ -8,10 +8,15 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbextensions"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
@@ -172,15 +177,26 @@ func (r *Renderer) followingStatements(
 // and keyType is the YDB type of the first key column, which splits a topic
 // that starts with more than one partition.
 func (r *Renderer) changefeedStatements(node *ast.CreateTableNode, indexes []string, keyType string) ([]string, error) {
-	if len(node.Changefeeds) == 0 {
+	if err := ydbextensions.ValidateObjects(DialectName, r.caps, node.OwnedObjects); err != nil {
+		return nil, err
+	}
+	parent := objectidentity.NewBuilder(identifier.ForDialect("ydb")).Table(node.Name)
+	if node.OwnedObjects.ForParent(parent).Len() != node.OwnedObjects.Len() {
+		return nil, fmt.Errorf("%w: CREATE TABLE %s carries feature objects of another parent", ptaherr.ErrInvalidSchemaDiff, node.Name)
+	}
+	changefeeds, err := ydbschema.DesiredChangefeeds(node.OwnedObjects, parent.Schema.Source, parent.Name.Source)
+	if err != nil {
+		return nil, err
+	}
+	if len(changefeeds) == 0 {
 		return nil, nil
 	}
 	subject := fmt.Sprintf("table %q", node.Name)
-	if reason := ydbchangefeed.NameRefusal(node.Changefeeds, indexes); reason != "" {
+	if reason := ydbchangefeed.NameRefusal(changefeeds, indexes); reason != "" {
 		return nil, refuseFact(subject, reason)
 	}
 	var statements []string
-	for _, changefeed := range node.Changefeeds {
+	for _, changefeed := range changefeeds {
 		if err := r.checkChangefeed(node.Name, changefeed); err != nil {
 			return nil, err
 		}
@@ -194,7 +210,7 @@ func (r *Renderer) changefeedStatements(node *ast.CreateTableNode, indexes []str
 
 // checkChangefeed refuses a changefeed the target cannot hold: one needing a
 // capability it lacks, named by the key, and one YDB refuses on every line.
-func (r *Renderer) checkChangefeed(table string, changefeed ast.ChangefeedSpec) error {
+func (r *Renderer) checkChangefeed(table string, changefeed ydbschema.ChangefeedSpec) error {
 	refusal := ydbchangefeed.Check(table, changefeed, r.caps)
 	switch {
 	case refusal == nil:

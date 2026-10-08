@@ -206,3 +206,13 @@ func indexOf(haystack, needle string) int {
 	}
 	return -1
 }
+
+func TestValidateSchemaCancellationIsNotASchemaProblem(t *testing.T) {
+	c := qt.New(t)
+	source := writeSchema(c, bookshop)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	response, err := schemaSession(c, source).ValidateSchema(ctx, agentapi.ValidateSchemaRequest{Source: source, Dialect: "postgres"})
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+	c.Assert(response, qt.IsNil)
+}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
@@ -18,6 +19,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -84,7 +86,7 @@ func TestOracleRoleCatalogIsNotDescribedWithoutPrivilegeE2E(t *testing.T) {
 	// And the consequence, at the seam that decides what happens next: a
 	// declaration naming the role plans nothing, rather than planning a
 	// CREATE ROLE this account cannot execute.
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.RolesAdded, qt.HasLen, 0)
 	c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -159,7 +161,7 @@ func TestOracleRolesAndGrantsAreReadWithPrivilegeE2E(t *testing.T) {
 		{table: "rc_docs", privileges: []string{"SELECT", "INSERT"}},
 		{table: "rc_titles", privileges: []string{"SELECT"}},
 	})
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleRoleDiffSummary(diff), qt.DeepEquals, []string(nil))
 }
@@ -345,8 +347,11 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(declared, before, platform.Oracle)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, before, platform.Oracle, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity: the plan really carries the role and the grants. Without
@@ -369,12 +374,15 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleRoleNames(after.Roles), qt.Contains, role)
 
-	settled := schemadiff.CompareWithDialect(declared, after, platform.Oracle)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, after, platform.Oracle, must.Must(builtin.New())))
 	c.Assert(oracleRoleDiffSummary(settled), qt.DeepEquals, []string(nil))
 
 	// And the plan the settled comparison produces is empty, which is the
 	// statement-level form of the same claim.
-	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(settled, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		settled, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleStatementsNaming(settledStatements, "ROLE"), qt.HasLen, 0)
 	c.Assert(oracleStatementsNaming(settledStatements, "GRANT"), qt.HasLen, 0)

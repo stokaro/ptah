@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -25,7 +26,7 @@ func TestWriteComparisonReportsUndecidedWithoutDifferences(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(stdout, stderr, &difftypes.SchemaDiff{}, []coverage.Object{undecidedRole("reporter")}, "", "mysql")
+	writeComparison(stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{Common: []coverage.Object{undecidedRole("reporter")}}, "", "mysql")
 
 	c.Assert(stdout.String(), qt.Equals, `No differences planned, but 1 declared object could not be decided:
   role "reporter"
@@ -48,7 +49,7 @@ func TestWriteComparisonReportsUndecidedBesideDifferences(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	writeComparison(stdout, stderr, diff,
-		[]coverage.Object{undecidedRole("reporter"), undecidedRole("auditor")},
+		schemadiff.Diagnostics{Common: []coverage.Object{undecidedRole("reporter"), undecidedRole("auditor")}},
 		"CREATE TABLE users (id INT);\n", "mysql")
 
 	c.Assert(stdout.String(), qt.Equals, `Differences detected (1 category):

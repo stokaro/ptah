@@ -186,16 +186,19 @@ ptah_schema_streaming_queries{dialect="sqlite"} 0
 # EOF
 ```
 
-That block is the whole answer, and the `HELP` lines are the list of families:
-no other page enumerates them. Three properties of the block are worth stating.
-The family list is fixed rather than derived from the target, so a run against
-PostgreSQL or MySQL emits the same names in the same order and a dashboard built
-against one engine keeps working against another. Every family appears on every
-run, at zero where the reader found none. The body ends with a literal `# EOF`
-line, which is how a collector separates a complete scrape from a truncated one.
+The `HELP` lines describe the metric families. The selected build determines
+their names and order, independently of the target. Every registered family
+appears on every run, at zero where the captured schema holds no values. Zero
+does not establish that inspection covered that family. The body ends with a
+literal `# EOF` line, which lets a collector identify a complete scrape.
+
+An unavailable feature reporter or an invalid count fails the command before it
+writes the scrape. An embedding application can select additional model
+reporters through the [public Go API](../../extend/public-api/).
 
 On YDB, standalone topics and their consumers are separate from table
-changefeeds and their consumers. External tables and their columns also have
+changefeeds and their consumers. Disabled changefeeds still contribute to the
+counts. External tables and their columns also have
 separate families; the ordinary table and column counters exclude them.
 Secrets contribute only an object count, never their names or values.
 

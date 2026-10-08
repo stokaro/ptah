@@ -1,16 +1,19 @@
 package mysql
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/deporder"
@@ -56,7 +59,7 @@ const (
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes, err := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		return err
 //	}
@@ -1310,7 +1313,7 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 //		},
 //	}
 //
-//	nodes, err := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		return err
 //	}
@@ -1337,14 +1340,23 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 // Returns a slice of AST nodes representing SQL statements or an error when
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // MySQL-specific visitor.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) (plannedNodes []ast.Node, planErr error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			plannedNodes, planErr = nil, err
+		}
+	}()
+
 	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
+	if err := schemaprecondition.RefuseFeatureChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseYDBObjects(p.targetDialect(), diff); err != nil {

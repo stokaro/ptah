@@ -11,12 +11,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -74,7 +76,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(current),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(replacementDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -84,7 +86,10 @@ CREATE TABLE [dbo].[users] (
 		{Name: "idx_email", TableName: "dbo.users"},
 	})
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -101,7 +106,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(actual),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
@@ -141,7 +146,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(current),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(replacementDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -151,7 +156,10 @@ CREATE TABLE [dbo].[users] (
 		{Name: "idx_users_lookup", TableName: "dbo.users"},
 	})
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -168,7 +176,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(actual),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
@@ -217,7 +225,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(current),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	want := []difftypes.IndexRef{
@@ -226,7 +234,10 @@ CREATE TABLE [dbo].[users] (
 	c.Assert(replacementDiff.IndexAdditions(), qt.DeepEquals, want)
 	c.Assert(replacementDiff.IndexRemovals(), qt.DeepEquals, want)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -252,7 +263,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(actual),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
@@ -294,7 +305,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(current),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	want := []difftypes.IndexRef{
@@ -303,7 +314,10 @@ CREATE TABLE [dbo].[users] (
 	c.Assert(replacementDiff.IndexAdditions(), qt.DeepEquals, want)
 	c.Assert(replacementDiff.IndexRemovals(), qt.DeepEquals, want)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -322,7 +336,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(actual),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
@@ -363,7 +377,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(current),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(createDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -371,7 +385,10 @@ CREATE TABLE [dbo].[users] (
 	})
 	c.Assert(createDiff.IndexRemovals(), qt.HasLen, 0)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(createDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		createDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains, "WHERE status = 1")
@@ -387,7 +404,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(actual),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
@@ -424,7 +441,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(current),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -432,7 +449,10 @@ CREATE TABLE [dbo].[users] (
 	})
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	_, err = conn.ExecContext(ctx, statements[0])
@@ -445,7 +465,7 @@ CREATE TABLE [dbo].[users] (
 		conn,
 		target,
 		indexOnlySchema(actual),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
@@ -566,7 +586,7 @@ func TestSQLServerLiveIdentifierSemantics_TargetTableCollision_FailurePath(t *te
 		conn,
 		target,
 		&catalog.Database{},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -599,7 +619,7 @@ func TestSQLServerLiveIdentifierSemantics_EmbeddedColumnCollision_FailurePath(t 
 		conn,
 		target,
 		&catalog.Database{},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

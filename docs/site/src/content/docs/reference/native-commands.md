@@ -568,9 +568,11 @@ the `undecided` key of the JSON output.
 ## Schema object counts
 
 `ptah schema stats` reads a live database and writes one OpenMetrics gauge per
-object kind, ending with a literal `# EOF` line. The family list is fixed rather
-than derived from the target, so every run emits the same names in the same
-order and a family the reader found none of is reported at `0`.
+object kind, ending with a literal `# EOF` line. The selected build determines
+the family list, independently of the target. Runs of that build emit the same
+names in the same order. A zero counts captured values; it does not establish
+that inspection covered every object of that kind. An unavailable feature
+reporter fails the command before it writes the scrape.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |

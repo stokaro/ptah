@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -293,6 +294,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	field = handleEnumTypes(field, enums, targetPlatform)
 
 	column := ast.NewColumn(field.Name, field.Type)
+	column.Facets = field.Facets
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
 	column.EnumType = declaredEnum(declaredType, enums) != nil
@@ -404,6 +406,7 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 
 	// Create column with basic properties
 	column := ast.NewColumn(field.Name, field.Type)
+	column.Facets = field.Facets
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
 	column.EnumType = declaredEnum(declaredType, enums) != nil
@@ -729,7 +732,7 @@ func fromTableWithFieldConverter(
 	createTable.RowTTL = newTable.RowTTL.Clone()
 	createTable.RowDeletionPolicy = newTable.RowDeletionPolicy.Clone()
 	createTable.YDBColumnFamilies = ast.CloneYDBColumnFamilies(newTable.YDBColumnFamilies)
-	createTable.Changefeeds = ast.CloneChangefeeds(newTable.Changefeeds)
+	createTable.Facets = newTable.Facets
 	createTable.YDBPartitioning = newTable.YDBPartitioning.Clone()
 	createTable.YDBColumnTable = newTable.YDBColumnTable.Clone()
 	// Raw SQL the author asked to be appended to CREATE TABLE. It is carried
@@ -923,6 +926,7 @@ func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
 	if node == nil {
 		return nil
 	}
+	node.Facets = constraint.Facets
 	node.Comment = constraint.Comment
 	node.KeyBlockSize = constraint.KeyBlockSize
 	// Only a CHECK or a foreign key can stay unvalidated, and the renderer
@@ -1211,6 +1215,7 @@ func FromIndex(index schemamodel.Index) *ast.IndexNode {
 // agree about every one that is here.
 func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	indexNode := ast.NewIndex(index.Name, tableName, indexFields(index)...)
+	indexNode.Facets = index.Facets
 	if len(index.Parts) > 0 {
 		indexNode.SetParts(toASTIndexParts(index.Parts))
 	}
@@ -2235,15 +2240,17 @@ func FromGlobalDefaultPrivilegeRevoke(defaultPrivilege schemamodel.DefaultPrivil
 // applied based on the targetPlatform parameter. This ensures that the generated
 // AST nodes contain the appropriate configurations for the target database.
 //
-// # Every declared object reaches a renderer
+// # Every common declaration reaches a renderer
 //
-// Whether an object kind is emitted is NOT a question this function answers.
-// Every object the schema declares is converted to a node and handed to the
+// Whether a common object kind is supported is not decided here.
+// Every common object the schema declares is converted to a node and handed to the
 // target's renderer, which answers from its capability set with a statement, a
 // supported equivalent, or a named skip. The dialect predicates left in this
 // function decide ORDER (MySQL wants a foreign key's indexes before ADD
 // CONSTRAINT) and COLUMN MODELING (SQLite carries foreign keys inline; four
 // engines model an enum on the column rather than as a type) -- never presence.
+// Feature state without an AST placement is refused before any node is visited,
+// so no declaration disappears before a renderer can account for it.
 //
 // It is written that way because the alternative was measured and it is silent.
 // Deleting a node here leaves nothing to report it: `ptah schema render`
@@ -2256,8 +2263,9 @@ func FromGlobalDefaultPrivilegeRevoke(defaultPrivilege schemamodel.DefaultPrivil
 //
 // # Return Value
 //
-// WalkDatabase stops at the first error returned by visit and returns that
-// error unchanged. A nil visitor is refused.
+// WalkDatabase validates input identities and feature placement before visiting
+// nodes. It stops at the first visitor error and returns that error unchanged.
+// A nil visitor is refused. Callers must discard earlier output on failure.
 func WalkDatabase(
 	database schemamodel.Database,
 	targetPlatform string,
@@ -2265,6 +2273,9 @@ func WalkDatabase(
 ) error {
 	if visit == nil {
 		return fmt.Errorf("walk database schema: nil visitor")
+	}
+	if err := validateFeatureLowering(database, targetPlatform); err != nil {
+		return err
 	}
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
@@ -2497,19 +2508,21 @@ func appendPreTableStatements(
 }
 
 // CollectDatabase collects the nodes [WalkDatabase] visits into an
-// ast.StatementList. It remains the compatibility entry point for callers that
-// need a complete AST; renderers should consume WalkDatabase directly.
-func CollectDatabase(database schemamodel.Database, targetPlatform string) *ast.StatementList {
+// ast.StatementList. It returns a nil list on any validation or lowering error.
+// Renderers can consume WalkDatabase directly when they discard all output on
+// failure; consumers needing an atomic result should use this collector.
+func CollectDatabase(database schemamodel.Database, targetPlatform string) (*ast.StatementList, error) {
 	statements := &ast.StatementList{
 		Statements: make([]ast.Node, 0),
 	}
-	// The collector never returns an error, and WalkDatabase has no other error
-	// source. Keep this wrapper infallible for its existing callers.
-	_ = WalkDatabase(database, targetPlatform, func(node ast.Node) error {
+	err := WalkDatabase(database, targetPlatform, func(node ast.Node) error {
 		statements.Statements = append(statements.Statements, node)
 		return nil
 	})
-	return statements
+	if err != nil {
+		return nil, err
+	}
+	return statements, nil
 }
 
 func visitDatabaseNodes(visit func(ast.Node) error, nodes ...ast.Node) error {
@@ -2620,6 +2633,8 @@ func appendTableStatements(
 		if sqliteTarget {
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
+		parent := objectidentity.NewBuilder(identifier.ForDialect(targetPlatform)).TableParts(table.Schema, table.Name)
+		tableNode.OwnedObjects = database.FeatureObjects.ForParent(parent)
 		after := addTableConstraints(tableNode, table, allFields, database.Constraints, mode, targetPlatform)
 		if err := visit(withInlineIndexes(tableNode, inlineIndexes[table.QualifiedName()])); err != nil {
 			return nil, err

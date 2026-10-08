@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/renderer"
 	"ptah.run/engine"
 )
@@ -12,7 +13,7 @@ import (
 // service without importing the built-in composition or any database driver.
 func ExampleNew() {
 	service := renderingFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
-		return renderer.Result{SQL: "rendered for " + request.Target}, nil
+		return renderer.Result{Complete: true, Fragments: []string{"rendered for " + request.Target}}, nil
 	})
 	runtime, err := engine.New(engine.Provider{
 		ID:      "example.org/my-provider",
@@ -22,12 +23,12 @@ func ExampleNew() {
 		fmt.Println(err)
 		return
 	}
-	result, err := runtime.Render(context.Background(), renderer.Request{Target: "custom"})
+	result, err := runtime.Render(context.Background(), renderer.Request{Target: "custom", Nodes: []ast.Node{&ast.StatementList{}}})
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(result.SQL)
+	fmt.Println(result.SQL())
 	fmt.Println(runtime.Targets())
 	// Output:
 	// rendered for custom

@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpatch"
 	"ptah.run/internal/agentpolicy"
@@ -50,7 +52,7 @@ func migrationScope(c *qt.C) *agentworkspace.Scope {
 // the checks rather than a stand-in for them.
 func realGates(c *qt.C) *agentgate.Runner {
 	c.Helper()
-	runner, err := agentgate.New(agentgate.Options{Dialect: "postgres"})
+	runner, err := agentgate.New(agentgate.Options{Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	return runner
 }

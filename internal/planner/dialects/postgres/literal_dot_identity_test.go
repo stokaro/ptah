@@ -1,11 +1,14 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -21,8 +24,8 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 		// qualified name of the other, so asking for a creation by that string
 		// is the ambiguity this test exists to keep apart.
 		TablesAdded: difftypes.TableChanges{
-			difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`),
-			difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data"),
+			difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`, identifier.ForDialect("postgres")),
+			difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data", identifier.ForDialect("postgres")),
 		},
 		IndexesAdded: difftypes.IndexChanges{
 			{Index: schemamodel.Index{Name: "literal_lookup", Fields: []string{"id"}}, TableName: `"tenant.data"`},
@@ -35,7 +38,10 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -53,7 +59,10 @@ func TestPlanner_LiteralDotAndQualifiedTableRemovalsRemainDistinct(t *testing.T)
 		TablesRemoved: []string{`"tenant.data"`, "tenant.data"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

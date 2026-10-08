@@ -66,7 +66,7 @@ func keyedSchema() *schemamodel.Database {
 func TestRender_WritesEveryKeyDBMLCanSpell(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := dbmlrender.Render(keyedSchema(), dbmlrender.Options{})
+	result, err := renderDBML(c, keyedSchema(), dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Equals, `Table "bookings" {
@@ -119,7 +119,7 @@ Ref "two_ref_b": "two"."ref" > "r"."id" [delete: cascade]
 func TestRender_NamesWhatTheKeysCannotCarry(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := dbmlrender.Render(keyedSchema(), dbmlrender.Options{})
+	result, err := renderDBML(c, keyedSchema(), dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Omitted, qt.DeepEquals, []string{
@@ -138,7 +138,7 @@ func TestRender_NamesWhatTheKeysCannotCarry(t *testing.T) {
 // Omitted names.
 func TestRender_KeysReadBack(t *testing.T) {
 	c := qt.New(t)
-	rendered, err := dbmlrender.Render(keyedSchema(), dbmlrender.Options{})
+	rendered, err := renderDBML(c, keyedSchema(), dbmlrender.Options{})
 	c.Assert(err, qt.IsNil)
 
 	read, err := dbmlparse.Parse(rendered.DBML, dbmlparse.Options{})

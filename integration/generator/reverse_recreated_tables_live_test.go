@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -59,7 +61,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 
 	// 2. The up migration under test: the table goes away.
 	target := rrtTargetSchema()
-	upDiff := schemadiff.CompareWithDialect(target, dbPrior, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, dbPrior, "postgres", must.Must(builtin.New())))
 	c.Assert(upDiff.TablesRemoved, qt.DeepEquals, []string{rrtGadgets})
 
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)

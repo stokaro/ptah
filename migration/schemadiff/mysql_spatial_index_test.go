@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -75,11 +77,11 @@ func TestCompareWithDialect_MariaDBSpatialAgainstPlainIsAChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				spatialDesiredSchema("SPATIAL"),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), spatialDesiredSchema("SPATIAL"),
 				spatialDatabaseSchema("BTREE"),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.HasChanges(), qt.IsTrue,
 				qt.Commentf("a BTREE index does not satisfy a requested SPATIAL index: %+v", diff))
@@ -111,11 +113,11 @@ func TestCompareWithDialect_MariaDBMatchingSpatialIndexesAreSynced(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				spatialDesiredSchema("SPATIAL"),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), spatialDesiredSchema("SPATIAL"),
 				spatialDatabaseSchema("SPATIAL"),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -145,11 +147,11 @@ func TestCompareWithDialect_MariaDBAPlainIndexIsSyncedAgainstAnyReportedMethod(t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				spatialDesiredSchema(""),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), spatialDesiredSchema(""),
 				spatialDatabaseSchema(test.method),
-				"mariadb",
-			)
+				"mariadb", must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})

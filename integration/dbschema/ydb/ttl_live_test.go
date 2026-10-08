@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
@@ -18,6 +19,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -218,10 +220,12 @@ func TestYDBTTL_KeepsARunIntervalYQLCannotWrite(t *testing.T) {
 
 			changed := ttlEvents(&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "PT2H"}, "created_at")
 			info := conn.Info()
-			diff, err := schemadiff.CompareWithDatabaseInfo(changed, live, info, nil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), changed, live, info, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-				diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+				context.Background(), must.Must(builtin.New()),
+				diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*the row deletion policy of table "ptah_ydb_ttl.events": the table's TTL carries `+
 				`a run interval or a tiering policy Ptah does not model, and SET \(TTL = \.\.\.\) resets it .*`)

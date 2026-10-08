@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/safety"
@@ -31,7 +33,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 		},
 	}
 
-	specs, assessments, err := planGeneratedMigrationSpecs(
+	specs, assessments, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		diff,
 		indexOnlyGeneratedSchema(),
 		&catalog.Database{},
@@ -77,7 +79,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 		},
 	}
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		diff,
 		indexOnlyGeneratedSchema(),
 		dbSchema,
@@ -124,7 +126,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexKeepsRedefinition(t *testing.T
 		}},
 	}
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		diff,
 		indexOnlyGeneratedSchema(),
 		dbSchema,
@@ -160,7 +162,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexPolicyForcesConcurrent(t *te
 		Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 0}},
 	}
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		indexOnlyDiff(),
 		indexOnlyGeneratedSchema(),
 		dbSchema,

@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -59,10 +61,10 @@ func TestCompareWithDatabaseInfo_ValidatesTargetForeignKeys_FailurePath(t *testi
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				test.schema,
+				t.Context(), test.schema,
 				&catalog.Database{},
 				catalog.ServerInfo{Dialect: test.dialect, IdentifierSemantics: test.semantics},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, test.wantIs, qt.Commentf("error: %v", err))

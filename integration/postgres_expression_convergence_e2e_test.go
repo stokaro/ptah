@@ -10,11 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -82,7 +84,7 @@ func TestPostgresIndexAndPolicyExpressionsConvergeE2E(t *testing.T) {
 
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx, conn, expressionDeclaration("lower(code)", "unit >= 0", "owner = 'x'"),
-		read, config.DefaultCompareOptions())
+		read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
@@ -93,13 +95,13 @@ func TestPostgresIndexAndPolicyExpressionsConvergeE2E(t *testing.T) {
 	// convergence above is not a comparison that always agrees.
 	changedIndex, err := schemadiff.CompareWithDatabase(
 		ctx, conn, expressionDeclaration("upper(code)", "unit >= 0", "owner = 'x'"),
-		read, config.DefaultCompareOptions())
+		read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(changedIndex.IndexesAdded, qt.Not(qt.HasLen), 0)
 
 	changedPolicy, err := schemadiff.CompareWithDatabase(
 		ctx, conn, expressionDeclaration("lower(code)", "unit >= 0", "owner = 'y'"),
-		read, config.DefaultCompareOptions())
+		read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(changedPolicy.RLSPoliciesModified, qt.HasLen, 1)
 }

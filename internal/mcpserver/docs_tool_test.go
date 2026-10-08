@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpolicy"
@@ -96,7 +98,7 @@ func docsSession(c *qt.C, docs agentpolicy.Verdict) *mcp.ClientSession {
 		Rules:  []agentpolicy.Rule{{Capability: agentpolicy.DocsRead, Verdict: docs}},
 	})
 	c.Assert(err, qt.IsNil)
-	gates, err := agentgate.New(agentgate.Options{Dialect: "postgres"})
+	gates, err := agentgate.New(agentgate.Options{Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Broker: agentpolicy.NewBroker(policy),

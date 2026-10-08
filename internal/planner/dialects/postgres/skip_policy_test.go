@@ -1,9 +1,11 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -30,7 +32,10 @@ func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 }
 
 func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

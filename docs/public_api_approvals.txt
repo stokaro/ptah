@@ -393,7 +393,10 @@ v0.12.0 ptah.run/core/platform/capability
 # leaves neutral rendering contracts in core/renderer. Callers use the new
 # ownership directly. This changes behavior; pre-v1, so no compatibility is
 # owed. The clean-break policy for #4140 and #4204 excludes compatibility
-# facades and aliases for the former factory surface.
+# facades and aliases for the former factory surface. Omission records belong
+# to core/renderer and are shared by selected whole-schema services. AST replies
+# require explicit completion and carry declaration refusals as diagnostic data,
+# preserving local input-node provenance through BatchRefusalError.
 v0.13.0 ptah.run/core/renderer
 
 # #4140 moves YDB changefeed operations out of core/ast into dialect/ydb/ydbast.
@@ -402,3 +405,73 @@ v0.13.0 ptah.run/core/renderer
 # is owed. No aliases or legacy reader remain. The implementation follows the
 # user-authorized extraction and #4204's clean-break policy.
 v0.13.0 ptah.run/core/ast
+
+# #4140 represents YDB changefeeds as individually named feature objects.
+# Their data leaves core/ast, and Table.Changefeeds is removed from desired and
+# observed models. The models gain immutable feature state; callers must use
+# selected codecs and handle representation-conversion errors. Table changes
+# carry individual owner-defined records instead of an aggregate feed slice.
+# Complete table declarations and observations move from difftypes into
+# core/schemacapture so contextual services need no migration-pipeline imports.
+# Callers use the neutral types directly; no old type aliases remain.
+# YAML managed-row parsing moves from schemamodel to core/manageddata so the
+# desired model imports no parser. LoadRows, LoadRowValues, and ResolveRows
+# replace the old model functions directly, without forwarding wrappers.
+# ScopeToTarget and OmissionsForTarget require a resolved TargetSelection and
+# return errors. Unknown targets cannot bypass filtering or erase declarations.
+# SchemaToAST now propagates identity and feature-lowering errors with no
+# partial statement list, rather than discarding the walker's refusal.
+# This changes behavior; pre-v1, so no compatibility is owed under the
+# authorized #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/core/schemamodel
+v0.13.0 ptah.run/catalog
+v0.13.0 ptah.run/migration/schemadiff/difftypes
+v0.13.0 ptah.run/atlascompat
+
+# #4140 makes comparison context-aware and runtime-selected. All entry points
+# return errors; reporting variants retain structured common/feature limits.
+# Non-reporting calls refuse incomplete evidence instead of returning a partial
+# diff as complete. TargetRuntime adds selected validation; DatabaseRuntime
+# also selects live probe rendering. Service failures abort comparison instead
+# of becoming unresolved normalization. ValidateDesiredSchema requires context
+# and a selected validation runtime with target resolution. The role-password
+# guard takes a resolved TargetSelection. Both resolve aliases before checks;
+# nil schemas are missing inputs. This changes behavior; pre-v1, so no
+# compatibility is owed.
+v0.13.0 ptah.run/migration/schemadiff
+
+# #4140 carries structured comparison limits through generation callbacks and
+# requires the selected runtime before generation or shadow verification work.
+# Generation and target-aware shadow comparison require validation too. Both
+# migration directions use the same selected validator. Live shadow comparisons
+# also require the selected probe renderer, and failures publish
+# no migration files.
+# This changes behavior; pre-v1, so no compatibility is owed.
+v0.13.0 ptah.run/migration/generator
+v0.13.0 ptah.run/migration/shadow
+
+# #4140 requires one explicitly selected feature runtime for declarative test
+# schema convergence. A missing runtime fails before database access. This
+# changes behavior; pre-v1, so no compatibility is owed.
+v0.13.0 ptah.run/migration/dbtest
+
+# #4140 requires explicit context and runtime selection for every planning
+# entry point and the Planner interface. Feature contributions use contextual
+# batches and rendering uses the same selection. There is no hidden built-in
+# fallback or old-signature wrapper. This changes behavior; pre-v1, so no
+# compatibility is owed under the authorized #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/migration/planner
+
+# #4140 requires caller context and an explicitly selected renderer for
+# AssessRendered and AssessRenderedWithCapabilities. A complete rendering
+# batch retains node provenance, rejects incomplete replies, and preserves
+# extension risk across every emitted statement. This changes behavior;
+# pre-v1, so no compatibility is owed under the authorized #4140/#4204 policy.
+v0.13.0 ptah.run/migration/safety
+
+# #4140 requires caller context for Import and Parser.Parse and replaces the
+# implicit WithDialect factories with WithRendering and an explicit service.
+# Selected providers retain omission reports, and failed rendering cannot emit
+# a partial migration directory. This changes behavior; pre-v1, so no
+# compatibility is owed under the authorized #4140/#4204 policy.
+v0.13.0 ptah.run/migration/importer

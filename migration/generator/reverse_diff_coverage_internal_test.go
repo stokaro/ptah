@@ -1,6 +1,6 @@
 package generator
 
-// White-box testing required: reverseSchemaDiffWithSchema is unexported, and
+// White-box testing required: reverseSchemaDiffWithPrior is unexported, and
 // this gate has to build the reverse plan directly in order to observe which
 // input fields it actually reads. The exported API surfaces only rendered SQL,
 // which cannot tell "the builder ignored this field" apart from "the planner
@@ -11,10 +11,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/deporder"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -23,7 +25,7 @@ import (
 // asks for: it fails when a field is added to SchemaDiff and the reverse builder
 // does not handle it.
 //
-// The enumeration is by reflection on purpose. reverseSchemaDiffWithSchema
+// The enumeration is by reflection on purpose. reverseSchemaDiffWithPrior
 // builds a fresh struct literal, and a literal is silent about the fields it
 // omits: nine of them -- views, materialized views and triggers -- were missing
 // for as long as those categories existed, so every rollback dropped them
@@ -40,7 +42,7 @@ func TestReverseSchemaDiff_AccountsForEverySchemaDiffField(t *testing.T) {
 	c := qt.New(t)
 
 	schema, dbSchema := reverseCoverageContext()
-	baseline := reverseSchemaDiffWithSchema(reverseCoverageDiff(), schema, dbSchema)
+	baseline := reverseCoveragePlan(c, reverseCoverageDiff(), schema, dbSchema)
 
 	diffType := reflect.TypeFor[difftypes.SchemaDiff]()
 	c.Assert(diffType.NumField() > 0, qt.IsTrue,
@@ -204,7 +206,7 @@ func assertReverseCoverageField(
 	withoutField := reverseCoverageDiff()
 	reflect.ValueOf(withoutField).Elem().Field(fieldIndex).SetZero()
 
-	reversed := reverseSchemaDiffWithSchema(withoutField, schema, dbSchema)
+	reversed := reverseCoveragePlan(c, withoutField, schema, dbSchema)
 
 	c.Assert(reflect.DeepEqual(baseline, reversed), qt.IsFalse,
 		qt.Commentf(
@@ -285,7 +287,8 @@ func TestReverseSchemaDiff_EveryModifiedCategoryReachesTheRenderedRollback(t *te
 			c.Assert(exists, qt.IsTrue,
 				qt.Commentf("SchemaDiff has no field %s; this gate is naming something that moved", test.field))
 
-			downSQL, err := generateDownMigrationSQL(test.diff, schema, dbSchema, "postgres")
+			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				test.diff, schema, dbSchema, "postgres")
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -404,6 +407,23 @@ func TestReverseCoverageDiff_PopulatesEverySchemaDiffField(t *testing.T) {
 func reverseCoverageDiff() *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
 	fillDistinctly(reflect.ValueOf(diff).Elem(), "")
+	diff.FeatureChanges = reverseCoverageFeatures()
+	// Captured children belong to their captured table. Keep the generated
+	// property values, but give their owner the same identity as that table.
+	for i := range diff.ObservedConstraintHosts {
+		host := &diff.ObservedConstraintHosts[i]
+		for j := range host.Indexes {
+			host.Indexes[j].Schema, host.Indexes[j].TableName = host.Table.Schema, host.Table.Name
+		}
+		for j := range host.Constraints {
+			host.Constraints[j].Schema, host.Constraints[j].TableName = host.Table.Schema, host.Table.Name
+		}
+	}
+	for i := range diff.TablesModified {
+		// Typed child changes have their own real YDB control. The generic
+		// common-field fixture cannot invent a valid owner payload.
+		diff.TablesModified[i].FeatureChanges = nil
+	}
 
 	// ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose object
 	// is a UNIQUE constraint of the same name on the same table, and
@@ -532,6 +552,9 @@ func reverseCoverageContext() (*schemamodel.Database, *catalog.Database) {
 // TestReverseCoverageDiff_PopulatesEverySchemaDiffField turns into a failure
 // naming the field and its type.
 func fillDistinctly(value reflect.Value, label string) {
+	if !value.CanSet() {
+		return
+	}
 	switch value.Kind() {
 	case reflect.String:
 		value.SetString(label)
@@ -588,10 +611,11 @@ func TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature(t *testing.T) {
 	// rollback drops by comes from the change rather than from a lookup in the
 	// schema beside it (stokaro/ptah#2315). The schema is still passed, and
 	// still empty of this routine, which is what shows the carry is the source.
-	reversed := reverseSchemaDiffWithSchema(
+	reversed := reverseForTest(t,
 		&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{
 			Function: schemamodel.Function{Name: "f", Parameters: "a text", Returns: "text", Body: "SELECT $1"},
-		}}}, &schemamodel.Database{}, nil)
+		}}}, &schemamodel.Database{}, nil, "postgres",
+	)
 
 	c.Assert(reversed.FunctionsRemoved.Removals(), qt.DeepEquals,
 		[]difftypes.RoutineRemoval{{Name: "f", Signature: new("a text")}})
@@ -608,8 +632,9 @@ func TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature(t *testing.T) {
 func TestReverseSchemaDiff_ARoutineDeclaringNoParametersDropsByItsEmptyList(t *testing.T) {
 	c := qt.New(t)
 
-	reversed := reverseSchemaDiffWithSchema(
-		&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "gone"}}}}, &schemamodel.Database{}, nil)
+	reversed := reverseForTest(t,
+		&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "gone"}}}}, &schemamodel.Database{}, nil, "postgres",
+	)
 
 	c.Assert(reversed.FunctionsRemoved.Removals(), qt.DeepEquals,
 		[]difftypes.RoutineRemoval{{Name: "gone", Signature: new("")}})
@@ -635,7 +660,9 @@ func TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary(t *testin
 		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.TablesAdded, qt.HasLen, 1)
 	c.Assert(reversed.DeclaredUserTypes.Domains, qt.HasLen, 1,
@@ -670,7 +697,9 @@ func TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables(t 
 		DeclaredTables: schema.Tables,
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	names := make([]string, 0, len(reversed.DeclaredTables))
 	for _, table := range reversed.DeclaredTables {
@@ -726,7 +755,9 @@ func TestReverseSchemaDiff_ARolledBackCascadeRecreatesThePriorViews(t *testing.T
 		DeclaredViewLikes: difftypes.ViewLikeVocabularyOf(schema),
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	names := make([]string, 0, len(reversed.DeclaredViewLikes.Views))
 	for _, view := range reversed.DeclaredViewLikes.Views {
@@ -788,7 +819,9 @@ func TestReverseSchemaDiff_ARolledBackColumnCarriesThePriorForeignKeys(t *testin
 		DeclaredForeignKeys: difftypes.ForeignKeyDeclarationsOf(schema),
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	names := make([]string, 0, len(reversed.DeclaredForeignKeys))
 	for _, declared := range reversed.DeclaredForeignKeys {
@@ -815,7 +848,9 @@ func TestReverseSchemaDiff_ARolledBackTableCarriesThePriorConstraints(t *testing
 	schema, dbSchema := reverseCoverageContext()
 	forward := &difftypes.SchemaDiff{TablesRemoved: []string{revCoverageTable}}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.TablesAdded, qt.HasLen, 1)
 	names := make([]string, 0, len(reversed.TablesAdded[0].Constraints))
@@ -879,7 +914,9 @@ func TestReverseSchemaDiff_ARolledBackRebuildUsesThePriorTableBody(t *testing.T)
 			schema, nil, removal, identifier.Semantics{}),
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 	c.Assert(reversed.DeclaredConstraintHosts, qt.HasLen, 1)
 	columns := make([]string, 0, len(reversed.DeclaredConstraintHosts[0].Fields))
 	for _, field := range reversed.DeclaredConstraintHosts[0].Fields {
@@ -933,7 +970,9 @@ func TestReverseSchemaDiff_ARolledBackDropOrderComesFromThePriorGraph(t *testing
 		DeclaredTableDependencies: deporder.GeneratedTableDependencies(schema),
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.DeclaredTableDependencies["prior_child"], qt.Contains, "prior_parent",
 		qt.Commentf("the edges come from the database being rolled back to"))
@@ -962,7 +1001,9 @@ func TestReverseSchemaDiff_ARolledBackFunctionOrderComesFromThePrior(t *testing.
 		DeclaredFunctions: difftypes.FunctionOrderingOf(schema),
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.DeclaredFunctions.Order, qt.Contains, "prior_only",
 		qt.Commentf("the ordering inputs come from the database being rolled back to"))
@@ -1008,7 +1049,9 @@ func TestReverseSchemaDiff_ARolledBackSchemaCarriesThePriorDeclaration(t *testin
 		},
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	reversed := reverseForTest(t,
+		forward, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.TablesAdded, qt.HasLen, 1)
 	c.Assert(reversed.DeclaredSchemas, qt.HasLen, 1)
@@ -1028,7 +1071,9 @@ func TestReverseSchemaDiff_AValidationHasNoReverse(t *testing.T) {
 	schema, dbSchema := reverseCoverageContext()
 	diff := &difftypes.SchemaDiff{ConstraintsValidated: []difftypes.ConstraintValidation{{TableName: "t", Name: "t_ck"}}}
 
-	reversed := reverseSchemaDiffWithSchema(diff, schema, dbSchema)
+	reversed := reverseForTest(t,
+		diff, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.HasChanges(), qt.IsFalse, qt.Commentf("%+v", reversed))
 }
@@ -1043,7 +1088,9 @@ func TestReverseSchemaDiff_ARotationHasNoReverse(t *testing.T) {
 	rotated := difftypes.SecretChanges{{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"}}
 	diff := &difftypes.SchemaDiff{SecretsRotated: rotated, DeclaredSecrets: rotated}
 
-	reversed := reverseSchemaDiffWithSchema(diff, schema, dbSchema)
+	reversed := reverseForTest(t,
+		diff, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.HasChanges(), qt.IsFalse, qt.Commentf("%+v", reversed))
 }
@@ -1061,7 +1108,9 @@ func TestReverseSchemaDiff_ADroppedSecretComesBackFromItsDefaultVariable(t *test
 		SecretsRemoved: difftypes.SecretChanges{{Name: "pg.password", Schema: "app"}},
 	}
 
-	reversed := reverseSchemaDiffWithSchema(diff, schema, dbSchema)
+	reversed := reverseForTest(t,
+		diff, schema, dbSchema, "postgres",
+	)
 
 	c.Assert(reversed.SecretsAdded, qt.DeepEquals, difftypes.SecretChanges{
 		{Name: "pg.password", Schema: "app", ValueEnv: "PTAH_SECRET_APP_PG_PASSWORD"},
@@ -1092,7 +1141,9 @@ func TestReverseSchemaDiff_ARolledBackSequenceChangeKeepsTheRestart(t *testing.T
 		}},
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, &schemamodel.Database{}, &catalog.Database{})
+	reversed := reverseForTest(t,
+		forward, &schemamodel.Database{}, &catalog.Database{}, "postgres",
+	)
 
 	c.Assert(reversed.CurrentDatabasePath, qt.Equals, "/local")
 	c.Assert(reversed.TablesModified, qt.HasLen, 1)
@@ -1127,7 +1178,8 @@ func TestReverseSchemaDiff_ARolledBackDataSourceTakesThePriorTables(t *testing.T
 		ExternalTablesRemoved:      difftypes.ExternalTableChanges{dropped},
 	}
 
-	reversed := reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "ydb")
+	reversed := reverseForTest(t,
+		diff, schema, dbSchema, "ydb")
 
 	c.Assert(reversed.ExternalDataSourcesChanged, qt.DeepEquals,
 		[]difftypes.ExternalDataSourceChange{{Declared: held, Current: declared}})

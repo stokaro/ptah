@@ -1,9 +1,11 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -62,7 +64,10 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 		}},
 	}
 
-	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities(platform.Spanner, capability.SpannerPostgres(), nodes...)
 

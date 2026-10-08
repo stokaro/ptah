@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -15,7 +16,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKChainTables(t *testing.
 			c := qt.New(t)
 			desired := dependencyOrderSchema()
 			diff := &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_accounts"),
+				TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_accounts"),
 			}
 
 			sql := renderMySQLFamily(c, dialect, diff, desired)
@@ -33,7 +34,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKDiamondTables(t *testin
 			c := qt.New(t)
 			desired := dependencyOrderSchema()
 			diff := &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_memberships", "ptah_fk_order_accounts"),
+				TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_memberships", "ptah_fk_order_accounts"),
 			}
 
 			sql := renderMySQLFamily(c, dialect, diff, desired)
@@ -76,7 +77,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueIndexBefore
 			c := qt.New(t)
 			desired := referencedUniqueKeySchema()
 			diff := &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
+				TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "ptah_fk_order_children", "ptah_fk_order_parents"),
 				IndexesAdded: difftypes.IndexChanges{
 					{Index: schemamodel.Index{
 						StructName: "PtahFKOrderParent",
@@ -101,7 +102,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueConstraintB
 			c := qt.New(t)
 			desired := referencedUniqueKeySchema()
 			diff := &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
+				TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "ptah_fk_order_children", "ptah_fk_order_parents"),
 				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:      "uq_ptah_fk_order_parents_code",
 					TableName: "ptah_fk_order_parents",

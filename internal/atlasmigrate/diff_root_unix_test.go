@@ -200,6 +200,7 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 			defer dbschema.CloseAndWarn(conn)
 
 			opts := atlasmigrate.DiffOptions{
+				Runtime:     selectedRuntime(c),
 				Dir:         dirFlag,
 				Root:        test.projectRoot(c, root),
 				Desired:     localDesiredSet(c, "file://"+schemaPath),
@@ -255,6 +256,7 @@ func TestGenerateDiff_AbsoluteAncestorSymlinkIsRefusedBeforePlanning(t *testing.
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         filepath.Join(root, "nest", "migrations"),
 		Root:        openDiffProjectRoot(c, root),
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
@@ -280,6 +282,7 @@ func TestGenerateDiff_CreatesMissingMigrationDirectoryInsideOpenedRoot(t *testin
 	migrationsDir := filepath.Join(root, "nest", "migrations")
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Root:        openDiffProjectRoot(c, root),
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
@@ -305,6 +308,7 @@ func TestGenerateDiff_RefusesMigrationDirectoryOutsideOpenedRoot(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         filepath.Join(root, "migrations"),
 		Root:        openDiffProjectRoot(c, root),
 		Desired:     localDesiredSet(c, "file://"+schemaPath),

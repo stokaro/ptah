@@ -1,13 +1,16 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -22,6 +25,7 @@ func TestGenerateSchemaDiffAST_SQLServerInvalidSnapshot_FailurePath(t *testing.T
 	}
 
 	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
 		diff,
 
 		platform.SQLServer,

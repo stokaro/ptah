@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -60,14 +61,17 @@ func TestYDBStreamingQueries_RoundTripAndRollback(t *testing.T) {
 
 	current := readScoped(c, conn, schemas)
 	declared.StreamingQueries[0].Spec.Text = "INSERT INTO `ptah_ydb_streaming/output` SELECT * FROM `ptah_ydb_streaming/input` WHERE TRUE; /* changed */"
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, current, conn.Info(), nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, current, conn.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities})
+	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.ErrorMatches, `(?s).*allow_state_reset=true.*`)
 	declared.StreamingQueries[0].AllowStateReset = true
-	diff, err = schemadiff.CompareWithDatabaseInfo(declared, current, conn.Info(), nil)
+	diff, err = schemadiff.CompareWithDatabaseInfo(t.Context(), declared, current, conn.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{Diff: diff, DesiredSchema: declared, CurrentSchema: current, Dialect: "ydb", Capabilities: conn.Info().Capabilities})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{Diff: diff, DesiredSchema: declared, CurrentSchema: current, Dialect: "ydb", Capabilities: conn.Info().Capabilities, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	forward, err := builtin.RenderSQLWithCapabilities("ydb", conn.Info().Capabilities, plan.Forward.Nodes...)
 	c.Assert(err, qt.IsNil)

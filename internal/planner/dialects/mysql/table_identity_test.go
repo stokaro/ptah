@@ -1,12 +1,15 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -89,6 +92,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			added, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
 					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Order", Name: "note", Type: "TEXT"}},
@@ -102,6 +106,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			c.Assert(addedPlan, qt.Contains, test.wantAdd, qt.Commentf("plan:\n%s", addedPlan))
 
 			modified, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName: test.diffName,
 					ColumnsModified: []difftypes.ColumnDiff{{
@@ -130,6 +135,7 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName:    "app.orders",
 			ColumnsAdded: difftypes.ColumnChanges{{StructName: "Order", Name: "note", Type: "TEXT"}},
@@ -202,7 +208,10 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 					Columns:   []string{"id"},
 				}},
 			}
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, "mysql",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Count(plan, "PRIMARY KEY"), qt.Equals, 1, qt.Commentf("plan:\n%s", plan))
@@ -235,7 +244,10 @@ func TestPrimaryKeyOwnershipDoesNotCrossSchemas(t *testing.T) {
 			Columns:   []string{"id"},
 		}},
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "mysql")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "mysql",
+	)
 	c.Assert(err, qt.IsNil)
 	plan := strings.Join(statements, "\n")
 	c.Assert(plan, qt.Contains, "MODIFY COLUMN `id` INT PRIMARY KEY", qt.Commentf("plan:\n%s", plan))

@@ -15,6 +15,7 @@
 package atlasmigrateimport
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -238,12 +239,18 @@ type CapturedImport struct {
 // It is [CaptureImport] followed immediately by [CapturedImport.Write], with
 // nothing in between. A caller that enforces source integrity must call the two
 // halves itself and gate between them; see [CapturedImport].
-func Import(opts Options) (*Result, error) {
+func Import(ctx context.Context, opts Options) (*Result, error) {
+	if ctx == nil {
+		return nil, errors.New("migration import requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	captured, err := CaptureImport(opts)
 	if err != nil {
 		return nil, err
 	}
-	return captured.Write()
+	return captured.Write(ctx)
 }
 
 // CaptureImport resolves an import's source URL, target URL and source format,
@@ -296,12 +303,23 @@ func CaptureImport(opts Options) (*CapturedImport, error) {
 // Write converts the captured source and writes the Atlas single-file
 // migrations plus atlas.sum into the target directory. It reads only the
 // captured bytes, never the source directory again.
-func (c *CapturedImport) Write() (*Result, error) {
-	loaded, err := loadCapturedForImport(c.Source, c.FromDir, c.Format)
+// A missing or canceled context is refused before conversion starts; cancellation
+// during conversion is checked again before creating the target directory.
+func (c *CapturedImport) Write(ctx context.Context) (*Result, error) {
+	if ctx == nil {
+		return nil, errors.New("migration import requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	loaded, err := loadCapturedForImport(ctx, c.Source, c.FromDir, c.Format)
 	if err != nil {
 		return nil, err
 	}
 	entries := loaded.Entries
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(c.ToDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create target migration directory %s: %w", c.ToDir, err)
 	}
@@ -467,7 +485,7 @@ func liquibaseSplitRollbacks(migrations []importer.SourceMigration) []DroppedRol
 // migration version, so every covered SQL file must be parsed as formatted SQL
 // and each changeset assigned a global version. Direct foreign-format apply
 // continues through loadCaptured and preserves its per-file behavior.
-func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Format) (*Loaded, error) {
+func loadCapturedForImport(ctx context.Context, snapshot fsnapshot.Snapshot, dir string, format Format) (*Loaded, error) {
 	if format != FormatLiquibase {
 		loaded, err := loadCaptured(snapshot, dir, format)
 		if err != nil {
@@ -495,7 +513,7 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 		return nil, err
 	}
 	if len(changelogs) > 0 {
-		read, err := loadLiquibaseChangelogEntries(snapshot, changelogs)
+		read, err := loadLiquibaseChangelogEntries(ctx, snapshot, changelogs)
 		if err != nil {
 			return nil, err
 		}
@@ -521,7 +539,7 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 		}
 		return loaded, nil
 	}
-	read, err := loadConventionalLiquibaseImportEntries(snapshot, covered)
+	read, err := loadConventionalLiquibaseImportEntries(ctx, snapshot, covered)
 	if err != nil {
 		return nil, err
 	}
@@ -545,6 +563,7 @@ func (r liquibaseImport) loaded(format Format, dir string) *Loaded {
 }
 
 func loadConventionalLiquibaseImportEntries(
+	ctx context.Context,
 	snapshot fsnapshot.Snapshot,
 	covered []string,
 ) (liquibaseImport, error) {
@@ -570,7 +589,7 @@ func loadConventionalLiquibaseImportEntries(
 		if err != nil {
 			return liquibaseImport{}, fmt.Errorf("isolate liquibase source file %s: %w", name, err)
 		}
-		parsed, err := parser.Parse(singleFile)
+		parsed, err := parser.Parse(ctx, singleFile)
 		if err != nil {
 			return liquibaseImport{}, fmt.Errorf("parse liquibase source file %s: %w", name, err)
 		}
@@ -994,12 +1013,12 @@ func snapshotLiquibaseChangelogNames(fsys fs.FS) ([]string, error) {
 // shared parser, which converts the changesets it can, refuses the constructs it
 // cannot by name, and refuses a directory mixing changelogs with formatted SQL
 // (stokaro/ptah#1629).
-func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) (liquibaseImport, error) {
+func loadLiquibaseChangelogEntries(ctx context.Context, fsys fs.FS, changelogs []string) (liquibaseImport, error) {
 	parser, err := importer.ParserByName(string(FormatLiquibase))
 	if err != nil {
 		return liquibaseImport{}, err
 	}
-	parsed, err := parser.Parse(fsys)
+	parsed, err := parser.Parse(ctx, fsys)
 	if err != nil {
 		return liquibaseImport{}, err
 	}

@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -63,7 +65,7 @@ func TestConvertDBSchemaToGoSchema_RoutineGrants(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{Grants: test.rows}, platform.Postgres)
+			db := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{Grants: test.rows}, platform.Postgres, must.Must(builtin.New())))
 
 			c.Assert(db.Grants, qt.DeepEquals, test.wantGrants)
 			c.Assert(db.RevokedGrants, qt.DeepEquals, test.wantRevoked)

@@ -32,7 +32,10 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/engine/builtin"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/agentpolicy"
 	"ptah.run/internal/agentworkspace"
 	"ptah.run/internal/migrationvalidate"
@@ -168,6 +171,10 @@ func (r Report) Resolved(baseline Report) []Diagnostic {
 
 // Options configures the runner.
 type Options struct {
+	// Validation selects the offline validator required for schema gates.
+	Validation schemavalidation.Runtime
+	// Rendering renders whole schemas for the schema gate. Nil is unavailable.
+	Rendering renderer.SchemaService
 	// Dialect is the target every SQL and schema check is run for. It is
 	// required: a lint run without one either guesses or checks nothing, and
 	// both answers are worse than refusing.
@@ -385,6 +392,12 @@ func severityOf(severity sqllint.Severity) string {
 
 // runSchema loads, validates and renders the declared schema.
 func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Report, error) {
+	if err := schemaext.RequireRuntime(ctx, r.opts.Validation); err != nil {
+		return Report{}, err
+	}
+	if err := schemaext.RequireRuntime(ctx, r.opts.Rendering); err != nil {
+		return Report{}, err
+	}
 	database, err := schemaload.LoadContext(ctx, schemaload.Options{
 		RootDirs: []string{scope.Path()},
 		Dialect:  r.opts.Dialect,
@@ -394,6 +407,9 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 		// have nothing to run against. They are reported as skipped with the
 		// reason rather than passed, because a gate that did not run is not a
 		// gate that agreed.
+		if ctx.Err() != nil {
+			return Report{}, ctx.Err()
+		}
 		return finish([]Result{
 			failure(GateSchemaLoad, []Diagnostic{{
 				Gate: GateSchemaLoad, Severity: SeverityError, Message: err.Error(),
@@ -403,7 +419,10 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 		}), nil
 	}
 
-	problems := schemavalidate.CollectWithCapabilities(database, r.opts.Dialect, r.capabilities())
+	problems, err := schemavalidate.CollectWithCapabilities(ctx, r.opts.Validation, database, r.opts.Dialect, r.capabilities())
+	if err != nil {
+		return Report{}, err
+	}
 	validate := make([]Diagnostic, 0, len(problems))
 	for _, problem := range problems {
 		validate = append(validate, Diagnostic{
@@ -413,7 +432,12 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 	}
 
 	render := pass(GateSchemaRender)
-	if _, renderErr := builtin.GetOrderedCreateStatements(database, r.opts.Dialect); renderErr != nil {
+	if _, renderErr := renderer.RenderSchema(ctx, r.opts.Rendering, renderer.SchemaRequest{
+		Target: r.opts.Dialect, Schema: database, Capabilities: r.capabilities(), Identifiers: identifier.ForDialect(r.opts.Dialect),
+	}); renderErr != nil {
+		if _, refused := errors.AsType[*renderer.SchemaRefusalError](renderErr); !refused {
+			return Report{}, renderErr
+		}
 		render = failure(GateSchemaRender, []Diagnostic{{
 			Gate: GateSchemaRender, Severity: SeverityError, Message: renderErr.Error(),
 		}})

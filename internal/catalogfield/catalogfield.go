@@ -77,6 +77,7 @@ type Options struct {
 // as the value that literal was written from.
 func Field(column catalog.Column, opts Options) schemamodel.Field {
 	field := schemamodel.Field{
+		Facets:             column.Facets,
 		Name:               column.Name,
 		Type:               Type(column),
 		Comment:            column.Comment,

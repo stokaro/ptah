@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 )
 
@@ -19,6 +22,7 @@ func TestGenerateSchemaDiffSQLStatements_SetNotNullWithoutDefault(t *testing.T) 
 	desired := schemamodel.Field{Name: "qty", Type: "INTEGER", StructName: "Flag"}
 
 	got, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		oneModifiedColumn(desired, map[string]string{"nullable": "true -> false"}), platform.Postgres,
 	)
 

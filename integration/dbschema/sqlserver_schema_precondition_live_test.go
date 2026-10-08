@@ -3,15 +3,18 @@
 package dbschema_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -117,10 +120,13 @@ func planSQLServerAgainstLive(
 	// names under the live catalog collation, and a snapshot that has not
 	// resolved them shares one conservative conflict key the planner refuses to
 	// act on.
-	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
+	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, conn.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, conn.Info().Dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

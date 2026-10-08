@@ -37,6 +37,7 @@ func TestAssess_UnknownExtensionsRequireReview(t *testing.T) {
 			(*ast.ExtensionStatement)(nil),
 			(*ast.ExtensionAlterOperation)(nil),
 			&ast.ExtensionStatement{Payload: payload},
+			&ast.StatementList{Statements: []ast.Node{&ast.ExtensionStatement{Payload: payload}}},
 			&ast.ExtensionAlterOperation{Payload: payload},
 			&ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: payload}}},
 		}

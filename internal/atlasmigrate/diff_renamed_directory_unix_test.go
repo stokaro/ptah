@@ -135,6 +135,7 @@ CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL DEFAULT '');
 	defer dbschema.CloseAndWarn(conn)
 
 	run.result, run.err = atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         run.migrations,
 		Root:        openDiffProjectRoot(c, root),
 		Desired:     localDesiredSet(c, "file://"+schemaPath),

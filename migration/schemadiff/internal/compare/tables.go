@@ -187,7 +187,7 @@ func TablesAndColumnsWithServerSpellings(
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(
-				desired, table, tableDiffName(table.Schema, table.Name, dialect)))
+				desired, table, tableDiffName(table.Schema, table.Name, dialect), semantics))
 		}
 	}
 
@@ -269,10 +269,6 @@ func TablesAndColumnsWithServerSpellings(
 			// table whose only difference is which family a column sits in
 			// has to reach TablesModified for the same reason.
 			tableDiff.YDBColumnFamiliesChange = columnFamiliesChange(cov, genTable, dbTable)
-			// Changefeeds belong to the table too, and a table whose only
-			// difference is a changefeed has to reach TablesModified for the
-			// same reason.
-			tableDiff.ChangefeedsChange = changefeedsChange(cov, genTable, dbTable)
 			// A YDB table's settings are compared here for the same reason
 			// again: they belong to the table, and a table whose only
 			// difference is how it splits into partitions has to reach
@@ -318,15 +314,19 @@ func TablesAndColumnsWithServerSpellings(
 // distinct ordinary table docs before the exact removal name reaches the
 // planner. Other dialects retain the established comparison behavior.
 func tableMapIdentity(schema, name, dialect string, semantics identifier.Semantics) tableIdentity {
+	return TableSubject(schema, name, dialect, semantics).Key()
+}
+
+// TableSubject is the structured identity shared by table pairing and feature
+// parent resolution. SQLite preserves exact catalog bytes at this boundary.
+func TableSubject(schema, name, dialect string, semantics identifier.Semantics) objectidentity.ID {
 	if platform.NormalizeDialect(dialect) != platform.SQLite {
-		return newTableIdentity(schema, name, semantics)
+		return objectidentity.NewBuilder(semantics).TableParts(schema, name)
 	}
 	if schema == "" {
 		schema = semantics.DefaultSchema
 	}
-	// Verbatim on SQLite: a quoted leading or trailing space is part of the
-	// name there, so trimming merges two distinct tables.
-	return objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema, name).Key()
+	return objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema, name)
 }
 
 // tableDiffName preserves the exact catalog identifier on SQLite. Quoted
@@ -384,7 +384,7 @@ func tableChanged(tableDiff difftypes.TableDiff) bool {
 	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 		len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
 		tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
-		tableDiff.ChangefeedsChange != nil || tableDiff.YDBColumnFamiliesChange != nil ||
+		len(tableDiff.FeatureChanges) > 0 || tableDiff.YDBColumnFamiliesChange != nil ||
 		tableDiff.YDBPartitioningChange != nil || tableDiff.YDBColumnTableChange != nil
 }
 

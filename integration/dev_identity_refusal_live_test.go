@@ -11,9 +11,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dbtarget"
@@ -114,9 +116,9 @@ func TestSimulateOnDevLeavesTheTargetsRowsWhenItRefusesTheDevDatabaseLive(t *tes
 			target := newDevIdentityTarget(c, engine.engine, engine.dropSuffix)
 			schemaFile, _ := writeDevIdentitySources(c)
 			plan, err := atlasschema.PrepareApply(c.Context(), target.conn, atlasschema.ApplyRuntimeOptions{
-				ToURLs: []string{"file://" + schemaFile},
-				TxMode: migrator.MigrationTxModeNone,
-			})
+				ToURLs:  []string{"file://" + schemaFile},
+				TxMode:  migrator.MigrationTxModeNone,
+				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
 
 			err = plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{DevURL: target.url})
@@ -138,7 +140,7 @@ func TestRehearsePlanStatementsLeavesTheTargetsRowsWhenItRefusesTheDevDatabaseLi
 			err := atlasschema.RehearsePlanStatements(c.Context(), target.conn,
 				[]string{"CREATE TABLE added (id int NOT NULL, PRIMARY KEY (id))"},
 				&schemamodel.Database{},
-				atlasschema.PlanRehearsalOptions{DevURL: target.url})
+				atlasschema.PlanRehearsalOptions{DevURL: target.url, Runtime: must.Must(builtin.New())})
 
 			c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`)
 			c.Assert(target.keptRows(c), qt.Equals, 1)
@@ -157,10 +159,10 @@ func TestPrepareApplyLeavesTheTargetsRowsWhenItRefusesToReplayOnTheTarget(t *tes
 			_, dir := writeDevIdentitySources(c)
 
 			_, err := atlasschema.PrepareApply(c.Context(), target.conn, atlasschema.ApplyRuntimeOptions{
-				ToURLs: []string{"file://" + dir},
-				DevURL: target.url,
-				TxMode: migrator.MigrationTxModeNone,
-			})
+				ToURLs:  []string{"file://" + dir},
+				DevURL:  target.url,
+				TxMode:  migrator.MigrationTxModeNone,
+				Runtime: must.Must(builtin.New())})
 
 			c.Assert(err, qt.ErrorMatches, `load --to schema: --dev-url must not point at the target database: the dev database is reset destructively before the migration directory is replayed on it`)
 			c.Assert(target.keptRows(c), qt.Equals, 1)

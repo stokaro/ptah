@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -41,8 +43,8 @@ func TestCompareWithDatabaseInfo_ACheckNamedLikeANotNull(t *testing.T) {
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database,
-		catalog.ServerInfo{Dialect: "postgres", Schema: "public"}, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database,
+		catalog.ServerInfo{Dialect: "postgres", Schema: "public"}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)

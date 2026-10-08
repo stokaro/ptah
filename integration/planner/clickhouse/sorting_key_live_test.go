@@ -10,10 +10,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/schemafile"
 )
@@ -44,7 +46,7 @@ func planFromFile(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnectio
 	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
 	desired, err := schemafile.LoadPath(path, schemafile.Options{Dialect: platform.ClickHouse})
 	c.Assert(err, qt.IsNil)
-	return atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	return atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 }
 
 // A table identical to its declaration plans nothing, whichever clause states

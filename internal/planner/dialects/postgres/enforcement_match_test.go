@@ -1,13 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -27,7 +30,10 @@ func referencingField(name string) schemamodel.Field {
 func planPostgres18(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
 	c.Helper()
 	nodes, err := postgres.NewForDialect(platform.Postgres, capability.Postgres18()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), nodes...)
 	c.Assert(err, qt.IsNil)
@@ -56,7 +62,7 @@ func TestPlanner_AColumnsForeignKeyKeepsItsClauses(t *testing.T) {
 		c := qt.New(t)
 
 		sql := planPostgres18(c, &difftypes.SchemaDiff{
-			TablesAdded: difftypes.TableCreationsFor(desired, "parents", "children"),
+			TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "parents", "children"),
 		}, desired)
 
 		c.Assert(sql, qt.Contains, `FOREIGN KEY ("parent_id") `+want)

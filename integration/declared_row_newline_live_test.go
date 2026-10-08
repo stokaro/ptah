@@ -8,9 +8,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -34,7 +36,7 @@ func TestDeclaredRowNewlineIsOneStatementLive(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{
 		Desired: declaredNoticeSchema(declaredNotice("one", "first line\nsecond line")),
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string{
 		"INSERT INTO \"notices\" (\"body\", \"code\") VALUES ('first line\nsecond line', 'one');",
@@ -110,7 +112,7 @@ func TestDeclaredRowNewlineConvergesLive(t *testing.T) {
 	desired := declaredNoticeSchema(declaredNotice("one", "first line\nsecond line"))
 	applyDeclaredRows(c, ctx, conn, desired)
 
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
 }

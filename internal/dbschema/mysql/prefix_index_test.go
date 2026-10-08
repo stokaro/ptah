@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -23,7 +25,7 @@ import (
 // database (stokaro/ptah#2112).
 func TestPrefixIndexReachesTheDocument(t *testing.T) {
 	c := qt.New(t)
-	database := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{{
 			Name: "orders",
 			Type: "BASE TABLE",
@@ -38,7 +40,7 @@ func TestPrefixIndexReachesTheDocument(t *testing.T) {
 			Columns:   []string{"notes"},
 			Parts:     []catalog.IndexPart{{Name: "notes", Prefix: "20"}},
 		}},
-	}, "mysql")
+	}, "mysql", must.Must(builtin.New())))
 
 	rendered, err := atlashclrender.Render(database)
 
@@ -54,7 +56,7 @@ func TestPrefixIndexReachesTheDocument(t *testing.T) {
 // an author writes.
 func TestWholeColumnIndexKeepsTheCompactSpelling(t *testing.T) {
 	c := qt.New(t)
-	database := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{{
 			Name: "orders",
 			Type: "BASE TABLE",
@@ -68,7 +70,7 @@ func TestWholeColumnIndexKeepsTheCompactSpelling(t *testing.T) {
 			TableName: "orders",
 			Columns:   []string{"customer_id"},
 		}},
-	}, "mysql")
+	}, "mysql", must.Must(builtin.New())))
 
 	rendered, err := atlashclrender.Render(database)
 

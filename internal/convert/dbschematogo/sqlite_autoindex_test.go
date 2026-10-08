@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -31,7 +32,7 @@ func describeSQLite(c *qt.C, ddl string) []string {
 	live, err := conn.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
 
-	model := dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect)
+	model := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), live, conn.Info().Dialect, must.Must(builtin.New())))
 	names := make([]string, 0, len(model.Indexes))
 	for _, index := range model.Indexes {
 		names = append(names, index.Name)
@@ -93,7 +94,7 @@ func TestConvert_SQLiteDescriptionReplaysIntoAFreshDatabase(t *testing.T) {
 	live, err := source.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
 
-	model := dbschematogo.ConvertDBSchemaToGoSchema(live, source.Info().Dialect)
+	model := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, source.Info().Dialect, must.Must(builtin.New())))
 	statements, err := builtin.GetOrderedCreateStatements(model, source.Info().Dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(statements) > 0, qt.IsTrue)

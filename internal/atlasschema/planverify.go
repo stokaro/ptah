@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/migration/migrator"
@@ -59,6 +61,8 @@ func IsPlanDesiredStateFailure(err error) bool {
 
 // PlanRehearsalOptions configures RehearsePlanStatements.
 type PlanRehearsalOptions struct {
+	// Runtime selects the feature services used by rehearsal and verification.
+	Runtime engine.SchemaRuntime
 	// DevURL is the dev database the plan is replayed on. Required; the dev
 	// database is reset destructively.
 	DevURL string
@@ -90,6 +94,9 @@ func RehearsePlanStatements(
 	desired *schemamodel.Database,
 	opts PlanRehearsalOptions,
 ) error {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return err
+	}
 	if conn == nil {
 		return errors.New("plan rehearsal requires database connection")
 	}
@@ -131,17 +138,21 @@ func RehearsePlanStatements(
 	// end-state comparison below, which reads the rehearsed state it drops.
 	defer discardDevRehearsalArtifacts(ctx, devConn, dev.baseline)
 
-	if err := rehearseStatementsOnDev(ctx, conn, devConn, dev.baseline, current, opts.TxMode, statements); err != nil {
+	if err := rehearseStatementsOnDev(ctx, conn, devConn, dev.baseline, current, opts.TxMode, statements, opts.Runtime); err != nil {
 		return err
 	}
 
 	computation, err := computeApplyPlan(ctx, devConn, ApplyOptions{
+		Runtime:  opts.Runtime,
 		Desired:  desired,
 		Exclude:  opts.Exclude,
 		baseline: dev.baseline,
 	})
 	if err != nil {
 		return fmt.Errorf("compare rehearsed plan state with the desired state: %w", err)
+	}
+	if err := computation.undecided.Err(); err != nil {
+		return err
 	}
 	// Convergence includes the declared rows. A rehearsal whose schema matches
 	// and whose reference table does not is not a rehearsal of the desired
@@ -162,7 +173,11 @@ func VerifyAppliedPlanState(
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	exclude []string,
+	runtime engine.SchemaRuntime,
 ) error {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return err
+	}
 	if conn == nil {
 		return errors.New("plan end-state verification requires database connection")
 	}
@@ -170,6 +185,7 @@ func VerifyAppliedPlanState(
 		return errors.New("plan end-state verification requires the desired schema state")
 	}
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
+		Runtime: runtime,
 		Desired: desired,
 		Exclude: exclude,
 	})
@@ -178,6 +194,9 @@ func VerifyAppliedPlanState(
 		// itself failing to run, which must not read as a schema mismatch.
 		return fmt.Errorf(
 			"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
+	}
+	if err := computation.undecided.Err(); err != nil {
+		return fmt.Errorf("the plan was applied successfully, but the end-state verification has incomplete evidence: %w", err)
 	}
 	if drift := computation.executionStatements(); len(drift) > 0 {
 		return &PlanDesiredStateError{Phase: "post-apply", Drift: drift}

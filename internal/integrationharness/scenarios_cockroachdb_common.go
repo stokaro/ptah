@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 )
@@ -94,17 +95,26 @@ func testPostgresDistributedCommonSubset(
 
 	var sqlText string
 	if err := recorder.RecordStep("Render "+label+" DDL", "Render common-subset table and index through the distributed-SQL renderer", func() error {
-		var err error
+		runtime, err := builtin.New()
+		if err != nil {
+			return err
+		}
 		info := conn.Info()
 		if claimed := capabilitiesClaimed(info.Capabilities, absent); len(claimed) > 0 {
 			return fmt.Errorf(
 				"%s connection claims %v, which this common-subset scenario is defined by the absence of",
 				label, claimed)
 		}
-		sqlText, err = builtin.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, createUsers, createEmailIndex)
+		result, err := runtime.Render(ctx, renderer.Request{
+			Target: info.Dialect, Capabilities: info.Capabilities, Nodes: []ast.Node{createUsers, createEmailIndex},
+		})
 		if err != nil {
 			return fmt.Errorf("render %s SQL: %w", label, err)
 		}
+		if len(result.Omissions) != 0 {
+			return fmt.Errorf("render %s SQL omitted common-subset declarations", label)
+		}
+		sqlText = result.SQL()
 		if strings.Contains(sqlText, "CONCURRENTLY") {
 			return fmt.Errorf("%s common-subset SQL must not contain CONCURRENTLY:\n%s", label, sqlText)
 		}

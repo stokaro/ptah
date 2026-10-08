@@ -3,15 +3,18 @@
 package clickhouse_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -216,9 +219,12 @@ func planClickHouseRowPolicies(
 ) (*difftypes.SchemaDiff, []string) {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readClickHouseRowPolicies(c, conn), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readClickHouseRowPolicies(c, conn), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	return diff, statements
 }

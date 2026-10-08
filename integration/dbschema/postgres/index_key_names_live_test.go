@@ -12,10 +12,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -142,7 +144,7 @@ func TestIndexKeyNames_LiveSchemaFileComparesEqual(t *testing.T) {
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 			c.Assert(err, qt.IsNil)
 
-			diff := schemadiff.CompareWithDialect(desired, live, dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.IndexesAdded, qt.HasLen, 0, qt.Commentf("%+v", diff.IndexesAdded))
 			c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.IndexesRemoved))

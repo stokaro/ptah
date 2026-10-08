@@ -24,6 +24,7 @@ func buildWithProjectRules(
 ) (migrationlintreport.Report, error) {
 	c.Helper()
 	return migrationlintreport.Build(c.TB.Context(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       "unused",
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte(sql)}},
 		DirFormat: string(migrationfile.DirFormatAtlas),

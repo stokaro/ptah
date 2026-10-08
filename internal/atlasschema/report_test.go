@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/dblock"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 )
 
 // reportErrors are the errors the report rows classify: one of each refusal
@@ -399,7 +400,7 @@ func TestReports_WireNames(t *testing.T) {
 	}
 
 	planReport, err := json.Marshal(atlasschema.PlanReport{
-		ContractVersion: 1,
+		ContractVersion: 2,
 		Outcome:         atlasschema.PlanOutcomeChanges,
 		PlanDigest:      "sha256:d",
 		PlanPath:        "p.plan.json",
@@ -412,16 +413,16 @@ func TestReports_WireNames(t *testing.T) {
 		Error: "e",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(planReport), qt.Equals, `{"contract_version":1,"outcome":"changes",`+
+	c.Assert(string(planReport), qt.Equals, `{"contract_version":2,"outcome":"changes",`+
 		`"plan_digest":"sha256:d","plan_path":"p.plan.json",`+
 		`"plan":{"format_version":1,"name":"p","dialect":"sqlite","from_fingerprint":"sha256:f",`+
 		`"to_fingerprint":"sha256:t","destructive":true,"statements":[{"sql":"S","severity":"destructive","reason":"R"}]},`+
-		`"undecided":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}],`+
+		`"undecided":{"common":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}]},`+
 		`"refusal":{"code":"stale-plan","tables":["t"],"changed":"rows",`+
 		`"plan_fingerprint":"sha256:a","database_fingerprint":"sha256:b"},"error":"e"}`)
 
 	applyReport, err := json.Marshal(atlasschema.ApplyReport{
-		ContractVersion: 1,
+		ContractVersion: 2,
 		Outcome:         atlasschema.ApplyOutcomeUnknown,
 		PlanName:        "p",
 		PlanDigest:      "sha256:d",
@@ -431,22 +432,22 @@ func TestReports_WireNames(t *testing.T) {
 		Error:           "e",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(applyReport), qt.Equals, `{"contract_version":1,"outcome":"unknown",`+
+	c.Assert(string(applyReport), qt.Equals, `{"contract_version":2,"outcome":"unknown",`+
 		`"plan_name":"p","plan_digest":"sha256:d","statements":["S"],`+
-		`"undecided":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}],`+
+		`"undecided":{"common":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}]},`+
 		`"refusal":{"code":"lock-timeout"},"error":"e"}`)
 }
 
 // withheldRoles is what the comparison withholds for declared roles a read
 // was refused the catalog of.
-func withheldRoles(names ...string) []coverage.Object {
+func withheldRoles(names ...string) schemadiff.Diagnostics {
 	objects := make([]coverage.Object, 0, len(names))
 	for _, name := range names {
 		object := coverage.Refused(coverage.Role)
 		object.Name = name
 		objects = append(objects, object)
 	}
-	return objects
+	return schemadiff.Diagnostics{Common: objects}
 }
 
 // TestReports_OutcomeAndRefusalValues pins every value a consumer switches on.
@@ -482,8 +483,8 @@ func TestReports_OutcomeAndRefusalValues(t *testing.T) {
 	}, qt.DeepEquals, []atlasschema.RefusalCode{
 		"stale-plan", "protected-table", "lock-timeout", "transaction-preflight", "simulation-failed",
 	})
-	c.Assert(atlasschema.PlanReportContractVersion, qt.Equals, 1)
-	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 1)
+	c.Assert(atlasschema.PlanReportContractVersion, qt.Equals, 2)
+	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 2)
 }
 
 // TestDecodePlanFile_HappyPath holds the digest and the plan to the bytes the

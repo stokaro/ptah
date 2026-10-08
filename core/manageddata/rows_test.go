@@ -1,4 +1,4 @@
-package schemamodel_test
+package manageddata_test
 
 import (
 	"os"
@@ -8,14 +8,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 )
 
-// TestLoadManagedRowValues_PreservesTheDeclaration measures the loss this
+// TestLoadRowValues_PreservesTheDeclaration measures the loss this
 // loader exists to avoid. Resolved through Go values, `007` is 7, `1.0` is 1
 // and `2020-01-01` is a time.Time; the published artifact has to carry what the
 // author wrote.
-func TestLoadManagedRowValues_PreservesTheDeclaration(t *testing.T) {
+func TestLoadRowValues_PreservesTheDeclaration(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeRowFile(c, dir, "countries.yaml", `
@@ -30,7 +31,7 @@ func TestLoadManagedRowValues_PreservesTheDeclaration(t *testing.T) {
   quoted: "1"
 `)
 
-	rows, err := schemamodel.LoadManagedRowValues(dir, schemamodel.ManagedData{
+	rows, err := manageddata.LoadRowValues(dir, schemamodel.ManagedData{
 		Table: "countries", Keys: []string{"code"}, File: "countries.yaml",
 	})
 
@@ -47,9 +48,9 @@ func TestLoadManagedRowValues_PreservesTheDeclaration(t *testing.T) {
 	c.Assert(declared, qt.IsFalse, qt.Commentf("the second row never names the column"))
 }
 
-// TestLoadManagedRowValues_EmptyFile covers the three spellings of a file that
+// TestLoadRowValues_EmptyFile covers the three spellings of a file that
 // declares nothing, which is not the same as a file nobody read.
-func TestLoadManagedRowValues_EmptyFile(t *testing.T) {
+func TestLoadRowValues_EmptyFile(t *testing.T) {
 	tests := []struct {
 		name     string
 		contents string
@@ -65,7 +66,7 @@ func TestLoadManagedRowValues_EmptyFile(t *testing.T) {
 			dir := t.TempDir()
 			writeRowFile(c, dir, "countries.yaml", test.contents)
 
-			rows, err := schemamodel.LoadManagedRowValues(dir, schemamodel.ManagedData{
+			rows, err := manageddata.LoadRowValues(dir, schemamodel.ManagedData{
 				Table: "countries", Keys: []string{"code"}, File: "countries.yaml",
 			})
 
@@ -75,7 +76,7 @@ func TestLoadManagedRowValues_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestLoadManagedRowValues_FailurePath(t *testing.T) {
+func TestLoadRowValues_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
 		contents string
@@ -114,7 +115,7 @@ func TestLoadManagedRowValues_FailurePath(t *testing.T) {
 			dir := t.TempDir()
 			writeRowFile(c, dir, "countries.yaml", test.contents)
 
-			rows, err := schemamodel.LoadManagedRowValues(dir, schemamodel.ManagedData{
+			rows, err := manageddata.LoadRowValues(dir, schemamodel.ManagedData{
 				Table: "countries", Keys: []string{"code"}, File: "countries.yaml",
 			})
 
@@ -124,10 +125,10 @@ func TestLoadManagedRowValues_FailurePath(t *testing.T) {
 	}
 }
 
-func TestLoadManagedRowValues_MissingFile(t *testing.T) {
+func TestLoadRowValues_MissingFile(t *testing.T) {
 	c := qt.New(t)
 
-	rows, err := schemamodel.LoadManagedRowValues(t.TempDir(), schemamodel.ManagedData{
+	rows, err := manageddata.LoadRowValues(t.TempDir(), schemamodel.ManagedData{
 		Table: "countries", Keys: []string{"code"}, File: "countries.yaml",
 	})
 
@@ -135,14 +136,14 @@ func TestLoadManagedRowValues_MissingFile(t *testing.T) {
 	c.Assert(rows, qt.IsNil)
 }
 
-// TestResolveManagedRows_AnswersLikeTheFileLoader is the property that lets a
+// TestResolveRows_AnswersLikeTheFileLoader is the property that lets a
 // caller accept both forms of a declaration: rows carried by a published
 // artifact resolve to the values reading the same file would have produced.
 //
 // The fixture declares one column per YAML scalar kind the two loaders could
 // disagree about, including the quoted "007" that separates a string from the
 // integer it looks like.
-func TestResolveManagedRows_AnswersLikeTheFileLoader(t *testing.T) {
+func TestResolveRows_AnswersLikeTheFileLoader(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeRowFile(c, dir, "countries.yaml", `
@@ -160,13 +161,13 @@ func TestResolveManagedRows_AnswersLikeTheFileLoader(t *testing.T) {
 		Table: "countries", Keys: []string{"code"}, File: "countries.yaml",
 	}
 
-	fromFile, err := schemamodel.LoadManagedRows(dir, declaration)
+	fromFile, err := manageddata.LoadRows(dir, declaration)
 	c.Assert(err, qt.IsNil)
-	declared, err := schemamodel.LoadManagedRowValues(dir, declaration)
+	declared, err := manageddata.LoadRowValues(dir, declaration)
 	c.Assert(err, qt.IsNil)
 	declaration.Rows = declared
 
-	resolved, err := schemamodel.ResolveManagedRows(declaration)
+	resolved, err := manageddata.ResolveRows(declaration)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(resolved, qt.DeepEquals, fromFile)
@@ -181,19 +182,19 @@ func TestResolveManagedRows_AnswersLikeTheFileLoader(t *testing.T) {
 	c.Assert(resolved[0]["since"], qt.Equals, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 }
 
-// TestResolveManagedRows_UnreadDeclaration separates a declaration nobody read
+// TestResolveRows_UnreadDeclaration separates a declaration nobody read
 // from one that declares no rows. The first has a file to read and the second
 // has an answer.
-func TestResolveManagedRows_UnreadDeclaration(t *testing.T) {
+func TestResolveRows_UnreadDeclaration(t *testing.T) {
 	c := qt.New(t)
 
-	unread, err := schemamodel.ResolveManagedRows(schemamodel.ManagedData{
+	unread, err := manageddata.ResolveRows(schemamodel.ManagedData{
 		Table: "countries", Keys: []string{"code"}, File: "countries.yaml",
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(unread, qt.IsNil)
 
-	empty, err := schemamodel.ResolveManagedRows(schemamodel.ManagedData{
+	empty, err := manageddata.ResolveRows(schemamodel.ManagedData{
 		Table: "countries", Keys: []string{"code"}, Rows: make([]schemamodel.ManagedRow, 0),
 	})
 	c.Assert(err, qt.IsNil)
@@ -201,7 +202,7 @@ func TestResolveManagedRows_UnreadDeclaration(t *testing.T) {
 	c.Assert(empty, qt.HasLen, 0)
 }
 
-func TestResolveManagedRows_FailurePath(t *testing.T) {
+func TestResolveRows_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		value   schemamodel.ManagedValue
@@ -228,7 +229,7 @@ func TestResolveManagedRows_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			rows, err := schemamodel.ResolveManagedRows(schemamodel.ManagedData{
+			rows, err := manageddata.ResolveRows(schemamodel.ManagedData{
 				Table: "countries",
 				Keys:  []string{"code"},
 				Rows:  []schemamodel.ManagedRow{{"population": test.value}},

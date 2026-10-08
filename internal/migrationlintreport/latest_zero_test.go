@@ -24,6 +24,7 @@ func TestBuild_AtlasExplicitZeroSuppressesProjectLatestAndAllowsProjectGit(t *te
 	}
 
 	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
+		Runtime:       selectedRuntime(c),
 		Dir:           "unused",
 		FS:            fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
 		DirFormat:     string(migrationfile.DirFormatAtlas),
@@ -43,6 +44,7 @@ func TestBuild_NativeExplicitZeroKeepsPreciseRefusal(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       "unused",
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
 		DirFormat: string(migrationfile.DirFormatAtlas),

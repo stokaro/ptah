@@ -32,7 +32,7 @@ func TestImport_RefusesToChecksumAnImportThatDroppedSQL(t *testing.T) {
 	c := qt.New(t)
 	outDir := filepath.Join(t.TempDir(), "out")
 
-	_, err := importer.Import(nestedGolangMigrateFS(), nil, outDir, importer.Options{})
+	_, err := importer.Import(c.Context(), nestedGolangMigrateFS(), nil, outDir, importer.Options{})
 
 	var partial *importer.PartialImportError
 	c.Assert(err, qt.ErrorAs, &partial)
@@ -52,7 +52,7 @@ func TestImport_AllowPartialImportsTheRestAndStillReportsIt(t *testing.T) {
 	c := qt.New(t)
 	outDir := filepath.Join(t.TempDir(), "out")
 
-	result, err := importer.Import(nestedGolangMigrateFS(), nil, outDir, importer.Options{AllowPartial: true})
+	result, err := importer.Import(c.Context(), nestedGolangMigrateFS(), nil, outDir, importer.Options{AllowPartial: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.HasLen, 2)
@@ -66,7 +66,7 @@ func TestImport_ACompleteSourceStillImportsWithoutAnOptIn(t *testing.T) {
 	c := qt.New(t)
 	outDir := filepath.Join(t.TempDir(), "out")
 
-	result, err := importer.Import(fstest.MapFS{
+	result, err := importer.Import(c.Context(), fstest.MapFS{
 		"000001_create.up.sql":   {Data: []byte("CREATE TABLE t (id INTEGER);")},
 		"000001_create.down.sql": {Data: []byte("DROP TABLE t;")},
 	}, nil, outDir, importer.Options{})

@@ -1,10 +1,12 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -97,7 +99,10 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 			planner := postgres.New()
 
 			diff := &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{test.modified}}
-			nodes, err := planner.GenerateMigrationAST(diff)
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 			c.Assert(err, qt.IsNil)
 			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -126,7 +131,10 @@ func TestPlanner_RebuildsADomainWhoseBaseTypeChanged(t *testing.T) {
 		Desired:                 alterDomains["positive"],
 	}}}
 
-	nodes, err := planner.GenerateMigrationAST(diff)
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -158,7 +166,10 @@ func TestPlanner_RebuildsADomainThatMixesAnAlterableChangeWithARebuild(t *testin
 		Desired:                 alterDomains["positive"],
 	}}}
 
-	nodes, err := planner.GenerateMigrationAST(diff)
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

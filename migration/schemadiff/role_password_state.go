@@ -7,6 +7,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -18,12 +19,18 @@ import (
 func ValidateRolePasswordComparison(
 	desired *schemamodel.Database,
 	database *catalog.Database,
-	dialect string,
+	selected schemaext.TargetSelection,
 ) error {
-	if !platform.IsPostgresFamily(dialect) || desired == nil || database == nil {
+	if err := selected.Validate(); err != nil {
+		return err
+	}
+	if !platform.IsPostgresFamily(selected.Name()) || desired == nil || database == nil {
 		return nil
 	}
-	desired = schemamodel.ScopeToDialect(desired, dialect)
+	desired, err := schemamodel.ScopeToTarget(desired, selected)
+	if err != nil {
+		return err
+	}
 
 	currentByName := make(map[string]catalog.Role, len(database.Roles)+len(database.RolesOutOfScope))
 	for _, role := range database.Roles {

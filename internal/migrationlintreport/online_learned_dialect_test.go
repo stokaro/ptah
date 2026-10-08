@@ -38,6 +38,7 @@ func TestBuild_OnlineModeRefusesALearnedDialectItCannotProve(t *testing.T) {
 	dir := writeOnlineRequireDir(c)
 
 	_, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime: selectedRuntime(c),
 		Dir:     dir,
 		DevURL:  "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
 		FailOn:  migrationlintreport.FailOnError,
@@ -55,6 +56,7 @@ func TestBuild_OnlineModeAcceptsALearnedDialectItCovers(t *testing.T) {
 	dir := writeOnlineRequireDir(c)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime: selectedRuntime(c),
 		Dir:     dir,
 		Dialect: "postgres",
 		FailOn:  migrationlintreport.FailOnNone,

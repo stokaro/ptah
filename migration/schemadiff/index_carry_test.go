@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -28,7 +30,7 @@ func TestCompare_AnIndexAdditionCarriesItsDeclaration(t *testing.T) {
 	}
 	schemamodel.Finalize(desired)
 
-	diff := schemadiff.Compare(desired, &catalog.Database{})
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, &catalog.Database{}, must.Must(builtin.New())))
 
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 1)
 	c.Assert(diff.IndexesAdded[0].Index.Name, qt.Equals, "idx_widgets_code")

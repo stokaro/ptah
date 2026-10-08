@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -26,7 +28,7 @@ func rangeIsModified(c *qt.C, declared schemamodel.Range, current catalog.Range)
 	c.Helper()
 
 	target, currentSchema := clearedRangeSchemas(declared, current)
-	diff := schemadiff.Compare(target, currentSchema)
+	diff := must.Must(schemadiff.Compare(c.Context(), target, currentSchema, must.Must(builtin.New())))
 	return len(diff.RangesModified) > 0
 }
 

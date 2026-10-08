@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
@@ -227,7 +228,7 @@ func TestRun_SQLiteRoundTripConverges(t *testing.T) {
 
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(desired, live, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %#v", diff))
 }

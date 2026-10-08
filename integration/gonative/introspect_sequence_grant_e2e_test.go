@@ -11,12 +11,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/config"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/root"
 	"ptah.run/migration/schemadiff"
 )
@@ -86,7 +88,7 @@ func TestIntrospectCommand_PostgresSequenceGrantRoundTrips(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = conn.Info().Dialect
-	diff := schemadiff.CompareWithOptions(desired, live, compareOpts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, live, compareOpts, must.Must(builtin.New())))
 	c.Assert(diff.GrantsAdded, qt.HasLen, 0, qt.Commentf("grants added: %#v", diff.GrantsAdded))
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 0, qt.Commentf("grants removed: %#v", diff.GrantsRemoved))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))

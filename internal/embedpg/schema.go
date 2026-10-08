@@ -7,11 +7,15 @@
 package embedpg
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/embedstore"
 )
 
@@ -44,29 +48,36 @@ var keyColumns = map[string][]string{
 // second DDL path would be a second answer to what these tables are -- and the
 // first answer, the field descriptors in embedstore, is the one the persistence
 // ratchet checks against embedrun.Run.
-func SchemaSQL() ([]string, error) {
-	var statements []string
+//
+// The selected service renders the whole batch before any SQL is returned.
+// Missing output and reported omissions cannot create a usable store schema.
+func SchemaSQL(ctx context.Context, service renderer.Service, caps capability.Capabilities) ([]string, error) {
+	var nodes []ast.Node
 	for _, table := range embedstore.Objects() {
 		node, err := tableNode(table)
 		if err != nil {
 			return nil, err
 		}
-		rendered, err := builtin.RenderSQL(Dialect, node)
-		if err != nil {
-			return nil, fmt.Errorf("render %s: %w", table.Name, err)
-		}
-		statements = append(statements, rendered)
+		nodes = append(nodes, node)
 	}
 	for _, index := range embedstore.Indexes() {
 		node := ast.NewIndex(index.Name, index.StructName, index.Fields...)
 		node.IfNotExists = true
-		rendered, err := builtin.RenderSQL(Dialect, node)
-		if err != nil {
-			return nil, fmt.Errorf("render index %s: %w", index.Name, err)
-		}
-		statements = append(statements, rendered)
+		nodes = append(nodes, node)
 	}
-	return statements, nil
+	result, err := renderer.Render(ctx, service, renderer.Request{Target: Dialect, Capabilities: caps, Nodes: nodes})
+	if err != nil {
+		return nil, fmt.Errorf("render inference store schema: %w", err)
+	}
+	if len(result.Omissions) != 0 {
+		return nil, fmt.Errorf("%w: inference store rendering omitted declarations", ptaherr.ErrUnsupportedFeature)
+	}
+	for index, fragment := range result.Fragments {
+		if strings.TrimSpace(fragment) == "" {
+			return nil, fmt.Errorf("%w: inference store node %d produced no SQL", renderer.ErrInvalidResult, index)
+		}
+	}
+	return result.Fragments, nil
 }
 
 // tableNode builds one table's CREATE statement.

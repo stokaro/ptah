@@ -223,7 +223,7 @@ func TestResolveCompositeSchema_HappyPath(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
 	c.Assert(err, qt.IsNil)
 
-	state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Dialect: "postgres"})
+	state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.Kind, qt.Equals, atlassource.KindCompositeSchema)
@@ -283,7 +283,7 @@ func TestResolveCompositeSchema_FailurePath(t *testing.T) {
 			set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
 			c.Assert(err, qt.IsNil)
 
-			state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Dialect: "postgres"})
+			state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "postgres"})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(state.Schema, qt.IsNil)
@@ -459,7 +459,7 @@ table "users" {
 	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
 	c.Assert(err, qt.IsNil)
 
-	state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Dialect: "postgres"})
+	state, err := set.Resolve(c.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)

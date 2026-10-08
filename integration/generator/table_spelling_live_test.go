@@ -10,10 +10,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -71,7 +73,7 @@ func TestPostgresLiveBareAndPublicTableAreOneTable(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, spellingDeclaration(table), live, nil)
+	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, spellingDeclaration(table), live, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`(?s).*table %q is declared twice, once without a schema and once as "public\.%s".*`, table, table))
 	c.Assert(diff, qt.IsNil)
@@ -101,9 +103,12 @@ func TestPostgresLiveBareAndPublicTableAreTwoTablesOnAnotherSearchPath(t *testin
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, spellingDeclaration(table), live, nil)
+	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, spellingDeclaration(table), live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, err := conn.ExecContext(c.Context(), statement)

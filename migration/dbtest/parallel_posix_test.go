@@ -83,7 +83,7 @@ func TestRunTest_ParallelCasesActuallyOverlap(t *testing.T) {
 		})
 	}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		AllowExternalCommands: true,
 		Parallelism:           participants,
 		ExternalTimeout:       60 * time.Second,

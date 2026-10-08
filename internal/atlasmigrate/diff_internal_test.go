@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemascope"
 	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/schemadiff"
 )
 
 const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared by --to but no change was planned for it:" +
@@ -98,7 +99,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 
 			_, _, err := compareReplayedState(
 				c.Context(), conn, runtime, nil, conn.Info().Schema,
-				&schemamodel.Database{}, devclean.Baseline{}, nil, nil, tt.policy,
+				&schemamodel.Database{}, devclean.Baseline{}, nil, nil, tt.policy, selectedRuntime(c),
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
@@ -138,7 +139,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, devclean.Baseline{}, nil, nil,
-		atlasschema.DiffPolicy{},
+		atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -165,7 +166,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
-		&schemamodel.Database{}, devclean.Baseline{}, nil, nil, atlasschema.DiffPolicy{},
+		&schemamodel.Database{}, devclean.Baseline{}, nil, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -203,7 +204,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, schemas, "public", desired, devclean.Baseline{}, nil, nil,
-		atlasschema.DiffPolicy{},
+		atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -232,7 +233,7 @@ func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *te
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, schemas, "public",
 		schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{}, schemas, "public"), devclean.Baseline{}, nil, nil,
-		atlasschema.DiffPolicy{},
+		atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -261,11 +262,11 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
 		&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq"}}},
-		devclean.Baseline{}, diagnostics, nil, atlasschema.DiffPolicy{},
+		devclean.Baseline{}, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
+	c.Assert(diff, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
 }
 
@@ -301,6 +302,7 @@ func TestGenerateDiff_RoutesUndecidedAdditionDiagnostics(t *testing.T) {
 	diagnostics := &bytes.Buffer{}
 
 	result, err := generateDiff(c.Context(), conn, DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     desired,
 		Name:        "undecided_sequence",
@@ -320,8 +322,8 @@ func TestGenerateDiff_RoutesUndecidedAdditionDiagnostics(t *testing.T) {
 	})
 	artifacts, readErr := os.ReadDir(migrationsDir)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(result.Synced, qt.IsTrue)
+	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
+	c.Assert(result.Synced, qt.IsFalse)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(result.SumPath, qt.Equals, "")
 	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
@@ -1548,6 +1550,7 @@ CREATE VIEW replayed_user_ids AS SELECT id FROM replayed_users;
 		dbschema.CloseAndWarn(conn)
 	})
 	return conn, DiffOptions{
+		Runtime: selectedRuntime(c),
 		Dir:     migrationsDir,
 		Desired: desired,
 		Name:    "fault_injection",
@@ -1666,6 +1669,7 @@ func TestCaptureVerifiedMigrationDirSeparatesPublicationAndReplaySources(t *test
 	}()
 
 	snapshots, err := captureVerifiedMigrationDir(writer, DiffOptions{
+		Runtime:      selectedRuntime(c),
 		ReplaySource: rendered,
 		VerifyDir: func(fsys fs.FS) error {
 			verified = true

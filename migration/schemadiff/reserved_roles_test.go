@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/migration/schemadiff"
 )
@@ -67,10 +69,10 @@ func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				&schemamodel.Database{Roles: test.roles},
+				t.Context(), &schemamodel.Database{Roles: test.roles},
 				emptyPostgresDatabase(),
 				postgresInfo(),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -118,10 +120,10 @@ func TestCompareWithDatabaseInfoStillComparesAnOrdinaryRole(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				&schemamodel.Database{Roles: test.roles},
+				t.Context(), &schemamodel.Database{Roles: test.roles},
 				emptyPostgresDatabase(),
 				postgresInfo(),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -142,10 +144,10 @@ func TestCompareWithDatabaseInfoOptInPlansTheReservedRoleAnyway(t *testing.T) {
 	c.Setenv(reservedrole.AllowEnvVar, "1")
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "postgres"}, {Name: "pg_monitor"}}},
+		t.Context(), &schemamodel.Database{Roles: []schemamodel.Role{{Name: "postgres"}, {Name: "pg_monitor"}}},
 		emptyPostgresDatabase(),
 		postgresInfo(),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)

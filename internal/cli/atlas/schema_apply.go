@@ -17,8 +17,11 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -39,6 +42,7 @@ import (
 )
 
 type atlasSchemaApplyOptions struct {
+	runtime     engine.SchemaRuntime
 	url         string
 	filePaths   []string
 	toURLs      []string
@@ -431,6 +435,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	opts.runtime, err = builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	mode := ignoreMissingEnvSelection
@@ -604,6 +612,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "", err
 		}
 		plan, err := atlasschema.PrepareApply(cmd.Context(), conn, withAtlasSchemaApplyPolicy(atlasschema.ApplyRuntimeOptions{
+			Runtime:     opts.runtime,
 			DevURL:      opts.devURL,
 			ToURLs:      opts.toURLs,
 			Exclude:     opts.exclude,
@@ -914,7 +923,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// fingerprint shape is not a security boundary — the derivation is public
 		// — so it only ever adds a check, never removes one.
 		if planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
-			if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
+			if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan, opts.runtime); err != nil {
 				return "", err
 			}
 		}
@@ -949,6 +958,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// test-drives a plan, and it would be useless if verifying a foreign plan
 		// required committing to apply it.
 		if err := rehearseAtlasSchemaApplyPlan(cmd, conn, rehearsePlanParams{
+			runtime:             opts.runtime,
 			policy:              rehearseWhenUnverified,
 			format:              planFormat,
 			statements:          statements,
@@ -981,7 +991,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// The semantic end-state verification mirrors Atlas: always on whenever a
 		// desired state is available, with no flag to disable it.
 		if desired != nil {
-			if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude); err != nil {
+			if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude, opts.runtime); err != nil {
 				return "", err
 			}
 		}
@@ -1001,6 +1011,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 // foreign plan file and a dev database, so a second call site that could drift
 // from this one is not worth the convenience.
 type rehearsePlanParams struct {
+	runtime engine.SchemaRuntime
 	// policy selects whether a plan whose fingerprint already verified may
 	// skip the replay.
 	policy     planRehearsalPolicy
@@ -1121,6 +1132,9 @@ func rehearseAtlasSchemaApplyPlan(
 	conn *dbschema.DatabaseConnection,
 	params rehearsePlanParams,
 ) error {
+	if err := schemaext.RequireRuntime(cmd.Context(), params.runtime); err != nil {
+		return err
+	}
 	decision, err := resolveAtlasSchemaApplyPlanRehearsal(
 		params.policy, params.format, conn.Info().Dialect, params.devURL, params.desired)
 	if err != nil {
@@ -1139,6 +1153,7 @@ func rehearseAtlasSchemaApplyPlan(
 		devURL = ephemeralURL
 	}
 	return atlasschema.RehearsePlanStatements(cmd.Context(), conn, params.statements, params.desired, atlasschema.PlanRehearsalOptions{
+		Runtime:             params.runtime,
 		DevURL:              devURL,
 		TargetURL:           params.targetURL,
 		DesiredURLs:         params.desiredURLs,
@@ -1399,6 +1414,7 @@ func checkAtlasApplyTarget(
 			opts.schemas,
 			opts.policy.ValidateInspectedSchema,
 			atlasLiveSchemaObjectValidator(opts.policy),
+			opts.runtime,
 		); err != nil {
 			return displayAtlasSchemaApplyError(err, opts.toURLs)
 		}

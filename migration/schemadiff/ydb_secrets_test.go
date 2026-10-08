@@ -4,11 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -47,7 +50,7 @@ func TestCompare_YDBSecretsCompareByPresence(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(declaredSecrets(), &catalog.Database{Secrets: test.held}, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredSecrets(), &catalog.Database{Secrets: test.held}, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.SecretsAdded, qt.DeepEquals, test.wantAdded)
 			c.Assert(diff.SecretsRemoved, qt.DeepEquals, test.wantRemoved)
 			c.Assert(diff.SecretsRotated, qt.HasLen, 0)
@@ -79,7 +82,7 @@ func TestCompare_YDBSecretKeptWhereTheDesiredStateCannotNameIt(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, held, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, held, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.SecretsRemoved, qt.HasLen, test.wantRemoved)
 		})
 	}
@@ -94,7 +97,9 @@ func TestCompare_YDBSecretNotCreatedWhereTheReadDidNotLook(t *testing.T) {
 	held := &catalog.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
 		Kind: coverage.Secret, Name: "pg_password", Reason: coverage.Unsupported, Provenance: coverage.Observed})}
 
-	diff := schemadiff.CompareWithDialect(declaredSecrets(), held, platform.YDB)
+	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), declaredSecrets(), held, &config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnostics.Common, qt.HasLen, 1)
 
 	c.Assert(diff.SecretsAdded, qt.DeepEquals, difftypes.SecretChanges{{Name: "s3", Schema: "ext", ValueEnv: "PTAH_SECRET_S3"}})
 }
@@ -124,7 +129,7 @@ func TestRotateSecrets_HappyPath(t *testing.T) {
 			desired := declaredSecrets()
 			desired.Secrets = append(desired.Secrets, schemamodel.Secret{Name: "new_one", ValueEnv: "PTAH_SECRET_NEW"})
 			held := &catalog.Database{Secrets: []catalog.Secret{{Name: "pg_password"}, {Name: "s3", Schema: "ext"}}}
-			diff := schemadiff.CompareWithDialect(desired, held, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, held, platform.YDB, must.Must(builtin.New())))
 
 			err := diff.RotateSecrets(test.requested)
 
@@ -152,7 +157,7 @@ func TestRotateSecrets_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			held := &catalog.Database{Secrets: []catalog.Secret{{Name: "pg_password"}, {Name: "s3", Schema: "ext"}}}
-			diff := schemadiff.CompareWithDialect(declaredSecrets(), held, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredSecrets(), held, platform.YDB, must.Must(builtin.New())))
 
 			err := diff.RotateSecrets(test.requested)
 

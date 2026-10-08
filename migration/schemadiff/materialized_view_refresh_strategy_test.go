@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -29,10 +31,10 @@ func TestCompareWithDatabaseInfoNeverDiffsARefreshStrategy(t *testing.T) {
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				materializedViewDesired(),
+				t.Context(), materializedViewDesired(),
 				materializedViewCurrent(),
 				catalog.ServerInfo{Dialect: dialect},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -56,10 +58,10 @@ func TestCompareWithDatabaseInfoReportsABodyChangeWithoutARefreshKey(t *testing.
 	desired.MaterializedViews[0].Body = "SELECT count(*) AS total FROM analytics.accounts"
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		desired,
+		t.Context(), desired,
 		materializedViewCurrent(),
 		catalog.ServerInfo{Dialect: platform.Postgres},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)

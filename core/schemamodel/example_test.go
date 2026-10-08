@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -115,13 +116,13 @@ func ExampleFinalize() {
 	// audit_updated_at generated=true
 }
 
-// ExampleScopeToDialect projects one multi-dialect schema onto each target.
+// ExampleScopeToTarget projects one multi-dialect schema onto each target.
 // An object whose dialects= scope excludes the target is absent from the
 // projection — not skipped with a warning, not refused — and
-// OmissionsForDialect is the accounting that keeps the absence honest: it
+// OmissionsForTarget is the accounting that keeps the absence honest: it
 // names what the projection removed, so a caller can report it instead of
 // saying less than the truth.
-func ExampleScopeToDialect() {
+func ExampleScopeToTarget() {
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Fields: []schemamodel.Field{
@@ -133,10 +134,11 @@ func ExampleScopeToDialect() {
 	}
 
 	for _, dialect := range []string{"postgres", "mysql"} {
-		scoped := schemamodel.ScopeToDialect(db, dialect)
+		selected := must.Must(schemaext.NewTargetSelection(dialect))
+		scoped := must.Must(schemamodel.ScopeToTarget(db, selected))
 		fmt.Printf("%s: %d table(s), %d extension(s)\n",
 			dialect, len(scoped.Tables), len(scoped.Extensions))
-		for _, omitted := range schemamodel.OmissionsForDialect(db, dialect) {
+		for _, omitted := range must.Must(schemamodel.OmissionsForTarget(db, selected)) {
 			fmt.Printf("%s omits %s %s (scoped to %v)\n",
 				dialect, omitted.Kind, omitted.Name, omitted.Dialects)
 		}

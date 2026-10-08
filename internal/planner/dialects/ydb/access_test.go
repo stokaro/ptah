@@ -1,13 +1,16 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -100,7 +103,7 @@ func TestGenerateMigrationAST_GrantPaths_HappyPath(t *testing.T) {
 // plan revokes is not given back, and one it grants is granted once.
 func TestGenerateMigrationAST_RebuildRegrants_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	})
@@ -170,7 +173,10 @@ func TestGenerateMigrationAST_AccessChanges_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(nodes, qt.IsNil)

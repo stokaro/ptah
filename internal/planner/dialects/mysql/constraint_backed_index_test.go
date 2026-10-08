@@ -1,12 +1,15 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -48,7 +51,10 @@ func TestPlanner_MySQLFamilyDropsAConstraintBackedKeyAsAnIndex(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()),
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
@@ -68,7 +74,10 @@ func TestPlanner_MySQLFamilyMarksTheUniquenessLossOnTheDrop(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()),
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
@@ -92,7 +101,10 @@ func TestPlanner_MySQLFamilyLeavesAPlainIndexDropUnmarked(t *testing.T) {
 				IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 			}
 
-			nodes, err := test.planner.GenerateMigrationAST(diff)
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)

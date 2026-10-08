@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/mssql"
 	"ptah.run/migration/schemadiff"
 )
@@ -99,7 +101,7 @@ func TestSynonymsDiffToZero_Live(t *testing.T) {
 		{StructName: "RemoteAlias", Name: "remote_alias", Schema: "app", Target: "other_db.dbo.orders"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(declared, schema, platform.SQLServer)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, schema, platform.SQLServer, must.Must(builtin.New())))
 
 	c.Assert(diff.SynonymsAdded, qt.HasLen, 0)
 	c.Assert(diff.SynonymsRemoved, qt.HasLen, 0)

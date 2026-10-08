@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
 )
@@ -34,8 +36,8 @@ func TestToDBSchema_CarriesAYDBVectorIndex(t *testing.T) {
 	c := qt.New(t)
 	db := ydbVectorDatabase()
 
-	current := goschematodb.ToDBSchema(db, platform.YDB)
-	diff := schemadiff.CompareWithDialect(db, current, platform.YDB)
+	current := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.YDB, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), db, current, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(current.Indexes, qt.HasLen, 1)
 	c.Assert(current.Indexes[0].Vector, qt.DeepEquals, db.Indexes[0].Vector)

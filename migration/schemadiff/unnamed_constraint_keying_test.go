@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -77,13 +80,16 @@ func TestCompare_EveryUnnamedCheckIsPlanned(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				unnamedChecksDesired("lo < hi", "hi > 0"),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), unnamedChecksDesired("lo < hi", "hi > 0"),
 				namedChecksCurrent(test.names, test.clauses),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, test.dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
@@ -106,11 +112,11 @@ func TestCompareSchemas_AnUnnamedCheckPairsWithItself(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareSchemas(
+			diff := must.Must(schemadiff.CompareSchemas(
+				t.Context(), unnamedChecksDesired("lo < hi", "hi > 0"),
 				unnamedChecksDesired("lo < hi", "hi > 0"),
-				unnamedChecksDesired("lo < hi", "hi > 0"),
-				dialect,
-			)
+				dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -123,11 +129,11 @@ func TestCompareSchemas_AnUnnamedCheckPairsWithItself(t *testing.T) {
 func TestCompareSchemas_AnUnnamedCheckThatChangedIsPlanned(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(
-		unnamedChecksDesired("lo < hi", "hi > 0"),
+	diff := must.Must(schemadiff.CompareSchemas(
+		t.Context(), unnamedChecksDesired("lo < hi", "hi > 0"),
 		unnamedChecksDesired("lo <= hi", "hi > 0"),
-		platform.Postgres,
-	)
+		platform.Postgres, must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
 	c.Assert(diff.ConstraintsAdded[0].CheckExpression, qt.Equals, "lo < hi")
@@ -144,7 +150,7 @@ func TestCompare_UnnamedChecksAreOrderedByCondition(t *testing.T) {
 	desired := unnamedChecksDesired("lo < hi", "hi > 0", "lo > 0")
 
 	for i := range 100 {
-		diff := schemadiff.CompareWithDialect(desired, namedChecksCurrent(nil, nil), platform.Postgres)
+		diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, namedChecksCurrent(nil, nil), platform.Postgres, must.Must(builtin.New())))
 
 		conditions := make([]string, 0, len(diff.ConstraintsAdded))
 		for _, added := range diff.ConstraintsAdded {

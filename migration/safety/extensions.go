@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -49,4 +50,26 @@ func classifyExtension(payload ast.ExtensionPayload) (Severity, string) {
 	default:
 		return Destructive, unknown
 	}
+}
+
+// hasExtensionEffect keeps the owner's risk on every statement emitted for an
+// extension-bearing unit. SQL keyword rules cannot interpret these operations;
+// splitting their output must not turn unknown effects into an additive change.
+func hasExtensionEffect(node ast.Node) bool {
+	switch typed := node.(type) {
+	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+		return true
+	case *ast.StatementList:
+		return typed != nil && slices.ContainsFunc(typed.Statements, hasExtensionEffect)
+	case *ast.AlterTableNode:
+		if typed == nil {
+			return false
+		}
+		for _, operation := range typed.Operations {
+			if _, ok := operation.(*ast.ExtensionAlterOperation); ok {
+				return true
+			}
+		}
+	}
+	return false
 }

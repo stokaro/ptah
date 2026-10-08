@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/dbtest"
 )
 
@@ -43,7 +44,8 @@ func ExampleRunMigrationTest() {
 		},
 	}}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	runtime := must.Must(builtin.New())
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: runtime,
 		Cases:         cases,
 		MigrationsDir: "migrations",
 		MigrationsFS:  migrations,
@@ -97,7 +99,8 @@ type User struct {
 		},
 	}}
 
-	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{
+	runtime := must.Must(builtin.New())
+	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Runtime: runtime,
 		Cases:   cases,
 		RootDir: rootDir,
 	})

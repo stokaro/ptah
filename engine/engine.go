@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemaprojection"
+	"ptah.run/core/schemavalidation"
 )
 
 // ErrInvalidRegistration identifies a malformed provider descriptor or
@@ -31,10 +32,25 @@ type Provider struct {
 	// Codecs declares understood model representations. Registration alone does
 	// not grant any target permission or capability to use those models.
 	Codecs []schemaext.Codec
+	// Conversions assigns each target/kind pair to one batched service. The
+	// provider must own both schema codecs for each kind it converts.
+	Conversions []Conversion
+	// Comparisons assigns named object semantics and change representations to
+	// one owner per target/kind. Registration does not enroll source coverage.
+	Comparisons []ObjectComparison
+	// FacetComparisons assigns attached settings to contextual comparison owners.
+	FacetComparisons []FacetComparison
+	// Reporting declares owner-supplied inventory labels and contextual value
+	// reports. It grants no inspection, comparison, or target capabilities.
+	Reporting []Reporting
+	// Reversals reconstruct directional changes and report state that cannot be recovered.
+	Reversals []Reversal
+	// Planning lowers accepted feature changes into owner-contributed operations.
+	Planning []Planning
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
-// rendering service. Names use lowercase ASCII letters, digits, '-' and '_',
+// services. Names use lowercase ASCII letters, digits, '-', '_' and '+',
 // beginning with a letter. Registering a target does not assert that its server
 // supports any particular capability. A nil Rendering service is unavailable.
 type Target struct {
@@ -44,27 +60,54 @@ type Target struct {
 	Aliases []string
 	// Rendering is optional. A typed-nil service is an invalid registration.
 	Rendering renderer.Service
+	// SchemaRendering lowers and renders whole declarations. Nil means unavailable.
+	SchemaRendering renderer.SchemaService
+	// Validation checks complete declarations offline. A nil service is unavailable.
+	Validation schemavalidation.Service
+	// Constraints predicts constraint-owned index and column effects. Nil
+	// explicitly leaves that prediction unavailable for this target.
+	Constraints schemaprojection.ConstraintService
 }
 
 // Runtime is a frozen selection of providers. It is safe for concurrent calls
 // when its services satisfy their contracts. The zero value has no providers;
 // it refuses every target and never falls back to a built-in implementation.
 type Runtime struct {
-	targets map[string]target
-	codecs  schemaext.Registry
+	targets            map[string]target
+	codecs             schemaext.Registry
+	conversions        map[conversionKey]int
+	conversionServices []schemaext.ConversionService
+	comparisons        map[conversionKey]int
+	comparisonServices []ObjectComparison
+	facetComparisons   map[conversionKey]int
+	facetServices      []FacetComparison
+	reports            map[reportingKey]int
+	reportingServices  []Reporting
+	reversals          map[conversionKey]int
+	reversalServices   []schemaext.ReversalService
+	planning           map[conversionKey]int
+	planningServices   []ownedPlanning
 }
 
 type target struct {
-	owner     string
-	name      string
-	rendering renderer.Service
+	owner           string
+	name            string
+	selection       schemaext.TargetSelection
+	rendering       renderer.Service
+	schemaRendering renderer.SchemaService
+	validation      schemavalidation.Service
+	constraints     schemaprojection.ConstraintService
 }
 
 // New validates and freezes explicit provider ownership. Duplicate provider
 // IDs, target names, and aliases are errors, including duplicates within one
 // provider. Registration calls no services and performs no database I/O.
 func New(providers ...Provider) (*Runtime, error) {
-	runtime := &Runtime{targets: make(map[string]target)}
+	runtime := &Runtime{
+		targets: make(map[string]target), conversions: make(map[conversionKey]int), comparisons: make(map[conversionKey]int),
+		facetComparisons: make(map[conversionKey]int),
+		reports:          make(map[reportingKey]int), reversals: make(map[conversionKey]int), planning: make(map[conversionKey]int),
+	}
 	owners := make(map[string]struct{}, len(providers))
 	var codecs []schemaext.OwnedCodec
 	for _, provider := range providers {
@@ -89,7 +132,46 @@ func New(providers ...Provider) (*Runtime, error) {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}
 	runtime.codecs = registry
+	for _, provider := range providers {
+		if err := runtime.registerServices(provider); err != nil {
+			return nil, err
+		}
+	}
 	return runtime, nil
+}
+
+func (r *Runtime) registerServices(provider Provider) error {
+	for _, planning := range provider.Planning {
+		if err := r.registerPlanning(provider.ID, planning); err != nil {
+			return err
+		}
+	}
+	for _, conversion := range provider.Conversions {
+		if err := r.registerConversion(provider.ID, conversion); err != nil {
+			return err
+		}
+	}
+	for _, comparison := range provider.Comparisons {
+		if err := r.registerComparison(provider.ID, comparison); err != nil {
+			return err
+		}
+	}
+	for _, comparison := range provider.FacetComparisons {
+		if err := r.registerFacetComparison(provider.ID, comparison); err != nil {
+			return err
+		}
+	}
+	for _, reversal := range provider.Reversals {
+		if err := r.registerReversal(provider.ID, reversal); err != nil {
+			return err
+		}
+	}
+	for _, reporting := range provider.Reporting {
+		if err := r.registerReporting(provider.ID, reporting); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Codecs returns the runtime's immutable model registry. A nil runtime knows
@@ -102,21 +184,28 @@ func (r *Runtime) Codecs() schemaext.Registry {
 }
 
 func (r *Runtime) register(owner string, declared Target) error {
-	if !validName(declared.Name) {
-		return fmt.Errorf("%w: invalid target %q", ErrInvalidRegistration, declared.Name)
+	selection, err := schemaext.NewTargetSelection(declared.Name, declared.Aliases...)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}
 	if declared.Rendering != nil && nilService(declared.Rendering) {
 		return fmt.Errorf("%w: target %q has a typed-nil rendering service", ErrInvalidRegistration, declared.Name)
 	}
-	for _, name := range append([]string{declared.Name}, declared.Aliases...) {
-		if !validName(name) {
-			return fmt.Errorf("%w: invalid target alias %q", ErrInvalidRegistration, name)
-		}
+	if declared.SchemaRendering != nil && nilService(declared.SchemaRendering) {
+		return fmt.Errorf("%w: target %q has a typed-nil schema rendering service", ErrInvalidRegistration, declared.Name)
+	}
+	if declared.Validation != nil && nilService(declared.Validation) {
+		return fmt.Errorf("%w: target %q has a typed-nil validation service", ErrInvalidRegistration, declared.Name)
+	}
+	if declared.Constraints != nil && nilService(declared.Constraints) {
+		return fmt.Errorf("%w: target %q has a typed-nil constraint projection service", ErrInvalidRegistration, declared.Name)
+	}
+	for _, name := range selection.Names() {
 		if existing, found := r.targets[name]; found {
 			return fmt.Errorf("%w: target name %q is claimed by %q and %q",
 				ErrInvalidRegistration, name, existing.owner, owner)
 		}
-		r.targets[name] = target{owner: owner, name: declared.Name, rendering: declared.Rendering}
+		r.targets[name] = target{owner: owner, name: declared.Name, selection: selection, rendering: declared.Rendering, schemaRendering: declared.SchemaRendering, validation: declared.Validation, constraints: declared.Constraints}
 	}
 	return nil
 }
@@ -144,7 +233,9 @@ func (r *Runtime) Targets() []string {
 //
 // Cancellation and service errors propagate without partial SQL. A nil context
 // is rejected. The service receives a cloned capability set and node slice;
-// its contract also prohibits mutation of the nodes themselves.
+// its contract also prohibits mutation of the nodes themselves. Completed
+// refusals return renderer.BatchRefusalError with diagnostic data and local
+// input-node provenance. Every reply must account for batch completion.
 func (r *Runtime) Render(ctx context.Context, request renderer.Request) (renderer.Result, error) {
 	if ctx == nil {
 		return renderer.Result{}, errors.New("rendering requires a context")
@@ -169,39 +260,22 @@ func (r *Runtime) Render(ctx context.Context, request renderer.Request) (rendere
 		}
 	}
 	request.Target = selected.name
-	request.Capabilities = request.Capabilities.Clone()
-	request.Nodes = slices.Clone(request.Nodes)
-	result, err := selected.rendering.Render(ctx, request)
-	if err != nil {
-		return renderer.Result{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return renderer.Result{}, err
-	}
-	return result, nil
+	return renderer.Render(ctx, selected.rendering, request)
 }
 
 func (r *Runtime) lookup(name string) (target, bool) {
 	if r == nil {
 		return target{}, false
 	}
-	selected, found := r.targets[strings.ToLower(strings.TrimSpace(name))]
+	spelling, err := schemaext.NormalizeTargetSpelling(name)
+	if err != nil {
+		return target{}, false
+	}
+	selected, found := r.targets[spelling]
 	return selected, found
 }
 
-func validName(name string) bool {
-	if name == "" || name[0] < 'a' || name[0] > 'z' {
-		return false
-	}
-	for _, char := range name {
-		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' && char != '_' {
-			return false
-		}
-	}
-	return true
-}
-
-func nilService(service renderer.Service) bool {
+func nilService(service any) bool {
 	value := reflect.ValueOf(service)
 	switch value.Kind() {
 	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:

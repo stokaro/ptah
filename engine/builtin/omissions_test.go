@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 )
@@ -45,7 +46,7 @@ func tableWithEngine(engine string) *schemamodel.Database {
 
 // omissionProperties lists the properties reported for one target, so a case
 // row can carry the answer as data.
-func omissionProperties(c *qt.C, omissions []builtin.Omission) []string {
+func omissionProperties(c *qt.C, omissions []renderer.Omission) []string {
 	c.Helper()
 
 	properties := make([]string, 0, len(omissions))
@@ -198,7 +199,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_CarriesTheDeclaredValue(t 
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(omissions[0], qt.DeepEquals, builtin.Omission{
+	c.Assert(omissions[0], qt.DeepEquals, renderer.Omission{
 		Dialect:  platform.Postgres,
 		Reason:   "unsupported",
 		Kind:     "table",

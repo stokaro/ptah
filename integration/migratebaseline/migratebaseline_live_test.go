@@ -13,8 +13,10 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/migratebaseline"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/shadow"
@@ -57,7 +59,7 @@ func TestVerifyBaselinePostgresMismatchRequiresForce(t *testing.T) {
 		Dialect:           info.Dialect,
 		Capabilities:      info.Capabilities,
 		Schemas:           []string{schema},
-	})
+		Runtime:           must.Must(builtin.New())})
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: .*`)
 
 	metadataTable := fmt.Sprintf("schema_migrations_issue_269_force_%d", suffix)
@@ -110,7 +112,7 @@ func TestVerifyBaselinePostgresMatchIgnoresShadowMetadata(t *testing.T) {
 		Version:           1,
 		Dialect:           info.Dialect,
 		Capabilities:      info.Capabilities,
-	})
+		Runtime:           must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 }
 

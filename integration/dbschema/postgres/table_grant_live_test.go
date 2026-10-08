@@ -11,10 +11,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -146,7 +148,7 @@ func TestTableGrant_LiveSchemaFileComparesEqual(t *testing.T) {
 			desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: dialect})
 			c.Assert(err, qt.IsNil)
 
-			diff := schemadiff.CompareWithDialect(desired, f.read(c), dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, f.read(c), dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.GrantsAdded, qt.HasLen, 0, qt.Commentf("%+v", diff.GrantsAdded))
 			c.Assert(diff.GrantsRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.GrantsRemoved))

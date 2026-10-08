@@ -29,10 +29,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/migrator"
@@ -98,7 +100,7 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(live, "postgres")
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "postgres", must.Must(builtin.New())))
 
 	tests := []struct {
 		name   string
@@ -218,7 +220,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(live, "postgres")
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "postgres", must.Must(builtin.New())))
 
 	tests := []struct {
 		name   string
@@ -368,8 +370,8 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmp
 		// The default the CLI parses out of an unset --tx-mode. One
 		// transaction per statement list is also what makes a failure
 		// unambiguous: the target is left empty rather than half built.
-		TxMode: migrator.MigrationTxModeFile,
-	})
+		TxMode:  migrator.MigrationTxModeFile,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 	c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))

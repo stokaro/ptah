@@ -10,11 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -118,8 +120,8 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 			// the premise every row below rests on.
 			c.Assert(countRoutinesNamed(read.Functions, "greet"), qt.Equals, 2)
 
-			diff := schemadiff.CompareWithDialect(
-				&schemamodel.Database{Functions: test.declared}, read, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), &schemamodel.Database{Functions: test.declared}, read, "postgres", must.Must(builtin.New())))
 
 			c.Assert(diff.FunctionsAdded, qt.HasLen, test.wantAdded,
 				qt.Commentf("added=%v", diff.FunctionsAdded))

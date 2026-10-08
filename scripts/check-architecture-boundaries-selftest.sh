@@ -6,12 +6,9 @@
 # stokaro/ptah#1344 requires an inverse control for exactly that reason: an
 # invariant that has never been seen fail is not accepted as evidence.
 #
-# Three defects are introduced in turn, each in a throwaway copy of the tree:
-# a NEW forbidden import on a rule already at zero, a NEW one on a rule with
-# recorded debt, and a source-description construction the type checker can see.
-# A fourth case proves the opposite direction -- that a doc comment showing a
-# caller how to build a schema is NOT a finding, which is the false positive a
-# spelling-based check produces.
+# Defects are introduced in a throwaway copy of tracked source files. Each
+# refusal is followed by a repaired-tree control. A comment that names a
+# forbidden construction must remain accepted.
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -22,7 +19,7 @@ tree="$work_dir/tree"
 git -C "$repo_root" worktree list >/dev/null 2>&1
 mkdir -p "$tree"
 # A copy rather than a worktree: the defects below must never reach a branch.
-tar -C "$repo_root" --exclude='.git' -cf - . | tar -C "$tree" -xf -
+git -C "$repo_root" ls-files -z | tar -C "$repo_root" --null -T - -cf - | tar -C "$tree" -xf -
 git -C "$tree" init --quiet
 git -C "$tree" add -A >/dev/null 2>&1 || true
 
@@ -135,4 +132,66 @@ require_refusal "a provider contract transitively linking a concrete feature"
 rm -f "$tree/engine/boundaries_selftest_defect.go"
 require_acceptance "the repaired provider contract"
 
-echo "check-architecture-boundaries-selftest: OK (5 refusals, 1 false-positive control)"
+# Captured parents are contracts too. They must remain usable by an external
+# provider without importing concrete features through common model helpers.
+cat >"$tree/core/schemacapture/boundaries_selftest_defect.go" <<'GO'
+package schemacapture
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./core/schemacapture)
+require_refusal "captured parent contracts transitively linking a concrete feature"
+rm -f "$tree/core/schemacapture/boundaries_selftest_defect.go"
+require_acceptance "the repaired parent contract"
+
+# Contextual feature planning must remain independent from target owners too.
+cat >"$tree/core/featureplan/boundaries_selftest_defect.go" <<'GO'
+package featureplan
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./core/featureplan)
+require_refusal "feature planning contracts transitively linking a concrete feature"
+rm -f "$tree/core/featureplan/boundaries_selftest_defect.go"
+require_acceptance "the repaired feature planning contract"
+
+# Validation is a provider contract, independent from concrete owners.
+cat >"$tree/core/schemavalidation/boundaries_selftest_defect.go" <<'GO'
+package schemavalidation
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./core/schemavalidation)
+require_refusal "schema validation contracts transitively linking a concrete feature"
+rm -f "$tree/core/schemavalidation/boundaries_selftest_defect.go"
+require_acceptance "the repaired validation contract"
+
+# A consumer must use its caller's renderer, including through helper packages.
+mkdir -p "$tree/internal/renderboundaryfixture" "$tree/engine/builtinlookalike"
+cat >"$tree/internal/renderboundaryfixture/bridge.go" <<'GO'
+package renderboundaryfixture
+
+import _ "ptah.run/engine/builtin"
+GO
+cat >"$tree/internal/genexprprobe/boundaries_selftest_defect.go" <<'GO'
+package genexprprobe
+
+import _ "ptah.run/internal/renderboundaryfixture"
+GO
+(cd "$tree" && go build ./internal/genexprprobe)
+require_refusal "a rendering consumer transitively linking a built-in factory"
+
+# A similar package name is not the forbidden package or one of its children.
+cat >"$tree/engine/builtinlookalike/empty.go" <<'GO'
+package builtinlookalike
+GO
+cat >"$tree/internal/renderboundaryfixture/bridge.go" <<'GO'
+package renderboundaryfixture
+
+import _ "ptah.run/engine/builtinlookalike"
+GO
+require_acceptance "a consumer dependency with a similar package name"
+rm -f "$tree/internal/genexprprobe/boundaries_selftest_defect.go"
+require_acceptance "the repaired rendering consumer"
+
+echo "check-architecture-boundaries-selftest: OK (9 refusals, 2 false-positive controls)"

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
@@ -146,7 +147,7 @@ func TestOracleDeclarationConvergesE2E(t *testing.T) {
 	// goes to a DEV account and never to the schema under comparison
 	// (stokaro/ptah#1915).
 	compareOpts := oracleGeneratedExpressionOptions(ctx, c, conn, declared)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, compareOpts)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, compareOpts, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleDiffSummary(diff), qt.DeepEquals, []string(nil))
 }
@@ -199,7 +200,7 @@ func TestOracleGeneratedExpressionChangeIsStillReportedE2E(t *testing.T) {
 	changed := withGeneratedExpression(oracleConvergenceDeclaration(), "doubled", "view_count * 3")
 
 	compareOpts := oracleGeneratedExpressionOptions(ctx, c, conn, changed)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, changed, read, compareOpts)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, changed, read, compareOpts, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleDiffSummary(diff), qt.DeepEquals, []string{
 		`column modified: ora_posts.doubled map[generated:VIRTUAL "VIEW_COUNT"*2 -> VIRTUAL "VIEW_COUNT"*3]`,
@@ -235,7 +236,7 @@ func oracleGeneratedExpressionOptions(
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(dev)
 
-	probes, err := genexprprobe.For(conn.Info().Dialect, conn.Info().Capabilities, declared)
+	probes, err := genexprprobe.For(ctx, must.Must(builtin.New()), conn.Info().Dialect, conn.Info().Capabilities, declared)
 	c.Assert(err, qt.IsNil)
 	c.Assert(probes, qt.Not(qt.HasLen), 0)
 

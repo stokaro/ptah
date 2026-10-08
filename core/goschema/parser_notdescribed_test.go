@@ -4,11 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -123,9 +124,9 @@ type Note struct {
 `)
 	c.Assert(err, qt.IsNil)
 
-	withheld := schemadiff.CompareWithOptions(&declining, live, config.DefaultCompareOptions())
+	withheld := must.Must(schemadiff.CompareWithDialect(t.Context(), &declining, live, "postgres", must.Must(builtin.New())))
 	// The control: the same comparison from a schema that declines nothing.
-	planned := schemadiff.CompareWithOptions(&silent, live, config.DefaultCompareOptions())
+	planned := must.Must(schemadiff.CompareWithDialect(t.Context(), &silent, live, "postgres", must.Must(builtin.New())))
 
 	c.Assert(withheld.ExtensionsRemoved, qt.HasLen, 0, qt.Commentf("removed: %#v", withheld.ExtensionsRemoved))
 	c.Assert(planned.ExtensionsRemoved, qt.HasLen, 1, qt.Commentf("removed: %#v", planned.ExtensionsRemoved))
@@ -155,8 +156,8 @@ type Note struct {
 	c.Assert(err, qt.IsNil)
 	byHeader.NotDescribed = byHeader.NotDescribed.WithObject(coverage.Extension, "pg_trgm")
 
-	fromAnnotation := schemadiff.CompareWithOptions(&annotated, live, config.DefaultCompareOptions())
-	fromHeader := schemadiff.CompareWithOptions(&byHeader, live, config.DefaultCompareOptions())
+	fromAnnotation := must.Must(schemadiff.CompareWithDialect(t.Context(), &annotated, live, "postgres", must.Must(builtin.New())))
+	fromHeader := must.Must(schemadiff.CompareWithDialect(t.Context(), &byHeader, live, "postgres", must.Must(builtin.New())))
 
 	c.Assert(fromAnnotation.ExtensionsRemoved, qt.DeepEquals, fromHeader.ExtensionsRemoved)
 }

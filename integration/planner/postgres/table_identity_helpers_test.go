@@ -3,10 +3,14 @@
 package postgres_test
 
 import (
+	"context"
+
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -37,8 +41,8 @@ func downColumnDatabase(tableSchema string) *catalog.Database {
 
 func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog.Database) []string {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, current, "postgres", must.Must(builtin.New())))
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
 		DesiredSchema: desired,
 		CurrentSchema: current,
@@ -47,9 +51,10 @@ func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog
 			Create: generator.ConcurrentIndexDisabled,
 			Drop:   generator.ConcurrentIndexDisabled,
 		},
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		plan.Reverse.Diff,
 
 		"postgres",

@@ -1,6 +1,6 @@
 package builtin
 
-// White-box testing required: visitorRenderSQL's contract of clearing a reused
+// White-box testing required: renderNodes' contract of clearing a reused
 // visitor's accumulated output on failure is not observable through the
 // exported RenderSQL functions, which construct a fresh renderer per call.
 
@@ -19,13 +19,13 @@ func TestVisitorRenderSQL_FailedRenderClearsPreviousOutput(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	valid := ast.NewCreateTable("parents").AddColumn(ast.NewColumn("id", "INTEGER").SetPrimary())
 
-	sql, err := visitorRenderSQL(r, valid)
+	sql, err := renderNodes(t.Context(), r, valid)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "CREATE TABLE")
+	c.Assert(sql.SQL(), qt.Contains, "CREATE TABLE")
 
-	sql, err = visitorRenderSQL(r, nil)
+	sql, err = renderNodes(t.Context(), r, nil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(sql, qt.Equals, "")
+	c.Assert(sql.SQL(), qt.Equals, "")
 	c.Assert(r.Output(), qt.Equals, "")
 }
 
@@ -38,9 +38,9 @@ func TestVisitorRenderSQL_RendererErrorClearsPartialOutput(t *testing.T) {
 	invalid := ast.NewIndex("idx_parents_id", "parents", "id")
 	invalid.NullsDistinct = &nullsDistinct
 
-	sql, err := visitorRenderSQL(r, valid, invalid)
+	sql, err := renderNodes(t.Context(), r, valid, invalid)
 
 	c.Assert(err, qt.ErrorMatches, "postgresql NULLS DISTINCT is only valid for unique indexes")
-	c.Assert(sql, qt.Equals, "")
+	c.Assert(sql.SQL(), qt.Equals, "")
 	c.Assert(r.Output(), qt.Equals, "")
 }

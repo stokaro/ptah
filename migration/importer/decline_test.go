@@ -109,7 +109,7 @@ func TestAccountForSource_NamesEveryFileTheImportDidNotConvert(t *testing.T) {
 			parser, err := importer.ParserByName(test.tool)
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(test.fsys)
+			parsed, err := parser.Parse(c.Context(), test.fsys)
 			c.Assert(err, qt.IsNil)
 			declined, err := importer.AccountForSource(test.fsys, parser, parsed)
 			c.Assert(err, qt.IsNil)
@@ -157,7 +157,7 @@ func TestDeclinedFile_OnlySQLBlocksTheChecksum(t *testing.T) {
 			parser, err := importer.ParserByName("golang-migrate")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fsys)
+			parsed, err := parser.Parse(c.Context(), fsys)
 			c.Assert(err, qt.IsNil)
 			declined, err := importer.AccountForSource(fsys, parser, parsed)
 			c.Assert(err, qt.IsNil)

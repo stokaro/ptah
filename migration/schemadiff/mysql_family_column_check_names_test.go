@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -63,8 +65,8 @@ func TestCompare_AnUnnamedColumnCheckTakesTheMySQLFamilyName(t *testing.T) {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				mysqlFamilyColumnChecks(), mysqlFamilyCatalog(test.first, test.second), test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), mysqlFamilyColumnChecks(), mysqlFamilyCatalog(test.first, test.second), test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -80,7 +82,7 @@ func TestCompare_AnUnnamedColumnCheckThatChangedIsPlannedOnMySQL(t *testing.T) {
 	desired := mysqlFamilyColumnChecks()
 	desired.Fields[2].Check = "b > 1"
 
-	diff := schemadiff.CompareWithDialect(desired, mysqlFamilyCatalog("e_chk_1", "e_chk_2"), platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, mysqlFamilyCatalog("e_chk_1", "e_chk_2"), platform.MySQL, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
 	c.Assert(diff.ConstraintsAdded[0].Name, qt.Equals, "e_chk_2")

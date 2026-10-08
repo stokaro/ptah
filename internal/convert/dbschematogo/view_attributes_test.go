@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -19,7 +21,7 @@ import (
 func TestConvertViews_CarriesTheAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Views: []catalog.View{
 			{
 				Schema:     "dbo",
@@ -33,7 +35,7 @@ func TestConvertViews_CarriesTheAttributes(t *testing.T) {
 				Body:   "SELECT id FROM dbo.orders",
 			},
 		},
-	}, "")
+	}, "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Views, qt.HasLen, 2)
 	c.Assert(converted.Views[0].Attributes, qt.DeepEquals, []string{"SCHEMABINDING"})

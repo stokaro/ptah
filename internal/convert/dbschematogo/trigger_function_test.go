@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -44,7 +46,7 @@ func onlyTrigger(c *qt.C, database *schemamodel.Database) schemamodel.Trigger {
 func TestConvert_KeepsATriggerBoundToSomebodyElsesFunction(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("audit_fn"), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), triggerSchema("audit_fn"), "postgres", must.Must(builtin.New())))
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "audit_fn")
@@ -66,7 +68,7 @@ func TestConvert_KeepsATriggerBoundToSomebodyElsesFunction(t *testing.T) {
 func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("ptah_trigger_a_trg__a"), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), triggerSchema("ptah_trigger_a_trg__a"), "postgres", must.Must(builtin.New())))
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
@@ -78,7 +80,7 @@ func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 func TestConvert_LeavesATriggerWithNoReportedFunctionInline(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema(""), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), triggerSchema(""), "postgres", must.Must(builtin.New())))
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")

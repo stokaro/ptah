@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/yamlschema"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
@@ -75,7 +76,7 @@ tables:
 			DownSQL: "DROP TABLE posts;",
 		}},
 		Generated: desired,
-	})
+		Runtime:   must.Must(builtin.New())})
 	if err != nil {
 		fmt.Println("verification failed:", err)
 		return
@@ -124,7 +125,7 @@ tables:
 			DownSQL: "DROP TABLE users;",
 		}},
 		Generated: desired,
-	})
+		Runtime:   must.Must(builtin.New())})
 
 	fmt.Println(err)
 	if verificationErr, ok := errors.AsType[*shadow.VerificationError](err); ok {
@@ -167,7 +168,7 @@ func ExampleVerifyBaseline() {
 		MigrationsFS:      history,
 		Version:           1,
 		Dialect:           "sqlite",
-	})
+		Runtime:           must.Must(builtin.New())})
 	if err != nil {
 		fmt.Println("baseline refused:", err)
 		return
@@ -211,7 +212,7 @@ func ExamplePlanDynamicRollback() {
 		ProviderOptions: []migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		},
-	})
+		Runtime: must.Must(builtin.New())})
 	if err != nil {
 		fmt.Println("planning failed:", err)
 		return

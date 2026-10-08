@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
 )
@@ -55,7 +57,7 @@ func TestToDBSchema_ForeignKeyDeferralStaysIdempotent(t *testing.T) {
 			c := qt.New(t)
 			db := deferredKeys(test.deferrable, test.initially)
 
-			diff := schemadiff.CompareWithDialect(db, goschematodb.ToDBSchema(db, platform.Postgres), platform.Postgres)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), db, must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New()))), platform.Postgres, must.Must(builtin.New())))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%#v", diff))
 		})
@@ -68,9 +70,9 @@ func TestToDBSchema_ForeignKeyDeferralStaysIdempotent(t *testing.T) {
 func TestToDBSchema_ForeignKeyDeferralIsCompared(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		deferredKeys(false, ""), goschematodb.ToDBSchema(deferredKeys(true, "deferred"), platform.Postgres), platform.Postgres,
-	)
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), deferredKeys(false, ""), must.Must(goschematodb.ToDBSchema(t.Context(), deferredKeys(true, "deferred"), platform.Postgres, must.Must(builtin.New()))), platform.Postgres, must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 }

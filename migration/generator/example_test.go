@@ -55,8 +55,7 @@ func ExampleGenerateMigration() {
 	dir := must.Must(os.MkdirTemp("", "generator-example"))
 	defer os.RemoveAll(dir)
 
-	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
-		GoEntitiesFS:  fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
+	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesFS: fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
 		GoEntitiesDir: "models",
 		DatabaseURL:   "sqlite://" + filepath.Join(dir, "app.db"),
 		MigrationName: "create_users",
@@ -99,8 +98,7 @@ func ExamplePlanMigration() {
 	defer os.RemoveAll(dir)
 	ctx := context.Background()
 
-	plan, err := generator.PlanMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesFS:  fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
+	plan, err := generator.PlanMigration(ctx, generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesFS: fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
 		GoEntitiesDir: "models",
 		DatabaseURL:   "sqlite://" + filepath.Join(dir, "app.db"),
 		MigrationName: "create_users",
@@ -143,8 +141,7 @@ func ExamplePlanMigration_directoryChanged() {
 	must.Assert(os.MkdirAll(migrationsDir, 0o755))
 	ctx := context.Background()
 
-	plan := must.Must(generator.PlanMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesFS:  fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
+	plan := must.Must(generator.PlanMigration(ctx, generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesFS: fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
 		GoEntitiesDir: "models",
 		DatabaseURL:   "sqlite://" + filepath.Join(dir, "app.db"),
 		MigrationName: "create_users",
@@ -221,9 +218,8 @@ func ExampleGenerateCheckpointFromShadow() {
 	write("0000000002_add_email.up.sql", "ALTER TABLE users ADD COLUMN email TEXT;\n")
 	write("0000000002_add_email.down.sql", "ALTER TABLE users DROP COLUMN email;\n")
 
-	up, down, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{
-		ShadowDatabaseURL: "sqlite://" + filepath.Join(dir, "shadow.db"),
-		MigrationsDir:     migrationsDir,
+	up, down, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{Runtime: must.Must(builtin.New()), ShadowDatabaseURL: "sqlite://" + filepath.Join(dir, "shadow.db"),
+		MigrationsDir: migrationsDir,
 	})
 	if err != nil {
 		fmt.Println("checkpoint:", err)
@@ -253,12 +249,14 @@ func ExamplePlanBidirectionalSchemaDiff() {
 	))
 	current := &catalog.Database{} // an empty database
 
-	plan := must.Must(generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          schemadiff.CompareWithDialect(desired, current, "postgres"),
-		DesiredSchema: desired,
-		CurrentSchema: current,
-		Dialect:       "postgres",
-	}))
+	plan := must.Must(generator.PlanBidirectionalSchemaDiff(context.Background(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: must.Must(schemadiff.CompareWithDialect(context.Background(),
+			desired, current, "postgres", must.Must(builtin.New()),
+		)),
+			DesiredSchema: desired,
+			CurrentSchema: current,
+			Dialect:       "postgres",
+		}))
 
 	r := must.Must(builtin.NewRenderer("postgres"))
 	fmt.Println("-- forward, no-transaction:", plan.Forward.RequiresNoTransaction)

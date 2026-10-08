@@ -68,10 +68,12 @@ func TestReverseSchemaDiff_SwapsTheDefaultPrivilegeDirections(t *testing.T) {
 		Grantee: "app_writer", Privilege: "USAGE",
 	}
 
-	reversed := reverseSchemaDiffWithSchema(&difftypes.SchemaDiff{
-		DefaultPrivilegesAdded:       []difftypes.DefaultPrivilegeRef{granted},
-		DefaultPrivilegeOptionsAdded: []difftypes.DefaultPrivilegeRef{revoked},
-	}, nil, nil)
+	reversed := reverseForTest(t,
+		&difftypes.SchemaDiff{
+			DefaultPrivilegesAdded:       []difftypes.DefaultPrivilegeRef{granted},
+			DefaultPrivilegeOptionsAdded: []difftypes.DefaultPrivilegeRef{revoked},
+		}, nil, nil, "postgres",
+	)
 
 	c.Assert(reversed.DefaultPrivilegesRemoved, qt.DeepEquals, []difftypes.DefaultPrivilegeRef{granted})
 	c.Assert(reversed.DefaultPrivilegesAdded, qt.HasLen, 0)

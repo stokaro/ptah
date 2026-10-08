@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -75,6 +77,7 @@ func TestOnlineAlterMySQLFamilyServerDecidesLive(t *testing.T) {
 func onlineAlterAddColumnStatement(c *qt.C, caps capability.Capabilities) string {
 	c.Helper()
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{
 			TablesModified: []difftypes.TableDiff{{
 				TableName: "online_alter",
@@ -124,6 +127,7 @@ func TestOnlineAlterPostgresAddsAndValidatesSeparatelyLive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{
 			Name: "ck_amount", TableName: table, Type: "CHECK", CheckExpression: "amount > 0",
 		}}},

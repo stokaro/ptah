@@ -1,10 +1,13 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -16,10 +19,13 @@ func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 	planner := postgres.New()
 	desired := dependencyOrderSchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_accounts"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_accounts"),
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -35,10 +41,13 @@ func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 	planner := postgres.New()
 	desired := dependencyOrderSchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_memberships", "ptah_fk_order_accounts"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_memberships", "ptah_fk_order_accounts"),
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -63,7 +72,10 @@ func TestPlanner_GenerateMigrationAST_DropsFKDiamondTablesInDependencyOrder(t *t
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -80,7 +92,7 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs
 	planner := postgres.New()
 	desired := referencedUniqueKeySchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_fk_order_children", "ptah_fk_order_parents"),
 		IndexesAdded: difftypes.IndexChanges{
 			{Index: schemamodel.Index{
 				StructName: "PtahFKOrderParent",
@@ -91,7 +103,10 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -106,7 +121,7 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 	planner := postgres.New()
 	desired := referencedUniqueKeySchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_fk_order_children", "ptah_fk_order_parents"),
 		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:      "uq_ptah_fk_order_parents_code",
 			TableName: "ptah_fk_order_parents",
@@ -115,7 +130,10 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

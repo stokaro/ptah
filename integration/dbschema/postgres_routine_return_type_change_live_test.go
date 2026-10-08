@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -107,10 +108,10 @@ func planReturnTypeChange(
 	live *catalog.Database,
 ) (forward, reverse []string) {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(wanted, live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), wanted, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
 		DesiredSchema: wanted,
 		CurrentSchema: live,
@@ -119,12 +120,18 @@ func planReturnTypeChange(
 			Create: generator.ConcurrentIndexDisabled,
 			Drop:   generator.ConcurrentIndexDisabled,
 		},
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
-	forward, err = planner.GenerateSchemaDiffSQLStatements(plan.Forward.Diff, platform.Postgres)
+	forward, err = planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		plan.Forward.Diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
-	reverse, err = planner.GenerateSchemaDiffSQLStatements(plan.Reverse.Diff, platform.Postgres)
+	reverse, err = planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		plan.Reverse.Diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	return forward, reverse
 }
@@ -164,7 +171,7 @@ func TestPostgresLiveRoutineReturnTypeChangeApplies(t *testing.T) {
 	c.Assert(readReturnTypes(c, conn, schemaName), qt.DeepEquals, map[string]string{"scalar()": "bigint"})
 	after, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	settled := schemadiff.CompareWithDialect(wanted, after, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, after, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)

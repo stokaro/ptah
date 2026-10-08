@@ -1,13 +1,16 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -24,7 +27,7 @@ func commented(field schemamodel.Field, comment string) schemamodel.Field {
 // YDB keeps the attribute under the column's name until a plan removes it.
 func TestGenerateMigrationAST_TableComments_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName:     "items",
 		Desired:       itemsDeclaration(commented(field("note", "TEXT", true), "A note"), field("label", "TEXT", true)),
 		CommentChange: &difftypes.CommentChange{Current: "Things", Desired: "Items"},
@@ -163,12 +166,12 @@ func TestGenerateMigrationAST_Comments_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "a table's comment", caps: withoutAttributes,
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				CommentChange: &difftypes.CommentChange{Desired: "x"}}),
 			wantKey: capability.CommentAttributes,
 			wantErr: `changing the comments of table "items", which requires target capability comment_attributes, .*`},
 		{name: "a dropped column's comment", caps: withoutAttributes,
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsRemoved: difftypes.ColumnChanges{commented(field("old", "TEXT", true), "x")}}),
 			wantKey: capability.CommentAttributes,
 			wantErr: `changing the comments of table "items", which requires target capability comment_attributes, .*`},
@@ -196,7 +199,10 @@ func TestGenerateMigrationAST_Comments_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			var capabilityErr *ptaherr.CapabilityError

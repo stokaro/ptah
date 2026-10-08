@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // TestParse_YDBChangefeed_HappyPath reads a table's changefeeds in YAML, keyed
@@ -42,13 +44,13 @@ tables:
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Changefeeds, qt.DeepEquals, []ast.ChangefeedSpec{
+	c.Assert(must.Must(ydbschema.DesiredChangefeeds(db.FeatureObjects, db.Tables[0].Schema, db.Tables[0].Name)), qt.DeepEquals, []ydbschema.ChangefeedSpec{
+		{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON", TopicMinActivePartitions: 2},
 		{Name: "updates", Mode: "UPDATES", Format: "JSON", VirtualTimestamps: true, RetentionPeriod: "PT12H",
 			Consumers: []ast.TopicConsumerSpec{
 				{Name: "audit", Important: true},
 				{Name: "late", SupportedCodecs: []string{"raw", "gzip"}, ReadFrom: "2026-01-01T00:00:00Z"},
 			}},
-		{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON", TopicMinActivePartitions: 2},
 	})
 }
 

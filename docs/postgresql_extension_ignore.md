@@ -62,6 +62,7 @@ import (
 
     "ptah.run/core/goschema"
     "ptah.run/dbschema"
+    "ptah.run/engine/builtin"
     "ptah.run/migration/schemadiff"
 )
 
@@ -87,8 +88,15 @@ func main() {
         panic(err)
     }
 
-    // Compare schemas with default options (ignores "plpgsql")
-    diff := schemadiff.Compare(generated, database)
+    runtime, err := builtin.New()
+    if err != nil {
+        panic(err)
+    }
+    // Compare with the connected target and default options (ignores "plpgsql").
+    diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, database, nil, runtime)
+    if err != nil {
+        panic(err)
+    }
     
     // plpgsql in database will NOT be marked for removal
     fmt.Printf("Extensions to add: %v\n", diff.ExtensionsAdded)
@@ -98,12 +106,19 @@ func main() {
 
 ### Custom Ignore List
 
+The following fragments reuse the context, runtime, and schema snapshots from
+the preceding example.
+
 ```go
 import "ptah.run/config"
 
 // Ignore specific extensions only
 opts := config.WithIgnoredExtensions("plpgsql", "adminpack", "pg_stat_statements")
-diff := schemadiff.CompareWithOptions(generated, database, opts)
+opts.Dialect = "postgres"
+diff, err := schemadiff.CompareWithOptions(ctx, generated, database, opts, runtime)
+if err != nil {
+    panic(err)
+}
 ```
 
 ### Add to Default Ignore List
@@ -111,7 +126,11 @@ diff := schemadiff.CompareWithOptions(generated, database, opts)
 ```go
 // Keep default (plpgsql) and add more
 opts := config.WithAdditionalIgnoredExtensions("adminpack", "pg_stat_statements")
-diff := schemadiff.CompareWithOptions(generated, database, opts)
+opts.Dialect = "postgres"
+diff, err := schemadiff.CompareWithOptions(ctx, generated, database, opts, runtime)
+if err != nil {
+    panic(err)
+}
 // Result: ignores ["plpgsql", "adminpack", "pg_stat_statements"]
 ```
 
@@ -120,7 +139,11 @@ diff := schemadiff.CompareWithOptions(generated, database, opts)
 ```go
 // Don't ignore any extensions (manage everything)
 opts := config.WithIgnoredExtensions() // Empty list
-diff := schemadiff.CompareWithOptions(generated, database, opts)
+opts.Dialect = "postgres"
+diff, err := schemadiff.CompareWithOptions(ctx, generated, database, opts, runtime)
+if err != nil {
+    panic(err)
+}
 // Result: even plpgsql will be managed
 ```
 
@@ -171,7 +194,11 @@ for _, name := range []string{"plpgsql", "pg_trgm", "adminpack"} {
 ```go
 // Development: ignore common pre-installed extensions
 opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
-diff := schemadiff.CompareWithOptions(generated, database, opts)
+opts.Dialect = "postgres"
+diff, err := schemadiff.CompareWithOptions(ctx, generated, database, opts, runtime)
+if err != nil {
+    panic(err)
+}
 ```
 
 ### Production Environment
@@ -183,7 +210,11 @@ opts := config.WithAdditionalIgnoredExtensions(
     "pg_stat_statements", 
     "pg_buffercache",
 )
-diff := schemadiff.CompareWithOptions(generated, database, opts)
+opts.Dialect = "postgres"
+diff, err := schemadiff.CompareWithOptions(ctx, generated, database, opts, runtime)
+if err != nil {
+    panic(err)
+}
 ```
 
 ### Testing Environment
@@ -191,7 +222,11 @@ diff := schemadiff.CompareWithOptions(generated, database, opts)
 ```go
 // Testing: manage all extensions for complete control
 opts := config.WithIgnoredExtensions() // Empty - manage everything
-diff := schemadiff.CompareWithOptions(generated, database, opts)
+opts.Dialect = "postgres"
+diff, err := schemadiff.CompareWithOptions(ctx, generated, database, opts, runtime)
+if err != nil {
+    panic(err)
+}
 ```
 
 ## Migration Generation
@@ -208,11 +243,12 @@ import (
 
 // Generate migration with custom extension ignore options
 opts := generator.GenerateMigrationOptions{
+    Runtime:       runtime,
+    CompareOptions: config.WithAdditionalIgnoredExtensions("adminpack"),
     GoEntitiesDir: "./models",
     DatabaseURL:   "postgres://user:pass@localhost/db",
     MigrationName: "update_schema",
     OutputDir:     "./migrations",
-    // Extension ignore options will be supported in future versions
 }
 
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -230,14 +266,15 @@ files, err := generator.GenerateMigration(ctx, opts)
 
 ## Best Practices
 
-1. **Start with defaults**: Use `schemadiff.Compare()` for most cases
+1. **Start with defaults**: Use `CompareWithDatabase` with the selected runtime and nil options for a live target
 2. **Be explicit in production**: Use `CompareWithOptions()` with explicit ignore lists
 3. **Document your choices**: Comment why specific extensions are ignored
 4. **Test thoroughly**: Verify ignore behavior in your test environment
 5. **Review regularly**: Periodically review your ignore list as your system evolves
 
-## Backward Compatibility
+## Comparison Errors
 
-- Existing code using `schemadiff.Compare()` continues to work unchanged
-- Default behavior ignores `plpgsql` (safe for most PostgreSQL installations)
-- New `CompareWithOptions()` function provides full control when needed
+Every comparison requires a context and a selected runtime. Handle its error
+before using the diff. Non-reporting entry points return no diff when available
+coverage cannot establish the requested state. Use a reporting entry point when
+your application can present both established changes and structured limits.

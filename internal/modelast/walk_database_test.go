@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -59,7 +60,7 @@ func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
 		"*ast.CreateViewNode",
 		"*ast.IndexNode",
 	})
-	c.Assert(visited, qt.DeepEquals, modelast.CollectDatabase(database, platform.Postgres).Statements)
+	c.Assert(visited, qt.DeepEquals, must.Must(modelast.CollectDatabase(database, platform.Postgres)).Statements)
 }
 
 func TestWalkDatabase_StopsAtVisitorError(t *testing.T) {

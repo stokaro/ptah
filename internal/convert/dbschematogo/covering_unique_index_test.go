@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -59,8 +61,8 @@ func bareUniqueConstraint() catalog.Constraint {
 func TestConvert_CoveringUniqueIndexKeepsItsPayload(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(
-		coveringUniqueSchema([]catalog.Constraint{bareUniqueConstraint()}), "")
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(
+		t.Context(), coveringUniqueSchema([]catalog.Constraint{bareUniqueConstraint()}), "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Indexes, qt.HasLen, 1)
 	c.Assert(converted.Indexes[0].Name, qt.Equals, "i2")
@@ -85,7 +87,7 @@ func TestConvert_UniqueConstraintStillOwnsAnIndexWithNothingToLose(t *testing.T)
 	schema.Indexes[0].IncludeColumns = nil
 
 	c := qt.New(t)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Indexes, qt.HasLen, 0)
 	names := make([]string, 0, len(converted.Constraints))
@@ -107,8 +109,8 @@ func TestConvert_ConstraintCarryingItsOwnPayloadKeepsTheObject(t *testing.T) {
 	constraint.IncludeColumns = []string{"name"}
 
 	c := qt.New(t)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(
-		coveringUniqueSchema([]catalog.Constraint{constraint}), "")
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(
+		t.Context(), coveringUniqueSchema([]catalog.Constraint{constraint}), "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Indexes, qt.HasLen, 0)
 	names := make([]string, 0, len(converted.Constraints))
@@ -124,7 +126,7 @@ func TestConvert_ConstraintCarryingItsOwnPayloadKeepsTheObject(t *testing.T) {
 func TestConvert_CoveringUniqueIndexWithNoConstraintRowIsUntouched(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(coveringUniqueSchema(nil), "")
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), coveringUniqueSchema(nil), "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Indexes, qt.HasLen, 1)
 	c.Assert(converted.Indexes[0].IncludeColumns, qt.DeepEquals, []string{"name"})
@@ -142,7 +144,7 @@ func TestConvert_ColumnUniqueIsClearedByTheOwningIndex(t *testing.T) {
 	schema.Tables[0].Columns[1].IsUnique = true
 
 	c := qt.New(t)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Indexes, qt.HasLen, 1)
 	for _, field := range converted.Fields {
@@ -166,7 +168,7 @@ func TestConvert_MySQLUniqueIndexOptions(t *testing.T) {
 			schema := coveringUniqueSchema([]catalog.Constraint{constraint})
 			schema.Indexes = []catalog.Index{index}
 			schema.Tables[0].Columns[1].IsUnique = true
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(schema, "mysql")
+			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "mysql", must.Must(builtin.New())))
 			c.Assert(converted.Indexes, qt.HasLen, 1)
 			c.Assert(converted.Constraints, qt.HasLen, 0)
 			c.Assert(converted.Indexes[0].KeyBlockSize, qt.Equals, index.KeyBlockSize)

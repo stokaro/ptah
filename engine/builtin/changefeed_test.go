@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -22,23 +23,24 @@ import (
 // node and each change of one alike: built without it, the table would carry
 // no stream of its changes, and nothing would report the difference.
 func TestRender_Changefeed_FailurePath(t *testing.T) {
-	feed := ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
 	schema := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "T", Name: "t", PrimaryKey: []string{"id"},
-			Changefeeds: []ast.ChangefeedSpec{feed}}},
-		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "int", Primary: true}},
+		Tables:         []schemamodel.Table{{StructName: "T", Name: "t", PrimaryKey: []string{"id"}}},
+		FeatureObjects: testChangefeedObjects(t, "", "t", feed),
+		Fields:         []schemamodel.Field{{StructName: "T", Name: "id", Type: "int", Primary: true}},
 	}
 	tests := []struct {
 		dialect      string
 		caps         capability.Capabilities
 		wantOpErrors []string
+		wantCreate   string
 	}{
-		{dialect: platform.Postgres, caps: capability.Postgres18(), wantOpErrors: unsupportedChangefeedErrors(platform.Postgres)},
-		{dialect: platform.CockroachDB, caps: capability.CockroachDB26(), wantOpErrors: unsupportedChangefeedErrors(platform.CockroachDB)},
-		{dialect: platform.MySQL, caps: capability.MySQL84(), wantOpErrors: unsupportedChangefeedErrors(platform.MySQL)},
-		{dialect: platform.SQLite, caps: capability.SQLite3(), wantOpErrors: unsupportedChangefeedErrors(platform.SQLite)},
-		{dialect: platform.ClickHouse, caps: capability.ClickHouse24(), wantOpErrors: unsupportedChangefeedErrors(platform.ClickHouse)},
-		{dialect: platform.YDB, caps: capability.YDB262().With(capability.Changefeeds, false), wantOpErrors: []string{
+		{dialect: platform.Postgres, caps: capability.Postgres18(), wantOpErrors: unsupportedChangefeedErrors(platform.Postgres), wantCreate: `unsupported feature: feature objects are not registered for target "postgres"`},
+		{dialect: platform.CockroachDB, caps: capability.CockroachDB26(), wantOpErrors: unsupportedChangefeedErrors(platform.CockroachDB), wantCreate: `unsupported feature: feature objects are not registered for target "cockroachdb"`},
+		{dialect: platform.MySQL, caps: capability.MySQL84(), wantOpErrors: unsupportedChangefeedErrors(platform.MySQL), wantCreate: `unsupported feature: feature objects are not registered for target "mysql"`},
+		{dialect: platform.SQLite, caps: capability.SQLite3(), wantOpErrors: unsupportedChangefeedErrors(platform.SQLite), wantCreate: `unsupported feature: feature objects are not registered for target "sqlite"`},
+		{dialect: platform.ClickHouse, caps: capability.ClickHouse24(), wantOpErrors: unsupportedChangefeedErrors(platform.ClickHouse), wantCreate: `unsupported feature: feature objects are not registered for target "clickhouse"`},
+		{dialect: platform.YDB, caps: capability.YDB262().With(capability.Changefeeds, false), wantCreate: `changefeed "updates" of table "t", which requires target capability changefeeds, unavailable on this ydb target`, wantOpErrors: []string{
 			`changing the changefeeds of table "t", which requires target capability changefeeds, unavailable on this ydb target`,
 			`dropping changefeed "updates" of table "t", which requires target capability changefeeds, unavailable on this ydb target`,
 			`changing the changefeeds of table "t", which requires target capability changefeeds, unavailable on this ydb target`,
@@ -51,14 +53,14 @@ func TestRender_Changefeed_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, test.dialect, test.caps)
-			c.Assert(err, qt.ErrorMatches, `.*table "t" declares changefeed "updates", which requires target capability changefeeds, .*`)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantCreate))
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(statements, qt.IsNil)
 
 			node := &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{ast.NewColumn("id", "INTEGER").SetPrimary()},
-				Changefeeds: []ast.ChangefeedSpec{feed}}
+				OwnedObjects: testChangefeedObjects(t, "", "t", feed)}
 			sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps, node)
-			c.Assert(err, qt.ErrorMatches, `.*table "t" declares changefeed "updates", which requires target capability changefeeds, .*`)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantCreate))
 			c.Assert(sql, qt.Equals, "")
 
 			for i, operation := range operations {
@@ -77,9 +79,9 @@ func TestRender_Changefeed_FailurePath(t *testing.T) {
 func TestRender_Changefeed_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	schema := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "T", Name: "t", PrimaryKey: []string{"id"},
-			Changefeeds: []ast.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON"}}}},
-		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "int", Primary: true}},
+		Tables:         []schemamodel.Table{{StructName: "T", Name: "t", PrimaryKey: []string{"id"}}},
+		FeatureObjects: testChangefeedObjects(t, "", "t", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}),
+		Fields:         []schemamodel.Field{{StructName: "T", Name: "id", Type: "int", Primary: true}},
 	}
 
 	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, platform.YDB, capability.YDB251())
@@ -97,4 +99,16 @@ func unsupportedChangefeedErrors(dialect string) []string {
 		messages = append(messages, fmt.Sprintf("target %q does not support extension %q in role %q", dialect, kind, ast.AlterExtension))
 	}
 	return messages
+}
+
+func testChangefeedObjects(t *testing.T, schema, table string, feeds ...ydbschema.ChangefeedSpec) schemaext.Objects {
+	t.Helper()
+	c := qt.New(t)
+	var values []schemaext.Object
+	for _, feed := range feeds {
+		values = append(values, ydbschema.DesiredObject(schema, table, feed))
+	}
+	objects, err := schemaext.NewObjects(values...)
+	c.Assert(err, qt.IsNil)
+	return objects
 }

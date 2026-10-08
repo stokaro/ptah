@@ -69,7 +69,7 @@ func samePayload(kind Kind, typeOf reflect.Type, cloned Payload) error {
 	return nil
 }
 
-func absent(payload Payload) bool {
+func absent(payload any) bool {
 	if payload == nil {
 		return true
 	}

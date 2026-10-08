@@ -117,10 +117,9 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// reasoning as the field above, on different engines
 		// (stokaro/ptah#2236).
 		"RowDeletionPolicyChange": false,
-		// A changefeed is YDB's, and the SQLite planner refuses a diff that
-		// carries one before it plans anything, so there is nothing for a
-		// SQLite rebuild to converge.
-		"ChangefeedsChange": false,
+		// Named feature changes require an owning planning handler. The
+		// SQLite planner refuses them before deciding whether to rebuild.
+		"FeatureChanges": false,
 		// SQLite has no comments: no CREATE TABLE clause, no COMMENT ON
 		// statement, and nothing in the catalog to read one back from. The
 		// field can only be non-nil for a target whose reader and renderer both
@@ -132,6 +131,7 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// modification, including the ones ALTER TABLE expresses in place, so a
 		// rebuild forced by it would rebuild for nothing (stokaro/ptah#2315).
 		"Desired": false,
+		"Current": false, // captured state, not a requested transition
 		// A YDB table's column families. The SQLite planner refuses a diff
 		// carrying a change of them before it decides on a rebuild
 		// (schemaprecondition.RefuseYDBColumnFamilyChanges), so there is

@@ -23,7 +23,10 @@ func TestConvertDBSchemaToGoSchema_YDBEmptyDefaultsSurviveExport(t *testing.T) {
 		{Name: "no_default", DataType: "Utf8", IsNullable: "YES"},
 	}}}}
 
-	model := dbschematogo.ConvertDBSchemaToGoSchema(db, platform.YDB)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	model, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), db, platform.YDB, runtime)
+	c.Assert(err, qt.IsNil)
 	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(model, platform.YDB, capability.YDB251())
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
@@ -31,7 +34,7 @@ func TestConvertDBSchemaToGoSchema_YDBEmptyDefaultsSurviveExport(t *testing.T) {
 	c.Assert(sql, qt.Contains, "`bytes_value` String DEFAULT ''")
 	c.Assert(sql, qt.Not(qt.Contains), "`no_default` Utf8 DEFAULT")
 
-	exported, err := dbmlrender.Render(model, dbmlrender.Options{})
+	exported, err := dbmlrender.Render(c.Context(), model, dbmlrender.Options{Target: platform.YDB}, runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(exported.DBML, qt.Contains, `"text_value" Utf8 [default: '']`)
 	c.Assert(exported.DBML, qt.Contains, `"bytes_value" String [default: '']`)

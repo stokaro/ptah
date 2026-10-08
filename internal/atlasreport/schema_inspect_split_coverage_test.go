@@ -68,7 +68,7 @@ func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			output, err := atlasreport.RenderSchemaInspect(test.format, coverageSplitReport())
+			output, err := atlasreport.RenderSchemaInspect(test.format, coverageSplitReport(c))
 
 			c.Assert(err, qt.IsNil)
 			members := txtarMembers(output.Text)
@@ -93,7 +93,7 @@ func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
 func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 	c := qt.New(t)
 
-	whole, err := atlasreport.RenderSchemaInspect(`{{ hcl . }}`, coverageSplitReport())
+	whole, err := atlasreport.RenderSchemaInspect(`{{ hcl . }}`, coverageSplitReport(c))
 	c.Assert(err, qt.IsNil)
 	wantSet, err := coverage.DecodeHeader(whole.Text)
 	c.Assert(err, qt.IsNil)
@@ -101,7 +101,7 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 		coverage.Extension, coverage.Policy, coverage.Sequence,
 	))
 
-	split, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split }}`, coverageSplitReport())
+	split, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split }}`, coverageSplitReport(c))
 	c.Assert(err, qt.IsNil)
 
 	for path, data := range txtarMembers(split.Text) {
@@ -123,7 +123,7 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 	c := qt.New(t)
 
 	output, err := atlasreport.RenderSchemaInspect(
-		`{{ hcl . | split | write "out" }}`, coverageSplitReport(),
+		`{{ hcl . | split | write "out" }}`, coverageSplitReport(c),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -149,7 +149,7 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 func TestSplitOfADocumentThatDescribesEverythingIsUnchanged(t *testing.T) {
 	c := qt.New(t)
 
-	output, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split "type" }}`, sampleSchemaInspectReport())
+	output, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split "type" }}`, sampleSchemaInspectReport(c))
 
 	c.Assert(err, qt.IsNil)
 	for path, data := range txtarMembers(output.Text) {
@@ -166,7 +166,7 @@ func TestSplitCarriesTheRecordWithSQLCommentSyntax(t *testing.T) {
 	sqlText := "-- ptah:not-described sequence\n\nCREATE TABLE users (id int);\nCREATE TABLE posts (id int);\n"
 	format := fmt.Sprintf(`{{ %q | split "type" }}`, sqlText)
 
-	output, err := atlasreport.RenderSchemaInspect(format, sampleSchemaInspectReport())
+	output, err := atlasreport.RenderSchemaInspect(format, sampleSchemaInspectReport(c))
 
 	c.Assert(err, qt.IsNil)
 	members := txtarMembers(output.Text)
@@ -187,7 +187,7 @@ func TestSplitRefusesAMalformedRecordRatherThanDroppingIt(t *testing.T) {
 	c := qt.New(t)
 	format := fmt.Sprintf(`{{ %q | split }}`, "// ptah:not-described wibble\n\nschema \"public\" {}\n")
 
-	output, err := atlasreport.RenderSchemaInspect(format, sampleSchemaInspectReport())
+	output, err := atlasreport.RenderSchemaInspect(format, sampleSchemaInspectReport(c))
 
 	c.Assert(err, qt.ErrorMatches, `template: format:.*unknown coverage kind "wibble".*`)
 	c.Assert(output.Text, qt.Equals, "")
@@ -196,8 +196,8 @@ func TestSplitRefusesAMalformedRecordRatherThanDroppingIt(t *testing.T) {
 // coverageSplitReport is an inspected PostgreSQL database carrying one of every
 // block type the compatibility surface omits, so the render is in omit mode and
 // declares the record the split has to carry.
-func coverageSplitReport() *atlasreport.SchemaInspectReport {
-	return atlasreport.NewSchemaInspectReport(
+func coverageSplitReport(c *qt.C) *atlasreport.SchemaInspectReport {
+	return newInspectReport(c,
 		&schemamodel.Database{
 			Schemas: []schemamodel.Schema{{Name: "public"}},
 			Tables:  []schemamodel.Table{{StructName: "Ticket", Name: "ticket", Schema: "public"}},

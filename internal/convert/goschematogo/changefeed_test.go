@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -16,7 +19,7 @@ import (
 // database and written as Go keeps its streams.
 func TestRender_Changefeed(t *testing.T) {
 	c := qt.New(t)
-	changefeeds := []ast.ChangefeedSpec{
+	changefeeds := []ydbschema.ChangefeedSpec{
 		{Name: "updates", Mode: "NEW_AND_OLD_IMAGES", Format: "JSON", VirtualTimestamps: true,
 			ResolvedTimestamps: "PT10S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 			TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
@@ -26,9 +29,15 @@ func TestRender_Changefeed(t *testing.T) {
 			}},
 		{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"},
 	}
+	var objects []schemaext.Object
+	for _, stream := range changefeeds {
+		objects = append(objects, ydbschema.DesiredObject("", "items", stream))
+	}
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Item", Name: "items", PrimaryKey: []string{"id"}, Changefeeds: changefeeds}},
-		Fields: []schemamodel.Field{{StructName: "Item", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil)),
+		Tables:          []schemamodel.Table{{StructName: "Item", Name: "items", PrimaryKey: []string{"id"}}},
+		Fields:          []schemamodel.Field{{StructName: "Item", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 
 	files, err := goschematogo.Render(db, goschematogo.Options{SingleFile: true})
@@ -39,5 +48,5 @@ func TestRender_Changefeed(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(files[0].Data), qt.Contains, `//ptah:schema:changefeed:consumer changefeed="updates" name="late"`)
 	c.Assert(reparsed.Tables, qt.HasLen, 1)
-	c.Assert(reparsed.Tables[0].Changefeeds, qt.DeepEquals, changefeeds)
+	c.Assert(reparsed.FeatureObjects.Equal(db.FeatureObjects), qt.IsTrue)
 }

@@ -31,7 +31,7 @@ func TestCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T) {
 			format, err := atlasreport.NormalizeSchemaInspectFormat(test.format)
 			c.Assert(err, qt.IsNil)
 
-			output, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(true))
+			output, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(c, true))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(output.Text, qt.Equals, "schema \"main\" {\n}\n")
@@ -41,7 +41,7 @@ func TestCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T) {
 
 func TestCompatibilityHCLFraming_PopulatedDocumentKeepsOnlyOneMarkerOccurrence(t *testing.T) {
 	c := qt.New(t)
-	report := atlasreport.NewSchemaInspectReport(
+	report := newInspectReport(c,
 		&schemamodel.Database{
 			Schemas: []schemamodel.Schema{{
 				Name:    "main",
@@ -72,7 +72,7 @@ func TestCompatibilityHCLFraming_PopulatedDocumentKeepsOnlyOneMarkerOccurrence(t
 
 func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testing.T) {
 	c := qt.New(t)
-	report := atlasreport.NewSchemaInspectReport(
+	report := newInspectReport(c,
 		&schemamodel.Database{
 			Schemas:    []schemamodel.Schema{{Name: "public"}},
 			Tables:     []schemamodel.Table{{StructName: "User", Name: "users", Schema: "public"}},
@@ -105,7 +105,7 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 
 func TestCompatibilityHCLFraming_IsIndependentOfBlockPolicy(t *testing.T) {
 	c := qt.New(t)
-	report := atlasreport.NewSchemaInspectReport(
+	report := newInspectReport(c,
 		&schemamodel.Database{
 			Schemas:    []schemamodel.Schema{{Name: "public"}},
 			Extensions: []schemamodel.Extension{{Name: "pgcrypto"}},
@@ -135,9 +135,9 @@ func TestCompatibilityHCLFraming_DoesNotChangeJSONOrSQL(t *testing.T) {
 	for _, format := range formats {
 		t.Run(format, func(t *testing.T) {
 			c := qt.New(t)
-			native, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(false))
+			native, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(c, false))
 			c.Assert(err, qt.IsNil)
-			compat, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(true))
+			compat, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(c, true))
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(compat, qt.DeepEquals, native)
@@ -148,15 +148,15 @@ func TestCompatibilityHCLFraming_DoesNotChangeJSONOrSQL(t *testing.T) {
 func TestCompatibilityHCLFraming_NativeDocumentIsByteIdentical(t *testing.T) {
 	c := qt.New(t)
 
-	hcl, err := emptySQLiteInspectReport(false).MarshalHCL()
+	hcl, err := emptySQLiteInspectReport(c, false).MarshalHCL()
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hcl, qt.Equals,
 		atlashclrender.GeneratedCodeMarker+"\n\nschema \"main\" {\n}\n\n")
 }
 
-func emptySQLiteInspectReport(compatibilityHCLFraming bool) *atlasreport.SchemaInspectReport {
-	return atlasreport.NewSchemaInspectReport(
+func emptySQLiteInspectReport(c *qt.C, compatibilityHCLFraming bool) *atlasreport.SchemaInspectReport {
+	return newInspectReport(c,
 		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "main"}}},
 		&catalog.Database{Schemas: []catalog.Schema{{Name: "main"}}},
 		catalog.ServerInfo{Dialect: platform.SQLite, Schema: "main"},

@@ -1,9 +1,11 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -37,7 +39,10 @@ func planNotNullName(c *qt.C, current, desired string, named bool) string {
 
 	caps := capability.Postgres17().With(capability.NamedNotNullConstraints, named)
 	nodes, err := postgres.NewForDialect(platform.Postgres, caps).
-		GenerateMigrationAST(notNullNameDiff(current, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			notNullNameDiff(current, desired),
+		)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
 	c.Assert(err, qt.IsNil)

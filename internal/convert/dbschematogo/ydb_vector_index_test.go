@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -27,7 +29,7 @@ func TestConvertDBSchemaToGoSchema_KeepsAYDBVectorIndex(t *testing.T) {
 			Method: "GLOBAL USING vector_kmeans_tree", Vector: vector}},
 	}
 
-	model := dbschematogo.ConvertDBSchemaToGoSchema(read, platform.YDB)
+	model := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(model.Indexes, qt.HasLen, 1)
 	c.Assert(model.Indexes[0].Type, qt.Equals, "GLOBAL USING vector_kmeans_tree")

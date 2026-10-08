@@ -21,7 +21,7 @@ import (
 func TestRunTest_AResultSetIsTheWholeResult(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "two rows are not one value",
 			Steps: []dbtest.Step{
@@ -73,7 +73,7 @@ func TestRunTest_ResultSetLayouts_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 				Cases: []dbtest.Case{{
 					Name: test.name,
 					Steps: []dbtest.Step{
@@ -124,7 +124,7 @@ func TestAssertion_RefusesALayoutWithNothingToLayOut(t *testing.T) {
 			c := qt.New(t)
 
 			_, err := dbtest.RunMigrationTest(context.Background(),
-				dbtest.Options{Cases: []dbtest.Case{{
+				dbtest.Options{Runtime: selectedRuntime(c), Cases: []dbtest.Case{{
 					Name:  "bad layout",
 					Steps: []dbtest.Step{{Assert: &test.assertion}},
 				}}})
@@ -144,7 +144,7 @@ func TestAssertion_RefusesALayoutWithNothingToLayOut(t *testing.T) {
 func TestReport_DistinguishesALogAndACaughtFailureFromAPassingStep(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "three outcomes",
 			Steps: []dbtest.Step{
@@ -201,7 +201,7 @@ func TestReport_DistinguishesALogAndACaughtFailureFromAPassingStep(t *testing.T)
 func TestReport_AFailedExpectedFailureIsNotCaught(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "nothing failed",
 			Steps: []dbtest.Step{

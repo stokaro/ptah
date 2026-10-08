@@ -3,6 +3,7 @@
 package dbschema_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,11 +12,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/planner"
@@ -117,10 +120,13 @@ func planDocumentAgainstLive(
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 
-	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
+	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, conn.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, conn.Info().Dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

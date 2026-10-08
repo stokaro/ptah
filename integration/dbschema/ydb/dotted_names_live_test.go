@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -116,9 +118,10 @@ func readDotted(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection)
 func planDotted(c *qt.C, conn *dbschema.DatabaseConnection) []string {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(dottedDeclaration(), readDotted(c, c.Context(), conn), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), dottedDeclaration(), readDotted(c, c.Context(), conn), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)

@@ -7,11 +7,12 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 func TestChangefeedPayloads_CloneRetainsIndependentConsumers(t *testing.T) {
 	c := qt.New(t)
-	feed := ast.ChangefeedSpec{Name: "updates", Consumers: []ast.TopicConsumerSpec{
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Consumers: []ast.TopicConsumerSpec{
 		{Name: "worker", SupportedCodecs: []string{"raw"}},
 	}}
 	added := &ydbast.AddChangefeed{Changefeed: feed}

@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -65,9 +68,10 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseSortingKey_HappyPath(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareSchemas(keyedTable(test.overrides), liveTable(test.overrides, test.keys...), platform.ClickHouse)
+			diff := must.Must(schemadiff.CompareSchemas(t.Context(), keyedTable(test.overrides), liveTable(test.overrides, test.keys...), platform.ClickHouse, must.Must(builtin.New())))
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
@@ -109,7 +113,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseSortingKey_FailurePath(t *tes
 			c := qt.New(t)
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-				schemadiff.CompareSchemas(keyedTable(test.declared), liveTable(test.live, test.keys...), platform.ClickHouse),
+				context.Background(), must.Must(builtin.New()),
+				must.Must(schemadiff.CompareSchemas(t.Context(), keyedTable(test.declared), liveTable(test.live, test.keys...), platform.ClickHouse, must.Must(builtin.New()))),
 				platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
 			)
 

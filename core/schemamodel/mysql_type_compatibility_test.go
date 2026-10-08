@@ -1,11 +1,14 @@
 package schemamodel_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
@@ -113,12 +116,15 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 
 	// Create schema diff for adding both tables
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(db, "users", "articles"),
+		TablesAdded: difftypes.TableCreationsFor(db, identifier.ForDialect("mysql"), "users", "articles"),
 	}
 
 	// Generate migration using MySQL planner
 	planner := &mysql.Planner{}
-	nodes, err := planner.GenerateMigrationAST(diff)
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL

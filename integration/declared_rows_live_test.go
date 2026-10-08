@@ -10,10 +10,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 )
@@ -104,7 +106,7 @@ func TestDeclaredRowsConvergeLive(t *testing.T) {
 	desired := declaredTypedSchema()
 	applyDeclaredRows(c, ctx, conn, desired)
 
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
 }
@@ -129,7 +131,7 @@ func TestDeclaredRowsUpdateOneRowLive(t *testing.T) {
 	changed.ManagedData[0].Rows[0]["label"] = schemamodel.ManagedValue{Tag: "str", Text: "Renamed"}
 	schemamodel.Finalize(changed)
 
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.HasLen, 1)
 
@@ -164,7 +166,7 @@ func declaredRowsDatabase(c *qt.C, ctx context.Context, purpose string) (*dbsche
 // fails the test at the statement, which is the measurement.
 func applyDeclaredRows(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, desired *schemamodel.Database) {
 	c.Helper()
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	for _, statement := range plan.Statements() {
 		_, err := conn.ExecContext(ctx, statement)
@@ -391,7 +393,7 @@ func TestDeclaredRowsConvergeOverTimeLive(t *testing.T) {
 	desired := declaredTimeSchema("2026-01-02T03:04:05Z", "2026-01-02")
 	applyDeclaredRows(c, ctx, conn, desired)
 
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
 }
@@ -410,12 +412,12 @@ func TestDeclaredRowsChangeATimeLive(t *testing.T) {
 	applyDeclaredRows(c, ctx, conn, declaredTimeSchema("2026-01-02T03:04:05Z", "2026-01-02"))
 
 	changed := declaredTimeSchema("2026-03-04T05:06:07Z", "2026-03-04")
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.HasLen, 1)
 
 	applyDeclaredRows(c, ctx, conn, changed)
-	again, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed})
+	again, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(again), qt.DeepEquals, []string(nil))
 }
@@ -541,7 +543,7 @@ func TestDeclaredRowsDefaultSchemaLive(t *testing.T) {
 	desired := declaredSchemaQualifiedRows("public")
 	applyDeclaredRows(c, ctx, conn, desired)
 
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
 

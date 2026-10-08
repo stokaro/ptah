@@ -112,6 +112,12 @@ bounds the session advisory lock that serializes concurrent applies,
 `$VISUAL`/`$EDITOR`, and `--schemas`, `--include`, and `--exclude` scope both
 comparison sides.
 
+Saved-plan rehearsal and post-apply verification require complete comparison
+evidence. An empty diff with an unknown feature state does not establish that
+the plan reached its desired schema. If verification after apply lacks that
+evidence, the error states that the plan was applied and verification remains
+incomplete.
+
 ## Locking and `--lock-timeout`
 
 A session advisory lock stops two applies from planning against one database at
@@ -374,7 +380,7 @@ Expected output on standard output:
 
 ```text
 {
-  "contract_version": 1,
+  "contract_version": 2,
   "outcome": "no-changes"
 }
 ```
@@ -464,11 +470,17 @@ account without access to the role tables is the usual case: a role the schema
 declares is withheld. No statement is planned for it, because creating it could
 fail or diverge against a role that is already there.
 
-Each withheld object is one entry in `undecided`, with its `kind` and `name`,
-and the `reason` and `provenance` the read gave. The entries are sorted by kind
-and then name, and standard error explains each one. The field is independent
-of the outcome: next to `changes` or `applied` it names what the run did not
-create, and next to `no-changes` it means the database is not shown to match.
+Contract version 2 records common-object limits in `undecided.common`, with
+`kind`, `name`, `reason`, and `provenance`. Feature limits appear in
+`undecided.features`, with the model `kind`, a structured `subject`, and a
+`reason`. A feature limit may describe a whole table-owned namespace. Subject
+components preserve catalog, schema, parent, and name separately, so a dot in a
+name cannot become a qualification boundary.
+
+The report omits `undecided` when neither collection has a limit. Standard
+error explains every limit. The field is independent of the outcome: next to
+`changes` or `applied` it names state the comparison could not establish, and
+next to `no-changes` it means the database is not shown to match.
 A caller that decides "in sync" from the outcome reads `undecided` too. A plan
 file does not record the field, so `apply --plan` does not report it; the
 `schema plan` run that computed the file did.

@@ -1,12 +1,15 @@
 package schemamodel_test
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -86,12 +89,15 @@ func TestIssue51ExactReproduction(t *testing.T) {
 
 	// Now test the migration generation
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(db, "tenants", "users", "locations", "areas"),
+		TablesAdded: difftypes.TableCreationsFor(db, identifier.ForDialect("postgres"), "tenants", "users", "locations", "areas"),
 	}
 
 	// Generate migration using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(diff)
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL

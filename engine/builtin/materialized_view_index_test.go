@@ -1,10 +1,12 @@
 package builtin_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -109,8 +111,14 @@ func TestPlan_IndexOnAMaterializedViewIsPlannedRatherThanRefused(t *testing.T) {
 	c := qt.New(t)
 	description := materializedViewIndexSchema()
 
-	diff := schemadiff.CompareWithDialect(description, &catalog.Database{}, platform.Postgres)
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	diff, err := schemadiff.CompareWithDialect(t.Context(), description, &catalog.Database{}, platform.Postgres, runtime)
+	c.Assert(err, qt.IsNil)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	rendered := make([]string, 0, len(nodes))

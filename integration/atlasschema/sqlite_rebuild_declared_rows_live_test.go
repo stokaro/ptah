@@ -9,9 +9,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrator"
 )
@@ -329,7 +331,7 @@ func rebuildRowsApplySavedPlan(
 	desired *schemamodel.Database,
 ) error {
 	c.Helper()
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	statements := make([]string, 0, len(plan.Statements))
 	for _, statement := range plan.Statements {
@@ -349,7 +351,7 @@ func rebuildRowsPrepare(
 	plan, err := atlasschema.PrepareApply(ctx, conn, atlasschema.ApplyRuntimeOptions{
 		Desired: desired,
 		TxMode:  migrator.MigrationTxModeFile,
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Logf("plan:\n%s", plan.SQL())
 	return plan

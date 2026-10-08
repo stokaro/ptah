@@ -3,12 +3,15 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -59,8 +62,11 @@ func TestDownMigrationRestoresDroppedColumnLive(t *testing.T) {
 			desired := downColumnTarget(test.targetSchema)
 			database := downColumnDatabase(test.dbSchema)
 
-			forward := schemadiff.CompareWithDialect(desired, database, "postgres")
-			up, err := planner.GenerateSchemaDiffSQLStatements(forward, "postgres")
+			forward := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
+			up, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				forward, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			executeSQL(c, dbURL, up)
 			c.Assert(usersColumns(c, dbURL), qt.DeepEquals, []string{"email", "id"})
@@ -127,6 +133,7 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 			c.Assert(domainNames(c, dbURL), qt.DeepEquals, []string{"app.zip"})
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				modifiedZipDomainDiff(),
 
 				"postgres",

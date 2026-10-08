@@ -12,12 +12,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 )
@@ -58,7 +60,7 @@ func TestCockroachGrants_LiveReadsWhatWasGranted(t *testing.T) {
 		fixture.reader + " USAGE on SEQUENCE " + fixture.schema + ".seq",
 	})
 	c.Assert(roleNamesOf(live.Roles), qt.DeepEquals, []string{fixture.owner, fixture.reader})
-	c.Assert(revokedRoutines(dbschematogo.ConvertDBSchemaToGoSchema(live, "cockroachdb").RevokedGrants),
+	c.Assert(revokedRoutines(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "cockroachdb", must.Must(builtin.New()))).RevokedGrants),
 		qt.DeepEquals, []string{"PUBLIC EXECUTE on " + fixture.schema + ".locked"})
 }
 

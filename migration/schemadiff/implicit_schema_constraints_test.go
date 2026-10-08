@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -110,11 +112,11 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTheDesiredSchema(t *tes
 			t.Parallel()
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				implicitSchemaDesired(test.genSchema),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), implicitSchemaDesired(test.genSchema),
 				implicitSchemaDatabase(test.dbSchema, test.dbTableName),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.wantRemoved,
 				qt.Commentf("diff: %#v", diff))
@@ -146,11 +148,11 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaPlansNothingAtAll(t *testing.T
 			t.Parallel()
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				implicitSchemaDesired(test.genSchema),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), implicitSchemaDesired(test.genSchema),
 				implicitSchemaDatabase("", "users"),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -203,7 +205,7 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 				Body:   "SELECT 1",
 			}}
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(len(diff.TriggersRemoved) == 0, qt.Equals, test.wantSame,
 				qt.Commentf("removed: %#v", diff.TriggersRemoved))

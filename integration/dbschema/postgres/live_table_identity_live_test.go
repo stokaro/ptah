@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
@@ -125,7 +126,7 @@ func (f liveTableIdentityFixture) indexTable(c *qt.C, index string) string {
 // the parts of the comparison the two tables make up.
 func (f liveTableIdentityFixture) assertNothingPlanned(c *qt.C, desired *schemamodel.Database) {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(desired, f.read(c), f.dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, f.read(c), f.dialect, must.Must(builtin.New())))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesAdded))
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesRemoved))
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))
@@ -142,7 +143,7 @@ func (f liveTableIdentityFixture) assertNothingPlanned(c *qt.C, desired *schemam
 func TestLiveTableIdentity_DescriptionReplays(t *testing.T) {
 	c := qt.New(t)
 	f := newLiveTableIdentityFixture(c)
-	description := dbschematogo.ConvertDBSchemaToGoSchema(f.read(c), f.dialect)
+	description := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), f.read(c), f.dialect, must.Must(builtin.New())))
 	statements, err := builtin.GetOrderedCreateStatements(description, f.dialect)
 	c.Assert(err, qt.IsNil)
 	f.execute(c, []string{"DROP SCHEMA " + f.quotedSchema() + " CASCADE", "CREATE SCHEMA " + f.quotedSchema()})
@@ -160,7 +161,7 @@ func TestLiveTableIdentity_DescriptionReplays(t *testing.T) {
 func TestLiveTableIdentity_IntrospectedModelsCompareEqual(t *testing.T) {
 	c := qt.New(t)
 	f := newLiveTableIdentityFixture(c)
-	files, err := goschematogo.Render(dbschematogo.ConvertDBSchemaToGoSchema(f.read(c), f.dialect),
+	files, err := goschematogo.Render(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), f.read(c), f.dialect, must.Must(builtin.New()))),
 		goschematogo.Options{PackageName: "models", PerTable: true})
 	c.Assert(err, qt.IsNil)
 	dir := c.TempDir()

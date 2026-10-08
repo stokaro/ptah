@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -61,7 +63,7 @@ func TestCompare_EquivalentInputsProduceIdenticalOutput(t *testing.T) {
 
 	encode := func(c *qt.C, db *catalog.Database) string {
 		c.Helper()
-		encoded, err := json.Marshal(schemadiff.Compare(&schemamodel.Database{}, db))
+		encoded, err := json.Marshal(must.Must(schemadiff.Compare(t.Context(), &schemamodel.Database{}, db, must.Must(builtin.New()))))
 		c.Assert(err, qt.IsNil)
 		return string(encoded)
 	}

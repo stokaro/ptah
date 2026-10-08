@@ -1,10 +1,12 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
@@ -75,7 +77,7 @@ func TestCompare_FieldLevelForeignKeyActionDrift(t *testing.T) {
 	t.Run("NO ACTION -> SET NULL is detected as a change", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := schemadiff.Compare(exportsSchema("SET NULL"), exportsDBSchema("NO ACTION"))
+		diff := must.Must(schemadiff.Compare(t.Context(), exportsSchema("SET NULL"), exportsDBSchema("NO ACTION"), must.Must(builtin.New())))
 
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 		// Drop + add of the same FK name (modified constraints are expressed as
@@ -87,7 +89,7 @@ func TestCompare_FieldLevelForeignKeyActionDrift(t *testing.T) {
 	t.Run("unchanged SET NULL FK is a no-op", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := schemadiff.Compare(exportsSchema("SET NULL"), exportsDBSchema("SET NULL"))
+		diff := must.Must(schemadiff.Compare(t.Context(), exportsSchema("SET NULL"), exportsDBSchema("SET NULL"), must.Must(builtin.New())))
 
 		c.Assert(diff.HasChanges(), qt.IsFalse)
 	})
@@ -95,7 +97,7 @@ func TestCompare_FieldLevelForeignKeyActionDrift(t *testing.T) {
 	t.Run("empty action vs NO ACTION default is a no-op", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := schemadiff.Compare(exportsSchema(""), exportsDBSchema("NO ACTION"))
+		diff := must.Must(schemadiff.Compare(t.Context(), exportsSchema(""), exportsDBSchema("NO ACTION"), must.Must(builtin.New())))
 
 		c.Assert(diff.HasChanges(), qt.IsFalse)
 	})
@@ -114,17 +116,17 @@ func TestCompare_FieldLevelForeignKeyActionIdempotency(t *testing.T) {
 
 	// Run Compare twice against the same (already-converged) inputs. Both runs
 	// must report no changes — no churn on repeated `generate`.
-	first := schemadiff.Compare(desired, database)
+	first := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 	c.Assert(first.HasChanges(), qt.IsFalse, qt.Commentf("first run should be a no-op"))
 
-	second := schemadiff.Compare(desired, database)
+	second := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 	c.Assert(second.HasChanges(), qt.IsFalse, qt.Commentf("second run should remain a no-op"))
 
 	// And the empty-action default likewise converges and stays converged.
 	noActionGen := exportsSchema("")
 	noActionDB := exportsDBSchema("NO ACTION")
-	c.Assert(schemadiff.Compare(noActionGen, noActionDB).HasChanges(), qt.IsFalse)
-	c.Assert(schemadiff.Compare(noActionGen, noActionDB).HasChanges(), qt.IsFalse)
+	c.Assert(must.Must(schemadiff.Compare(t.Context(), noActionGen, noActionDB, must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
+	c.Assert(must.Must(schemadiff.Compare(t.Context(), noActionGen, noActionDB, must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
 }
 
 // TestCompare_FieldLevelForeignKeyActionMigrationSQL pins the emitted migration
@@ -139,10 +141,13 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 	c := qt.New(t)
 
 	gen := exportsSchema("SET NULL")
-	diff := schemadiff.Compare(gen, exportsDBSchema("NO ACTION"))
+	diff := must.Must(schemadiff.Compare(t.Context(), gen, exportsDBSchema("NO ACTION"), must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -173,8 +178,11 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 		qt.Commentf("DROP must come before ADD; drop@%d add@%d\n%s", dropIdx, addIdx, sql))
 
 	// Idempotency: once applied, regenerating produces no statements.
-	converged := schemadiff.Compare(exportsSchema("SET NULL"), exportsDBSchema("SET NULL"))
-	noopNodes, err := postgres.New().GenerateMigrationAST(converged)
+	converged := must.Must(schemadiff.Compare(t.Context(), exportsSchema("SET NULL"), exportsDBSchema("SET NULL"), must.Must(builtin.New())))
+	noopNodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		converged,
+	)
 	c.Assert(err, qt.IsNil)
 	noopSQL, err := builtin.RenderSQL("postgres", noopNodes...)
 	c.Assert(err, qt.IsNil)

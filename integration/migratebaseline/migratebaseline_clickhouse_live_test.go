@@ -11,8 +11,10 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/shadow"
 )
@@ -70,7 +72,7 @@ func TestVerifyBaselineClickHouseAcceptsAShadowDatabaseOfItsOwn(t *testing.T) {
 		Version:           1,
 		Dialect:           info.Dialect,
 		Capabilities:      info.Capabilities,
-	}
+		Runtime:           must.Must(builtin.New())}
 	c.Assert(shadow.VerifyBaseline(ctx, options), qt.IsNil)
 
 	// A column the migrations never create makes the target a schema they do not

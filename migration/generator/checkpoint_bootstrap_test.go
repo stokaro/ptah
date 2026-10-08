@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
 )
@@ -96,11 +98,10 @@ func TestCheckpointBootstrapRefusesAnUnusableTable(t *testing.T) {
 			c := qt.New(t)
 			history := writeHistoryWithReferenceData(c)
 
-			_, _, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{
-				ShadowDatabaseURL: "sqlite://" + filepath.Join(c.TempDir(), "shadow.db"),
-				MigrationsDir:     history,
-				Dialect:           "sqlite",
-				DataTables:        []string{test.table},
+			_, _, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{Runtime: must.Must(builtin.New()), ShadowDatabaseURL: "sqlite://" + filepath.Join(c.TempDir(), "shadow.db"),
+				MigrationsDir: history,
+				Dialect:       "sqlite",
+				DataTables:    []string{test.table},
 			})
 
 			c.Assert(err, qt.ErrorMatches, test.message)
@@ -137,11 +138,10 @@ func writeHistoryWithReferenceData(c *qt.C) string {
 
 func generateSQLiteCheckpoint(c *qt.C, historyDir string, dataTables ...string) (upSQL, downSQL string) {
 	c.Helper()
-	up, down, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{
-		ShadowDatabaseURL: "sqlite://" + filepath.Join(c.TempDir(), "shadow.db"),
-		MigrationsDir:     historyDir,
-		Dialect:           "sqlite",
-		DataTables:        dataTables,
+	up, down, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{Runtime: must.Must(builtin.New()), ShadowDatabaseURL: "sqlite://" + filepath.Join(c.TempDir(), "shadow.db"),
+		MigrationsDir: historyDir,
+		Dialect:       "sqlite",
+		DataTables:    dataTables,
 	})
 	c.Assert(err, qt.IsNil)
 	return up, down

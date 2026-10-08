@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/schemadiff"
@@ -101,10 +103,10 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 			envbooltest.Unset(sqlitevirtual.AllowDropEnvVar)(t)
 
 			_, err := schemadiff.CompareWithDatabaseInfo(
-				tt.desired,
+				t.Context(), tt.desired,
 				tt.database,
 				catalog.ServerInfo{Dialect: "sqlite"},
-				tt.options,
+				tt.options, must.Must(builtin.New()),
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)

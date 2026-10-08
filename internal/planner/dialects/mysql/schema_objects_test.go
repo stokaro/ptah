@@ -1,12 +1,14 @@
 package mysql_test
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -44,7 +46,10 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -74,7 +79,10 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 		}},
 	}
 
-	_, err := planner.GenerateMigrationAST(diff)
+	_, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
@@ -95,7 +103,10 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 func TestPlanner_GenerateMigrationAST_ACoveringUniqueThePlanDoesNotTouch(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := mysql.New().GenerateMigrationAST(&difftypes.SchemaDiff{})
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
@@ -122,7 +133,10 @@ func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.
 		}},
 	}
 
-	statements, err := migrationplanner.GenerateSchemaDiffSQLStatements(diff, "mysql")
+	statements, err := migrationplanner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "mysql",
+	)
 	c.Assert(err, qt.IsNil)
 	for i, statement := range statements {
 		statements[i] = legacyRenderedSQL(statement)
@@ -154,7 +168,10 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
@@ -206,7 +223,10 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *tes
 			// The addition is planned from the declaration, so the desired
 			// schema has to hold what the diff names or the phase contributes
 			// nothing (stokaro/ptah#1762).
-			nodes, err := planner.GenerateMigrationAST(test.diff)
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 			c.Check(fmt.Sprintf("%T", nodes[0]), qt.Equals, test.wantNode)

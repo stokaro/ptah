@@ -177,6 +177,11 @@ func rules() []rule {
 			Summary:    "public provider contracts must not link concrete features, database implementations, or external modules",
 			violations: providerContractImports,
 		},
+		{
+			ID:         "renderer-consumers-import-builtins",
+			Summary:    "selected rendering consumers must not link built-in rendering factories",
+			violations: rendererConsumerImports,
+		},
 	}
 }
 
@@ -307,9 +312,9 @@ func measure(root string) ([]ruleReport, error) {
 		return nil, fmt.Errorf("packages failed to load")
 	}
 
-	for _, required := range providerContractRoots {
+	for _, required := range slices.Concat(providerContractRoots, rendererConsumerRoots) {
 		if !slices.ContainsFunc(loaded, func(pkg *packages.Package) bool { return relative(pkg.PkgPath) == required }) {
-			return nil, fmt.Errorf("provider contract root %q was not loaded", required)
+			return nil, fmt.Errorf("architecture root %q was not loaded", required)
 		}
 	}
 

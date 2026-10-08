@@ -62,7 +62,7 @@ func TestRunTest_ExpectedFailureAndBooleanAssertions_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			report, err := dbtest.RunMigrationTest(context.Background(),
-				dbtest.Options{Cases: []dbtest.Case{{Name: test.name, Steps: test.steps}}})
+				dbtest.Options{Runtime: selectedRuntime(c), Cases: []dbtest.Case{{Name: test.name, Steps: test.steps}}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(report.Failed(), qt.IsFalse)
@@ -133,7 +133,7 @@ func TestRunTest_ExpectedFailureAndBooleanAssertions_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			report, err := dbtest.RunMigrationTest(context.Background(),
-				dbtest.Options{Cases: []dbtest.Case{{Name: test.name, Steps: test.steps}}})
+				dbtest.Options{Runtime: selectedRuntime(c), Cases: []dbtest.Case{{Name: test.name, Steps: test.steps}}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(report.Failed(), qt.IsTrue)
@@ -154,7 +154,7 @@ func TestRunTest_ExpectedFailureAndBooleanAssertions_FailurePath(t *testing.T) {
 func TestRunTest_ALogStepRunsWhereItStandsAndDecidesNothing(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "logged",
 			Steps: []dbtest.Step{
@@ -206,7 +206,7 @@ func TestAssertion_RefusesTwoConditionsAtOnce(t *testing.T) {
 			c := qt.New(t)
 
 			_, err := dbtest.RunMigrationTest(context.Background(),
-				dbtest.Options{Cases: []dbtest.Case{{
+				dbtest.Options{Runtime: selectedRuntime(c), Cases: []dbtest.Case{{
 					Name:  "two conditions",
 					Steps: []dbtest.Step{{Assert: &test.assertion}},
 				}}})
@@ -236,7 +236,7 @@ func TestAssertion_RefusesAnInvalidPattern(t *testing.T) {
 			c := qt.New(t)
 
 			_, err := dbtest.RunMigrationTest(context.Background(),
-				dbtest.Options{Cases: []dbtest.Case{{
+				dbtest.Options{Runtime: selectedRuntime(c), Cases: []dbtest.Case{{
 					Name:  "bad pattern",
 					Steps: []dbtest.Step{{Assert: &test.assertion}},
 				}}})

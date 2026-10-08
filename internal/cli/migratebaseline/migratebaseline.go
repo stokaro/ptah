@@ -13,7 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -29,6 +31,7 @@ import (
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/shadow"
 )
 
@@ -219,7 +222,12 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	}
 	defer releaseShadow()
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
 	if err := verifyBaseline(ctx, baselineVerifyOptions{
+		runtime:        runtime,
 		diagnostics:    cmd.ErrOrStderr(),
 		dbURL:          opts.dbURL,
 		shadowDB:       shadowDB,
@@ -244,6 +252,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 }
 
 type baselineVerifyOptions struct {
+	runtime schemadiff.DatabaseRuntime
 	// diagnostics receives the warning for each declared object the entity
 	// comparison could not check.
 	diagnostics    io.Writer
@@ -261,9 +270,13 @@ type baselineVerifyOptions struct {
 }
 
 func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
+	if err := schemaext.RequireRuntime(ctx, opts.runtime); err != nil {
+		return err
+	}
 	handler := verificationErrorHandler{force: opts.force}
 	if opts.shadowDB != "" {
 		err := shadow.VerifyBaseline(ctx, shadow.BaselineVerifyOptions{
+			Runtime:           opts.runtime,
 			ShadowDatabaseURL: opts.shadowDB,
 			TargetConn:        opts.conn,
 			MigrationsDir:     opts.migrationsDir,
@@ -281,6 +294,7 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 
 	fmt.Println("No --shadow-db provided; using weaker entity drift verification.")
 	result, err := schemaops.Compare(ctx, schemaops.CompareOptions{
+		Runtime:        opts.runtime,
 		RootDirs:       []string{opts.rootDir},
 		DatabaseURL:    opts.dbURL,
 		ConnectTimeout: opts.connectTimeout,
@@ -306,9 +320,9 @@ func entityDriftError(result *schemaops.CompareResult) error {
 		findings := safety.ClassifySchemaDiff(result.Diff)
 		return fmt.Errorf("baseline drift verification failed: schema drift detected; findings: %v", findings)
 	}
-	if len(result.Undecided) > 0 {
+	if !result.Undecided.Empty() {
 		return fmt.Errorf("baseline drift verification failed: %s; see the warnings above",
-			undecidednote.Summary(len(result.Undecided)))
+			undecidednote.Summary(result.Undecided))
 	}
 	return nil
 }

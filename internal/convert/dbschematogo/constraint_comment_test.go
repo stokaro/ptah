@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 )
@@ -32,8 +34,8 @@ func commentedCheckCatalog() *catalog.Database {
 func TestConvertDBSchemaToGoSchema_CarriesTheConstraintComment(t *testing.T) {
 	c := qt.New(t)
 
-	declared := dbschematogo.ConvertDBSchemaToGoSchema(commentedCheckCatalog(), "postgres")
-	roundTrip := goschematodb.ToDBSchema(declared, "postgres")
+	declared := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), commentedCheckCatalog(), "postgres", must.Must(builtin.New())))
+	roundTrip := must.Must(goschematodb.ToDBSchema(t.Context(), declared, "postgres", must.Must(builtin.New())))
 
 	c.Assert(declared.Constraints, qt.HasLen, 1)
 	c.Assert(declared.Constraints[0].Comment, qt.Equals, "a total is positive")

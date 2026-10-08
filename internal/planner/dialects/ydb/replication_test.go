@@ -1,17 +1,24 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -31,9 +38,9 @@ func heldReplication(name, target, state string) catalog.AsyncReplication {
 	return catalog.AsyncReplication{Name: name, State: state, Spec: replicationOf(name, target)}
 }
 
-// table is a declared table with a key and the given changefeeds.
-func table(name string, changefeeds ...ast.ChangefeedSpec) schemamodel.Table {
-	return schemamodel.Table{StructName: "S", Name: name, Changefeeds: changefeeds}
+// table is a declared table with a key.
+func table(name string) schemamodel.Table {
+	return schemamodel.Table{StructName: "S", Name: name}
 }
 
 // lambda is the lambda every transfer below writes rows with.
@@ -53,14 +60,15 @@ func replicaOf(name string) coverage.Object {
 // views.
 func TestGenerateMigrationAST_Replications_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	feed := ast.ChangefeedSpec{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}
+	feed := ydbschema.ChangefeedSpec{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}
 	moved := replicationOf("paused", "paused_copy")
 	moved.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
 	ingest := ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda}
 	relambda := ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: "($m) -> { return [1]; }"}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "orders", Table: table("orders", feed),
-			Fields: []schemamodel.Field{keyField("id")}}},
+		TablesAdded: difftypes.TableChanges{{Name: "orders", Table: table("orders"),
+			OwnedObjects: declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects,
+			Fields:       []schemamodel.Field{keyField("id")}}},
 		TablesRemoved: []string{"legacy"},
 		AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{
 			{Name: "mirror", Spec: replicationOf("accounts", "replica/accounts")},
@@ -77,9 +85,10 @@ func TestGenerateMigrationAST_Replications_HappyPath(t *testing.T) {
 			Current: ingest, State: catalog.ReplicationRunning}},
 		ViewsAdded: difftypes.ViewChanges{{Name: "v", Body: "SELECT id FROM orders"}},
 		DeclaredTables: []schemamodel.Table{
-			table("orders", feed), table("order_log"),
+			table("orders"), table("order_log"),
 		},
 		Replications: difftypes.ReplicationContext{
+			DesiredObjects: declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects,
 			CurrentReplications: []catalog.AsyncReplication{
 				heldReplication("failed_over", "failed_over_copy", catalog.ReplicationDone),
 				heldReplication("running", "running_copy", catalog.ReplicationRunning),
@@ -135,13 +144,22 @@ func TestGenerateMigrationAST_Replications_ProposeNothingForReplicaTables(t *tes
 		AsyncReplications: []catalog.AsyncReplication{{Name: "mirror", State: catalog.ReplicationRunning,
 			Spec: ast.AsyncReplicationSpec{Connection: spec.Connection,
 				Items: []ast.AsyncReplicationItem{{Source: "src", Target: "rep"}}}}},
-		NotDescribed: coverage.Set{}.With(replicaOf("rep"),
-			coverage.Object{Kind: coverage.Changefeed, Name: "src/2b1f0c5e-0d1c-4b1a-9c3e-5d6f7a8b9c0d",
-				Reason: coverage.Unsupported, Provenance: coverage.Observed}),
+		NotDescribed: coverage.Set{}.With(replicaOf("rep")),
 	}
-	diff := schemadiff.CompareWithDialect(declared, read, platform.YDB)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	declared.FeatureCoverage = feedCoverage(t, schemaext.Desired)
+	read.FeatureCoverage = feedCoverage(t, schemaext.Observed, schemaext.SubjectCoverage{
+		Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("", "src", "2b1f0c5e-0d1c-4b1a-9c3e-5d6f7a8b9c0d"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "replication stream"}})
+	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), declared, read, &config.CompareOptions{Dialect: platform.YDB}, runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnostics.Features, qt.HasLen, 1)
 
-	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(diff)
+	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
@@ -152,13 +170,15 @@ func TestGenerateMigrationAST_Replications_ProposeNothingForReplicaTables(t *tes
 // its own or a changefeed's: both are there for the transfer to read.
 func TestGenerateMigrationAST_Replications_TransferReadsARecordedTopic(t *testing.T) {
 	tests := []struct {
-		name   string
-		source string
-		record coverage.Object
+		name            string
+		source          string
+		limits          coverage.Set
+		tables          []schemamodel.Table
+		featureCoverage schemaext.Coverage
 	}{
-		{name: "a topic", source: "events", record: coverage.Object{Kind: coverage.Topic, Name: "events"}},
-		{name: "a changefeed in a directory", source: "app/orders/feed",
-			record: coverage.Object{Kind: coverage.Changefeed, Name: "app.orders/feed"}},
+		{name: "a topic", source: "events", limits: coverage.Set{}.With(coverage.Object{Kind: coverage.Topic, Name: "events"}), tables: []schemamodel.Table{table("order_log")}},
+		{name: "a changefeed in a directory", source: "app/orders/feed", tables: []schemamodel.Table{table("order_log"), {Schema: "app", Name: "orders"}},
+			featureCoverage: feedCoverage(t, schemaext.Observed, schemaext.SubjectCoverage{Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("app", "orders", "feed"), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "unsupported stream"}})},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -166,9 +186,10 @@ func TestGenerateMigrationAST_Replications_TransferReadsARecordedTopic(t *testin
 			spec := ast.TransferSpec{Source: test.source, Target: "order_log", Lambda: lambda}
 			diff := &difftypes.SchemaDiff{
 				TransfersAdded:      difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
-				DeclaredTables:      []schemamodel.Table{table("order_log")},
-				CurrentNotDescribed: coverage.Set{}.With(test.record),
+				DeclaredTables:      test.tables,
+				CurrentNotDescribed: test.limits,
 				Replications: difftypes.ReplicationContext{
+					CurrentCoverage:   test.featureCoverage,
 					DeclaredTransfers: []schemamodel.Transfer{{Name: "ingest", Spec: spec}},
 				},
 			}
@@ -216,7 +237,10 @@ func TestGenerateMigrationAST_Replications_TransferReadsADeclaredTopic(t *testin
 			},
 		}
 
-		nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(diff)
+		nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 
 		c.Assert(err, qt.ErrorMatches, `transfer ingest: it reads topic app/events, which the schema declares `+
 			`neither as a topic nor as a changefeed, .*`)
@@ -248,12 +272,14 @@ func TestGenerateMigrationAST_Replications_TransferDroppedBeforeItsTopic(t *test
 // or a transfer owns or depends on.
 func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 	ingest := ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda}
-	feed := ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}
-	withTransfer := func(spec ast.TransferSpec, tables ...schemamodel.Table) *difftypes.SchemaDiff {
+	feed := ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}
+	streams := declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects
+	withTransfer := func(spec ast.TransferSpec, objects schemaext.Objects, tables ...schemamodel.Table) *difftypes.SchemaDiff {
 		return &difftypes.SchemaDiff{
 			TransfersAdded: difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
 			DeclaredTables: tables,
 			Replications: difftypes.ReplicationContext{
+				DesiredObjects:    objects,
 				DeclaredTransfers: []schemamodel.Transfer{{Name: "ingest", Spec: spec}},
 			},
 		}
@@ -273,7 +299,7 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 		{
 			name:    "a transfer on 25.1",
 			caps:    capability.YDB251(),
-			diff:    withTransfer(ingest, table("orders", feed), table("order_log")),
+			diff:    withTransfer(ingest, streams, table("orders"), table("order_log")),
 			wantErr: `transfer ingest, which requires target capability transfers, unavailable on this ydb target`,
 		},
 		{
@@ -359,13 +385,13 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 		{
 			name:    "a transfer into an undeclared table",
 			caps:    capability.YDB262(),
-			diff:    withTransfer(ingest, table("orders", feed)),
+			diff:    withTransfer(ingest, streams, table("orders")),
 			wantErr: `transfer ingest: it writes table order_log, which the schema does not declare, .*`,
 		},
 		{
 			name: "a transfer of a topic nobody declares",
 			caps: capability.YDB262(),
-			diff: withTransfer(ingest, table("orders"), table("order_log")),
+			diff: withTransfer(ingest, schemaext.Objects{}, table("orders"), table("order_log")),
 			wantErr: `transfer ingest: it reads topic orders/feed, which the schema declares neither as a topic ` +
 				`nor as a changefeed, so the plan leaves no such topic, .*`,
 		},
@@ -381,7 +407,10 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(nodes, qt.IsNil)
@@ -406,13 +435,16 @@ func TestGenerateMigrationAST_Replications_RebuildRefusesATransfersTable(t *test
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := modified(difftypes.TableDiff{TableName: "app.items",
+			diff := modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired:         appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 				ColumnsModified: typeChange})
 			diff.Replications.CurrentTransfers = []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning,
 				Spec: test.transfer}}
 
-			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuild(true).GenerateMigrationAST(diff)
+			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuild(true).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 
 			c.Assert(err, qt.ErrorMatches, `rebuilding table "app.items": transfer ingest writes the table or reads `+
 				`one of its changefeeds, and a rebuild swaps the table from under it; drop the transfer, rebuild, `+

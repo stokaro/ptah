@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -81,10 +82,10 @@ func TestComposite_BareAndDefaultSchemaTableCompared_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	database := loadSpellingComposite(c)
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(database, &catalog.Database{}, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), database, &catalog.Database{}, catalog.ServerInfo{
 		Dialect:             platform.Postgres,
 		IdentifierSemantics: identifier.ForDialect(platform.Postgres),
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*table "accounts" is declared twice.*`)
 	c.Assert(diff, qt.IsNil)
@@ -99,10 +100,10 @@ func TestComposite_BareAndDefaultSchemaTableOnAnotherSearchPath_HappyPath(t *tes
 	semantics := identifier.ForDialect(platform.Postgres)
 	semantics.DefaultSchema = "app"
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(database, &catalog.Database{}, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), database, &catalog.Database{}, catalog.ServerInfo{
 		Dialect:             platform.Postgres,
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 2)

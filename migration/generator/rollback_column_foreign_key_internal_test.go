@@ -9,11 +9,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -62,11 +64,14 @@ func TestGenerateDownMigrationSQL_RestoresAColumnsForeignKeyOnce(t *testing.T) {
 		}},
 	}
 
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.TablesModified, qt.HasLen, 1)
 	c.Assert(upDiff.TablesModified[0].ColumnsRemoved.Names(), qt.DeepEquals, []string{"owner_id"})
 
-	down, err := generateDownMigrationSQL(upDiff, desired, database, platform.Postgres, capability.Postgres17())
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, desired, database, platform.Postgres, capability.Postgres17())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(down, `ADD CONSTRAINT "fk_orders_owner"`), qt.Equals, 1,

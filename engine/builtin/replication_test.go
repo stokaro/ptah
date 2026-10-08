@@ -10,19 +10,20 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 )
 
 // replicationSchema declares a table with a changefeed, the table a transfer
 // of that changefeed writes, a replication of another database's table and
 // the transfer.
-func replicationSchema() *schemamodel.Database {
+func replicationSchema(t *testing.T) *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
-			{StructName: "Orders", Name: "orders", PrimaryKey: []string{"id"},
-				Changefeeds: []ast.ChangefeedSpec{{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}}},
+			{StructName: "Orders", Name: "orders", PrimaryKey: []string{"id"}},
 			{StructName: "Log", Name: "order_log", PrimaryKey: []string{"id"}},
 		},
+		FeatureObjects: testChangefeedObjects(t, "", "orders", ydbschema.ChangefeedSpec{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}),
 		Fields: []schemamodel.Field{
 			{StructName: "Orders", Name: "id", Type: "int", Primary: true},
 			{StructName: "Log", Name: "id", Type: "int", Primary: true},
@@ -48,7 +49,7 @@ func replicationSchema() *schemamodel.Database {
 func TestRender_AsyncReplication_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(replicationSchema(), platform.YDB,
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(replicationSchema(t), platform.YDB,
 		capability.YDB262())
 
 	c.Assert(err, qt.IsNil)
@@ -105,8 +106,8 @@ func TestRender_AsyncReplication_FailurePath(t *testing.T) {
 
 	// The changefeed the transfer reads is left out, so the refusal measured is
 	// the replication's rather than the changefeed's, which comes first.
-	schema := replicationSchema()
-	schema.Tables[0].Changefeeds = nil
+	schema := replicationSchema(t)
+	schema.FeatureObjects = testChangefeedObjects(t, "", "orders")
 
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -132,10 +133,10 @@ func TestRender_AsyncReplication_FailurePath(t *testing.T) {
 // statement, a declaration the YDB line refuses or a table YDB would collide
 // with.
 func TestRender_AsyncReplication_RefusesWhatALineCannotHold(t *testing.T) {
-	bySecretPath := replicationSchema()
+	bySecretPath := replicationSchema(t)
 	bySecretPath.AsyncReplications[0].Spec.Connection.TokenSecretName = ""
 	bySecretPath.AsyncReplications[0].Spec.Connection.TokenSecretPath = "secrets/token"
-	atAReplica := replicationSchema()
+	atAReplica := replicationSchema(t)
 	atAReplica.Tables = append(atAReplica.Tables, schemamodel.Table{StructName: "Accounts", Name: "accounts",
 		Schema: "replica", PrimaryKey: []string{"id"}})
 	atAReplica.Fields = append(atAReplica.Fields, schemamodel.Field{StructName: "Accounts", Name: "id",
@@ -146,7 +147,7 @@ func TestRender_AsyncReplication_RefusesWhatALineCannotHold(t *testing.T) {
 		caps   capability.Capabilities
 		want   string
 	}{
-		{name: "a transfer on 25.1", schema: replicationSchema(), caps: capability.YDB251(),
+		{name: "a transfer on 25.1", schema: replicationSchema(t), caps: capability.YDB251(),
 			want: `transfer ingest, which requires target capability transfers, unavailable on this ydb target`},
 		{name: "a secret path on 25.3", schema: bySecretPath, caps: capability.YDB253(),
 			want: `async replication mirror names a secret by its path, which requires target capability ` +

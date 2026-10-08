@@ -4,12 +4,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -30,6 +34,7 @@ func ydbTTLDeclaration(policy *ast.RowDeletionPolicySpec) *schemamodel.Database 
 // back as policy.
 func ydbTTLCatalog(policy *ast.RowDeletionPolicySpec) *catalog.Database {
 	return &catalog.Database{
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)),
 		Tables: []catalog.Table{{Name: "events", Type: "TABLE", RowDeletionPolicy: policy, Columns: []catalog.Column{
 			{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			{Name: "ts", DataType: "Timestamp64", ColumnType: "Timestamp64", IsNullable: "YES", OrdinalPosition: 2},
@@ -70,9 +75,9 @@ func TestCompare_YDBTTL_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			against := schemadiff.CompareWithDialect(ydbTTLDeclaration(test.declared), ydbTTLCatalog(test.read), platform.YDB)
+			against := must.Must(schemadiff.CompareWithDialect(t.Context(), ydbTTLDeclaration(test.declared), ydbTTLCatalog(test.read), platform.YDB, must.Must(builtin.New())))
 			c.Assert(against.TablesModified, qt.HasLen, 0)
-			itself := schemadiff.CompareSchemas(ydbTTLDeclaration(test.declared), ydbTTLDeclaration(test.declared), platform.YDB)
+			itself := must.Must(schemadiff.CompareSchemas(t.Context(), ydbTTLDeclaration(test.declared), ydbTTLDeclaration(test.declared), platform.YDB, must.Must(builtin.New())))
 			c.Assert(itself.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -113,7 +118,7 @@ func TestCompare_YDBTTL_Changes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(ydbTTLDeclaration(test.declared), ydbTTLCatalog(test.read), platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), ydbTTLDeclaration(test.declared), ydbTTLCatalog(test.read), platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
 			c.Assert(diff.TablesModified[0].RowDeletionPolicyChange, qt.DeepEquals, &difftypes.RowDeletionPolicyChange{
 				Desired: test.declared, Current: test.read,
@@ -139,8 +144,8 @@ func TestCompare_YDBTTL_UndescribedIsNotRemoved(t *testing.T) {
 			declared := ydbTTLDeclaration(nil)
 			declared.NotDescribed = test.notDescribed
 
-			diff := schemadiff.CompareWithDialect(declared,
-				ydbTTLCatalog(&ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"}), platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared,
+				ydbTTLCatalog(&ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"}), platform.YDB, must.Must(builtin.New())))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
@@ -171,7 +176,7 @@ func TestCompare_YDBTTL_UndescribedGatesOnlyItsRemoval(t *testing.T) {
 			declared := ydbTTLDeclaration(test.declared)
 			declared.NotDescribed = test.notDescribed
 
-			diff := schemadiff.CompareWithDialect(declared, ydbTTLCatalog(read), platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, ydbTTLCatalog(read), platform.YDB, must.Must(builtin.New())))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
 			c.Assert(diff.TablesModified[0].RowDeletionPolicyChange, qt.DeepEquals,

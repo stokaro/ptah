@@ -7,12 +7,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -161,7 +163,7 @@ func TestYDBSecrets_FailurePath_RefusedOnALineWithout(t *testing.T) {
 	conn := openYDB(c, lineNamed(c, "25.1"))
 	info := conn.Info()
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(secretsDeclaration(), readScoped(c, conn, secretsSchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), secretsDeclaration(), readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches,
 		"secret ptah_ydb_secrets.pg_password, which requires target capability secrets, unavailable on this ydb target")
@@ -175,10 +177,11 @@ func TestYDBSecrets_FailurePath_RefusedOnALineWithout(t *testing.T) {
 func planRotating(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, path string) []string {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readScoped(c, conn, secretsSchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.RotateSecrets([]string{path}), qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)

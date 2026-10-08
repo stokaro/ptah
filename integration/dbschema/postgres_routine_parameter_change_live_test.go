@@ -20,10 +20,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -70,7 +72,7 @@ func TestPostgresLiveRoutineParameterRenameApplies(t *testing.T) {
 	after, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(after.Functions, qt.HasLen, 1)
-	settled := schemadiff.CompareWithDialect(wanted, after, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, after, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)
@@ -103,7 +105,7 @@ func TestPostgresLiveRoutineParameterTypeChangeApplies(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(after.Functions, qt.HasLen, 1)
 	c.Assert(readReturnTypes(c, conn, schemaName), qt.DeepEquals, map[string]string{"scalar(n bigint)": "integer"})
-	settled := schemadiff.CompareWithDialect(wanted, after, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, after, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)

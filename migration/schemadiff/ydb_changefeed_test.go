@@ -4,30 +4,46 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // changefeedDeclaration declares table events with the given changefeeds.
-func changefeedDeclaration(changefeeds ...ast.ChangefeedSpec) *schemamodel.Database {
+func changefeedDeclaration(changefeeds ...ydbschema.ChangefeedSpec) *schemamodel.Database {
+	var objects []schemaext.Object
+	for _, stream := range changefeeds {
+		objects = append(objects, ydbschema.DesiredObject("", "events", stream))
+	}
 	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Event", Name: "events", Changefeeds: changefeeds}},
-		Fields: []schemamodel.Field{{StructName: "Event", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil)),
+		Tables:          []schemamodel.Table{{StructName: "Event", Name: "events"}},
+		Fields:          []schemamodel.Field{{StructName: "Event", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 }
 
 // changefeedCatalog is table events as the YDB reader reports it, with the
 // given changefeeds.
-func changefeedCatalog(changefeeds ...ast.ChangefeedSpec) *catalog.Database {
+func changefeedCatalog(changefeeds ...ydbschema.ChangefeedSpec) *catalog.Database {
+	var objects []schemaext.Object
+	for _, stream := range changefeeds {
+		objects = append(objects, ydbschema.ObservedObject("", "events", stream))
+	}
 	return &catalog.Database{
-		Tables: []catalog.Table{{Name: "events", Type: "TABLE", Changefeeds: changefeeds, Columns: []catalog.Column{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)),
+		Tables: []catalog.Table{{Name: "events", Type: "TABLE", Columns: []catalog.Column{
 			{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 		}}},
 		Constraints: []catalog.Constraint{{Name: "events_pkey", TableName: "events", Type: "PRIMARY KEY",
@@ -39,9 +55,9 @@ func changefeedCatalog(changefeeds ...ast.ChangefeedSpec) *catalog.Database {
 // as the reader reports it: the retention in its own spelling, and the
 // consumer's start as the epoch YDB reports for none.
 var (
-	declared = ast.ChangefeedSpec{Name: "updates", Mode: "updates", Format: "json", RetentionPeriod: "PT720M",
+	declared = ydbschema.ChangefeedSpec{Name: "updates", Mode: "updates", Format: "json", RetentionPeriod: "PT720M",
 		Consumers: []ast.TopicConsumerSpec{{Name: "audit", SupportedCodecs: []string{"GZIP", "raw"}}}}
-	read = ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H",
+	read = ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H",
 		Consumers: []ast.TopicConsumerSpec{{Name: "audit", ReadFrom: "1970-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}}}
 )
 
@@ -53,10 +69,10 @@ func TestCompare_YDBChangefeedReadsBackAsDeclared(t *testing.T) {
 		name string
 		diff *difftypes.SchemaDiff
 	}{
-		{name: "against the database", diff: schemadiff.CompareWithDialect(
-			changefeedDeclaration(declared), changefeedCatalog(read), platform.YDB)},
-		{name: "against the same document", diff: schemadiff.CompareSchemas(
-			changefeedDeclaration(declared), changefeedDeclaration(declared), platform.YDB)},
+		{name: "against the database", diff: must.Must(schemadiff.CompareWithDialect(
+			t.Context(), changefeedDeclaration(declared), changefeedCatalog(read), platform.YDB, must.Must(builtin.New())))},
+		{name: "against the same document", diff: must.Must(schemadiff.CompareSchemas(
+			t.Context(), changefeedDeclaration(declared), changefeedDeclaration(declared), platform.YDB, must.Must(builtin.New())))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -69,25 +85,24 @@ func TestCompare_YDBChangefeedReadsBackAsDeclared(t *testing.T) {
 // TestCompare_YDBChangefeedChange carries both sides whole where they differ,
 // so a planner can pair them by name.
 func TestCompare_YDBChangefeedChange(t *testing.T) {
-	other := ast.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}
+	other := ydbschema.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}
 	tests := []struct {
 		name     string
 		desired  *schemamodel.Database
 		current  *catalog.Database
-		wantDiff *difftypes.ChangefeedsChange
+		wantDiff []schemaext.ChangeRecord
 	}{
 		{name: "one added", desired: changefeedDeclaration(declared, other), current: changefeedCatalog(read),
-			wantDiff: &difftypes.ChangefeedsChange{Desired: []ast.ChangefeedSpec{declared, other},
-				Current: []ast.ChangefeedSpec{read}}},
+			wantDiff: []schemaext.ChangeRecord{{Subject: ydbschema.ChangefeedRef("", "events", "keys"), Value: &ydbdiff.Changefeed{After: &ydbschema.DesiredChangefeed{Spec: other}}}}},
 		{name: "one removed", desired: changefeedDeclaration(), current: changefeedCatalog(read),
-			wantDiff: &difftypes.ChangefeedsChange{Current: []ast.ChangefeedSpec{read}}},
+			wantDiff: []schemaext.ChangeRecord{{Subject: ydbschema.ChangefeedRef("", "events", "updates"), Value: &ydbdiff.Changefeed{Before: &ydbschema.ObservedChangefeed{Spec: read}}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, test.current, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.current, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
-			c.Assert(diff.TablesModified[0].ChangefeedsChange, qt.DeepEquals, test.wantDiff)
+			c.Assert(diff.TablesModified[0].FeatureChanges, qt.DeepEquals, test.wantDiff)
 		})
 	}
 }
@@ -99,20 +114,21 @@ func TestCompare_YDBChangefeedChange(t *testing.T) {
 func TestCompare_YDBChangefeedCoverage(t *testing.T) {
 	c := qt.New(t)
 	unread := changefeedCatalog()
-	unread.NotDescribed = coverage.Set{}.With(coverage.Object{Kind: coverage.Changefeed, Name: "events/updates",
-		Reason: coverage.Unsupported, Provenance: coverage.Observed})
+	unread.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, []schemaext.SubjectCoverage{{
+		Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("", "events", "updates"), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "unsupported stream settings"},
+	}}))
 	undeclared := changefeedDeclaration()
-	undeclared.NotDescribed = coverage.Set{}.WithKind(coverage.Changefeed)
+	undeclared.FeatureCoverage = schemaext.Coverage{}
 
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = platform.YDB
 
-	withheld, undecided := schemadiff.CompareReportingUndecidedAdditions(changefeedDeclaration(declared), unread, opts)
-	kept := schemadiff.CompareWithDialect(undeclared, changefeedCatalog(read), platform.YDB)
+	withheld, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), changefeedDeclaration(declared), unread, opts, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	kept := must.Must(schemadiff.CompareWithDialect(t.Context(), undeclared, changefeedCatalog(read), platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(withheld.HasChanges(), qt.IsFalse)
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{{Kind: coverage.Changefeed,
-		Name: "events/updates", Reason: coverage.Unsupported, Provenance: coverage.Observed}})
+	c.Assert(undecided.Features, qt.DeepEquals, []schemaext.UndecidedChange{{Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("", "events", "updates"), Reason: "the current changefeed or its absence was not established: unsupported stream settings"}})
 	c.Assert(kept.HasChanges(), qt.IsFalse)
 }
 
@@ -124,38 +140,39 @@ func TestCompare_YDBChangefeedCoverage(t *testing.T) {
 // changefeed and declares none drops them, which is the control on the
 // first row. The declaration passed in is not changed.
 func TestCompare_YDBChangefeedsADeclarationDoesNotDescribeAreTheDatabases(t *testing.T) {
-	other := ast.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}
+	other := ydbschema.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}
+	unknown := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "source does not declare this stream"}
 	tests := []struct {
-		name         string
-		notDescribed coverage.Set
-		want         []ast.ChangefeedSpec
-		wantChange   *difftypes.ChangefeedsChange
+		name     string
+		coverage schemaext.Coverage
+		want     []ydbschema.ChangefeedSpec
+		removed  []string
 	}{
-		{name: "the whole kind", notDescribed: coverage.Set{}.WithKind(coverage.Changefeed),
-			want: []ast.ChangefeedSpec{read, other}},
-		{name: "one changefeed by name", notDescribed: coverage.Set{}.WithObject(coverage.Changefeed, "events/updates"),
-			want: []ast.ChangefeedSpec{read},
-			wantChange: &difftypes.ChangefeedsChange{Desired: []ast.ChangefeedSpec{read},
-				Current: []ast.ChangefeedSpec{read, other}}},
-		{name: "none", notDescribed: coverage.Set{},
-			wantChange: &difftypes.ChangefeedsChange{Current: []ast.ChangefeedSpec{read, other}}},
+		{name: "the whole kind", want: []ydbschema.ChangefeedSpec{other, read}},
+		{name: "one changefeed by name", coverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, []schemaext.SubjectCoverage{{Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("", "events", "updates"), Knowledge: unknown}})), want: []ydbschema.ChangefeedSpec{read}, removed: []string{"keys"}},
+		{name: "none", coverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil)), removed: []string{"keys", "updates"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			desired := changefeedDeclaration()
 			desired.Fields = append(desired.Fields, schemamodel.Field{StructName: "Event", Name: "n", Type: "BIGINT"})
-			desired.NotDescribed = test.notDescribed
+			desired.FeatureCoverage = test.coverage
 			current := changefeedCatalog(read, other)
 			current.Tables[0].Columns = append(current.Tables[0].Columns, catalog.Column{Name: "n", DataType: "Int32",
 				ColumnType: "Int32", IsNullable: "YES", OrdinalPosition: 2})
 
-			diff := schemadiff.CompareWithDialect(desired, current, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New())))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
-			c.Assert(diff.TablesModified[0].Desired.Table.Changefeeds, qt.DeepEquals, test.want)
-			c.Assert(diff.TablesModified[0].ChangefeedsChange, qt.DeepEquals, test.wantChange)
-			c.Assert(desired.Tables[0].Changefeeds, qt.IsNil)
+			c.Assert(must.Must(ydbschema.DesiredChangefeeds(diff.TablesModified[0].Desired.OwnedObjects, "", "events")), qt.DeepEquals, test.want)
+			var removed []string
+			for _, change := range diff.TablesModified[0].FeatureChanges {
+				c.Assert(change.Value.(*ydbdiff.Changefeed).After, qt.IsNil)
+				removed = append(removed, change.Subject.Name.Source)
+			}
+			c.Assert(removed, qt.DeepEquals, test.removed)
+			c.Assert(desired.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
 }

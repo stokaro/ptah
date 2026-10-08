@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 )
 
@@ -182,8 +184,7 @@ func TestGenerateMigrationRejectsOutputOutsideAllowedRoot(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(root, "..", "outside")
 
-	_, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
-		GoEntitiesDir:     root,
+	_, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: root,
 		OutputDir:         outside,
 		AllowedOutputRoot: root,
 	})

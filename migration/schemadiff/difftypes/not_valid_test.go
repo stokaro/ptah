@@ -16,7 +16,7 @@ func TestConstraintAdditionsFor_CarriesNotValid(t *testing.T) {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
 		Constraints: []schemamodel.Constraint{{
-			StructName: "T", Table: "t", Name: "t_n_positive", Type: "CHECK", CheckExpression: "n > 0", NotValid: true,
+			StructName: "T", Table: "t", Name: "t_n_positive", Type: "CHECK", CheckExpression: "n > 0", NotValid: true, Comment: "positive values",
 		}},
 	}
 
@@ -24,6 +24,7 @@ func TestConstraintAdditionsFor_CarriesNotValid(t *testing.T) {
 
 	c.Assert(additions, qt.HasLen, 1)
 	c.Assert(additions[0].NotValid, qt.IsTrue)
+	c.Assert(additions[0].Comment, qt.Equals, "positive values")
 }
 
 // TestSchemaDiff_AValidationIsAChange counts a validation as a change, so a

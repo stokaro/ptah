@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/migration/schemadiff"
 )
@@ -30,13 +32,13 @@ func TestCompareWithDatabaseReportingUndecidedAdditionsUsesDatabaseDefaults(t *t
 	}
 
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		c.Context(), conn, desired, current, nil,
+		c.Context(), conn, desired, current, nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{
 		{Kind: coverage.Sequence, Name: "order_seq"},
 	})
 }

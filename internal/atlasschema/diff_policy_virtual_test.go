@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
@@ -77,9 +79,9 @@ func TestSchemaSeamsCarryTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 			defer dbschema.CloseAndWarn(conn)
 
 			plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
-				ToURLs: []string{"file://" + schemaPath},
-				Policy: tt.policy,
-			})
+				ToURLs:  []string{"file://" + schemaPath},
+				Policy:  tt.policy,
+				Runtime: must.Must(builtin.New())})
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			for _, fragment := range tt.wantContains {
@@ -97,7 +99,7 @@ func TestSchemaSeamsCarryTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 				FromURLs: []string{"sqlite://" + dbPath},
 				ToURLs:   []string{"file://" + schemaPath},
 				Policy:   tt.policy,
-			})
+				Runtime:  must.Must(builtin.New())})
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			for _, fragment := range tt.wantContains {

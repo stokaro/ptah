@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/generator"
@@ -90,7 +92,7 @@ type Product struct {
 	c.Assert(err, qt.IsNil)
 	dbAfter, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(desired, dbAfter, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, dbAfter, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse,
 		qt.Commentf("post-migration diff must be clean; added=%v removed=%v modified=%v",
 			diff.ConstraintsAdded, diff.ConstraintsRemoved, diff.TablesModified))
@@ -172,7 +174,7 @@ type Product struct {
 			c.Assert(err, qt.IsNil)
 			dbAfter, err := conn.Reader().ReadSchemaContext(ctx)
 			c.Assert(err, qt.IsNil)
-			diff := schemadiff.CompareWithDialect(desired, dbAfter, dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, dbAfter, dialect, must.Must(builtin.New())))
 			c.Assert(diff.HasChanges(), qt.IsFalse,
 				qt.Commentf("[%s] post-migration diff must be clean; added=%v removed=%v modified=%v",
 					dialect, diff.ConstraintsAdded, diff.ConstraintsRemoved, diff.TablesModified))

@@ -38,7 +38,7 @@ type Event struct {
 	})
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
-	c.Assert(err.Error(), qt.Contains, "table.events: changefeed updates is not represented in HCL")
+	c.Assert(err.Error(), qt.Contains, "feature object ptah.run/ydb/changefeed events.updates of kind ptah.run/ydb/changefeed is not represented in HCL")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 	assertFileBytes(c, source, sourceData)
 	assertFileBytes(c, output, outputData)

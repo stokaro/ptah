@@ -9,11 +9,13 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/shadow"
 )
 
@@ -71,7 +73,7 @@ func TestVerifyMigrationRoundTrip_HappyPath(t *testing.T) {
 			DownSQL: roundTripDependencyOrderedDownSQL,
 		}},
 		Generated: roundTripDesiredSchema(c),
-	})
+		Runtime:   must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(readRoundTripShadowTables(c, shadowURL), qt.HasLen, 0)
@@ -101,7 +103,7 @@ func TestVerifyMigrationRoundTrip_FailurePathReapply(t *testing.T) {
 			DownSQL: roundTripIncompleteDownSQL,
 		}},
 		Generated: roundTripDesiredSchema(c),
-	})
+		Runtime:   must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `(?s)shadow check failed: round-trip up: .*"orders" already exists.*`)
 	var shadowErr *shadow.VerificationError
@@ -135,7 +137,7 @@ func TestVerifyMigrationRoundTrip_FailurePath(t *testing.T) {
 			DownSQL: roundTripReversedDownSQL,
 		}},
 		Generated: roundTripDesiredSchema(c),
-	})
+		Runtime:   must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `(?s)shadow check failed: round-trip down: .*`)
 	var shadowErr *shadow.VerificationError

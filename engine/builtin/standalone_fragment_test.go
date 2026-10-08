@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/astrouteguard"
 )
@@ -96,7 +97,7 @@ func TestStandaloneFragment_ReadsWithoutAName(t *testing.T) {
 		{
 			name:     "a changefeed on PostgreSQL",
 			dialect:  platform.Postgres,
-			fragment: &ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: ast.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}}},
+			fragment: &ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: ydbschema.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}}},
 			want:     `target "postgres" does not support extension "ptah.run/ydb/add-changefeed" in role "alter-table"`,
 		},
 		{
@@ -244,7 +245,7 @@ func fragmentFixture(c *qt.C, family fragmentFamily, kind string) ast.Node {
 // would then report as rendered an operation it refuses for a missing
 // capability once it has one.
 func alterOperationFixtures() map[string]func() ast.Node {
-	changefeed := ast.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}
+	changefeed := ydbschema.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}
 	return map[string]func() ast.Node{
 		"ExtensionAlterOperation": func() ast.Node {
 			return &ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: changefeed}}

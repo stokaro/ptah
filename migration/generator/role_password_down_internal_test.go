@@ -6,14 +6,17 @@ package generator
 // the whole pipeline has run.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -46,16 +49,22 @@ func TestGenerateDownMigration_RolledBackPasswordChangeSetsNoPassword(t *testing
 	}
 
 	caps := capability.Postgres17().With(capability.RoleManagement, true)
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.RolesModified, qt.HasLen, 1)
 
-	up, err := generateUpMigrationSQL(upDiff, desired, platform.Postgres, caps)
+	up, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		upDiff, desired, platform.Postgres, caps,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, "ALTER ROLE \"app_user\" CREATEDB;")
 	c.Assert(up, qt.Contains, declaredPassword,
 		qt.Commentf("the forward direction sets the password the declaration carries"))
 
-	down, err := generateDownMigrationSQL(upDiff, desired, database, platform.Postgres, caps)
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, desired, database, platform.Postgres, caps)
 	c.Assert(err, qt.IsNil)
 	c.Assert(down, qt.Contains, "ALTER ROLE \"app_user\" NOCREATEDB;",
 		qt.Commentf("the attribute change does reverse"))

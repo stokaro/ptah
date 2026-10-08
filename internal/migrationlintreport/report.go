@@ -23,6 +23,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/lintdialect"
@@ -86,9 +88,19 @@ type Report struct {
 	SchemaDesired string `json:"-"`
 }
 
+// Runtime supplies conversion, reporting, and schema rendering for replayed
+// schema captures.
+type Runtime interface {
+	schemaext.ConversionRuntime
+	schemaext.ReportingRuntime
+	renderer.SchemaService
+}
+
 // Options are the migration lint inputs shared by native and Atlas-compatible
 // commands.
 type Options struct {
+	// Runtime selects the services used to convert and report replayed state.
+	Runtime   Runtime
 	Dir       string
 	FS        fs.FS
 	DirFormat string
@@ -206,8 +218,8 @@ type sarifRegion struct {
 
 // Build returns the migration lint report without rendering it.
 func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (Report, error) {
-	if ctx == nil {
-		ctx = context.Background()
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return Report{}, err
 	}
 	prepared, err := prepareSourceOptions(opts, projectCfg)
 	if err != nil {
@@ -474,8 +486,7 @@ func lintDirectory(
 	if err != nil {
 		return lintOutcome{dialect: dialect}, err
 	}
-	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
-	baseline.setDialect(opts.Dialect)
+	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL, opts.Runtime)
 	capture := newReplaySchemaCapture(opts, analysis)
 	server := newServerTargetCollector(lintOptions.Target, deferred, lintOptions.RequireOnline)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
@@ -703,7 +714,7 @@ func newReplaySchemaCapture(opts Options, analysis lint.Analysis) *schemaCapture
 	if !opts.CaptureSchema {
 		return nil
 	}
-	return newSchemaCapture(analysis, opts.DevURL)
+	return newSchemaCapture(analysis, opts.DevURL, opts.Runtime)
 }
 
 func (c *schemaCapture) result() replayedSchemas {
@@ -764,6 +775,7 @@ func replayVersionObserver(
 // A nil observer is handed to the replay when nothing was asked for, so a
 // directory with no renames pays no introspection at all.
 type baselineCollector struct {
+	runtime schemaext.ConversionRuntime
 	wanted  map[int64]bool
 	schemas []string
 	columns []lint.BaselineColumn
@@ -774,20 +786,10 @@ type baselineCollector struct {
 	dependents []lint.BaselineDependent
 	// hypertables are the TimescaleDB hypertables of the same read.
 	hypertables []lint.BaselineHypertable
-	dialect     string
 }
 
-// setDialect records which routine-body parser the dependents are resolved
-// with. A body is that dialect's procedural language, and reading it with
-// another dialect's parser is a wrong answer rather than a cautious one.
-func (c *baselineCollector) setDialect(dialect string) {
-	if c != nil {
-		c.dialect = dialect
-	}
-}
-
-func newBaselineCollector(versions []int64, devURL string) *baselineCollector {
-	collector := &baselineCollector{wanted: make(map[int64]bool, len(versions))}
+func newBaselineCollector(versions []int64, devURL string, runtime schemaext.ConversionRuntime) *baselineCollector {
+	collector := &baselineCollector{runtime: runtime, wanted: make(map[int64]bool, len(versions))}
 	for _, version := range versions {
 		collector.wanted[version] = true
 	}
@@ -814,7 +816,7 @@ func (c *baselineCollector) observe(
 	if c == nil || !c.wanted[version] {
 		return nil
 	}
-	state, err := readBaselineState(ctx, conn, version, c.schemas, c.dialect)
+	state, err := readBaselineState(ctx, conn, version, c.schemas, c.runtime)
 	if err != nil {
 		return err
 	}

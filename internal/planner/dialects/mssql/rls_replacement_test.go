@@ -1,9 +1,11 @@
 package mssql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -30,7 +32,10 @@ func planModifiedPolicy(c *qt.C, policyFor, withCheck string) string {
 		}},
 	}
 
-	nodes, err := mssql.New().GenerateMigrationAST(diff)
+	nodes, err := mssql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("sqlserver", nodes...)
 	c.Assert(err, qt.IsNil)

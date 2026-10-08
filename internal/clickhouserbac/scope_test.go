@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -314,10 +316,10 @@ func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
 			// This is the path `ptah db read` output takes back into a
 			// comparison, and a reader that filled the wrong field would break
 			// it while both assertions above still passed.
-			described := dbschematogo.ConvertDBSchemaToGoSchema(
-				&catalog.Database{Grants: []catalog.Grant{test.live}},
-				"clickhouse",
-			)
+			described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(
+				t.Context(), &catalog.Database{Grants: []catalog.Grant{test.live}},
+				"clickhouse", must.Must(builtin.New()),
+			))
 			c.Assert(described.Grants, qt.HasLen, 1)
 			redeclared, err := clickhouserbac.ScopeOf(described.Grants[0], "")
 			c.Assert(err, qt.IsNil)

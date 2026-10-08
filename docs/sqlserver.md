@@ -60,12 +60,17 @@ not infer behavior from `_CI_`, `_CS_`, or other collation-name substrings.
 Use the live-aware comparison API when embedding Ptah:
 
 ```go
+runtime, err := builtin.New()
+if err != nil {
+    return err
+}
 diff, err := schemadiff.CompareWithDatabase(
 	ctx,
 	conn,
 	desired,
 	current,
 	compareOptions,
+	runtime,
 )
 if err != nil {
 	return err
@@ -86,10 +91,10 @@ It returns an error when a non-zero snapshot is invalid, does not cover every
 candidate identifier, or reveals a target table, column, or index collision.
 Omitting the snapshot selects conservative dialect-only SQL Server rules.
 
-`CompareWithOptions` has no error return. When its explicit snapshot is
-invalid, incomplete, or collision-prone, Ptah discards that snapshot and
-produces a conservative offline diff instead of treating unresolved names as
-equal.
+`CompareWithOptions` also refuses an invalid, incomplete, or collision-prone
+explicit snapshot. Every comparison takes a context and the selected feature
+runtime, and returns an error when its inputs or a provider fail. A caller must
+handle that error before using the diff.
 
 An offline `CompareWithDialect(..., "sqlserver")` call cannot know the target
 collation. It confirms only exact-spelling identity. Distinct unresolved names

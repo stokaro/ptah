@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -60,7 +63,7 @@ func TestCompare_DeclaredPrimaryKey_Synced(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(declaredKeyDesired(test.declared, ""), liveKeyCurrent(test.live), test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredKeyDesired(test.declared, ""), liveKeyCurrent(test.live), test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%#v", diff))
 		})
@@ -73,9 +76,12 @@ func TestCompare_DeclaredPrimaryKey_Synced(t *testing.T) {
 // primary key, so the other order fails.
 func TestCompare_DeclaredPrimaryKey_Renamed(t *testing.T) {
 	c := qt.New(t)
-	diff := schemadiff.CompareWithDialect(declaredKeyDesired("hk_pk", ""), liveKeyCurrent("hk_pkey"), platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredKeyDesired("hk_pk", ""), liveKeyCurrent("hk_pkey"), platform.Postgres, must.Must(builtin.New())))
 
-	plan, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	plan, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(plan, "\n")
@@ -91,9 +97,12 @@ func TestCompare_DeclaredPrimaryKey_DefaultNameWritesNone(t *testing.T) {
 	c := qt.New(t)
 	current := liveKeyCurrent("hk_pkey")
 	current.Constraints = nil
-	diff := schemadiff.CompareWithDialect(declaredKeyDesired("hk_pkey", ""), current, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredKeyDesired("hk_pkey", ""), current, platform.Postgres, must.Must(builtin.New())))
 
-	plan, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	plan, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(plan, "\n"), qt.Contains, `ADD PRIMARY KEY ("id")`)
@@ -105,7 +114,7 @@ func TestCompare_DeclaredPrimaryKey_DefaultNameWritesNone(t *testing.T) {
 func TestCompare_DeclaredPrimaryKey_CommentIsCompared(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(declaredKeyDesired("", "the key"), liveKeyCurrent("hk_pkey"), platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredKeyDesired("", "the key"), liveKeyCurrent("hk_pkey"), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintCommentsChanged, qt.HasLen, 1)

@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -40,9 +43,12 @@ func TestPlanIndexPayloadChange_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareSchemas(parsePinSchema(c, "covering"), parsePinSchema(c, "current"), test.dialect)
+			diff := must.Must(schemadiff.CompareSchemas(t.Context(), parsePinSchema(c, "covering"), parsePinSchema(c, "current"), test.dialect, must.Must(builtin.New())))
 
-			planned, err := planner.GenerateSchemaDiffSQL(diff, test.dialect)
+			planned, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(planned, qt.Contains, test.drop)
@@ -61,9 +67,12 @@ func TestPlanIndexPayloadChange_FailurePath(t *testing.T) {
 	} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareSchemas(parsePinSchema(c, "covering"), parsePinSchema(c, "current"), dialect)
+			diff := must.Must(schemadiff.CompareSchemas(t.Context(), parsePinSchema(c, "covering"), parsePinSchema(c, "current"), dialect, must.Must(builtin.New())))
 
-			planned, err := planner.GenerateSchemaDiffSQL(diff, dialect)
+			planned, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.ErrorMatches, dialect+` does not support INCLUDE columns on index "users_name_ix"; target .*`)
 			c.Assert(planned, qt.Equals, "")
@@ -85,10 +94,13 @@ func TestPlanIndexPayloadOnlyTheServerHolds_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			database := goschematodb.ToDBSchema(withPayload(parsePinSchema(c, "current"), "email"), test.dialect)
-			diff := schemadiff.CompareWithDialect(parsePinSchema(c, "current"), database, test.dialect)
+			database := must.Must(goschematodb.ToDBSchema(t.Context(), withPayload(parsePinSchema(c, "current"), "email"), test.dialect, must.Must(builtin.New())))
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), parsePinSchema(c, "current"), database, test.dialect, must.Must(builtin.New())))
 
-			planned, err := planner.GenerateSchemaDiffSQL(diff, test.dialect)
+			planned, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(planned, qt.Contains, test.create)
@@ -123,9 +135,9 @@ func TestCompareIndexPayloadLeavesOutCockroachDBImplicitPrimaryKey(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := goschematodb.ToDBSchema(withPayload(parsePinSchema(c, "current"), test.live...), platform.CockroachDB)
+			database := must.Must(goschematodb.ToDBSchema(t.Context(), withPayload(parsePinSchema(c, "current"), test.live...), platform.CockroachDB, must.Must(builtin.New())))
 
-			diff := schemadiff.CompareWithDialect(withPayload(parsePinSchema(c, "current"), test.declared...), database, platform.CockroachDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), withPayload(parsePinSchema(c, "current"), test.declared...), database, platform.CockroachDB, must.Must(builtin.New())))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff.IndexesAdded))
 		})
@@ -137,9 +149,9 @@ func TestCompareIndexPayloadLeavesOutCockroachDBImplicitPrimaryKey(t *testing.T)
 // declaration against a live index without it is a change there.
 func TestCompareIndexPayloadKeepsAPrimaryKeyPayloadOnPostgreSQL(t *testing.T) {
 	c := qt.New(t)
-	database := goschematodb.ToDBSchema(parsePinSchema(c, "current"), platform.Postgres)
+	database := must.Must(goschematodb.ToDBSchema(t.Context(), parsePinSchema(c, "current"), platform.Postgres, must.Must(builtin.New())))
 
-	diff := schemadiff.CompareWithDialect(withPayload(parsePinSchema(c, "current"), "id"), database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), withPayload(parsePinSchema(c, "current"), "id"), database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 }

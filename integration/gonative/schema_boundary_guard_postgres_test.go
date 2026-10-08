@@ -86,11 +86,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemafile"
@@ -426,7 +428,7 @@ func observeBoundaryCase(c *qt.C, dsn string, tc boundaryCase) boundaryObservati
 	compatDocument := boundaryInspect(c, dbURL, true)
 
 	return boundaryObservation{
-		live:          dbschematogo.ConvertDBSchemaToGoSchema(live, "postgres"),
+		live:          must.Must(dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), live, "postgres", must.Must(builtin.New()))),
 		document:      boundaryParseBack(c, nativeDocument, false),
 		defaultSchema: conn.Info().Schema,
 		role:          boundaryConnectedRole(c, dbURL),
@@ -564,7 +566,7 @@ func boundaryApplyBack(c *qt.C, conn *dbschema.DatabaseConnection, document stri
 		// plans below would drop an extension.
 		DryRun:                true,
 		IgnoreUnknownHCLNames: compatibility,
-	})
+		Runtime:               must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	return boundaryStripComments(plan.Statements())
 }

@@ -148,7 +148,7 @@ $$ LANGUAGE plpgsql;`
 	c.Assert(migrations[0].DownSQL, qt.Equals, "DROP FUNCTION f();")
 
 	out := t.TempDir()
-	result, err := importer.Import(fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}}, nil, out, importer.Options{})
+	result, err := importer.Import(c.Context(), fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}}, nil, out, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.HasLen, 2)
 	up, err := os.ReadFile(filepath.Join(out, "0000000001_fn.up.sql"))
@@ -274,7 +274,7 @@ func TestGooseImportEndToEnd(t *testing.T) {
 	c := qt.New(t)
 	out := t.TempDir()
 
-	result, err := importer.Import(gooseFS(), nil, out, importer.Options{})
+	result, err := importer.Import(c.Context(), gooseFS(), nil, out, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	// Two goose migrations -> two up + two down Ptah files.
 	c.Assert(result.Files, qt.HasLen, 4)

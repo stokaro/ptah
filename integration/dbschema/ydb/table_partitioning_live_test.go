@@ -3,14 +3,17 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -47,11 +50,14 @@ func partitioningOf(c *qt.C, conn *dbschema.DatabaseConnection) *ast.YDBTablePar
 func planPartitioning(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, rebuild bool) ([]string, error) {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readScoped(c, conn, partitioningSchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, partitioningSchemas), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	return planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities: info.Capabilities, AllowTableRebuild: rebuild,
-	})
+	return planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{
+			Capabilities: info.Capabilities, AllowTableRebuild: rebuild,
+		},
+	)
 }
 
 // TestYDBTablePartitioning_RoundTrip creates a table with every setting, reads

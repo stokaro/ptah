@@ -1,13 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -66,7 +69,10 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -110,7 +116,7 @@ func TestCompare_ATriggerResolvesTheDiffSpelling(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.TriggersAdded, qt.HasLen, 0,
 		qt.Commentf("the two spellings are one trigger, not one to add and one to drop"))
@@ -119,7 +125,10 @@ func TestCompare_ATriggerResolvesTheDiffSpelling(t *testing.T) {
 	c.Assert(diff.TriggersModified[0].Desired.Name, qt.Equals, "touch",
 		qt.Commentf("the comparison resolved the two spellings to one declaration"))
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "TRIGGER")
@@ -143,13 +152,16 @@ func TestCompare_AModifiedViewResolvesTheDiffSpelling(t *testing.T) {
 		Views: []catalog.View{{Schema: "public", Name: "active_users", Body: "SELECT id FROM users"}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "active_users",
 		qt.Commentf("the comparison resolved the two spellings to one declaration"))
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "VIEW")

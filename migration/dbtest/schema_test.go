@@ -46,7 +46,7 @@ func TestRunSchemaTest_AppliesDesiredSchema(t *testing.T) {
 		},
 	}}
 
-	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir})
+	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Runtime: selectedRuntime(c), Cases: cases, RootDir: rootDir})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report, qt.IsNotNil)
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
@@ -69,7 +69,7 @@ func TestRunSchemaTest_ApplySchemaRepairsDrift(t *testing.T) {
 		},
 	}}
 
-	report, err := dbtest.RunSchemaTest(t.Context(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir})
+	report, err := dbtest.RunSchemaTest(t.Context(), dbtest.SchemaOptions{Runtime: selectedRuntime(c), Cases: cases, RootDir: rootDir})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
 	c.Assert(report.Cases[0].Steps[1].Detail, qt.Equals, "desired schema applied")
@@ -79,7 +79,7 @@ func TestRunSchemaTest_ExplicitDBURLIsRepeatableForIdempotentCases(t *testing.T)
 	c := qt.New(t)
 	rootDir := writeUsersEntity(c)
 	databaseURL := "sqlite://" + filepath.Join(c.TempDir(), "repeatable.db")
-	opts := dbtest.SchemaOptions{
+	opts := dbtest.SchemaOptions{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name:  "desired table exists",
 			Steps: []dbtest.Step{{Name: "users table is empty", Assert: &dbtest.Assertion{Query: "SELECT id FROM users", RowCount: new(0)}}},
@@ -107,7 +107,7 @@ type Security struct{}
 `
 	c.Assert(os.WriteFile(filepath.Join(rootDir, "security.go"), []byte(content), 0o600), qt.IsNil)
 
-	report, err := dbtest.RunSchemaTest(t.Context(), dbtest.SchemaOptions{
+	report, err := dbtest.RunSchemaTest(t.Context(), dbtest.SchemaOptions{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name:  "never executes",
 			Steps: []dbtest.Step{{Name: "no-op query", Exec: "SELECT 1"}},
@@ -127,7 +127,7 @@ func TestRunSchemaTest_RejectsMigrateToStep(t *testing.T) {
 		Steps: []dbtest.Step{{Name: "attempt migrate", MigrateTo: "latest"}},
 	}}
 
-	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir})
+	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Runtime: selectedRuntime(c), Cases: cases, RootDir: rootDir})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsTrue)
 	c.Assert(report.Cases, qt.HasLen, 1)
@@ -160,7 +160,7 @@ func TestRunSchemaTest_EphemeralCasesAreIsolated(t *testing.T) {
 		},
 	}
 
-	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir})
+	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Runtime: selectedRuntime(c), Cases: cases, RootDir: rootDir})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
 	c.Assert(report.Cases, qt.HasLen, 2)
@@ -191,7 +191,7 @@ func TestRunSchemaTest_ExplicitDBURLPreservesStateBetweenCases(t *testing.T) {
 		},
 	}
 
-	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir, DBURL: shared})
+	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Runtime: selectedRuntime(c), Cases: cases, RootDir: rootDir, DBURL: shared})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report, qt.IsNotNil)
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
@@ -209,7 +209,7 @@ func TestRunSchemaTest_InvalidCasesError(t *testing.T) {
 		Steps: []dbtest.Step{{Name: "empty"}},
 	}}
 
-	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir})
+	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Runtime: selectedRuntime(c), Cases: cases, RootDir: rootDir})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(report, qt.IsNil)
 	c.Assert(err.Error(), qt.Contains, "invalid test cases")

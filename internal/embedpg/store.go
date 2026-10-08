@@ -9,6 +9,8 @@ import (
 	"slices"
 	"time"
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
@@ -89,8 +91,11 @@ func beginStoreTransaction(ctx context.Context, source transactionStarter) (*sql
 //
 // It is idempotent because a worker starting is the normal time to call it, and
 // several of them start at once.
-func (s *Store) EnsureSchema(ctx context.Context) error {
-	statements, err := SchemaSQL()
+//
+// Rendering uses the caller's selected service and PostgreSQL profile. Every
+// statement is validated before execution begins.
+func (s *Store) EnsureSchema(ctx context.Context, service renderer.Service, caps capability.Capabilities) error {
+	statements, err := SchemaSQL(ctx, service, caps)
 	if err != nil {
 		return err
 	}

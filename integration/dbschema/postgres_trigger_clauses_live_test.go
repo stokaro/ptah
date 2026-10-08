@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
@@ -87,7 +88,7 @@ func TestPostgresLiveTriggerClausesConverge(t *testing.T) {
 		{Name: "t_tables", Event: "UPDATE", ForEach: "STATEMENT", OldTable: "Old Rows", NewTable: "newrows"},
 	})
 
-	settled, err := schemadiff.CompareWithDatabase(ctx, conn, &declared, live, nil)
+	settled, err := schemadiff.CompareWithDatabase(ctx, conn, &declared, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(settled.TriggersAdded, qt.HasLen, 0)
 	c.Assert(settled.TriggersModified, qt.HasLen, 0)
@@ -96,7 +97,7 @@ func TestPostgresLiveTriggerClausesConverge(t *testing.T) {
 	// The control: without the server's answer, the condition is compared as
 	// folded text, and `NEW.a IN (1, 2)` is not `(new.a = ANY (ARRAY[1, 2]))`.
 	// So the comparison above converged because it asked the server.
-	folded := schemadiff.CompareWithDialect(&declared, live, platform.Postgres)
+	folded := must.Must(schemadiff.CompareWithDialect(t.Context(), &declared, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(folded.TriggersModified, qt.HasLen, 1)
 	c.Assert(folded.TriggersModified[0].TriggerName, qt.Equals, "t_when")
 }

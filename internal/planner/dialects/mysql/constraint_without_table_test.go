@@ -1,9 +1,11 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -53,7 +55,10 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, test.constraint.Name)}
 
-			nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := mysql.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 
 			c.Assert(err, qt.IsNil)
 			sql, err := builtin.RenderSQL("mysql", nodes...)
@@ -77,7 +82,10 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "positive_price")}
 
-	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("mysql", nodes...)
@@ -131,7 +139,10 @@ func TestPlanner_ExcludeConstraintIsReportedRatherThanEmitted(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "one_active_session_per_user")}
 
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 
 			c.Assert(err, qt.IsNil)
 			sql, err := builtin.RenderSQL(test.dialect, nodes...)

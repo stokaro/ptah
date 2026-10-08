@@ -4,6 +4,7 @@
 package atlascompatpolicy
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"iter"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
@@ -108,12 +110,19 @@ func (p Policy) ValidateInspectedSchema(database *schemamodel.Database) error {
 // Community Edition inspector does not expose, then validates the exact state
 // that downstream inspection renders. Full mode returns the original snapshot
 // unchanged so its richer round-trip remains available by default.
-func (p Policy) PrepareInspectedSchema(current *catalog.Database) (*catalog.Database, error) {
+func (p Policy) PrepareInspectedSchema(ctx context.Context, current *catalog.Database, dialect string, runtime schemaext.ConversionRuntime) (*catalog.Database, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
 	if !p.strictCE || current == nil {
 		return current, nil
 	}
 	inspected := dbSchemaWithoutInspectedPostgresBaselines(current)
-	if err := p.validateSchemaObjects(dbschematogo.ConvertDBSchemaToGoSchema(inspected, ""), "inspected"); err != nil {
+	model, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, inspected, dialect, runtime)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.validateSchemaObjects(model, "inspected"); err != nil {
 		return nil, err
 	}
 	return inspected, nil

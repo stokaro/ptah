@@ -1,9 +1,11 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -33,7 +35,10 @@ func TestGenerateSchemaDiffAST_NilDiffRejected(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(nil, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				nil, test.dialect,
+			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
@@ -65,7 +70,10 @@ func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
@@ -78,7 +86,10 @@ func TestGenerateSchemaDiffAST_IndexRefMissingOwnerRejected(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}}},
 	}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(nodes, qt.IsNil)
@@ -103,7 +114,10 @@ func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing
 					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "orders"},
 				},
 			}
-			nodes, err := planner.GenerateSchemaDiffAST(diff, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect,
+			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
@@ -130,7 +144,10 @@ func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.
 					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "orders"},
 				},
 			}
-			nodes, err := planner.GenerateSchemaDiffAST(diff, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 2)
@@ -146,7 +163,10 @@ func TestGenerateSchemaDiffAST_MariaDBUnicodeCaseReplacementDropsFirst(t *testin
 			{Name: "Ä_idx", TableName: "users"},
 		},
 	}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.MariaDB)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MariaDB,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -166,7 +186,10 @@ func TestGenerateSchemaDiffSQL_PostgreSQLRawDottedIndexNameIsOneIdentifier(t *te
 			{Name: "idx.users.email", TableName: "public.users"},
 		},
 	}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL(platform.Postgres, nodes...)
 
@@ -183,7 +206,10 @@ func TestGenerateSchemaDiffSQL_SQLiteRawDottedIndexNameIsOneIdentifier(t *testin
 			{Name: "idx.users.email", TableName: "main.users"},
 		},
 	}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL(platform.SQLite, nodes...)
 
@@ -204,7 +230,10 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 			{Name: indexName, TableName: tableName},
 		},
 	}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.ClickHouse)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.ClickHouse,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL(platform.ClickHouse, nodes...)
 

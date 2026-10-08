@@ -1,10 +1,12 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -44,7 +46,10 @@ func TestPlanner_GenerateMigrationAST_DefaultPrivileges(t *testing.T) {
 		RolesRemoved: difftypes.RoleChanges{{Name: "legacy_owner"}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -77,7 +82,10 @@ func TestPlanner_GenerateMigrationAST_DefaultPrivilegeRemovalIsNeverADrop(t *tes
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

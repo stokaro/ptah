@@ -1085,7 +1085,7 @@ func partitionAttachedIndexIsNotPlannable(entry databaseIndexEntry) bool {
 // (stokaro/ptah#2315).
 func appendIndexAddition(diff *difftypes.SchemaDiff, entry generatedIndexEntry) {
 	diff.IndexesAdded = append(diff.IndexesAdded, difftypes.IndexChange{
-		Index:     entry.index,
+		Index:     entry.index.Clone(),
 		TableName: entry.ref.TableName,
 	})
 }

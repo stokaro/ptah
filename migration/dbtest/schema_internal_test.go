@@ -6,12 +6,15 @@ package dbtest
 // this policy through the public runner API.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -105,7 +108,10 @@ func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) 
 	}
 
 	preserveUnmanagedObjects(diff, "postgres")
-	sql, err := planner.GenerateSchemaDiffSQL(diff, "postgres")
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Matches, `(?s).*DROP CONSTRAINT IF EXISTS "check_users_name".*ADD CONSTRAINT "check_users_name".*`)

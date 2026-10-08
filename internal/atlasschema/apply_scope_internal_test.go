@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/migration/schemadiff"
 )
@@ -46,7 +48,7 @@ func TestScopeApplyStatesDoesNotReAddCurrentSupportExtension(t *testing.T) {
 		got.currentReports.Selection,
 		got.desiredReports.Selection,
 	)
-	diff := schemadiff.CompareWithDialect(got.desired, got.current, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), got.desired, got.current, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)

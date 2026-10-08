@@ -11,7 +11,6 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/ydbfamily"
@@ -22,14 +21,7 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// reverseSchemaDiff creates a reverse diff for generating down migrations
-//
-// Deprecated: Use reverseSchemaDiffWithSchema for proper RLS policy table name resolution
-func reverseSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
-	return reverseSchemaDiffWithSchema(diff, nil, nil)
-}
-
-// reverseSchemaDiffWithSchema creates a reverse diff for generating down migrations with schema context.
+// reverseSchemaDiffWithPrior creates a reverse diff for generating down migrations with schema context.
 //
 // schema is the generated (target) Go schema, used to resolve table names for
 // RLS policies. dbSchema is the introspected (pre-change) database schema, used
@@ -77,30 +69,14 @@ func reverseSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 // direction. TestReverseSchemaDiff_AccountsForEverySchemaDiffField enforces
 // that by reflection: it zeroes one field of a fully populated diff at a time
 // and fails when doing so leaves the reverse plan unchanged.
-func reverseSchemaDiffWithSchema(diff *difftypes.SchemaDiff, schema *schemamodel.Database, dbSchema *catalog.Database) *difftypes.SchemaDiff {
-	return reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "")
-}
-
-func reverseSchemaDiffWithSchemaForDialect(
+func reverseSchemaDiffWithPrior(
 	diff *difftypes.SchemaDiff,
 	schema *schemamodel.Database,
 	dbSchema *catalog.Database,
+	prior *schemamodel.Database,
 	dialect string,
 ) *difftypes.SchemaDiff {
-	// The identity the two producers agree on. The reversed diff carries the
-	// same rules the forward one was compared under, so a down migration pairs
-	// its drops exactly as the up migration it undoes did.
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
-	// The pre-change database as a desired schema. This is the schema the DOWN
-	// plan is rendered against -- see generateDownMigrationSQLQualified, which
-	// hands the planner exactly this -- so it is where a reversed modification
-	// finds the definition it must restore (stokaro/ptah#2315).
-	// nil is a real input here: callers that reverse a diff without a database
-	// read pass one, and the conversion dereferences it.
-	var prior *schemamodel.Database
-	if dbSchema != nil {
-		prior = dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, dialect)
-	}
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 
@@ -110,7 +86,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// becomes renders CREATE TABLE, so the declaration has to be recovered
 		// from the pre-change database or the rollback drops a table it never
 		// puts back (stokaro/ptah#2315).
-		TablesAdded: tableCreationsFromRemovals(diff.TablesRemoved, prior),
+		TablesAdded: tableCreationsFromRemovals(diff.TablesRemoved, prior, semantics),
 		// The PRE-CHANGE declaration's vocabulary, not the desired one: the
 		// tables this direction creates are the ones that database held, and a
 		// column of theirs names a type as that database declared it
@@ -149,7 +125,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		SchemasRemoved:  schemaNames(diff.SchemasAdded),
 		SchemasModified: reverseSchemaChanges(diff.SchemasModified),
 		TablesRemoved:   deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:  reverseTableDiffs(diff.TablesModified, prior),
+		TablesModified:  reverseTableDiffs(diff.TablesModified, prior, semantics),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
@@ -166,7 +142,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// merge into one addition list without losing which was which.
 		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
 		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded),
-		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, dbSchema, dialect),
+		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, dbSchema, prior),
 		// A removed procedure comes back as an addition, and the planner reads
 		// its kind off the declaration -- which is why the reverse of a removal
 		// needs no kind of its own. The reverse of an ADDITION does: nothing
@@ -404,7 +380,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// how a rollback of a DROP TABLE became unexecutable. This runs before the
 	// index-removal restorations are appended purely for readability: those are
 	// UNIQUE constraints, which the rule deliberately never drops.
-	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemoved, dbSchema, dialect)
+	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemoved, prior)
 	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema, prior)
 	// The definitions come from the PRE-CHANGE database: this direction
 	// re-creates the indexes the change dropped, and an index the declaration
@@ -605,19 +581,6 @@ func reverseColumnFamiliesChange(change *difftypes.YDBColumnFamiliesChange) *dif
 	return &difftypes.YDBColumnFamiliesChange{
 		Desired: ast.CloneYDBColumnFamilies(change.Current),
 		Current: ydbfamily.Applied(change.Desired, change.Current),
-	}
-}
-
-// reverseChangefeedsChange swaps the two sides of a table's changefeeds, so a
-// rollback drops what the forward change added and adds back what it
-// dropped, under the settings each side held.
-func reverseChangefeedsChange(change *difftypes.ChangefeedsChange) *difftypes.ChangefeedsChange {
-	if change == nil {
-		return nil
-	}
-	return &difftypes.ChangefeedsChange{
-		Desired: ast.CloneChangefeeds(change.Current),
-		Current: ast.CloneChangefeeds(change.Desired),
 	}
 }
 

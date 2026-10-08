@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -22,7 +24,7 @@ func TestPreparePlanFile_RefusesAChangeToAProtectedTable(t *testing.T) {
 	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired:         regionsSchema(regionRow("NO", "Norge", 1)),
 		ProtectedTables: []string{"regions"},
-	})
+		Runtime:         must.Must(builtin.New())})
 
 	var fenced *atlasschema.ProtectedTableError
 	c.Assert(err, qt.ErrorAs, &fenced)
@@ -42,7 +44,7 @@ func TestPreparePlanFile_RefusesADeletionFromAProtectedTable(t *testing.T) {
 	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired:         regionsSchema(regionRow("NO", "Norway", 1)),
 		ProtectedTables: []string{"regions"},
-	})
+		Runtime:         must.Must(builtin.New())})
 
 	var fenced *atlasschema.ProtectedTableError
 	c.Assert(err, qt.ErrorAs, &fenced)
@@ -59,7 +61,7 @@ func TestPreparePlanFile_AProtectedTableTheDeclarationAgreesWithPlansNothing(t *
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired:         regionsSchema(regionRow("NO", "Norway", 1)),
 		ProtectedTables: []string{"regions"},
-	})
+		Runtime:         must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsFalse)
@@ -75,7 +77,7 @@ func TestPreparePlanFile_AFenceOnAnotherTableLeavesThePlanAlone(t *testing.T) {
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired:         regionsSchema(regionRow("NO", "Norge", 1)),
 		ProtectedTables: []string{"countries", "currencies"},
-	})
+		Runtime:         must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(planSQL(plan), qt.Contains, `UPDATE "regions"`)
@@ -91,7 +93,7 @@ func TestPreparePlanFile_AProtectedEntryIsReadCaseInsensitively(t *testing.T) {
 	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired:         regionsSchema(regionRow("NO", "Norge", 1)),
 		ProtectedTables: []string{"REGIONS"},
-	})
+		Runtime:         must.Must(builtin.New())})
 
 	var fenced *atlasschema.ProtectedTableError
 	c.Assert(err, qt.ErrorAs, &fenced)

@@ -1,15 +1,18 @@
 package planner_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -35,7 +38,10 @@ func TestEveryPlannerButYDBRefusesATableSettingsChange(t *testing.T) {
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*the diff changes the partitioning, read replicas or key bloom filter of table "users".*`)
 			c.Assert(nodes, qt.IsNil)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
@@ -187,7 +188,7 @@ func TestCollectDatabase_EveryDialectGetsEveryDeclaredObject(t *testing.T) {
 func missingRoutedObjects(spellings []string) []string {
 	var missing []string
 	for _, spelling := range spellings {
-		statements := modelast.CollectDatabase(routingFixture(), spelling).Statements
+		statements := must.Must(modelast.CollectDatabase(routingFixture(), spelling)).Statements
 		for _, kind := range routedKinds {
 			got := kind.count(statements)
 			if got == kind.want {
@@ -231,6 +232,20 @@ func TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testi
 	}
 
 	declared := declaredCollectionNames(routingFixture())
+	// Feature placements have their own routing and refusal fixtures. Their
+	// controls prove named children survive, source claims do not invent DDL,
+	// and unhandled facets fail before a visitor can publish partial output.
+	for _, feature := range []struct {
+		field   string
+		fixture schemamodel.Database
+	}{
+		{field: "FeatureObjects", fixture: loweringFeatureFixture("postgres")},
+		{field: "FeatureCoverage", fixture: loweringFeatureFixture("postgres")},
+		{field: "Facets", fixture: unloweredFacetsFixture()},
+	} {
+		c.Assert(declaredCollectionNames(feature.fixture), qt.Contains, feature.field)
+		declared = append(declared, feature.field)
+	}
 	all := allCollectionNames()
 
 	uncovered := slices.DeleteFunc(all, func(name string) bool {
@@ -248,6 +263,9 @@ func TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testi
 	c.Assert(declared, qt.Contains, "Sequences")
 	c.Assert(declared, qt.Contains, "Domains")
 	c.Assert(declared, qt.Contains, "Grants")
+	c.Assert(declared, qt.Contains, "FeatureObjects")
+	c.Assert(declared, qt.Contains, "FeatureCoverage")
+	c.Assert(declared, qt.Contains, "Facets")
 }
 
 // allCollectionNames lists every exported field of schemamodel.Database, read from

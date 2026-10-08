@@ -10,8 +10,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/devclean"
@@ -87,6 +89,9 @@ type SimulateOptions struct {
 // *SimulationError and the caller must refuse the target apply; the target
 // database has not been modified. Empty DevURL and empty plans are no-ops.
 func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOptions) error {
+	if err := schemaext.RequireRuntime(ctx, p.runtime); err != nil {
+		return err
+	}
 	if strings.TrimSpace(opts.DevURL) == "" {
 		return nil
 	}
@@ -114,7 +119,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	// succeeded or failed.
 	defer discardDevRehearsalArtifacts(ctx, dev.conn, dev.baseline)
 
-	return rehearseStatementsOnDev(ctx, p.conn, dev.conn, dev.baseline, p.current, p.txMode, statements)
+	return rehearseStatementsOnDev(ctx, p.conn, dev.conn, dev.baseline, p.current, p.txMode, statements, p.runtime)
 }
 
 // discardDevRehearsalArtifacts drops what the rehearsal created in the dev
@@ -393,7 +398,11 @@ func rehearseStatementsOnDev(
 	current *catalog.Database,
 	txMode migrator.MigrationTxMode,
 	statements []string,
+	runtime engine.SchemaRuntime,
 ) error {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return err
+	}
 	if targetConn == nil {
 		return errors.New("schema apply simulation requires target database connection")
 	}
@@ -423,7 +432,7 @@ func rehearseStatementsOnDev(
 	// WithUntrustedSQLSession is what makes an unrestricted rehearsal
 	// impossible to write; the lint above is only a lint.
 	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
-		return rehearseOnPreparedDev(ctx, session, baseline, current, txMode, statements)
+		return rehearseOnPreparedDev(ctx, session, baseline, current, txMode, statements, runtime)
 	})
 }
 
@@ -439,12 +448,13 @@ func rehearseOnPreparedDev(
 	current *catalog.Database,
 	txMode migrator.MigrationTxMode,
 	statements []string,
+	runtime engine.SchemaRuntime,
 ) error {
 	devConn.SchemaWriter().SetDryRun(false)
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, current, baseline); err != nil {
+	if err := recreateCurrentSchema(ctx, devConn, current, baseline, runtime); err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
@@ -485,11 +495,15 @@ func recreateCurrentSchema(
 	devConn *dbschema.DatabaseConnection,
 	current *catalog.Database,
 	baseline devclean.Baseline,
+	runtime engine.SchemaRuntime,
 ) error {
 	if current == nil {
 		return nil
 	}
-	target := dbschematogo.ConvertDBSchemaToGoSchema(current, devConn.Info().Dialect)
+	target, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, current, devConn.Info().Dialect, runtime)
+	if err != nil {
+		return err
+	}
 	normalizeBaselineSerialColumns(target, devConn.Info().Dialect)
 	devCurrent, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
 	if err != nil {
@@ -498,14 +512,17 @@ func recreateCurrentSchema(
 	devCurrent = baseline.WithoutEnvironment(devCurrent, catalogExtensionNames(current))
 	devCurrent = baseline.WithoutStartingPoint(devCurrent, current, defaultSchemaOf(devConn.Info()))
 	info := devConn.Info()
-	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil, runtime)
 	if err != nil {
 		return fmt.Errorf("compare current schema with dev database: %w", err)
 	}
 	if diff.HasChanges() {
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
-			Capabilities: info.Capabilities,
-		})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+			ctx, runtime,
+			diff, info.Dialect, planner.Options{
+				Capabilities: info.Capabilities,
+			},
+		)
 		if err != nil {
 			return fmt.Errorf("generate current schema DDL for dev database: %w", err)
 		}

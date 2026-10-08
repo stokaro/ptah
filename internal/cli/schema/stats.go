@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/convert/dbschematogo"
@@ -81,6 +82,10 @@ func runSchemaStats(cmd *cobra.Command, opts schemaStatsOptions) error {
 	if opts.dbURL == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s is required", statsDBURLFlag))
 	}
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.dbURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", statsDBURLFlag, err))
@@ -91,7 +96,14 @@ func runSchemaStats(cmd *cobra.Command, opts schemaStatsOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}
-	stats := schemastats.Collect(dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect))
+	schema, err := dbschematogo.ConvertDBSchemaToGoSchema(cmd.Context(), live, conn.Info().Dialect, runtime)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("convert schema: %w", err))
+	}
+	stats, err := schemastats.Collect(cmd.Context(), schema, conn.Info().Dialect, runtime)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("count schema objects: %w", err))
+	}
 	labels := map[string]string{"dialect": conn.Info().Dialect}
 	if opts.schemas != "" {
 		labels["schemas"] = opts.schemas

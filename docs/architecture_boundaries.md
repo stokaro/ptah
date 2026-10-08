@@ -35,6 +35,7 @@ features, database implementations, or external modules.
 | `pipeline-imports-execution` | Planning must not import versioned execution. | 0 |
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
 | `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
+| `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build.
@@ -51,10 +52,21 @@ The remaining `model-imports-pipeline` edge is
 
 Renderer assembly lives in `engine/builtin`, above the neutral contracts in
 `core/renderer`. It consumes `internal/modelast` for AST lowering.
-`core/objectidentity`, `core/renderer`, and `engine` are the roots of the
+`core/featureplan`, `core/objectidentity`, `core/plangraph`, `core/renderer`, `core/schemacapture`,
+`core/schemaext`, `core/schemamodel`, `core/schemaprojection`,
+`core/schemavalidation`, and `engine` are the roots of the
 provider-contract isolation check. The check follows their complete import
 graph and refuses a missing root. Its mutation test verifies that an indirect
-import through a helper is still refused.
+import through a helper is still refused. Managed-data YAML parsing lives in
+`core/manageddata`; `core/schemamodel` carries its declared rows without importing
+the parser.
+
+`internal/embedpg`, `internal/genexprprobe`, `migration/generator`,
+`migration/importer`, `migration/planner`, `migration/safety`,
+`migration/schemadiff`, and `migration/shadow` receive rendering from their caller. Their complete import
+graphs must exclude `engine/builtin` and its children. The gate requires every
+root to load; its self-test injects a forbidden import through a helper and
+accepts a similarly named package outside that subtree.
 
 The SQL schema-source path still parses into AST before `internal/sqlschema`
 constructs the model, and that edge is still recorded.
@@ -79,7 +91,7 @@ issue that owns each.
 | Boundary | What is lost | Owner |
 | --- | --- | --- |
 | `schemamodel.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; four packages under `internal/convert` move between them. [#1662](https://github.com/stokaro/ptah/issues/1662) closed with the boundary still here: it put the COLUMN family on the canonical model, not the conversion. | [#2315](https://github.com/stokaro/ptah/issues/2315) |
-| `difftypes.SchemaDiff` per-family name lists | Closed: a change carries its own operands, so the planner takes the change set alone — `GenerateSchemaDiffAST(diff, dialect)`. One `[]string` remains, `TablesRemoved`, because `DROP TABLE` is written from the name. The whole-target validation the second parameter fed is `schemadiff.ValidateDesiredSchema`, made where the whole target is supplied. | closed |
+| `difftypes.SchemaDiff` per-family name lists | Closed: a change carries its own operands. `GenerateSchemaDiffAST(ctx, runtime, diff, dialect)` receives context and service selection separately. One `[]string` remains, `TablesRemoved`, because `DROP TABLE` is written from the name. The whole-target validation is `schemadiff.ValidateDesiredSchema`, made where the whole target is supplied. | closed |
 | Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band ([#1209](https://github.com/stokaro/ptah/issues/1209)). | closed |
 | Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |
 | Single-column uniqueness | Closed: `builtin.tableHasUniqueKey` accepts a primary key, a unique field, a unique constraint or a unique index, each compared as a whole column list, so a composite key is a key. The credit previously went to `schemastate.UniqueKey`, which never shipped. | closed |
@@ -107,6 +119,7 @@ test and the control that make it evidence.
 | Target facts: uncertainty reaches every target-dependent consumer | the two entry points, plus `TestDefaultWriterCapabilitiesAnswerEveryKeyThisPackageConsults` | see [How target facts are held](#how-target-facts-are-held) ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
 | Determinism: equivalent inputs produce identical output across runs and map orders | `TestCompare_EquivalentInputsProduceIdenticalOutput`, on `schemadiff.Compare` | 20 runs plus a reversed-input control; deleting one `sort.Strings` in `compare/sequences.go` kills both halves ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
+| Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
 
 ## How target facts are held
 

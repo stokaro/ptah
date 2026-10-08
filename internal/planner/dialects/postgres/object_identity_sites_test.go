@@ -1,12 +1,15 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,6 +34,7 @@ func TestSequenceAdditionFollowsItsOperand(t *testing.T) {
 	// The desired schema deliberately declares a DIFFERENT sequence, to prove
 	// the plan does not read placement out of it.
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{SequencesAdded: difftypes.SequenceChanges{
 			{Name: "order_id_seq", Schema: "app", AsType: "bigint"},
 		}},
@@ -91,6 +95,7 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			}
 
 			removed, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				&difftypes.SchemaDiff{
 					EnumsModified: []difftypes.EnumDiff{{
 						EnumName:      test.diffName,
@@ -124,6 +129,7 @@ func TestEnumAdditionFollowsItsOperand(t *testing.T) {
 	// The desired schema deliberately declares the enum in a DIFFERENT schema,
 	// to prove the plan does not read placement out of it.
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{EnumsAdded: difftypes.EnumChanges{
 			{Name: "status", Schema: "app", Values: []string{"draft", "live"}},
 		}},
@@ -208,6 +214,7 @@ func TestUserTypeRecreationPairsAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				test.diff, "postgres",
 			)
 
@@ -284,7 +291,10 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))

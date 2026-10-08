@@ -1,9 +1,11 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -73,7 +75,10 @@ func TestPlanner_OracleUserTypesPlanWhateverSchemaTheyName(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := mysql.NewForDialect(platform.Oracle, capability.ForDialect(platform.Oracle)).
-				GenerateMigrationAST(test.diff)
+				GenerateMigrationAST(
+					context.Background(), must.Must(builtin.New()),
+					test.diff,
+				)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.Not(qt.HasLen), 0,
 				qt.Commentf("the declaration travels with the change; nothing is left to look up"))

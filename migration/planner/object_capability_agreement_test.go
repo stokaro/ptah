@@ -1,14 +1,14 @@
 package planner_test
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -20,34 +20,14 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// normalizeDialectSource is the file that decides which dialect spellings ptah
-// accepts. The spelling list below is read out of it rather than copied here,
-// so a spelling added to the switch becomes a row of the agreement test without
-// anyone editing this file.
-const normalizeDialectSource = "../../core/platform/constants.go"
-
-// quotedLiteral deliberately requires a non-empty literal: the switch's default
-// arm returns "", which is the one string in the body that is not a spelling.
-var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
-
-// acceptedSpellings returns every dialect spelling that appears as a case in
-// platform.NormalizeDialect's switch, read from the switch body itself.
+// acceptedSpellings reads the declaration used by normalization and built-in
+// registration, so every new alias joins the sweeps automatically.
 func acceptedSpellings(c *qt.C) []string {
-	source, err := os.ReadFile(normalizeDialectSource)
-	c.Assert(err, qt.IsNil)
-
-	_, afterSignature, foundSignature := strings.Cut(string(source), "func NormalizeDialect(dialect string) string {")
-	c.Assert(foundSignature, qt.IsTrue, qt.Commentf("NormalizeDialect signature moved in %s", normalizeDialectSource))
-
-	body, _, foundEnd := strings.Cut(afterSignature, "\n}")
-	c.Assert(foundEnd, qt.IsTrue, qt.Commentf("NormalizeDialect body is unterminated in %s", normalizeDialectSource))
-
-	spellings := make([]string, 0, 24)
-	for _, match := range quotedLiteral.FindAllStringSubmatch(body, -1) {
-		spellings = append(spellings, match[1])
-	}
+	spellings := platform.DialectSpellings()
 	slices.Sort(spellings)
-	return slices.Compact(spellings)
+	c.Assert(len(spellings) > 9, qt.IsTrue,
+		qt.Commentf("only %d spellings, so the sweep is incomplete", len(spellings)))
+	return spellings
 }
 
 // postgresFamilySpellings is every spelling NormalizeDialect maps onto a
@@ -160,7 +140,7 @@ func objectKindFixture() schemamodel.Database {
 // renderedSchema is what `ptah schema render --dialect <d>` produces: the
 // offline converter's AST for the whole desired schema, rendered.
 func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	nodes := modelast.CollectDatabase(database, dialect)
+	nodes := must.Must(modelast.CollectDatabase(database, dialect))
 	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
 	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
 	return sql
@@ -170,8 +150,11 @@ func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) stri
 // against an empty database: the comparator's diff, through the dialect planner
 // and the same renderer.
 func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
-	sql, err := planner.GenerateSchemaDiffSQL(diff, dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), &database, &catalog.Database{}, dialect, must.Must(builtin.New())))
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", dialect))
 	return sql
 }
@@ -182,14 +165,17 @@ func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) strin
 // spelling-parity test below compares engines to themselves, never to each
 // other, so a refusal is a legitimate answer as long as it is the same answer.
 func renderedOrRefusal(database schemamodel.Database, dialect string) string {
-	nodes := modelast.CollectDatabase(database, dialect)
+	nodes := must.Must(modelast.CollectDatabase(database, dialect))
 	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }
 
 func plannedOrRefusal(database schemamodel.Database, dialect string) string {
-	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
-	sql, err := planner.GenerateSchemaDiffSQL(diff, dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(context.Background(), &database, &catalog.Database{}, dialect, must.Must(builtin.New())))
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }
 
@@ -265,34 +251,26 @@ func (gate objectKindGate) answer(sql, dialect string) string {
 // the point: these four must still be allowed to answer differently.
 var postgresFamily = []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
 
-// TestSpellingExtraction_Controls proves the spelling list the agreement test
-// iterates is really NormalizeDialect's own list.
-//
-// Reverting the extraction — a renamed signature, a regexp that stops matching
-// — leaves acceptedSpellings empty, and an empty list would make the agreement
-// test below pass while comparing nothing.
-func TestSpellingExtraction_Controls(t *testing.T) {
+// TestSpellingDeclaration_Controls pins representative aliases and canonical
+// names so an incomplete declaration cannot vacate the agreement tests.
+func TestSpellingDeclaration_Controls(t *testing.T) {
 	c := qt.New(t)
 
 	spellings := acceptedSpellings(c)
 	family := postgresFamilySpellings(c)
 	aliases := nonCanonicalSpellings(c)
 
-	// Positive control: spellings that exist only inside that switch, one per
-	// engine family that has one. An extractor that stopped working loses these
-	// first, and prints the missing name.
+	// Positive control: representative aliases from each engine family.
 	for _, alias := range []string{"pgx", "ch", "sqlite3", "tsql", "sql-server", "crdb", "ysql", "google_spanner"} {
 		c.Assert(spellings, qt.Contains, alias)
 		c.Assert(aliases, qt.Contains, alias)
 	}
-	// Positive control: every canonical family name is a case of its own.
+	// Positive control: canonical family names are accepted spellings too.
 	for _, canonical := range postgresFamily {
 		c.Assert(family, qt.Contains, canonical)
 		c.Assert(aliases, qt.Not(qt.Contains), canonical)
 	}
-	// Negative control: the extractor must not reach past the switch body.
-	// Every literal it collected has to be a spelling NormalizeDialect really
-	// accepts, so a comment word or a neighboring function's literal fails here.
+	// Every enumerated spelling must resolve to a target.
 	for _, spelling := range spellings {
 		c.Assert(platform.NormalizeDialect(spelling), qt.Not(qt.Equals), "",
 			qt.Commentf("collected %q, which is not an accepted spelling", spelling))
@@ -321,13 +299,13 @@ func TestSpellingExtraction_Controls(t *testing.T) {
 // another engine, and both sides fold a refusal into the compared string. What
 // this asserts is only that the spelling of the name never changes the answer.
 //
-// The rows come from NormalizeDialect's own switch, so a spelling added there
-// is covered without anyone editing this file.
+// The rows come from platform.DialectSpellings, so new aliases are covered
+// without anyone editing this file.
 func TestEverySpelling_RendersAndPlansLikeItsCanonicalName(t *testing.T) {
 	c := qt.New(t)
 
 	aliases := nonCanonicalSpellings(c)
-	c.Assert(len(aliases) > 0, qt.IsTrue, qt.Commentf("the alias table is empty; the extractor is broken"))
+	c.Assert(len(aliases) > 0, qt.IsTrue, qt.Commentf("the alias declaration is empty"))
 
 	for _, spelling := range aliases {
 		t.Run(spelling, func(t *testing.T) {

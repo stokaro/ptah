@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -86,7 +88,7 @@ func TestConvert_KeepsTheIncludePayloadOfACoveringPrimaryKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, []string{"payload"}), "")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), coveringSchema(tt.keyColumns, []string{"payload"}), "postgres", must.Must(builtin.New())))
 
 			table := coveringTable(c, database)
 			c.Assert(table.PrimaryKey, qt.DeepEquals, tt.keyColumns)
@@ -120,7 +122,7 @@ func TestConvert_LeavesAPlainPrimaryKeyAsItWas(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, nil), "")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), coveringSchema(tt.keyColumns, nil), "postgres", must.Must(builtin.New())))
 
 			table := coveringTable(c, database)
 			c.Assert(table.PrimaryKey, qt.DeepEquals, tt.wantTableLevel)

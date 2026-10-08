@@ -35,6 +35,12 @@ func (r atlasSchemaInspectJSONRealm) MarshalJSON() ([]byte, error) {
 	return json.Marshal(document(r))
 }
 
+func (s atlasSchemaInspectJSONSchema) MarshalJSON() ([]byte, error) {
+	type document atlasSchemaInspectJSONSchema
+	s.loss.write()
+	return json.Marshal(document(s))
+}
+
 func (t atlasSchemaInspectJSONTable) MarshalJSON() ([]byte, error) {
 	type document atlasSchemaInspectJSONTable
 	t.loss.write()

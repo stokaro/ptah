@@ -1,12 +1,14 @@
 package modelast_test
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -136,11 +138,11 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
-	renderCensus := surfaceCensus(c, dialect,
-		modelast.CollectDatabase(desired, dialect).Statements)
+	renderCensus := surfaceCensus(c, dialect, must.Must(modelast.CollectDatabase(desired, dialect)).Statements)
 
 	planNodes, err := planner.GenerateSchemaDiffAST(
-		schemadiff.CompareWithDialect(&desired, &catalog.Database{}, dialect),
+		context.Background(), must.Must(builtin.New()),
+		must.Must(schemadiff.CompareWithDialect(c.Context(), &desired, &catalog.Database{}, dialect, must.Must(builtin.New()))),
 
 		dialect,
 	)
@@ -220,7 +222,7 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	// where the whole target is supplied, and the pipeline still refuses
 	// before it plans (stokaro/ptah#2315).
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 
 	renderErr := builtin.ValidateSchema(desired, dialect)
@@ -242,7 +244,7 @@ func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desire
 		return 0
 	}
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 	renderErr := builtin.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -263,7 +265,7 @@ func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamo
 		return 0
 	}
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 	renderErr := builtin.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -286,7 +288,7 @@ func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *s
 		return 0
 	}
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 	renderErr := builtin.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -296,7 +298,7 @@ func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *s
 	desired.AsyncReplications = nil
 
 	_, planErr = schemadiff.CompareWithDatabaseInfo(
-		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 	renderErr = builtin.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -318,7 +320,7 @@ func assertBothSurfacesRefuseTheResourcePools(c *qt.C, dialect string, desired *
 		return 0
 	}
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 	renderErr := builtin.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -345,7 +347,7 @@ func assertBothSurfacesRefuseTheSecret(c *qt.C, dialect string, desired *schemam
 	probe := *desired
 	probe.Topics, probe.ExternalDataSources, probe.ExternalTables = nil, nil, nil
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		&probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), &probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 	renderErr := builtin.ValidateSchema(&probe, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -369,7 +371,7 @@ func assertBothSurfacesRefuseTheExternalObjects(c *qt.C, dialect string, desired
 	probe := *desired
 	probe.Topics = nil
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		&probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+		c.Context(), &probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)
 	renderErr := builtin.ValidateSchema(&probe, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -384,7 +386,7 @@ func assertBothSurfacesRefuseTheExternalObjects(c *qt.C, dialect string, desired
 // removing this family from the shared routing census.
 func assertBothSurfacesRefuseTheStreamingQueries(c *qt.C, dialect string, desired *schemamodel.Database) int {
 	c.Helper()
-	_, planErr := schemadiff.CompareWithDatabaseInfo(desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil)
+	_, planErr := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()))
 	renderErr := builtin.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

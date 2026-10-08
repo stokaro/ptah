@@ -8,9 +8,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -67,7 +69,7 @@ func TestRemoveDefault_HappyPath(t *testing.T) {
 	tableWithADefault(c, ctx, conn)
 	desired := declaredAsn(schemamodel.Field{Type: "INTEGER"})
 
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements(), qt.DeepEquals, []string{
 		"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT",
@@ -79,7 +81,7 @@ func TestRemoveDefault_HappyPath(t *testing.T) {
 	_, err = conn.ExecContext(ctx, "INSERT INTO asn (id) VALUES (3)")
 	c.Assert(err, qt.IsNil)
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int32", "1=1", "2=5", "3=0"})
-	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.Statements(), qt.HasLen, 0)
 }
@@ -95,7 +97,7 @@ func TestRemoveDefaultWithATypeChange_HappyPath(t *testing.T) {
 	tableWithADefault(c, ctx, conn)
 	desired := declaredAsn(schemamodel.Field{Type: "BIGINT"})
 
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements(), qt.DeepEquals, []string{
 		"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT",
@@ -105,7 +107,7 @@ func TestRemoveDefaultWithATypeChange_HappyPath(t *testing.T) {
 
 	c.Assert(asnDefault(c, ctx, conn), qt.Equals, " ")
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int64", "1=1", "2=5"})
-	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.Statements(), qt.HasLen, 0)
 }

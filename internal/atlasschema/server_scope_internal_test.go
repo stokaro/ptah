@@ -8,13 +8,16 @@ package atlasschema
 // are compared.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -32,7 +35,7 @@ func serverState(databases ...string) atlassource.State {
 	}
 	return atlassource.State{
 		Kind:        atlassource.KindDatabase,
-		Schema:      dbschematogo.ConvertDBSchemaToGoSchema(database, platform.MySQL),
+		Schema:      must.Must(dbschematogo.ConvertDBSchemaToGoSchema(context.Background(), database, platform.MySQL, must.Must(builtin.New()))),
 		DB:          database,
 		RealmScoped: true,
 		WholeServer: true,
@@ -47,7 +50,7 @@ func TestDiffResolvedStates_ComparesTheDatabasesOfTwoServers(t *testing.T) {
 	c := qt.New(t)
 
 	report, _, err := diffResolvedStates(t.Context(), nil, serverState("r1", "r3"), serverState("r1", "r9"),
-		platform.MySQL, nil, devServerSides{}, DiffOptions{})
+		platform.MySQL, nil, devServerSides{}, DiffOptions{Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	statements := make([]string, 0, len(report.Changes))
@@ -79,7 +82,7 @@ func TestDiffResolvedStates_RefusesAServerBesideOneDatabase(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report, diff, err := diffResolvedStates(t.Context(), nil, test.from, test.to, platform.MySQL, nil, devServerSides{}, DiffOptions{})
+			report, diff, err := diffResolvedStates(t.Context(), nil, test.from, test.to, platform.MySQL, nil, devServerSides{}, DiffOptions{Runtime: must.Must(builtin.New())})
 
 			var mismatch *ServerScopeMismatchError
 			c.Assert(err, qt.ErrorAs, &mismatch)

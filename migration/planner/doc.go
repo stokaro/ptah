@@ -40,10 +40,11 @@
 // The package provides a Planner interface for extensible dialect support:
 //
 //	type Planner interface {
-//		GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error)
+//		GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error)
 //	}
 //
-// The diff is the whole input: each change entry carries its own operands
+// The diff carries the schema operands. The caller passes its context and
+// selected runtime separately. Each change entry carries its own operands
 // (the difftypes Changes elements and Desired fields), and schema-wide
 // vocabulary travels on the diff's Declared* carries, so a planner reads
 // everything it plans from the diff. The desired schema is not this package's
@@ -94,21 +95,24 @@
 // The three generation helpers sit at different levels of abstraction:
 //
 //	// High-level: individual SQL statements
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(ctx, runtime, diff, "postgres")
 //
 //	// Mid-level: one complete SQL string
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, "postgres")
+//	sql, err := planner.GenerateSchemaDiffSQL(ctx, runtime, diff, "postgres")
 //
 //	// Low-level: AST nodes for custom processing
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+//	nodes, err := planner.GenerateSchemaDiffAST(ctx, runtime, diff, "postgres")
 //
 // Basic migration planning:
 //
 //	// Compare schemas to get differences
-//	diff := schemadiff.Compare(generated, database)
+//	runtime, err := builtin.New()
+//	if err != nil { return err }
+//	diff, err := schemadiff.CompareWithDialect(ctx, generated, database, "postgres", runtime)
+//	if err != nil { return err }
 //
 //	// Generate SQL statements for PostgreSQL
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(ctx, runtime, diff, "postgres")
 //	if err != nil {
 //		log.Fatal(err)
 //	}

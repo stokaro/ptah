@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -61,7 +63,7 @@ func TestCompareWithDialect_PostgresDomainNamedLikeATypeStillReportsARealChange(
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1,
 		qt.Commentf("a column of domain waypoint (over integer) against a desired BIGINT, and one of domain context "+

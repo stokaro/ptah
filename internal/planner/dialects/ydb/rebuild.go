@@ -10,10 +10,13 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtype"
@@ -79,7 +82,11 @@ type tableRebuild struct {
 	// name is the table as the diff spells it.
 	name string
 	// declaration is the desired table, which the new one is written from.
-	declaration difftypes.TableDeclaration
+	declaration schemacapture.TableDeclaration
+	// observation is the independently captured state that will be replaced.
+	observation schemacapture.TableObservation
+	// Streams are validated once before lowering begins.
+	currentStreams, desiredStreams []ydbschema.ChangefeedSpec
 	// tableDiff is the table's modification, or nil when the change is its
 	// key alone, which the diff carries as a constraint change.
 	tableDiff *difftypes.TableDiff
@@ -211,6 +218,7 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 		return refuseFact(subject, "column-table rebuilds require an explicit data migration")
 	}
 	rebuild.declaration = declaration
+	rebuild.observation = rebuildObservation(diff, rebuild, semantics)
 	if !declaresKey(declaration) {
 		return refuseKey(capability.PrimaryKeyRequired, fmt.Sprintf("table %q declares no primary key", rebuild.name))
 	}
@@ -231,6 +239,11 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 			"write on the new table: recreating it would drop them. Change the table by hand, or remove those "+
 			"settings first", strings.Join(settings, ", ")))
 	}
+	current, desired, err := p.rebuildChangefeeds(rebuild)
+	if err != nil {
+		return err
+	}
+	rebuild.currentStreams, rebuild.desiredStreams = current, desired
 	if transfer := transferOfTable(diff, declaration.Table); transfer != "" {
 		return refuseFact(subject, fmt.Sprintf("transfer %s writes the table or reads one of its changefeeds, and "+
 			"a rebuild swaps the table from under it; drop the transfer, rebuild, and create it again", transfer))
@@ -330,7 +343,7 @@ func rebuildDeclaration(
 	diff *difftypes.SchemaDiff,
 	rebuild *tableRebuild,
 	semantics identifierSemantics,
-) (difftypes.TableDeclaration, bool) {
+) (schemacapture.TableDeclaration, bool) {
 	if rebuild.tableDiff != nil && rebuild.tableDiff.Desired.HasTable() {
 		return rebuild.tableDiff.Desired, true
 	}
@@ -340,7 +353,22 @@ func rebuildDeclaration(
 			return host, true
 		}
 	}
-	return difftypes.TableDeclaration{}, false
+	return schemacapture.TableDeclaration{}, false
+}
+
+// rebuildObservation selects the actual current operand even when only a
+// constraint changes. Desired objects cannot establish what the old table holds.
+func rebuildObservation(diff *difftypes.SchemaDiff, rebuild *tableRebuild, semantics identifierSemantics) schemacapture.TableObservation {
+	if rebuild.tableDiff != nil && rebuild.tableDiff.Current.HasTable() {
+		return rebuild.tableDiff.Current
+	}
+	key := semantics.TableIdentityKey(rebuild.name)
+	for _, host := range diff.ObservedConstraintHosts {
+		if host.HasTable() && semantics.TableIdentityKey(host.Table.QualifiedName()) == key {
+			return host
+		}
+	}
+	return schemacapture.TableObservation{}
 }
 
 // settingKinds are the table settings the YDB reader records as not described
@@ -350,7 +378,6 @@ var settingKinds = []struct {
 	words string
 }{
 	{coverage.TTL, "a TTL run interval or tiering policy"},
-	{coverage.Changefeed, "changefeeds with settings Ptah does not read"},
 	{coverage.ColumnFamily, "column families with settings Ptah does not read"},
 	{coverage.TableOption, "storage settings (commit log pools, an external pool or external blobs)"},
 }
@@ -465,8 +492,7 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	// The scratch table takes no changefeed: YDB would refuse to move it into
 	// place (`Cannot move table with cdc streams`), so the changefeeds are
 	// added once it holds the table's name.
-	create.Changefeeds = nil
-	current, desired := rebuildChangefeeds(rebuild)
+	current, desired := rebuild.currentStreams, rebuild.desiredStreams
 	for _, index := range rebuild.declaration.Indexes {
 		index.TableName = scratchName
 		subject := fmt.Sprintf("index %q of %s", index.Name, rebuildSubject(rebuild.name))
@@ -488,9 +514,7 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 		ast.NewComment("The copy is one query. YDB refuses one that carries more than about 48 MiB on 25.1 or " +
 			"64 MiB on 26.2; nothing is then copied, and the old table keeps serving."),
 	}
-	if len(current) > 0 {
-		nodes = append(nodes, ast.NewComment(rebuildChangefeedNote(shown, current)))
-	}
+	nodes = append(nodes, ydbchangefeed.RebuildNotes(shown, current, desired)...)
 	nodes = append(nodes, create, ast.NewRawSQL(copyStatement))
 	for _, changefeed := range current {
 		nodes = append(nodes, &ast.AlterTableNode{Name: rebuild.name,
@@ -589,7 +613,7 @@ func (p *Planner) copiedValue(table string, field schemamodel.Field, isKey bool,
 }
 
 // isKeyColumn reports whether field is part of the declaration's key.
-func isKeyColumn(declaration difftypes.TableDeclaration, field schemamodel.Field) bool {
+func isKeyColumn(declaration schemacapture.TableDeclaration, field schemamodel.Field) bool {
 	return field.Primary || slices.Contains(declaration.Table.PrimaryKey, field.Name)
 }
 

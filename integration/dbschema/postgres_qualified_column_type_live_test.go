@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -28,9 +30,12 @@ func planAcrossSchemas(c *qt.C, conn *dbschema.DatabaseConnection, schemaName, d
 	c.Assert(err, qt.IsNil)
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName, schemaName + "_types"})
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
+	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, conn.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, conn.Info().Dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

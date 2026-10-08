@@ -1,14 +1,17 @@
 package goschema_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -58,12 +61,15 @@ type User struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: difftypes.TableCreationsFor(database, "users"),
+			TablesAdded: difftypes.TableCreationsFor(database, identifier.ForDialect("postgres"), "users"),
 		}
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff)
+		astNodes, err := planner.GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
 		c.Assert(astNodes, qt.HasLen, 1)
 
@@ -167,12 +173,15 @@ type Post struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: difftypes.TableCreationsFor(database, "posts"),
+			TablesAdded: difftypes.TableCreationsFor(database, identifier.ForDialect("postgres"), "posts"),
 		}
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff)
+		astNodes, err := planner.GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
 		c.Assert(astNodes, qt.HasLen, 1)
 
@@ -262,12 +271,15 @@ type Post struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: difftypes.TableCreationsFor(database, "users", "posts"),
+			TablesAdded: difftypes.TableCreationsFor(database, identifier.ForDialect("postgres"), "users", "posts"),
 		}
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff)
+		astNodes, err := planner.GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
 		// 2 CREATE TABLE statements plus 1 ALTER TABLE ADD CONSTRAINT for the
 		// posts.user_id field-level foreign key. The FK has no explicit

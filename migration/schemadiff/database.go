@@ -9,12 +9,13 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
@@ -33,11 +34,9 @@ func CompareWithDatabase(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
+	runtime DatabaseRuntime,
 ) (*difftypes.SchemaDiff, error) {
-	diff, _, err := CompareWithDatabaseReportingUndecidedAdditions(
-		ctx, conn, desired, database, opts,
-	)
-	return diff, err
+	return completeComparison(CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, database, opts, runtime))
 }
 
 // CompareWithDatabaseReportingUndecidedAdditions performs the same
@@ -54,9 +53,16 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
-) (*difftypes.SchemaDiff, []coverage.Object, error) {
+	runtime DatabaseRuntime,
+) (*difftypes.SchemaDiff, Diagnostics, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, Diagnostics{}, err
+	}
+	if desired == nil || database == nil {
+		return nil, Diagnostics{}, fmt.Errorf("%w: comparison requires desired and observed schemas", ptaherr.ErrInvalidSchemaDiff)
+	}
 	if conn == nil {
-		return nil, nil, fmt.Errorf("compare schemas: database connection is nil")
+		return nil, Diagnostics{}, fmt.Errorf("compare schemas: database connection is nil")
 	}
 	info := conn.Info()
 	// Resolve the comparison-owned toggle before catalog queries. Direct
@@ -64,12 +70,12 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	// malformed setting; command adapters perform the same check before they
 	// load desired sources or connect.
 	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	names := collectIdentifierNames(desired, database, info.Schema)
 	semantics, err := conn.ResolveIdentifierSemantics(ctx, names)
 	if err != nil {
-		return nil, nil, fmt.Errorf("compare schemas: %w", err)
+		return nil, Diagnostics{}, fmt.Errorf("compare schemas: %w", err)
 	}
 	info.IdentifierSemantics = semantics
 
@@ -79,43 +85,43 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	// two states it is given.
 	expressions, err := resolveDomainExpressions(ctx, conn, desired, database)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	bodies, err := resolveContinuousAggregateBodies(ctx, conn, desired, database)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	checks, err := resolveCheckExpressions(ctx, conn, desired, database, info.Dialect, semantics)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	policies, err := resolvePolicyExpressions(ctx, conn, desired, database, semantics)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	indexes, err := resolveIndexExpressions(ctx, conn, desired, database, semantics)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	excludes, err := resolveExcludeExpressions(ctx, conn, desired, database, semantics)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
-	columns, err := resolveColumnSpellings(ctx, conn, desired, database, semantics)
+	columns, err := resolveColumnSpellings(ctx, conn, desired, database, semantics, runtime)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	triggers, err := resolveTriggerConditions(ctx, conn, desired, database, semantics)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
-	arguments, err := resolveRoutineArguments(ctx, conn, desired, database, semantics)
+	arguments, err := resolveRoutineArguments(ctx, conn, desired, database, semantics, runtime)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	views, err := resolveViewBodies(ctx, conn, desired, database)
 	if err != nil {
-		return nil, nil, err
+		return nil, Diagnostics{}, err
 	}
 	// Every resolver's answer reaches the comparison the same way: a copy of
 	// the options carrying the maps that have something in them. The copy is
@@ -135,7 +141,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
-		desired, database, info, opts,
+		ctx, desired, database, info, opts, runtime,
 	)
 }
 
@@ -291,6 +297,7 @@ func resolveRoutineArguments(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
+	service renderer.Service,
 ) (map[string]config.RoutineArguments, error) {
 	if desired == nil || database == nil {
 		return nil, nil
@@ -310,7 +317,11 @@ func resolveRoutineArguments(
 			continue
 		}
 		seen[key] = true
-		if probe, ok := routineArgumentsProbe(function, key, len(probes), dialect, starsAnswerable); ok {
+		probe, ok, err := routineArgumentsProbe(ctx, service, function, key, len(probes), conn.Info(), starsAnswerable)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			probes = append(probes, probe)
 		}
 	}
@@ -391,12 +402,15 @@ func bareName(name string) string {
 // starsAnswerable says whether a body selecting `*` may be answered; see
 // [resolveRoutineArguments].
 func routineArgumentsProbe(
+	ctx context.Context,
+	service renderer.Service,
 	function schemamodel.Function,
 	key string,
 	index int,
-	dialect string,
+	info catalog.ServerInfo,
 	starsAnswerable bool,
-) (dbexprprobe.RoutineArgumentsProbe, bool) {
+) (dbexprprobe.RoutineArgumentsProbe, bool, error) {
+	dialect := info.Dialect
 	name := fmt.Sprintf("ptah_routine_probe_%d", index)
 	probe := dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name}
 	declared := schemamodel.Function{
@@ -414,17 +428,13 @@ func routineArgumentsProbe(
 		declared.Language = function.Language
 		declared.Body = function.Body
 	}
-	statement, err := builtin.RenderSQL(dialect, modelast.FromFunction(declared))
-	if err != nil {
-		return dbexprprobe.RoutineArgumentsProbe{}, false
+	result, usable, err := renderProbe(ctx, service, info,
+		modelast.FromFunction(declared), ast.NewDropFunction(declared.Name).SetKind(function.Kind))
+	if err != nil || !usable {
+		return dbexprprobe.RoutineArgumentsProbe{}, false, err
 	}
-	drop, err := builtin.RenderSQL(dialect, ast.NewDropFunction(declared.Name).SetKind(function.Kind))
-	if err != nil {
-		return dbexprprobe.RoutineArgumentsProbe{}, false
-	}
-	probe.Statement = statement
-	probe.Drop = drop
-	return probe, true
+	probe.Statement, probe.Drop = result.Fragments[0], result.Fragments[1]
+	return probe, true, nil
 }
 
 // columnListsChange reports whether a table the database shares with the
@@ -488,11 +498,11 @@ func resolveColumnSpellings(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
+	service renderer.Service,
 ) (map[string]config.ColumnSpelling, error) {
 	if desired == nil || database == nil {
 		return nil, nil
 	}
-	dialect := conn.Info().Dialect
 	held := make(map[string]map[string]string, len(database.Tables))
 	for _, table := range database.Tables {
 		columns := make(map[string]string, len(table.Columns))
@@ -515,7 +525,11 @@ func resolveColumnSpellings(
 				fields = append(fields, field)
 			}
 		}
-		if probe, ok := columnSpellingProbe(desired, table, fields, len(probes), dialect); ok {
+		probe, ok, err := columnSpellingProbe(ctx, service, desired, table, fields, len(probes), conn.Info())
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			probes = append(probes, probe)
 		}
 	}
@@ -541,38 +555,41 @@ func needsColumnSpelling(field schemamodel.Field, liveType string) bool {
 // columnSpellingProbe renders the probe for one table's columns, or reports
 // that the renderer refused them, in which case the columns stay unresolved.
 func columnSpellingProbe(
+	ctx context.Context,
+	service renderer.Service,
 	desired *schemamodel.Database,
 	table schemamodel.Table,
 	fields []schemamodel.Field,
 	index int,
-	dialect string,
-) (dbexprprobe.ColumnSpellingProbe, bool) {
+	info catalog.ServerInfo,
+) (dbexprprobe.ColumnSpellingProbe, bool, error) {
+	dialect := info.Dialect
 	if len(fields) == 0 {
-		return dbexprprobe.ColumnSpellingProbe{}, false
+		return dbexprprobe.ColumnSpellingProbe{}, false, nil
 	}
 	probe := dbexprprobe.ColumnSpellingProbe{Table: fmt.Sprintf("pg_temp.ptah_column_probe_%d", index)}
 	tableNode := ast.NewCreateTable(probe.Table)
+	nodes := []ast.Node{tableNode}
 	for position, field := range fields {
 		column := modelast.FromFieldWithoutForeignKeys(typeAndDefaultOnly(field), desired.Enums, dialect)
 		tableNode.AddColumn(column)
 		columnTable := fmt.Sprintf("%s_%d", probe.Table, position)
-		statement, err := builtin.RenderSQL(dialect, &ast.CreateTableNode{Name: columnTable, Columns: []*ast.ColumnNode{column}})
-		if err != nil {
-			continue
-		}
+		nodes = append(nodes, &ast.CreateTableNode{Name: columnTable, Columns: []*ast.ColumnNode{column}})
 		probe.Columns = append(probe.Columns, dbexprprobe.ColumnSpellingColumn{
-			Key:       exprkey.Column(dialect, table.Schema, table.Name, field.Name),
-			Name:      column.Name,
-			Table:     columnTable,
-			Statement: statement,
+			Key:   exprkey.Column(dialect, table.Schema, table.Name, field.Name),
+			Name:  column.Name,
+			Table: columnTable,
 		})
 	}
-	statement, err := builtin.RenderSQL(dialect, tableNode)
-	if err != nil || len(probe.Columns) == 0 {
-		return dbexprprobe.ColumnSpellingProbe{}, false
+	result, usable, err := renderProbe(ctx, service, info, nodes...)
+	if err != nil || !usable {
+		return dbexprprobe.ColumnSpellingProbe{}, false, err
 	}
-	probe.Statement = statement
-	return probe, true
+	probe.Statement = result.Fragments[0]
+	for position := range probe.Columns {
+		probe.Columns[position].Statement = result.Fragments[position+1]
+	}
+	return probe, true, nil
 }
 
 // typeAndDefaultOnly strips a field to what its probe column needs.

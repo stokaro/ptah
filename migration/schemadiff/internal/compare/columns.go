@@ -151,7 +151,7 @@ func tableColumnsWithSemantics(
 		TableName: genTable.QualifiedName(),
 		// Everything the declaration says about this table, for the rebuild a
 		// dialect reaches for when ALTER TABLE cannot express the change.
-		Desired: difftypes.TableDeclarationFor(desired, genTable),
+		Desired: difftypes.TableDeclarationFor(desired, genTable, semantics),
 	}
 
 	// Create maps for quick lookup
@@ -173,7 +173,7 @@ func tableColumnsWithSemantics(
 	// Find added and removed columns
 	for identity, column := range genColumns {
 		if _, exists := dbColumns[identity]; !exists {
-			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, column)
+			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, column.Clone())
 		}
 	}
 
@@ -404,7 +404,7 @@ func columnsWithDesiredDomains(
 ) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
 		ColumnName:    genCol.Name,
-		Desired:       genCol,
+		Desired:       genCol.Clone(),
 		Changes:       make(map[string]string),
 		CommentChange: commentChange(genCol.Comment, dbCol.Comment),
 		NotNullConstraintNameChange: notNullConstraintNameChange(

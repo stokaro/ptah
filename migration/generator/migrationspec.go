@@ -4,6 +4,7 @@ package generator
 // direction, and how a bidirectional plan is split into subplans.
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -11,11 +12,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/safety"
@@ -33,6 +33,8 @@ type generatedMigrationSpec struct {
 }
 
 func planGeneratedMigrationSpecs(
+	ctx context.Context,
+	runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
@@ -54,7 +56,8 @@ func planGeneratedMigrationSpecs(
 		diff, skipped = diffpolicy.ApplyForDialect(diff, skipSet, info.Dialect)
 	}
 
-	bidirectional, err := PlanBidirectionalSchemaDiff(BidirectionalSchemaPlanOptions{
+	bidirectional, err := PlanBidirectionalSchemaDiff(ctx, BidirectionalSchemaPlanOptions{
+		Runtime:       runtime,
 		Diff:          diff,
 		DesiredSchema: desired,
 		CurrentSchema: dbSchema,
@@ -71,7 +74,7 @@ func planGeneratedMigrationSpecs(
 	}
 	requiresNoTransaction := bidirectional.Forward.RequiresNoTransaction
 	if !requiresNoTransaction {
-		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+		spec, assessments, err := buildGeneratedMigrationSpec(ctx, runtime, generatedMigrationSpecOptions{
 			Plan:      bidirectional,
 			Qualifier: qualifier,
 			Version:   version,
@@ -85,7 +88,7 @@ func planGeneratedMigrationSpecs(
 
 	nodeGroups := splitNoTransactionNodes(info.Dialect, upNodes)
 	if len(nodeGroups.transactional) == 0 {
-		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+		spec, assessments, err := buildGeneratedMigrationSpec(ctx, runtime, generatedMigrationSpecOptions{
 			Plan:      bidirectional,
 			Qualifier: qualifier,
 			Version:   version,
@@ -130,11 +133,11 @@ func planGeneratedMigrationSpecs(
 		if !group.diff.HasChanges() {
 			continue
 		}
-		plan, err := bidirectionalSubplan(bidirectional, group.diff)
+		plan, err := bidirectionalSubplan(ctx, runtime, bidirectional, group.diff)
 		if err != nil {
 			return nil, nil, err
 		}
-		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+		spec, assessments, err := buildGeneratedMigrationSpec(ctx, runtime, generatedMigrationSpecOptions{
 			Plan:      plan,
 			Qualifier: qualifier,
 			Version:   version,
@@ -192,7 +195,7 @@ type generatedMigrationSpecOptions struct {
 	Qualifier atlasmigrate.Qualifier
 }
 
-func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
+func buildGeneratedMigrationSpec(ctx context.Context, service renderer.Service, opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
 	if opts.Plan == nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("bidirectional migration plan is nil")
 	}
@@ -201,6 +204,7 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 		return generatedMigrationSpec{}, nil, err
 	}
 	assessments, err := safety.AssessRenderedWithCapabilities(
+		ctx, service,
 		upNodes,
 		opts.Plan.Dialect,
 		opts.Plan.Capabilities,
@@ -210,6 +214,7 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 	}
 	upDirectiveOpts := generatedDirectiveOptions{skipTimeouts: opts.Plan.Forward.RequiresNoTransaction}
 	upSQL, err := renderGeneratedMigrationSQL(
+		ctx, service,
 		upNodes,
 		opts.Plan.Dialect,
 		opts.Plan.Capabilities,
@@ -226,7 +231,7 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 		upSQL = withNoTransactionDirective(upSQL)
 	}
 
-	downSQL, err := renderGeneratedDownMigrationSQL(opts.Plan, opts.Qualifier)
+	downSQL, err := renderGeneratedDownMigrationSQL(ctx, service, opts.Plan, opts.Qualifier)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
@@ -245,6 +250,8 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 }
 
 func bidirectionalSubplan(
+	ctx context.Context,
+	runtime Runtime,
 	full *BidirectionalSchemaPlan,
 	diff *difftypes.SchemaDiff,
 ) (*BidirectionalSchemaPlan, error) {
@@ -256,7 +263,8 @@ func bidirectionalSubplan(
 		diff.IndexRemovals(),
 		indexRefSet(full.Forward.ConcurrentIndexDropRefs),
 	)
-	return planBidirectionalSchemaDiffWithRefs(BidirectionalSchemaPlanOptions{
+	return planBidirectionalSchemaDiffWithRefs(ctx, BidirectionalSchemaPlanOptions{
+		Runtime:       runtime,
 		Diff:          diff,
 		DesiredSchema: full.DesiredSchema,
 		CurrentSchema: full.CurrentSchema,
@@ -267,19 +275,21 @@ func bidirectionalSubplan(
 }
 
 func renderGeneratedDownMigrationSQL(
+	ctx context.Context,
+	service renderer.Service,
 	plan *BidirectionalSchemaPlan,
 	qualifier atlasmigrate.Qualifier,
 ) (string, error) {
-	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(plan.CurrentSchema, plan.Dialect)
+	priorSchema := plan.PriorSchema
 	nodes := plan.Reverse.Nodes
 	if err := qualifier.ApplyToPlan(plan.Dialect, priorSchema, nodes); err != nil {
 		return "", err
 	}
-	output, err := builtin.RenderSQLWithCapabilities(plan.Dialect, plan.Capabilities, nodes...)
+	output, err := renderer.Render(ctx, service, renderer.Request{Target: plan.Dialect, Capabilities: plan.Capabilities, Nodes: nodes})
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatementsForDialect(output, plan.Dialect)
+	statements := sqlutil.SplitSQLStatementsForDialect(output.SQL(), plan.Dialect)
 	if len(statements) == 0 {
 		return fmt.Sprintf(
 			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n-- No rollback operations needed\n",
@@ -299,17 +309,19 @@ func renderGeneratedDownMigrationSQL(
 }
 
 func renderGeneratedMigrationSQL(
+	ctx context.Context,
+	service renderer.Service,
 	nodes []ast.Node,
 	dialect string,
 	caps capability.Capabilities,
 	direction string,
 	directiveOpts generatedDirectiveOptions,
 ) (string, error) {
-	rawSQL, err := builtin.RenderSQLWithCapabilities(dialect, caps, nodes...)
+	rawSQL, err := renderer.Render(ctx, service, renderer.Request{Target: dialect, Capabilities: caps, Nodes: nodes})
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatementsForDialect(rawSQL, dialect)
+	statements := sqlutil.SplitSQLStatementsForDialect(rawSQL.SQL(), dialect)
 	if len(statements) == 0 || !hasActualSQLStatements(statements) {
 		return "", nil
 	}

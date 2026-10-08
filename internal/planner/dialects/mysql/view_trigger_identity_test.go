@@ -1,14 +1,17 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -49,7 +52,10 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, "mysql",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -90,7 +96,7 @@ func TestCompare_ATriggerResolvesTheDatabaseQualifier(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.MySQL, must.Must(builtin.New())))
 
 	// One object. The body differs -- the reader reported none -- so it is a
 	// modification rather than nothing, and it carries the declaration it
@@ -101,7 +107,10 @@ func TestCompare_ATriggerResolvesTheDatabaseQualifier(t *testing.T) {
 	c.Assert(diff.TriggersModified[0].Desired.Name, qt.Equals, "touch",
 		qt.Commentf("the change carries the declaration the comparison resolved to"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "TRIGGER")
@@ -124,13 +133,16 @@ func TestCompare_AModifiedViewResolvesTheDatabaseQualifier(t *testing.T) {
 		Views: []catalog.View{{Schema: "app", Name: "active_orders", Body: "SELECT id FROM orders"}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.MySQL, must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "active_orders",
 		qt.Commentf("the comparison resolved the qualified readback to the declaration"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "VIEW")

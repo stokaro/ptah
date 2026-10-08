@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
@@ -117,6 +118,10 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	var problems []schemavalidate.Problem
 	for _, dialect := range dialects {
 		// Loaded once per dialect on purpose: loading is dialect-aware, so a
@@ -132,6 +137,9 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 			Vars:            declaredVars,
 		})
 		if err != nil {
+			if cmd.Context().Err() != nil {
+				return cmdutil.Fail(cmd, cmd.Context().Err())
+			}
 			problems = append(problems, schemavalidate.Problem{
 				Dialect: dialect,
 				Kind:    "source",
@@ -143,10 +151,14 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-		problems = append(problems, schemavalidate.CollectWithOptions(database, dialect, schemavalidate.Options{
+		found, err := schemavalidate.CollectWithOptions(cmd.Context(), runtime, database, dialect, schemavalidate.Options{
 			Capabilities: caps,
 			NoSkipped:    opts.noSkipped,
-		})...)
+		})
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		problems = append(problems, found...)
 	}
 	if len(problems) == 0 {
 		return nil

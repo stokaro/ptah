@@ -1,13 +1,16 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -42,13 +45,16 @@ func TestCompare_AModifiedFunctionRendersTheDeclarationAsWritten(t *testing.T) {
 		Language: "sql", Body: "RETURN n * 3;",
 	}}}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.MySQL, must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 	c.Assert(diff.FunctionsModified[0].Desired.Returns, qt.Equals, "INTEGER")
 	c.Assert(diff.FunctionsModified[0].Desired.Security, qt.Equals, "")
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "RETURNS INTEGER",

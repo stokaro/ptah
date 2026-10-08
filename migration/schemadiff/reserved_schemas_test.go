@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -18,10 +20,10 @@ func TestCompareWithDatabaseInfoRefusesADeclaredSystemSchema(t *testing.T) {
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "pg_catalog"}}},
+		t.Context(), &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "pg_catalog"}}},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -34,10 +36,10 @@ func TestCompareWithDatabaseInfoKeepsAQuotedSystemSchemaLookalike(t *testing.T) 
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "PG_CATALOG"}}},
+		t.Context(), &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "PG_CATALOG"}}},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)

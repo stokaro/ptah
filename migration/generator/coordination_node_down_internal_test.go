@@ -8,12 +8,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -60,7 +62,8 @@ func TestGenerateDownMigration_CoordinationNodes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := generateDownMigrationSQL(test.diff, &schemamodel.Database{}, &catalog.Database{},
+			sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				test.diff, &schemamodel.Database{}, &catalog.Database{},
 				platform.YDB, capability.YDB262())
 
 			c.Assert(err, qt.IsNil)

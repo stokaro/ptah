@@ -2,6 +2,7 @@
 package sqlite
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -9,10 +10,13 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
@@ -52,7 +56,16 @@ func (p *Planner) capabilities() capability.Capabilities {
 	return p.caps
 }
 
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) (plannedNodes []ast.Node, planErr error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			plannedNodes, planErr = nil, err
+		}
+	}()
+
 	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
 		return nil, err
 	}
@@ -68,7 +81,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseYDBObjects(DialectName, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseChangefeedChanges(DialectName, diff); err != nil {
+	if err := schemaprecondition.RefuseFeatureChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {
@@ -622,7 +635,7 @@ func (p *Planner) modifyTables(
 // table (stokaro/ptah#2315).
 func (p *Planner) rebuildTable(
 	target rebuildTarget,
-	declared difftypes.TableDeclaration,
+	declared schemacapture.TableDeclaration,
 	diff *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
 	if !declared.HasTable() {
@@ -1213,7 +1226,7 @@ func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 func declarationForRebuild(
 	diff *difftypes.SchemaDiff,
 	tableName string,
-) difftypes.TableDeclaration {
+) schemacapture.TableDeclaration {
 	for _, tableDiff := range diff.TablesModified {
 		if tableDiff.TableName == tableName && tableDiff.Desired.HasTable() {
 			return tableDiff.Desired
@@ -1222,10 +1235,10 @@ func declarationForRebuild(
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
 	declared := objectlookup.Find(
 		diff.DeclaredConstraintHosts, tableName, semantics,
-		func(host difftypes.TableDeclaration) string { return host.Table.QualifiedName() },
+		func(host schemacapture.TableDeclaration) string { return host.Table.QualifiedName() },
 	)
 	if declared == nil {
-		return difftypes.TableDeclaration{}
+		return schemacapture.TableDeclaration{}
 	}
 	return *declared
 }

@@ -188,6 +188,7 @@ func apply(
 			filtered.IndexAdditions(),
 		)
 		var kept []difftypes.IndexRef
+		var retained []difftypes.IndexRef
 		for _, ref := range filtered.IndexRemovals() {
 			// Preserve replacements (dropped then recreated under the same
 			// dialect-specific index namespace); skip only standalone removals.
@@ -196,8 +197,10 @@ func apply(
 				continue
 			}
 			skipped = append(skipped, SkippedChange{Kind: DropIndex, Object: indexRefObject(ref)})
+			retained = append(retained, ref)
 		}
 		filtered.SetIndexRemovals(kept)
+		filtered.IndexCommentsChanged = retainIndexComments(&filtered, retained, dialect)
 	}
 	if skip.Has(DropEnum) {
 		skipped = append(skipped, changesForNames(DropEnum, filtered.EnumsRemoved.Names())...)

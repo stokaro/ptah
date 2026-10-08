@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -130,14 +132,14 @@ table "c" {
 			c.Assert(os.WriteFile(path, []byte(test.document), 0o600), qt.IsNil)
 
 			plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{
-				ToURLs: []string{"file://" + path},
-			})
+				ToURLs:  []string{"file://" + path},
+				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
 			c.Assert(plan.Statements, qt.Not(qt.HasLen), 0,
 				qt.Commentf("an empty plan cannot show the fingerprints disagreeing"))
 			c.Assert(plan.SchemasBeyondURL, qt.DeepEquals, test.wantBeyondURL)
 
-			c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan), qt.IsNil)
+			c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan, must.Must(builtin.New())), qt.IsNil)
 		})
 	}
 }
@@ -209,17 +211,17 @@ func TestPlanLive_SavedPlanIsStaleAfterTheTargetMoves(t *testing.T) {
 			c.Assert(os.WriteFile(path, []byte(test.document), 0o600), qt.IsNil)
 
 			plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{
-				ToURLs: []string{"file://" + path},
-			})
+				ToURLs:  []string{"file://" + path},
+				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
-			c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan), qt.IsNil,
+			c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan, must.Must(builtin.New())), qt.IsNil,
 				qt.Commentf("a plan stale before the drift cannot show the drift being seen"))
 
 			_, err = conn.ExecContext(ctx, test.drift)
 			c.Assert(err, qt.IsNil)
 
 			var stale *atlasschema.StalePlanError
-			c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan), qt.ErrorAs, &stale)
+			c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan, must.Must(builtin.New())), qt.ErrorAs, &stale)
 		})
 	}
 }

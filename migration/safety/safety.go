@@ -8,6 +8,7 @@
 package safety
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -19,8 +20,9 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
@@ -244,8 +246,8 @@ func Assess(nodes []ast.Node) []StatementAssessment {
 // generated AST nodes, using the dialect's default capability preset
 // ([capability.ForDialect]). See [AssessRenderedWithCapabilities] for the
 // assessment and error contract.
-func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, error) {
-	return AssessRenderedWithCapabilities(nodes, dialect, capability.ForDialect(dialect))
+func AssessRendered(ctx context.Context, service renderer.Service, nodes []ast.Node, dialect string) ([]StatementAssessment, error) {
+	return AssessRenderedWithCapabilities(ctx, service, nodes, dialect, capability.ForDialect(dialect))
 }
 
 // AssessRenderedWithCapabilities returns per-rendered-SQL-statement risk
@@ -253,9 +255,9 @@ func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, er
 // rendering on live database paths. The dialect accepts any spelling
 // platform.NormalizeDialect resolves.
 //
-// Rendering is the only error source: a construct the dialect or capability
-// set cannot render fails here with the typed error documented on
-// [renderer.RenderSQLWithCapabilities] rather than being classified.
+// The caller selects the rendering service. All assessment units are rendered
+// in one batch, with node provenance retained in the reply. Missing services,
+// rendering errors, incomplete replies, and cancellation return no assessments.
 //
 // There is one assessment per rendered statement, not per node, because a node
 // can render into several statements on some dialects, and Index is 1-based
@@ -264,40 +266,55 @@ func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, er
 // narrowing type change stays destructive where the SQL alone would not say so
 // — never lowering a statement's own classification.
 func AssessRenderedWithCapabilities(
+	ctx context.Context,
+	service renderer.Service,
 	nodes []ast.Node,
 	dialect string,
 	caps capability.Capabilities,
 ) ([]StatementAssessment, error) {
-	var assessments []StatementAssessment
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return nil, err
+	}
+	var units []ast.Node
 	for _, whole := range nodes {
-		for _, node := range assessmentUnits(whole, dialect) {
-			nodeAssessment := assessNode(node)
-			rendered, err := builtin.RenderSQLWithCapabilities(dialect, caps, node)
-			if err != nil {
-				return nil, err
-			}
-			statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
-			if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
-				statements = []string{strings.TrimSpace(rendered)}
-			}
-			keepsNull := keepsNullability(node)
-			fills := fillsNullRows(node)
-			for _, statement := range statements {
-				assessment := assessStatement(statement, keepsNull)
-				assessment.NodeType = nodeAssessment.NodeType
-				if assessment.Subject == "" {
-					assessment.Subject = nodeAssessment.Subject
-				}
-				if len(statements) == 1 || isTypeChangeSQL(statement) {
-					raiseAssessment(&assessment, nodeAssessment)
-				}
-				if fills {
-					judgeNullFillPair(&assessment, statement)
-				}
-				assessment.Index = len(assessments) + 1
-				assessments = append(assessments, assessment)
-			}
+		units = append(units, assessmentUnits(whole, dialect)...)
+	}
+	target := platform.NormalizeDialect(dialect)
+	if target == "" {
+		target = dialect
+	}
+	result, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: units})
+	if err != nil {
+		return nil, err
+	}
+	var assessments []StatementAssessment
+	for i, node := range units {
+		nodeAssessment := assessNode(node)
+		rendered := result.Fragments[i]
+		statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
+		if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
+			statements = []string{strings.TrimSpace(rendered)}
 		}
+		keepsNull := keepsNullability(node)
+		fills := fillsNullRows(node)
+		for _, statement := range statements {
+			assessment := assessStatement(statement, keepsNull)
+			assessment.NodeType = nodeAssessment.NodeType
+			if assessment.Subject == "" {
+				assessment.Subject = nodeAssessment.Subject
+			}
+			if len(statements) == 1 || hasExtensionEffect(node) || isTypeChangeSQL(statement) {
+				raiseAssessment(&assessment, nodeAssessment)
+			}
+			if fills {
+				judgeNullFillPair(&assessment, statement)
+			}
+			assessment.Index = len(assessments) + 1
+			assessments = append(assessments, assessment)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return assessments, nil
 }
@@ -563,6 +580,8 @@ func assessNode(node ast.Node) StatementAssessment {
 	}
 
 	switch n := node.(type) {
+	case *ast.StatementList:
+		return assessStatementList(n, assessment)
 	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
 		assessment.Severity, assessment.Reason = classifyExtensionNode(node)
 	case *ast.AlterTableNode:
@@ -643,6 +662,15 @@ func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
 	default:
 		return "", "", false
 	}
+}
+
+func assessStatementList(nodes *ast.StatementList, assessment StatementAssessment) StatementAssessment {
+	if nodes != nil {
+		for _, child := range nodes.Statements {
+			raiseAssessment(&assessment, assessNode(child))
+		}
+	}
+	return assessment
 }
 
 func assessAlterTable(n *ast.AlterTableNode, assessment StatementAssessment) StatementAssessment {

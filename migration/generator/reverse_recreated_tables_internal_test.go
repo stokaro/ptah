@@ -1,7 +1,7 @@
 package generator
 
 // White-box testing required: the subject is the unexported reverse plan
-// builder (reverseSchemaDiffWithSchema -> dropReverseConstraintsRestoredByTableCreation)
+// builder (reverseSchemaDiffWithPrior -> dropReverseConstraintsRestoredByTableCreation)
 // as it is rendered by the unexported generateDownMigrationSQL. The exported
 // migration-file API reaches the same code only through a filesystem and a live
 // connection, which would put the failure somewhere other than the rule under
@@ -12,9 +12,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -81,10 +83,13 @@ func TestGenerateDownMigration_DropTable_RollbackSaysEachConstraintOnce(t *testi
 			c := qt.New(t)
 			target, prior := droppedTableFixtures(tt.dialect)
 
-			upDiff := schemadiff.CompareWithDialect(target, prior, tt.dialect)
+			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				target, prior, tt.dialect, must.Must(builtin.New()),
+			))
 			c.Assert(upDiff.TablesRemoved, qt.DeepEquals, []string{"gadgets"})
 
-			down, err := generateDownMigrationSQL(upDiff, target, prior, tt.dialect)
+			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				upDiff, target, prior, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			down = legacyRenderedSQL(down)
 
@@ -118,11 +123,14 @@ func TestGenerateDownMigration_DropTable_KeepsWhatTableCreationCannotRestore(t *
 	c := qt.New(t)
 	target, prior := selfAndCompositeForeignKeyFixtures()
 
-	upDiff := schemadiff.CompareWithDialect(target, prior, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		target, prior, "postgres", must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.TablesRemoved, qt.Contains, "nodes")
 	c.Assert(upDiff.TablesRemoved, qt.Contains, "pairs")
 
-	down, err := generateDownMigrationSQL(upDiff, target, prior, "postgres")
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, target, prior, "postgres")
 	c.Assert(err, qt.IsNil)
 	down = legacyRenderedSQL(down)
 

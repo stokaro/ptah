@@ -1,10 +1,7 @@
 package lint_test
 
 import (
-	"os"
-	"regexp"
 	"slices"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -25,42 +22,22 @@ import (
 // exit 0 -- a silently narrower analysis rather than an error. So the reader
 // has to rewrite what it keeps, and that is what these tests pin.
 
-// normalizeDialectSource is read rather than copied so a spelling added to
-// platform.NormalizeDialect is covered here without anyone editing this file.
-// internal/lintdialect/dialect_test.go and
-// internal/modelast/dialect_spelling_test.go reads the same switch for
-// the same reason.
-const normalizeDialectSource = "../../core/platform/constants.go"
-
-var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
-
+// acceptedSpellings reads the declaration used by normalization and built-in
+// registration, so every new alias joins the sweeps automatically.
 func acceptedSpellings(c *qt.C) []string {
-	source, err := os.ReadFile(normalizeDialectSource)
-	c.Assert(err, qt.IsNil)
-
-	_, afterSignature, foundSignature := strings.Cut(string(source), "func NormalizeDialect(dialect string) string {")
-	c.Assert(foundSignature, qt.IsTrue, qt.Commentf("NormalizeDialect signature moved in %s", normalizeDialectSource))
-
-	body, _, foundEnd := strings.Cut(afterSignature, "\n}")
-	c.Assert(foundEnd, qt.IsTrue, qt.Commentf("NormalizeDialect body is unterminated in %s", normalizeDialectSource))
-
-	matches := quotedLiteral.FindAllStringSubmatch(body, -1)
-	spellings := make([]string, 0, len(matches))
-	for _, match := range matches {
-		spellings = append(spellings, match[1])
-	}
+	spellings := platform.DialectSpellings()
 	slices.Sort(spellings)
-	spellings = slices.Compact(spellings)
-	c.Assert(len(spellings) > 9, qt.IsTrue, qt.Commentf("extracted %d spellings, so the sweeps below cover no aliases", len(spellings)))
+	c.Assert(len(spellings) > 9, qt.IsTrue,
+		qt.Commentf("only %d spellings, so the sweep is incomplete", len(spellings)))
 	return spellings
 }
 
-// lintSupportedSpellings narrows the switch's list to the engines lint
+// lintSupportedSpellings narrows the declared list to the engines lint
 // analyzes.
 //
 // The two lists were the same until Ptah gained a dialect lint has no rules
 // for. The filter is lintdialect.Valid rather than a list copied into this
-// file, so the sweeps below still cannot fall behind the switch; what changed
+// file, so the sweeps below still cannot fall behind normalization; what changed
 // is that they sweep the engines lint can actually answer for. The other side
 // of the partition is held by
 // TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet in internal/lintdialect

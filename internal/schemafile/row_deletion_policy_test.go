@@ -6,11 +6,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -39,14 +41,14 @@ func TestAnHCLDocumentKeepsTheTableTTL(t *testing.T) {
 
 	desired, err := schemafile.LoadPath(path, schemafile.Options{})
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{
 		Tables: []catalog.Table{{Name: "events", Type: "TABLE", RowDeletionPolicy: policy, Columns: []catalog.Column{
 			{Name: "id", DataType: "Uint64", ColumnType: "Uint64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			{Name: "ts", DataType: "Timestamp", ColumnType: "Timestamp", IsNullable: "YES", OrdinalPosition: 2},
 		}}},
 		Constraints: []catalog.Constraint{{Name: "events_pkey", TableName: "events", Type: "PRIMARY KEY",
 			ColumnName: "id", ColumnNames: []string{"id"}}},
-	}, platform.YDB)
+	}, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }

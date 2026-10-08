@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -53,7 +55,7 @@ func TestConvert_KeepsAColumnsOwnUniqueBesideANamedOne(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(twoUniqueSchema(nil, test.names...), "")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), twoUniqueSchema(nil, test.names...), "postgres", must.Must(builtin.New())))
 
 			c.Assert(constraintNames(database.Constraints), qt.DeepEquals, test.want)
 			c.Assert(emailField(c, database).Unique, qt.IsTrue)
@@ -102,7 +104,7 @@ func TestConvert_ClearsAColumnsUniqueAnotherObjectDescribes(t *testing.T) {
 			schema := twoUniqueSchema(test.indexes, test.names...)
 			schema.Constraints = append(schema.Constraints, test.checks...)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New())))
 
 			c.Assert(emailField(c, database).Unique, qt.IsFalse)
 		})

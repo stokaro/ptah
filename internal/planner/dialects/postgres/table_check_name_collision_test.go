@@ -1,11 +1,14 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -54,10 +57,13 @@ func TestPlanner_GenerateMigrationAST_TableCheckNameDoesNotCollide(t *testing.T)
 	planner := postgres.New()
 	desired := checkNameCollisionSchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_check_collision"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_check_collision"),
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -75,10 +81,13 @@ func TestPlanner_GenerateMigrationAST_TableCheckKeepsItsNameWithoutACollision(t 
 	desired := checkNameCollisionSchema()
 	desired.Constraints[0].Name = "ptah_check_collision_stock_positive"
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_check_collision"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_check_collision"),
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

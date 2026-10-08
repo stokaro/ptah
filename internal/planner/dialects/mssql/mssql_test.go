@@ -1,10 +1,13 @@
 package mssql
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -24,7 +27,10 @@ func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 		}},
 	}
 
-	_, err := plan.GenerateMigrationAST(diff)
+	_, err := plan.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports type, nullability and default changes on users\.status; unsupported changes: unique.*`)
 }
@@ -40,7 +46,10 @@ func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {
 		}},
 	}
 
-	_, err := plan.GenerateMigrationAST(diff)
+	_, err := plan.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner does not support automatic DROP COLUMN for users; write an explicit migration that drops dependent constraints and indexes first.*`)
 }

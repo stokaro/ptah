@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemacensus"
 )
 
@@ -17,7 +19,7 @@ import (
 func TestMeasureEmissions_EveryPhysicalObjectIsEmittedOnce(t *testing.T) {
 	c := qt.New(t)
 
-	measured := schemacensus.MeasureEmissions()
+	measured := must.Must(schemacensus.MeasureEmissions(t.Context(), must.Must(builtin.New())))
 
 	c.Assert(measured.Duplicates, qt.HasLen, 0, qt.Commentf(
 		"a physical object was created more than once in one render, so it has two emission paths"))
@@ -37,7 +39,7 @@ func TestMeasureEmissions_EveryPhysicalObjectIsEmittedOnce(t *testing.T) {
 func TestMeasureEmissions_TheCorpusActuallyRenders(t *testing.T) {
 	c := qt.New(t)
 
-	measured := schemacensus.MeasureEmissions()
+	measured := must.Must(schemacensus.MeasureEmissions(t.Context(), must.Must(builtin.New())))
 
 	c.Assert(measured.Objects > 3000, qt.IsTrue, qt.Commentf(
 		"the corpus emitted %d objects, so the duplicate check above measured almost nothing",
@@ -65,7 +67,7 @@ func TestMeasureEmissions_TheCorpusActuallyRenders(t *testing.T) {
 func TestMeasureEmissions_EveryCellContributes(t *testing.T) {
 	c := qt.New(t)
 
-	measured := schemacensus.MeasureEmissions()
+	measured := must.Must(schemacensus.MeasureEmissions(t.Context(), must.Must(builtin.New())))
 
 	c.Assert(measured.DarkCells, qt.HasLen, 0, qt.Commentf(
 		"these declared cells rendered no object at all, so nothing about them was measured"))
@@ -89,7 +91,7 @@ func TestMeasureEmissions_EveryCellContributes(t *testing.T) {
 func TestMeasureEmissions_EveryFixtureContributes(t *testing.T) {
 	c := qt.New(t)
 
-	measured := schemacensus.MeasureEmissions()
+	measured := must.Must(schemacensus.MeasureEmissions(t.Context(), must.Must(builtin.New())))
 
 	c.Assert(measured.DarkFixtures, qt.HasLen, 0, qt.Commentf(
 		"these fixtures rendered no object on any declared cell"))
@@ -107,7 +109,7 @@ func TestMeasureEmissions_EveryFixtureContributes(t *testing.T) {
 func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 	c := qt.New(t)
 
-	measured := schemacensus.MeasureEmissions()
+	measured := must.Must(schemacensus.MeasureEmissions(t.Context(), must.Must(builtin.New())))
 
 	c.Assert(measured.Unclassified, qt.DeepEquals, []string{
 		// A PL/pgSQL or SQL function body carries its own semicolons, so the

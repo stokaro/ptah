@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -77,7 +78,7 @@ func TestSQLServerLiveProcedureRoundTrip(t *testing.T) {
 
 	// 3. The convergence assertion. Comparing the same description against what
 	// the server now holds must produce nothing to do.
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
@@ -130,7 +131,7 @@ func TestSQLServerLiveProcedureReplacementUsesTheMatchingVerb(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	report := sqlServerFunctionNamed(live.Functions, "p_report")
 	c.Assert(report.Body, qt.Contains, "1 AS extra")
-	settled := schemadiff.CompareWithDialect(after, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), after, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 }
 

@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbttl"
@@ -119,7 +120,7 @@ func refuseDroppingTheTTLColumn(tableDiff difftypes.TableDiff) error {
 // from, through the type map the renderer writes the column with. A
 // modification that carries no declaration of the table is left to the
 // server, which refuses the statement by itself.
-func (p *Planner) refuseTTLColumn(subject string, declaration difftypes.TableDeclaration, policy *ast.RowDeletionPolicySpec) error {
+func (p *Planner) refuseTTLColumn(subject string, declaration schemacapture.TableDeclaration, policy *ast.RowDeletionPolicySpec) error {
 	if !declaration.HasTable() {
 		return nil
 	}

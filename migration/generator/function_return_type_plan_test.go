@@ -1,14 +1,17 @@
 package generator_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -31,20 +34,28 @@ func planRoutineChange(
 	c.Helper()
 	wanted := &schemamodel.Database{Functions: desired}
 	live := &catalog.Database{Functions: current}
-	diff := schemadiff.CompareWithDialect(wanted, live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(),
+		wanted, live, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: wanted,
-		CurrentSchema: live,
-		Dialect:       platform.Postgres,
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: wanted,
+			CurrentSchema: live,
+			Dialect:       platform.Postgres,
+		})
 	c.Assert(err, qt.IsNil)
 
-	up, err := planner.GenerateSchemaDiffSQLStatements(plan.Forward.Diff, platform.Postgres)
+	up, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		plan.Forward.Diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
-	down, err := planner.GenerateSchemaDiffSQLStatements(plan.Reverse.Diff, platform.Postgres)
+	down, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		plan.Reverse.Diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	return strings.Join(up, "\n"), strings.Join(down, "\n")
 }

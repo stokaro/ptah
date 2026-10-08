@@ -10,9 +10,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -106,7 +108,7 @@ func TestPostgresLiveConnection_ASelectedSchemaComparesEqualToItself(t *testing.
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, live, conn.Info(), nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, live, conn.Info(), nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	// Non-vacuity: the table really is on both sides, so two empty lists cannot

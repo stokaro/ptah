@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -57,7 +59,7 @@ func TestCompareWithDatabaseInfo_KeyIntoAnUncomparedSchema_HappyPath(t *testing.
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				ordersIntoCRM(), test.database, catalog.ServerInfo{Dialect: test.dialect, Schema: "public"}, nil,
+				t.Context(), ordersIntoCRM(), test.database, catalog.ServerInfo{Dialect: test.dialect, Schema: "public"}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -97,7 +99,7 @@ func TestCompareWithDatabaseInfo_KeyIntoAComparedSchema_FailurePath(t *testing.T
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				ordersIntoCRM(), test.database, catalog.ServerInfo{Dialect: test.dialect, Schema: "public"}, nil,
+				t.Context(), ordersIntoCRM(), test.database, catalog.ServerInfo{Dialect: test.dialect, Schema: "public"}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

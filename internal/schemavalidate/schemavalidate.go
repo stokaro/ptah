@@ -1,24 +1,23 @@
 // Package schemavalidate reports structural problems in a desired schema
 // without a database.
 //
-// It sits below the CLI because the question means something without Atlas: a
-// schema that names a column no table declares is wrong whoever asks. The
-// renderer already refuses a schema it cannot render, but it refuses the first
-// problem it meets and only while producing SQL, so the answer arrives after
-// output the caller has to read past. Indexes are not covered there at all --
-// an index on a column, or a table, that no declaration mentions renders
-// happily (stokaro/ptah#1711).
+// Common structural checks run before the selected target validator. Index
+// references need this common check because a syntactically valid index can
+// name a relation or column absent from the declaration (stokaro/ptah#1711).
 package schemavalidate
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
+	"ptah.run/core/schemavalidation"
 )
 
 // Problem is one structural fault found in a desired schema.
@@ -44,8 +43,8 @@ func (p Problem) String() string {
 
 // Collect reports every structural problem it can find in database for one
 // dialect, against that dialect's default capability preset.
-func Collect(database *schemamodel.Database, dialect string) []Problem {
-	return CollectWithCapabilities(database, dialect, capability.ForDialect(dialect))
+func Collect(ctx context.Context, service schemavalidation.Runtime, database *schemamodel.Database, dialect string) ([]Problem, error) {
+	return CollectWithOptions(ctx, service, database, dialect, Options{})
 }
 
 // Options selects what a collection checks.
@@ -64,114 +63,61 @@ type Options struct {
 // CollectWithCapabilities reports every structural problem it can find against
 // a concrete capability set.
 func CollectWithCapabilities(
+	ctx context.Context,
+	service schemavalidation.Runtime,
 	database *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
-) []Problem {
-	return CollectWithOptions(database, dialect, Options{Capabilities: caps})
+) ([]Problem, error) {
+	return CollectWithOptions(ctx, service, database, dialect, Options{Capabilities: caps})
 }
 
 // CollectWithOptions reports every problem the selected checks can find.
 //
-// The checks are ordered cheapest first and none of them stops the others: a
-// caller asking what is wrong with a schema wants the list, not the first
-// entry. The renderer's own validation contributes at most one problem,
-// because it is fail-fast by construction.
-//
-// With [Options.NoSkipped] the render runs too, and what it leaves out becomes
-// one problem per lost declaration. A render refusal is a problem rather than
-// an error: the caller asked what is wrong with this schema for this target,
-// and "it cannot be rendered at all" is an answer to that question, not a
-// failure to answer it.
+// Common checks and selected target validation contribute to the same report.
+// With [Options.NoSkipped], the provider also diagnoses declarations it would
+// omit. A completed validation can report schema refusals. A service failure,
+// incomplete reply, or cancellation returns an error and no partial problem list.
 func CollectWithOptions(
+	ctx context.Context,
+	service schemavalidation.Runtime,
 	database *schemamodel.Database,
 	dialect string,
 	opts Options,
-) []Problem {
+) ([]Problem, error) {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return nil, err
+	}
+	selected, err := service.ResolveTarget(dialect)
+	if err != nil {
+		return nil, err
+	}
+	dialect = selected.Name()
 	caps := opts.Capabilities
 	if caps == nil {
 		caps = capability.ForDialect(dialect)
 	}
 	if database == nil {
-		return []Problem{{
-			Dialect: dialect,
-			Kind:    "schema",
-			Message: "no schema was loaded",
-		}}
+		return []Problem{{Dialect: dialect, Kind: "schema", Message: "no schema was loaded"}}, nil
 	}
-	// Scoped first, for the same reason the renderer scopes before validating:
-	// a declaration this dialect was not given is not part of its desired
-	// state, so faulting it here would refuse what the operator excluded.
-	scoped := schemamodel.ScopeToDialect(database, dialect)
-	problems := collectIndexProblems(scoped, dialect)
-	if err := builtin.ValidateSchemaWithCapabilities(scoped, dialect, caps); err != nil {
-		problems = append(problems, Problem{
-			Dialect: dialect,
-			Kind:    "schema",
-			Message: err.Error(),
-		})
-		// The render begins with exactly this validation, so running it now
-		// would report the same refusal twice. Returning here is the dedup:
-		// there is no second fault to find in a schema that does not reach a
-		// renderer.
-		return problems
-	}
-	if !opts.NoSkipped {
-		return problems
-	}
-	return append(problems, collectSkippedDeclarations(scoped, dialect, caps)...)
-}
-
-// collectSkippedDeclarations renders the schema and reports what did not survive.
-//
-// The SQL is discarded. This verb answers a question about the schema and must
-// not print DDL or write a file, so the render exists only for what it leaves
-// behind: the omission report and, where the target refuses outright, the
-// error.
-func collectSkippedDeclarations(
-	database *schemamodel.Database,
-	dialect string,
-	caps capability.Capabilities,
-) []Problem {
-	_, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(database, dialect, caps)
+	// Target scoping precedes both common structural checks and owner validation.
+	scoped, err := schemamodel.ScopeToTarget(database, selected)
 	if err != nil {
-		return []Problem{{
-			Dialect: dialect,
-			Kind:    "schema",
-			Message: err.Error(),
-		}}
+		return nil, err
 	}
-	problems := make([]Problem, 0, len(omissions))
-	for _, omission := range omissions {
-		problems = append(problems, Problem{
-			Dialect: dialect,
-			Kind:    omission.Kind,
-			Object:  omission.Name,
-			Message: skippedMessage(omission),
-		})
+	problems := collectIndexProblems(scoped, dialect)
+	target := selected.Name()
+	result, err := schemavalidation.Validate(ctx, service, schemavalidation.Request{
+		Target: target, Schema: scoped, Capabilities: caps,
+		Identifiers: identifier.ForDialect(dialect), NoSkipped: opts.NoSkipped,
+	})
+	if err != nil {
+		return nil, err
 	}
-	return problems
-}
-
-// skippedMessage states the loss, and the remedy only where one exists.
-//
-// A whole object that was lost is named by [Problem.String] already, so the
-// message says only what happened to it; repeating the name there produced
-// `role "app": role app would be skipped`. A lost property has to name itself,
-// because the object line cannot.
-//
-// A remedy that does not work on the target it is printed for costs the reader
-// more than silence, so the renderer decides whether there is one and this
-// function only formats what it was given.
-func skippedMessage(omission builtin.Omission) string {
-	message := "would be skipped"
-	if omission.Property != "" {
-		message = omission.Message()
+	for _, diagnostic := range result.Diagnostics {
+		problems = append(problems, Problem{Dialect: dialect, Kind: diagnostic.Kind, Object: diagnostic.Object, Message: diagnostic.Message})
 	}
-	if omission.Remedy == "" {
-		return message
-	}
-	return message + "; " + omission.Remedy
+	return problems, nil
 }
 
 // collectIndexProblems checks every index against the relation it belongs to.

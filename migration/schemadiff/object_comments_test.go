@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -79,11 +81,11 @@ func TestCompareWithDialect_ObjectCommentDifferenceIsAChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				commentedObjects(test.declared, ""),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), commentedObjects(test.declared, ""),
 				reportedObjects(test.inDatabase, ""),
-				platform.Postgres,
-			)
+				platform.Postgres, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, test.want)
 			c.Assert(diff.ViewsModified, qt.HasLen, 0)
@@ -127,11 +129,11 @@ func TestCompareWithDialect_ExtensionCommentOnlyWhenDeclared(t *testing.T) {
 			opts.Dialect = platform.Postgres
 			opts.IgnoredExtensions = test.ignored
 
-			diff := schemadiff.CompareWithOptions(
-				commentedObjects("same", test.declared),
+			diff := must.Must(schemadiff.CompareWithOptions(
+				t.Context(), commentedObjects("same", test.declared),
 				reportedObjects("same", test.inDatabase),
-				opts,
-			)
+				opts, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, test.want)
 			c.Assert(diff.ExtensionsModified, qt.HasLen, 0)
@@ -181,10 +183,10 @@ func TestCompareWithDatabaseInfo_ObjectCommentsFollowTheTargetsCapabilities(t *t
 			declared.Domains, declared.Ranges = nil, nil
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				declared,
+				t.Context(), declared,
 				reportedObjects("old", ""),
 				catalog.ServerInfo{Dialect: test.dialect, Capabilities: test.caps},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -216,7 +218,7 @@ func withoutKinds(
 func TestCompareWithDialect_ObjectCommentOnlyForObjectsBothSidesHold(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(commentedObjects("new", "mine"), &catalog.Database{}, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), commentedObjects("new", "mine"), &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.HasLen, 0)
 	c.Assert(diff.ViewsAdded, qt.HasLen, 1)
@@ -227,7 +229,7 @@ func TestCompareWithDialect_ObjectCommentOnlyForObjectsBothSidesHold(t *testing.
 func TestCompareSchemas_UnnamedDialectComparesObjectCommentsAsPostgreSQL(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.Compare(commentedObjects("new", ""), reportedObjects("old", ""))
+	diff := must.Must(schemadiff.Compare(t.Context(), commentedObjects("new", ""), reportedObjects("old", ""), must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, everyObjectComment("old", "new"))
 }
@@ -239,7 +241,7 @@ func TestCompareSchemas_UnnamedDialectComparesObjectCommentsAsPostgreSQL(t *test
 func TestCompareSchemas_ObjectCommentsSurviveTheConversion(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(commentedObjects("new", "mine"), commentedObjects("old", "theirs"), platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), commentedObjects("new", "mine"), commentedObjects("old", "theirs"), platform.Postgres, must.Must(builtin.New())))
 
 	want := everyObjectComment("old", "new")
 	// The kinds sort by name, so the extension falls between the domain and
@@ -255,7 +257,7 @@ func TestCompareSchemas_ObjectCommentsSurviveTheConversion(t *testing.T) {
 func TestCompareWithDialect_RemovedUserTypesCarryTheirComments(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(&schemamodel.Database{}, reportedObjects("kept", ""), platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, reportedObjects("kept", ""), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.DomainsRemoved, qt.HasLen, 1)
 	c.Assert(diff.DomainsRemoved[0].Comment, qt.Equals, "kept")

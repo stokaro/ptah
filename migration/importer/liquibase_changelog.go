@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -193,12 +194,15 @@ type liquibaseChangelogRead struct {
 // Name order is the same rule the formatted-SQL reader applies for the same
 // reason: absent a master changelog naming an order, the file name is the only
 // stable one, and inventing a different one would reorder history.
-func parseLiquibaseChangelogFiles(fsys fs.FS, names []string, parser liquibaseParser) (liquibaseChangelogRead, error) {
+func parseLiquibaseChangelogFiles(ctx context.Context, fsys fs.FS, names []string, parser liquibaseParser) (liquibaseChangelogRead, error) {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
 
 	var read liquibaseChangelogRead
 	for _, name := range sorted {
+		if err := ctx.Err(); err != nil {
+			return liquibaseChangelogRead{}, err
+		}
 		content, err := fs.ReadFile(fsys, name)
 		if err != nil {
 			return liquibaseChangelogRead{}, fmt.Errorf("read %q: %w", name, err)
@@ -207,7 +211,7 @@ func parseLiquibaseChangelogFiles(fsys fs.FS, names []string, parser liquibasePa
 		if err != nil {
 			return liquibaseChangelogRead{}, err
 		}
-		converter := &liquibaseConverter{fsys: fsys, file: name, dialect: parser.dialect, caps: parser.caps, dbms: parser.dbms}
+		converter := &liquibaseConverter{ctx: ctx, rendering: parser.rendering, fsys: fsys, file: name, dialect: parser.dialect, caps: parser.caps, dbms: parser.dbms}
 		for _, changeset := range changesets {
 			conversion, err := liquibaseMigrationFrom(converter, changeset)
 			if err != nil {

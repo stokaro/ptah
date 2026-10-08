@@ -1,14 +1,17 @@
 package ydb_test
 
 import (
+	"context"
 	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/internal/ydbpool"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -144,7 +147,10 @@ func TestGenerateMigrationAST_ResourcePools_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(nodes, qt.IsNil)

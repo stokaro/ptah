@@ -3,15 +3,18 @@
 package mysql_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -74,7 +77,7 @@ func TestGrantOptionGhost_LiveConverges(t *testing.T) {
 
 			live, err := conn.Reader().ReadSchemaContext(c.Context())
 			c.Assert(err, qt.IsNil)
-			diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
+			diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.GrantsRemoved, qt.HasLen, 1)
 			c.Assert(diff.GrantsRemoved[0].Privilege, qt.Equals, "SELECT")
@@ -87,7 +90,7 @@ func TestGrantOptionGhost_LiveConverges(t *testing.T) {
 			// it is.
 			ghostRead, err := conn.Reader().ReadSchemaContext(c.Context())
 			c.Assert(err, qt.IsNil)
-			ghostDiff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, ghostRead, nil)
+			ghostDiff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, ghostRead, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(ghostDiff.GrantsRemoved, qt.HasLen, 1)
 			c.Assert(ghostDiff.GrantsRemoved[0].Privilege, qt.Equals, "USAGE")
@@ -98,7 +101,7 @@ func TestGrantOptionGhost_LiveConverges(t *testing.T) {
 
 			settled, err := conn.Reader().ReadSchemaContext(c.Context())
 			c.Assert(err, qt.IsNil)
-			again, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, settled, nil)
+			again, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, settled, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(again.GrantsAdded, qt.HasLen, 0)
 			c.Assert(again.GrantsRemoved, qt.HasLen, 0)
@@ -110,7 +113,10 @@ func TestGrantOptionGhost_LiveConverges(t *testing.T) {
 // applyPlan generates the statements a diff plans and runs every one of them.
 func applyPlan(c *qt.C, conn *dbschema.DatabaseConnection, diff *difftypes.SchemaDiff, dialect string) {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("statement:\n%s", statement))

@@ -74,7 +74,7 @@ func TestCompatCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 
 	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
 		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
 			"\n"+
@@ -101,7 +101,7 @@ func TestCompatCommand_MigrateLintDefaultTextDropColumn(t *testing.T) {
 
 	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
 		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
 			"\n"+
@@ -128,7 +128,7 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsDropColumnAtMeasuredBoundary(t
 
 	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
 		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
 			"\n"+
@@ -183,7 +183,7 @@ func TestCompatCommand_MigrateLintDefaultTextCollectsFixesAfterEveryAnalyzerGrou
 
 	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
 		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
 			"\n"+
@@ -227,7 +227,7 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsAnalyzerURLAtMeasuredBoundary(
 
 	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
 		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
 			"\n"+

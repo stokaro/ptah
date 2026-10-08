@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -119,7 +122,8 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 				dialectGen, dialectDB := determinismInputsForDialect(gen, scenario.db, dialect)
 
 				first, err := planner.GenerateSchemaDiffSQL(
-					schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialect,
+					context.Background(), must.Must(builtin.New()),
+					must.Must(schemadiff.CompareWithDialect(t.Context(), dialectGen, dialectDB, dialect, must.Must(builtin.New()))), dialect,
 				)
 
 				c.Assert(err, qt.IsNil)
@@ -127,7 +131,8 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 
 				for i := range 100 {
 					sql, err := planner.GenerateSchemaDiffSQL(
-						schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialect,
+						context.Background(), must.Must(builtin.New()),
+						must.Must(schemadiff.CompareWithDialect(t.Context(), dialectGen, dialectDB, dialect, must.Must(builtin.New()))), dialect,
 					)
 
 					c.Assert(err, qt.IsNil)
@@ -160,7 +165,7 @@ func TestGenerateSchemaDiffSQL_DriftedFixtureCoverage(t *testing.T) {
 	c := qt.New(t)
 
 	gen := multiTenantRLSSchema()
-	diff := schemadiff.CompareWithDialect(gen, driftedDatabase(gen), "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), gen, driftedDatabase(gen), "postgres", must.Must(builtin.New())))
 
 	multiChangeColumns := 0
 	for _, tableDiff := range diff.TablesModified {
@@ -193,7 +198,10 @@ func TestGenerateSchemaDiffSQL_EnableRLSSorted(t *testing.T) {
 	c := qt.New(t)
 
 	gen := multiTenantRLSSchema()
-	sql, err := planner.GenerateSchemaDiffSQL(schemadiff.Compare(gen, &catalog.Database{}), "postgres")
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		must.Must(schemadiff.Compare(t.Context(), gen, &catalog.Database{}, must.Must(builtin.New()))), "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 
 	var enableStmts []string

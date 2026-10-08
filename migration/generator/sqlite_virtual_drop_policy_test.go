@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/generator"
 )
@@ -75,13 +77,12 @@ func TestGenerateMigrationCarriesTheDropPolicyIntoTheVirtualTableGuard(t *testin
 			_, err = conn.ExecContext(ctx, `CREATE VIRTUAL TABLE docs USING fts5(title, body)`)
 			c.Assert(err, qt.IsNil)
 
-			_, err = generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-				Generated: &schemamodel.Database{
-					Tables: []schemamodel.Table{{StructName: "users", Name: "users"}},
-					Fields: []schemamodel.Field{
-						{StructName: "users", Name: "id", Type: "INTEGER", Primary: true},
-					},
+			_, err = generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), Generated: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "users", Name: "users"}},
+				Fields: []schemamodel.Field{
+					{StructName: "users", Name: "id", Type: "INTEGER", Primary: true},
 				},
+			},
 				DBConn:        conn,
 				MigrationName: "drop_policy",
 				OutputDir:     migrationsDir,

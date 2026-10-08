@@ -1,11 +1,14 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
@@ -166,7 +169,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				tablesAdded := make(difftypes.TableChanges, 0, len(tt.desired.Tables))
 				for _, table := range tt.desired.Tables {
 					tablesAdded = append(tablesAdded,
-						difftypes.TableCreationFor(tt.desired, table, table.Name))
+						difftypes.TableCreationFor(tt.desired, table, table.Name, identifier.ForDialect("mysql")))
 				}
 				diff = &difftypes.SchemaDiff{
 					TablesAdded: tablesAdded,
@@ -178,7 +181,10 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				}
 			}
 
-			nodes, err := mysql.New().GenerateMigrationAST(withDeclaredTables(diff, tt.desired))
+			nodes, err := mysql.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 			sql, err := builtin.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)

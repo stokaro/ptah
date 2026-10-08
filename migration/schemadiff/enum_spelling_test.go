@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -63,7 +65,7 @@ func TestEnumDeclaredByName_ComparesAsWhatTheTargetStores(t *testing.T) {
 				Constraints: tt.constraints,
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, live, tt.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, tt.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0,
 				qt.Commentf("a column declared by enum name must compare as what %s stores", tt.dialect))

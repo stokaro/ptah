@@ -11,11 +11,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -73,7 +75,7 @@ func TestSQLServerCheckExpressionConvergesE2E(t *testing.T) {
 	c.Assert(storedSQLServerCheck(c, ctx, setupDB, "ck_price"), qt.Equals, "([price]>=(0))")
 
 	diff, err := schemadiff.CompareWithDatabase(
-		ctx, conn, sqlServerCheckDeclaration("price >= 0"), read, config.DefaultCompareOptions())
+		ctx, conn, sqlServerCheckDeclaration("price >= 0"), read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
@@ -81,7 +83,7 @@ func TestSQLServerCheckExpressionConvergesE2E(t *testing.T) {
 
 	// The control: a check that really did change is still reported.
 	changed, err := schemadiff.CompareWithDatabase(
-		ctx, conn, sqlServerCheckDeclaration("price >= 1"), read, config.DefaultCompareOptions())
+		ctx, conn, sqlServerCheckDeclaration("price >= 1"), read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed.ConstraintsAdded.Names(), qt.DeepEquals, []string{"ck_price"})

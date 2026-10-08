@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -219,10 +220,16 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	// DiffReportingChanges rather than Diff: Diff is the same call with the
 	// structured comparison discarded, and that comparison is what says which
 	// tables the diagram marks.
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
+		Runtime:     runtime,
 		FromURLs:    opts.fromURLs,
 		ToURLs:      opts.toURLs,
 		DevURL:      opts.devURL,

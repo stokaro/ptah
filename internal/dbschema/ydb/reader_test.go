@@ -21,7 +21,9 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
-	ydbschema "ptah.run/internal/dbschema/ydb"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
+	ydbreader "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/ydbcolumn"
 )
 
@@ -46,12 +48,12 @@ type fakeSource struct {
 	selves map[string]*Ydb_Scheme.Entry
 	// principals is what .sys/auth_* reports, and principalsErr how reading
 	// it fails.
-	principals    ydbschema.Principals
+	principals    ydbreader.Principals
 	principalsErr error
 	// pools is what .sys/resource_pools and .sys/resource_pool_classifiers
 	// report, and poolsErr how reading them fails. A fixture that names no
 	// database answers for /local, the database every fixture reads.
-	pools    ydbschema.ResourcePools
+	pools    ydbreader.ResourcePools
 	poolsErr error
 	nodes    map[string]*Ydb_Coordination.DescribeNodeResult
 }
@@ -80,11 +82,11 @@ func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.E
 	return f.selves[path], entries, nil
 }
 
-func (f fakeSource) Principals(context.Context) (ydbschema.Principals, error) {
+func (f fakeSource) Principals(context.Context) (ydbreader.Principals, error) {
 	return f.principals, f.principalsErr
 }
 
-func (f fakeSource) ResourcePools(context.Context) (ydbschema.ResourcePools, error) {
+func (f fakeSource) ResourcePools(context.Context) (ydbreader.ResourcePools, error) {
 	if f.pools.Database == "" {
 		f.pools.Database = "/local"
 	}
@@ -214,7 +216,7 @@ func implementationTable() *Ydb_Table.DescribeTableResult {
 
 func readFrom(c *qt.C, source fakeSource) *catalog.Database {
 	c.Helper()
-	db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
+	db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
 	c.Assert(err, qt.IsNil)
 	return db
 }
@@ -286,7 +288,7 @@ func TestReader_LeavesOutTheDevRealms(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := ydbschema.NewReaderFromSource(source, test.root, capability.YDB262()).ReadSchemaContext(context.Background())
+			db, err := ydbreader.NewReaderFromSource(source, test.root, capability.YDB262()).ReadSchemaContext(context.Background())
 
 			c.Assert(err, qt.IsNil)
 			var got []string
@@ -327,7 +329,7 @@ func TestReader_SetSchemas(t *testing.T) {
 					"/local/app/sub/items": plainTable(),
 				},
 			}
-			reader := ydbschema.NewReaderFromSource(source, "local", capability.YDB262())
+			reader := ydbreader.NewReaderFromSource(source, "local", capability.YDB262())
 			reader.SetSchemas(test.schemas)
 
 			db, err := reader.ReadSchemaContext(context.Background())
@@ -465,7 +467,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 				entry("ext", Ydb_Scheme.Entry_EXTERNAL_TABLE),
 				entry("key", Ydb_Scheme.Entry_SECRET),
 				entry("pool", Ydb_Scheme.Entry_RESOURCE_POOL),
-				entry("stream", ydbschema.EntryStreamingQuery),
+				entry("stream", ydbreader.EntryStreamingQuery),
 				entry("health", Ydb_Scheme.Entry_SYS_VIEW),
 				entry("app", Ydb_Scheme.Entry_DIRECTORY),
 			},
@@ -479,7 +481,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		views: map[string]*Ydb_View.DescribeViewResult{"/local/v": {QueryText: "SELECT 1 AS a"}},
 		// A cluster that does not serve the replication API, as local-ydb
 		// does not by default: the replication and the transfer are recorded.
-		replicationErr: fmt.Errorf("describe YDB async replication: %w", ydbschema.ErrReplicationServiceUnavailable),
+		replicationErr: fmt.Errorf("describe YDB async replication: %w", ydbreader.ErrReplicationServiceUnavailable),
 	}
 
 	db := readFrom(c, source)
@@ -487,9 +489,9 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	observed := func(kind coverage.Kind, name string) coverage.Object {
 		return coverage.Object{Kind: kind, Name: name, Reason: coverage.Unsupported, Provenance: coverage.Observed}
 	}
+	c.Assert(db.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef("app", "t", "feed")).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
 		observed(coverage.TTL, "app.t"),
-		observed(coverage.Changefeed, "app.t/feed"),
 		observed(coverage.ColumnFamily, "app.t"),
 		observed(coverage.TableOption, "app.t"),
 		observed(coverage.ExternalTable, "ext"),
@@ -533,7 +535,7 @@ func TestReader_ReadsASecretByItsPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+			reader := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262())
 			reader.SetSchemas(test.schemas)
 
 			db, err := reader.ReadSchemaContext(context.Background())
@@ -554,7 +556,7 @@ func TestReader_RecordsASecretOnALineWithoutSecrets(t *testing.T) {
 		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("pg_password", Ydb_Scheme.Entry_SECRET)}},
 	}
 
-	db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB253()).ReadSchemaContext(context.Background())
+	db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB253()).ReadSchemaContext(context.Background())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Secrets, qt.HasLen, 0)
@@ -731,7 +733,7 @@ func TestReader_TableSettings_FailurePath(t *testing.T) {
 				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": test.described},
 			}
 
-			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
+			db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -1079,7 +1081,7 @@ func TestReader_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := ydbschema.NewReaderFromSource(test.source, "/local", capability.YDB262()).
+			db, err := ydbreader.NewReaderFromSource(test.source, "/local", capability.YDB262()).
 				ReadSchemaContext(context.Background())
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -1095,12 +1097,12 @@ func (errorSource) ListDirectory(context.Context, string) (*Ydb_Scheme.Entry, []
 	return nil, nil, errors.New("connection refused")
 }
 
-func (errorSource) Principals(context.Context) (ydbschema.Principals, error) {
-	return ydbschema.Principals{}, errors.New("connection refused")
+func (errorSource) Principals(context.Context) (ydbreader.Principals, error) {
+	return ydbreader.Principals{}, errors.New("connection refused")
 }
 
-func (errorSource) ResourcePools(context.Context) (ydbschema.ResourcePools, error) {
-	return ydbschema.ResourcePools{}, errors.New("connection refused")
+func (errorSource) ResourcePools(context.Context) (ydbreader.ResourcePools, error) {
+	return ydbreader.ResourcePools{}, errors.New("connection refused")
 }
 
 func (errorSource) DescribeTable(context.Context, string) (*Ydb_Table.DescribeTableResult, error) {
@@ -1138,7 +1140,7 @@ func (errorSource) DescribeExternalTable(context.Context, string) (*Ydb_Table.De
 func TestReader_FailurePath_SourceFails(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := ydbschema.NewReaderFromSource(errorSource{}, "/local", capability.YDB262()).ReadSchema()
+	db, err := ydbreader.NewReaderFromSource(errorSource{}, "/local", capability.YDB262()).ReadSchema()
 
 	c.Assert(err, qt.ErrorMatches, "connection refused")
 	c.Assert(db, qt.IsNil)
@@ -1155,7 +1157,7 @@ func TestReader_ScopedReadPassesAnObjectOutsideIt(t *testing.T) {
 		},
 		tables: map[string]*Ydb_Table.DescribeTableResult{"/local/app/orders": plainTable()},
 	}
-	reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+	reader := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262())
 	reader.SetSchemas([]string{"app"})
 
 	db, err := reader.ReadSchemaContext(context.Background())
@@ -1198,10 +1200,10 @@ func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
 	source := fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{
 			"/local": {
-				entry(ydbschema.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE),
+				entry(ydbreader.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE),
 				entry("app", Ydb_Scheme.Entry_DIRECTORY),
 			},
-			"/local/app": {entry(ydbschema.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE)},
+			"/local/app": {entry(ydbreader.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE)},
 		},
 		nodes: map[string]*Ydb_Coordination.DescribeNodeResult{
 			"/local/app/ptah_locks": {Config: &Ydb_Coordination.Config{}},
@@ -1244,7 +1246,7 @@ func TestReader_DescribesCoordinationNodes(t *testing.T) {
 			}},
 		},
 	}
-	reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+	reader := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262())
 	reader.SetSchemas([]string{"", "app"})
 
 	db, err := reader.ReadSchema()
@@ -1306,7 +1308,7 @@ func TestReader_DescribesCoordinationNodes_FailurePath(t *testing.T) {
 				nodes:       map[string]*Ydb_Coordination.DescribeNodeResult{"/local/locks": test.described},
 			}
 
-			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchema()
+			db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchema()
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -1340,7 +1342,7 @@ func TestReader_TableColumns_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+			reader := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262())
 
 			columns, exists, err := reader.TableColumns(context.Background(), test.schema, test.table)
 
@@ -1374,7 +1376,7 @@ func TestReader_TableColumns_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+			reader := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262())
 
 			columns, exists, err := reader.TableColumns(context.Background(), test.schema, test.table)
 
@@ -1496,7 +1498,7 @@ func TestReader_IndexPartitioning_FailurePath(t *testing.T) {
 				tables:      tables,
 			}
 
-			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
+			db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

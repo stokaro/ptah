@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -85,7 +87,7 @@ func TestCompareWithDialect_TheConstraintListsCarryTheNamesTheirFixturesExpect(t
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(row.desired(), row.current(), row.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), row.desired(), row.current(), row.dialect, must.Must(builtin.New())))
 
 			c.Assert(sortedCopy(diff.ConstraintsAdded.Names()), qt.DeepEquals, sortedCopy(row.wantAdds),
 				qt.Commentf("the fixture did not produce the additions it was written for"))

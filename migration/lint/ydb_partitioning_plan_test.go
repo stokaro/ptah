@@ -1,10 +1,12 @@
 package lint_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -53,7 +55,10 @@ func TestYDBRules_LeavePtahsPartitioningPlans(t *testing.T) {
 				}},
 				DeclaredTables: []schemamodel.Table{{Name: "t"}},
 			}
-			nodes, err := ydbplanner.NewWithCapabilities(caps).GenerateMigrationAST(diff)
+			nodes, err := ydbplanner.NewWithCapabilities(caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 			c.Assert(err, qt.IsNil)
 			sql, err := builtin.RenderSQLWithCapabilities("ydb", caps, nodes...)
 			c.Assert(err, qt.IsNil)

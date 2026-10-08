@@ -75,7 +75,7 @@ func TestDbmateImportWritesPtahLayout(t *testing.T) {
 	c := qt.New(t)
 	outDir := t.TempDir()
 
-	result, err := importer.Import(dbmateFS(), nil, outDir, importer.Options{})
+	result, err := importer.Import(c.Context(), dbmateFS(), nil, outDir, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.Contains, "0000000001_v20240101120000_create_users.up.sql")
 	c.Assert(result.Files, qt.Contains, "0000000001_v20240101120000_create_users.down.sql")
@@ -117,7 +117,7 @@ func TestDbmateImportKeepsTransactionFalse(t *testing.T) {
 			source := test.up + "\nCREATE UNIQUE INDEX i ON users (email);\n" +
 				test.down + "\nDROP INDEX i;\n"
 			outDir := t.TempDir()
-			_, err := importer.Import(
+			_, err := importer.Import(c.Context(),
 				fstest.MapFS{"20240215093000_index.sql": {Data: []byte(source)}}, nil, outDir, importer.Options{})
 			c.Assert(err, qt.IsNil)
 

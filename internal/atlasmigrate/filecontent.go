@@ -1,13 +1,16 @@
 package atlasmigrate
 
 import (
+	"context"
 	"fmt"
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/txrequire"
@@ -82,27 +85,32 @@ type MigrationFileContent struct {
 // `atlas:txmode none`; the two-file split preserves that metadata while
 // keeping Ptah's stricter transactional-safety contract.
 func BuildMigrationFileContents(
+	ctx context.Context,
+	service renderer.Service,
 	dialect string,
 	caps capability.Capabilities,
 	format string,
 	nodes []ast.Node,
 ) ([]MigrationFileContent, error) {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return nil, err
+	}
 	transactional, noTransaction := splitNoTransactionPlanNodes(dialect, nodes)
 	if len(noTransaction) == 0 {
-		content, err := renderMigrationFileContent(dialect, caps, format, nodes)
+		content, err := renderMigrationFileContent(ctx, service, dialect, caps, format, nodes)
 		if err != nil {
 			return nil, err
 		}
 		return []MigrationFileContent{content}, nil
 	}
-	transactionalSQL, err := renderMigrationStatements(dialect, caps, transactional)
+	transactionalSQL, err := renderMigrationStatements(ctx, service, dialect, caps, transactional)
 	if err != nil {
 		return nil, err
 	}
 	if !hasActualSQLStatements(transactionalSQL) {
 		// Only comments accompany the non-transactional statements: keep the
 		// whole plan (comments included, in order) in one no-transaction file.
-		content, err := renderMigrationFileContent(dialect, caps, format, nodes)
+		content, err := renderMigrationFileContent(ctx, service, dialect, caps, format, nodes)
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +140,7 @@ func BuildMigrationFileContents(
 		if len(group.nodes) == 0 {
 			continue
 		}
-		content, err := renderMigrationFileContent(dialect, caps, format, group.nodes)
+		content, err := renderMigrationFileContent(ctx, service, dialect, caps, format, group.nodes)
 		if err != nil {
 			return nil, err
 		}
@@ -172,12 +180,14 @@ func unsplittableNoTransactionNodes(nodes []ast.Node) []ast.Node {
 }
 
 func renderMigrationFileContent(
+	ctx context.Context,
+	service renderer.Service,
 	dialect string,
 	caps capability.Capabilities,
 	format string,
 	nodes []ast.Node,
 ) (MigrationFileContent, error) {
-	statements, err := renderMigrationStatements(dialect, caps, nodes)
+	statements, err := renderMigrationStatements(ctx, service, dialect, caps, nodes)
 	if err != nil {
 		return MigrationFileContent{}, err
 	}
@@ -332,15 +342,16 @@ func withTxModeNoneDirective(content MigrationFileContent) MigrationFileContent 
 	return content
 }
 
-func renderMigrationStatements(dialect string, caps capability.Capabilities, nodes []ast.Node) ([]string, error) {
-	if len(nodes) == 0 {
-		return nil, nil
+func renderMigrationStatements(ctx context.Context, service renderer.Service, dialect string, caps capability.Capabilities, nodes []ast.Node) ([]string, error) {
+	target := platform.NormalizeDialect(dialect)
+	if target == "" {
+		target = dialect
 	}
-	output, err := builtin.RenderSQLWithCapabilities(dialect, caps, nodes...)
+	output, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: nodes})
 	if err != nil {
 		return nil, err
 	}
-	return sqlutil.SplitSQLStatements(output), nil
+	return sqlutil.SplitSQLStatements(output.SQL()), nil
 }
 
 // splitNoTransactionPlanNodes partitions the planned nodes into statements

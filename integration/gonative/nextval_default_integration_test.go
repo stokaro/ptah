@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/engine/builtin"
@@ -60,7 +61,7 @@ type Order struct {
 	live, err := postgres.NewPostgreSQLReader(db, "public").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	roundTrip := schemadiff.CompareWithDialect(desired, live, "postgres")
+	roundTrip := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, "postgres", must.Must(builtin.New())))
 	c.Assert(roundTrip.HasChanges(), qt.IsFalse, qt.Commentf(
 		"nextval-default column must round-trip; tablesModified=%d", len(roundTrip.TablesModified)))
 }

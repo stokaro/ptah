@@ -12,9 +12,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -69,7 +72,10 @@ func executeSQL(c *qt.C, dbURL string, statements []string) {
 // protects rows from one that is inert.
 func planAndApply(c *qt.C, dbURL string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []string {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	c.Logf("planned SQL:\n%s", strings.Join(statements, "\n"))
 	executeSQL(c, dbURL, statements)
@@ -213,7 +219,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "the diff creates orders and the policy names public.orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredBare, "orders"),
+				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredBare, identifier.ForDialect("postgres"), "orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "public.orders", Desired: ordersPolicy("public.orders")},
 				},
@@ -225,7 +231,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "the diff creates public.orders and the policy names orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredQualified, "public.orders"),
+				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredQualified, identifier.ForDialect("postgres"), "public.orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
@@ -237,7 +243,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "both sides spell the table the same way",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredMatching, "orders"),
+				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredMatching, identifier.ForDialect("postgres"), "orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
@@ -257,7 +263,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 				`CREATE TABLE legacy (id INTEGER PRIMARY KEY, tenant_id INTEGER)`,
 			},
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(shipmentsAndLegacy, "shipments"),
+				TablesAdded: difftypes.TableCreationsFor(shipmentsAndLegacy, identifier.ForDialect("postgres"), "shipments"),
 			},
 			desired:         shipmentsAndLegacy,
 			wantPolicies:    make([]string, 0),

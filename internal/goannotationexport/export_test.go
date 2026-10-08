@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -256,7 +257,7 @@ type Country struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.ManagedData, qt.HasLen, 1)
 	c.Assert(parsed.ManagedData[0].File, qt.Equals, "../models/countries.yaml")
-	rows, err := schemamodel.LoadManagedRows("", parsed.ManagedData[0])
+	rows, err := manageddata.LoadRows("", parsed.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "CZ"}})
 }

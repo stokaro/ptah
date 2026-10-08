@@ -1,10 +1,13 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,7 +34,10 @@ func TestPlan_MySQLFamilyRevokesEachGrantOptionOncePerObject(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(grantOptionsRevoked(), dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				grantOptionsRevoked(), dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -47,7 +53,10 @@ func TestPlan_MySQLFamilyRevokesEachGrantOptionOncePerObject(t *testing.T) {
 func TestPlan_SQLServerRevokesTheGrantOptionPerPrivilege(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(grantOptionsRevoked(), "sqlserver")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		grantOptionsRevoked(), "sqlserver",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{

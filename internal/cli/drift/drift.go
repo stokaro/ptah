@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/datamigrate"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -138,7 +139,7 @@ type driftReport struct {
 	// threshold of all fails on them and destructive does not. Drift stays
 	// false when they are all there is, because no difference was found, and
 	// Failed says whether the check passed.
-	Undecided []coverage.Object `json:"undecided,omitempty"`
+	Undecided schemadiff.Diagnostics `json:"undecided,omitzero"`
 	// ManagedData names the declared reference tables whose live rows differ,
 	// in counts. It is absent when every declared row is in place, so the
 	// section appears only where there is something to act on, and it carries
@@ -206,7 +207,12 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
+		Runtime:         runtime,
 		RootDirs:        opts.rootDirs,
 		SchemaFiles:     opts.schemaFiles,
 		ProjectEnv:      schemaSourceEnv,
@@ -270,7 +276,7 @@ func assessDrift(
 	findings = append(findings, undecidednote.Findings(result.Undecided)...)
 	highest := safety.Highest(findings)
 	hasDrift := result.Diff.HasChanges() || result.DataDrift.HasChanges()
-	unproven := hasDrift || len(result.Undecided) > 0
+	unproven := hasDrift || !result.Undecided.Empty()
 	return driftReport{
 		Drift:            hasDrift,
 		Failed:           useExitCode && unproven && shouldFailDrift(highest, severity),
@@ -390,7 +396,7 @@ func writeTextReport(w io.Writer, report driftReport) error {
 	if _, err := fmt.Fprintln(w, textHeadline(report)); err != nil {
 		return err
 	}
-	if !report.Drift && len(report.Undecided) == 0 {
+	if !report.Drift && report.Undecided.Empty() {
 		return nil
 	}
 	if _, err := fmt.Fprintf(w, "Failure threshold: %s. Failing: %t.\n", report.FailureThreshold, report.Failed); err != nil {
@@ -435,9 +441,9 @@ func textHeadline(report driftReport) string {
 	switch {
 	case report.Drift:
 		return fmt.Sprintf("Schema drift detected (highest severity: %s).", report.HighestSeverity)
-	case len(report.Undecided) > 0:
+	case !report.Undecided.Empty():
 		return fmt.Sprintf("No schema drift found, but %s (highest severity: %s).",
-			undecidednote.Summary(len(report.Undecided)), report.HighestSeverity)
+			undecidednote.Summary(report.Undecided), report.HighestSeverity)
 	default:
 		return "No schema drift detected."
 	}
@@ -445,14 +451,14 @@ func textHeadline(report driftReport) string {
 
 // writeUndecidedSection prints one line per declared object the comparison
 // withheld. Standard error says why the read could not decide each one.
-func writeUndecidedSection(w io.Writer, undecided []coverage.Object) error {
-	if len(undecided) == 0 {
+func writeUndecidedSection(w io.Writer, undecided schemadiff.Diagnostics) error {
+	if undecided.Empty() {
 		return nil
 	}
 	if _, err := fmt.Fprintln(w, "\nUndecided:"); err != nil {
 		return err
 	}
-	for _, object := range undecided {
+	for _, object := range undecidednote.Entries(undecided, "the database") {
 		if _, err := fmt.Fprintf(w, "- %s %q\n", object.Kind, object.Name); err != nil {
 			return err
 		}
@@ -496,7 +502,7 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 		_, err := fmt.Fprintf(w, "::error title=Ptah drift check failed::%s\n", escapeWorkflowCommand(report.Error))
 		return err
 	}
-	if !report.Drift && len(report.Undecided) == 0 {
+	if !report.Drift && report.Undecided.Empty() {
 		_, err := fmt.Fprintln(w, "::notice title=Ptah drift check::No schema drift detected")
 		return err
 	}
@@ -522,8 +528,8 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 			}
 		}
 	}
-	for _, object := range report.Undecided {
-		message := fmt.Sprintf("%s %q could not be checked", object.Kind, object.Name)
+	for _, object := range undecidednote.Entries(report.Undecided, "the database") {
+		message := fmt.Sprintf("%s %q could not be checked: %s", object.Kind, object.Name, object.Reason)
 		if _, err := fmt.Fprintf(w, "::%s title=Ptah undecided object::%s\n", level, escapeWorkflowCommand(message)); err != nil {
 			return err
 		}
@@ -543,7 +549,7 @@ func annotationHeadline(report driftReport) string {
 	if report.Drift {
 		return "Schema drift detected"
 	}
-	return "No schema drift found, but " + undecidednote.Summary(len(report.Undecided))
+	return "No schema drift found, but " + undecidednote.Summary(report.Undecided)
 }
 
 func escapeWorkflowCommand(s string) string {

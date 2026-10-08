@@ -3,6 +3,7 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -10,10 +11,12 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -118,8 +121,11 @@ func inlineEnumPending(c *qt.C, db *sql.DB, dialect string, desired *schemamodel
 	// on the dialect. Comparing dialect-neutrally would set a named enum type
 	// against a catalog that has none and report a difference on every run --
 	// which is the shape the issue describes.
-	diff := schemadiff.CompareWithDialect(desired, live, dialect)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, dialect, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

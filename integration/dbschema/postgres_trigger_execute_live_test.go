@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
@@ -115,7 +116,7 @@ func TestPostgresLiveTriggerExecuteConverges(t *testing.T) {
 	c.Assert(live.Triggers, qt.HasLen, 2)
 	c.Assert(live.Functions, qt.HasLen, 1)
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.TriggersAdded, qt.HasLen, 0)
 	c.Assert(settled.TriggersModified, qt.HasLen, 0)
 	c.Assert(settled.TriggersRemoved, qt.HasLen, 0)

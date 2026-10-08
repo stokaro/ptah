@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -31,7 +33,7 @@ func TestCompareWithDialect_TableLevelCompositePrimaryKeyMatchesIntrospectedPost
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
@@ -51,7 +53,7 @@ func TestCompareWithDialect_TableLevelCompositePrimaryKeyMissingFromExistingTabl
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"memberships_pkey"})
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
 	c.Assert(diff.ConstraintsAdded[0].TableName, qt.Equals, "memberships")
@@ -85,7 +87,7 @@ func TestCompareWithDialect_BlankTablePrimaryKeyDoesNotSynthesizeConstraint(t *t
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
 }
@@ -126,7 +128,7 @@ func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyIsNotDuplicated(t *t
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
@@ -160,7 +162,7 @@ func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyMissingFromDBIsDetec
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %#v", diff))
 	c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, "pets_pkey", qt.Commentf("diff: %#v", diff))
 }

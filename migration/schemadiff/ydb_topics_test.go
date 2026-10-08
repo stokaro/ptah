@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -73,7 +75,7 @@ func TestCompare_Topics(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, test.current, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.current, platform.YDB, must.Must(builtin.New())))
 
 			c.Assert(diff.TopicsAdded.Names(), qt.DeepEquals, test.added)
 			c.Assert(diff.TopicsRemoved.Names(), qt.DeepEquals, test.removed)
@@ -98,14 +100,15 @@ func TestCompare_Topics_Coverage(t *testing.T) {
 	desired := topicsDeclared()
 	desired.NotDescribed = undescribed
 
-	removal := schemadiff.CompareWithDialect(desired, &catalog.Database{Topics: []catalog.Topic{readTopic("events")}}, platform.YDB)
-	addition, undecided := schemadiff.CompareReportingUndecidedAdditions(
-		topicsDeclared(schemamodel.Topic{Name: "events", Schema: "app"}),
+	removal := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{Topics: []catalog.Topic{readTopic("events")}}, platform.YDB, must.Must(builtin.New())))
+	addition, undecided, err := schemadiff.CompareReportingUndecidedAdditions(
+		t.Context(), topicsDeclared(schemamodel.Topic{Name: "events", Schema: "app"}),
 		&catalog.Database{NotDescribed: coverage.Set{}.With(coverage.Object{Kind: coverage.Topic, Name: "app.events"})},
-		&config.CompareOptions{Dialect: platform.YDB},
+		&config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()),
 	)
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(removal.TopicsRemoved, qt.HasLen, 0)
 	c.Assert(addition.TopicsAdded, qt.HasLen, 0)
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{{Kind: coverage.Topic, Name: "app.events"}})
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{Kind: coverage.Topic, Name: "app.events"}})
 }

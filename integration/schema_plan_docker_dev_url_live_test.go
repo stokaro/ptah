@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 )
@@ -34,7 +36,7 @@ func TestPreparePlanFileNamesTheContainerItDoesNotStartLive(t *testing.T) {
 		DevURL:      "docker://postgres/16/dev",
 		ToURLs:      []string{"file://" + desired},
 		Diagnostics: &diagnostics,
-	})
+		Runtime:     must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Contains, "schema plan starts none")

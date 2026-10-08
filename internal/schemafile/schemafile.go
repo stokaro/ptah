@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/atlashcl"
@@ -583,7 +584,9 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 		if err := ledger.admit(name, declaredObjects(db, format), guardedObjects(statements), tableStatements(statements)); err != nil {
 			return nil, err
 		}
-		appendDatabase(merged, db)
+		if err := appendDatabase(merged, db); err != nil {
+			return nil, err
+		}
 	}
 	schemamodel.Finalize(merged)
 	return merged, nil
@@ -729,8 +732,7 @@ func loadSourceInto(source Source, opts Options, merged *schemamodel.Database, d
 	if err != nil {
 		return err
 	}
-	appendDatabase(merged, db)
-	return nil
+	return appendDatabase(merged, db)
 }
 
 // apply narrows opts to this source's variable scope. An unscoped source keeps
@@ -837,7 +839,33 @@ func loadSQLFileWithStatements(
 // [TestAppendDatabase_MergesEveryObjectFamily] is what keeps the next family
 // from being missed the same way: it reflects over the struct rather than
 // trusting this list.
-func appendDatabase(dst, src *schemamodel.Database) {
+func appendDatabase(dst, src *schemamodel.Database) error {
+	objects, err := dst.FeatureObjects.Merge(src.FeatureObjects)
+	if err != nil {
+		return err
+	}
+	facets, err := dst.Facets.Merge(src.Facets)
+	if err != nil {
+		return err
+	}
+	// This private destination starts as a fresh file accumulator. Capture a
+	// direction even for an unknown first source so a later known source can
+	// never reinterpret that first source as an empty accumulator.
+	sourceCoverage := src.FeatureCoverage
+	if sourceCoverage.Representation() == "" {
+		sourceCoverage, err = schemaext.NewCoverage(schemaext.Desired, nil, nil)
+		if err != nil {
+			return err
+		}
+	}
+	mergedCoverage := sourceCoverage
+	if dst.FeatureCoverage.Representation() != "" {
+		mergedCoverage, err = dst.FeatureCoverage.Merge(sourceCoverage)
+		if err != nil {
+			return err
+		}
+	}
+	dst.FeatureObjects, dst.Facets, dst.FeatureCoverage = objects, facets, mergedCoverage
 	dst.Schemas = append(dst.Schemas, src.Schemas...)
 	dst.Tables = append(dst.Tables, src.Tables...)
 	dst.Fields = append(dst.Fields, src.Fields...)
@@ -880,6 +908,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	// what all of them together describe. Union, never intersection: a limit
 	// one file declares is a limit of the whole (stokaro/ptah#1276).
 	dst.NotDescribed = dst.NotDescribed.Merge(src.NotDescribed)
+	return nil
 }
 
 // ignoredNameReporter turns the writer into the callback the HCL parser takes,

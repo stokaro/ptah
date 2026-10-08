@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/ydbextensions"
 )
@@ -21,7 +22,7 @@ func TestCodecs_RoundTripAllChangefeedState(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	feed := ast.ChangefeedSpec{
+	feed := ydbschema.ChangefeedSpec{
 		Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", VirtualTimestamps: true,
 		ResolvedTimestamps: "PT5S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 		TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT2H", Disabled: true,
@@ -30,7 +31,7 @@ func TestCodecs_RoundTripAllChangefeedState(t *testing.T) {
 	}
 	payloads := []schemaext.Payload{
 		&ydbast.AddChangefeed{Changefeed: feed}, &ydbast.DropChangefeed{Name: feed.Name},
-		&ydbast.AlterChangefeedTopic{Changefeed: feed, Previous: ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}},
+		&ydbast.AlterChangefeedTopic{Changefeed: feed, Previous: ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}},
 	}
 	data, err := runtime.Codecs().Marshal(context.Background(), schemaext.Operation, payloads)
 	c.Assert(err, qt.IsNil)
@@ -45,12 +46,15 @@ func TestCodecs_RoundTripAllChangefeedState(t *testing.T) {
 func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 	c := qt.New(t)
 	codecs := ydbextensions.Codecs()
+	type shape struct{ Properties map[string]json.RawMessage }
 	var definition struct {
-		Defs       map[string]struct{ Properties map[string]json.RawMessage } `json:"$defs"`
-		Operations map[string]struct{ Properties map[string]json.RawMessage } `json:"operations"`
+		Defs       map[string]shape                              `json:"$defs"`
+		Changes    map[string]shape                              `json:"changes"`
+		Operations map[string]shape                              `json:"operations"`
+		Values     map[schemaext.Representation]map[string]shape `json:"values"`
 	}
 	c.Assert(json.Unmarshal(codecs[0].Definition, &definition), qt.IsNil)
-	for name, model := range map[string]any{"changefeed": ast.ChangefeedSpec{}, "consumer": ast.TopicConsumerSpec{}} {
+	for name, model := range map[string]any{"changefeed": ydbschema.ChangefeedSpec{}, "consumer": ast.TopicConsumerSpec{}} {
 		var fields []string
 		modelType := reflect.TypeOf(model)
 		for field := range modelType.Fields() {
@@ -64,13 +68,16 @@ func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 		slices.Sort(described)
 		c.Assert(described, qt.DeepEquals, fields)
 	}
+	definition.Values[schemaext.Operation] = definition.Operations
+	definition.Values[schemaext.Change] = definition.Changes
+	c.Assert(codecs, qt.HasLen, 6)
 	for _, codec := range codecs {
 		var fields, described []string
 		modelType := reflect.TypeOf(codec.Prototype).Elem()
 		for field := range modelType.Fields() {
 			fields = append(fields, field.Tag.Get("json"))
 		}
-		for field := range definition.Operations[string(codec.Prototype.Kind())].Properties {
+		for field := range definition.Values[codec.Representation][string(codec.Prototype.Kind())].Properties {
 			described = append(described, field)
 		}
 		slices.Sort(fields)
@@ -83,7 +90,7 @@ func TestCodecs_RefuseMalformedAndLossyValues(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	for _, feed := range []ast.ChangefeedSpec{
+	for _, feed := range []ydbschema.ChangefeedSpec{
 		{Name: "", Mode: "UPDATES", Format: "JSON"},
 		{Name: "nested/name", Mode: "UPDATES", Format: "JSON"},
 		{Name: "updates", Format: "JSON"},
@@ -104,7 +111,7 @@ func TestCodecs_CanonicalConsumerOrderRetainsDeclarations(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	feed := ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{
 		{Name: "worker-b", SupportedCodecs: []string{"zstd", "raw"}}, {Name: "worker-a"},
 	}}
 	fingerprint, err := runtime.Codecs().Fingerprint(context.Background(), schemaext.Operation, []schemaext.Payload{&ydbast.AddChangefeed{Changefeed: feed}})

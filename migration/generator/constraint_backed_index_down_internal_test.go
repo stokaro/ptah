@@ -6,13 +6,16 @@ package generator
 // does not expose without a filesystem and database connection.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -137,14 +140,20 @@ func TestGenerateMigration_ConstraintBackedIndexReplacement_DownRestoresTheConst
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.name)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				desired, database, test.name, must.Must(builtin.New()),
+			))
 			c.Assert(diff.ConstraintBackedIndexRemovals, qt.HasLen, 1)
 
-			up, err := generateUpMigrationSQL(diff, desired, test.name)
+			up, err := generateUpMigrationSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, desired, test.name,
+			)
 			c.Assert(err, qt.IsNil)
 			assertOrderedPair(c, up, test.upDrop, test.create)
 
-			down, err := generateDownMigrationSQL(diff, desired, database, test.name)
+			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				diff, desired, database, test.name)
 			c.Assert(err, qt.IsNil)
 			assertOrderedPair(c, down, test.downDro, test.restore)
 		})
@@ -167,10 +176,13 @@ func TestGenerateMigration_PlainIndexReplacement_DownRebuildsTheIndex(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.name)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				desired, database, test.name, must.Must(builtin.New()),
+			))
 			c.Assert(diff.ConstraintBackedIndexRemovals, qt.HasLen, 0)
 
-			down, err := generateDownMigrationSQL(diff, desired, database, test.name)
+			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				diff, desired, database, test.name)
 			c.Assert(err, qt.IsNil)
 			c.Assert(down, qt.Not(qt.Contains), "ADD CONSTRAINT")
 			c.Assert(strings.Contains(down, "UNIQUE INDEX") ||

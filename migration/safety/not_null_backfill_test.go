@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
 )
 
@@ -24,7 +26,7 @@ func TestAssessRendered_SetNotNullWithoutDefaultWarnsAndRewritesNothing(t *testi
 		}},
 	}
 
-	assessments, err := safety.AssessRendered([]ast.Node{node}, platform.Postgres)
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), []ast.Node{node}, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(assessments, qt.HasLen, 1)

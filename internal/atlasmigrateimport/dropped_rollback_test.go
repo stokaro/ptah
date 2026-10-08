@@ -19,7 +19,7 @@ func importedRollbackReport(c *qt.C, format string, files map[string]string) []a
 	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(from, name), []byte(body), 0o600), qt.IsNil)
 	}
-	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(c.Context(), atlasmigrateimport.Options{
 		FromURL:   "file://" + from,
 		ToURL:     "file://" + filepath.Join(c.TempDir(), "dst"),
 		DirFormat: format,

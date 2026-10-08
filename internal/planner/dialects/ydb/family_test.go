@@ -1,15 +1,18 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -17,10 +20,10 @@ import (
 // familiesChanged is a change of the column families of items, beside a
 // column added into a family and a column dropped out of one, with the
 // declaration holding desired.
-func familiesChanged(desired, current []ast.YDBColumnFamilySpec) *difftypes.SchemaDiff {
+func familiesChanged(t *testing.T, desired, current []ast.YDBColumnFamilySpec) *difftypes.SchemaDiff {
 	declaration := itemsDeclaration(field("note", "TEXT", true), field("body", "TEXT", true))
 	declaration.Table.YDBColumnFamilies = desired
-	return modified(difftypes.TableDiff{
+	return modified(t, difftypes.TableDiff{
 		TableName:               "items",
 		Desired:                 declaration,
 		ColumnsAdded:            difftypes.ColumnChanges{field("note", "TEXT", true)},
@@ -43,7 +46,7 @@ func TestGenerateMigrationAST_ColumnFamilies_HappyPath(t *testing.T) {
 	}{
 		{
 			name: "a new family holding an added column and a kept one",
-			diff: familiesChanged(
+			diff: familiesChanged(t,
 				[]ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"body", "note"}}},
 				nil,
 			),
@@ -54,7 +57,7 @@ func TestGenerateMigrationAST_ColumnFamilies_HappyPath(t *testing.T) {
 		},
 		{
 			name: "the default family's compression and a column moved back to it",
-			diff: familiesChanged(
+			diff: familiesChanged(t,
 				[]ast.YDBColumnFamilySpec{{Name: "default", Compression: "lz4"}, {Name: "cold"}},
 				[]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"body", "old"}}},
 			),
@@ -64,7 +67,7 @@ func TestGenerateMigrationAST_ColumnFamilies_HappyPath(t *testing.T) {
 		},
 		{
 			name: "settings and families the declaration leaves out",
-			diff: familiesChanged(
+			diff: familiesChanged(t,
 				[]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"body"}}},
 				[]ast.YDBColumnFamilySpec{
 					{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"body"}},
@@ -77,14 +80,14 @@ func TestGenerateMigrationAST_ColumnFamilies_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a column out of a family the declaration leaves out",
-			diff: familiesChanged(nil, []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Columns: []string{"body"}}}),
+			diff: familiesChanged(t, nil, []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Columns: []string{"body"}}}),
 			want: "ALTER TABLE `items` ADD COLUMN `note` Utf8;\n" +
 				"ALTER TABLE `items` ALTER COLUMN `body` SET FAMILY `default`;\n" +
 				"ALTER TABLE `items` DROP COLUMN `old`;\n",
 		},
 		{
 			name: "only a dropped column's family differs",
-			diff: familiesChanged(
+			diff: familiesChanged(t,
 				[]ast.YDBColumnFamilySpec{{Name: "cold"}},
 				[]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"old"}}},
 			),
@@ -94,7 +97,7 @@ func TestGenerateMigrationAST_ColumnFamilies_HappyPath(t *testing.T) {
 		{
 			name: "after the TTL",
 			diff: func() *difftypes.SchemaDiff {
-				diff := familiesChanged([]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"note"}}}, nil)
+				diff := familiesChanged(t, []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"note"}}}, nil)
 				diff.TablesModified[0].Desired.Fields = append(diff.TablesModified[0].Desired.Fields, field("ts", "TIMESTAMP", true))
 				diff.TablesModified[0].RowDeletionPolicyChange = &difftypes.RowDeletionPolicyChange{
 					Desired: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"},
@@ -150,28 +153,28 @@ func TestGenerateMigrationAST_ColumnFamilies_FailurePath(t *testing.T) {
 		{
 			name:        "families without the key",
 			caps:        capability.YDB262().With(capability.ColumnFamilies, false),
-			diff:        familiesChanged([]ast.YDBColumnFamilySpec{{Name: "cold"}}, nil),
+			diff:        familiesChanged(t, []ast.YDBColumnFamilySpec{{Name: "cold"}}, nil),
 			wantFeature: "column_families",
 			wantErr:     `changing the column families of table "items", which requires target capability column_families, .*`,
 		},
 		{
 			name:        "a cache mode on a line without it",
 			caps:        capability.YDB253(),
-			diff:        familiesChanged([]ast.YDBColumnFamilySpec{hot}, nil),
+			diff:        familiesChanged(t, []ast.YDBColumnFamilySpec{hot}, nil),
 			wantFeature: "column_family_cache_mode",
 			wantErr:     `changing the column family cache mode of table "items", which requires target capability column_family_cache_mode, .*`,
 		},
 		{
 			name:        "a key column in a family",
 			caps:        capability.YDB262(),
-			diff:        familiesChanged([]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"id"}}}, nil),
+			diff:        familiesChanged(t, []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"id"}}}, nil),
 			wantFeature: `table "items"`,
 			wantErr:     `table "items": column family "cold" names key column "id", .*`,
 		},
 		{
 			name: "keep_in_memory stated for a family without it",
 			caps: capability.YDB262(),
-			diff: familiesChanged([]ast.YDBColumnFamilySpec{{Name: "default", KeepInMemory: true}},
+			diff: familiesChanged(t, []ast.YDBColumnFamilySpec{{Name: "default", KeepInMemory: true}},
 				[]ast.YDBColumnFamilySpec{{Name: "default", Compression: "off"}}),
 			wantFeature: `table "items"`,
 			wantErr: `table "items": column family "default" keeps its columns in memory \(keep_in_memory\) on one side ` +
@@ -182,7 +185,10 @@ func TestGenerateMigrationAST_ColumnFamilies_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			var refusal *ptaherr.CapabilityError
@@ -223,7 +229,7 @@ func TestGenerateMigrationAST_ColumnFamilies_NeedNoRebuild(t *testing.T) {
 			c := qt.New(t)
 			declaration := appItems(field("label", "TEXT", true))
 			declaration.Table.YDBColumnFamilies = test.desired
-			got := renderRebuild(c, capability.YDB262(), modified(difftypes.TableDiff{
+			got := renderRebuild(c, capability.YDB262(), modified(t, difftypes.TableDiff{
 				TableName: "app.items", Desired: declaration,
 				YDBColumnFamiliesChange: &difftypes.YDBColumnFamiliesChange{Desired: test.desired, Current: test.current},
 			}))
@@ -245,7 +251,7 @@ func TestGenerateMigrationAST_ColumnFamilies_RebuildCarriesThem(t *testing.T) {
 		{Name: "default", Compression: "lz4"},
 		{Name: "extra", Compression: "off"},
 	}
-	got := renderRebuild(c, capability.YDB262(), modified(difftypes.TableDiff{
+	got := renderRebuild(c, capability.YDB262(), modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: declaration,
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	}))
@@ -264,7 +270,7 @@ func TestGenerateMigrationAST_ColumnFamilies_RebuildCarriesThem(t *testing.T) {
 func TestGenerateMigrationAST_ColumnFamilies_RebuildRefusesWhatItCannotRead(t *testing.T) {
 	c := qt.New(t)
 	change := func() *difftypes.SchemaDiff {
-		return modified(difftypes.TableDiff{
+		return modified(t, difftypes.TableDiff{
 			TableName: "app.items", Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 			ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 		})
@@ -274,7 +280,10 @@ func TestGenerateMigrationAST_ColumnFamilies_RebuildRefusesWhatItCannotRead(t *t
 	format := notDescribing(change(), coverage.Object{Kind: coverage.ColumnFamily,
 		Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact})
 
-	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuild(true).GenerateMigrationAST(read)
+	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuild(true).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		read,
+	)
 	c.Assert(err, qt.ErrorMatches, `rebuilding table "app.items": the table carries column families with settings Ptah does not read, .*`)
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(renderRebuild(c, capability.YDB262(), format), qt.Contains, "CREATE TABLE `app/__ptah_rebuild_items` (")
@@ -315,12 +324,15 @@ func TestGenerateMigrationAST_ColumnFamilies_RebuildRefusesWhatItCannotWrite(t *
 			c := qt.New(t)
 			declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
 			declaration.Table.YDBColumnFamilies = test.families
-			diff := modified(difftypes.TableDiff{
+			diff := modified(t, difftypes.TableDiff{
 				TableName: "app.items", Desired: declaration,
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 			})
 
-			nodes, err := ydb.NewWithCapabilities(test.caps).WithTableRebuild(true).GenerateMigrationAST(diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).WithTableRebuild(true).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

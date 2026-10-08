@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -20,7 +23,7 @@ func TestReadYQLChangefeedSettings(t *testing.T) {
  schema_changes = TRUE, topic_min_active_partitions = 2, topic_auto_partitioning = 'ENABLED', retention_period = Interval('PT12H'));
  ALTER TOPIC `+"`events/updates`"+` ADD CONSUMER audit WITH (important = TRUE, supported_codecs = 'raw,gzip');`), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Tables[0].Changefeeds, qt.DeepEquals, []ast.ChangefeedSpec{{
+	c.Assert(must.Must(ydbschema.DesiredChangefeeds(database.FeatureObjects, database.Tables[0].Schema, database.Tables[0].Name)), qt.DeepEquals, []ydbschema.ChangefeedSpec{{
 		Name: "updates", Mode: "NEW_AND_OLD_IMAGES", Format: "JSON", VirtualTimestamps: true,
 		ResolvedTimestamps: "PT1S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 		TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
@@ -33,12 +36,15 @@ func TestReadYQLChangefeedIdentityAcrossFiles(t *testing.T) {
 	base, _, err := sqlschema.Read([]byte("CREATE TABLE `app.events` (id Int64 NOT NULL, PRIMARY KEY (id)); CREATE TABLE `app/events` (id Int64 NOT NULL, PRIMARY KEY (id)); CREATE TOPIC `app.events/audit`;"), "ydb")
 	c.Assert(err, qt.IsNil)
 	document := sqlschema.NewDocument(&base)
-	_, _, err = sqlschema.ReadOnto([]byte("ALTER TABLE `app.events` ADD CHANGEFEED updates WITH (mode='UPDATES', format='JSON'); ALTER TABLE `app/events` ADD CHANGEFEED updates WITH (mode='KEYS_ONLY', format='JSON');"), "ydb", document)
+	addition, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE `app.events` ADD CHANGEFEED updates WITH (mode='UPDATES', format='JSON'); ALTER TABLE `app/events` ADD CHANGEFEED updates WITH (mode='KEYS_ONLY', format='JSON');"), "ydb", document)
 	c.Assert(err, qt.IsNil)
+	merged, err := schemamodel.Merge(&base, &addition)
+	c.Assert(err, qt.IsNil)
+	base = *merged
 	_, _, err = sqlschema.ReadOnto([]byte("ALTER TOPIC `app.events/updates` ADD CONSUMER dotted; ALTER TOPIC `app/events/updates` ADD CONSUMER nested; ALTER TOPIC `app.events/audit` ADD CONSUMER ordinary;"), "ydb", document)
 	c.Assert(err, qt.IsNil)
-	c.Assert(base.Tables[0].Changefeeds[0].Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "dotted"}})
-	c.Assert(base.Tables[1].Changefeeds[0].Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "nested"}})
+	c.Assert(must.Must(ydbschema.DesiredChangefeeds(base.FeatureObjects, base.Tables[0].Schema, base.Tables[0].Name))[0].Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "dotted"}})
+	c.Assert(must.Must(ydbschema.DesiredChangefeeds(base.FeatureObjects, base.Tables[1].Schema, base.Tables[1].Name))[0].Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "nested"}})
 	c.Assert(base.Topics[0].Spec.Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "ordinary"}})
 }
 

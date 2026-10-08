@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/migration/safety"
 )
 
@@ -15,7 +16,7 @@ import (
 // can end a consumer's position or keep records for less time, and an
 // addition loses nothing.
 func TestClassify_Changefeed(t *testing.T) {
-	feed := ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
 	alter := func(operation ast.AlterOperation) ast.Node {
 		return &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{operation}}
 	}

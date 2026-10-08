@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -134,9 +135,9 @@ func TestPostgresLiveTriggerDropTakesOnlyTheGeneratedFunction(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	wanted := triggerDropDeclaration()
-	diff := schemadiff.CompareWithDialect(wanted, live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.TriggersRemoved, qt.HasLen, 2)
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
 		DesiredSchema: wanted,
 		CurrentSchema: live,
@@ -145,9 +146,12 @@ func TestPostgresLiveTriggerDropTakesOnlyTheGeneratedFunction(t *testing.T) {
 			Create: generator.ConcurrentIndexDisabled,
 			Drop:   generator.ConcurrentIndexDisabled,
 		},
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	forward, err := planner.GenerateSchemaDiffSQLStatements(plan.Forward.Diff, platform.Postgres)
+	forward, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		plan.Forward.Diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range forward {
 		_, err := conn.ExecContext(c.Context(), statement)

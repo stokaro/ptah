@@ -12,12 +12,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
@@ -209,8 +211,8 @@ func TestOwnedSequenceGrant_LiveSchemaFileComparesEqual(t *testing.T) {
 			opts := config.DefaultCompareOptions()
 			opts.Dialect = dialect
 
-			declared := schemadiff.CompareWithOptions(f.schemaFile(c, nil, f.grantStatements()), live, opts)
-			described := schemadiff.CompareWithOptions(dbschematogo.ConvertDBSchemaToGoSchema(live, dialect), live, opts)
+			declared := must.Must(schemadiff.CompareWithOptions(t.Context(), f.schemaFile(c, nil, f.grantStatements()), live, opts, must.Must(builtin.New())))
+			described := must.Must(schemadiff.CompareWithOptions(t.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, dialect, must.Must(builtin.New()))), live, opts, must.Must(builtin.New())))
 
 			c.Assert(sequenceGrantRefs(declared.GrantsAdded), qt.HasLen, 0)
 			c.Assert(sequenceGrantRefs(declared.GrantsRemoved), qt.HasLen, 0)
@@ -237,7 +239,7 @@ func TestOwnedSequenceGrant_LiveSchemaFilePlansTheDifference(t *testing.T) {
 			opts := config.DefaultCompareOptions()
 			opts.Dialect = f.conn.Info().Dialect
 
-			diff := schemadiff.CompareWithOptions(f.schemaFile(c, nil, f.grantStatements()), f.read(c), opts)
+			diff := must.Must(schemadiff.CompareWithOptions(t.Context(), f.schemaFile(c, nil, f.grantStatements()), f.read(c), opts, must.Must(builtin.New())))
 
 			c.Assert(sequenceGrantRefs(diff.GrantsAdded), qt.DeepEquals, []string{
 				"USAGE " + f.schema + "." + engine.sequences[0] + " TO " + f.role,
@@ -251,7 +253,7 @@ func TestOwnedSequenceGrant_LiveSchemaFilePlansTheDifference(t *testing.T) {
 			opts.Dialect = f.conn.Info().Dialect
 			manageRole := []string{"CREATE ROLE " + pgx.Identifier{f.role}.Sanitize()}
 
-			diff := schemadiff.CompareWithOptions(f.schemaFile(c, manageRole, f.grantStatements()[1:]), f.read(c), opts)
+			diff := must.Must(schemadiff.CompareWithOptions(t.Context(), f.schemaFile(c, manageRole, f.grantStatements()[1:]), f.read(c), opts, must.Must(builtin.New())))
 
 			c.Assert(sequenceGrantRefs(diff.GrantsAdded), qt.HasLen, 0)
 			c.Assert(sequenceGrantRefs(diff.GrantsRemoved), qt.DeepEquals, []string{

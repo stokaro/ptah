@@ -3,14 +3,17 @@
 package clickhouse_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	clickhousedb "ptah.run/internal/dbschema/clickhouse"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -50,13 +53,14 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 		Name:       viewName,
 		Body:       "SELECT id FROM " + sourceTable + " WHERE active = true",
 	}}}
-	creationDiff := schemadiff.CompareWithDialect(
-		created,
+	creationDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), created,
 		readClickHouseViews(t, db, database),
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	c.Assert(creationDiff.ViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		creationDiff,
 
 		platform.ClickHouse,
@@ -71,7 +75,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(createdReadback.Views, qt.HasLen, 1)
 	c.Assert(createdReadback.Views[0].Body, qt.Contains, "users")
 	c.Assert(
-		schemadiff.CompareWithDialect(created, createdReadback, platform.ClickHouse).HasChanges(),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), created, createdReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 
@@ -80,13 +84,14 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 		Name:       viewName,
 		Body:       "SELECT id FROM " + sourceTable + " WHERE active = false",
 	}}}
-	replacementDiff := schemadiff.CompareWithDialect(
-		replaced,
+	replacementDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), replaced,
 		createdReadback,
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	c.Assert(replacementDiff.ViewsModified, qt.HasLen, 1)
 	replaceStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		replacementDiff,
 
 		platform.ClickHouse,
@@ -99,17 +104,18 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 
 	replacedReadback := readClickHouseViews(t, db, database)
 	c.Assert(
-		schemadiff.CompareWithDialect(replaced, replacedReadback, platform.ClickHouse).HasChanges(),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), replaced, replacedReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 
-	removalDiff := schemadiff.CompareWithDialect(
-		&schemamodel.Database{},
+	removalDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), &schemamodel.Database{},
 		replacedReadback,
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	c.Assert(removalDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		removalDiff,
 
 		platform.ClickHouse,
@@ -123,7 +129,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	removedReadback := readClickHouseViews(t, db, database)
 	c.Assert(removedReadback.Views, qt.HasLen, 0)
 	c.Assert(
-		schemadiff.CompareWithDialect(&schemamodel.Database{}, removedReadback, platform.ClickHouse).HasChanges(),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, removedReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 }

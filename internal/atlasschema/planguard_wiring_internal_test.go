@@ -16,9 +16,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devclean"
 	"ptah.run/migration/migrator"
@@ -83,7 +85,7 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLint(t *testing.T) {
 		"CREATE TABLE victim.pwned (id integer)",
 	}
 
-	err = rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone, statements)
+	err = rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone, statements, must.Must(builtin.New()))
 
 	// The refusal comes from SQLite, not from Ptah's scanner.
 	c.Assert(err, qt.IsNotNil)
@@ -116,7 +118,7 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode(t *testing.T) 
 			targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
 			err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, tt.txMode,
-				[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath)})
+				[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath)}, must.Must(builtin.New()))
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, "too many attached databases")
@@ -138,7 +140,7 @@ func TestRehearsalCoreLintsStatementsTheEngineWouldAccept(t *testing.T) {
 	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
 	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone,
-		[]string{fmt.Sprintf("PRAGMA temp_store_directory = '%s'", dir)})
+		[]string{fmt.Sprintf("PRAGMA temp_store_directory = '%s'", dir)}, must.Must(builtin.New()))
 
 	c.Assert(IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))
 	c.Assert(err, qt.ErrorMatches, `.*statement 1 uses PRAGMA temp_store_directory.*`)
@@ -158,7 +160,7 @@ func TestRehearsePlanStatementsLintsBeforeTouchingTheTarget(t *testing.T) {
 
 	err = RehearsePlanStatements(context.Background(), target,
 		[]string{`PRAGMA temp_store_directory = '/tmp/evil'`},
-		&goschemaDatabaseFixture, PlanRehearsalOptions{DevURL: atlasurl.SQLiteURLFromPath(filepath.Join(dir, "dev.db"))})
+		&goschemaDatabaseFixture, PlanRehearsalOptions{DevURL: atlasurl.SQLiteURLFromPath(filepath.Join(dir, "dev.db")), Runtime: must.Must(builtin.New())})
 
 	c.Assert(IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))
 }

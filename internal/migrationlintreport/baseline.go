@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
@@ -36,16 +37,20 @@ func readBaselineState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	version int64,
 	schemas []string,
-	dialect string,
+	runtime schemaext.ConversionRuntime,
 ) (baselineState, error) {
 	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
 		return baselineState{}, fmt.Errorf("read dev database schema: %w", err)
 	}
+	dependents, err := baselineDependentsOf(ctx, schema, version, conn.Info().Dialect, runtime)
+	if err != nil {
+		return baselineState{}, fmt.Errorf("convert dev database baseline: %w", err)
+	}
 	return baselineState{
 		columns:     baselineColumnsOf(schema, version),
 		indexes:     baselineIndexesOf(schema, version),
-		dependents:  baselineDependentsOf(schema, version, dialect),
+		dependents:  dependents,
 		hypertables: baselineHypertablesOf(schema, version),
 	}, nil
 }
@@ -240,8 +245,11 @@ func numericDataType(column catalog.Column) string {
 // contributes no dependent, so the rule stays silent about it rather than
 // naming a reader it did not establish -- the rule reports a fact, and the
 // analysis's own undecided list is where the gaps are stated.
-func baselineDependentsOf(schema *catalog.Database, version int64, dialect string) []lint.BaselineDependent {
-	desired := dbschematogo.ConvertDBSchemaToGoSchema(schema, dialect)
+func baselineDependentsOf(ctx context.Context, schema *catalog.Database, version int64, dialect string, runtime schemaext.ConversionRuntime) ([]lint.BaselineDependent, error) {
+	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, dialect, runtime)
+	if err != nil {
+		return nil, err
+	}
 	tableSchemas := tableSchemasByName(schema)
 
 	dependents := make([]lint.BaselineDependent, 0)
@@ -259,7 +267,7 @@ func baselineDependentsOf(schema *catalog.Database, version int64, dialect strin
 			Dependent: read.ByRoutine, Kind: routineKind(read.Kind),
 		})
 	}
-	return dependents
+	return dependents, nil
 }
 
 // tableSchemasByName maps each table to the schema the server spells it in, so

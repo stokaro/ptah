@@ -11,14 +11,18 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -141,12 +145,15 @@ func replicationState(state string) func(*catalog.Database) bool {
 func planError(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database) error {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readScoped(c, conn, replicationSchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, replicationSchemas), info, nil, must.Must(builtin.New()))
 	if err != nil {
 		return err
 	}
-	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities})
+	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect,
+		planner.Options{Capabilities: info.Capabilities},
+	)
 	return err
 }
 
@@ -311,9 +318,10 @@ func TestYDBReplication_ConnectionChangesWhilePaused(t *testing.T) {
 // changefeed's topic through lambda, or no transfer for an empty lambda.
 func transferDeclaration(lambda string) *schemamodel.Database {
 	db := &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbschema.DesiredObject(replicationSchema, "orders", ydbschema.ChangefeedSpec{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}))),
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil)),
 		Tables: []schemamodel.Table{
-			{StructName: "Orders", Name: "orders", Schema: replicationSchema,
-				Changefeeds: []ast.ChangefeedSpec{{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}}},
+			{StructName: "Orders", Name: "orders", Schema: replicationSchema},
 			{StructName: "Log", Name: "order_log", Schema: replicationSchema},
 		},
 		Fields: []schemamodel.Field{

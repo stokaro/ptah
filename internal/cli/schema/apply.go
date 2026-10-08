@@ -12,9 +12,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -34,6 +35,7 @@ import (
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrator"
+	"ptah.run/migration/schemadiff"
 )
 
 const (
@@ -56,6 +58,7 @@ const (
 )
 
 type schemaApplyOptions struct {
+	runtime         engine.SchemaRuntime
 	dbURL           string
 	rootDirs        []string
 	schemaFiles     []string
@@ -353,6 +356,10 @@ func applySchema(
 		return "", err
 	}
 	opts.devServerDisposable = devServerDisposable
+	opts.runtime, err = builtin.New()
+	if err != nil {
+		return "", err
+	}
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
 		return "", err
 	}
@@ -524,6 +531,7 @@ func runSchemaApplyOnLockedSession(
 		return "", err
 	}
 	plan, err := atlasschema.PrepareApply(ctx, conn, atlasschema.ApplyRuntimeOptions{
+		Runtime:             opts.runtime,
 		ProjectRoot:         schemaroot.Of(opts.rootDirs),
 		DevURL:              opts.devURL,
 		DevServerDisposable: opts.devServerDisposable,
@@ -702,7 +710,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 	txMode migrator.MigrationTxMode,
 	run *applyRun,
 ) (atlasschema.ApplyOutcome, error) {
-	if err := atlasschema.VerifyPlanTarget(ctx, conn, plan); err != nil {
+	if err := atlasschema.VerifyPlanTarget(ctx, conn, plan, opts.runtime); err != nil {
 		return "", err
 	}
 
@@ -810,9 +818,9 @@ func editSchemaApplySQL(ctx context.Context, sqlText string) (string, error) {
 // synced only when the comparison withheld nothing: with an undecided object,
 // the read did not look at something the desired schema declares, and "synced"
 // would claim a check that did not run. The warnings above it say what and why.
-func printNothingPlanned(out io.Writer, undecided []coverage.Object) {
-	if len(undecided) > 0 {
-		fmt.Fprintf(out, "No changes planned, but %s.\n", undecidednote.Summary(len(undecided)))
+func printNothingPlanned(out io.Writer, undecided schemadiff.Diagnostics) {
+	if !undecided.Empty() {
+		fmt.Fprintf(out, "No changes planned, but %s.\n", undecidednote.Summary(undecided))
 		return
 	}
 	fmt.Fprintln(out, "Schema is synced, no changes to be made.")

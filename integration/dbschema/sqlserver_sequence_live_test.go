@@ -3,12 +3,14 @@
 package dbschema_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -93,7 +95,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 
 	// 3. The convergence assertion. Comparing the same description against what
 	// the server now holds must produce nothing to do.
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(settled.SequencesAdded, qt.HasLen, 0)
 	c.Assert(settled.SequencesRemoved, qt.HasLen, 0)
 	c.Assert(settled.SequencesModified, qt.HasLen, 0)
@@ -103,9 +105,12 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	changed := sqlServerSequenceSchema(schemaName)
 	newIncrement := int64(7)
 	changed.Sequences[0].Increment = &newIncrement
-	modification := schemadiff.CompareWithDialect(changed, live, platform.SQLServer)
+	modification := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(modification.SequencesModified, qt.HasLen, 1)
-	nodes, err := planner.GenerateSchemaDiffAST(modification, platform.SQLServer)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		modification, platform.SQLServer,
+	)
 	c.Assert(err, qt.IsNil)
 	alters := renderedStatementsNaming(c, nodes, "ALTER SEQUENCE")
 	c.Assert(alters, qt.HasLen, 1)

@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
@@ -83,7 +85,7 @@ func readTargetSchema(c *qt.C, dbURL string) *catalog.Database {
 // the same deterministic form used by native plan stale-state checks.
 func targetSchemaFingerprint(c *qt.C, dbURL string) string {
 	c.Helper()
-	fingerprint, err := atlasschema.SchemaFingerprint(readTargetSchema(c, dbURL))
+	fingerprint, err := atlasschema.SchemaFingerprint(c.Context(), readTargetSchema(c, dbURL), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	return fingerprint
 }

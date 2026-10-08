@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -225,7 +227,7 @@ func TestNewReportDestructiveVerdictDoesNotDependOnAssessmentOrder(t *testing.T)
 func TestAssessRenderedSplitsPostgresModifyColumnStatements(t *testing.T) {
 	c := qt.New(t)
 
-	assessments, err := safety.AssessRendered([]ast.Node{
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), []ast.Node{
 		&ast.AlterTableNode{
 			Name: "users",
 			Operations: []ast.AlterOperation{

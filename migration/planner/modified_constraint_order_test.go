@@ -1,15 +1,18 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -169,10 +172,13 @@ func planModifiedConstraint(c *qt.C, desired *schemamodel.Database, dialect, sch
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
 	opts.IdentifierSemantics = &semantics
-	diff := schemadiff.CompareWithOptions(desired, database, opts)
+	diff := must.Must(schemadiff.CompareWithOptions(c.Context(), desired, database, opts, must.Must(builtin.New())))
 	diff.IdentifierSemantics = &semantics
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 0, qt.Commentf("the table itself must pair"))
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0, qt.Commentf("the table itself must pair"))

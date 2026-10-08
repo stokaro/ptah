@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -14,12 +15,12 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.ChangefeedSpec
+		want   ydbschema.ChangefeedSpec
 	}{
 		{
 			name:   "the two options YDB requires, folded to capitals",
 			values: map[string]string{"name": "updates", "mode": "updates", "format": "json"},
-			want:   ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"},
+			want:   ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"},
 		},
 		{
 			name: "every option",
@@ -29,7 +30,7 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 				"user_sids": "true", "schema_changes": "true", "topic_min_active_partitions": "4",
 				"topic_auto_partitioning": "true", "retention_period": "P1D",
 			},
-			want: ast.ChangefeedSpec{
+			want: ydbschema.ChangefeedSpec{
 				Name: "feed", Mode: "NEW_AND_OLD_IMAGES", Format: "DEBEZIUM_JSON", VirtualTimestamps: true,
 				ResolvedTimestamps: "PT10S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 				TopicMinActivePartitions: 4, TopicAutoPartitioning: true, RetentionPeriod: "P1D",
@@ -38,7 +39,7 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 		{
 			name:   "a switch set to false declares nothing",
 			values: map[string]string{"name": "f", "mode": "KEYS_ONLY", "format": "JSON", "initial_scan": "false"},
-			want:   ast.ChangefeedSpec{Name: "f", Mode: "KEYS_ONLY", Format: "JSON"},
+			want:   ydbschema.ChangefeedSpec{Name: "f", Mode: "KEYS_ONLY", Format: "JSON"},
 		},
 	}
 	for _, test := range tests {
@@ -82,7 +83,7 @@ func TestParseDeclaration_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbchangefeed.ParseDeclaration(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.DeepEquals, ast.ChangefeedSpec{})
+			c.Assert(got, qt.DeepEquals, ydbschema.ChangefeedSpec{})
 		})
 	}
 }
@@ -194,13 +195,13 @@ func TestSeconds_FailurePath(t *testing.T) {
 func TestCheck_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
-		spec ast.ChangefeedSpec
+		spec ydbschema.ChangefeedSpec
 		caps capability.Capabilities
 	}{
 		{name: "the plainest changefeed on the oldest line", caps: capability.YDB251(),
-			spec: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON"}},
+			spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON"}},
 		{name: "every option on the newest line", caps: capability.YDB262(),
-			spec: ast.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "JSON", UserSIDs: true,
+			spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "JSON", UserSIDs: true,
 				SchemaChanges: true, TopicAutoPartitioning: true, ResolvedTimestamps: "PT1S", RetentionPeriod: "P31D",
 				Consumers: []ast.TopicConsumerSpec{{Name: "a", AvailabilityPeriod: "PT1H"}, {Name: "b", Important: true}}}},
 	}
@@ -215,7 +216,7 @@ func TestCheck_HappyPath(t *testing.T) {
 // TestCheck_RefusesWhatTheTargetLacks pins each option to the key that gates
 // it, on the newest line that lacks it.
 func TestCheck_RefusesWhatTheTargetLacks(t *testing.T) {
-	plain := ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON"}
+	plain := ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON"}
 	withSIDs, withSchema, withAuto, withAvailability := plain, plain, plain, plain
 	withSIDs.UserSIDs = true
 	withSchema.SchemaChanges = true
@@ -223,7 +224,7 @@ func TestCheck_RefusesWhatTheTargetLacks(t *testing.T) {
 	withAvailability.Consumers = []ast.TopicConsumerSpec{{Name: "c", AvailabilityPeriod: "PT1H"}}
 	tests := []struct {
 		name string
-		spec ast.ChangefeedSpec
+		spec ydbschema.ChangefeedSpec
 		caps capability.Capabilities
 		want ydbchangefeed.Refusal
 	}{
@@ -257,26 +258,26 @@ func TestCheck_RefusesWhatTheTargetLacks(t *testing.T) {
 func TestCheck_RefusesWhatYDBRefusesEverywhere(t *testing.T) {
 	tests := []struct {
 		name       string
-		spec       ast.ChangefeedSpec
+		spec       ydbschema.ChangefeedSpec
 		wantReason string
 	}{
-		{name: "Debezium in UPDATES mode", spec: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "DEBEZIUM_JSON"},
+		{name: "Debezium in UPDATES mode", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "DEBEZIUM_JSON"},
 			wantReason: "YDB writes DEBEZIUM_JSON in every mode but UPDATES .*"},
-		{name: "Debezium with virtual timestamps", spec: ast.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
+		{name: "Debezium with virtual timestamps", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
 			VirtualTimestamps: true}, wantReason: "YDB writes DEBEZIUM_JSON with no virtual timestamps, .*"},
-		{name: "Debezium with resolved timestamps", spec: ast.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
+		{name: "Debezium with resolved timestamps", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
 			ResolvedTimestamps: "PT1S"}, wantReason: "YDB writes DEBEZIUM_JSON with no virtual timestamps, .*"},
-		{name: "Debezium with schema changes", spec: ast.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
+		{name: "Debezium with schema changes", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
 			SchemaChanges: true}, wantReason: "YDB writes DEBEZIUM_JSON with no virtual timestamps, .*"},
-		{name: "a disabled changefeed", spec: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON", Disabled: true},
+		{name: "a disabled changefeed", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON", Disabled: true},
 			wantReason: "YDB has no statement that disables a changefeed .*"},
-		{name: "an unknown mode", spec: ast.ChangefeedSpec{Name: "f", Mode: "ALL", Format: "JSON"},
+		{name: "an unknown mode", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "ALL", Format: "JSON"},
 			wantReason: `its mode "ALL" is none of .*`},
-		{name: "a slash in the name", spec: ast.ChangefeedSpec{Name: "a/b", Mode: "UPDATES", Format: "JSON"},
+		{name: "a slash in the name", spec: ydbschema.ChangefeedSpec{Name: "a/b", Mode: "UPDATES", Format: "JSON"},
 			wantReason: "a changefeed needs a name without a slash .*"},
-		{name: "a fractional retention", spec: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
+		{name: "a fractional retention", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
 			RetentionPeriod: "PT1.5S"}, wantReason: `its retention_period "PT1.5S": interval "PT1.5S" has a fraction of a second, .*`},
-		{name: "two consumers of one name", spec: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
+		{name: "two consumers of one name", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
 			Consumers: []ast.TopicConsumerSpec{{Name: "c"}, {Name: "c"}}},
 			wantReason: `two of its consumers are named "c", .*`},
 	}
@@ -292,17 +293,17 @@ func TestCheck_RefusesWhatYDBRefusesEverywhere(t *testing.T) {
 }
 
 func TestNameRefusal(t *testing.T) {
-	feed := ast.ChangefeedSpec{Name: "feed"}
+	feed := ydbschema.ChangefeedSpec{Name: "feed"}
 	tests := []struct {
 		name        string
-		changefeeds []ast.ChangefeedSpec
+		changefeeds []ydbschema.ChangefeedSpec
 		indexes     []string
 		want        string
 	}{
-		{name: "distinct names", changefeeds: []ast.ChangefeedSpec{feed}, indexes: []string{"ix"}, want: ""},
-		{name: "an index's name", changefeeds: []ast.ChangefeedSpec{feed}, indexes: []string{"feed"},
+		{name: "distinct names", changefeeds: []ydbschema.ChangefeedSpec{feed}, indexes: []string{"ix"}, want: ""},
+		{name: "an index's name", changefeeds: []ydbschema.ChangefeedSpec{feed}, indexes: []string{"feed"},
 			want: `changefeed "feed" has the name of one of its indexes, and YDB keeps both under the table's path`},
-		{name: "two changefeeds", changefeeds: []ast.ChangefeedSpec{feed, feed},
+		{name: "two changefeeds", changefeeds: []ydbschema.ChangefeedSpec{feed, feed},
 			want: `two of its changefeeds are named "feed"`},
 	}
 	for _, test := range tests {
@@ -314,16 +315,16 @@ func TestNameRefusal(t *testing.T) {
 }
 
 func TestKeyRefusal(t *testing.T) {
-	two := ast.ChangefeedSpec{Name: "f", TopicMinActivePartitions: 2}
+	two := ydbschema.ChangefeedSpec{Name: "f", TopicMinActivePartitions: 2}
 	tests := []struct {
 		name    string
-		spec    ast.ChangefeedSpec
+		spec    ydbschema.ChangefeedSpec
 		keyType string
 		want    string
 	}{
 		{name: "two partitions on a Uint64 key", spec: two, keyType: "Uint64", want: ""},
 		{name: "two partitions on a Uint32 key", spec: two, keyType: "Uint32", want: ""},
-		{name: "one partition on a Utf8 key", spec: ast.ChangefeedSpec{TopicMinActivePartitions: 1}, keyType: "Utf8", want: ""},
+		{name: "one partition on a Utf8 key", spec: ydbschema.ChangefeedSpec{TopicMinActivePartitions: 1}, keyType: "Utf8", want: ""},
 		{name: "two partitions on a Utf8 key", spec: two, keyType: "Utf8",
 			want: "its topic starts with 2 partitions, which YDB splits by the first key column, and takes that " +
 				"column only as Uint32 or Uint64, not Utf8"},

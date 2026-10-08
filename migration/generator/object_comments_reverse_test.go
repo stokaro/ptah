@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -26,13 +28,13 @@ func TestPlanBidirectionalSchemaDiff_ObjectCommentRollsBack(t *testing.T) {
 		{Kind: difftypes.CommentedFunction, Name: "app.f", Arguments: new("a integer"), Current: "old", Desired: "new"},
 	}}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{},
-		CurrentSchema: &catalog.Database{},
-		Dialect:       platform.Postgres,
-		Capabilities:  capability.Postgres18(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{},
+			CurrentSchema: &catalog.Database{},
+			Dialect:       platform.Postgres,
+			Capabilities:  capability.Postgres18(),
+		})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Reverse.Diff.ObjectCommentsChanged, qt.DeepEquals, []difftypes.ObjectCommentChange{

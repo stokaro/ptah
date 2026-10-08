@@ -388,6 +388,11 @@ keys a new database built from the file has. For a migration that names the
 key `c_p_fk` and a schema file that writes `p_id bigint REFERENCES p(id)` on
 `c`, the plan drops `c_p_fk` and adds `c_p_id_fkey`, as Atlas CE does.
 
+A plan releases removed foreign keys before removing or replacing the keys
+they reference and before changing their columns. Replacement foreign keys are
+added after the referenced keys. This order also applies to reverse migrations
+and self-references.
+
 A column-level `UNIQUE` is compared by the name PostgreSQL gives it,
 `<table>_<column>_key`, numbered `1` and on where another relation or
 constraint of the schema already holds that name. When the database holds the

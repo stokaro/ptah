@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -111,7 +112,7 @@ func TestPostgresLiveDefaultPrivilegeConverges(t *testing.T) {
 	c.Assert(defaultPrivilegeGrantOption(c, live.DefaultPrivileges, "INSERT"), qt.IsTrue)
 
 	// 3. The convergence assertion.
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.DefaultPrivilegesAdded, qt.HasLen, 0)
 	c.Assert(settled.DefaultPrivilegesRemoved, qt.HasLen, 0)
 }

@@ -608,12 +608,6 @@
     },
     {
       "path": "migration/generator/reverse_diff_test.go",
-      "function": "TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/generator/reverse_diff_test.go",
       "function": "TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingIndex",
       "kind": "if",
       "count": 2

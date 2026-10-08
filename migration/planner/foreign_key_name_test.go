@@ -1,15 +1,19 @@
 package planner_test
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -29,11 +33,14 @@ func TestGenerateSchemaDiffSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T)
 	// (stokaro/ptah#2315).
 	named := schemaprep.AssignDefaultForeignKeyNames(schema, platform.MySQL)
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:    difftypes.TableCreationsFor(named, "parents", tableName),
+		TablesAdded:    difftypes.TableCreationsFor(named, identifier.ForDialect("mysql"), "parents", tableName),
 		DeclaredTables: named.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	matches := generatedForeignKeyNamePattern.FindAllString(sql, -1)
@@ -55,11 +62,14 @@ func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision
 	schemamodel.Finalize(schema)
 	named := schemaprep.AssignDefaultForeignKeyNames(schema, platform.MySQL)
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:    difftypes.TableCreationsFor(named, "parents", "children"),
+		TablesAdded:    difftypes.TableCreationsFor(named, identifier.ForDialect("mysql"), "parents", "children"),
 		DeclaredTables: named.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MySQL,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "FK_CHILDREN_PARENT_ID")

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/dbschema"
@@ -81,7 +82,7 @@ func applyRoleCaseSchema(c *qt.C, engine dbtarget.Engine, quote, template string
 	}
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schema})
 	c.Assert(err, qt.IsNil)
-	return schemadiff.CompareWithDialect(desired, live, dialect)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, dialect, must.Must(builtin.New())))
 }
 
 // TestRoleCase_LivePolicyNamesTheRoleTheServerHolds applies a policy whose TO

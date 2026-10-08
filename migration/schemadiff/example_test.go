@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -43,7 +44,7 @@ func ExampleCompareSchemas() {
 	}
 	schemamodel.Finalize(revised)
 
-	diff := schemadiff.CompareSchemas(revised, previous, "postgres")
+	diff := must.Must(schemadiff.CompareSchemas(context.Background(), revised, previous, "postgres", must.Must(builtin.New())))
 
 	fmt.Println("has changes:", diff.HasChanges())
 	for _, table := range diff.TablesModified {
@@ -80,7 +81,7 @@ func ExampleCompareWithDatabase() {
 	}
 	schemamodel.Finalize(desired)
 
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil, must.Must(builtin.New()))
 	if err != nil {
 		fmt.Println("compare:", err)
 		return
@@ -113,10 +114,10 @@ func ExampleCompareWithDialect() {
 		}}},
 	}
 
-	withDialect := schemadiff.CompareWithDialect(desired, live, "mysql")
+	withDialect := must.Must(schemadiff.CompareWithDialect(context.Background(), desired, live, "mysql", must.Must(builtin.New())))
 	fmt.Println("mysql:", withDialect.HasChanges())
 
-	neutral := schemadiff.Compare(desired, live)
+	neutral := must.Must(schemadiff.Compare(context.Background(), desired, live, must.Must(builtin.New())))
 	fmt.Println("neutral:", neutral.HasChanges(), "enums to add:", neutral.EnumsAdded.Names())
 
 	// Output:
@@ -138,11 +139,12 @@ func ExampleCompareReportingUndecidedAdditions() {
 	current := &catalog.Database{}
 	current.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
+	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(context.Background(), desired, current, nil, must.Must(builtin.New()))
+	must.Assert(err)
 
 	fmt.Println("planned additions:", diff.SequencesAdded.Names())
 	fmt.Println("has changes:", diff.HasChanges())
-	for _, object := range undecided {
+	for _, object := range undecided.Common {
 		fmt.Printf("undecided: %s %s\n", object.Kind, object.Name)
 	}
 

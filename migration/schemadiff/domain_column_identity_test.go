@@ -1,13 +1,16 @@
 package schemadiff_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -25,7 +28,7 @@ func domainColumnTableDiffs(column catalog.Column, desiredType string, desiredDo
 		Fields:  []schemamodel.Field{{StructName: "T", Name: column.Name, Type: desiredType}},
 		Domains: desiredDomains,
 	}
-	return schemadiff.CompareWithDialect(desired, database, platform.Postgres).TablesModified
+	return must.Must(schemadiff.CompareWithDialect(context.Background(), desired, database, platform.Postgres, must.Must(builtin.New()))).TablesModified
 }
 
 // TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange pins how a

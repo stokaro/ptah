@@ -9,12 +9,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -46,7 +48,7 @@ func TestPostgresSequenceGrant_LiveDescriptionComparesEqualToItsRead(t *testing.
 		{Privilege: "USAGE", ObjectType: "SEQUENCE", Target: schemaName + ".order_seq"},
 	})
 
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read, "postgres")
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "postgres", must.Must(builtin.New())))
 	c.Assert(sequenceGrantDescribedTargets(described.Grants, roleName), qt.DeepEquals, []sequenceGrantDescribedTarget{
 		{Privileges: []string{"SELECT"}, OnTable: schemaName + ".invoices"},
 		{Privileges: []string{"USAGE"}, OnSequence: schemaName + ".order_seq"},
@@ -54,7 +56,7 @@ func TestPostgresSequenceGrant_LiveDescriptionComparesEqualToItsRead(t *testing.
 
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = conn.Info().Dialect
-	diff := schemadiff.CompareWithOptions(described, read, opts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), described, read, opts, must.Must(builtin.New())))
 	c.Assert(diff.GrantsAdded, qt.HasLen, 0, qt.Commentf("grants added: %#v", diff.GrantsAdded))
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 0, qt.Commentf("grants removed: %#v", diff.GrantsRemoved))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))

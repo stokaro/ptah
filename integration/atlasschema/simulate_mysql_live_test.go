@@ -25,10 +25,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
@@ -71,9 +73,9 @@ table "sim_added" {
 `)
 
 	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + desiredPath},
-		TxMode: migrator.MigrationTxModeNone,
-	})
+		ToURLs:  []string{"file://" + desiredPath},
+		TxMode:  migrator.MigrationTxModeNone,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 	// The premise of the defect: the plan carries the TARGET's schema name.
@@ -130,9 +132,9 @@ table "sim_added" {
 `)
 
 	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + desiredPath},
-		TxMode: migrator.MigrationTxModeNone,
-	})
+		ToURLs:  []string{"file://" + desiredPath},
+		TxMode:  migrator.MigrationTxModeNone,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(plan.Statements(), "\n"), qt.Contains, "`"+targetName+"`.`sim_added`")
 
@@ -180,9 +182,9 @@ table "sim_added" {
 }
 `)
 	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + desiredPath},
-		TxMode: migrator.MigrationTxModeNone,
-	})
+		ToURLs:  []string{"file://" + desiredPath},
+		TxMode:  migrator.MigrationTxModeNone,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
 	// A statement naming a database that is neither the target nor the dev one

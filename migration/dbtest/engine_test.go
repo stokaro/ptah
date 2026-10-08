@@ -45,7 +45,7 @@ func TestRunMigrationTest_AssertionsHappyPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: tc.cases})
+			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: tc.cases})
 			c.Assert(err, qt.IsNil)
 			c.Assert(report, qt.IsNotNil)
 			c.Assert(report.Failed(), qt.IsFalse)
@@ -92,7 +92,7 @@ func TestRunMigrationTest_AssertionsFailurePath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: tc.cases})
+			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: tc.cases})
 			c.Assert(err, qt.IsNil)
 			c.Assert(report, qt.IsNotNil)
 			c.Assert(report.Failed(), qt.IsTrue)
@@ -111,7 +111,7 @@ func TestRunMigrationTest_FailureDetailAndShortCircuit(t *testing.T) {
 		},
 	}}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsTrue)
 	c.Assert(report.Cases, qt.HasLen, 1)
@@ -134,7 +134,7 @@ func TestRunMigrationTest_InvalidCasesError(t *testing.T) {
 		Name:  "no action",
 		Steps: []dbtest.Step{{Name: "empty"}},
 	}}
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(report, qt.IsNil)
 	c.Assert(err.Error(), qt.Contains, "invalid test cases")
@@ -160,7 +160,7 @@ func TestRunMigrationTest_MigrateToLatest(t *testing.T) {
 		},
 	}}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases:         cases,
 		MigrationsDir: migrationsDir,
 		DirFormat:     migrationfile.DirFormatPtah,
@@ -194,7 +194,7 @@ func TestRunMigrationTest_MigrateToUsesProvidedSnapshotInsteadOfPath(t *testing.
 		)},
 	}
 
-	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "snapshot is execution source",
 			Steps: []dbtest.Step{
@@ -229,7 +229,7 @@ func TestRunMigrationTest_ApplySchema(t *testing.T) {
 		},
 	}}
 
-	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{Cases: cases, RootDir: rootDir})
+	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases, RootDir: rootDir})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
 	c.Assert(report.Cases[0].Steps[0].Detail, qt.Equals, "desired schema applied")
@@ -246,7 +246,7 @@ func TestRunMigrationTest_ApplySchemaPreservesMigrationObjects(t *testing.T) {
 		[]byte("DROP TABLE widgets;"), 0o600), qt.IsNil)
 	rootDir := writeUsersEntity(c)
 
-	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "desired schema is additive",
 			Steps: []dbtest.Step{
@@ -286,7 +286,7 @@ type User struct {
 }
 `), 0o600), qt.IsNil)
 
-	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "desired schema adds the missing column",
 			Steps: []dbtest.Step{
@@ -315,7 +315,7 @@ func TestRunMigrationTest_ApplySchemaRequiresRootDir(t *testing.T) {
 		Steps: []dbtest.Step{{Name: "apply desired schema", ApplySchema: true}},
 	}}
 
-	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.ErrorMatches, "apply_schema requires a desired schema root directory")
 	c.Assert(report, qt.IsNil)
 }
@@ -341,7 +341,7 @@ func TestRunMigrationTest_EphemeralCasesAreIsolated(t *testing.T) {
 		},
 	}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsFalse)
 	c.Assert(report.Cases, qt.HasLen, 2)
@@ -375,7 +375,7 @@ func TestRunMigrationTest_SeedStepDirectoryOverride(t *testing.T) {
 		},
 	}}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases:         cases,
 		MigrationsDir: migrationsDir,
 		SeedDir:       t.TempDir(),
@@ -406,7 +406,7 @@ func TestRunMigrationTest_DefaultSeedDirectory(t *testing.T) {
 		},
 	}}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases:   cases,
 		SeedDir: seedsDir,
 	})
@@ -424,7 +424,7 @@ func TestRunMigrationTest_SeedRequiresEnv(t *testing.T) {
 		Steps: []dbtest.Step{{Name: "seed", Seed: &dbtest.SeedStep{Dir: t.TempDir()}}},
 	}}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(report, qt.IsNil)
 	c.Assert(err.Error(), qt.Contains, "seed requires an env")
@@ -437,7 +437,7 @@ func TestRunMigrationTest_SeedRequiresDirectory(t *testing.T) {
 		Steps: []dbtest.Step{{Name: "seed", Seed: &dbtest.SeedStep{Env: "test"}}},
 	}}
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(report, qt.IsNil)
 	c.Assert(err.Error(), qt.Contains, "seed requires a dir or a run-level seed directory")
@@ -452,7 +452,7 @@ func TestReport_RenderFormats(t *testing.T) {
 			{Name: "empty", Assert: &dbtest.Assertion{Query: "SELECT id FROM t", RowCount: new(0)}},
 		},
 	}}
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.IsNil)
 
 	// JSON carries the kind, summary counts, and cases, and round-trips.
@@ -473,7 +473,7 @@ func TestReport_RenderFormats(t *testing.T) {
 
 	// A case name with HTML metacharacters is escaped, never emitted raw, so the
 	// report cannot inject markup regardless of the test-case contents.
-	xssReport, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: []dbtest.Case{{
+	xssReport, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: []dbtest.Case{{
 		Name:  "<script>alert(1)</script>",
 		Steps: []dbtest.Step{{Name: "noop", Exec: "SELECT 1"}},
 	}}})
@@ -507,7 +507,7 @@ func TestRunMigrationTest_MigrateToWithoutDir(t *testing.T) {
 		Name:  "migrate without dir",
 		Steps: []dbtest.Step{{Name: "migrate", MigrateTo: "latest"}},
 	}}
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c), Cases: cases})
 	c.Assert(err, qt.ErrorMatches, "migrate_to requires a migrations directory")
 	c.Assert(report, qt.IsNil)
 }
@@ -517,7 +517,7 @@ func TestRunMigrationTest_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	report, err := dbtest.RunMigrationTest(ctx, dbtest.Options{Cases: []dbtest.Case{{
+	report, err := dbtest.RunMigrationTest(ctx, dbtest.Options{Runtime: selectedRuntime(c), Cases: []dbtest.Case{{
 		Name:  "never runs",
 		Steps: []dbtest.Step{{Name: "query", Exec: "SELECT 1"}},
 	}}})

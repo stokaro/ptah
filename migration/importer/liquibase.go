@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/internal/liquibaserun"
 )
 
@@ -40,20 +42,22 @@ var liquibaseChangelogExts = map[string]bool{".xml": true, ".yaml": true, ".yml"
 // the `author:id` carried into the name.
 //
 // dialect is the target a typed change is rendered for, and caps the preset it
-// is rendered against. Both are empty until [WithDialectCapabilities] sets
+// is rendered against. Both are empty until [WithRendering] sets
 // them; without a dialect a typed change is refused. dbms is the Liquibase
 // short name of the database the history ran on, empty until
 // [WithLiquibaseDBMS] sets it; without it a `dbms` attribute is refused.
 type liquibaseParser struct {
-	dialect string
-	caps    capability.Capabilities
-	dbms    string
+	dialect   string
+	caps      capability.Capabilities
+	rendering renderer.Service
+	dbms      string
 }
 
-// withDialect returns the parser set to render typed changes for dialect.
-func (p liquibaseParser) withDialect(dialect string, caps capability.Capabilities) Parser {
+// withRendering retains the explicit service for typed changes.
+func (p liquibaseParser) withRendering(dialect string, caps capability.Capabilities, service renderer.Service) Parser {
 	p.dialect = dialect
 	p.caps = caps
+	p.rendering = service
 	return p
 }
 
@@ -86,7 +90,11 @@ func (liquibaseParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
+func (p liquibaseParser) Parse(ctx context.Context, fsys fs.FS) (*ParseResult, error) {
+	return parseWithContext(ctx, func() (*ParseResult, error) { return p.parse(ctx, fsys) })
+}
+
+func (p liquibaseParser) parse(ctx context.Context, fsys fs.FS) (*ParseResult, error) {
 	result := &ParseResult{}
 	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {
@@ -119,7 +127,7 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 					"would reorder or duplicate history -- import them separately",
 				strings.Join(changelogFiles, ", "), strings.Join(sqlFiles, ", "))
 		}
-		read, err := parseLiquibaseChangelogFiles(fsys, changelogFiles, p)
+		read, err := parseLiquibaseChangelogFiles(ctx, fsys, changelogFiles, p)
 		if err != nil {
 			return nil, err
 		}

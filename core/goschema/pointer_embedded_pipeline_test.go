@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
@@ -161,7 +162,7 @@ type BlogPost struct {
 	c.Assert(blogPostEmbedded, qt.Equals, 6)
 
 	// Generate schema
-	statements := modelast.CollectDatabase(*database, "postgresql")
+	statements := must.Must(modelast.CollectDatabase(*database, "postgresql"))
 
 	// Find the BlogPost CREATE TABLE and FK ALTER TABLE statements
 	var blogPostSQL, blogPostFKSQL string

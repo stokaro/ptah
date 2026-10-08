@@ -146,7 +146,7 @@ func TestImportLiquibaseChangesetAttributes_HappyPath(t *testing.T) {
 			target := t.TempDir()
 			writeFile(c, source, test.file, test.content)
 
-			result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+			result, err := atlasmigrateimport.Import(t.Context(), atlasmigrateimport.Options{
 				FromURL: "file://" + source + "?format=liquibase",
 				ToURL:   "file://" + target,
 			})

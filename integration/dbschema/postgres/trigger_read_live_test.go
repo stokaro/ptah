@@ -9,9 +9,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
@@ -71,7 +73,7 @@ func TestTriggerRead_LiveOnEveryPostgresFamilyEngine(t *testing.T) {
 
 			declared, _, err := sqlschema.Read([]byte(triggerReadDocument(schemaName)), conn.Info().Dialect)
 			c.Assert(err, qt.IsNil)
-			diff, err := schemadiff.CompareWithDatabase(ctx, conn, &declared, live, nil)
+			diff, err := schemadiff.CompareWithDatabase(ctx, conn, &declared, live, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.TriggersAdded, qt.HasLen, 0)
 			c.Assert(diff.TriggersModified, qt.HasLen, 0)

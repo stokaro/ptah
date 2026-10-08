@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff"
 )
@@ -44,7 +46,7 @@ func unvalidatedKeys(notValid bool) *catalog.Database {
 func TestConvert_KeepsNotValid(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(unvalidatedKeys(true), platform.Postgres)
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), unvalidatedKeys(true), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(fieldNamed(c, database, "p_id").Foreign, qt.Equals, "")
 	c.Assert(database.Constraints, qt.HasLen, 2)
@@ -59,7 +61,7 @@ func TestConvert_KeepsNotValid(t *testing.T) {
 func TestConvert_LeavesAValidatedForeignKeyToItsColumn(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(unvalidatedKeys(false), platform.Postgres)
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), unvalidatedKeys(false), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(fieldNamed(c, database, "p_id").ForeignKeyName, qt.Equals, "c_p")
 	c.Assert(database.Constraints, qt.HasLen, 1)
@@ -73,7 +75,7 @@ func TestCompare_ADatabaseWithUnvalidatedConstraintsIsSynced(t *testing.T) {
 	c := qt.New(t)
 	live := unvalidatedKeys(true)
 
-	diff := schemadiff.CompareWithDialect(dbschematogo.ConvertDBSchemaToGoSchema(live, platform.Postgres), live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, platform.Postgres, must.Must(builtin.New()))), live, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
 }

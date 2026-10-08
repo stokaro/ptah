@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -97,7 +99,7 @@ func TestCompare_ResourcePools(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, test.current, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.current, platform.YDB, must.Must(builtin.New())))
 
 			c.Assert(names(diff.ResourcePoolsAdded), qt.DeepEquals, test.added)
 			c.Assert(diff.ResourcePoolsRemoved, qt.HasLen, 0)
@@ -122,19 +124,20 @@ func TestCompare_ResourcePools_Coverage(t *testing.T) {
 		coverage.Object{Kind: coverage.ResourcePoolClassifier, Reason: coverage.OutsideScope},
 	)
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(
-		&schemamodel.Database{
+	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(
+		t.Context(), &schemamodel.Database{
 			ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}},
 			ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all",
 				Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1}}},
 		},
 		&catalog.Database{NotDescribed: outside},
-		&config.CompareOptions{Dialect: platform.YDB},
+		&config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()),
 	)
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(diff.ResourcePoolsAdded, qt.HasLen, 0)
 	c.Assert(diff.ResourcePoolClassifiersAdded, qt.HasLen, 0)
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{
 		{Kind: coverage.ResourcePool, Name: "batch", Reason: coverage.OutsideScope},
 		{Kind: coverage.ResourcePoolClassifier, Name: "all", Reason: coverage.OutsideScope},
 	})

@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -55,7 +57,7 @@ func TestCompare_AScopedObjectIsNotReportedAsAddedOnATargetItDoesNotName(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(scopedDesiredState(), &catalog.Database{}, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), scopedDesiredState(), &catalog.Database{}, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.FunctionsAdded, qt.HasLen, test.added)
 			c.Assert(diff.RolesAdded, qt.HasLen, test.added)
@@ -73,7 +75,7 @@ func TestCompare_AnUnscopedObjectIsStillReportedAsAdded(t *testing.T) {
 	unscoped.Functions[0].Dialects = nil
 	unscoped.Roles[0].Dialects = nil
 
-	diff := schemadiff.CompareWithDialect(unscoped, &catalog.Database{}, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), unscoped, &catalog.Database{}, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 1)
 	c.Assert(diff.RolesAdded, qt.HasLen, 1)
@@ -89,7 +91,7 @@ func TestCompare_ADialectlessComparisonKeepsEveryScopedObject(t *testing.T) {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = ""
 
-	diff := schemadiff.CompareWithOptions(scopedDesiredState(), &catalog.Database{}, opts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), scopedDesiredState(), &catalog.Database{}, opts, must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 1)
 	c.Assert(diff.RolesAdded, qt.HasLen, 1)
@@ -123,11 +125,11 @@ func TestCompare_AScopedObjectAlreadyInTheDatabaseIsNotPlannedForRemoval(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				scopedFunctionDeclaredFor("mysql"),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), scopedFunctionDeclaredFor("mysql"),
 				databaseHoldingTheScopedFunction(),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.FunctionsRemoved, qt.HasLen, 0)
 		})
@@ -147,7 +149,7 @@ func TestCompare_AnUndeclaredObjectIsStillRemovedOnAScopedTarget(t *testing.T) {
 	desired := scopedFunctionDeclaredFor("mysql")
 	desired.Functions[0].Name = "something_else_entirely"
 
-	diff := schemadiff.CompareWithDialect(desired, databaseHoldingTheScopedFunction(), "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, databaseHoldingTheScopedFunction(), "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsRemoved, qt.HasLen, 1)
 }
@@ -209,7 +211,7 @@ func TestCompare_AScopedAwayNameDoesNotSuppressAnotherSchemasObject(t *testing.T
 				Sequences: []catalog.Sequence{{Name: "tenant_seq", Schema: test.schema}},
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, current, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, "postgres", must.Must(builtin.New())))
 
 			c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, test.removed)
 		})

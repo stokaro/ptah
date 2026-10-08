@@ -8,10 +8,9 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/objectlookup"
-	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -92,18 +91,18 @@ type tableMemberKey struct {
 }
 
 // reverseTableDiffs reverses table modifications for down migrations
-func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Database) []difftypes.TableDiff {
+func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Database, semantics identifier.Semantics) []difftypes.TableDiff {
 	reversed := make([]difftypes.TableDiff, len(tableDiffs))
 	for i, tableDiff := range tableDiffs {
 		reversed[i] = difftypes.TableDiff{
 			TableName:       tableDiff.TableName,
-			ColumnsAdded:    tableDiff.ColumnsRemoved, // Columns to remove become columns to add
-			ColumnsRemoved:  tableDiff.ColumnsAdded,   // Columns to add become columns to remove
+			ColumnsAdded:    clonedColumnChanges(tableDiff.ColumnsRemoved),
+			ColumnsRemoved:  clonedColumnChanges(tableDiff.ColumnsAdded),
 			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior),
 			// The table as the PRE-CHANGE database declared it. A rollback that
 			// rebuilds is rebuilding what that database held, and the forward
 			// declaration describes the state being rolled back from.
-			Desired: priorTableDeclaration(prior, tableDiff.TableName),
+			Desired: priorTableDeclaration(prior, tableDiff.TableName, semantics),
 			// The three Desired/Current pairs below carry BOTH sides for the
 			// reason each of their doc comments gives, which is exactly so a
 			// reversal can swap them. None of them was swapped, or carried at
@@ -113,12 +112,19 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			RowTTLChange:            reverseRowTTLChange(tableDiff.RowTTLChange),
 			RowDeletionPolicyChange: reverseRowDeletionPolicyChange(tableDiff.RowDeletionPolicyChange),
 			YDBColumnFamiliesChange: reverseColumnFamiliesChange(tableDiff.YDBColumnFamiliesChange),
-			ChangefeedsChange:       reverseChangefeedsChange(tableDiff.ChangefeedsChange),
 			YDBPartitioningChange:   reversePartitioningChange(tableDiff.YDBPartitioningChange),
 			YDBColumnTableChange:    reverseColumnTableChange(tableDiff.YDBColumnTableChange),
 		}
 	}
 	return reversed
+}
+
+func clonedColumnChanges(changes difftypes.ColumnChanges) difftypes.ColumnChanges {
+	result := slices.Clone(changes)
+	for i := range result {
+		result[i] = result[i].Clone()
+	}
+	return result
 }
 
 // reverseColumnDiffs reverses column modifications for down migrations
@@ -175,16 +181,16 @@ func reverseColumnDiffs(
 // It is the rollback's half of the declaration a modification carries: a
 // dialect that rebuilds rather than alters recreates the table, and the one
 // it has to recreate is the one that database held.
-func priorTableDeclaration(prior *schemamodel.Database, tableName string) difftypes.TableDeclaration {
+func priorTableDeclaration(prior *schemamodel.Database, tableName string, semantics identifier.Semantics) schemacapture.TableDeclaration {
 	if prior == nil {
-		return difftypes.TableDeclaration{}
+		return schemacapture.TableDeclaration{}
 	}
 	for _, table := range prior.Tables {
 		if table.Name == tableName || table.QualifiedName() == tableName {
-			return difftypes.TableDeclarationFor(prior, table)
+			return difftypes.TableDeclarationFor(prior, table, semantics)
 		}
 	}
-	return difftypes.TableDeclaration{}
+	return schemacapture.TableDeclaration{}
 }
 
 func priorColumn(prior *schemamodel.Database, tableName, columnName string) schemamodel.Field {
@@ -197,7 +203,7 @@ func priorColumn(prior *schemamodel.Database, tableName, columnName string) sche
 		}
 		for _, field := range generatedschema.FieldsForTable(prior, table) {
 			if field.Name == columnName {
-				return field
+				return field.Clone()
 			}
 		}
 	}
@@ -216,20 +222,20 @@ func priorColumn(prior *schemamodel.Database, tableName, columnName string) sche
 // That is the honest answer rather than a silent omission: the planner has
 // nothing to render, and the entry still names the table so a report can say
 // which one.
-func tableCreationsFromRemovals(names []string, prior *schemamodel.Database) difftypes.TableChanges {
+func tableCreationsFromRemovals(names []string, prior *schemamodel.Database, semantics identifier.Semantics) difftypes.TableChanges {
 	if len(names) == 0 {
 		return nil
 	}
 	creations := make(difftypes.TableChanges, 0, len(names))
 	for _, name := range names {
-		creations = append(creations, priorTableCreation(prior, name))
+		creations = append(creations, priorTableCreation(prior, name, semantics))
 	}
 	return creations
 }
 
 // priorTableCreation is the creation bundle for one table the pre-change
 // database held.
-func priorTableCreation(prior *schemamodel.Database, name string) difftypes.TableCreation {
+func priorTableCreation(prior *schemamodel.Database, name string, semantics identifier.Semantics) difftypes.TableCreation {
 	creation := difftypes.TableCreation{Name: name}
 	if prior == nil {
 		return creation
@@ -238,34 +244,13 @@ func priorTableCreation(prior *schemamodel.Database, name string) difftypes.Tabl
 	if table == nil {
 		return creation
 	}
-	fields := schemamodel.ProcessEmbeddedFields(prior.EmbeddedFields, prior.Fields)
-	owned := make([]schemamodel.Field, 0, len(fields))
-	for _, field := range fields {
-		if field.StructName == table.StructName {
-			owned = append(owned, field)
-		}
-	}
-	creation.Table = *table
-	creation.Fields = owned
-	creation.Enums = schemaprep.EnumsFor(owned, prior.Enums)
-	// The constraints that database's table had. A target with no
-	// ADD CONSTRAINT renders them inside the CREATE, so a rollback that
-	// omitted them would put the table back without them and report success
-	// (stokaro/ptah#2315).
-	creation.Constraints = difftypes.TableCreationFor(prior, *table, name).Constraints
-	// The edges between the tables being put back. Without them
-	// TablesAdded.InDependencyOrder() has nothing to order by, so a rollback
-	// recreates them in whatever order TablesRemoved held and can put a child
-	// before the parent it references (stokaro/ptah#2541).
-	//
-	// Derived rather than read out of prior.Dependencies for the reason
-	// TableCreationFor gives: that map is filled by [schemamodel.Finalize],
-	// and this schema has not necessarily been through it.
-	creation.DependsOn = deporder.GeneratedTableDependencies(prior)[table.QualifiedName()]
+	creation = difftypes.TableCreationFor(prior, *table, name, semantics)
+
 	// SelfReferencingForeignKeys stays unfilled: such a key is already emitted
 	// twice on the FORWARD path when it is declared as a table-level
 	// constraint, so a copy here is a third (stokaro/ptah#2583).
 	// nestedCoverageExempt records that, so it is a decision and not a gap.
+	creation.SelfReferencingForeignKeys = nil
 	return creation
 }
 

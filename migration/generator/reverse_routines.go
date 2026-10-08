@@ -9,7 +9,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -68,7 +67,7 @@ func reverseProceduresRemoved(added difftypes.FunctionChanges) difftypes.Functio
 func reverseFunctionDiffs(
 	functionDiffs []difftypes.FunctionDiff,
 	current *catalog.Database,
-	dialect string,
+	prior *schemamodel.Database,
 ) []difftypes.FunctionDiff {
 	reversed := make([]difftypes.FunctionDiff, len(functionDiffs))
 	for i, functionDiff := range functionDiffs {
@@ -92,7 +91,7 @@ func reverseFunctionDiffs(
 			// map without reversing the operand would have the down direction
 			// re-apply the body it is undoing (stokaro/ptah#2315).
 			Desired: priorFunction(
-				current, dialect, functionDiff.FunctionName, functionDiff.CurrentSignature,
+				current, prior, functionDiff.FunctionName, functionDiff.CurrentSignature,
 			),
 			CurrentSignature: forwardRoutineSignature(functionDiff),
 		}
@@ -144,16 +143,16 @@ func sameDropIdentity(left, right *string) bool {
 // rewrote the wrong routine, and a rebuild dropped `f(n integer)` and never
 // created it again (stokaro/ptah#3288). The comparison records the signature
 // from this same catalog record, so the two agree by construction.
-func priorFunction(current *catalog.Database, dialect, name string, signature *string) schemamodel.Function {
-	if current == nil {
+func priorFunction(current *catalog.Database, prior *schemamodel.Database, name string, signature *string) schemamodel.Function {
+	if current == nil || prior == nil || len(current.Functions) != len(prior.Functions) {
 		return schemamodel.Function{}
 	}
-	for _, function := range current.Functions {
+	for i, function := range current.Functions {
 		if function.QualifiedName() == name && sameDropIdentity(function.DropIdentity(), signature) {
-			// One routine through the conversion every other prior object
-			// takes, so the restored declaration is spelled the same way.
-			single := &catalog.Database{Functions: []catalog.Function{function}}
-			return dbschematogo.ConvertDBSchemaToGoSchema(single, dialect).Functions[0]
+			// Conversion preserves routine order. Keep the catalog signature for
+			// overload selection and use the declaration already converted with
+			// this operation's selected runtime, including its feature facets.
+			return prior.Functions[i]
 		}
 	}
 	return schemamodel.Function{}

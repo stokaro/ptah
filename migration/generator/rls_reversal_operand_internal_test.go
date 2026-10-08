@@ -7,15 +7,18 @@ package generator
 // nothing is a plan that succeeds.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -50,15 +53,21 @@ func TestGenerateDownMigrationSQL_RecreatesAnRLSPolicyTheUpDirectionDropped(t *t
 	}
 
 	caps := capability.Postgres17()
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.RLSPoliciesRemoved, qt.HasLen, 1)
 	c.Assert(upDiff.RLSPoliciesAdded, qt.HasLen, 0)
 
-	up, err := generateUpMigrationSQL(upDiff, desired, platform.Postgres, caps)
+	up, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		upDiff, desired, platform.Postgres, caps,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, "DROP POLICY")
 
-	down, err := generateDownMigrationSQL(upDiff, desired, database, platform.Postgres, caps)
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, desired, database, platform.Postgres, caps)
 	c.Assert(err, qt.IsNil)
 	c.Assert(down, qt.Contains, "CREATE POLICY",
 		qt.Commentf("the rollback puts back the policy the up direction dropped\n%s", down))
@@ -104,7 +113,7 @@ func TestReverseSchemaDiff_ARolledBackRLSModificationRestoresThePriorPredicate(t
 // than carried across: an entry holding a policy nothing reads tells the next
 // reader that something does.
 //
-// It drives reverseSchemaDiffWithSchema rather than the helper underneath,
+// It drives reverseSchemaDiffWithPrior rather than the helper underneath,
 // which is the difference between pinning what the helper answers and pinning
 // that the reversal calls it. Nothing downstream renders differently either
 // way, so the helper is the only place this is observable AND the reversal is
@@ -120,7 +129,9 @@ func TestReverseSchemaDiff_ARolledBackRLSAdditionCarriesNoOperand(t *testing.T) 
 		}},
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, &schemamodel.Database{}, &catalog.Database{})
+	reversed := reverseForTest(t,
+		forward, &schemamodel.Database{}, &catalog.Database{}, "postgres",
+	)
 
 	c.Assert(reversed.RLSPoliciesRemoved, qt.HasLen, 1)
 	c.Assert(reversed.RLSPoliciesRemoved[0].PolicyName, qt.Equals, "tenant")

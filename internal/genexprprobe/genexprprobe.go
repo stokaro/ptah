@@ -8,14 +8,17 @@
 package genexprprobe
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/modelast"
 )
@@ -31,13 +34,23 @@ import (
 // database may legitimately already hold the schema being compared -- that is
 // what a dev database is for -- and creating a second table under the same name
 // would fail on the first schema that did.
-func For(dialect string, caps capability.Capabilities, declared *schemamodel.Database) ([]dbexprprobe.GeneratedExpressionProbe, error) {
+//
+// All probe tables are rendered in one selected batch. Missing output, reported
+// omissions, refusal, service failure, or cancellation returns no probes.
+func For(ctx context.Context, service renderer.Service, dialect string, caps capability.Capabilities, declared *schemamodel.Database) ([]dbexprprobe.GeneratedExpressionProbe, error) {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return nil, err
+	}
 	if declared == nil || !rewritesStoredExpressions(dialect) {
 		return nil, nil
 	}
 
 	var probes []dbexprprobe.GeneratedExpressionProbe
+	var nodes []ast.Node
 	for _, table := range declared.Tables {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		fields := fieldsForTable(declared, table)
 		desired := generatedColumnNames(fields)
 		if len(desired) == 0 {
@@ -52,17 +65,31 @@ func For(dialect string, caps capability.Capabilities, declared *schemamodel.Dat
 		// fresh value from FromTable, so renaming it here changes nothing the
 		// caller holds.
 		node.Name = probeTable
-		statement, err := renderCreateTable(dialect, caps, node)
-		if err != nil {
-			return nil, err
-		}
+		nodes = append(nodes, node)
 		probes = append(probes, dbexprprobe.GeneratedExpressionProbe{
 			Schema:     table.Schema,
 			Table:      table.Name,
 			ProbeTable: probeTable,
-			Create:     statement,
 			Generated:  desired,
 		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	result, err := renderer.Render(ctx, service, renderer.Request{Target: dialect, Capabilities: caps, Nodes: nodes})
+	if err != nil {
+		return nil, fmt.Errorf("render generated-expression probes: %w", err)
+	}
+	if len(result.Omissions) != 0 {
+		return nil, fmt.Errorf("%w: generated-expression probe rendering omitted declarations", ptaherr.ErrUnsupportedFeature)
+	}
+	for index, fragment := range result.Fragments {
+		// Oracle's driver refuses a terminator on a single statement.
+		statement := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(fragment), ";"))
+		if statement == "" {
+			return nil, fmt.Errorf("%w: generated-expression probe %s produced no SQL", renderer.ErrInvalidResult, probes[index].ProbeTable)
+		}
+		probes[index].Create = statement
 	}
 	return probes, nil
 }
@@ -93,16 +120,4 @@ func generatedColumnNames(fields []schemamodel.Field) []string {
 		}
 	}
 	return names
-}
-
-// renderCreateTable renders one node and strips the statement terminator, which
-// the Oracle driver refuses on a single statement.
-func renderCreateTable(dialect string, caps capability.Capabilities, node *ast.CreateTableNode) (string, error) {
-	rendered, err := builtin.RenderSQLWithCapabilities(dialect, caps, node)
-	if err != nil {
-		return "", fmt.Errorf("render generated-expression probe for %s: %w", node.Name, err)
-	}
-	statement := strings.TrimSpace(rendered)
-	statement = strings.TrimSuffix(statement, ";")
-	return strings.TrimSpace(statement), nil
 }

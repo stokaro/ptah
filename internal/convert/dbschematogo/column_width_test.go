@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -71,11 +73,11 @@ func TestConvert_CarriesTheWidthIntoTheDescription(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 				Tables: []catalog.Table{{
 					Name: "probe", Schema: "public", Columns: []catalog.Column{test.column},
 				}},
-			}, "")
+			}, "postgres", must.Must(builtin.New())))
 
 			c.Assert(convertedFieldTypes(converted.Fields), qt.DeepEquals, []string{test.wantType})
 		})

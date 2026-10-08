@@ -11,6 +11,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/envbool/envbooltest"
 )
@@ -306,6 +307,8 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 
 func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) {
 	c := qt.New(t)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
 	baseline := &catalog.Database{
 		Extensions: []catalog.Extension{{Name: "plpgsql"}},
 		Grants: []catalog.Grant{{
@@ -317,7 +320,7 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 		}},
 	}
 
-	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(baseline)
+	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), baseline, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(prepared, qt.Not(qt.Equals), baseline)
 	c.Assert(prepared.Extensions, qt.HasLen, 0)
@@ -325,7 +328,7 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 	c.Assert(baseline.Extensions, qt.HasLen, 1)
 	c.Assert(baseline.Grants, qt.HasLen, 1)
 
-	full, err := atlascompatpolicy.Full().PrepareInspectedSchema(baseline)
+	full, err := atlascompatpolicy.Full().PrepareInspectedSchema(t.Context(), baseline, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(full, qt.Equals, baseline)
 	c.Assert(full.Extensions, qt.HasLen, 1)

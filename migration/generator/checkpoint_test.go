@@ -8,7 +8,9 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/migration/generator"
 )
@@ -28,10 +30,9 @@ func TestGenerateCheckpointFromShadow_ReplaysHistoryIntoCumulativeSnapshot(t *te
 
 	shadowURL := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
-	up, down, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{
-		ShadowDatabaseURL: shadowURL,
-		MigrationsDir:     dir,
-		Dialect:           "sqlite",
+	up, down, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{Runtime: must.Must(builtin.New()), ShadowDatabaseURL: shadowURL,
+		MigrationsDir: dir,
+		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -66,11 +67,10 @@ func TestGenerateCheckpointFromShadow_UsesProvidedSnapshotInsteadOfPath(t *testi
 		)},
 	}
 
-	up, _, err := generator.GenerateCheckpointFromShadow(t.Context(), generator.CheckpointFromShadowOptions{
-		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
-		MigrationsDir:     reopenedDir,
-		MigrationsFS:      authorized,
-		Dialect:           "sqlite",
+	up, _, err := generator.GenerateCheckpointFromShadow(t.Context(), generator.CheckpointFromShadowOptions{Runtime: must.Must(builtin.New()), ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
+		MigrationsDir: reopenedDir,
+		MigrationsFS:  authorized,
+		Dialect:       "sqlite",
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -82,10 +82,9 @@ func TestGenerateCheckpointFromShadow_EmptyDirectoryErrors(t *testing.T) {
 	c := qt.New(t)
 
 	shadowURL := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
-	_, _, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{
-		ShadowDatabaseURL: shadowURL,
-		MigrationsDir:     t.TempDir(),
-		Dialect:           "sqlite",
+	_, _, err := generator.GenerateCheckpointFromShadow(context.Background(), generator.CheckpointFromShadowOptions{Runtime: must.Must(builtin.New()), ShadowDatabaseURL: shadowURL,
+		MigrationsDir: t.TempDir(),
+		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.ErrorMatches, `.*no migrations found.*`)
 }

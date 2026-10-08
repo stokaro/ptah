@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -39,7 +41,7 @@ func TestCompareWithDialect_MaterializedViewBodyMatchesCatalogReadback(t *testin
 			c := qt.New(t)
 			desired, database := materializedViewReadbackFixtures(test.schema, test.schema)
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -67,7 +69,7 @@ func TestCompareWithDialect_MaterializedViewWrongSchemaRelationStillDiffs(t *tes
 			c := qt.New(t)
 			desired, database := materializedViewReadbackFixtures(test.schema, "archive")
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
 			c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -100,7 +102,7 @@ func TestCompareWithDialect_MaterializedViewAliasedBodyMatchesCatalogReadback(t 
 
 	desired, database := aliasedMaterializedViewReadbackFixtures("mvqual", "mvqual")
 
-	diff := schemadiff.CompareWithDialect(desired, database, "clickhouse")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "clickhouse", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -113,7 +115,7 @@ func TestCompareWithDialect_MaterializedViewAliasedRelationSchemaStillDiffs(t *t
 
 	desired, database := aliasedMaterializedViewReadbackFixtures("mvqual", "archive")
 
-	diff := schemadiff.CompareWithDialect(desired, database, "clickhouse")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "clickhouse", must.Must(builtin.New())))
 
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")

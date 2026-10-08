@@ -13,11 +13,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/config"
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/root"
 	"ptah.run/migration/schemadiff"
 )
@@ -92,7 +94,7 @@ func TestIntrospectCommand_PostgresBrownfieldGoRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = conn.Info().Dialect
-	diff := schemadiff.CompareWithOptions(desired, live, compareOpts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, live, compareOpts, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 

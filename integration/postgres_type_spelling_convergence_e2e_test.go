@@ -11,11 +11,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -99,9 +101,9 @@ func TestPostgresTypeSpellingsConvergeE2E(t *testing.T) {
 	// against nothing would report no changes and pass.
 	c.Assert(readColumnCount(read, "spellings"), qt.Equals, len(postgresSpellings)+1)
 
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read, "postgres")
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "postgres", must.Must(builtin.New())))
 	diff, err := schemadiff.CompareWithDatabase(
-		ctx, conn, described, read, config.DefaultCompareOptions())
+		ctx, conn, described, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(modifiedColumnSummaries(diff), qt.HasLen, 0)

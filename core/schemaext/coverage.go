@@ -43,6 +43,7 @@ type KindCoverage struct {
 
 // SubjectCoverage overrides a kind-wide claim for one structured subject.
 // A facet uses its common owner identity; a feature object uses its own identity.
+// A table identity also records a namespace claim for its named children of Kind.
 type SubjectCoverage struct {
 	Kind      Kind              `json:"kind"`
 	Subject   objectidentity.ID `json:"subject"`
@@ -133,10 +134,27 @@ func (c Coverage) Lookup(kind Kind, subject objectidentity.ID) Knowledge {
 	if record, found := c.subjects[subjectKey{kind: kind, ref: subject.Key()}]; found {
 		return record.Knowledge
 	}
+	// Named feature objects use their value kind as their identity kind. Their
+	// Parent component names a table; common column/index facets do not take
+	// this path because their subject kind remains the common envelope kind.
+	if subject.Kind == objectidentity.Kind(kind) && !subject.Parent.Empty() {
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
+		if record, found := c.subjects[subjectKey{kind: kind, ref: parent.Key()}]; found {
+			return record.Knowledge
+		}
+	}
 	if record, found := c.kinds[kind]; found {
 		return record.Knowledge
 	}
 	return Knowledge{State: Uninspected, Reason: "this source did not describe the feature kind"}
+}
+
+// SubjectKnowledge returns only an explicit subject claim. A concrete observed
+// object can be known even when enumeration of its namespace was incomplete;
+// callers use this method to distinguish that case from an unreadable object.
+func (c Coverage) SubjectKnowledge(kind Kind, subject objectidentity.ID) (Knowledge, bool) {
+	record, found := c.subjects[subjectKey{kind: kind, ref: subject.Key()}]
+	return record.Knowledge, found
 }
 
 // Representation reports the captured source direction. The zero value has no

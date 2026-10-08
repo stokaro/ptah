@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/serverversion"
@@ -202,7 +203,14 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	// against a live database is about that database, and a routine body is
 	// read by its own engine's parser.
 	dialect := conn.Info().Dialect
-	database := dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect)
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	database, err := dbschematogo.ConvertDBSchemaToGoSchema(cmd.Context(), live, conn.Info().Dialect, runtime)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("convert database schema: %w", err))
+	}
 	document := lineageDocument{
 		Result:   schemalineage.DeriveForDialect(database, dialect),
 		Routines: schemalineage.DeriveRoutines(database, dialect),

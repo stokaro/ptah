@@ -11,11 +11,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -83,7 +85,7 @@ func TestPostgresCheckExpressionsConvergeE2E(t *testing.T) {
 
 	declared := checkDeclaration()
 	diff, err := schemadiff.CompareWithDatabase(
-		ctx, conn, declared, read, config.DefaultCompareOptions())
+		ctx, conn, declared, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
@@ -94,7 +96,7 @@ func TestPostgresCheckExpressionsConvergeE2E(t *testing.T) {
 	changed := checkDeclaration()
 	changed.Constraints[len(changed.Constraints)-1].CheckExpression = "rank > 5 OR rank = -1"
 	changedDiff, err := schemadiff.CompareWithDatabase(
-		ctx, conn, changed, read, config.DefaultCompareOptions())
+		ctx, conn, changed, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changedDiff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"ck_6"})

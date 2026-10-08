@@ -38,6 +38,7 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		}
 
 		contents, err := atlasmigrate.BuildMigrationFileContents(
+			t.Context(), selectedRuntime(c),
 			platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
 
 		c.Assert(err, qt.IsNil)
@@ -53,6 +54,7 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		nodes := []ast.Node{concurrentIndexNode("idx_users_email", "users", "email")}
 
 		contents, err := atlasmigrate.BuildMigrationFileContents(
+			t.Context(), selectedRuntime(c),
 			platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
 
 		c.Assert(err, qt.IsNil)
@@ -71,6 +73,7 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		}
 
 		contents, err := atlasmigrate.BuildMigrationFileContents(
+			t.Context(), selectedRuntime(c),
 			platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
 
 		c.Assert(err, qt.IsNil)
@@ -95,6 +98,7 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		}
 
 		contents, err := atlasmigrate.BuildMigrationFileContents(
+			t.Context(), selectedRuntime(c),
 			platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
 
 		c.Assert(err, qt.IsNil)
@@ -113,6 +117,7 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		}
 
 		contents, err := atlasmigrate.BuildMigrationFileContents(
+			t.Context(), selectedRuntime(c),
 			platform.MySQL, capability.ForDialect(platform.MySQL), defaultMigrateDiffFormat(), nodes)
 
 		c.Assert(err, qt.IsNil)
@@ -130,9 +135,11 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		}
 
 		first, err := atlasmigrate.BuildMigrationFileContents(
+			t.Context(), selectedRuntime(c),
 			platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), buildNodes())
 		c.Assert(err, qt.IsNil)
 		second, err := atlasmigrate.BuildMigrationFileContents(
+			t.Context(), selectedRuntime(c),
 			platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), buildNodes())
 		c.Assert(err, qt.IsNil)
 		c.Assert(first, qt.DeepEquals, second)
@@ -159,6 +166,7 @@ func TestBuildMigrationFileContents_LeadsWithTheEnumValueAddition(t *testing.T) 
 	}
 
 	contents, err := atlasmigrate.BuildMigrationFileContents(
+		t.Context(), selectedRuntime(c),
 		platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
 
 	c.Assert(err, qt.IsNil)
@@ -184,6 +192,7 @@ func TestBuildMigrationFileContents_TxModeRoundTrip(t *testing.T) {
 		concurrentIndexNode("idx_users_email", "users", "email"),
 	}
 	contents, err := atlasmigrate.BuildMigrationFileContents(
+		t.Context(), selectedRuntime(c),
 		platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
 	c.Assert(err, qt.IsNil)
 	c.Assert(contents, qt.HasLen, 2)

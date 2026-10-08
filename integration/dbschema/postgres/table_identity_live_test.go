@@ -12,6 +12,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/core/schemamodel"
@@ -128,7 +129,7 @@ func (f tableIdentityFixture) assertNothingPlannedForTheTables(c *qt.C) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(f.load(c), live, f.dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), f.load(c), live, f.dialect, must.Must(builtin.New())))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))

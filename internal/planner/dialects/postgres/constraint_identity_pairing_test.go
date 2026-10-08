@@ -1,10 +1,12 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -73,7 +75,10 @@ func widgetDeclaringScopeConstraint() *schemamodel.Database {
 
 func renderedPlan(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
 	c.Helper()
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

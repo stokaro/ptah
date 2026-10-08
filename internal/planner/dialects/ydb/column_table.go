@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemacapture"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbexternal"
@@ -101,7 +102,7 @@ func columnTTLStatement(name string, policy *ast.YDBTieredTTLSpec) ast.Node {
 
 // refuseColumnTTLShape checks the complete desired table, including changes
 // that remove a TTL column or its min-max index without changing the policy.
-func refuseColumnTTLShape(table difftypes.TableDeclaration) error {
+func refuseColumnTTLShape(table schemacapture.TableDeclaration) error {
 	spec := table.Table.YDBColumnTable
 	if spec == nil {
 		return nil

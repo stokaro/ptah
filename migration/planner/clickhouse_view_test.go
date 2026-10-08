@@ -1,13 +1,16 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -55,6 +58,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				test.diff,
 
 				platform.ClickHouse,
@@ -104,6 +108,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				test.diff,
 
 				platform.ClickHouse,
@@ -121,6 +126,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseDropsViewBeforeSourceTable(t 
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{
 			ViewsRemoved:  difftypes.ViewChanges{{Name: "analytics.active_users"}},
 			TablesRemoved: []string{"analytics.users"},
@@ -154,6 +160,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				&difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{
 
 					{Name: "analytics.a_dep", Body: test.dependentBody},
@@ -216,6 +223,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				test.diff,
 
 				platform.ClickHouse,
@@ -236,6 +244,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 func TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewCarriesItsBody(t *testing.T) {
 	c := qt.New(t)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "analytics.user_counts", Body: "SELECT count() FROM users"}}},
 
 		platform.ClickHouse,

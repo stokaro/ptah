@@ -26,7 +26,7 @@ func TestCompare_UsesDatabaseURLDialectForExternalSQL(t *testing.T) {
 	_, err := schemasource.Run(context.Background(), command)
 	c.Assert(err, qt.ErrorMatches, `parse schema command "go" output: unsupported CREATE OR ALTER outside SQL Server dialect at position \d+`)
 
-	_, err = schemaops.Compare(t.Context(), schemaops.CompareOptions{
+	_, err = schemaops.Compare(t.Context(), schemaops.CompareOptions{Runtime: selectedRuntime(c),
 		Commands:       []schemasource.Command{command},
 		DatabaseURL:    sqlServerDatabaseURL,
 		ConnectTimeout: time.Nanosecond,
@@ -38,7 +38,7 @@ func TestCompare_ValidatesVirtualDropToggleBeforeExternalSchema(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
 
-	_, err := schemaops.Compare(t.Context(), schemaops.CompareOptions{
+	_, err := schemaops.Compare(t.Context(), schemaops.CompareOptions{Runtime: selectedRuntime(c),
 		Commands:    []schemasource.Command{{Args: []string{"/path/that/does/not/exist"}}},
 		DatabaseURL: "sqlite://test.db",
 	})

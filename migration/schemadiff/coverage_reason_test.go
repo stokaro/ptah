@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -74,10 +76,11 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 			}}}
 			current := &catalog.Database{NotDescribed: test.notDescribed}
 
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
+			diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, current, nil, must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
-			c.Assert(undecided, qt.DeepEquals, []coverage.Object{{
+			c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{
 				Kind:       coverage.Extension,
 				Name:       "citext",
 				Reason:     test.wantReason,
@@ -103,10 +106,11 @@ func TestWithheldTableCarriesTheSchemaRecordsReason(t *testing.T) {
 		Provenance: coverage.Configured,
 	})}
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
+	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, current, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{{
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{
 		Kind:       coverage.Schema,
 		Name:       "extra.reports",
 		Reason:     coverage.OutsideScope,
@@ -133,9 +137,10 @@ func TestWithheldAdditionCarriesTheReasonOfTheRecordThatCoveredIt(t *testing.T) 
 		}).
 		With(coverage.Refused(coverage.Extension))}
 
-	_, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
+	_, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, current, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{{
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{
 		Kind:       coverage.Extension,
 		Name:       "citext",
 		Reason:     coverage.NotInspected,

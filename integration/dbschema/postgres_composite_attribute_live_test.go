@@ -9,6 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -114,7 +115,7 @@ func compareLiveComposites(
 	c.Helper()
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	return diff
 }
@@ -128,7 +129,10 @@ func applyLiveComposite(
 	declared *schemamodel.Database,
 ) {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 	for _, statement := range statements {

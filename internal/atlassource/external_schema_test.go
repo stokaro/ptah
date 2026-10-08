@@ -212,7 +212,7 @@ func TestResolveExternalSchema_HappyPath(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"))
 	c.Assert(err, qt.IsNil)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--dev-url",
 	})
@@ -232,7 +232,7 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("fail"))
 		c.Assert(err, qt.IsNil)
 
-		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Contains, `--to "env://src"`)
@@ -244,7 +244,7 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("empty"))
 		c.Assert(err, qt.IsNil)
 
-		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Contains, "produced empty output")
@@ -260,7 +260,7 @@ func TestResolveExternalSchemaCommandIsIsolatedPerResolve(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"))
 	c.Assert(err, qt.IsNil)
 
-	_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+	_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Sources[0].Command, qt.DeepEquals, schemasource.Command{

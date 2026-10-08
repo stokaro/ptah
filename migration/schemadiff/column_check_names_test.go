@@ -1,10 +1,12 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -55,7 +57,7 @@ func columnCheckCurrent() *catalog.Database {
 func TestCompare_AnUnnamedColumnCheckTakesTheServersName(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(columnCheckDesired(), columnCheckCurrent(), platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), columnCheckDesired(), columnCheckCurrent(), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -69,7 +71,7 @@ func TestCompare_AnUnnamedColumnCheckThatChangedIsPlanned(t *testing.T) {
 	desired := columnCheckDesired()
 	desired.Fields[0].Check = "a <= b"
 
-	diff := schemadiff.CompareWithDialect(desired, columnCheckCurrent(), platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, columnCheckCurrent(), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
 	c.Assert(diff.ConstraintsAdded[0].Name, qt.Equals, "e_check")
@@ -87,7 +89,7 @@ func TestCompareSchemas_AnUnnamedColumnCheckPairsWithItself(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareSchemas(columnCheckDesired(), columnCheckDesired(), dialect)
+			diff := must.Must(schemadiff.CompareSchemas(t.Context(), columnCheckDesired(), columnCheckDesired(), dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -108,7 +110,9 @@ func TestColumnCheck_RenderAndPlanNameTheChecksEntryPastIt(t *testing.T) {
 	statements, err := builtin.GetOrderedCreateStatements(desired, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	plan, err := planner.GenerateSchemaDiffSQLStatements(
-		schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres), platform.Postgres)
+		context.Background(), must.Must(builtin.New()),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New()))), platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, `CONSTRAINT "e_check1" CHECK (a > 0)`)

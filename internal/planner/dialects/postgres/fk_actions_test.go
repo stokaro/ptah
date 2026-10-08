@@ -1,11 +1,14 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -173,7 +176,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				tablesAdded := make(difftypes.TableChanges, 0, len(tt.desired.Tables))
 				for _, table := range tt.desired.Tables {
 					tablesAdded = append(tablesAdded,
-						difftypes.TableCreationFor(tt.desired, table, table.Name))
+						difftypes.TableCreationFor(tt.desired, table, table.Name, identifier.ForDialect("postgres")))
 				}
 				diff = &difftypes.SchemaDiff{
 					TablesAdded: tablesAdded,
@@ -185,7 +188,10 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				}
 			}
 
-			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, tt.desired))
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)

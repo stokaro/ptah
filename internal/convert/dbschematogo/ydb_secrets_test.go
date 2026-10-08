@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -18,9 +20,9 @@ import (
 func TestConvert_CarriesASecretAsADeclarationNamingItsDefaultVariable(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Secrets: []catalog.Secret{{Name: "pg_password"}, {Name: "s3-key", Schema: "ext/aws"}},
-	}, "ydb")
+	}, "ydb", must.Must(builtin.New())))
 
 	c.Assert(converted.Secrets, qt.DeepEquals, []schemamodel.Secret{
 		{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG_PASSWORD"},

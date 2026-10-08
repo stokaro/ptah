@@ -1,6 +1,7 @@
 package atlascompat
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/convert/dbschematogo"
@@ -83,8 +85,8 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 // SchemaToAST converts Ptah's Go schema IR into SQL AST statements for the
 // selected target platform.
 //
-// The conversion never fails and refuses nothing: each declared object is
-// appended as its own statement or carried inline by the statement that
+// Each supported declared object is appended as its own statement or carried
+// inline by the statement that
 // declares it. Which of the two applies is a deliberate per-platform
 // modeling decision rather than an accident — a dialect that has no
 // standalone enum type takes the enum on the referencing column instead, so
@@ -97,8 +99,12 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 // statement can be rendered on a concrete dialect is the renderer's
 // capability decision, made downstream where a refusal can be reported.
 //
+// Invalid identities and feature state without a lowering path return an error
+// and a nil list. No partial statement list is returned. Feature coverage records
+// source knowledge; they do not become SQL or authorize deletion of absent objects.
+//
 // Canonical platform names are declared in core/platform.
-func SchemaToAST(database schemamodel.Database, targetPlatform string) *ast.StatementList {
+func SchemaToAST(database schemamodel.Database, targetPlatform string) (*ast.StatementList, error) {
 	return modelast.CollectDatabase(database, targetPlatform)
 }
 
@@ -109,13 +115,10 @@ func SchemaToAST(database schemamodel.Database, targetPlatform string) *ast.Stat
 // the IR, which is what lets a plan target the introspected database itself
 // instead of a reduced copy of it.
 //
-// dbSchema must be non-nil: there is no error return, so a nil argument is a
-// programming error rather than a case this function reports.
-func DBSchemaToGoSchema(dbSchema *catalog.Database) *schemamodel.Database {
-	// No dialect: this signature is the stable one and takes none. The shared
-	// evidence answers only what every server does for an empty dialect, which
-	// is what this entry point has always produced.
-	return dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
+// The caller supplies the target and selected feature runtime. Conversion
+// errors, including provider failures and cancellation, return no schema.
+func DBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect string, runtime schemaext.ConversionRuntime) (*schemamodel.Database, error) {
+	return dbschematogo.ConvertDBSchemaToGoSchema(ctx, dbSchema, dialect, runtime)
 }
 
 // SumEntry is one migration file and its content hash.

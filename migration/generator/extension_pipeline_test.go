@@ -1,12 +1,15 @@
 package generator_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -134,11 +137,16 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			c := qt.New(t)
 
 			// 1. Calculate schema diff
-			diff := schemadiff.Compare(tt.generatedSchema, tt.databaseSchema)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				tt.generatedSchema, tt.databaseSchema, "postgres", must.Must(builtin.New()),
+			))
 			c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("Expected schema changes to be detected"))
 
 			// 2. Generate up migration SQL
-			upSQL, err := planner.GenerateSchemaDiffSQL(diff, "postgres")
+			upSQL, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			upSQL = legacyRenderedSQL(upSQL)
 
@@ -159,7 +167,10 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 				}
 			}
 
-			downSQL, err := planner.GenerateSchemaDiffSQL(reverseDiff, "postgres")
+			downSQL, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				reverseDiff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -204,7 +215,9 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	}
 
 	// 1. Calculate initial diff (should add extensions)
-	upDiff := schemadiff.Compare(generatedSchema, databaseSchema)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		generatedSchema, databaseSchema, "postgres", must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.ExtensionsAdded.Names(), qt.HasLen, 2)
 	c.Assert(upDiff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 
@@ -217,7 +230,9 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	}
 
 	// 3. Calculate down diff (should remove extensions)
-	downDiff := schemadiff.Compare(&schemamodel.Database{Extensions: make([]schemamodel.Extension, 0)}, simulatedDatabaseAfterUp)
+	downDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		&schemamodel.Database{Extensions: make([]schemamodel.Extension, 0)}, simulatedDatabaseAfterUp, "postgres", must.Must(builtin.New()),
+	))
 	c.Assert(downDiff.ExtensionsAdded.Names(), qt.HasLen, 0)
 	c.Assert(downDiff.ExtensionsRemoved.Names(), qt.HasLen, 2)
 

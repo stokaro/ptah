@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -88,7 +91,10 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := planner.GenerateSchemaDiffSQLStatements(modifiedColumnOn(test.table, test.desired, test.changes), platform.Postgres)
+			got, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				modifiedColumnOn(test.table, test.desired, test.changes), platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -131,7 +137,10 @@ func TestGenerateSchemaDiffSQLStatements_ColumnUniqueAddsNothing(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := planner.GenerateSchemaDiffSQLStatements(modifiedColumnOn("flags", test.desired, test.changes), platform.Postgres)
+			got, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				modifiedColumnOn("flags", test.desired, test.changes), platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)

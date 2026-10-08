@@ -1,13 +1,16 @@
 package sqlite_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	sqliteplanner "ptah.run/internal/planner/dialects/sqlite"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -99,7 +102,10 @@ func TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines(t *testing.T) {
 
 			p := sqliteplanner.NewWithCapabilities(test.caps)
 
-			nodes, err := p.GenerateMigrationAST(withDeclaredTable(test.diff, test.desired))
+			nodes, err := p.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTable(test.diff, test.desired),
+			)
 
 			c.Assert(errorText916(err), qt.Contains, test.wantError)
 			// The arithmetic half of the assertion, which the empty wantError

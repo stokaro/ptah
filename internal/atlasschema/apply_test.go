@@ -4,15 +4,14 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/migration/migrator"
 )
 
@@ -31,8 +30,8 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
-		ToURLs: []string{"file://" + schemaPath},
-	})
+		ToURLs:  []string{"file://" + schemaPath},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
@@ -59,7 +58,7 @@ CREATE TABLE apply_skip (
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
 		ToURLs:  []string{"file://" + schemaPath},
 		Exclude: []string{"apply_skip"},
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
@@ -88,7 +87,7 @@ CREATE TABLE apply_skip (
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
 		ToURLs:  []string{"file://" + schemaPath},
 		Exclude: []string{"apply_skip"},
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
@@ -112,8 +111,8 @@ CREATE TABLE users (
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
-		ToURLs: []string{"file://" + schemaPath},
-	})
+		ToURLs:  []string{"file://" + schemaPath},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsFalse)
@@ -124,8 +123,8 @@ func TestPlanApply_FailurePath(t *testing.T) {
 	t.Run("nil connection", func(t *testing.T) {
 		c := qt.New(t)
 		plan, err := atlasschema.PlanApply(t.Context(), nil, atlasschema.ApplyOptions{
-			ToURLs: []string{"file:///schema.sql"},
-		})
+			ToURLs:  []string{"file:///schema.sql"},
+			Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, "schema apply planning requires database connection")
 		c.Assert(plan.HasChanges(), qt.IsFalse)
 		c.Assert(plan.SQL(), qt.Equals, "")
@@ -136,7 +135,7 @@ func TestPlanApply_FailurePath(t *testing.T) {
 		conn := connectSQLite(c, filepath.Join(t.TempDir(), "empty-to.db"))
 		defer dbschema.CloseAndWarn(conn)
 
-		plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{})
+		plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, "schema apply planning requires desired schema URLs")
 		c.Assert(plan.HasChanges(), qt.IsFalse)
 		c.Assert(plan.SQL(), qt.Equals, "")
@@ -157,10 +156,10 @@ CREATE TABLE runtime_users (
 	conn := connectSQLite(c, dbPath)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		DevURL: "sqlite://dev.db",
-		ToURLs: []string{"file://" + schemaPath},
-		TxMode: migrator.MigrationTxModeAll,
-	})
+		DevURL:  "sqlite://dev.db",
+		ToURLs:  []string{"file://" + schemaPath},
+		TxMode:  migrator.MigrationTxModeAll,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 	c.Assert(plan.SQL(), qt.Contains, "runtime_users")
@@ -185,11 +184,11 @@ CREATE TABLE runtime_dry_run (
 	conn := connectSQLite(c, dbPath)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		DevURL: "sqlite://dev.db",
-		ToURLs: []string{"file://" + schemaPath},
-		TxMode: migrator.MigrationTxModeAll,
-		DryRun: true,
-	})
+		DevURL:  "sqlite://dev.db",
+		ToURLs:  []string{"file://" + schemaPath},
+		TxMode:  migrator.MigrationTxModeAll,
+		DryRun:  true,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 
@@ -215,10 +214,10 @@ CREATE TABLE runtime_synced (
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		DevURL: "sqlite://dev.db",
-		ToURLs: []string{"file://" + schemaPath},
-		TxMode: migrator.MigrationTxModeAll,
-	})
+		DevURL:  "sqlite://dev.db",
+		ToURLs:  []string{"file://" + schemaPath},
+		TxMode:  migrator.MigrationTxModeAll,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsFalse)
 	c.Assert(plan.SQL(), qt.Equals, "")
@@ -233,10 +232,10 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 	t.Run("nil connection", func(t *testing.T) {
 		c := qt.New(t)
 		plan, err := atlasschema.PrepareApply(t.Context(), nil, atlasschema.ApplyRuntimeOptions{
-			DevURL: "sqlite://dev.db",
-			ToURLs: []string{"file:///schema.sql"},
-			TxMode: migrator.MigrationTxModeAll,
-		})
+			DevURL:  "sqlite://dev.db",
+			ToURLs:  []string{"file:///schema.sql"},
+			TxMode:  migrator.MigrationTxModeAll,
+			Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, "schema apply requires database connection")
 		c.Assert(plan.HasChanges(), qt.IsFalse)
 		c.Assert(plan.SQL(), qt.Equals, "")
@@ -248,10 +247,10 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 		defer dbschema.CloseAndWarn(conn)
 
 		plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-			DevURL: "postgres://localhost/dev",
-			ToURLs: []string{"file:///schema.sql"},
-			TxMode: migrator.MigrationTxModeAll,
-		})
+			DevURL:  "postgres://localhost/dev",
+			ToURLs:  []string{"file:///schema.sql"},
+			TxMode:  migrator.MigrationTxModeAll,
+			Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
 		c.Assert(plan.HasChanges(), qt.IsFalse)
 		c.Assert(plan.SQL(), qt.Equals, "")
@@ -360,23 +359,4 @@ func TestFormatMigrationSQL_HappyPath(t *testing.T) {
 	c.Assert(sqlText, qt.Equals, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n"+
 		"CREATE INDEX users_id_idx ON users (id);\n"+
 		"-- NOTE: a planner note with nothing after it\n")
-}
-
-func connectSQLite(c *qt.C, dbPath string) *dbschema.DatabaseConnection {
-	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
-	c.Assert(err, qt.IsNil)
-	return conn
-}
-
-func sqliteTableExists(c *qt.C, dbPath, table string) bool {
-	c.Helper()
-	conn := connectSQLite(c, dbPath)
-	defer dbschema.CloseAndWarn(conn)
-
-	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
-	c.Assert(err, qt.IsNil)
-	return slices.ContainsFunc(schema.Tables, func(dbTable catalog.Table) bool {
-		return dbTable.Name == table
-	})
 }

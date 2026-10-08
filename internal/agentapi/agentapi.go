@@ -31,6 +31,9 @@ import (
 	"context"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -194,6 +197,9 @@ func validateSchema(ctx context.Context, req ValidateSchemaRequest) (*ValidateSc
 		// A source that will not load is a validation result rather than a
 		// transport failure: the caller asked whether the schema is sound, and
 		// "it does not parse for this target" answers that.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return &ValidateSchemaResponse{
 			Dialect: dialect,
 			Notice:  UntrustedContentNotice,
@@ -204,7 +210,14 @@ func validateSchema(ctx context.Context, req ValidateSchemaRequest) (*ValidateSc
 			}},
 		}, nil
 	}
-	found := schemavalidate.Collect(database, dialect)
+	runtime, err := builtin.New()
+	if err != nil {
+		return nil, err
+	}
+	found, err := schemavalidate.Collect(ctx, runtime, database, dialect)
+	if err != nil {
+		return nil, err
+	}
 	response := &ValidateSchemaResponse{
 		Dialect: dialect,
 		Notice:  UntrustedContentNotice,
@@ -256,13 +269,19 @@ func renderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaRe
 	if err != nil {
 		return nil, err
 	}
-	statements, err := builtin.GetOrderedCreateStatements(database, dialect)
+	runtime, err := builtin.New()
+	if err != nil {
+		return nil, err
+	}
+	rendered, err := renderer.RenderSchema(ctx, runtime, renderer.SchemaRequest{
+		Target: dialect, Schema: database, Capabilities: capability.ForDialect(dialect), Identifiers: identifier.ForDialect(dialect),
+	})
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeRenderFailed, "render %s: %w", dialect, err)
 	}
 	return &RenderSchemaResponse{
 		Dialect:    dialect,
-		Statements: statements,
+		Statements: rendered.Statements,
 		Notice:     UntrustedContentNotice,
 	}, nil
 }

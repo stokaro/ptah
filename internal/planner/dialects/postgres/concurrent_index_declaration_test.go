@@ -1,9 +1,11 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -52,7 +54,10 @@ func TestPlanner_ADeclarationDoesNotDecideTheConcurrentBuild(t *testing.T) {
 	t.Run("no policy and no ref keeps plain CREATE INDEX", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 		c.Assert(err, qt.IsNil)
 		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -69,7 +74,10 @@ func TestPlanner_ADeclarationDoesNotDecideTheConcurrentBuild(t *testing.T) {
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 		nodes, err := postgres.NewWithCapabilities(caps).
 			WithConcurrentIndexes().
-			GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 		c.Assert(err, qt.IsNil)
 		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -86,7 +94,10 @@ func TestPlanner_ADeclarationDoesNotDecideTheConcurrentBuild(t *testing.T) {
 		ref := difftypes.IndexRef{Name: "idx_users_email", TableName: "users"}
 		nodes, err := postgres.New().
 			WithConcurrentIndexRefs(ref).
-			GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 		c.Assert(err, qt.IsNil)
 		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)

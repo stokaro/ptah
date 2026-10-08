@@ -28,14 +28,17 @@
 package clickhouse
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
@@ -91,7 +94,16 @@ func (p *Planner) capabilities() capability.Capabilities {
 // each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
 // `schema render` produces for the same model. Plain-view, role and grant nodes
 // are executable and retain what they declare.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) (plannedNodes []ast.Node, planErr error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			plannedNodes, planErr = nil, err
+		}
+	}()
+
 	if err := schemaprecondition.RefuseServerSchemas(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
@@ -107,7 +119,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseYDBObjects(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseChangefeedChanges(platform.ClickHouse, diff); err != nil {
+	if err := schemaprecondition.RefuseFeatureChanges(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(platform.ClickHouse, diff); err != nil {

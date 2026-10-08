@@ -55,7 +55,7 @@ func columnHashClause(spec *ast.YDBColumnTableSpec) string {
 func columnTableShape(node *ast.CreateTableNode, key []string, types map[string]string) error {
 	spec := node.YDBColumnTable
 	subject := fmt.Sprintf("column table %q", node.Name)
-	if !node.YDBPartitioning.IsZero() || len(node.YDBColumnFamilies) > 0 || len(node.Changefeeds) > 0 {
+	if !node.YDBPartitioning.IsZero() || len(node.YDBColumnFamilies) > 0 || node.OwnedObjects.Len() > 0 {
 		return refuseFact(subject, "row-table partitioning, column families and changefeeds cannot be applied to a column table")
 	}
 	for _, constraint := range node.Constraints {

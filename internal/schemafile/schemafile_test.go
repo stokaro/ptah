@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/schemafile"
@@ -119,7 +121,7 @@ table "users" {
 	db, err := schemafile.Load(path, schemafile.Options{})
 	c.Assert(err, qt.IsNil)
 
-	got := goschematodb.ToDBSchema(db, platform.Postgres)
+	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(got.Tables, qt.HasLen, 1)
 	c.Assert(got.Tables[0].Name, qt.Equals, "users")

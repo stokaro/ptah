@@ -10,12 +10,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -85,7 +87,7 @@ func TestOracleDeferrableKeysConvergeE2E(t *testing.T) {
 		"PRIMARY KEY deferrable deferred",
 		"UNIQUE deferrable immediate",
 	})
-	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil)
+	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(settled.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(settled.ConstraintsRemoved, qt.HasLen, 0)
@@ -110,10 +112,12 @@ func applyOraclePlan(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnec
 	c.Helper()
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 	for _, statement := range statements {

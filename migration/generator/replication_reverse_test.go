@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -59,13 +60,13 @@ func TestPlanBidirectionalSchemaDiff_ReplicationsRollBack(t *testing.T) {
 		{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 	}}}}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "L", Name: "log"}}},
-		CurrentSchema: current,
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB262(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "L", Name: "log"}}},
+			CurrentSchema: current,
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB262(),
+		})
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 

@@ -11,11 +11,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	moderncsqlite "modernc.org/sqlite"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/sqlite"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -330,8 +332,11 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	initial, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	diff := schemadiff.CompareWithDialect(desired, initial, platform.SQLite)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLite)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, initial, platform.SQLite, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(statements) > 0, qt.IsTrue)
 
@@ -345,7 +350,7 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 
 	actual, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	secondDiff := schemadiff.CompareWithDialect(desired, actual, platform.SQLite)
+	secondDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, actual, platform.SQLite, must.Must(builtin.New())))
 	c.Assert(secondDiff.HasChanges(), qt.IsFalse, qt.Commentf("unexpected SQLite drift: %+v", secondDiff))
 }
 

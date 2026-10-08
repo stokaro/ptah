@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -89,7 +90,7 @@ func TestWriteJSONReport(t *testing.T) {
 func TestAssessDriftGradesAnUndecidedObject(t *testing.T) {
 	tests := []struct {
 		name        string
-		undecided   []coverage.Object
+		undecided   schemadiff.Diagnostics
 		severity    string
 		useExitCode bool
 		wantFailed  bool
@@ -121,7 +122,7 @@ func TestAssessDriftGradesAnUndecidedObject(t *testing.T) {
 		},
 		{
 			name:        "nothing withheld",
-			undecided:   nil,
+			undecided:   schemadiff.Diagnostics{},
 			severity:    severityAll,
 			useExitCode: true,
 			wantFailed:  false,
@@ -159,8 +160,8 @@ func TestWriteTextReportNamesAnUndecidedObject(t *testing.T) {
 Failure threshold: all. Failing: true.
 
 Undecided:
-- role "reporter"
 - role "auditor"
+- role "reporter"
 
 Findings:
 - undecided: 2 (warning)
@@ -180,7 +181,7 @@ func TestWriteGitHubActionsReportAnnotatesAnUndecidedObject(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Equals, "::error title=Ptah schema drift::No schema drift found, but 1 declared object"+
 		" could not be decided; highest severity: warning; failure threshold: all\n"+
-		"::error title=Ptah undecided object::role \"reporter\" could not be checked\n"+
+		"::error title=Ptah undecided object::role \"reporter\" could not be checked: the database does not describe role objects because the read was refused the catalog that would have listed them\n"+
 		"::error title=Ptah drift finding::undecided: 1 (warning)\n")
 }
 
@@ -196,24 +197,26 @@ func TestWriteJSONReportCarriesTheUndecidedObjects(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Contains, `"drift": false,
   "failed": true,`)
-	c.Assert(buf.String(), qt.Contains, `"undecided": [
-    {
-      "kind": "role",
-      "name": "reporter",
-      "reason": "not-inspected",
-      "provenance": "observed"
-    }
-  ],`)
+	c.Assert(buf.String(), qt.Contains, `"undecided": {
+    "common": [
+      {
+        "kind": "role",
+        "name": "reporter",
+        "reason": "not-inspected",
+        "provenance": "observed"
+      }
+    ]
+  },`)
 }
 
 // undecidedRoles is what the comparison withholds for declared roles a read
 // was refused the catalog of.
-func undecidedRoles(names ...string) []coverage.Object {
+func undecidedRoles(names ...string) schemadiff.Diagnostics {
 	objects := make([]coverage.Object, 0, len(names))
 	for _, name := range names {
 		object := coverage.Refused(coverage.Role)
 		object.Name = name
 		objects = append(objects, object)
 	}
-	return objects
+	return schemadiff.Diagnostics{Common: objects}
 }

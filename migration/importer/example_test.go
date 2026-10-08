@@ -1,6 +1,7 @@
 package importer_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/importer"
 )
 
@@ -24,7 +27,7 @@ func ExampleImport() {
 		"000002_add_email.down.sql":    {Data: []byte("ALTER TABLE users DROP COLUMN email;\n")},
 	}
 
-	result := must.Must(importer.Import(source, nil, "migrations", importer.Options{DryRun: true}))
+	result := must.Must(importer.Import(context.Background(), source, nil, "migrations", importer.Options{DryRun: true}))
 	for _, name := range result.Files {
 		fmt.Println(name)
 	}
@@ -51,7 +54,7 @@ func ExampleImport_partialRefused() {
 	outDir := must.Must(os.MkdirTemp("", "importer-example"))
 	defer os.RemoveAll(outDir)
 
-	_, err := importer.Import(source, nil, outDir, importer.Options{})
+	_, err := importer.Import(context.Background(), source, nil, outDir, importer.Options{})
 
 	if partial, ok := errors.AsType[*importer.PartialImportError](err); ok {
 		for _, declined := range partial.Declined {
@@ -63,11 +66,11 @@ func ExampleImport_partialRefused() {
 	// 000002_add_email.sql: its name is not a golang-migrate migration file name (<version>_<name>.up.sql / .down.sql)
 }
 
-// ExampleWithDialect converts a Liquibase typed change, which carries no SQL of
-// its own. The parser WithDialect returns renders the change for the dialect it
+// ExampleWithRendering converts a Liquibase typed change, which carries no SQL of
+// its own. The parser WithRendering returns renders the change for the dialect it
 // was given, and derives the rollback Liquibase would: the changeset declares
 // none, so the down SQL drops the table the up SQL creates.
-func ExampleWithDialect() {
+func ExampleWithRendering() {
 	source := fstest.MapFS{"changelog.xml": {Data: []byte(`<databaseChangeLog>
   <changeSet id="1" author="alice">
     <createTable tableName="users">
@@ -77,12 +80,12 @@ func ExampleWithDialect() {
 </databaseChangeLog>`)}}
 
 	parser := must.Must(importer.ParserByName("liquibase"))
-	parser, err := importer.WithDialect(parser, "postgres")
+	parser, err := importer.WithRendering(parser, "postgres", capability.ForDialect("postgres"), must.Must(builtin.New()))
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	parsed, err := parser.Parse(source)
+	parsed, err := parser.Parse(context.Background(), source)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -118,7 +121,7 @@ func ExampleWithLiquibaseDBMS() {
 		fmt.Println(err)
 		return
 	}
-	parsed, err := parser.Parse(source)
+	parsed, err := parser.Parse(context.Background(), source)
 	if err != nil {
 		fmt.Println(err)
 		return

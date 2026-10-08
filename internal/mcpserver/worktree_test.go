@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpolicy"
@@ -134,7 +136,7 @@ func workspaceAt(c *qt.C, root string) workspaceFixture {
 		}},
 	})
 	c.Assert(err, qt.IsNil)
-	gates, err := agentgate.New(agentgate.Options{Dialect: platform.Postgres})
+	gates, err := agentgate.New(agentgate.Options{Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Workspace:   workspace,

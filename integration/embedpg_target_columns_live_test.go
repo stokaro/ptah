@@ -19,8 +19,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedpg"
@@ -165,7 +168,7 @@ func targetColumnsDatabase(
 	// The run tables, because Target.Commit writes the run's progress in the
 	// same transaction as the vectors -- which is the point of that design and
 	// not something a test gets to opt out of.
-	c.Assert(embedpg.NewStore(db).EnsureSchema(ctx), qt.IsNil)
+	c.Assert(embedpg.NewStore(db).EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
 	return db, table
 }
 

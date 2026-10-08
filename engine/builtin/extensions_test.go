@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/engine/builtin/internal/dialects/mssql"
@@ -31,7 +32,7 @@ type extensionFixture struct {
 }
 
 func extensionFixtures() []extensionFixture {
-	feed := ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
 	grown := feed.Clone()
 	grown.RetentionPeriod = "PT2H"
 	return []extensionFixture{

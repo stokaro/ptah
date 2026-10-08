@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/engine/builtin"
@@ -300,7 +301,7 @@ func readAndRenderSQLite(t *testing.T, db *sql.DB) []string {
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
-	statements, err := builtin.GetOrderedCreateStatements(dbschematogo.ConvertDBSchemaToGoSchema(schema, "sqlite"), "sqlite")
+	statements, err := builtin.GetOrderedCreateStatements(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "sqlite", must.Must(builtin.New()))), "sqlite")
 	if err != nil {
 		t.Fatalf("render schema: %v", err)
 	}

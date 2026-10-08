@@ -1,17 +1,20 @@
 package reusable_components_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/atlascompat"
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/lint"
@@ -54,11 +57,15 @@ type User struct {
 	db, err := goschema.ParseFS(fsys, "models")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := builtin.GetOrderedCreateStatements(db, "sqlite")
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	rendered, err := renderer.RenderSchema(t.Context(), runtime, renderer.SchemaRequest{
+		Target: "sqlite", Schema: db, Capabilities: capability.ForDialect("sqlite"),
+	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.HasLen, 1)
-	c.Assert(statements[0], qt.Contains, `CREATE TABLE "users"`)
+	c.Assert(rendered.Statements, qt.HasLen, 1)
+	c.Assert(rendered.Statements[0], qt.Contains, `CREATE TABLE "users"`)
 }
 
 func TestAtlasHCLToSQL(t *testing.T) {
@@ -78,7 +85,8 @@ table "users" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	list := atlascompat.SchemaToAST(*db, "postgres")
+	list, err := atlascompat.SchemaToAST(*db, "postgres")
+	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", list.Statements...)
 
 	c.Assert(err, qt.IsNil)
@@ -99,8 +107,11 @@ func TestDiffAndPlan(t *testing.T) {
 	}
 	live := &catalog.Database{}
 
-	diff := schemadiff.CompareWithDialect(desired, live, "sqlite")
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, live, "sqlite", must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "sqlite",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)

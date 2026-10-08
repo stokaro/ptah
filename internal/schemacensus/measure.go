@@ -1,13 +1,17 @@
 package schemacensus
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	identifiers "ptah.run/core/platform/identifier"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/internal/ydbflags"
 )
@@ -40,8 +44,26 @@ func (o Observation) Observed() bool { return len(o.Cells) > 0 }
 // a declaration has read it, which is the disposition this package calls
 // rendering-or-refusing rather than dropping; what it must not do is answer the
 // same way with the field and without it.
-func Measure() []Observation {
-	return measure(renderOne)
+func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation, error) {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return nil, err
+	}
+	var failure error
+	measured := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) string {
+		if failure != nil {
+			return ""
+		}
+		var rendered string
+		rendered, failure = renderOne(ctx, service, schema, cell)
+		return rendered
+	})
+	if failure != nil {
+		return nil, failure
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return measured, nil
 }
 
 // measure is the shared body of [Measure] and [MeasurePlan].
@@ -126,12 +148,15 @@ func everyCell(
 }
 
 // renderOne is the shipping render path for one cell.
-func renderOne(schema schemamodel.Database, cell capabilityprobe.Cell) string {
-	statements, err := RenderStatements(schema, cell)
+func renderOne(ctx context.Context, service renderer.SchemaService, schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
+	statements, err := RenderStatements(ctx, service, schema, cell)
 	if err != nil {
-		return "refused: " + err.Error()
+		if !schemaRenderRefusal(err) {
+			return "", err
+		}
+		return "refused: " + err.Error(), nil
 	}
-	return strings.Join(statements, "\n")
+	return strings.Join(statements, "\n"), nil
 }
 
 // RenderStatements is the same render, answering with the statements rather
@@ -142,16 +167,27 @@ func renderOne(schema schemamodel.Database, cell capabilityprobe.Cell) string {
 // render: two call sites building their own would let the guard measure a
 // schema the census never renders.
 func RenderStatements(
+	ctx context.Context,
+	service renderer.SchemaService,
 	schema schemamodel.Database, cell capabilityprobe.Cell,
 ) ([]string, error) {
 	finalized := deepCopyDatabase(schema)
 	schemamodel.Finalize(&finalized)
-	return builtin.GetOrderedCreateStatementsWithCapabilities(
-		&finalized,
-		cell.Dialect,
-		cell.Preset(),
-	)
+	rendered, err := renderer.RenderSchema(ctx, service, renderer.SchemaRequest{
+		Target: cell.Dialect, Schema: &finalized, Capabilities: cell.Preset(), Identifiers: identifiers.ForDialect(cell.Dialect),
+	})
+	return rendered.Statements, err
 }
 
 // CellName is how an observation names one declared release line.
 func CellName(cell capabilityprobe.Cell) string { return cell.Dialect + "-" + cell.Line }
+
+// schemaRenderRefusal separates a declaration the selected implementation cannot
+// interpret from a failed measurement. Unknown model codecs are an intentional
+// fixture: the host refuses them before it dispatches to a rendering provider.
+// Both census surfaces use this predicate so an operational failure cannot count
+// as a render-or-refuse observation on only one of them.
+func schemaRenderRefusal(err error) bool {
+	_, refused := errors.AsType[*renderer.SchemaRefusalError](err)
+	return refused || errors.Is(err, schemaext.ErrUnknownCodec)
+}

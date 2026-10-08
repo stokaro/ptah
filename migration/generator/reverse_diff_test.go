@@ -1,10 +1,12 @@
 package generator
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -86,7 +88,9 @@ func TestReverseSchemaDiff_Extensions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := reverseSchemaDiff(tt.input)
+			result := reverseForTest(t,
+				tt.input, nil, nil, "postgres",
+			)
 
 			c.Assert(result.ExtensionsAdded.Names(), qt.DeepEquals, tt.expected.ExtensionsAdded.Names())
 			c.Assert(result.ExtensionsRemoved.Names(), qt.DeepEquals, tt.expected.ExtensionsRemoved.Names())
@@ -165,7 +169,8 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 	}
 
 	// Generate down migration SQL
-	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, generatedSchema, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 	downSQL = legacyRenderedSQL(downSQL)
@@ -246,7 +251,8 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 	}
 
 	// Generate down migration SQL
-	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, generatedSchema, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -310,7 +316,9 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	// Verify all reversals
 	c.Assert(result.TablesAdded.Names(), qt.DeepEquals, input.TablesRemoved)
@@ -366,7 +374,8 @@ func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_accounts"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_tasks"}},
 	}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
 	c.Assert(err, qt.IsNil)
@@ -381,7 +390,8 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_accounts"}, {Name: "ptah_fk_order_memberships"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_tasks"}},
 	}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
 	c.Assert(err, qt.IsNil)
@@ -414,9 +424,10 @@ func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforePar
 			},
 		},
 	}
-	upDiff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(schema, "app.accounts", "app.projects")}
+	upDiff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "app.accounts", "app.projects")}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, &catalog.Database{}, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS app.projects", "DROP TABLE IF EXISTS app.accounts")
@@ -428,9 +439,12 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKChainInDependencyOrder(t *te
 			c := qt.New(t)
 			schema := fkOrderSchema()
 			schemamodel.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
+			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				schema, &catalog.Database{}, dialect, must.Must(builtin.New()),
+			))
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
+			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -448,9 +462,12 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKDiamondInDependencyOrder(t *
 			c := qt.New(t)
 			schema := fkOrderSchema()
 			schemamodel.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
+			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				schema, &catalog.Database{}, dialect, must.Must(builtin.New()),
+			))
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
+			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -471,9 +488,12 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyMutualFKCycleTogether(t *testi
 			c := qt.New(t)
 			schema := mutualFKCycleSchema()
 			schemamodel.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
+			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				schema, &catalog.Database{}, dialect, must.Must(builtin.New()),
+			))
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
+			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -493,8 +513,13 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 		},
 	}
 
-	downDiff := reverseSchemaDiff(upDiff)
-	nodes, err := postgres.New().GenerateMigrationAST(downDiff)
+	downDiff := reverseForTest(t,
+		upDiff, nil, nil, "postgres",
+	)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		downDiff,
+	)
 	c.Assert(err, qt.IsNil)
 	downSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -523,7 +548,9 @@ func TestReverseSchemaDiff_TableModifications(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	c.Assert(result.TablesModified, qt.HasLen, 1)
 
@@ -552,7 +579,9 @@ func TestReverseSchemaDiff_EnumModifications(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	c.Assert(result.EnumsModified, qt.HasLen, 1)
 
@@ -579,7 +608,9 @@ func TestReverseSchemaDiff_FunctionModifications(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	c.Assert(result.FunctionsModified, qt.HasLen, 1)
 
@@ -609,7 +640,9 @@ func TestReverseSchemaDiff_RLSPolicyModifications(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	c.Assert(result.RLSPoliciesModified, qt.HasLen, 1)
 
@@ -640,7 +673,9 @@ func TestReverseSchemaDiff_RoleModifications(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	c.Assert(result.RolesModified, qt.HasLen, 1)
 
@@ -681,7 +716,9 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	}
 
 	// Generate the reverse diff (for down migration)
-	downDiff := reverseSchemaDiff(upDiff)
+	downDiff := reverseForTest(t,
+		upDiff, nil, nil, "postgres",
+	)
 
 	// Verify that the down migration includes removal of all the objects that were added
 
@@ -725,7 +762,9 @@ func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
 		ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "fk_export_file", TableName: "exports", Type: "FOREIGN KEY"}},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	// Neither direction is reconstructed without the schemas, and that is the
 	// answer rather than a gap. A reversed constraint needs a definition -- the
@@ -775,7 +814,9 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 	// door (stokaro/ptah#2315).
 	constraintscope.Normalize(upDiff, identifier.Semantics{})
 
-	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
+	result := reverseForTest(t,
+		upDiff, generatedSchema, nil, "postgres",
+	)
 
 	c.Assert(result.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"files_category_check", "files_status_valid"})
 	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{
@@ -824,10 +865,12 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 		},
 	}
 	upDiff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(generatedSchema, "app.projects"),
+		TablesAdded: difftypes.TableCreationsFor(generatedSchema, identifier.ForDialect("postgres"), "app.projects"),
 	}
 
-	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
+	result := reverseForTest(t,
+		upDiff, generatedSchema, nil, "postgres",
+	)
 
 	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{
 		{Name: "fk_projects_account_id", TableName: "app.projects", Type: "FOREIGN KEY"},
@@ -891,7 +934,8 @@ func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchem
 		}},
 	}
 
-	reversed := reverseSchemaDiffWithSchemaForDialect(diff, desired, nil, platform.MySQL)
+	reversed := reverseForTest(t,
+		diff, desired, nil, platform.MySQL)
 
 	c.Assert(reversed.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 		Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
@@ -1070,7 +1114,8 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 
 	t.Run("postgres", func(t *testing.T) {
 		c := qt.New(t)
-		downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
+		downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			upDiff, generatedSchema, dbSchema, "postgres")
 		c.Assert(err, qt.IsNil)
 		downSQL = legacyRenderedSQL(downSQL)
 
@@ -1085,7 +1130,8 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 
 	t.Run("mysql", func(t *testing.T) {
 		c := qt.New(t)
-		downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "mysql")
+		downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			upDiff, generatedSchema, dbSchema, "mysql")
 		c.Assert(err, qt.IsNil)
 		downSQL = legacyRenderedSQL(downSQL)
 
@@ -1124,23 +1170,28 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 			},
 		},
 	}
-	upDiff := schemadiff.Compare(generatedSchema, dbSchema)
-	c := qt.New(t)
-	c.Assert(upDiff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"files_category_check"})
-
-	for _, dialect := range []string{"mysql", "mariadb"} {
-		t.Run(dialect, func(t *testing.T) {
+	cases := []struct {
+		dialect  string
+		wantName string
+		wantDrop string
+	}{
+		{dialect: "mysql", wantName: "files_chk_1", wantDrop: "ALTER TABLE files DROP CONSTRAINT files_chk_1;"},
+		{dialect: "mariadb", wantName: "category", wantDrop: "ALTER TABLE files DROP CONSTRAINT IF EXISTS category;"},
+	}
+	for _, test := range cases {
+		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			upDiff, err := schemadiff.CompareWithDialect(t.Context(), generatedSchema, dbSchema, test.dialect, runtime)
+			c.Assert(err, qt.IsNil)
+			c.Assert(upDiff.ConstraintsAdded.Names(), qt.DeepEquals, []string{test.wantName})
 
-			downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, dialect)
+			downSQL, err := generateDownMigrationSQL(t.Context(), runtime,
+				upDiff, generatedSchema, dbSchema, test.dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
-			wantDrop := "ALTER TABLE files DROP CONSTRAINT files_category_check;"
-			if dialect == "mariadb" {
-				wantDrop = "ALTER TABLE files DROP CONSTRAINT IF EXISTS files_category_check;"
-			}
-			c.Assert(downSQL, qt.Contains, wantDrop)
+			c.Assert(downSQL, qt.Contains, test.wantDrop)
 			c.Assert(downSQL, qt.Not(qt.Contains), "No rollback operations needed",
 				qt.Commentf("field-level CHECK down migration must not be empty:\n%s", downSQL))
 			c.Assert(downSQL, qt.Not(qt.Contains), "TODO",
@@ -1193,7 +1244,8 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 				t.Run(dialect, func(t *testing.T) {
 					c := qt.New(t)
 
-					downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, tt.dbSchema, dialect)
+					downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+						upDiff, generatedSchema, tt.dbSchema, dialect)
 					c.Assert(err, qt.IsNil)
 					downSQL = normalizedRenderedSQL(downSQL)
 
@@ -1228,7 +1280,9 @@ func TestReverseSchemaDiff_Sequences(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	c.Assert(result.SequencesAdded.Names(), qt.DeepEquals, []string{"removed_seq"})
 	c.Assert(result.SequencesRemoved.Names(), qt.DeepEquals, []string{"added_seq"})
@@ -1252,7 +1306,8 @@ func TestGenerateDownMigrationSQL_SequenceAdded(t *testing.T) {
 		Sequences: []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
 	}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, generatedSchema, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 	c.Assert(downSQL, qt.Contains, "DROP SEQUENCE IF EXISTS order_seq")

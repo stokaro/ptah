@@ -1,13 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -248,9 +251,12 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			test.diff.TablesAdded = difftypes.TableCreationsFor(test.desired, test.tablesAdded...)
+			test.diff.TablesAdded = difftypes.TableCreationsFor(test.desired, identifier.ForDialect("postgres"), test.tablesAdded...)
 
-			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(test.diff, test.desired))
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(test.diff, test.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			sql, err := builtin.RenderSQL("postgres", nodes...)
@@ -283,7 +289,10 @@ func TestPlannerNamesRLSItCannotCarry(t *testing.T) {
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(diff)
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 	c.Assert(err, qt.IsNil)
 
 	sql, err := builtin.RenderSQL(platform.Spanner, nodes...)

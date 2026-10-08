@@ -1,11 +1,15 @@
 package schemacensus
 
 import (
+	"github.com/go-extras/go-kit/must"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/capabilityprobe"
 )
 
@@ -68,7 +72,7 @@ func oneTable(name string, table schemamodel.Table, extra ...schemamodel.Field) 
 // Fixtures is the corpus. A field no fixture populates cannot be measured, and
 // the gate reports that as its own state rather than as a loss.
 func Fixtures() []Fixture {
-	return []Fixture{
+	return withFacetFixtures([]Fixture{
 		{Name: "schema", Schema: schemaFixture()},
 		{Name: "column-core", Schema: columnCoreFixture()},
 		{Name: "column-default", Schema: columnDefaultFixture()},
@@ -222,7 +226,7 @@ func Fixtures() []Fixture {
 		{Name: "constraint-host-struct-two-tables", Schema: constraintHostStructTwoTablesFixture()},
 		{Name: "index-host-struct-two-tables", Schema: indexHostStructTwoTablesFixture()},
 		{Name: "rls-host-struct-two-tables", Schema: rlsHostStructTwoTablesFixture()},
-	}
+	})
 }
 
 // twoNamedTables is two tables, so a host spelling that is ablated cannot be
@@ -864,18 +868,17 @@ func tableColumnFamiliesFixture() schemamodel.Database {
 // important and limited by an availability period. Its starting partition
 // count needs a Uint64 key, which an unsigned BIGINT maps to.
 func tableChangefeedFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{
-		Name: "t",
-		Changefeeds: []ast.ChangefeedSpec{{
-			Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", VirtualTimestamps: true,
-			ResolvedTimestamps: "PT10S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
-			TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
-			Consumers: []ast.TopicConsumerSpec{
-				{Name: "audit", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw"}},
-				{Name: "late", AvailabilityPeriod: "PT1H"},
-			},
-		}},
-	})
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbschema.DesiredObject("", "t", ydbschema.ChangefeedSpec{
+		Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", VirtualTimestamps: true,
+		ResolvedTimestamps: "PT10S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
+		TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
+		Consumers: []ast.TopicConsumerSpec{
+			{Name: "audit", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw"}},
+			{Name: "late", AvailabilityPeriod: "PT1H"},
+		},
+	})))
+	db.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
 	db.Fields[0].Type = "BIGINT UNSIGNED"
 	return db
 }
@@ -883,10 +886,12 @@ func tableChangefeedFixture() schemamodel.Database {
 // tableChangefeedDisabledFixture is a changefeed only a reader reports, which
 // every target refuses to write: YDB has no statement that disables one.
 func tableChangefeedDisabledFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{
-		Name:        "t",
-		Changefeeds: []ast.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true}},
-	})
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbschema.DesiredObject("", "t", ydbschema.ChangefeedSpec{
+		Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true,
+	})))
+	db.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
+	return db
 }
 
 // tableRowDeletionEpochFixture is a YDB TTL on an integer column, whose unit

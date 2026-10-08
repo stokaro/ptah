@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
@@ -196,6 +197,11 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	runtime, err := builtin.New()
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	reportOpts.Runtime = runtime
 	report, err := migrationlintreport.Build(cmd.Context(), reportOpts, projectCfg)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
