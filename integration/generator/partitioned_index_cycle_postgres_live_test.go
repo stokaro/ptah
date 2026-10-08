@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
 )
@@ -70,6 +72,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 
 	// Cycle 1: the parent index is planned and applied.
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "add_events_tenant_index",
@@ -97,6 +100,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	// Cycle 2: nothing is left to plan. A second cycle that publishes
 	// DROP INDEX IF EXISTS "events_2026_tenant_idx" is refused by the server.
 	second, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "second_cycle",
@@ -128,6 +132,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	_, err = target.ExecContext(ctx, `CREATE INDEX events_2026_id_idx ON events_2026 (id)`)
 	c.Assert(err, qt.IsNil)
 	third, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "third_cycle",

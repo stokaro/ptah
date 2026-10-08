@@ -33,6 +33,15 @@ func TestCoverage_ParentNamespaceDoesNotHideSubjectLimits(t *testing.T) {
 	other.Name = widgetRef("orders", "x").Parent
 	c.Assert(coverage.ForParent(other).SubjectRecords(), qt.HasLen, 0)
 	c.Assert(coverage.ForParent(other).KindRecords(), qt.DeepEquals, coverage.KindRecords())
+	selected := coverage.SelectSubjects(func(ref objectidentity.ID) bool { return ref.Key() == child.Key() })
+	c.Assert(selected.Representation(), qt.Equals, schemaext.Desired)
+	c.Assert(selected.Lookup(widgetKind, child), qt.Equals, limit)
+	// Removing the parent record must expose the original unknown namespace,
+	// not manufacture complete knowledge for other children.
+	c.Assert(selected.Lookup(widgetKind, widgetRef("orders.2024", "other")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(coverage.Lookup(widgetKind, widgetRef("orders.2024", "other")).State, qt.Equals, schemaext.Complete)
+	c.Assert(coverage.SelectSubjects(nil).SubjectRecords(), qt.DeepEquals, coverage.SubjectRecords())
+	c.Assert((schemaext.Coverage{}).SelectSubjects(nil).Representation(), qt.Equals, schemaext.Representation(""))
 }
 
 func TestCoverage_DisjointDispatchDiffersFromIndependentSources(t *testing.T) {

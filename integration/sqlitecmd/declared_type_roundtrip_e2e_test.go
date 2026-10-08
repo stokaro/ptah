@@ -56,7 +56,7 @@ func TestSQLiteDeclaredTypesSurviveAReadE2E(t *testing.T) {
 	read, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "", must.Must(builtin.New())))
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(describedColumnTypes(described), qt.DeepEquals, map[string]string{
 		"id":       "INTEGER",
@@ -246,6 +246,6 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 
 	replayed, err := replayConn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(describedColumnTypes(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), replayed, "", must.Must(builtin.New())))),
-		qt.DeepEquals, describedColumnTypes(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "", must.Must(builtin.New())))))
+	c.Assert(describedColumnTypes(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), replayed, "sqlite", must.Must(builtin.New())))),
+		qt.DeepEquals, describedColumnTypes(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "sqlite", must.Must(builtin.New())))))
 }

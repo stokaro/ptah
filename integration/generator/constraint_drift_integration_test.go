@@ -70,6 +70,7 @@ type Product struct {
 `), 0600), qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DBConn:        conn,
 		MigrationName: "constraint_drift",
@@ -153,6 +154,7 @@ type Product struct {
 `), 0600), qt.IsNil)
 
 			files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+				Runtime:       must.Must(builtin.New()),
 				GoEntitiesDir: entitiesDir,
 				DBConn:        conn,
 				MigrationName: "unique_constraint_drift",

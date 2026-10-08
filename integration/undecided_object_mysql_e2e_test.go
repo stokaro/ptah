@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/schemadiff"
 )
 
 // A declared object the comparison could not decide, driven through the
@@ -264,10 +265,11 @@ func TestSchemaDriftReportsAnUndecidedObjectE2E(t *testing.T) {
 
 // undecidedDocument is the part of a JSON document these tests read.
 type undecidedDocument struct {
-	Outcome   string            `json:"outcome"`
-	Drift     bool              `json:"drift"`
-	Failed    bool              `json:"failed"`
-	Undecided []coverage.Object `json:"undecided"`
+	ContractVersion int                    `json:"contract_version"`
+	Outcome         string                 `json:"outcome"`
+	Drift           bool                   `json:"drift"`
+	Failed          bool                   `json:"failed"`
+	Undecided       schemadiff.Diagnostics `json:"undecided"`
 }
 
 // TestJSONDocumentsCarryAnUndecidedObjectE2E holds each machine-readable
@@ -288,17 +290,17 @@ func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
 		{
 			name: "schema plan",
 			args: []string{"schema", "plan", "--dry-run", "--json"},
-			want: undecidedDocument{Outcome: "no-changes", Undecided: []coverage.Object{withheld}},
+			want: undecidedDocument{ContractVersion: 2, Outcome: "no-changes", Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
 		},
 		{
 			name: "schema apply",
 			args: []string{"schema", "apply", "--auto-approve", "--json"},
-			want: undecidedDocument{Outcome: "no-changes", Undecided: []coverage.Object{withheld}},
+			want: undecidedDocument{ContractVersion: 2, Outcome: "no-changes", Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
 		},
 		{
 			name: "schema drift",
 			args: []string{"schema", "drift", "--format", "json"},
-			want: undecidedDocument{Failed: true, Undecided: []coverage.Object{withheld}},
+			want: undecidedDocument{ContractVersion: 2, Failed: true, Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
 		},
 	}
 

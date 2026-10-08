@@ -77,19 +77,25 @@ func TestOracleRoleCatalogIsNotDescribedWithoutPrivilegeE2E(t *testing.T) {
 	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
-	// Three assertions, and the third is the one a wrong reader passes the
-	// first two without.
+	// Empty collections do not establish absence when the account cannot
+	// inspect the role catalog.
 	c.Assert(read.Roles, qt.HasLen, 0)
 	c.Assert(read.Grants, qt.HasLen, 0)
 	c.Assert(read.NotDescribed.Describes(coverage.Role, role), qt.IsFalse)
 
-	// And the consequence, at the seam that decides what happens next: a
-	// declaration naming the role plans nothing, rather than planning a
-	// CREATE ROLE this account cannot execute.
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil, must.Must(builtin.New()))
+	// A partial comparison withholds the role and reports the missing evidence.
+	diff, diagnostics, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.RolesAdded, qt.HasLen, 0)
 	c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+	withheld := coverage.Refused(coverage.Role)
+	withheld.Name = role
+	c.Assert(diagnostics, qt.DeepEquals, schemadiff.Diagnostics{Common: []coverage.Object{withheld}})
+
+	// The non-reporting API must not expose an apparently complete diff.
+	diff, err = schemadiff.CompareWithDatabase(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
+	c.Assert(diff, qt.IsNil)
 }
 
 // TestOracleRolesAndGrantsAreReadWithPrivilegeE2E is the other half: the same

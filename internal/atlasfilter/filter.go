@@ -101,6 +101,9 @@ func excludeDatabase(
 	// left, and that answer has to exist before the first object is judged.
 	filtered.Schemas = state.filterSchemas(filtered.Schemas)
 	filtered.Tables = state.filterTables(filtered.Tables)
+	filtered.FeatureObjects, filtered.FeatureCoverage = selectTableFeatures(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
+		return !state.tableExcluded(schema, table)
+	})
 	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
 	filtered.Sequences = state.filterSequences(filtered.Sequences)
@@ -215,6 +218,9 @@ func excludeGenerated(
 	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
 	state.excludeGeneratedColumnSequences(schema.Tables, schema.Fields)
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
+	filtered.FeatureObjects, filtered.FeatureCoverage = selectTableFeatures(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
+		return !state.tableExcluded(schema, table)
+	})
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
 	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
@@ -1983,6 +1989,8 @@ func stripGeneratedFieldForeignKey(field schemamodel.Field) schemamodel.Field {
 
 func cloneDatabase(schema *catalog.Database) *catalog.Database {
 	return &catalog.Database{
+		FeatureObjects:          schema.FeatureObjects,
+		FeatureCoverage:         schema.FeatureCoverage,
 		Schemas:                 slices.Clone(schema.Schemas),
 		Tables:                  slices.Clone(schema.Tables),
 		Enums:                   slices.Clone(schema.Enums),

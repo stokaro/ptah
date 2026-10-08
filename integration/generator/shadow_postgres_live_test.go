@@ -105,6 +105,7 @@ func TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres(t *te
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "add_users_email_index",

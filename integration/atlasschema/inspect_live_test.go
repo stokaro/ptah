@@ -12,10 +12,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 )
@@ -119,6 +121,7 @@ func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
 			conn := newInspectLiveConnection(c, ctx, test.query, test.setup)
 
 			renderedResult, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+				Runtime: must.Must(builtin.New()),
 				Format:  "json",
 				Schemas: test.schemas,
 			})
@@ -199,6 +202,7 @@ func TestInspectLive_SQLSchemaStatements(t *testing.T) {
 			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
 
 			renderedResult, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+				Runtime: must.Must(builtin.New()),
 				Format:  "sql",
 				Schemas: test.schemas,
 			})
@@ -265,7 +269,8 @@ func TestInspectLive_HCLRealmScope(t *testing.T) {
 			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
 
-			renderedResult, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{Format: "hcl"})
+			renderedResult, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+				Runtime: must.Must(builtin.New()), Format: "hcl"})
 
 			c.Assert(err, qt.IsNil)
 			rendered := renderedResult.Rendered

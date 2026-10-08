@@ -14,10 +14,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/generator"
@@ -141,6 +143,7 @@ func replayBinaryCheckpoint(c *qt.C, shadowURL, freshURL, historyURL, historyUp 
 	writeBinaryCheckpointFile(c, filepath.Join(history, "0000000001_payloads.down.sql"), "DROP TABLE "+binaryCheckpointTable+";\n")
 
 	upSQL, downSQL, err := generator.GenerateCheckpointFromShadow(ctx, generator.CheckpointFromShadowOptions{
+		Runtime:           must.Must(builtin.New()),
 		ShadowDatabaseURL: shadowURL,
 		MigrationsDir:     history,
 		DataTables:        []string{binaryCheckpointTable},

@@ -9,8 +9,10 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 )
 
@@ -37,6 +39,7 @@ func TestGenerateCheckpointFromShadowRejectsMalformedSQLiteToggleBeforeMutation(
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 
 	_, _, err = generator.GenerateCheckpointFromShadow(t.Context(), generator.CheckpointFromShadowOptions{
+		Runtime:           must.Must(builtin.New()),
 		ShadowDatabaseURL: shadowURL,
 		MigrationsDir:     migrationsDir,
 		Dialect:           "sqlite",
@@ -60,6 +63,7 @@ func TestGenerateCheckpointFromShadowRejectsMalformedSQLiteToggleBeforeConnect(t
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 
 	_, _, err := generator.GenerateCheckpointFromShadow(t.Context(), generator.CheckpointFromShadowOptions{
+		Runtime:           must.Must(builtin.New()),
 		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "missing", "shadow.db"),
 		MigrationsDir:     t.TempDir(),
 		Dialect:           "sqlite",
@@ -75,6 +79,7 @@ func TestGenerateCheckpointFromShadowDoesNotApplySQLiteToggleToPostgres(t *testi
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 
 	_, _, err := generator.GenerateCheckpointFromShadow(t.Context(), generator.CheckpointFromShadowOptions{
+		Runtime:           must.Must(builtin.New()),
 		ShadowDatabaseURL: "postgres://localhost/database",
 		MigrationsDir:     t.TempDir(),
 		Dialect:           "postgres",

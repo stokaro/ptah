@@ -143,7 +143,7 @@ ALTER TABLE ptah_cycle_read_137.right_nodes
 	// schema-local objects from the structured snapshot.
 	liveSchema.Roles = nil
 	liveSchema.Grants = nil
-	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), liveSchema, "", must.Must(builtin.New())))
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), liveSchema, "postgres", must.Must(builtin.New())))
 	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		database,
 		conn.Info().Dialect,

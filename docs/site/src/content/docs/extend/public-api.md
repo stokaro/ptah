@@ -134,6 +134,11 @@ Replies must set `Complete`. The migration comparator captures table facets and
 applies effective desired settings before capturing common table changes. Other
 attachment points currently refuse because they lack comparison identity capture.
 Adding a provider does not add coverage claims to an existing source.
+
+Table selection preserves the selected tables' feature children and their source
+coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering
+explicit records. Use it with the same object projection; removing an override
+alone changes which knowledge a lookup returns.
 Unrepresentable enrolled state and explicit subject limits require a selected
 comparison handler even without concrete values. An uninspected namespace alone
 makes no claim about target applicability; the runtime preserves that knowledge.

@@ -7,6 +7,24 @@ import (
 	"ptah.run/core/objectidentity"
 )
 
+// SelectSubjects retains the source representation and kind-wide knowledge,
+// selecting explicit subject and parent-namespace records by identity. Use it
+// with the same projection of schema objects: removing a subject override alone
+// makes Lookup fall back to the kind-wide knowledge. A nil predicate retains
+// every record. The source and result are immutable and share no writable state.
+func (c Coverage) SelectSubjects(keep func(objectidentity.ID) bool) Coverage {
+	if keep == nil {
+		return c
+	}
+	result := Coverage{representation: c.representation, kinds: c.kinds, subjects: make(map[subjectKey]SubjectCoverage)}
+	for key, record := range c.subjects {
+		if keep(record.Subject) {
+			result.subjects[key] = record
+		}
+	}
+	return result
+}
+
 // SelectKinds captures only the named model kinds, including their subject and
 // parent-namespace overrides. Unenrolled kinds remain unenrolled.
 func (c Coverage) SelectKinds(kinds []Kind) Coverage {

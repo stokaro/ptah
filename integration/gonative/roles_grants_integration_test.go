@@ -683,6 +683,7 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	var inspectDiag bytes.Buffer
 	inspectedResult, err := atlasschema.Inspect(t.Context(), conn, atlasschema.InspectOptions{
+		Runtime:     must.Must(builtin.New()),
 		Schemas:     []string{"ptah_undescribed_schema_137"},
 		Diagnostics: &inspectDiag,
 	})

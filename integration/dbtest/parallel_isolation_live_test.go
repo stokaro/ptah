@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/dbtest"
 )
@@ -46,6 +48,7 @@ func TestRunMigrationTest_ParallelCasesGetTheirOwnDatabaseOnAServer(t *testing.T
 	}
 
 	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+		Runtime:     must.Must(builtin.New()),
 		DBURL:       serverURL,
 		Parallelism: 3,
 		Cases:       built,
@@ -74,7 +77,8 @@ func TestRunMigrationTest_AScratchDatabaseIsRemovedAfterTheRun(t *testing.T) {
 	before := scratchDatabaseCount(c, serverURL)
 
 	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
-		DBURL: serverURL,
+		Runtime: must.Must(builtin.New()),
+		DBURL:   serverURL,
 		Cases: []dbtest.Case{{
 			Name:     "leaves nothing",
 			Parallel: true,

@@ -237,6 +237,7 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 			source := newInspectLiveConnection(c, ctx, "", test.setup)
 
 			documentResult, err := atlasschema.Inspect(ctx, source, atlasschema.InspectOptions{
+				Runtime:                must.Must(builtin.New()),
 				Format:                 "hcl",
 				OmitAtlasRefusedBlocks: test.omitRefused,
 			})

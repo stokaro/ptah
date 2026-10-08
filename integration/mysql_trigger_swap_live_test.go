@@ -13,9 +13,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/generator"
@@ -212,6 +214,7 @@ func TestMigrateUpHoldsWritesWhileAMySQLTriggerIsSwappedLive(t *testing.T) {
 			defer dbschema.CloseAndWarn(conn)
 			dir := c.TempDir()
 			_, err = generator.GenerateMigration(c.Context(), generator.GenerateMigrationOptions{
+				Runtime:   must.Must(builtin.New()),
 				Generated: desired, DBConn: conn, OutputDir: dir, MigrationName: "swap_audit_trigger",
 			})
 			c.Assert(err, qt.IsNil)
@@ -276,6 +279,7 @@ func TestMigrateUpKeepsWritesWorkingWhenATriggerColumnIsDroppedLive(t *testing.T
 			defer dbschema.CloseAndWarn(conn)
 			dir := c.TempDir()
 			_, err = generator.GenerateMigration(c.Context(), generator.GenerateMigrationOptions{
+				Runtime:   must.Must(builtin.New()),
 				Generated: desired, DBConn: conn, OutputDir: dir, MigrationName: "drop_legacy",
 			})
 			c.Assert(err, qt.IsNil)

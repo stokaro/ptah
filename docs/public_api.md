@@ -415,6 +415,11 @@ value is uninspected. Registering another provider cannot make an older source
 authoritative over that provider's objects. Subject claims distinguish explicit
 absence, requested defaults, complete inspection, and unrepresentable state.
 
+`Coverage.SelectSubjects` projects explicit subject and parent records while
+retaining the source's kind-wide knowledge. Apply the same projection to schema
+objects: deleting an override alone makes lookups fall back to kind-wide knowledge.
+Table selection carries retained feature children and their coverage together.
+
 Providers supply versioned `Codec` descriptors through `Provider.Codecs`.
 `Runtime.Codecs` returns the frozen registry. Its context-aware batch methods
 refuse unknown kinds, changed definitions, and incompatible versions without

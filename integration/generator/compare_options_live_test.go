@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 )
 
@@ -30,6 +32,7 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("default options ignore plpgsql", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:       must.Must(builtin.New()),
 			Generated:     &schemamodel.Database{},
 			DBConn:        target,
 			MigrationName: "default_ignore",
@@ -42,6 +45,7 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("custom options ignore plpgsql", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:        must.Must(builtin.New()),
 			Generated:      &schemamodel.Database{},
 			DBConn:         target,
 			MigrationName:  "custom_ignore",
@@ -55,6 +59,7 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("empty ignore list manages plpgsql", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:        must.Must(builtin.New()),
 			Generated:      &schemamodel.Database{},
 			DBConn:         target,
 			MigrationName:  "manage_plpgsql",
@@ -73,6 +78,7 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("desired extension is added while plpgsql is ignored", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime: must.Must(builtin.New()),
 			Generated: &schemamodel.Database{
 				Extensions: []schemamodel.Extension{{Name: "pg_trgm", IfNotExists: true}},
 			},

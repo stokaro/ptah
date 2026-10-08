@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/generator"
 )
@@ -49,6 +51,7 @@ func generateLiveMigrationSQL(
 	c.Helper()
 	outputDir := c.TempDir()
 	files, err := generator.GenerateMigration(c.Context(), generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		Generated:     desired,
 		DBConn:        conn,
 		MigrationName: "integration",

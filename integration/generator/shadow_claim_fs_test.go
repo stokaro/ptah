@@ -159,6 +159,7 @@ func planDynamicRollbackWithDev(ctx context.Context, dir, devURL string) error {
 // generateCheckpointWithShadow is `migrations checkpoint --shadow-db`.
 func generateCheckpointWithShadow(ctx context.Context, _, shadowURL string) error {
 	_, _, err := generator.GenerateCheckpointFromShadow(ctx, generator.CheckpointFromShadowOptions{
+		Runtime:           must.Must(builtin.New()),
 		ShadowDatabaseURL: shadowURL,
 		MigrationsDir:     "migrations",
 		MigrationsFS:      shadowClaimHistory,
