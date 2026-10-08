@@ -13,8 +13,11 @@ import (
 )
 
 func (r *Runtime) validatePlanningReply(ctx context.Context, service int, request featureplan.Request, reply featureplan.Result) (featureplan.Result, error) {
-	if !reply.Complete {
-		return featureplan.Result{}, fmt.Errorf("%w: planning did not complete", schemaext.ErrInvalidValue)
+	if err := reply.ValidateOutcome(request); err != nil {
+		return featureplan.Result{}, err
+	}
+	if len(reply.Diagnostics) != 0 {
+		return validatePlanningDiagnostics(request, reply.Diagnostics)
 	}
 	if len(reply.Changes) != len(request.Changes) {
 		return featureplan.Result{}, fmt.Errorf("%w: planning changed the result count", schemaext.ErrInvalidValue)
@@ -56,6 +59,21 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 	}
 	if err := ctx.Err(); err != nil {
 		return featureplan.Result{}, err
+	}
+	return result, nil
+}
+
+func validatePlanningDiagnostics(request featureplan.Request, diagnostics []featureplan.Diagnostic) (featureplan.Result, error) {
+	result := featureplan.Result{Complete: true, Diagnostics: make([]featureplan.Diagnostic, len(diagnostics))}
+	for i, diagnostic := range diagnostics {
+		kind := schemaext.Kind(diagnostic.Problem.Kind)
+		if diagnostic.Change != nil && kind != request.Changes[*diagnostic.Change].Value.Kind() {
+			return featureplan.Result{}, fmt.Errorf("%w: planning diagnostic changed its input kind", schemaext.ErrInvalidValue)
+		}
+		if diagnostic.Parent != nil && !slices.Contains(request.ParentKinds, kind) {
+			return featureplan.Result{}, fmt.Errorf("%w: planning diagnostic names an unassigned parent kind", schemaext.ErrInvalidValue)
+		}
+		result.Diagnostics[i] = diagnostic.Clone()
 	}
 	return result, nil
 }

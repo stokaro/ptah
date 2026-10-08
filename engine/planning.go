@@ -75,6 +75,9 @@ func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
 // selected service. Inputs and replies are isolated through local codecs. Every
 // change is accounted for; missing ownership, malformed replies, and cancellation
 // return no result. Contributions still require scheduling with the host graph.
+// Completed refusals retain diagnostics from every selected service, with change
+// indexes remapped to the caller's batch. Any refusal discards all contributions
+// and receipts. Provider failures discard diagnostics too.
 func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
 	if err := schemaext.RequireRuntime(ctx, r); err != nil {
 		return featureplan.Result{}, err
@@ -121,6 +124,10 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 		if err != nil {
 			return featureplan.Result{}, err
 		}
+		if len(reply.Diagnostics) != 0 {
+			result.Diagnostics = append(result.Diagnostics, remapPlanningDiagnostics(reply.Diagnostics, indices)...)
+			continue
+		}
 		result.Contributions = append(result.Contributions, reply.Contributions...)
 		result.Parents = append(result.Parents, reply.Parents...)
 		for i, index := range indices {
@@ -130,7 +137,21 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 	if err := ctx.Err(); err != nil {
 		return featureplan.Result{}, err
 	}
+	if len(result.Diagnostics) != 0 {
+		return featureplan.Result{Complete: true, Diagnostics: result.Diagnostics}, nil
+	}
 	return result, nil
+}
+
+func remapPlanningDiagnostics(diagnostics []featureplan.Diagnostic, indices []int) []featureplan.Diagnostic {
+	result := make([]featureplan.Diagnostic, len(diagnostics))
+	for i, diagnostic := range diagnostics {
+		if diagnostic.Change != nil {
+			diagnostic.Change = new(indices[*diagnostic.Change])
+		}
+		result[i] = diagnostic
+	}
+	return result
 }
 
 func (r *Runtime) planningBatches(request featureplan.Request) ([][]int, error) {

@@ -115,6 +115,15 @@ checks before comparison use `schemadiff.RefusalError` with the original cause.
 The schema census discards its measurement when any selected service fails,
 including after earlier cells completed.
 
+`Runtime.PlanFeatures` returns completed refusals as `featureplan.Diagnostic`
+data, with optional change or parent indexes. It validates each service's
+assignment and maps change indexes to the original request. A refusal leaves
+no operations or receipts from any service. Failures and cancellation also
+discard diagnostics. The planning host calls `Result.Err(request)` before
+lowering operations; its `featureplan.RefusalError` preserves the report and
+schema or capability error identities. Process adapters carry diagnostics
+without encoding Go errors.
+
 `Provider.Conversions` registers a batched conversion service for explicit target
 and feature-kind pairs. `Runtime.ConvertFeatures` validates each ordered batch,
 propagates cancellation and service errors, and returns no partial result.

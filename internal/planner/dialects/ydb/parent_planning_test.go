@@ -42,6 +42,10 @@ func TestPlannerRefusesDropWithUnknownCapturedChildren(t *testing.T) {
 			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(t.Context(), runtime, diff)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, "(?s).*source cannot represent stream ownership.*")
+			var refused *featureplan.RefusalError
+			c.Assert(err, qt.ErrorAs, &refused)
+			c.Assert(refused.Diagnostics(), qt.HasLen, 1)
+			c.Assert(refused.Target(), qt.Equals, "ydb")
 			c.Assert(nodes, qt.IsNil)
 		})
 	}

@@ -32,9 +32,13 @@ func TestParentOperationsRefuseReplicationBindingsWithoutChildChanges(t *testing
 			c.Assert(err, qt.IsNil)
 			request.Tables[0].Current.OwnedObjects = objects
 			result, err := (ydbplan.Service{}).PlanFeatures(t.Context(), request)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, "(?s).*controller must release it.*")
-			c.Assert(result, qt.DeepEquals, featureplan.Result{})
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(result.Err(request), qt.ErrorMatches, "(?s).*controller must release it.*")
+			c.Assert(result.Diagnostics, qt.HasLen, 1)
+			c.Assert(result.Contributions, qt.HasLen, 0)
+			c.Assert(result.Changes, qt.HasLen, 0)
+			c.Assert(result.Parents, qt.HasLen, 0)
 		})
 	}
 }
@@ -46,7 +50,11 @@ func TestPlannerRefusesAnIndependentReplicationStreamChange(t *testing.T) {
 	change := request.Changes[0].Value.(*ydbdiff.Changefeed)
 	change.Before.Replication = &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}
 	result, err := (ydbplan.Service{}).PlanFeatures(t.Context(), request)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, "(?s).*independently of its controller.*")
-	c.Assert(result, qt.DeepEquals, featureplan.Result{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(result.Err(request), qt.ErrorMatches, "(?s).*independently of its controller.*")
+	c.Assert(result.Diagnostics, qt.HasLen, 1)
+	c.Assert(result.Contributions, qt.HasLen, 0)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Parents, qt.HasLen, 0)
 }

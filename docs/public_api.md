@@ -155,6 +155,16 @@ without encoding or semantic service calls. Missing services, malformed replies,
 errors, and cancellation return no result. A successful result explicitly sets
 `Complete`, including a no-op.
 
+A completed refusal returns `Diagnostics` and no contributions or receipts.
+Diagnostics contain data and optional change or parent indexes. The runtime
+validates their assigned kinds and maps change indexes back to the caller's
+batch. It collects refusals from every selected service and discards all
+operations if any service refuses. Provider failures and cancellation discard
+diagnostics as well. `Result.Err(request)` converts a validated outcome into
+`featureplan.RefusalError` for local callers, preserving schema and capability
+error identities. The common planning host performs this conversion before
+lowering operations. Transport adapters carry the diagnostic data.
+
 A captured table's `Action` requests `DropTable` or `RebuildTable` assessment.
 The zero action supplies context only. The runtime calls every assigned parent
 model for the target even without child changes, concrete feature values, or
@@ -183,7 +193,8 @@ them again. Drop and rebuild assessment requires complete captured changefeed
 coverage, including subject-specific limits. A known stream is removed with its
 parent; an uninspected or unrepresentable stream blocks the operation. Stream
 state remains irrecoverable. A receipt describes planning ownership, not
-successful execution.
+successful execution. Semantic refusals return a completed diagnostic result;
+invalid service setup and execution failures remain errors.
 
 `core/plangraph.Schedule` combines owner contributions into a deterministic
 dependency order before rendering. Steps carry typed payloads, structured object
