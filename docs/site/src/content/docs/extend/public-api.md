@@ -59,6 +59,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership for shared column comparison. |
 | `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
+| `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
+| `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
@@ -189,6 +191,13 @@ optional values, and keeps sorting and primary keys separate. Register
 The bundled reader, renderer, and migration planner do not yet consume these
 typed table settings; [#4140](https://github.com/stokaro/ptah/issues/4140) owns
 their integration.
+
+Register `chcompare.Service` in a selected provider's `FacetComparisons` to
+compare resolved table settings. `chdiff.Table` and its codec retain complete
+before and after operands. Missing evidence needed for declared settings produces
+an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
+limits remain visible. These services perform no ALTER planning; the bundled
+runtime does not register them.
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.
