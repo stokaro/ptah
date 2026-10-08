@@ -287,7 +287,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, pools.nodes...)
 	result = append(result, streamAfter...)
 	result = append(result, access.last...)
-	return scheduleChangefeeds(ctx, beforeChangefeeds, result, changefeeds, diff)
+	return scheduleChangefeeds(ctx, beforeChangefeeds, result, changefeeds)
 }
 
 // refuseUnplannableObjectChanges refuses every index addition, in-place index
