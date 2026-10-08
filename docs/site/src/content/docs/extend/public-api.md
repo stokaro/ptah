@@ -60,6 +60,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chprepare` | ClickHouse key membership for shared column comparison. |
 | `dialect/clickhouse/chresolve` | Table-setting resolution with retained intent and property origins. |
 | `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
+| `dialect/clickhouse/chsource` | Table property encoding and decoding that preserves setting intent. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
@@ -214,6 +215,18 @@ fully resolved declarations into predicted observations. Empty settings and
 separate key roles survive the conversion. The migration generator uses this
 projection when capturing what a reverse DROP removes. A prediction does not
 establish that a database was inspected.
+
+`Provider.Properties` declares source property ownership by target, format, and
+feature kind. The runtime validates complete batches before dispatch and rejects
+changed kinds, missing results, and properties outside the owner's declared keys.
+Empty values remain distinct from missing properties. Conversion failures and
+cancellation return no partial result or new catalog knowledge.
+
+`chsource.Service` preserves ClickHouse intent through the table platform property
+format. Bare keys carry explicit values; a `.state` suffix with value `default`
+requests the creation rule. Register its definitions and service with a selected
+provider. Bundled frontend and Go export integration remains part of
+[#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.
