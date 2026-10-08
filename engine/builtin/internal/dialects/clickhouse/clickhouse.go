@@ -1003,12 +1003,6 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			if err := r.renderAddSkippingIndex(node.Name, op); err != nil {
 				return err
 			}
-		case *ast.ModifyTTLOperation:
-			if op.Expression == "" {
-				r.w.WriteLinef("ALTER TABLE %s REMOVE TTL;", node.Name)
-			} else {
-				r.w.WriteLinef("ALTER TABLE %s MODIFY TTL %s;", node.Name, op.Expression)
-			}
 		default:
 			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, DialectName, op)
 		}

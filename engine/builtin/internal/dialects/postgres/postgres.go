@@ -653,7 +653,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.DropRowDeletionPolicyOperation,
 		*ast.EnumTypeDef,
 		*ast.ModifyColumnOperation,
-		*ast.ModifyTTLOperation,
 		*ast.RangeTypeDef,
 		*ast.RenameColumnOperation,
 		*ast.RenameConstraintOperation,
@@ -1372,14 +1371,8 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			// budget, the way the two TTL arms below already do; writeRename
 			// re-selects between them.
 			r.writeRename(node, operation)
-		case *ast.AddSkippingIndexOperation, *ast.ModifyTTLOperation:
-			// Two ClickHouse-specific constructs with no PostgreSQL equivalent,
-			// sharing one arm so this switch keeps its complexity budget. The
-			// ClickHouse table TTL is a different feature from the CockroachDB
-			// row-level TTL the next arm carries: that one is a column
-			// expression on a MergeTree table, this one a set of storage
-			// parameters.
-			r.writeClickHouseOnlyOperation(operation)
+		case *ast.AddSkippingIndexOperation:
+			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
 		case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation,
 			*ast.SetRowDeletionPolicyOperation, *ast.DropRowDeletionPolicyOperation:
 			// Every row-expiry operation shares one branch so this switch keeps
@@ -4050,18 +4043,6 @@ func (r *Renderer) uniqueConstraintUnsupported(name string, columns []string) er
 
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
-}
-
-// writeClickHouseOnlyOperation names a ClickHouse construct this dialect has no
-// form for, as a comment rather than as a dropped operation: an operator
-// reading the plan has to be able to see that something was declined.
-func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
-	switch operation.(type) {
-	case *ast.AddSkippingIndexOperation:
-		r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
-	case *ast.ModifyTTLOperation:
-		r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
-	}
 }
 
 // renderCreateContinuousAggregate renders the statement that creates a

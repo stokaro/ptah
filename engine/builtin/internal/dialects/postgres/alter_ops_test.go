@@ -85,26 +85,21 @@ func TestPostgres_CreateTableSelectWithTypedColumnsUnsupported(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "postgres: create table as select with explicit column definitions is not supported")
 }
 
-// AddSkippingIndex and ModifyTTL are ClickHouse-only; postgres emits an
-// explanatory comment and otherwise treats the operation as a no-op.
-func TestPostgres_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
+// ClickHouse skipping indexes have no PostgreSQL spelling.
+func TestPostgres_AlterTable_ClickHouseSkippingIndexEmitsComment(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{
 		Name: "events",
 		Operations: []ast.AlterOperation{
 			&ast.AddSkippingIndexOperation{Name: "idx_e_src", Expression: "source"},
-			&ast.ModifyTTLOperation{Expression: "created_at + INTERVAL '30 days'"},
 		},
 	}
 	out := renderPG(t, alter)
 
 	c.Assert(out, qt.Contains, "-- POSTGRES: data-skipping indexes are ClickHouse-specific; ignored.")
-	c.Assert(out, qt.Contains, "-- POSTGRES: table TTL is ClickHouse-specific; ignored.")
 	// No executable ALTER statement should have been emitted by these branches.
 	c.Assert(out, qt.Not(qt.Contains), "ADD INDEX",
 		qt.Commentf("postgres must not emit ADD INDEX for an AddSkippingIndexOperation; got: %q", out))
-	c.Assert(out, qt.Not(qt.Contains), "MODIFY TTL",
-		qt.Commentf("postgres must not emit MODIFY TTL for a ModifyTTLOperation; got: %q", out))
 }
 
 func TestPostgres_AlterTable_SetGeneratedExpression(t *testing.T) {

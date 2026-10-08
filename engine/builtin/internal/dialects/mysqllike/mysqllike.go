@@ -1363,10 +1363,6 @@ func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, enums map
 			// comment so the migration is still readable and diffable.
 			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
 
-		case *ast.ModifyTTLOperation:
-			// Table TTL (row expiration) is a ClickHouse-only feature.
-			r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
-
 		default:
 			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, r.dialect, operation)
 		}

@@ -13,6 +13,7 @@ const AlterTTLKind schemaext.Kind = "ptah.run/clickhouse/alter-ttl"
 
 // AlterTTL retains the complete transition so validation cannot silently omit
 // another storage change. An explicit empty after TTL removes the rules.
+// A nonempty rule containing only whitespace is invalid on either operand.
 type AlterTTL struct {
 	Change chdiff.Table `json:"change"`
 }

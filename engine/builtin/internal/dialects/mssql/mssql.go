@@ -282,7 +282,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			if err := r.writeSetComment(node.Name, op); err != nil {
 				return err
 			}
-		case *ast.AddSkippingIndexOperation, *ast.ModifyTTLOperation:
+		case *ast.AddSkippingIndexOperation:
 			r.notSupported("ClickHouse table option", node.Name)
 		default:
 			return unsupportedFeaturef("unsupported alter table operation %T", operation)

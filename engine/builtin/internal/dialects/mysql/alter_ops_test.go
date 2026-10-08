@@ -185,19 +185,16 @@ func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "DEFAULT 'false'")
 }
 
-func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
+func TestMySQL_AlterTable_ClickHouseSkippingIndexEmitsComment(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{
 		Name: "events",
 		Operations: []ast.AlterOperation{
 			&ast.AddSkippingIndexOperation{Name: "idx_e_src", Expression: "source"},
-			&ast.ModifyTTLOperation{Expression: "created_at + INTERVAL 30 DAY"},
 		},
 	}
 	out := renderMySQL(t, alter)
 
 	c.Assert(out, qt.Contains, "-- MYSQL: data-skipping indexes are ClickHouse-specific; ignored.")
-	c.Assert(out, qt.Contains, "-- MYSQL: table TTL is ClickHouse-specific; ignored.")
 	c.Assert(out, qt.Not(qt.Contains), "ADD INDEX")
-	c.Assert(out, qt.Not(qt.Contains), "MODIFY TTL")
 }

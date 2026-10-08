@@ -720,8 +720,6 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return Warning, "SET EXPRESSION rewrites generated column values"
 	case *ast.AddSkippingIndexOperation:
 		return Warning, "ADD INDEX can affect write workload during build"
-	case *ast.ModifyTTLOperation:
-		return Warning, "MODIFY TTL can delete or move existing rows"
 	case *ast.ReplaceIndexOperation:
 		return classifyReplaceIndex(o)
 	case *ast.AlterIndexVisibilityOperation:

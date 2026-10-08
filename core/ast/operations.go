@@ -415,32 +415,6 @@ func (op *AddSkippingIndexOperation) Accept(visitor Visitor) error {
 
 func (op *AddSkippingIndexOperation) alterOperation() {}
 
-// ModifyTTLOperation represents ClickHouse's `ALTER TABLE x MODIFY TTL ...`
-// and `ALTER TABLE x REMOVE TTL`.
-//
-// Empty Expression instructs the ClickHouse renderer to emit `REMOVE TTL`;
-// any non-empty value is emitted verbatim as `MODIFY TTL <expression>`.
-//
-// Table TTL is a ClickHouse-only concept; other dialects emit a
-// `-- <DIALECT>: table TTL is ClickHouse-specific; ignored.` comment and
-// otherwise treat the operation as a no-op.
-type ModifyTTLOperation struct {
-	// Expression is the new TTL clause. Empty clears the TTL.
-	Expression string
-}
-
-// Accept implements the Node interface for ModifyTTLOperation.
-//
-// The actual rendering is handled by the dialect's VisitAlterTable method.
-func (op *ModifyTTLOperation) Accept(visitor Visitor) error {
-	return visitor.VisitNode(
-
-		// alterOperation implements the marker method for type safety.
-		op)
-}
-
-func (op *ModifyTTLOperation) alterOperation() {}
-
 // SetRowTTLOperation represents ALTER TABLE ... SET (<storage parameters>) for
 // CockroachDB row-level TTL.
 //

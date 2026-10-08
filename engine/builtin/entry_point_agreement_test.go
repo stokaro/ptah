@@ -252,7 +252,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"GrantRoleMembershipNode":                 &ast.GrantRoleMembershipNode{},
 		"IndexNode":                               &ast.IndexNode{},
 		"ModifyColumnOperation":                   &ast.ModifyColumnOperation{},
-		"ModifyTTLOperation":                      &ast.ModifyTTLOperation{},
 		"MySQLRoutineNode":                        &ast.MySQLRoutineNode{},
 		"ObjectCommentNode":                       &ast.ObjectCommentNode{},
 		"OpaqueRoutineNode":                       &ast.OpaqueRoutineNode{},

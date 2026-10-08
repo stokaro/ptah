@@ -2,6 +2,7 @@ package chsql
 
 import (
 	"fmt"
+	"strings"
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -18,6 +19,11 @@ func ValidateTTLChange(change *chdiff.Table) error {
 	after, err := change.After.Observed()
 	if err != nil {
 		return err
+	}
+	for _, rule := range []string{change.Before.TTL, after.TTL} {
+		if rule != "" && strings.TrimSpace(rule) == "" {
+			return fmt.Errorf("%w: a ClickHouse TTL rule cannot contain only whitespace; use an empty string to remove it", schemaext.ErrInvalidValue)
+		}
 	}
 	beforeWithoutTTL, afterWithoutTTL := *change.Before, *after
 	beforeWithoutTTL.TTL, afterWithoutTTL.TTL = "", ""

@@ -57,3 +57,27 @@ func TestTTLCodecCannotAcknowledgeAnUnrelatedStorageChange(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(decoded, qt.IsNil)
 }
+
+func TestTTLCodecRefusesWhitespaceRules(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		before string
+		after  string
+	}{
+		{name: "before", before: " \t\n", after: "created_at + INTERVAL 7 DAY"},
+		{name: "after", before: "created_at + INTERVAL 7 DAY", after: " \t\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			op := ttlOperation()
+			op.Change.Before.TTL, op.Change.After.TTL.Value = test.before, test.after
+			codec := chast.Codecs()[0]
+			encoded, err := codec.Encode(op)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(encoded, qt.IsNil)
+			decoded, err := codec.Decode(must.Must(json.Marshal(op)))
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(decoded, qt.IsNil)
+		})
+	}
+}

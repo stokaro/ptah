@@ -779,27 +779,6 @@ func TestAlterTable_AddSkippingIndex_MissingExpressionErrors(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "expression")
 }
 
-func TestAlterTable_ModifyTTL(t *testing.T) {
-	c := qt.New(t)
-	setTTL := &ast.AlterTableNode{
-		Name: "events",
-		Operations: []ast.AlterOperation{
-			&ast.ModifyTTLOperation{Expression: "created_at + INTERVAL 30 DAY"},
-		},
-	}
-	out := render(t, setTTL)
-	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY TTL created_at + INTERVAL 30 DAY;")
-
-	clearTTL := &ast.AlterTableNode{
-		Name: "events",
-		Operations: []ast.AlterOperation{
-			&ast.ModifyTTLOperation{},
-		},
-	}
-	out = render(t, clearTTL)
-	c.Assert(out, qt.Contains, "ALTER TABLE events REMOVE TTL;")
-}
-
 // TestVisitIndex_AnnotationDrivenTypeAndGranularity exercises the end-to-end
 // path from a schemamodel.Index annotation (with type= and granularity=) through
 // modelast.FromIndex into the ClickHouse renderer. Two type spellings are
