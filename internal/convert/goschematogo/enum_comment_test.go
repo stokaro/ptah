@@ -19,7 +19,7 @@ func TestRender_EnumCommentRoundTrip(t *testing.T) {
 		{Name: "mood", Values: []string{"ok"}, Comment: "how it went"},
 	}}
 
-	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	var source strings.Builder
 	for _, file := range files {

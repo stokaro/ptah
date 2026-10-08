@@ -29,7 +29,7 @@ func unvalidatedCheckDatabase(notValid bool) *schemamodel.Database {
 func TestRender_NotValidConstraint_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(unvalidatedCheckDatabase(true), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), unvalidatedCheckDatabase(true), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.ErrorMatches, `CHECK "slots_pos_positive" is NOT VALID, which a Go annotation cannot represent`)
 	c.Assert(files, qt.IsNil)
@@ -39,7 +39,7 @@ func TestRender_NotValidConstraint_FailurePath(t *testing.T) {
 func TestRender_NotValidConstraint_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(unvalidatedCheckDatabase(false), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), unvalidatedCheckDatabase(false), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

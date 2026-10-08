@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
@@ -25,7 +26,7 @@ func TestNamedChangefeeds_GoExportRoundTrip(t *testing.T) {
 	objects, err := schemaext.NewObjects(ydbschema.DesiredObject("shop", "items", feed))
 	c.Assert(err, qt.IsNil)
 	database := &schemamodel.Database{FeatureObjects: objects, Tables: []schemamodel.Table{{Name: "items", Schema: "shop", StructName: "Item"}}, Fields: []schemamodel.Field{{StructName: "Item", Name: "id", FieldName: "ID", Type: "BIGINT", Primary: true}}}
-	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource("schema.go", string(files[0].Data))
@@ -49,7 +50,7 @@ func TestFeatureRendering_RefusesFacetsAtEveryCommonScope(t *testing.T) {
 
 		_, err := builtin.GetOrderedCreateStatementsWithCapabilities(isolated, "postgres", capability.Postgres18())
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-		files, err := goschematogo.Render(isolated, goschematogo.Options{SingleFile: true})
+		files, err := goschematogo.Render(c.Context(), isolated, goschematogo.Options{SingleFile: true, Dialect: "postgres", Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		c.Assert(files, qt.IsNil)
 	}
@@ -62,7 +63,7 @@ func TestFeatureRendering_RefusesOrphanAndWrongParent(t *testing.T) {
 	database := &schemamodel.Database{FeatureObjects: objects}
 	_, err = builtin.GetOrderedCreateStatementsWithCapabilities(database, "ydb", capability.YDB262())
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	_, err = goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	_, err = goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	table := ast.NewCreateTable("items").AddColumn(ast.NewColumn("id", "Int64").SetPrimary())
 	table.OwnedObjects = objects
@@ -74,7 +75,7 @@ func TestGoExport_RefusesDisabledChangefeed(t *testing.T) {
 	c := qt.New(t)
 	objects, err := schemaext.NewObjects(ydbschema.DesiredObject("", "items", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true}))
 	c.Assert(err, qt.IsNil)
-	files, err := goschematogo.Render(&schemamodel.Database{FeatureObjects: objects, Tables: []schemamodel.Table{{Name: "items"}}}, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), &schemamodel.Database{FeatureObjects: objects, Tables: []schemamodel.Table{{Name: "items"}}}, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(files, qt.IsNil)
 }
@@ -90,7 +91,7 @@ func TestExportRefusesToRecreateRetainedReplicationState(t *testing.T) {
 		Fields: []schemamodel.Field{{StructName: "Item", Name: "id", Type: "BIGINT", Primary: true}}}
 	// Complete-schema validation checks the same creation contract as export.
 	c.Assert(builtin.ValidateSchemaWithCapabilities(database, "ydb", capability.YDB262()), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "(?s).*cannot preserve the retained replication binding.*")
 	c.Assert(files, qt.IsNil)

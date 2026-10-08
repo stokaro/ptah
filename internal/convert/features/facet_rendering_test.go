@@ -110,9 +110,9 @@ func TestGoExportRefusesUnrepresentableExcludedFacetBindings(t *testing.T) {
 	facets := scopedRenderFacets("mysql")
 	excluded := must.Must(facets.ForTarget(must.Must(schemaext.NewTargetSelection("postgres"))))
 	database := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "items", StructName: "Item", Facets: excluded}}}
-	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true, Dialect: "postgres", Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `(?s).*Go annotations cannot represent feature facet "example.org/facet".*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*has an excluded facet "example.org/facet".*`)
 	c.Assert(files, qt.IsNil)
 	c.Assert(database.Tables[0].Facets, qt.DeepEquals, excluded)
 }

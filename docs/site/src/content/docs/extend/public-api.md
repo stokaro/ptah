@@ -61,6 +61,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chresolve` | Table-setting resolution with retained intent and property origins. |
 | `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
 | `dialect/clickhouse/chsource` | Table property encoding and decoding that preserves setting intent. |
+| `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
@@ -225,7 +226,16 @@ cancellation return no partial result or new catalog knowledge.
 `chsource.Service` preserves ClickHouse intent through the table platform property
 format. Bare keys carry explicit values; a `.state` suffix with value `default`
 requests the creation rule. Register its definitions and service with a selected
-provider. Bundled frontend and Go export integration remains part of
+provider. The bundled runtime registers it for Go annotation export.
+
+`schemaproperties.DecodeTables` attaches decoded properties as facets bound to
+the selected target. Unclaimed keys and other target groups stay untouched.
+`EncodeTables` exports those facets through the same owner. Both refuse mixed
+typed/property declarations and duplicate alias keys. Export also refuses facets
+whose scope or presence the property format cannot preserve. Neither operation
+adds inspection coverage. Native Go export uses these operations; other Go/YAML
+consumers call `DecodeTables` after parsing. Automatic source lowering for schema
+rendering and comparison remains part of
 [#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures

@@ -27,7 +27,7 @@ func TestRead_PrimaryKeyOptions_HappyPath(t *testing.T) {
 				ddl, err := builtin.GetOrderedCreateStatements(&db, dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(strings.Join(ddl, "\n"), qt.Contains, "PRIMARY KEY (`a`) KEY_BLOCK_SIZE=8 COMMENT 'lookup'")
-				files, err := goschematogo.Render(&db, goschematogo.Options{SingleFile: true})
+				files, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{SingleFile: true})
 				c.Assert(err, qt.IsNil)
 				c.Assert(files, qt.HasLen, 1)
 				again, err := goschema.ParseSource("schema.go", string(files[0].Data))

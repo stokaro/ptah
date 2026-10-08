@@ -48,7 +48,7 @@ func TestRender_PerTableFileNames_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			files, err := goschematogo.Render(&test.database, goschematogo.Options{PerTable: true})
+			files, err := goschematogo.Render(c.Context(), &test.database, goschematogo.Options{PerTable: true})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(fileNames(files), qt.DeepEquals, test.want)

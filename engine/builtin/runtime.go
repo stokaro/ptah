@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chprepare"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/postgres/pgproject"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
@@ -65,6 +66,7 @@ func New() (*engine.Runtime, error) {
 		if name == platform.ClickHouse {
 			provider.Targets[0].Preparation = chprepare.Service{}
 			provider.Codecs = append(chschema.Codecs(), chdiff.Codecs()...)
+			provider.Properties = []engine.PropertySource{{Target: name, Format: schemaext.TablePlatformProperties, Definitions: chsource.Definitions(), Service: chsource.Service{}}}
 			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{chschema.TableKind}, Service: chconvert.Service{}}}
 			provider.FacetComparisons = []engine.FacetComparison{{Target: name, Kinds: []schemaext.Kind{chschema.TableKind}, ChangeKinds: []schemaext.Kind{chdiff.TableKind}, Service: chcompare.Service{}}}
 		}

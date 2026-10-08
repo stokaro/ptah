@@ -29,7 +29,7 @@ func TestRender_Topic_RoundTrip(t *testing.T) {
 	}}
 	db := &schemamodel.Database{Topics: []schemamodel.Topic{topic, {Name: "plain"}}}
 
-	files, err := goschematogo.Render(db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)

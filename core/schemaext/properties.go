@@ -71,4 +71,5 @@ type PropertyRuntime interface {
 	PropertyService
 	ModelRuntime
 	PropertyDefinitions(string, PropertyFormat) ([]PropertyDefinition, error)
+	PropertyFormats(string) ([]PropertyFormat, error)
 }

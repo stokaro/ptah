@@ -117,7 +117,7 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 		}},
 	}
 
-	files, err := goschematogo.Render(db, goschematogo.Options{
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{
 		PackageName:     "models",
 		AddJSONTags:     true,
 		AddDBTags:       true,
@@ -336,7 +336,7 @@ func TestRenderOrdersDefaultPrivilegesDeterministically(t *testing.T) {
 func TestRenderSingleFileUsesOneSchemaFile(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(&schemamodel.Database{
+	files, err := goschematogo.Render(c.Context(), &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Fields: []schemamodel.Field{{
 			StructName: "User",
@@ -390,7 +390,7 @@ func TestRenderRejectsUnrepresentableIndexIncludeColumns(t *testing.T) {
 				IncludeColumns: []string{"created_at", test.column},
 			}}}
 
-			files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+			files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 
 			c.Assert(files, qt.IsNil)
 			c.Assert(err, qt.ErrorMatches, test.err)
@@ -410,7 +410,7 @@ func TestRenderAcceptsRepresentableIndexIncludeColumns(t *testing.T) {
 		}},
 	}
 
-	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
@@ -424,7 +424,7 @@ func TestRenderAcceptsRepresentableIndexIncludeColumns(t *testing.T) {
 func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(&schemamodel.Database{
+	files, err := goschematogo.Render(c.Context(), &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "BillingUser", Schema: "billing", Name: "users"},
 			{StructName: "AuthUser", Schema: "auth", Name: "users"},
@@ -438,7 +438,7 @@ func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {
 func TestRenderRejectsInvalidPackageName(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschematogo.Render(&schemamodel.Database{}, goschematogo.Options{PackageName: "type"})
+	_, err := goschematogo.Render(c.Context(), &schemamodel.Database{}, goschematogo.Options{PackageName: "type"})
 
 	c.Assert(err, qt.ErrorMatches, `invalid package name "type"`)
 }
@@ -463,7 +463,7 @@ func writeSource(c *qt.C, path, source string) {
 // what the annotation parser reads back out of it.
 func renderAndParseGrants(c *qt.C, dir string, grants []schemamodel.Grant) []schemamodel.Grant {
 	c.Helper()
-	files, err := goschematogo.Render(
+	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{Grants: grants},
 		goschematogo.Options{PackageName: "models", SingleFile: true},
 	)
@@ -480,7 +480,7 @@ func renderAndParseDefaultPrivileges(
 	privileges []schemamodel.DefaultPrivilege,
 ) []schemamodel.DefaultPrivilege {
 	c.Helper()
-	files, err := goschematogo.Render(
+	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{DefaultPrivileges: privileges},
 		goschematogo.Options{PackageName: "models", SingleFile: true},
 	)
@@ -493,7 +493,7 @@ func renderAndParseDefaultPrivileges(
 
 func renderDefaultPrivilegeSource(c *qt.C, privileges []schemamodel.DefaultPrivilege) string {
 	c.Helper()
-	files, err := goschematogo.Render(
+	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{DefaultPrivileges: privileges},
 		goschematogo.Options{PackageName: "models", SingleFile: true},
 	)
@@ -545,7 +545,7 @@ func TestRenderRolesRoundTripThroughParser(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(before.Roles, qt.HasLen, 2)
 
-	files, err := goschematogo.Render(
+	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{Roles: before.Roles, RevokedGrants: before.RevokedGrants},
 		goschematogo.Options{PackageName: "models", SingleFile: true},
 	)

@@ -117,6 +117,24 @@ func (r *Runtime) PropertyDefinitions(targetName string, format schemaext.Proper
 	return result, nil
 }
 
+// PropertyFormats returns the selected target's supported source formats in
+// sorted order. A known target with no property services returns an empty list;
+// an unknown target returns ErrUnsupportedDialect. The result is independent.
+func (r *Runtime) PropertyFormats(targetName string) ([]schemaext.PropertyFormat, error) {
+	selected, found := r.lookup(targetName)
+	if !found {
+		return nil, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, targetName)
+	}
+	var formats []schemaext.PropertyFormat
+	for _, source := range r.propertyServices {
+		if source.Target == selected.name {
+			formats = append(formats, source.Format)
+		}
+	}
+	slices.Sort(formats)
+	return slices.Compact(formats), nil
+}
+
 func propertyContext(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: property conversion requires a context", schemaext.ErrInvalidValue)

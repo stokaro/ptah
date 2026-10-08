@@ -110,7 +110,8 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("convert database schema: %w", err))
 	}
-	files, err := goschematogo.Render(goSchema, goschematogo.Options{
+	files, err := goschematogo.Render(cmd.Context(), goSchema, goschematogo.Options{
+		Runtime:         runtime,
 		PackageName:     opts.packageName,
 		PerTable:        opts.perTable,
 		SingleFile:      opts.singleFile,
