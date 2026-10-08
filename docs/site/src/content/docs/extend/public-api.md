@@ -106,6 +106,11 @@ a complete `schemamodel.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
 
+Ordered rendering resolves constraint owners against the complete table set
+before checking or emitting them. An explicit table identity takes precedence
+over an unqualified match in another schema. Equal foreign-key names on
+different PostgreSQL tables remain separate constraints.
+
 `core/astbuilder` writes `core/ast` DDL nodes as method chains: `NewTable` and
 `NewIndex` build one statement, `NewSchema` builds an `*ast.StatementList` in
 declaration order. The builders return AST types and nothing of their own, so a

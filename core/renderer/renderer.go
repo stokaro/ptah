@@ -2344,6 +2344,12 @@ func prepareDatabaseForRendering(
 	prepared.Fields = slices.Clone(database.Fields)
 	prepared.EmbeddedFields = slices.Clone(database.EmbeddedFields)
 	prepared.Constraints = slices.Clone(database.Constraints)
+	// Resolve shorthand owners against the complete table set before a
+	// constraint is matched to an individual table during validation or DDL
+	// lowering. Only the cloned constraint slice is normalized here.
+	schemamodel.NormalizeTableScopedNames(&schemamodel.Database{
+		Tables: prepared.Tables, Constraints: prepared.Constraints,
+	})
 
 	hasForeignKeys := false
 	for i := range prepared.Fields {
@@ -4348,14 +4354,12 @@ func tableByStructName(tables []schemamodel.Table, structName string) *schemamod
 }
 
 func constraintOwnerTable(tables []schemamodel.Table, constraint schemamodel.Constraint) *schemamodel.Table {
-	if constraint.Table != "" {
-		for i := range tables {
-			if tables[i].QualifiedName() == constraint.Table || tables[i].Name == constraint.Table {
-				return &tables[i]
-			}
+	for i := range tables {
+		if schemaprep.ConstraintBelongsToTable(constraint, tables[i]) {
+			return &tables[i]
 		}
 	}
-	return tableByStructName(tables, constraint.StructName)
+	return nil
 }
 
 func referencedTable(tables []schemamodel.Table, owner schemamodel.Table, reference string) *schemamodel.Table {
