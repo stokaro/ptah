@@ -41,6 +41,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/yamlschema`
 - `ptah.run/dbschema`
 - `ptah.run/dialect/clickhouse/chprepare`
+- `ptah.run/dialect/clickhouse/chschema`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
@@ -463,6 +464,23 @@ does not establish target support. Owner callbacks are pure local operations.
 `Fingerprint` uses owner-defined canonical ordering, retaining ordered lists;
 it does not decide semantic equality. Default JSON serialization of feature
 collections is refused so callers cannot lose concrete payload types.
+
+`dialect/clickhouse/chschema` owns the ClickHouse table-settings model and its
+versioned codecs. A desired setting distinguishes an unmanaged omission, a
+request for the target default, and an explicit value. An explicit empty value
+remains distinct from a default request. An observation requires every property,
+including empty optional values. Sorting and primary keys stay separate even
+when their expressions agree. Codecs preserve expression text and order.
+
+Register `chschema.Codecs()` with the selected provider to encode table facets.
+`ObservedTable.Desired` makes every property explicit; `DesiredTable.Observed`
+refuses unresolved settings. This projection records a prediction, not a new
+database observation. Invalid model values return `schemaext.InvalidModelError`,
+which identifies the kind and representation and wraps `ErrInvalidValue`.
+
+These model APIs do not enable typed ClickHouse table facets in the bundled
+reader, renderer, or migration planner. Their integration is part of
+[stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register

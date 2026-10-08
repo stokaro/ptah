@@ -1,0 +1,51 @@
+{
+  "$id": "ptah.run/clickhouse/table/v1",
+  "$defs": {
+    "setting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {"enum": ["", "explicit", "default"]},
+        "value": {"type": "string", "pattern": "^[^\u0000]*$"}
+      },
+      "meaning": "Missing settings are unmanaged. Empty state requires an empty value. Default requests target default resolution and requires an empty value. Explicit preserves the exact value, including an empty optional setting."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/clickhouse/table": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "engine": {"$ref": "#/$defs/setting"},
+          "order_by": {"$ref": "#/$defs/setting"},
+          "primary_key": {"$ref": "#/$defs/setting"},
+          "partition_by": {"$ref": "#/$defs/setting"},
+          "sample_by": {"$ref": "#/$defs/setting"},
+          "ttl": {"$ref": "#/$defs/setting"},
+          "settings": {"$ref": "#/$defs/setting"}
+        },
+        "constraint": "An explicit engine cannot be blank. Null properties are invalid. Conversion to an observation requires every setting to be explicit."
+      }
+    },
+    "observed": {
+      "ptah.run/clickhouse/table": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["engine", "order_by", "primary_key", "partition_by", "sample_by", "ttl", "settings"],
+        "properties": {
+          "engine": {"type": "string", "pattern": "^[^\u0000]*$"},
+          "order_by": {"type": "string", "pattern": "^[^\u0000]*$"},
+          "primary_key": {"type": "string", "pattern": "^[^\u0000]*$"},
+          "partition_by": {"type": "string", "pattern": "^[^\u0000]*$"},
+          "sample_by": {"type": "string", "pattern": "^[^\u0000]*$"},
+          "ttl": {"type": "string", "pattern": "^[^\u0000]*$"},
+          "settings": {"type": "string", "pattern": "^[^\u0000]*$"}
+        },
+        "constraint": "Engine cannot be blank. All properties must be present strings; an empty optional string records inspected absence. Incomplete inspection belongs in coverage."
+      }
+    }
+  },
+  "canonicalization": "Omitted and empty unspecified settings are equivalent. Strings must be valid UTF-8. Preserve all SQL expression text, ordering, and explicit empty values. Do not resolve defaults or equate SQL expressions."
+}
