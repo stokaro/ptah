@@ -370,7 +370,7 @@ Offline target-aware comparison requires `schemadiff.TargetRuntime`, including
 its selected validation service. Live comparison requires
 `schemadiff.DatabaseRuntime`, adding selected AST rendering for normalization
 probes. Completed rendering refusals leave normalization unresolved; service
-failures abort comparison. Pure comparison accepts `schemaext.ComparisonRuntime`.
+failures abort comparison. Pure comparison accepts `schemapreparation.Runtime`.
 Validation sends the whole captured schema with target facts in one call.
 
 `runtime.ResolveTarget(name)` returns an immutable `schemaext.TargetSelection`.

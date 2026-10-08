@@ -7,10 +7,12 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/rowdeletion"
@@ -112,12 +114,15 @@ func TablesAndColumnsWithSemantics(
 	semantics identifier.Semantics,
 	cov Coverage,
 ) {
-	TablesAndColumnsWithServerSpellings(desired, database, diff, dialect, semantics, cov, ServerSpellings{}, nil)
+	TablesAndColumnsWithTableContext(desired, database, diff, dialect, semantics, cov, TableContext{}, nil)
 }
 
-// ServerSpellings is how the target itself spells the column attributes it
-// rewrites. The zero value is every comparison that could not ask a server.
-type ServerSpellings struct {
+// TableContext carries selected preparation and server-reported spellings.
+// Its zero value preserves declared flags and uses no server normalization.
+type TableContext struct {
+	// Prepared holds selected captures under the identities used for pairing.
+	Prepared map[objectidentity.Key]schemapreparation.Table
+
 	// Generated is [config.CompareOptions.GeneratedExpressions].
 	Generated map[string]config.GeneratedExpression
 	// Columns is [config.CompareOptions.ColumnSpellings].
@@ -128,19 +133,19 @@ type ServerSpellings struct {
 	DefaultIntSize int
 }
 
-// TablesAndColumnsWithServerSpellings is [TablesAndColumnsWithSemantics] told
+// TablesAndColumnsWithTableContext is [TablesAndColumnsWithSemantics] told
 // how the target itself spells each declared generated expression, column type
 // and column default, and what the target can do: with
 // [capability.SerialSequenceOptions] in caps, the start and the increment of a
 // Serial column's sequence are compared too. Nil caps compares neither.
-func TablesAndColumnsWithServerSpellings(
+func TablesAndColumnsWithTableContext(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
 	cov Coverage,
-	spellings ServerSpellings,
+	spellings TableContext,
 	caps capability.Capabilities,
 ) {
 	// Create maps for quick lookup
@@ -186,8 +191,8 @@ func TablesAndColumnsWithServerSpellings(
 	diff.DeclaredFunctions = difftypes.FunctionOrderingOf(desired)
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
-			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(
-				desired, table, tableDiffName(table.Schema, table.Name, dialect), semantics))
+			creation := difftypes.TableCreationFor(desired, table, tableDiffName(table.Schema, table.Name, dialect), semantics)
+			diff.TablesAdded = append(diff.TablesAdded, creation)
 		}
 	}
 

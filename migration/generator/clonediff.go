@@ -8,11 +8,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone := *diff
+	clone.TablePreparation = cloneTablePreparation(diff.TablePreparation)
 	clone.IdentifierSemantics = cloneIdentifierSemantics(diff.IdentifierSemantics)
 	clone.TablesAdded = slices.Clone(diff.TablesAdded)
 	clone.TablesRemoved = diff.TablesRemoved.Clone()
@@ -296,4 +298,13 @@ func cloneResourcePoolDiffs(changes []difftypes.ResourcePoolDiff) []difftypes.Re
 		clone[i] = change
 	}
 	return clone
+}
+
+// cloneTablePreparation preserves comparison provenance in both plan directions.
+// It does not reinterpret forward captures as reverse declarations or observations.
+func cloneTablePreparation(capture *schemapreparation.Capture) *schemapreparation.Capture {
+	if capture == nil {
+		return nil
+	}
+	return new(capture.Clone())
 }

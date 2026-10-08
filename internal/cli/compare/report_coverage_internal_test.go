@@ -34,6 +34,7 @@ import (
 // this replaces named fields that stokaro/ptah#2315 had already retired while
 // the report went on printing the two it did name (stokaro/ptah#2476).
 var nonCategoryFields = map[string]string{
+	"TablePreparation":           "source and prepared comparison provenance, not a schema change",
 	"IdentifierSemantics":        "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
 	"DeclaredTables":             "every table the declaration holds, carried so a foreign key can be resolved to the table it references; like the vocabulary below it is an input to rendering rather than a difference, and reporting it would print the whole document's tables as though they had changed (stokaro/ptah#2315)",
 	"DeclaredUserTypes":          "the declaration's type vocabulary, carried so a planner can resolve a created column's type to the user type it names; it is an input to rendering rather than a difference between the two schemas, and reporting it would print the whole document's domains and enums as though they had changed (stokaro/ptah#2315)",

@@ -46,6 +46,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
 | `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
+| `core/schemapreparation` | Selected column-key normalization with independent source and prepared captures. |
 | `core/schemaext` | Typed immutable feature values, positive source coverage, versioned codecs, and conservative operation effects. |
 | `core/schemaprojection` | Target-owned constraint effects and independent table-state predictions. |
 | `core/schemavalidation` | Whole-schema validation services with structured diagnostics and explicit completion. |
@@ -56,6 +57,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
+| `dialect/clickhouse/chprepare` | ClickHouse key membership for shared column comparison. |
 | `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
@@ -157,12 +159,19 @@ inspected absence. Statistics and DBML or JSON omission reports use these model
 services. Counts from YDB's owner include disabled changefeeds and their consumers.
 
 Every `schemadiff` entry point takes a context and a selected
-`schemaext.ComparisonRuntime`. Non-reporting calls return no diff when evidence
+`schemapreparation.Runtime`. Non-reporting calls return no diff when evidence
 is incomplete; `ErrIncompleteComparison` identifies that refusal, and
 `IncompleteComparisonError` retains the structured diagnostics. Reporting calls
 return established changes, `Diagnostics`, and an error. Reports must retain
 both `Diagnostics.Common` and `Diagnostics.Features`; an empty diff with a
 knowledge limit does not establish agreement.
+
+`Target.Preparation` selects table preparation before common column comparison.
+Providers that preserve input flags register `schemapreparation.Identity`;
+a missing service is an error. Services may resolve column key membership but
+cannot change other declarations, observations, or knowledge. Incomplete replies
+return no diff. `SchemaDiff.TablePreparation` retains independent source and
+prepared captures as comparison provenance, including through reversal.
 
 Feature providers register their local model codecs through `Provider.Codecs`.
 `Runtime.Codecs` exposes context-aware batch encoding, decoding, and canonical
@@ -193,7 +202,7 @@ provider's target-aware comparison of desired and observed state.
 The `migration/dbtest` package is the embeddable engine behind the native test
 commands, including regular-expression case selection through `FilterCases`.
 Its `Options.Runtime` and `SchemaOptions.Runtime` require a selected
-`schemaext.ComparisonRuntime`, reused for every case's schema convergence.
+`engine.SchemaRuntime`, reused for every case's schema convergence.
 See [Test migrations and schemas](../../testing/migrations-and-schema/) for
 its case model and [Database test commands](../../reference/test-cases/) for CLI behavior.
 

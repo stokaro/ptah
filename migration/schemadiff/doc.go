@@ -25,7 +25,7 @@
 // # Core Functionality
 //
 // Every comparison takes a context, desired and current state, and an explicit
-// runtime. Pure comparisons accept schemaext.ComparisonRuntime. Offline target
+// runtime. Pure comparisons accept schemapreparation.Runtime. Offline target
 // comparisons require TargetRuntime, including selected schema validation. Live
 // comparisons require DatabaseRuntime, adding selected rendering for probes.
 // Each returns a *difftypes.SchemaDiff and an error.

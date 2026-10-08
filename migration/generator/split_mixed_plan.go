@@ -15,6 +15,7 @@ func splitEnumValueAdditionDiff(diff *difftypes.SchemaDiff) splitSchemaDiffs {
 	txDiff := cloneSchemaDiff(diff)
 	noTxDiff := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
+		TablePreparation:    cloneTablePreparation(diff.TablePreparation),
 	}
 
 	txEnums := make([]difftypes.EnumDiff, 0, len(diff.EnumsModified))

@@ -41,7 +41,7 @@ func (r *Runtime) validateParentPlanningOwnership(request featureplan.Request) e
 
 func capturedPlanningKinds(table featureplan.Table) ([]schemaext.Kind, error) {
 	var kinds []schemaext.Kind
-	for _, group := range planningModelGroups(table) {
+	for _, group := range capturedTableModelGroups(table.Desired, table.Current) {
 		objects, err := group.state.Objects.All()
 		if err != nil {
 			return nil, err

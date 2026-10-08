@@ -171,6 +171,9 @@ func apply(
 	}
 
 	filtered := *diff
+	if diff.TablePreparation != nil {
+		filtered.TablePreparation = new(diff.TablePreparation.Clone())
+	}
 	var skipped []SkippedChange
 
 	if skip.Has(DropTable) {

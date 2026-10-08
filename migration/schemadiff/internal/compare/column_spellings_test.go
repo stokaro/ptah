@@ -39,9 +39,9 @@ func optional(value string) *string {
 
 func spellingsDiff(desired *schemamodel.Database, current *catalog.Database, spellings map[string]config.ColumnSpelling) *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
-	compare.TablesAndColumnsWithServerSpellings(desired, current, diff, "postgres",
+	compare.TablesAndColumnsWithTableContext(desired, current, diff, "postgres",
 		identifier.ForDialect("postgres"), compare.CoverageOf(desired, current),
-		compare.ServerSpellings{Columns: spellings}, nil)
+		compare.TableContext{Columns: spellings}, nil)
 	return diff
 }
 

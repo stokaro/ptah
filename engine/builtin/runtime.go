@@ -9,6 +9,8 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemapreparation"
+	"ptah.run/dialect/clickhouse/chprepare"
 	"ptah.run/dialect/postgres/pgproject"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
@@ -50,10 +52,14 @@ func New() (*engine.Runtime, error) {
 				Rendering:       renderingService{},
 				SchemaRendering: schemaRenderingService{},
 				Validation:      validationService{},
+				Preparation:     schemapreparation.Identity{},
 			}},
 		}
 		if name == platform.Postgres {
 			provider.Targets[0].Constraints = pgproject.Constraints{}
+		}
+		if name == platform.ClickHouse {
+			provider.Targets[0].Preparation = chprepare.Service{}
 		}
 		if name == platform.YDB {
 			provider.Codecs = ydbextensions.Codecs()

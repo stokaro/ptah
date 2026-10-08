@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/engine"
 )
 
@@ -32,6 +33,7 @@ func (v *comparedChange) CloneChange() schemaext.ChangeValue {
 
 func comparisonProvider(service schemaext.ObjectComparisonService) engine.Provider {
 	p := conversionProvider(nil)
+	p.Targets[0].Preparation = schemapreparation.Identity{}
 	p.Conversions = nil
 	p.Comparisons = []engine.ObjectComparison{{Target: "custom", Kinds: []schemaext.Kind{conversionFirst, conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: service}}
 	encode := func(value schemaext.Payload) (json.RawMessage, error) { return json.Marshal(value) }

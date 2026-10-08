@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
@@ -53,7 +54,7 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 			return featureplan.Request{}, fmt.Errorf("%w: observed planning table disagrees with its subject", schemaext.ErrInvalidValue)
 		}
 		table = table.Clone()
-		if err := r.validatePlanningModels(ctx, table); err != nil {
+		if err := r.validateCapturedTableModels(ctx, table.Desired, table.Current); err != nil {
 			return featureplan.Request{}, err
 		}
 		request.Tables[i] = table
@@ -61,8 +62,8 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	return request, ctx.Err()
 }
 
-func (r *Runtime) validatePlanningModels(ctx context.Context, table featureplan.Table) error {
-	for _, group := range planningModelGroups(table) {
+func (r *Runtime) validateCapturedTableModels(ctx context.Context, declared schemacapture.TableDeclaration, observed schemacapture.TableObservation) error {
+	for _, group := range capturedTableModelGroups(declared, observed) {
 		if _, err := r.codecs.SnapshotObjectState(ctx, group.representation, group.state); err != nil {
 			return err
 		}
@@ -85,12 +86,10 @@ type planningModelGroup struct {
 	state          schemaext.ObjectState
 }
 
-func planningModelGroups(table featureplan.Table) []planningModelGroup {
+func capturedTableModelGroups(d schemacapture.TableDeclaration, o schemacapture.TableObservation) []planningModelGroup {
 	// These temporary views reuse the models' one inventory of facet locations.
 	// They neither build a desired schema nor derive missing parent definitions.
-	d := table.Desired
 	declared := schemamodel.Database{Tables: []schemamodel.Table{d.Table}, Fields: d.Fields, Enums: d.Enums, Constraints: d.Constraints, Indexes: d.Indexes, Triggers: d.Triggers}
-	o := table.Current
 	observed := catalog.Database{Tables: []catalog.Table{o.Table}, Indexes: o.Indexes, Constraints: o.Constraints, Triggers: o.Triggers}
 	return []planningModelGroup{
 		{schemaext.Desired, declared.FacetSlots(), schemaext.ObjectState{Objects: d.OwnedObjects, Coverage: d.FeatureCoverage}},

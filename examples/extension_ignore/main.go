@@ -62,8 +62,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
@@ -93,7 +93,7 @@ func run(ctx context.Context) error {
 	fmt.Println()
 
 	// Demonstrate different configuration options
-	for _, demonstrate := range []func(context.Context, *schemamodel.Database, *catalog.Database, schemaext.ComparisonRuntime) error{
+	for _, demonstrate := range []func(context.Context, *schemamodel.Database, *catalog.Database, schemapreparation.Runtime) error{
 		demonstrateDefaultBehavior, demonstrateCustomIgnoreList,
 		demonstrateAdditionalIgnoredExtensions, demonstrateManageAllExtensions,
 	} {
@@ -139,7 +139,7 @@ func getDatabaseExtensionNames(extensions []catalog.Extension) []string {
 	return names
 }
 
-func demonstrateDefaultBehavior(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
+func demonstrateDefaultBehavior(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) error {
 	fmt.Println("1. Default Behavior (ignores 'plpgsql'):")
 	fmt.Println(`   Code: schemadiff.CompareWithDialect(ctx, generated, database, "postgres", runtime)`)
 
@@ -155,7 +155,7 @@ func demonstrateDefaultBehavior(ctx context.Context, desired *schemamodel.Databa
 	return nil
 }
 
-func demonstrateCustomIgnoreList(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
+func demonstrateCustomIgnoreList(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) error {
 	fmt.Println("2. Custom Ignore List (ignore 'adminpack' only):")
 	fmt.Println("   Code: config.WithIgnoredExtensions(\"adminpack\")")
 
@@ -173,7 +173,7 @@ func demonstrateCustomIgnoreList(ctx context.Context, desired *schemamodel.Datab
 	return nil
 }
 
-func demonstrateAdditionalIgnoredExtensions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
+func demonstrateAdditionalIgnoredExtensions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) error {
 	fmt.Println("3. Additional Ignored Extensions (default + 'adminpack'):")
 	fmt.Println("   Code: config.WithAdditionalIgnoredExtensions(\"adminpack\")")
 
@@ -191,7 +191,7 @@ func demonstrateAdditionalIgnoredExtensions(ctx context.Context, desired *schema
 	return nil
 }
 
-func demonstrateManageAllExtensions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
+func demonstrateManageAllExtensions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) error {
 	fmt.Println("4. Manage All Extensions (no ignoring):")
 	fmt.Println("   Code: config.WithIgnoredExtensions() // empty list")
 
