@@ -71,7 +71,7 @@ func (r *Runtime) featureComparisonKinds(request schemaext.ComparisonRequest) (f
 			}
 		}
 		for _, record := range state.Facets {
-			for _, kind := range record.Values.Kinds() {
+			for _, kind := range record.Values.DeclaredKinds() {
 				if _, found := r.comparisons[conversionKey{target: request.Target, kind: kind}]; found {
 					return nil, nil, fmt.Errorf("%w: named-object model %q is attached as a facet", schemaext.ErrInvalidValue, kind)
 				}

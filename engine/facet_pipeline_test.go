@@ -95,3 +95,28 @@ func TestFacetHostRequiresCompletedRuntimeReply(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(diff, qt.IsNil)
 }
+
+func TestFacetScopeSurvivesHostProjectionAndTableCaptures(t *testing.T) {
+	c := qt.New(t)
+	runtime := mustRuntime(c, facetProvider(facetComparisonFunc(func(_ context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		c.Assert(request.Kinds, qt.DeepEquals, []schemaext.Kind{conversionSecond})
+		return schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired}, nil
+	})))
+	desired, current := facetSchemas()
+	desired.Tables[0].Facets = must.Must(desired.Tables[0].Facets.WithTargetScope(conversionFirst, "foreign"))
+	selected := must.Must(runtime.ResolveTarget("alternate"))
+	projected := must.Must(schemamodel.ScopeToTarget(desired, selected))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), projected, current, "alternate", runtime))
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+	projected.Tables[0].Comment = "capture the common change"
+	diff = must.Must(schemadiff.CompareWithDialect(t.Context(), projected, current, "alternate", runtime))
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	table := diff.TablesModified[0]
+	c.Assert(table.FeatureChanges, qt.HasLen, 0)
+	c.Assert(table.Desired.Table.Facets.TargetScope(conversionFirst), qt.DeepEquals, []string{"foreign"})
+	c.Assert(table.Desired.Table.Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{conversionSecond})
+	// Rebuilding a parent still needs its actual settings, including settings
+	// excluded from source comparison. Its observation must retain that state.
+	c.Assert(table.Current.Table.Facets, qt.DeepEquals, current.Tables[0].Facets)
+	c.Assert(desired.Tables[0].Facets.Len(), qt.Equals, 2)
+}

@@ -27,7 +27,9 @@ type FacetState struct {
 
 // FacetComparisonRequest compares attached settings against captured target
 // facts. Owners describes common object lifecycles even when neither source has
-// a facet value. The service performs no inspection or mutation of its inputs.
+// a facet value. Includes determines whether each model applies to an owner;
+// an exclusion for one model does not exclude another on the same owner. The
+// service performs no inspection or mutation of its inputs.
 type FacetComparisonRequest struct {
 	Target       string
 	Identifiers  identifier.Semantics
@@ -36,6 +38,19 @@ type FacetComparisonRequest struct {
 	Desired      FacetState
 	Current      FacetState
 	Owners       []ParentState
+}
+
+// Includes reports whether a prepared request compares kind on subject. The
+// runtime projects source bindings before dispatch. A deliberate exclusion
+// permits neither changes, adopted values, nor undecided diagnostics. Providers
+// must check this for each model/owner pair, even under complete source coverage.
+func (r FacetComparisonRequest) Includes(kind Kind, subject objectidentity.ID) bool {
+	for _, record := range r.Desired.Records {
+		if record.Subject.Key() == subject.Key() {
+			return !slices.Contains(record.Values.DeclaredKinds(), kind) || slices.Contains(record.Values.Kinds(), kind)
+		}
+	}
+	return true
 }
 
 // FacetChange names the model whose setting changes. A common subject can have
@@ -77,15 +92,7 @@ func (r Registry) SnapshotFacetState(ctx context.Context, representation Represe
 			return FacetState{}, fmt.Errorf("%w: invalid or duplicate facet subject %s", ErrInvalidValue, ref)
 		}
 		seen[ref.Key()] = true
-		values, err := record.Values.Values()
-		if err != nil {
-			return FacetState{}, err
-		}
-		values, err = r.SnapshotValues(ctx, representation, values)
-		if err != nil {
-			return FacetState{}, err
-		}
-		facets, err := NewFacets(values...)
+		facets, err := r.SnapshotFacets(ctx, representation, record.Values)
 		if err != nil {
 			return FacetState{}, err
 		}

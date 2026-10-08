@@ -20,7 +20,7 @@ func RequireFacetPreservation(source, destination []*schemaext.Facets) error {
 	count := func(groups []*schemaext.Facets) map[schemaext.Kind]int {
 		result := make(map[schemaext.Kind]int)
 		for _, group := range groups {
-			for _, kind := range group.Kinds() {
+			for _, kind := range group.DeclaredKinds() {
 				result[kind]++
 			}
 		}
@@ -96,14 +96,9 @@ func Convert(ctx context.Context, runtime schemaext.ConversionRuntime, target st
 	if err != nil {
 		return schemaext.Objects{}, schemaext.Coverage{}, err
 	}
-	groups := make([]schemaext.Facets, len(destinations))
-	offset := len(inputs)
-	for i, length := range lengths {
-		groups[i], err = schemaext.NewFacets(converted[offset : offset+length]...)
-		if err != nil {
-			return schemaext.Objects{}, schemaext.Coverage{}, err
-		}
-		offset += length
+	groups, err := convertedFacetGroups(destinations, lengths, converted[len(inputs):])
+	if err != nil {
+		return schemaext.Objects{}, schemaext.Coverage{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaext.Objects{}, schemaext.Coverage{}, err
@@ -112,4 +107,23 @@ func Convert(ctx context.Context, runtime schemaext.ConversionRuntime, target st
 		*destinations[i] = group
 	}
 	return convertedObjects, convertedCoverage, nil
+}
+
+// Replacing each converted value retains source bindings, including exclusions
+// with no payload. Rebuilding the groups from Values would lose that intent.
+func convertedFacetGroups(destinations []*schemaext.Facets, lengths []int, converted []schemaext.Value) ([]schemaext.Facets, error) {
+	groups := make([]schemaext.Facets, len(destinations))
+	offset := 0
+	for i, length := range lengths {
+		groups[i] = *destinations[i]
+		for _, value := range converted[offset : offset+length] {
+			replaced, err := groups[i].Replace(value)
+			if err != nil {
+				return nil, err
+			}
+			groups[i] = replaced
+		}
+		offset += length
+	}
+	return groups, nil
 }

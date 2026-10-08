@@ -11,6 +11,7 @@ import (
 // insertion and lookup clone values, and no method exposes the stored map.
 type Facets struct {
 	values map[Kind]Value
+	scopes map[Kind][]string
 }
 
 // NewFacets validates and snapshots the supplied values. Duplicate kinds are
@@ -37,7 +38,7 @@ func (f Facets) With(value Value) (Facets, error) {
 	if err != nil {
 		return Facets{}, err
 	}
-	if _, found := f.values[cloned.Kind()]; found {
+	if f.declares(cloned.Kind()) {
 		return Facets{}, fmt.Errorf("%w: facet %q", ErrDuplicate, cloned.Kind())
 	}
 	return f.replaced(cloned), nil
@@ -57,7 +58,7 @@ func (f Facets) Replace(value Value) (Facets, error) {
 }
 
 func (f Facets) replaced(value Value) Facets {
-	result := Facets{values: make(map[Kind]Value, len(f.values)+1)}
+	result := Facets{values: make(map[Kind]Value, len(f.values)+1), scopes: f.scopes}
 	maps.Copy(result.values, f.values)
 	result.values[value.Kind()] = value
 	return result
@@ -65,22 +66,25 @@ func (f Facets) replaced(value Value) Facets {
 
 // Without returns a collection without kind. The original remains unchanged.
 func (f Facets) Without(kind Kind) Facets {
-	result := Facets{values: maps.Clone(f.values)}
+	result := Facets{values: maps.Clone(f.values), scopes: maps.Clone(f.scopes)}
 	delete(result.values, kind)
+	delete(result.scopes, kind)
 	return result
 }
 
 // Merge combines independent declarations and refuses duplicate kinds, even
 // when their values compare equal. The result shares only immutable snapshots.
 func (f Facets) Merge(other Facets) (Facets, error) {
-	result := Facets{values: make(map[Kind]Value, len(f.values)+len(other.values))}
+	result := Facets{values: make(map[Kind]Value, len(f.values)+len(other.values)), scopes: make(map[Kind][]string, len(f.scopes)+len(other.scopes))}
 	maps.Copy(result.values, f.values)
-	for kind, value := range other.values {
-		if _, found := result.values[kind]; found {
+	maps.Copy(result.scopes, f.scopes)
+	for _, kind := range other.DeclaredKinds() {
+		if f.declares(kind) {
 			return Facets{}, fmt.Errorf("%w: facet %q", ErrDuplicate, kind)
 		}
-		result.values[kind] = value
 	}
+	maps.Copy(result.values, other.values)
+	maps.Copy(result.scopes, other.scopes)
 	return result, nil
 }
 
@@ -110,7 +114,8 @@ func FacetAs[T Value](facets Facets, kind Kind) (T, bool, error) {
 	return typed, true, nil
 }
 
-// Kinds returns sorted kind identities in a fresh slice.
+// Kinds returns the concrete values' sorted kind identities in a fresh slice.
+// Use DeclaredKinds when exclusions must survive a collection transformation.
 func (f Facets) Kinds() []Kind { return slices.Sorted(maps.Keys(f.values)) }
 
 // Values returns independent snapshots ordered by kind.
@@ -126,11 +131,11 @@ func (f Facets) Values() ([]Value, error) {
 	return result, nil
 }
 
-// Len returns the number of facet kinds.
+// Len returns the number of concrete facet values, excluding scoped omissions.
 func (f Facets) Len() int { return len(f.values) }
 
 // IsZero reports an empty collection for explicit omitzero model fields.
-func (f Facets) IsZero() bool { return f.Len() == 0 }
+func (f Facets) IsZero() bool { return f.Len() == 0 && len(f.scopes) == 0 }
 
 // MarshalJSON refuses implicit interface serialization. Use Registry codecs.
 func (Facets) MarshalJSON() ([]byte, error) { return nil, ErrExplicitCodec }

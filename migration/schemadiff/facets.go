@@ -23,20 +23,20 @@ func captureFeatureStates(desired *schemamodel.Database, current *catalog.Databa
 	for i := range desired.Tables {
 		table := &desired.Tables[i]
 		captured[&table.Facets] = true
-		if table.Facets.Len() != 0 {
+		if !table.Facets.IsZero() {
 			declared.Facets = append(declared.Facets, schemaext.FacetRecord{Subject: compare.TableSubject(table.Schema, table.Name, target, semantics), Values: table.Facets})
 		}
 	}
 	for i := range current.Tables {
 		table := &current.Tables[i]
 		captured[&table.Facets] = true
-		if table.Facets.Len() != 0 {
+		if !table.Facets.IsZero() {
 			observed.Facets = append(observed.Facets, schemaext.FacetRecord{Subject: compare.TableSubject(table.Schema, table.Name, target, semantics), Values: table.Facets})
 		}
 	}
 	for _, slots := range [][]*schemaext.Facets{desired.FacetSlots(), current.FacetSlots()} {
 		for _, slot := range slots {
-			if !captured[slot] && slot.Len() != 0 {
+			if !captured[slot] && !slot.IsZero() {
 				return schemaext.FeatureState{}, schemaext.FeatureState{}, fmt.Errorf("%w: no comparison identity capture for non-table facets %v", ptaherr.ErrUnsupportedFeature, slot.Kinds())
 			}
 		}

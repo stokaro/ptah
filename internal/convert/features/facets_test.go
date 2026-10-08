@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
@@ -146,4 +147,28 @@ func TestSchemaConversion_RefusesFacetsOnFoldedPrimaryKey(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(result, qt.IsNil)
 	c.Assert(service.calls, qt.Equals, 0)
+}
+
+func TestSchemaConversionPreservesFacetBindingsAndExclusions(t *testing.T) {
+	c := qt.New(t)
+	service := &facetService{}
+	runtime := facetRuntime(c, service)
+	desired := facetedSchema(c)
+	for _, slot := range desired.FacetSlots() {
+		*slot = must.Must(slot.WithTargetScope(facetKind, "postgres"))
+	}
+	desired.Tables[0].Facets = must.Must(desired.Tables[0].Facets.WithTargetScope(facetKind, "foreign"))
+	projected := must.Must(schemamodel.ScopeToTarget(desired, must.Must(runtime.ResolveTarget("postgres"))))
+	observed := must.Must(goschematodb.ToDBSchema(t.Context(), projected, "postgres", runtime))
+	restored := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observed, "postgres", runtime))
+	c.Assert(restored.FacetSlots(), qt.HasLen, len(projected.FacetSlots()))
+	for i, slot := range restored.FacetSlots() {
+		source := projected.FacetSlots()[i]
+		c.Assert(slot.TargetScope(facetKind), qt.DeepEquals, source.TargetScope(facetKind))
+		c.Assert(slot.Kinds(), qt.DeepEquals, source.Kinds())
+		c.Assert(slot.DeclaredKinds(), qt.DeepEquals, source.DeclaredKinds())
+	}
+	c.Assert(restored.Tables[0].Facets.Len(), qt.Equals, 0)
+	c.Assert(restored.Tables[0].Facets.IsZero(), qt.IsFalse)
+	c.Assert(desired.Tables[0].Facets.Len(), qt.Equals, 1)
 }

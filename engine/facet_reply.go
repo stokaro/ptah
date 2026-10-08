@@ -63,22 +63,35 @@ func (r *Runtime) validateFacetReply(ctx context.Context, service int, request s
 		seen[key], payloads[payloadKey] = true, true
 	}
 	result.Undecided = slices.Clone(result.Undecided)
-	diagnostics := make(map[facetSubject]bool)
-	for _, diagnostic := range result.Undecided {
-		key := facetSubject{diagnostic.Kind, diagnostic.Subject.Key()}
-		_, found := facetOwner(request.Owners, diagnostic.Subject)
-		if !slices.Contains(request.Kinds, diagnostic.Kind) || !found || strings.TrimSpace(diagnostic.Reason) == "" || diagnostics[key] || seen[key] {
-			return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: invalid facet diagnostic for %s", schemaext.ErrInvalidValue, diagnostic.Subject)
-		}
-		diagnostics[key] = true
+	if err := validateFacetDiagnostics(request, result.Undecided, seen); err != nil {
+		return schemaext.FacetComparisonResult{}, err
 	}
 	return result, nil
 }
 
-func facetDesired(request schemaext.FacetComparisonRequest, result schemaext.FacetState) error {
+func validateFacetDiagnostics(request schemaext.FacetComparisonRequest, undecided []schemaext.UndecidedChange, changes map[facetSubject]bool) error {
+	diagnostics := make(map[facetSubject]bool)
+	for _, diagnostic := range undecided {
+		key := facetSubject{diagnostic.Kind, diagnostic.Subject.Key()}
+		_, found := facetOwner(request.Owners, diagnostic.Subject)
+		if !request.Includes(diagnostic.Kind, diagnostic.Subject) || !slices.Contains(request.Kinds, diagnostic.Kind) || !found || strings.TrimSpace(diagnostic.Reason) == "" || diagnostics[key] || changes[key] {
+			return fmt.Errorf("%w: invalid facet diagnostic for %s", schemaext.ErrInvalidValue, diagnostic.Subject)
+		}
+		diagnostics[key] = true
+	}
+	return nil
+}
+
+func retainFacetDeclarations(request schemaext.FacetComparisonRequest, result schemaext.FacetState) error {
 	for _, original := range request.Desired.Records {
 		returned := facetValues(result, original.Subject)
-		for _, kind := range original.Values.Kinds() {
+		for _, kind := range original.Values.DeclaredKinds() {
+			if !sameFacetScope(original.Values, returned, kind) {
+				return fmt.Errorf("%w: facet comparison changed source target scope for %s/%q", schemaext.ErrInvalidValue, original.Subject, kind)
+			}
+			if !slices.Contains(original.Values.Kinds(), kind) {
+				continue
+			}
 			before, _, err := original.Values.Get(kind)
 			if err != nil {
 				return err
@@ -92,12 +105,26 @@ func facetDesired(request schemaext.FacetComparisonRequest, result schemaext.Fac
 			}
 		}
 	}
+	return nil
+}
+
+func facetDesired(request schemaext.FacetComparisonRequest, result schemaext.FacetState) error {
+	if err := retainFacetDeclarations(request, result); err != nil {
+		return err
+	}
 	for _, record := range result.Records {
 		owner, found := facetOwner(request.Owners, record.Subject)
 		if !found || !owner.Desired {
 			return fmt.Errorf("%w: facet comparison returned a missing or removed owner %s", schemaext.ErrInvalidValue, record.Subject)
 		}
-		for _, kind := range record.Values.Kinds() {
+		for _, kind := range record.Values.DeclaredKinds() {
+			original := facetValues(request.Desired, record.Subject)
+			if len(record.Values.TargetScope(kind)) != 0 && !sameFacetScope(original, record.Values, kind) {
+				return fmt.Errorf("%w: facet comparison invented target scope for %s/%q", schemaext.ErrInvalidValue, record.Subject, kind)
+			}
+			if !request.Includes(kind, record.Subject) && sameFacetScope(original, record.Values, kind) {
+				continue
+			}
 			if !slices.Contains(request.Kinds, kind) || !facetHasSource(request, kind, record.Subject) {
 				return fmt.Errorf("%w: facet comparison invented an unrelated value for %s/%q", schemaext.ErrInvalidValue, record.Subject, kind)
 			}
@@ -107,7 +134,7 @@ func facetDesired(request schemaext.FacetComparisonRequest, result schemaext.Fac
 		kinds: request.Kinds, desired: request.Desired.Coverage, current: request.Current.Coverage,
 		related: func(record schemaext.SubjectCoverage) bool {
 			_, found := facetOwner(request.Owners, record.Subject)
-			return found && slices.Contains(request.Kinds, record.Kind)
+			return found && slices.Contains(request.Kinds, record.Kind) && request.Includes(record.Kind, record.Subject)
 		},
 		observedValue: func(kind schemaext.Kind, subject objectidentity.ID) bool {
 			return slices.Contains(facetValues(request.Current, subject).Kinds(), kind)
@@ -125,12 +152,18 @@ func facetValues(state schemaext.FacetState, subject objectidentity.ID) schemaex
 }
 
 func facetHasSource(request schemaext.FacetComparisonRequest, kind schemaext.Kind, subject objectidentity.ID) bool {
+	if !request.Includes(kind, subject) {
+		return false
+	}
 	return slices.Contains(facetValues(request.Desired, subject).Kinds(), kind) ||
 		slices.Contains(facetValues(request.Current, subject).Kinds(), kind) ||
 		request.Desired.Coverage.Lookup(kind, subject).State == schemaext.Defaulted
 }
 
 func facetCanChange(request schemaext.FacetComparisonRequest, kind schemaext.Kind, subject objectidentity.ID) bool {
+	if !request.Includes(kind, subject) {
+		return false
+	}
 	if knowledge, explicit := request.Desired.Coverage.SubjectKnowledge(kind, subject); explicit &&
 		(knowledge.State == schemaext.Uninspected || knowledge.State == schemaext.Unrepresentable) {
 		return false

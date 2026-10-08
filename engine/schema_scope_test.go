@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -50,6 +51,50 @@ func TestWholeSchemaServicesScopeDeclarationsBeforeCodecChecks(t *testing.T) {
 	_, err = runtime.ValidateSchema(t.Context(), schemavalidation.Request{Target: "alternate", Schema: schema})
 	c.Assert(err, qt.ErrorIs, schemaext.ErrUnknownCodec)
 	_, err = runtime.RenderSchema(t.Context(), renderer.SchemaRequest{Target: "alternate", Schema: schema})
+	c.Assert(err, qt.ErrorIs, schemaext.ErrUnknownCodec)
+	c.Assert(calls, qt.Equals, 2)
+}
+
+func TestWholeSchemaServicesProjectFacetBindingsBeforeCodecs(t *testing.T) {
+	c := qt.New(t)
+	source := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "items", StructName: "Item"}}}
+	facets := must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst}))
+	facets = must.Must(facets.WithTargetScope(facets.Kinds()[0], "foreign"))
+	source.Tables[0].Facets = facets
+	known := mustRuntime(c, facetProvider(facetComparisonFunc(func(_ context.Context, r schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		return schemaext.FacetComparisonResult{Complete: true, Desired: r.Desired}, nil
+	})))
+	source.FeatureCoverage = facetCoverage(known.Codecs(), schemaext.Desired, schemaext.Complete).SelectKinds([]schemaext.Kind{conversionFirst})
+	calls := 0
+	check := func(schema *schemamodel.Database) {
+		calls++
+		c.Assert(schema.Tables[0].Facets.Len(), qt.Equals, 0)
+		c.Assert(schema.Tables[0].Facets.DeclaredKinds(), qt.DeepEquals, facets.Kinds())
+		c.Assert(schema.FeatureCoverage.KindRecords(), qt.DeepEquals, source.FeatureCoverage.KindRecords())
+	}
+	runtime := mustRuntime(c, engine.Provider{ID: "example.org/scoped", Targets: []engine.Target{{Name: "custom", Aliases: []string{"alternate"},
+		Validation: validationFunc(func(_ context.Context, r schemavalidation.Request) (schemavalidation.Result, error) {
+			check(r.Schema)
+			return schemavalidation.Result{Complete: true}, nil
+		}),
+		SchemaRendering: schemaRenderFunc(func(_ context.Context, r renderer.SchemaRequest) (renderer.SchemaResult, error) {
+			check(r.Schema)
+			return renderer.SchemaResult{Complete: true}, nil
+		}),
+	}}})
+	_, err := runtime.ValidateSchema(t.Context(), schemavalidation.Request{Target: "alternate", Schema: source})
+	c.Assert(err, qt.IsNil)
+	_, err = runtime.RenderSchema(t.Context(), renderer.SchemaRequest{Target: "alternate", Schema: source})
+	c.Assert(err, qt.IsNil)
+	c.Assert(calls, qt.Equals, 2)
+	c.Assert(source.Tables[0].Facets.Len(), qt.Equals, 1)
+	source.Tables[0].Facets = must.Must(source.Tables[0].Facets.WithTargetScope(conversionFirst, "alternate"))
+	_, err = runtime.RenderSchema(t.Context(), renderer.SchemaRequest{Target: "alternate", Schema: source})
+	c.Assert(err, qt.ErrorIs, schemaext.ErrUnknownCodec)
+	c.Assert(calls, qt.Equals, 2)
+	source.Tables[0].Facets = facets
+	source.Tables = append(source.Tables, schemamodel.Table{Name: "included", StructName: "Included", Facets: must.Must(facets.WithTargetScope(conversionFirst))})
+	_, err = runtime.ValidateSchema(t.Context(), schemavalidation.Request{Target: "alternate", Schema: source})
 	c.Assert(err, qt.ErrorIs, schemaext.ErrUnknownCodec)
 	c.Assert(calls, qt.Equals, 2)
 }

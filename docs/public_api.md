@@ -299,6 +299,16 @@ A change requires declared intent and observed state; an explicit subject limit
 takes priority over a partial concrete value. Parent creation and removal own
 their attached state, so they cannot also produce separate facet changes.
 
+Facet providers check `FacetComparisonRequest.Includes` for each model and
+common owner. A source binding can exclude one model while retaining another
+on the same owner. Excluded values are removed before codec checks; their
+bindings survive repeated projection. Whole-schema validation and rendering
+check the remaining model identities without changing source coverage; later
+comparison still uses that coverage for owners without an exclusion. The runtime suppresses the corresponding
+observed values during comparison and refuses changes, adopted values, or
+undecided diagnostics for excluded pairs. A captured parent observation still
+retains its actual settings for rebuild and reversal.
+
 `Runtime.CompareFeatures` joins named-object and facet comparison. It validates
 both input surfaces before dispatch and returns no result if either fails.
 Installing a provider never enrolls its models in a captured source. The
@@ -386,6 +396,19 @@ values with structured references. Insertions and lookups clone values.
 Duplicate kinds or object identities and nil payloads are errors. `Value.Equal`
 compares local representations; target-aware comparison resolves defaults and
 inspection limits separately.
+
+`Facets.WithTargetScope` binds a value to target names from its source.
+`ForTarget` uses an explicit `TargetSelection`, including its registered aliases.
+An excluded value retains its binding without its payload. `Kinds` and `Len`
+describe concrete values; `DeclaredKinds` includes exclusions, and `IsZero`
+remains false when an exclusion is present. Reproject the source declaration
+when selecting a target that needs a previously excluded value.
+
+`EncodeFacets` and `DecodeFacets` carry `EncodedFacet` records with separate
+host-owned target bindings and owner-defined payload envelopes. An excluded
+record has no payload and needs no model codec. `SnapshotFacets` and common
+schema conversion preserve bindings; ordinary value replacement does too.
+Changing a value's target scope does not change its local semantic equality.
 
 `Coverage` records the model definitions a source actually describes. Its zero
 value is uninspected. Registering another provider cannot make an older source

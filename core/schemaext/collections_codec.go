@@ -7,25 +7,83 @@ import (
 	"ptah.run/core/objectidentity"
 )
 
-// EncodeFacets serializes snapshots in deterministic kind order.
-func (r Registry) EncodeFacets(ctx context.Context, representation Representation, facets Facets) ([]Envelope, error) {
+// EncodedFacet carries source selection separately from the owner's payload.
+// A nil Value requires a nonempty Targets binding and records deliberate
+// exclusion. It is never evidence of absence or a request for target defaults.
+type EncodedFacet struct {
+	Kind    Kind      `json:"kind"`
+	Targets []string  `json:"targets,omitempty"`
+	Value   *Envelope `json:"value,omitempty"`
+}
+
+// EncodeFacets serializes concrete values and scoped exclusions in kind order.
+// Excluded values require no model codec; their payload is no longer captured.
+func (r Registry) EncodeFacets(ctx context.Context, representation Representation, facets Facets) ([]EncodedFacet, error) {
 	if err := schemaRepresentation(representation); err != nil {
 		return nil, err
 	}
-	values, err := facets.Values()
-	if err != nil {
+	result := make([]EncodedFacet, 0, len(facets.DeclaredKinds()))
+	for _, kind := range facets.DeclaredKinds() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		record := EncodedFacet{Kind: kind, Targets: facets.TargetScope(kind)}
+		value, found, err := facets.Get(kind)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			encoded, err := r.Encode(ctx, representation, []Payload{value})
+			if err != nil {
+				return nil, err
+			}
+			record.Value = &encoded[0]
+		}
+		result = append(result, record)
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	payloads := make([]Payload, len(values))
-	for i, value := range values {
-		payloads[i] = value
-	}
-	return r.Encode(ctx, representation, payloads)
+	return result, nil
 }
 
-// DecodeFacets reconstructs an immutable collection, refusing non-value payloads
-// and duplicate kinds even if the duplicate payload bytes are identical.
-func (r Registry) DecodeFacets(ctx context.Context, representation Representation, envelopes []Envelope) (Facets, error) {
+// DecodeFacets reconstructs source bindings and immutable values. An exclusion
+// is retained without looking up a model codec, then ForTarget checks whether
+// it applies to the selected target before an operational caller consumes it.
+func (r Registry) DecodeFacets(ctx context.Context, representation Representation, records []EncodedFacet) (Facets, error) {
+	if err := schemaRepresentation(representation); err != nil {
+		return Facets{}, err
+	}
+	result := Facets{values: make(map[Kind]Value), scopes: make(map[Kind][]string)}
+	// Validate the entire host envelope before dispatching any owner codec.
+	seen := make(map[Kind]bool)
+	var envelopes []Envelope
+	for _, record := range records {
+		if !record.Kind.Valid() {
+			return Facets{}, fmt.Errorf("%w: invalid encoded facet %q", ErrInvalidValue, record.Kind)
+		}
+		if seen[record.Kind] {
+			return Facets{}, fmt.Errorf("%w: encoded facet %q", ErrDuplicate, record.Kind)
+		}
+		seen[record.Kind] = true
+		scope, err := normalizeFacetScope(record.Targets)
+		if err != nil {
+			return Facets{}, err
+		}
+		if len(scope) != 0 {
+			result.scopes[record.Kind] = scope
+		}
+		if record.Value == nil {
+			if len(scope) == 0 {
+				return Facets{}, fmt.Errorf("%w: excluded facet requires a target binding", ErrInvalidValue)
+			}
+			continue
+		}
+		if record.Value.Kind != record.Kind {
+			return Facets{}, fmt.Errorf("%w: facet envelope disagrees with its model kind", ErrInvalidValue)
+		}
+		envelopes = append(envelopes, *record.Value)
+	}
 	if err := requireRepresentations(representation, envelopes); err != nil {
 		return Facets{}, err
 	}
@@ -33,15 +91,48 @@ func (r Registry) DecodeFacets(ctx context.Context, representation Representatio
 	if err != nil {
 		return Facets{}, err
 	}
-	values := make([]Value, len(payloads))
-	for i, payload := range payloads {
+	for _, payload := range payloads {
 		value, ok := payload.(Value)
 		if !ok {
 			return Facets{}, fmt.Errorf("%w: %q is not a schema value", ErrInvalidValue, payload.Kind())
 		}
-		values[i] = value
+		value, err = CloneValue(value)
+		if err != nil {
+			return Facets{}, err
+		}
+		result.values[value.Kind()] = value
 	}
-	return NewFacets(values...)
+	if err := ctx.Err(); err != nil {
+		return Facets{}, err
+	}
+	return result, nil
+}
+
+// SnapshotFacets captures each concrete value through its selected codec while
+// retaining source target bindings and deliberate exclusions.
+func (r Registry) SnapshotFacets(ctx context.Context, representation Representation, facets Facets) (Facets, error) {
+	if err := schemaRepresentation(representation); err != nil {
+		return Facets{}, err
+	}
+	values, err := facets.Values()
+	if err != nil {
+		return Facets{}, err
+	}
+	values, err = r.SnapshotValues(ctx, representation, values)
+	if err != nil {
+		return Facets{}, err
+	}
+	result := facets
+	for _, value := range values {
+		result, err = result.Replace(value)
+		if err != nil {
+			return Facets{}, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return Facets{}, err
+	}
+	return result, nil
 }
 
 // EncodedObject retains structured source and comparison identity beside its

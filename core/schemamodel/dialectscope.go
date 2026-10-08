@@ -23,7 +23,7 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	if db == nil {
 		return nil, nil
 	}
-	if !hasDialectScope(db) {
+	if !hasDialectScope(db) && !slices.ContainsFunc(db.FacetSlots(), func(f *schemaext.Facets) bool { return f.HasTargetScopes() }) {
 		// Nothing is scoped, so the projection is the identity. Returning the
 		// original pointer keeps an unscoped schema out of the clone-and-
 		// finalize path entirely, which is where every behavior difference
@@ -58,6 +58,14 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	scoped.Enums = slices.Clone(db.Enums)
 	scoped.EmbeddedFields = slices.Clone(db.EmbeddedFields)
 	scoped.Schemas = slices.Clone(db.Schemas)
+
+	for _, facets := range scoped.FacetSlots() {
+		projected, err := facets.ForTarget(target)
+		if err != nil {
+			return nil, err
+		}
+		*facets = projected
+	}
 
 	// The derived graphs name objects the projection may have removed, so they
 	// are dropped and recomputed rather than carried across. This is the same

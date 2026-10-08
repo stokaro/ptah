@@ -42,7 +42,7 @@ func (r *Runtime) validateDeclaredModels(ctx context.Context, schema *schemamode
 	if schema == nil {
 		return nil
 	}
-	if _, err := r.codecs.SnapshotObjectState(ctx, schemaext.Desired, schemaext.ObjectState{Objects: schema.FeatureObjects, Coverage: schema.FeatureCoverage}); err != nil {
+	if _, err := r.codecs.SnapshotObjectState(ctx, schemaext.Desired, schemaext.ObjectState{Objects: schema.FeatureObjects, Coverage: declaredModelCoverage(schema)}); err != nil {
 		return err
 	}
 	for _, facets := range schema.FacetSlots() {

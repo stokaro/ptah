@@ -393,5 +393,35 @@ func verifyTargetScope(foreign schemaext.Facets) error {
 	if !errors.Is(validationErr, schemaext.ErrUnknownCodec) || !errors.Is(renderingErr, schemaext.ErrUnknownCodec) {
 		return fmt.Errorf("unscoped unknown payload was not refused: %v, %v", validationErr, renderingErr)
 	}
-	return nil
+	return verifyFacetTargetScope(runtime, foreign)
+}
+
+func verifyFacetTargetScope(runtime *engine.Runtime, foreign schemaext.Facets) error {
+	source, err := foreign.WithTargetScope((&widget{}).Kind(), "postgres")
+	if err != nil {
+		return err
+	}
+	target, err := runtime.ResolveTarget("custom+wire")
+	if err != nil {
+		return err
+	}
+	selected, err := source.ForTarget(target)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	encoded, err := runtime.Codecs().EncodeFacets(ctx, schemaext.Desired, selected)
+	if err != nil {
+		return err
+	}
+	decoded, err := runtime.Codecs().DecodeFacets(ctx, schemaext.Desired, encoded)
+	if err != nil {
+		return err
+	}
+	if decoded.Len() != 0 || decoded.IsZero() || !slices.Equal(decoded.TargetScope((&widget{}).Kind()), []string{"postgres"}) {
+		return fmt.Errorf("facet source binding was lost in an excluded capture")
+	}
+	schema := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{Name: "local", Facets: decoded}}}
+	_, err = runtime.RenderSchema(ctx, renderer.SchemaRequest{Target: "custom+wire", Schema: schema})
+	return err
 }

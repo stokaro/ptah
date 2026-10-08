@@ -110,7 +110,14 @@ func (r *Runtime) CompareFacets(ctx context.Context, request schemaext.FacetComp
 }
 
 func (r *Runtime) snapshotFacetComparison(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonRequest, error) {
-	var err error
+	target, err := r.ResolveTarget(request.Target)
+	if err != nil {
+		return schemaext.FacetComparisonRequest{}, err
+	}
+	request, err = scopeFacetComparison(request, target)
+	if err != nil {
+		return schemaext.FacetComparisonRequest{}, err
+	}
 	request.Desired, err = r.codecs.SnapshotFacetState(ctx, schemaext.Desired, request.Desired)
 	if err != nil {
 		return schemaext.FacetComparisonRequest{}, err
@@ -168,12 +175,15 @@ func (r *Runtime) facetComparisonBatches(request schemaext.FacetComparisonReques
 		if !kind.Valid() || kinds[kind] {
 			return nil, nil, fmt.Errorf("%w: invalid or duplicate facet comparison kind %q", schemaext.ErrInvalidValue, kind)
 		}
-		kinds[kind], required[kind] = true, true
+		kinds[kind], required[kind] = true, !facetKindExcluded(request, kind)
 	}
 	for _, state := range []schemaext.FacetState{request.Desired, request.Current} {
 		for _, record := range state.Records {
-			for _, kind := range record.Values.Kinds() {
-				kinds[kind], required[kind] = true, true
+			for _, kind := range record.Values.DeclaredKinds() {
+				kinds[kind] = true
+				if slices.Contains(record.Values.Kinds(), kind) {
+					required[kind] = true
+				}
 			}
 		}
 		comparisonCoverageRequirements(state.Coverage, kinds, required)
@@ -181,6 +191,10 @@ func (r *Runtime) facetComparisonBatches(request schemaext.FacetComparisonReques
 	batches := make([][]schemaext.Kind, len(r.facetServices))
 	var inactive []schemaext.Kind
 	for _, kind := range slices.Sorted(maps.Keys(kinds)) {
+		if facetKindExcluded(request, kind) {
+			inactive = append(inactive, kind)
+			continue
+		}
 		service, found := r.facetComparisons[conversionKey{target: request.Target, kind: kind}]
 		if !found {
 			if required[kind] {
@@ -207,12 +221,12 @@ func selectFacetState(state schemaext.FacetState, kinds []schemaext.Kind) schema
 	result := schemaext.FacetState{Coverage: state.Coverage.SelectKinds(kinds)}
 	for _, record := range state.Records {
 		selected := record.Values
-		for _, kind := range selected.Kinds() {
+		for _, kind := range selected.DeclaredKinds() {
 			if !slices.Contains(kinds, kind) {
 				selected = selected.Without(kind)
 			}
 		}
-		if selected.Len() != 0 {
+		if !selected.IsZero() {
 			result.Records = append(result.Records, schemaext.FacetRecord{Subject: record.Subject, Values: selected})
 		}
 	}

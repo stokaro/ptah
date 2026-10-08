@@ -123,7 +123,10 @@ service preserves inspected changefeeds omitted by an incomplete desired source.
 objects. `Runtime.CompareFacets` keeps their common owner identity and source
 knowledge. Explicit knowledge limits prevent a partial value from authorizing
 a change. Parent creation or removal captures attached settings without a
-separate facet operation.
+separate facet operation. A provider checks `FacetComparisonRequest.Includes`
+for each model and owner. Source scope may exclude one setting while retaining
+another on the same object. The runtime refuses changes and diagnostics for
+excluded pairs, even when source coverage is complete.
 
 `Runtime.CompareFeatures` combines named objects and attached facets. It validates
 both sources before dispatch and discards all output if either comparison fails.
@@ -166,6 +169,14 @@ registering a codec alone does not grant a target support for that feature.
 individually named objects with structured references, including parentage.
 Both clone inputs and returned values and refuse duplicates. Use the registry
 to serialize them: ordinary JSON encoding refuses interface payloads.
+
+Use `Facets.WithTargetScope` for a source binding and `ForTarget` with the
+runtime's selected target. An excluded value keeps its target binding without
+its payload. `DeclaredKinds` includes these exclusions; `Kinds` and `Len` count
+concrete values. Repeated projection, codec round trips, snapshots, and schema
+conversion preserve the binding. `EncodedFacet` carries it separately from the
+owner's payload. An excluded payload needs no codec. Select from the original
+source when another target needs a value already excluded from a capture.
 
 `schemaext.Coverage` records only definitions the source explicitly enrolled.
 Its empty value is uninspected, so a newly installed provider cannot turn an
