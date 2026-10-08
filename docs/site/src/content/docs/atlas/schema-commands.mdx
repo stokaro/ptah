@@ -195,6 +195,11 @@ a column declared against a type in another schema is written against that
 schema's type. Applying such a document therefore rebuilds each object where it
 was, and applying it back to the database it describes plans nothing.
 
+PostgreSQL SQL output keeps a foreign key on its owning table when tables in
+different schemas share a name. Those tables can also use the same foreign-key
+constraint name. A table in the default schema remains distinct from its
+schema-qualified namesake.
+
 #### A schema-limited run refuses a multi-schema HCL desired state
 
 An HCL desired state that declares more than one top-level `schema` block is

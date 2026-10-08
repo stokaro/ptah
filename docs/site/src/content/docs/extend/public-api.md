@@ -229,6 +229,11 @@ a complete `schemamodel.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
 
+Ordered rendering resolves constraint owners against the complete table set
+before checking or emitting them. An explicit table identity takes precedence
+over an unqualified match in another schema. Equal foreign-key names on
+different PostgreSQL tables remain separate constraints.
+
 `core/astbuilder` writes `core/ast` DDL nodes as method chains: `NewTable` and
 `NewIndex` build one statement, `NewSchema` builds an `*ast.StatementList` in
 declaration order. The builders return AST types and nothing of their own, so a
@@ -336,6 +341,11 @@ deduplicated raw name under the final `search_path`. Repair without an explicit
 replayable path checks every same-named target in PostgreSQL user schemas. A drop skipped
 by resume does not satisfy the preflight. `RepairMigration` performs the same
 positive index-state check, including when `Force` is set.
+
+An `ALTER TABLE ... ADD CONSTRAINT ... USING INDEX` attachment with an explicit
+constraint name updates the observed index name on the same target table.
+The post-check, retry, and `RepairMigration` follow PostgreSQL's rename while
+preserving the requirement for a usable index on that target.
 
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.

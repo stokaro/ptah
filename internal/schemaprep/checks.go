@@ -178,10 +178,12 @@ func tableLeaf(tableName string) string {
 }
 
 // ConstraintBelongsToTable reports whether constraint is owned by table under
-// either the explicit table identity or the legacy struct identity.
+// either the normalized explicit table identity or the struct identity.
+// Normalize table-scoped names against the complete table set first: a bare
+// name for the default-schema table must not also match a scoped namesake.
 func ConstraintBelongsToTable(constraint schemamodel.Constraint, table schemamodel.Table) bool {
 	if constraint.Table != "" {
-		return constraint.Table == table.Name || constraint.Table == table.QualifiedName()
+		return constraint.Table == table.QualifiedName()
 	}
 	return constraint.StructName == table.StructName
 }
