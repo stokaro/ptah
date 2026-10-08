@@ -100,23 +100,26 @@ func (r Registry) snapshotObjectProjections(ctx context.Context, projections []O
 }
 
 func knownProjectionSource(state ObjectState, ref objectidentity.ID) error {
-	kind := Kind(ref.Kind)
-	if _, enrolled := state.Coverage.kinds[kind]; !enrolled {
-		return fmt.Errorf("%w: cannot project an unenrolled model %q", ErrInvalidValue, kind)
-	}
-	_, found, err := state.Objects.Get(ref)
+	object, _, err := state.Objects.Get(ref)
 	if err != nil {
 		return err
 	}
-	knowledge, explicit := state.Coverage.SubjectKnowledge(kind, ref)
-	if found && !explicit {
+	return knownProjectionValue(state.Coverage, Kind(ref.Kind), ref, object.Value)
+}
+
+func knownProjectionValue(coverage Coverage, kind Kind, ref objectidentity.ID, value Value) error {
+	if _, enrolled := coverage.kinds[kind]; !enrolled {
+		return fmt.Errorf("%w: cannot project an unenrolled model %q", ErrInvalidValue, kind)
+	}
+	knowledge, explicit := coverage.SubjectKnowledge(kind, ref)
+	if value != nil && !explicit {
 		// A concrete definition can be known in a partly enumerated namespace.
 		return nil
 	}
 	if !explicit {
-		knowledge = state.Coverage.Lookup(kind, ref)
+		knowledge = coverage.Lookup(kind, ref)
 	}
-	if knowledge.State != Complete && (found || knowledge.State != Absent) {
+	if knowledge.State != Complete && (value != nil || knowledge.State != Absent) {
 		return fmt.Errorf("%w: cannot project unknown prior state for %s: %s", ErrInvalidValue, ref, knowledge.Reason)
 	}
 	return nil

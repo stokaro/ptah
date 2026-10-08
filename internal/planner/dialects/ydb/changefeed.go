@@ -22,7 +22,7 @@ func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Ru
 		}
 		_, rebuilt := rebuilds[semantics.TableIdentityKey(table.TableName)]
 		ref := table.FeatureChanges[0].Subject
-		subject := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+		subject := featureParent(ref)
 		if objectidentity.NewBuilder(semantics).Table(table.TableName).Key() != subject.Key() {
 			return featureplan.Result{}, fmt.Errorf("%w: feature parent disagrees with the changed table", schemaext.ErrInvalidValue)
 		}
@@ -57,4 +57,13 @@ func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Ru
 		return featureplan.Result{}, err
 	}
 	return result, nil
+}
+
+// Request capture and operation lowering must recognize the same subject
+// shapes: a facet names the table itself; a named child carries its parent.
+func featureParent(ref objectidentity.ID) objectidentity.ID {
+	if ref.Kind == objectidentity.KindTable {
+		return ref
+	}
+	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 }

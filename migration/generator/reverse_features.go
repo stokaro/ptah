@@ -144,19 +144,5 @@ func reverseFeatureTableState(
 	if len(recovery) == 0 {
 		return current, nil
 	}
-	var projections []schemaext.ObjectProjection
-	for _, result := range recovery {
-		if len(result.ForwardState) != 1 || result.ForwardState[0].Placement != schemaext.ObjectPlacement {
-			return schemacapture.TableObservation{}, fmt.Errorf("%w: table reversal requires a named object projection", schemaext.ErrInvalidValue)
-		}
-		projections = append(projections, schemaext.ObjectProjection{Subject: result.Change.Subject, Value: result.ForwardState[0].Value})
-	}
-	state, err := runtime.Codecs().ProjectObjects(ctx, schemaext.ObjectState{
-		Objects: table.Current.OwnedObjects, Coverage: table.Current.FeatureCoverage,
-	}, projections)
-	if err != nil {
-		return schemacapture.TableObservation{}, err
-	}
-	current.OwnedObjects, current.FeatureCoverage = state.Objects, state.Coverage
-	return current, nil
+	return projectTableFeatures(ctx, current, recovery, semantics, runtime.Codecs())
 }

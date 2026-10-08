@@ -66,7 +66,7 @@ func featureNodes(result featureplan.Result, diff *difftypes.SchemaDiff) ([]plan
 	for _, table := range diff.TablesModified {
 		for _, change := range table.FeatureChanges {
 			ref := change.Subject
-			parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+			parent := featureParent(ref)
 			names[parent.Key()] = table.TableName
 		}
 	}
