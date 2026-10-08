@@ -31,7 +31,7 @@ func TestRenderExternalObjectsRoundTripThroughParser(t *testing.T) {
 			Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`},
 		}},
 	}
-	files, err := goschematogo.Render(database, goschematogo.Options{PackageName: "models", SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{PackageName: "models", SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	dir := t.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)

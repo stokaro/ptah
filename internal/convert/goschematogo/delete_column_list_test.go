@@ -35,7 +35,7 @@ func narrowedDeleteDatabase(listed ...string) *schemamodel.Database {
 func TestRender_NarrowedDeleteAction_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(narrowedDeleteDatabase("parent_id"), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), narrowedDeleteDatabase("parent_id"), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.ErrorMatches,
 		`foreign key "fk_children_parent" limits ON DELETE SET NULL to columns parent_id, which a Go annotation cannot represent`)
@@ -46,7 +46,7 @@ func TestRender_NarrowedDeleteAction_FailurePath(t *testing.T) {
 func TestRender_NarrowedDeleteAction_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(narrowedDeleteDatabase("parent_id", "tenant"), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), narrowedDeleteDatabase("parent_id", "tenant"), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

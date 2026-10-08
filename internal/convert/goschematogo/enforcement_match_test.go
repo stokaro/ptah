@@ -28,7 +28,7 @@ func matchDatabase(match string) *schemamodel.Database {
 func TestRender_EnforcementAndMatch_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(matchDatabase("FULL"), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), matchDatabase("FULL"), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.ErrorMatches, `the foreign key of column "p_id" is MATCH FULL, which a Go annotation cannot represent`)
 	c.Assert(files, qt.IsNil)
@@ -38,7 +38,7 @@ func TestRender_EnforcementAndMatch_FailurePath(t *testing.T) {
 func TestRender_EnforcementAndMatch_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(matchDatabase(""), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), matchDatabase(""), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

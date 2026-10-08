@@ -96,6 +96,26 @@ func TestProperties_BatchOrderAndSnapshots(t *testing.T) {
 	})
 }
 
+func TestPropertyFormats_DistinguishesMissingTargetFromNoService(t *testing.T) {
+	c := qt.New(t)
+	provider := propertyProvider(propertyService{})
+	provider.Targets = append(provider.Targets, engine.Target{Name: "empty"})
+	runtime := mustRuntime(c, provider)
+	formats, err := runtime.PropertyFormats("alternate")
+	c.Assert(err, qt.IsNil)
+	c.Assert(formats, qt.DeepEquals, []schemaext.PropertyFormat{schemaext.TablePlatformProperties})
+	formats[0] = "mutated"
+	got, err := runtime.PropertyFormats("custom")
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []schemaext.PropertyFormat{schemaext.TablePlatformProperties})
+	got, err = runtime.PropertyFormats("empty")
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 0)
+	got, err = runtime.PropertyFormats("missing")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+	c.Assert(got, qt.IsNil)
+}
+
 func TestProperties_RejectRegistrationConflicts(t *testing.T) {
 	for _, test := range []struct {
 		name   string

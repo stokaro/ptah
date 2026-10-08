@@ -20,7 +20,7 @@ func TestRenderSecretsRoundTripThroughParser(t *testing.T) {
 		{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG_PASSWORD"},
 		{Name: "s3.key", Schema: "ext/aws", ValueEnv: "PTAH_SECRET_EXT_AWS_S3_KEY"},
 	}
-	files, err := goschematogo.Render(&schemamodel.Database{Secrets: secrets},
+	files, err := goschematogo.Render(c.Context(), &schemamodel.Database{Secrets: secrets},
 		goschematogo.Options{PackageName: "models", SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	dir := t.TempDir()

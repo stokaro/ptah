@@ -31,6 +31,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/renderer`
 - `ptah.run/core/schemacapture`
 - `ptah.run/core/schemapreparation`
+- `ptah.run/core/schemaproperties`
 - `ptah.run/core/schemaext`
 - `ptah.run/core/schemaprojection`
 - `ptah.run/core/schemavalidation`
@@ -533,7 +534,8 @@ does not replace a catalog read.
 selected target and format. A `PropertySource` must own the desired model codec
 for each kind, and two definitions cannot claim the same key in that format.
 `PropertyDefinitions` returns independent copies for a frontend to group input
-without knowing the feature's Go type.
+without knowing the feature's Go type. `PropertyFormats` distinguishes a selected
+target without property services from an unknown target.
 
 `DecodeProperties` and `EncodeProperties` preserve ordered batches and explicit
 empty values. Every input is validated before dispatch. Replies must preserve
@@ -545,9 +547,23 @@ remain errors on empty batches. These operations establish no catalog coverage.
 carries an explicit setting, including empty. A `.state` suffix with value
 `default` requests its creation rule; a setting cannot have both spellings.
 An omitted setting writes neither key. Register `chsource.Definitions()` and the
-service in an application-selected provider. This source codec is not yet
-connected to the bundled Go/YAML frontends or annotation export; that integration
-remains part of [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
+service in an application-selected provider. The bundled runtime registers this
+service for Go annotation export.
+
+`schemaproperties.DecodeTables` attaches decoded property groups as desired
+facets bound to the selected target. It consumes only claimed keys; other keys
+and target groups remain in `Overrides`. `EncodeTables` writes table facets as
+properties for that target. Both refuse duplicate alias keys and mixed typed and
+property declarations, even when a property's value is empty. They copy table
+data and leave other schema data shared and read-only. Neither establishes
+inspection coverage or resolves omitted settings.
+
+An export refuses excluded facets, bindings outside the selected target, missing
+source codecs, and empty fragments that cannot preserve a facet's presence.
+Native Go export uses both operations before writing annotations. Other source
+consumers must call `DecodeTables` explicitly after parsing Go or YAML; automatic
+lowering for rendering and comparison remains part of
+[stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register

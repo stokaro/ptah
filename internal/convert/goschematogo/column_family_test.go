@@ -31,7 +31,7 @@ func TestRender_ColumnFamilies(t *testing.T) {
 		},
 	}
 
-	files, err := goschematogo.Render(db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	reparsed, err := goschema.ParseSource("schema.go", string(files[0].Data))
@@ -55,7 +55,7 @@ func TestRender_ColumnFamilies_PlainDefaultFamily(t *testing.T) {
 		Fields: []schemamodel.Field{{StructName: "Item", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 
-	files, err := goschematogo.Render(db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

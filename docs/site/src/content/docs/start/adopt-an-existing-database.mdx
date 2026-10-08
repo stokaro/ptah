@@ -166,6 +166,9 @@ ptah introspect \
 
 Expected output includes `Generated 2 Go file(s)` and `Imported 2 table(s)`.
 This path requires Go source because the generated files are annotated structs.
+Table platform properties are written as `platform.<dialect>.<property>`
+attributes, including empty values. For ClickHouse, these attributes retain the
+engine and storage clauses supplied by the schema reader.
 
 </TabItem>
 </Tabs>

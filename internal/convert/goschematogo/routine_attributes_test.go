@@ -30,7 +30,7 @@ func TestRender_RoutineAttributesRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	database := &schemamodel.Database{Functions: []schemamodel.Function{attributedFunction()}}
 
-	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	var source strings.Builder
 	for _, file := range files {

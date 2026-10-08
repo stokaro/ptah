@@ -28,7 +28,7 @@ func deferrableUniqueDatabase(deferrable bool) *schemamodel.Database {
 func TestRender_DeferrableKey_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(deferrableUniqueDatabase(true), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), deferrableUniqueDatabase(true), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.ErrorMatches, `UNIQUE "slots_pos_key" defers its check, which a Go annotation cannot represent`)
 	c.Assert(files, qt.IsNil)
@@ -38,7 +38,7 @@ func TestRender_DeferrableKey_FailurePath(t *testing.T) {
 func TestRender_DeferrableKey_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(deferrableUniqueDatabase(false), goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), deferrableUniqueDatabase(false), goschematogo.Options{SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

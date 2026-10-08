@@ -748,6 +748,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-schemaproperties",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemaproperties",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-schemasource",
       "kind": "public-package",
       "surface": "ptah.run/core/schemasource",
