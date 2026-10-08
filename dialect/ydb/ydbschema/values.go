@@ -14,14 +14,20 @@ import (
 // ChangefeedKind identifies an individually named table-owned YDB stream.
 const ChangefeedKind schemaext.Kind = "ptah.run/ydb/changefeed"
 
-// DesiredChangefeed records a stream declaration, including omitted defaults.
+// DesiredChangefeed records a stream declaration or the requirement to retain
+// an existing replication-managed stream in an effective planning snapshot.
 type DesiredChangefeed struct {
 	Spec ChangefeedSpec `json:"spec"`
+	// RetainedReplication keeps an observed binding in an effective planning
+	// snapshot. It is a requirement to retain that existing stream, never an
+	// instruction to create an independently managed changefeed.
+	RetainedReplication *ReplicationBinding `json:"retained_replication,omitempty"`
 }
 
 // ObservedChangefeed records a stream as inspected, including its disabled state.
 type ObservedChangefeed struct {
-	Spec ChangefeedSpec `json:"spec"`
+	Spec        ChangefeedSpec      `json:"spec"`
+	Replication *ReplicationBinding `json:"replication,omitempty"`
 }
 
 // Kind returns the stable changefeed model identity.
@@ -30,12 +36,14 @@ func (*DesiredChangefeed) Kind() schemaext.Kind { return ChangefeedKind }
 // Kind returns the stable changefeed model identity.
 func (*ObservedChangefeed) Kind() schemaext.Kind { return ChangefeedKind }
 
-// Clone returns a declaration with independent consumer and codec lists.
-func (v *DesiredChangefeed) Clone() schemaext.Value { return &DesiredChangefeed{Spec: v.Spec.Clone()} }
+// Clone returns an independent declaration or retention requirement.
+func (v *DesiredChangefeed) Clone() schemaext.Value {
+	return &DesiredChangefeed{Spec: v.Spec.Clone(), RetainedReplication: v.RetainedReplication.Clone()}
+}
 
-// Clone returns an observation with independent consumer and codec lists.
+// Clone returns an independent observation, including its replication binding.
 func (v *ObservedChangefeed) Clone() schemaext.Value {
-	return &ObservedChangefeed{Spec: v.Spec.Clone()}
+	return &ObservedChangefeed{Spec: v.Spec.Clone(), Replication: v.Replication.Clone()}
 }
 
 // Equal compares declarations without resolving server defaults or intervals.
@@ -44,7 +52,7 @@ func (v *DesiredChangefeed) Equal(other schemaext.Value) bool {
 	if !ok || v == nil || w == nil {
 		return ok && v == nil && w == nil
 	}
-	return equalSpec(v.Spec, w.Spec)
+	return equalSpec(v.Spec, w.Spec) && equalBinding(v.RetainedReplication, w.RetainedReplication)
 }
 
 // Equal compares observations without interpreting them as declarations.
@@ -53,7 +61,19 @@ func (v *ObservedChangefeed) Equal(other schemaext.Value) bool {
 	if !ok || v == nil || w == nil {
 		return ok && v == nil && w == nil
 	}
-	return equalSpec(v.Spec, w.Spec)
+	return equalSpec(v.Spec, w.Spec) && equalBinding(v.Replication, w.Replication)
+}
+
+// Desired captures the observation as effective desired state. A replication
+// binding remains a retention requirement rather than a creation instruction.
+func (v *ObservedChangefeed) Desired() *DesiredChangefeed {
+	return &DesiredChangefeed{Spec: v.Spec.Clone(), RetainedReplication: v.Replication.Clone()}
+}
+
+// Observed projects a captured desired value without inspecting a server.
+// Retained replication bindings survive; this projection proves no execution.
+func (v *DesiredChangefeed) Observed() *ObservedChangefeed {
+	return &ObservedChangefeed{Spec: v.Spec.Clone(), Replication: v.RetainedReplication.Clone()}
 }
 
 func equalSpec(a, b ChangefeedSpec) bool {
@@ -104,6 +124,8 @@ func ObservedObject(schema, table string, spec ChangefeedSpec) schemaext.Object 
 
 // DesiredChangefeeds returns declarations belonging to one table in name order.
 // A changefeed with an observed or unrecognized payload is an error.
+// The returned specs omit replication bindings. Use the typed object values for
+// capture, conversion, or replacement; specs alone cannot reconstruct ownership.
 func DesiredChangefeeds(objects schemaext.Objects, schema, table string) ([]ChangefeedSpec, error) {
 	return changefeeds(objects, schema, table, func(value schemaext.Value) (ChangefeedSpec, error) {
 		v, ok := value.(*DesiredChangefeed)
@@ -116,6 +138,8 @@ func DesiredChangefeeds(objects schemaext.Objects, schema, table string) ([]Chan
 
 // ObservedChangefeeds returns observations belonging to one table in name order.
 // A changefeed with a desired or unrecognized payload is an error.
+// The returned specs omit replication bindings. Use the typed object values for
+// capture, conversion, or replacement; specs alone cannot reconstruct ownership.
 func ObservedChangefeeds(objects schemaext.Objects, schema, table string) ([]ChangefeedSpec, error) {
 	return changefeeds(objects, schema, table, func(value schemaext.Value) (ChangefeedSpec, error) {
 		v, ok := value.(*ObservedChangefeed)

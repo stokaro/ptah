@@ -59,7 +59,10 @@ func convertChangefeed(from schemaext.Representation, value schemaext.Value) (sc
 		if err := ydbschema.ValidateChangefeed(v.Spec); err != nil {
 			return nil, err
 		}
-		return &ydbschema.ObservedChangefeed{Spec: v.Spec.Clone()}, nil
+		if err := v.RetainedReplication.Validate(); err != nil {
+			return nil, err
+		}
+		return v.Observed(), nil
 	case schemaext.Observed:
 		v, ok := value.(*ydbschema.ObservedChangefeed)
 		if !ok {
@@ -68,7 +71,10 @@ func convertChangefeed(from schemaext.Representation, value schemaext.Value) (sc
 		if err := ydbschema.ValidateChangefeed(v.Spec); err != nil {
 			return nil, err
 		}
-		return &ydbschema.DesiredChangefeed{Spec: v.Spec.Clone()}, nil
+		if err := v.Replication.Validate(); err != nil {
+			return nil, err
+		}
+		return v.Desired(), nil
 	default:
 		return nil, fmt.Errorf("%w: unknown schema representation", schemaext.ErrInvalidValue)
 	}

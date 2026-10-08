@@ -63,6 +63,9 @@ func reverseChangefeed(record schemaext.ChangeRecord, caps capability.Capabiliti
 	if !ok || (change.Before == nil && change.After == nil) {
 		return schemaext.Reversal{}, fmt.Errorf("%w: reversal requires captured changefeed operands", schemaext.ErrInvalidValue)
 	}
+	if change.ReplicationManaged() {
+		return schemaext.Reversal{}, fmt.Errorf("%w: a replication-managed changefeed cannot be reversed independently of its controller", schemaext.ErrIrreversible)
+	}
 	before, after := changefeedOperands(change)
 	for _, spec := range []*ydbschema.ChangefeedSpec{before, after} {
 		if spec != nil {
@@ -84,12 +87,21 @@ func reverseChangefeed(record schemaext.ChangeRecord, caps capability.Capabiliti
 	if change.Before != nil && change.After != nil && ydbchangefeed.Equal(change.After.Spec, change.Before.Spec) {
 		return schemaext.Reversal{}, fmt.Errorf("%w: changefeed operands contain no change", schemaext.ErrInvalidValue)
 	}
+	reverse := reversedChangefeed(change)
+	strategy, limitations := recovery(change)
+	return schemaext.Reversal{
+		Change:       schemaext.ChangeRecord{Subject: record.Subject, Value: reverse},
+		ForwardState: []schemaext.ProjectedValue{projectedChangefeed(reverse.Before)}, Strategy: strategy, Limitations: limitations,
+	}, nil
+}
+
+func reversedChangefeed(change *ydbdiff.Changefeed) *ydbdiff.Changefeed {
 	reverse := &ydbdiff.Changefeed{}
 	if change.Before != nil {
-		reverse.After = &ydbschema.DesiredChangefeed{Spec: change.Before.Spec.Clone()}
+		reverse.After = change.Before.Desired()
 	}
 	if change.After != nil {
-		reverse.Before = &ydbschema.ObservedChangefeed{Spec: change.After.Spec.Clone()}
+		reverse.Before = change.After.Observed()
 		// An omitted starting partition count keeps the existing stream's count
 		// on an in-place topic change. A recreated stream's count remains unknown
 		// when its declaration did not specify one; it is not copied from history.
@@ -97,11 +109,7 @@ func reverseChangefeed(record schemaext.ChangeRecord, caps capability.Capabiliti
 			reverse.Before.Spec.TopicMinActivePartitions = change.Before.Spec.TopicMinActivePartitions
 		}
 	}
-	strategy, limitations := recovery(change)
-	return schemaext.Reversal{
-		Change:       schemaext.ChangeRecord{Subject: record.Subject, Value: reverse},
-		ForwardState: []schemaext.ProjectedValue{projectedChangefeed(reverse.Before)}, Strategy: strategy, Limitations: limitations,
-	}, nil
+	return reverse
 }
 
 func projectedChangefeed(after *ydbschema.ObservedChangefeed) schemaext.ProjectedValue {

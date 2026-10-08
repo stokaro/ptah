@@ -59,11 +59,11 @@ func (r *Reader) changefeeds(
 	source Source,
 	schema, table string,
 	described *Ydb_Table.DescribeTableResult,
-) ([]ydbschema.ChangefeedSpec, []schemaext.SubjectCoverage, error) {
-	var read []ydbschema.ChangefeedSpec
+) ([]*ydbschema.ObservedChangefeed, []schemaext.SubjectCoverage, error) {
+	var read []*ydbschema.ObservedChangefeed
 	var records []schemaext.SubjectCoverage
 	for _, feed := range described.GetChangefeeds() {
-		spec, modeled, err := r.changefeed(ctx, source, schema, table, feed)
+		observed, modeled, err := r.changefeed(ctx, source, schema, table, feed)
 		if err != nil {
 			return nil, nil, fmt.Errorf("changefeed %q: %w", feed.GetName(), err)
 		}
@@ -75,29 +75,30 @@ func (r *Reader) changefeeds(
 			})
 			continue
 		}
-		read = append(read, spec)
+		read = append(read, observed)
 	}
-	slices.SortFunc(read, func(a, b ydbschema.ChangefeedSpec) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(read, func(a, b *ydbschema.ObservedChangefeed) int { return strings.Compare(a.Spec.Name, b.Spec.Name) })
 	return read, records, nil
 }
 
 // changefeed reads one changefeed and its topic. It reports false for one
 // holding something Ptah does not model: a mode, a format or a state it does
-// not know, an AWS region, attributes, trace identifiers, a field the pinned
-// protocol buffers do not know, or a topic or consumer setting it does not
-// read.
+// not know, an AWS region, attributes other than the replication binding,
+// trace identifiers, a field the pinned protocol buffers do not know, or a
+// topic or consumer setting it does not read.
 func (r *Reader) changefeed(
 	ctx context.Context,
 	source Source,
 	schema, table string,
 	feed *Ydb_Table.ChangefeedDescription,
-) (ydbschema.ChangefeedSpec, bool, error) {
+) (*ydbschema.ObservedChangefeed, bool, error) {
 	mode, knownMode := changefeedModes[feed.GetMode()]
 	format, knownFormat := changefeedFormats[feed.GetFormat()]
 	userSIDs, traceIDs, knownFields := changefeedUnknownFields(feed)
+	binding, knownOwnership := changefeedReplication(feed.GetAttributes())
 	if !knownMode || !knownFormat || !knownFields || traceIDs ||
-		feed.GetAwsRegion() != "" || len(feed.GetAttributes()) > 0 {
-		return ydbschema.ChangefeedSpec{}, false, nil
+		feed.GetAwsRegion() != "" || !knownOwnership {
+		return nil, false, nil
 	}
 	spec := ydbschema.ChangefeedSpec{
 		Name:              feed.GetName(),
@@ -117,21 +118,21 @@ func (r *Reader) changefeed(
 	case Ydb_Table.ChangefeedDescription_STATE_DISABLED:
 		spec.Disabled = true
 	default:
-		return ydbschema.ChangefeedSpec{}, false, nil
+		return nil, false, nil
 	}
 	resolved, whole := durationSeconds(feed.GetResolvedTimestampsInterval())
 	if !whole {
-		return ydbschema.ChangefeedSpec{}, false, nil
+		return nil, false, nil
 	}
 	if resolved > 0 {
 		spec.ResolvedTimestamps = ydbttl.FormatInterval(resolved)
 	}
 	topic, err := source.DescribeTopic(ctx, r.absolute(schema, path.Join(table, feed.GetName())))
 	if err != nil {
-		return ydbschema.ChangefeedSpec{}, false, err
+		return nil, false, err
 	}
 	modeled := readTopic(&spec, topic)
-	return spec, modeled, nil
+	return &ydbschema.ObservedChangefeed{Spec: spec, Replication: binding}, modeled, nil
 }
 
 // changefeedUnknownFields reads the fields of a changefeed description the
@@ -287,7 +288,7 @@ func (r *Reader) observeChangefeeds(ctx context.Context, source Source, schema, 
 	}
 	objects := database.FeatureObjects
 	for _, feed := range feeds {
-		objects, err = objects.With(ydbschema.ObservedObject(schema, table, feed))
+		objects, err = objects.With(schemaext.Object{Ref: ydbschema.ChangefeedRef(schema, table, feed.Spec.Name), Value: feed})
 		if err != nil {
 			return err
 		}

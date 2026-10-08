@@ -225,7 +225,14 @@ func adoptChangefeedConsumers(adopted *schemamodel.Database, database *catalog.D
 				continue
 			}
 			feed.Consumers = append(feed.Consumers, missing...)
-			adopted.FeatureObjects, err = adopted.FeatureObjects.Replace(ydbschema.DesiredObject(table.Schema, table.Name, feed))
+			object, _, err := adopted.FeatureObjects.Get(ydbschema.ChangefeedRef(table.Schema, table.Name, feed.Name))
+			if err != nil {
+				return false, err
+			}
+			// Get returns an independent value. Preserve its retention binding:
+			// adding a transfer consumer cannot take ownership from replication.
+			object.Value.(*ydbschema.DesiredChangefeed).Spec = feed
+			adopted.FeatureObjects, err = adopted.FeatureObjects.Replace(object)
 			if err != nil {
 				return false, err
 			}

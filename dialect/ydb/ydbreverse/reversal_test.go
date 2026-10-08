@@ -40,6 +40,23 @@ func request(changes ...schemaext.ChangeRecord) schemaext.ReversalRequest {
 	return schemaext.ReversalRequest{Target: "ydb", Capabilities: capability.YDB262(), Changes: changes}
 }
 
+func TestReversalRefusesIndependentReplicationStreamOperations(t *testing.T) {
+	observed := &ydbschema.ObservedChangefeed{Spec: *feed(nil),
+		Replication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
+	for _, test := range []struct {
+		name  string
+		value *ydbdiff.Changefeed
+	}{{"drop", &ydbdiff.Changefeed{Before: observed}}, {"create", &ydbdiff.Changefeed{After: observed.Desired()}}} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			record := schemaext.ChangeRecord{Subject: ydbschema.ChangefeedRef("", "table.with.dot", "updates"), Value: test.value}
+			result, err := (ydbreverse.Service{}).ReverseChanges(t.Context(), request(record))
+			c.Assert(err, qt.ErrorIs, schemaext.ErrIrreversible)
+			c.Assert(result, qt.IsNil)
+		})
+	}
+}
+
 func TestRegisteredYDBReversalRestoresDefinitionsAndReportsStateLoss(t *testing.T) {
 	for _, test := range []struct {
 		name          string

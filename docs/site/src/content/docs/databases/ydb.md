@@ -833,7 +833,8 @@ came in later releases each need a key: `user_sids` (26.1), `schema_changes`
 changefeed.
 
 Go export refuses a disabled changefeed because annotations cannot request its
-disabled state. Exporting it as enabled would change the declaration.
+disabled state. It also refuses a retained replication binding, which cannot
+be recreated through a changefeed annotation.
 
 ### Changing a changefeed
 
@@ -1165,9 +1166,17 @@ stops it (`Create dst error: StatusSchemeError, Empty replication config`).
 While the replication runs, its replica tables are read-only. A write answers
 `Can't execute write tx at replicated table`, and an `ALTER TABLE` answers
 `path is an async replica table`. The read records each replica table rather
-than describing it, so no plan drops, changes or creates one. The changefeed
-YDB adds to each source table of a replication of the same database is
-recorded the same way, and stays.
+than describing it, so no plan drops, changes or creates one.
+
+Ptah inspects the changefeed YDB adds to a source table and retains its
+replication binding. The binding names a destination table and an item number;
+the replication controller may live in another database or cluster. Leaving
+this changefeed out of a schema keeps it. Ptah refuses to change or recreate it
+independently, or to drop or rebuild its source table while the binding exists.
+Release the stream through its replication controller before changing the
+source table. SQL creation export refuses a retained binding because creating
+an ordinary changefeed would not restore the replication or its position.
+Unknown binding fields remain unrepresentable and block affected plans.
 
 ### Changing a replication
 

@@ -79,6 +79,26 @@ func TestGoExport_RefusesDisabledChangefeed(t *testing.T) {
 	c.Assert(files, qt.IsNil)
 }
 
+func TestExportRefusesToRecreateRetainedReplicationState(t *testing.T) {
+	c := qt.New(t)
+	value := &ydbschema.DesiredChangefeed{Spec: ydbschema.ChangefeedSpec{Name: "stream", Mode: "UPDATES", Format: "JSON"},
+		RetainedReplication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
+	objects, err := schemaext.NewObjects(schemaext.Object{Ref: ydbschema.ChangefeedRef("", "items", "stream"), Value: value})
+	c.Assert(err, qt.IsNil)
+	database := &schemamodel.Database{FeatureObjects: objects,
+		Tables: []schemamodel.Table{{Name: "items", StructName: "Item"}},
+		Fields: []schemamodel.Field{{StructName: "Item", Name: "id", Type: "BIGINT", Primary: true}}}
+	// Complete-schema validation checks the same creation contract as export.
+	c.Assert(builtin.ValidateSchemaWithCapabilities(database, "ydb", capability.YDB262()), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "(?s).*cannot preserve the retained replication binding.*")
+	c.Assert(files, qt.IsNil)
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, "ydb", capability.YDB262())
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(statements, qt.IsNil)
+}
+
 func TestHCLExport_ReportsOpaqueFeatureLoss(t *testing.T) {
 	c := qt.New(t)
 	value := &facetValue{Number: 7, Representation: schemaext.Desired}

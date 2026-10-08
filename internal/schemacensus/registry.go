@@ -25,6 +25,10 @@ var registry = []Entry{
 	{Field: "schemamodel.View.Facets", Disposition: DDL},
 	{Field: "schemamodel.Database.FeatureObjects", Disposition: DDL},
 	{Field: "ydbschema.DesiredChangefeed.Spec", Disposition: DDL},
+	{Field: "ydbschema.DesiredChangefeed.RetainedReplication", Disposition: Planning, Reason: "retains an observed controller binding and refuses independent changefeed creation or mutation"},
+	{Field: "ydbschema.ReplicationBinding.DestinationPath", Disposition: Planning, Reason: "records the observed replica destination without interpreting it as a local replication object"},
+	{Field: "ydbschema.ReplicationBinding.ItemID", Disposition: Planning, Reason: "identifies the observed replication target item whose stream must not be managed independently"},
+	{Field: "ydbschema.ReplicationBinding.SupportsTopicAutopartitioning", Disposition: Planning, Reason: "preserves observed controller behavior through snapshots and codecs"},
 	{Field: "schemamodel.Database.FeatureCoverage", Disposition: Comparison, Reason: "records source knowledge for exact feature models and subjects; limits which state can be compared or reconstructed"},
 
 	{Field: "ast.CoordinationNodeSpec.AttachConsistencyMode", Disposition: DDL},

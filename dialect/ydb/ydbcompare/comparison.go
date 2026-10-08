@@ -25,6 +25,10 @@ type stream struct {
 	current *ydbschema.ObservedChangefeed
 }
 
+func (v stream) independentObservation() bool {
+	return v.current != nil && v.current.Replication == nil
+}
+
 // CompareObjects resolves target defaults only for semantic comparison. Its
 // returned desired objects retain declaration spelling and complete adopted
 // observation state. Changes below new or removed tables belong to table captures.
@@ -73,9 +77,9 @@ func compareStream(request schemaext.ObjectComparisonRequest, value stream, resu
 	if desiredKnowledge.State == schemaext.Defaulted {
 		return fmt.Errorf("%w: changefeed %s requires a definition; the namespace has no default stream", schemaext.ErrInvalidValue, value.ref)
 	}
-	if value.desired == nil && unknown(desiredKnowledge) && value.current != nil {
+	if value.desired == nil && unknown(desiredKnowledge) && value.independentObservation() {
 		var err error
-		result.Desired.Objects, err = result.Desired.Objects.With(schemaext.Object{Ref: value.ref, Value: &ydbschema.DesiredChangefeed{Spec: value.current.Spec.Clone()}})
+		result.Desired.Objects, err = result.Desired.Objects.With(schemaext.Object{Ref: value.ref, Value: value.current.Desired()})
 		if err != nil {
 			return err
 		}
@@ -91,6 +95,9 @@ func compareStream(request schemaext.ObjectComparisonRequest, value stream, resu
 	if objectLimited(request.Current.Coverage, value.ref) || (value.current == nil && unknown(currentKnowledge)) {
 		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: ydbschema.ChangefeedKind, Subject: value.ref, Reason: "the current changefeed or its absence was not established: " + currentKnowledge.Reason})
 		return nil
+	}
+	if handled, err := compareRetainedStream(value, desiredKnowledge, result); handled {
+		return err
 	}
 	if value.desired == nil && unknown(desiredKnowledge) {
 		return nil
@@ -116,4 +123,28 @@ func objectLimited(coverage schemaext.Coverage, ref objectidentity.ID) bool {
 
 func parentRef(ref objectidentity.ID) objectidentity.ID {
 	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+}
+
+// Replication controls its stream. Absence from the authored stream namespace
+// does not ask the host to delete that resource independently of its controller.
+func compareRetainedStream(value stream, desiredKnowledge schemaext.Knowledge, result *schemaext.ObjectComparisonResult) (bool, error) {
+	retained := value.desired != nil && value.desired.RetainedReplication != nil
+	managed := value.current != nil && value.current.Replication != nil
+	if !retained && !managed {
+		return false, nil
+	}
+	if managed && value.desired == nil && desiredKnowledge.State != schemaext.Absent {
+		objects, err := result.Desired.Objects.With(schemaext.Object{Ref: value.ref, Value: value.current.Desired()})
+		if err != nil {
+			return true, err
+		}
+		result.Desired.Objects = objects
+		return true, nil
+	}
+	if retained && managed && value.desired.Equal(value.current.Desired()) {
+		return true, nil
+	}
+	result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: ydbschema.ChangefeedKind, Subject: value.ref,
+		Reason: "the retained replication-managed changefeed cannot be created, removed, or changed independently of its controller"})
+	return true, nil
 }

@@ -54,7 +54,7 @@ func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 		Values     map[schemaext.Representation]map[string]shape `json:"values"`
 	}
 	c.Assert(json.Unmarshal(codecs[0].Definition, &definition), qt.IsNil)
-	for name, model := range map[string]any{"changefeed": ydbschema.ChangefeedSpec{}, "consumer": ast.TopicConsumerSpec{}} {
+	for name, model := range map[string]any{"changefeed": ydbschema.ChangefeedSpec{}, "consumer": ast.TopicConsumerSpec{}, "replication_binding": ydbschema.ReplicationBinding{}} {
 		var fields []string
 		modelType := reflect.TypeOf(model)
 		for field := range modelType.Fields() {
@@ -75,7 +75,7 @@ func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 		var fields, described []string
 		modelType := reflect.TypeOf(codec.Prototype).Elem()
 		for field := range modelType.Fields() {
-			fields = append(fields, field.Tag.Get("json"))
+			fields = append(fields, strings.Split(field.Tag.Get("json"), ",")[0])
 		}
 		for field := range definition.Values[codec.Representation][string(codec.Prototype.Kind())].Properties {
 			described = append(described, field)

@@ -27,6 +27,9 @@ func ValidateObjects(target string, caps capability.Capabilities, objects schema
 		if !ok {
 			return fmt.Errorf("%w: YDB does not render feature object %s with payload %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
 		}
+		if err := value.RetainedReplication.Validate(); err != nil {
+			return err
+		}
 		if ydbschema.ChangefeedRef(object.Ref.Schema.Source, object.Ref.Parent.Source, value.Spec.Name).Key() != object.Ref.Key() {
 			return fmt.Errorf("%w: changefeed reference disagrees with its payload", ptaherr.ErrInvalidSchemaDiff)
 		}
@@ -34,6 +37,26 @@ func ValidateObjects(target string, caps capability.Capabilities, objects schema
 		if refusal := ydbchangefeed.Check(table, value.Spec, caps); refusal != nil {
 			return &ptaherr.CapabilityError{Dialect: target, Feature: string(refusal.Key), Err: ptaherr.ErrUnsupportedFeature,
 				Message: refusalMessage(target, refusal.Subject, refusal.Key, refusal.Reason)}
+		}
+	}
+	return nil
+}
+
+// ValidateCreationObjects checks a CREATE TABLE's children. A retained binding
+// is valid planning state, but creating its stream cannot restore the controller
+// or its consumer position. Keep this decision separate from state validation so
+// an inspected snapshot can be compared again without becoming a create request.
+func ValidateCreationObjects(target string, caps capability.Capabilities, objects schemaext.Objects) error {
+	if err := ValidateObjects(target, caps, objects); err != nil {
+		return err
+	}
+	all, err := objects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range all {
+		if object.Value.(*ydbschema.DesiredChangefeed).RetainedReplication != nil {
+			return fmt.Errorf("%w: retained replication-managed changefeed %s is an observation, not a standalone creation instruction", ptaherr.ErrUnsupportedFeature, object.Ref)
 		}
 	}
 	return nil

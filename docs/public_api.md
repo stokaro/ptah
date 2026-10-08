@@ -461,6 +461,15 @@ its children in `OwnedObjects`. `dialect/ydb/ydbconvert.Service` converts betwee
 these representations; `dialect/ydb/ydbdiff.Changefeed` carries the before and
 after values of one named stream.
 
+`ObservedChangefeed.Replication` records a server-reported destination binding.
+Conversion preserves it as `DesiredChangefeed.RetainedReplication`, a requirement
+to keep an existing stream. Comparison can retain that state across repeated
+plans, but a renderer cannot treat it as a creation instruction. Codecs, cloning,
+and equality include the binding. The spec-only `DesiredChangefeeds` and
+`ObservedChangefeeds` accessors omit it; use the typed objects when replacing or
+capturing state. A binding can refer to a remote destination and does not name a
+local replication controller.
+
 `atlascompat.DBSchemaToGoSchema` requires a context, target name, and selected
 feature runtime. It returns a schema and an error. `FacetSlots` on the desired
 and observed database models enumerates the mutable slots holding immutable

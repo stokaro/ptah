@@ -105,12 +105,18 @@ func readStream(request schemaext.ObjectComparisonRequest, direction schemaext.R
 			return stream{}, fmt.Errorf("%w: expected desired changefeed", schemaext.ErrInvalidValue)
 		}
 		value.desired, spec = typed, typed.Spec
+		if err := typed.RetainedReplication.Validate(); err != nil {
+			return stream{}, err
+		}
 	} else {
 		typed, ok := object.Value.(*ydbschema.ObservedChangefeed)
 		if !ok || typed == nil {
 			return stream{}, fmt.Errorf("%w: expected observed changefeed", schemaext.ErrInvalidValue)
 		}
 		value.current, spec = typed, typed.Spec
+		if err := typed.Replication.Validate(); err != nil {
+			return stream{}, err
+		}
 	}
 	expected := ydbschema.ChangefeedRef(object.Ref.Schema.Source, object.Ref.Parent.Source, spec.Name)
 	if expected.Key() != object.Ref.Key() {

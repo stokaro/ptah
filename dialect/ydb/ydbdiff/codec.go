@@ -57,11 +57,17 @@ func changefeedValue(value schemaext.Payload) (*Changefeed, error) {
 		return nil, fmt.Errorf("%w: a changefeed change requires a before or after definition", schemaext.ErrInvalidValue)
 	}
 	if change.Before != nil {
+		if err := change.Before.Replication.Validate(); err != nil {
+			return nil, err
+		}
 		if err := ydbschema.ValidateChangefeed(change.Before.Spec); err != nil {
 			return nil, err
 		}
 	}
 	if change.After != nil {
+		if err := change.After.RetainedReplication.Validate(); err != nil {
+			return nil, err
+		}
 		if err := ydbschema.ValidateChangefeed(change.After.Spec); err != nil {
 			return nil, err
 		}

@@ -43,6 +43,9 @@ func (ctx *renderContext) captureFeatureObjects() error {
 		if feed.Spec.Disabled {
 			return fmt.Errorf("%w: Go annotations cannot preserve disabled changefeed %s", ptaherr.ErrUnsupportedFeature, object.Ref)
 		}
+		if feed.RetainedReplication != nil {
+			return fmt.Errorf("%w: Go annotations cannot preserve the retained replication binding of changefeed %s", ptaherr.ErrUnsupportedFeature, object.Ref)
+		}
 		parent := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts(object.Ref.Schema.Source, object.Ref.Parent.Source)
 		if _, found := parents[parent.Key()]; !found {
 			return fmt.Errorf("%w: feature object %s has no declared parent table", ptaherr.ErrInvalidSchemaDiff, object.Ref)

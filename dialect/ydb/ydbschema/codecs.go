@@ -64,9 +64,7 @@ func valueCodec(prototype schemaext.Value, representation schemaext.Representati
 			}
 			spec = spec.Clone()
 			CanonicalChangefeed(&spec)
-			return json.Marshal(struct {
-				Spec ChangefeedSpec `json:"spec"`
-			}{Spec: spec})
+			return marshalValue(payload, spec)
 		},
 	}
 }
@@ -79,9 +77,7 @@ func encodeValue(payload schemaext.Payload) (json.RawMessage, error) {
 	if err := ValidateChangefeed(spec); err != nil {
 		return nil, err
 	}
-	return json.Marshal(struct {
-		Spec ChangefeedSpec `json:"spec"`
-	}{Spec: spec})
+	return marshalValue(payload, spec)
 }
 
 func valueSpec(payload schemaext.Payload) (ChangefeedSpec, error) {
@@ -90,9 +86,9 @@ func valueSpec(payload schemaext.Payload) (ChangefeedSpec, error) {
 	}
 	switch value := payload.(type) {
 	case *DesiredChangefeed:
-		return value.Spec, nil
+		return value.Spec, value.RetainedReplication.Validate()
 	case *ObservedChangefeed:
-		return value.Spec, nil
+		return value.Spec, value.Replication.Validate()
 	default:
 		return ChangefeedSpec{}, fmt.Errorf("%w: expected a changefeed value, got %T", schemaext.ErrInvalidValue, payload)
 	}
@@ -116,4 +112,16 @@ func ChangefeedCoverage(representation schemaext.Representation, subjects []sche
 		}
 	}
 	return schemaext.Coverage{}, fmt.Errorf("%w: changefeed coverage requires a schema representation", schemaext.ErrInvalidValue)
+}
+
+// Keep observation ownership and a retained planning binding distinct on the wire.
+func marshalValue(payload schemaext.Payload, spec ChangefeedSpec) (json.RawMessage, error) {
+	switch value := payload.(type) {
+	case *DesiredChangefeed:
+		return json.Marshal(&DesiredChangefeed{Spec: spec, RetainedReplication: value.RetainedReplication})
+	case *ObservedChangefeed:
+		return json.Marshal(&ObservedChangefeed{Spec: spec, Replication: value.Replication})
+	default:
+		return nil, fmt.Errorf("%w: expected a changefeed value, got %T", schemaext.ErrInvalidValue, payload)
+	}
 }

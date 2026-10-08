@@ -27,6 +27,20 @@ func withChangefeeds(t *testing.T, changefeeds []ydbschema.ChangefeedSpec, index
 	return table
 }
 
+func TestRenderRefusesToRecreateARetainedReplicationStream(t *testing.T) {
+	c := qt.New(t)
+	node := withChangefeeds(t, nil)
+	objects, err := schemaext.NewObjects(schemaext.Object{Ref: ydbschema.ChangefeedRef("", "t", "stream"),
+		Value: &ydbschema.DesiredChangefeed{Spec: ydbschema.ChangefeedSpec{Name: "stream", Mode: "UPDATES", Format: "JSON"},
+			RetainedReplication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}})
+	c.Assert(err, qt.IsNil)
+	node.OwnedObjects = objects
+	output, err := ydb.NewWithCapabilities(capability.YDB262()).Render(node)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "(?s).*not a standalone creation instruction.*")
+	c.Assert(output, qt.Equals, "")
+}
+
 // TestRender_Changefeed_HappyPath pins how a changefeed is written: never in
 // CREATE TABLE, which takes none on any line, but by an ALTER TABLE after it,
 // one per changefeed, and its consumers by an ALTER TOPIC each once the topic

@@ -177,7 +177,7 @@ func (r *Renderer) followingStatements(
 // and keyType is the YDB type of the first key column, which splits a topic
 // that starts with more than one partition.
 func (r *Renderer) changefeedStatements(node *ast.CreateTableNode, indexes []string, keyType string) ([]string, error) {
-	if err := ydbextensions.ValidateObjects(DialectName, r.caps, node.OwnedObjects); err != nil {
+	if err := ydbextensions.ValidateCreationObjects(DialectName, r.caps, node.OwnedObjects); err != nil {
 		return nil, err
 	}
 	parent := objectidentity.NewBuilder(identifier.ForDialect("ydb")).Table(node.Name)

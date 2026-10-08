@@ -182,6 +182,47 @@ func TestCompare_YDBTransferConsumerIsAdopted(t *testing.T) {
 	c.Assert(must.Must(ydbschema.DesiredChangefeeds(desired.FeatureObjects, "", "events")), qt.DeepEquals, []ydbschema.ChangefeedSpec{transferFeed})
 }
 
+func TestTransferConsumerAdoptionPreservesReplicationBinding(t *testing.T) {
+	c := qt.New(t)
+	desired, current := transferDeclaration(), transferCatalog(generated)
+	ref := ydbschema.ChangefeedRef("", "events", transferFeed.Name)
+	observed := &ydbschema.ObservedChangefeed{Spec: transferFeed.Clone(),
+		Replication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
+	retained := observed.Desired()
+	observed.Spec.Consumers = []ast.TopicConsumerSpec{generated}
+	var err error
+	desired.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: retained})
+	c.Assert(err, qt.IsNil)
+	current.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: observed})
+	c.Assert(err, qt.IsNil)
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+	unchanged, _, err := desired.FeatureObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(unchanged.Value.Equal(retained), qt.IsTrue)
+}
+
+func TestTableChangeCapturesRetainedReplicationState(t *testing.T) {
+	c := qt.New(t)
+	desired, current := changefeedDeclaration(), changefeedCatalog()
+	desired.Fields = append(desired.Fields, schemamodel.Field{StructName: "Event", Name: "extra", Type: "TEXT", Nullable: true})
+	observed := &ydbschema.ObservedChangefeed{Spec: transferFeed.Clone(),
+		Replication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
+	ref := ydbschema.ChangefeedRef("", "events", transferFeed.Name)
+	var err error
+	current.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: observed})
+	c.Assert(err, qt.IsNil)
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].FeatureChanges, qt.HasLen, 0)
+	captured, found, err := diff.TablesModified[0].Desired.OwnedObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(captured.Value.Equal(observed.Desired()), qt.IsTrue)
+}
+
 // TestCompare_YDBTransferConsumerAdoptionKeepsOthersCompared still compares a
 // consumer of the same changefeed no transfer reads through: the plan drops
 // it, and keeps the transfer's.

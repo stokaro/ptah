@@ -52,6 +52,9 @@ func validateChangefeedRecord(table tableChanges, record schemaext.ChangeRecord)
 	if change.Before == nil && change.After == nil {
 		return refuseFact(subject, "a changefeed change has no operands")
 	}
+	if change.ReplicationManaged() {
+		return refuseFact(subject, "a replication-managed changefeed cannot be changed independently of its controller")
+	}
 	if change.Before != nil {
 		if err := validateChangefeedSubject(record.Subject, table.Current.Table.Schema, table.Current.Table.Name, change.Before.Spec); err != nil {
 			return err

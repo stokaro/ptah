@@ -156,6 +156,16 @@ func reconstructibleChangefeeds(action featureplan.ParentAction, objects schemae
 		if object.Value.Kind() != ydbschema.ChangefeedKind {
 			continue
 		}
+		switch value := object.Value.(type) {
+		case *ydbschema.ObservedChangefeed:
+			if value.Replication != nil {
+				return refuseFact(string(action)+" "+parent.String(), "a replication-managed changefeed depends on this table; its controller must release it before the parent changes")
+			}
+		case *ydbschema.DesiredChangefeed:
+			if value.RetainedReplication != nil {
+				return refuseFact(string(action)+" "+parent.String(), "a retained replication-managed changefeed cannot be recreated with its parent")
+			}
+		}
 		if object.Ref.Kind != objectidentity.Kind(ydbschema.ChangefeedKind) || owner.Key() != parent.Key() {
 			return refuseFact(string(action)+" "+parent.String(), "no rebuild handler for the captured feature object "+object.Ref.String())
 		}
