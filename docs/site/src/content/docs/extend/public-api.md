@@ -124,6 +124,18 @@ lowering operations; its `featureplan.RefusalError` preserves the report and
 schema or capability error identities. Process adapters carry diagnostics
 without encoding Go errors.
 
+`plangraph.ScheduleRewritten` replaces explicitly claimed host steps with an
+owner-contributed unit, redirects dependencies, and runs the common scheduler.
+It rejects duplicate claims, unknown source effects, lost logical writes,
+conflicting emitters, and cycles. The owner supplies the complete replacement
+semantics and execution requirements; grouping does not imply a transaction.
+Providers receive accepted host operations through `Request.CommonSteps` and
+return claims in `Result.Rewrites`. The runtime isolates common operands between
+services and validates claim identities. The host applies claims before returning
+any operations. `AlterTable` requests assessment of unchanged attached state when
+common table objects change. Process adapters define an explicit wire model for
+common operands; Go AST structs are local representations.
+
 `Provider.Conversions` registers a batched conversion service for explicit target
 and feature-kind pairs. `Runtime.ConvertFeatures` validates each ordered batch,
 propagates cancellation and service errors, and returns no partial result.

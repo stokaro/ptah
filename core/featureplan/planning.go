@@ -45,16 +45,22 @@ type Request struct {
 	Capabilities capability.Capabilities
 	Changes      []schemaext.ChangeRecord
 	Tables       []Table
+	// CommonSteps describes host operations available for dependency references
+	// and explicit rewrites. Providers cannot inspect the host's mutable graph.
+	CommonSteps []CommonStep
 	// ParentKinds is the model vocabulary assigned to this service. The
 	// selected runtime derives it from registration; callers cannot narrow it.
 	ParentKinds []schemaext.Kind
 }
 
-// ParentAction identifies a destructive common operation. It does not grant
+// ParentAction identifies a common table operation. It does not grant
 // permission to perform that operation or imply that attached state is known.
 type ParentAction string
 
 const (
+	// AlterTable changes surviving common objects whose dependencies may be
+	// owned by a feature. The captured table remains present on both sides.
+	AlterTable ParentAction = "alter-table"
 	// DropTable removes the captured table and its attached state.
 	DropTable ParentAction = "drop-table"
 	// RebuildTable replaces a table and restores its effective declaration.
@@ -87,7 +93,7 @@ type Operation struct {
 // ChangePlan accounts for one input change, preserving its subject and kind.
 // Steps names the operations that implement it. An empty list is an explicit
 // no-op and still requires a nonempty Strategy. Several changes may share a
-// step, but every contributed step must be accounted for by a change.
+// step, but every contributed step must be accounted for by a change or parent.
 type ChangePlan struct {
 	Subject  objectidentity.ID
 	Kind     schemaext.Kind
@@ -108,8 +114,11 @@ type Result struct {
 	// Parents accounts for every table with an Action, in table order, and
 	// every assigned ParentKind, in kind order. Missing receipts are errors.
 	Parents []ParentPlan
+	// Rewrites transfers explicitly claimed common steps to contributed units.
+	// The host validates and applies these claims before scheduling the graph.
+	Rewrites []plangraph.Rewrite
 	// Diagnostics describes a completed refusal. A refused batch carries no
-	// contributions or change/parent receipts, including a successful prefix.
+	// contributions, rewrites, or change/parent receipts, including a successful prefix.
 	Diagnostics []Diagnostic
 }
 

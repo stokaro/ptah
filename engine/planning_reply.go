@@ -57,6 +57,11 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 	if len(covered) != len(steps) {
 		return featureplan.Result{}, fmt.Errorf("%w: planning emitted an unaccounted step", schemaext.ErrInvalidValue)
 	}
+	var err error
+	result.Rewrites, err = snapshotPlanningRewrites(request, reply.Rewrites, steps)
+	if err != nil {
+		return featureplan.Result{}, err
+	}
 	if err := ctx.Err(); err != nil {
 		return featureplan.Result{}, err
 	}

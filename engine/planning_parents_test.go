@@ -86,6 +86,24 @@ func TestPlanningAccountsForStepsOwnedByAParentStrategy(t *testing.T) {
 	c.Assert(result.Contributions[0].Steps[0].Payload.Payload.(*planningOperation).Values, qt.DeepEquals, []int{42})
 }
 
+func TestPlanningAssessesSurvivingParentsWithoutFeatureChanges(t *testing.T) {
+	c := qt.New(t)
+	request := commonPlanningRequest()
+	request.Changes = nil
+	request.Tables[0].Action = featureplan.AlterTable
+	var received featureplan.Request
+	provider := parentPlanningProvider(planningFunc(func(ctx context.Context, input featureplan.Request) (featureplan.Result, error) {
+		received = input
+		return plannedParents(ctx, input)
+	}))
+	result, err := mustRuntime(c, provider).PlanFeatures(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(received.CommonSteps, qt.DeepEquals, request.CommonSteps)
+	c.Assert(received.Tables[0].Action, qt.Equals, featureplan.AlterTable)
+	c.Assert(result.Parents, qt.HasLen, 2)
+	c.Assert(result.Parents[0].Action, qt.Equals, featureplan.AlterTable)
+}
+
 func TestPlanningRefusesMalformedParentReceipts(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -177,6 +195,7 @@ func TestPlanningPreflightsParentOperandsBeforeDispatch(t *testing.T) {
 	}{
 		{"missing observation", func(r *featureplan.Request) { r.Tables[0].Current = schemacapture.TableObservation{} }},
 		{"missing rebuild declaration", func(r *featureplan.Request) { r.Tables[0].Action = featureplan.RebuildTable }},
+		{"missing surviving declaration", func(r *featureplan.Request) { r.Tables[0].Action = featureplan.AlterTable }},
 		{"drop with declaration", func(r *featureplan.Request) { r.Tables[0].Desired = planningRequest().Tables[0].Desired }},
 		{"unknown action", func(r *featureplan.Request) { r.Tables[0].Action = "destroy" }},
 	} {

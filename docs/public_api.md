@@ -204,6 +204,23 @@ inconsistent declared lifecycles. Cancellation returns no partial plan.
 Ordering preserves unknown effects and transaction requirements as unknown.
 The scheduler copies metadata slices; payload ownership stays with the caller.
 
+`ScheduleRewritten` lets a target owner replace explicitly named host steps with
+one contributed ordering unit. It transfers incoming and outgoing dependencies
+to that unit before calling the same scheduler. Claims cannot overlap or name
+steps outside the supplied host contribution. Each source needs a known object
+footprint; its logical write actions must remain in the replacement. The owner
+supplies the replacement's complete semantics, risk, and transaction assessment.
+Combining steps does not establish transactional execution.
+
+`featureplan.Request.CommonSteps` exposes accepted common operations with their
+identities, effects, and available column-addition operands. Each selected service
+receives an independent snapshot. `Result.Rewrites` claims source steps by identity
+and names a contributed replacement; the runtime validates and copies those claims,
+and the host applies them to its complete graph. A refusal discards the claims.
+`AlterTable` requests parent assessment even when no attached feature changed.
+Common AST operands are local data; process adapters must map them to an explicit
+protocol schema instead of serializing Go AST structs.
+
 YDB changefeed changes contribute graph steps with table references and explicit
 drop-before-add dependencies. Surrounding target-planner phases participate in
 that order as batches; their object-level effects remain unspecified. Parent

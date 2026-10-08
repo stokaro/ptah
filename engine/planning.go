@@ -129,6 +129,7 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 			continue
 		}
 		result.Contributions = append(result.Contributions, reply.Contributions...)
+		result.Rewrites = append(result.Rewrites, reply.Rewrites...)
 		result.Parents = append(result.Parents, reply.Parents...)
 		for i, index := range indices {
 			result.Changes[index] = reply.Changes[i]

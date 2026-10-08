@@ -38,7 +38,7 @@ func (r Result) ValidateOutcome(request Request) error {
 	if !r.Complete {
 		return fmt.Errorf("%w: planning did not complete", schemaext.ErrInvalidValue)
 	}
-	if len(r.Diagnostics) != 0 && (len(r.Contributions) != 0 || len(r.Changes) != 0 || len(r.Parents) != 0) {
+	if len(r.Diagnostics) != 0 && (len(r.Contributions) != 0 || len(r.Changes) != 0 || len(r.Parents) != 0 || len(r.Rewrites) != 0) {
 		return fmt.Errorf("%w: refused planning batch contains output", schemaext.ErrInvalidValue)
 	}
 	for _, diagnostic := range r.Diagnostics {
