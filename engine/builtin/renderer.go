@@ -676,7 +676,7 @@ func prepareCreateTableNode(
 	if err := validateNamedFeatures(dialect, caps, node.OwnedObjects); err != nil {
 		return nil, err
 	}
-	facets, err := prepareFacets(dialect, node.Facets)
+	facets, err := prepareTableFacets(dialect, node.Facets)
 	if err != nil {
 		return nil, err
 	}
@@ -1438,10 +1438,8 @@ func validateDeclaredTableSettings(dialect string, caps capability.Capabilities,
 }
 
 func validateDeclaredFeatures(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	for _, facets := range database.FacetSlots() {
-		if _, err := prepareFacets(dialect, *facets); err != nil {
-			return err
-		}
+	if err := validateDeclaredFacets(dialect, database); err != nil {
+		return err
 	}
 	if err := validateNamedFeatures(dialect, caps, database.FeatureObjects); err != nil {
 		return err

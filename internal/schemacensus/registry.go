@@ -7,6 +7,15 @@ package schemacensus
 // set to match Fields() exactly, requires a reason on every entry that is not
 // DDL, and requires Measure to agree with every entry that is.
 var registry = []Entry{
+	{Field: "chschema.DesiredTable.Engine", Disposition: DDL},
+	{Field: "chschema.DesiredTable.OrderBy", Disposition: DDL},
+	{Field: "chschema.DesiredTable.PartitionBy", Disposition: DDL},
+	{Field: "chschema.DesiredTable.PrimaryKey", Disposition: DDL},
+	{Field: "chschema.DesiredTable.SampleBy", Disposition: DDL},
+	{Field: "chschema.DesiredTable.Settings", Disposition: DDL},
+	{Field: "chschema.DesiredTable.TTL", Disposition: DDL},
+	{Field: "chschema.Setting.State", Disposition: DDL},
+	{Field: "chschema.Setting.Value", Disposition: DDL},
 	{Field: "schemamodel.CompositeType.Facets", Disposition: DDL},
 	{Field: "schemamodel.Constraint.Facets", Disposition: DDL},
 	{Field: "schemamodel.Database.Facets", Disposition: DDL},

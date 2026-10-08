@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-588 fields are reachable from the desired schema, and each one carries
+597 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 510 | reaches rendered SQL on at least one target |
+| `ddl` | 519 | reaches rendered SQL on at least one target |
 | `comparison` | 9 | read when two schemas are compared, and written into no statement |
 | `planning` | 12 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -173,6 +173,15 @@ None.
 | `ast.YDBTieredTTLSpec.Column` | `ddl` | — |
 | `ast.YDBTieredTTLSpec.Tiers` | `ddl` | — |
 | `ast.YDBTieredTTLSpec.Unit` | `ddl` | — |
+| `chschema.DesiredTable.Engine` | `ddl` | — |
+| `chschema.DesiredTable.OrderBy` | `ddl` | — |
+| `chschema.DesiredTable.PartitionBy` | `ddl` | — |
+| `chschema.DesiredTable.PrimaryKey` | `ddl` | — |
+| `chschema.DesiredTable.SampleBy` | `ddl` | — |
+| `chschema.DesiredTable.Settings` | `ddl` | — |
+| `chschema.DesiredTable.TTL` | `ddl` | — |
+| `chschema.Setting.State` | `ddl` | — |
+| `chschema.Setting.Value` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
 | `coverage.Object.Name` | `comparison` | which object was not described |
 | `coverage.Object.Provenance` | `comparison` | how Ptah learned the object was not described |

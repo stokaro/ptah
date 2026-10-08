@@ -1,27 +1,31 @@
-// Package chprepare resolves ClickHouse column key membership before shared
-// comparison. Key clauses belong to the dialect, not to the common comparator.
+// Package chprepare resolves ClickHouse table settings and column key membership
+// before shared comparison. Key clauses belong to the dialect, not to the common
+// comparator.
 package chprepare
 
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/dialect/clickhouse/chresolve"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/clickhouse/internal/chkey"
 )
 
-// Service resolves desired column primary-key flags from ClickHouse key clauses.
+// Service resolves typed table settings and desired column primary-key flags.
 // It keeps declared facets and all observed state unchanged. The zero value is
 // usable and safe for concurrent calls; no live server is consulted.
 type Service struct{}
 
-// PrepareTables returns independent captures whose column key flags match a
-// nonempty PRIMARY KEY clause, or ORDER BY when no primary key is declared.
-// Tables without either clause retain their column flags. Nil context returns
-// schemapreparation.ErrInvalid; cancellation returns its context error with no
-// partial result. Only ClickHouse and its platform aliases are accepted.
+// PrepareTables returns independent captures whose column key flags match the
+// declared or retained ClickHouse key. Unknown state required by an omitted
+// typed setting returns chresolve.ErrUnknownCurrent. Invalid input, provider
+// errors, and cancellation return no partial result. Only ClickHouse is accepted.
 func (Service) PrepareTables(ctx context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
 	if ctx == nil {
 		return schemapreparation.Result{}, fmt.Errorf("%w: preparation requires a context", schemapreparation.ErrInvalid)
@@ -34,7 +38,9 @@ func (Service) PrepareTables(ctx context.Context, request schemapreparation.Requ
 	}
 	request = request.Clone()
 	for i := range request.Tables {
-		prepareTable(&request.Tables[i])
+		if err := prepareTable(&request.Tables[i]); err != nil {
+			return schemapreparation.Result{}, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return schemapreparation.Result{}, err
@@ -42,17 +48,48 @@ func (Service) PrepareTables(ctx context.Context, request schemapreparation.Requ
 	return schemapreparation.Result{Complete: true, Tables: request.Tables}, nil
 }
 
-func prepareTable(table *schemapreparation.Table) {
+func prepareTable(table *schemapreparation.Table) error {
 	names := make([]string, 0, len(table.Desired.Fields))
 	for _, field := range table.Desired.Fields {
 		names = append(names, field.Name)
 	}
 	keys, declared := chkey.PrimaryKeyColumns(table.Desired.Table, names)
+	value, typed, err := schemaext.FacetAs[*chschema.DesiredTable](table.Desired.Table.Facets, chschema.TableKind)
+	if err != nil {
+		return err
+	}
+	if typed {
+		for _, key := range chresolve.StorageOptionKeys() {
+			if _, found := table.Desired.Table.Overrides[platform.ClickHouse][strings.ToLower(key)]; found {
+				return fmt.Errorf("%w: ClickHouse table setting %s has both typed and override declarations", schemaext.ErrInvalidValue, key)
+			}
+		}
+		observed, _, err := schemaext.FacetAs[*chschema.ObservedTable](table.Current.Table.Facets, chschema.TableKind)
+		if err != nil {
+			return err
+		}
+		if table.CurrentKnowledge.State != schemaext.Complete ||
+			table.Current.FeatureCoverage.Lookup(chschema.TableKind, table.Subject).State != schemaext.Complete {
+			observed = nil
+		}
+		resolved, err := chresolve.Table(chresolve.Request{
+			Desired: value, Current: observed, Creating: table.CurrentKnowledge.State == schemaext.Absent, CommonKey: chkey.CommonColumns(table.Desired),
+		})
+		if err != nil {
+			return err
+		}
+		table.ResolvedFacets, err = schemaext.NewFacets(&resolved.Prepared)
+		if err != nil {
+			return err
+		}
+		keys, declared = chkey.ReferencedColumns(resolved.Prepared.PrimaryKey.Value, names), true
+	}
 	if !declared {
-		return
+		return nil
 	}
 	for i := range table.Desired.Fields {
 		table.Desired.Fields[i].Primary = keys[table.Desired.Fields[i].Name]
 	}
 	table.ColumnPrimaryKeysPrepared = true
+	return nil
 }

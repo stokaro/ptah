@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 )
@@ -65,4 +66,13 @@ func TestCensusAblatesNestedOwnerValuesWithoutChangingTheSource(t *testing.T) {
 			c.Assert(ablated.FeatureCoverage.Equal(source.FeatureCoverage), qt.IsTrue)
 		})
 	}
+}
+
+func TestCensusAblationRetainsFacetTargetScope(t *testing.T) {
+	c := qt.New(t)
+	source := tableClickHouseSettingsFixture()
+	ablated := Ablate(source, "chschema.DesiredTable.TTL")
+	c.Assert(ablated.Tables[0].Facets.TargetScope(chschema.TableKind), qt.DeepEquals, []string{"clickhouse"})
+	c.Assert(Populated(source, "chschema.DesiredTable.TTL"), qt.IsTrue)
+	c.Assert(Populated(ablated, "chschema.DesiredTable.TTL"), qt.IsFalse)
 }

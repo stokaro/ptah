@@ -41,8 +41,10 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/yamlschema`
 - `ptah.run/dbschema`
 - `ptah.run/dialect/clickhouse/chcompare`
+- `ptah.run/dialect/clickhouse/chconvert`
 - `ptah.run/dialect/clickhouse/chdiff`
 - `ptah.run/dialect/clickhouse/chprepare`
+- `ptah.run/dialect/clickhouse/chresolve`
 - `ptah.run/dialect/clickhouse/chschema`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/ydb/ydbast`
@@ -480,8 +482,17 @@ refuses unresolved settings. This projection records a prediction, not a new
 database observation. Invalid model values return `schemaext.InvalidModelError`,
 which identifies the kind and representation and wraps `ErrInvalidValue`.
 
-These model APIs do not enable typed ClickHouse table facets in the bundled
-reader, renderer, or migration planner. Their integration is part of
+The bundled runtime registers the table model, preparation, conversion, and
+comparison.
+Programmatically supplied desired facets render through the schema API and new
+table migration plans with their reverse DROP plans. A typed facet and storage
+overrides on the same table are refused together, including empty overrides.
+Other targets and non-table
+attachment points refuse active ClickHouse table facets.
+
+Existing-table comparison needs complete captured typed settings. The bundled
+reader does not produce them yet, and migration planning refuses storage-setting
+changes. Reader, frontend, and ALTER integration remain part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `chcompare.Service` compares resolved table settings through a selected
@@ -495,8 +506,27 @@ parentheses while preserving quoted text, identifier case, and key order.
 Missing evidence needed for declared settings produces an undecided diagnostic.
 An unmentioned table without inspected settings stays unmanaged; registering a
 model does not create intent on every table. Explicit inspection limits remain
-undecided. These services perform no database I/O or ALTER planning and are not
-registered by the bundled runtime.
+undecided. These services perform no database I/O or ALTER planning.
+
+`chresolve.Table` retains the declaration beside fully explicit settings and
+records each property's origin. Creation uses `MergeTree` and common ordered
+primary-key columns when the engine and sorting key are omitted. A default
+primary key inherits the resolved sorting key. An explicit empty sorting or
+primary key renders as `tuple()` and stays empty in the table's catalog state.
+Missing sorting-key input for a MergeTree table returns `ErrMissingSortingKey`.
+
+For existing tables, omitted settings retain a usable observation; a default
+request selects the creation rule instead. Callers must check source coverage
+before supplying that observation. Missing evidence required by an omitted
+setting returns `ErrUnknownCurrent` without a partial result. Resolution does
+not establish server support or a new observation.
+
+`chconvert.Service` projects complete observed settings into explicit declarations
+and fully resolved declarations into predicted observations. It preserves empty
+properties and separate sorting and primary keys. Unresolved settings, invalid
+inputs, and cancellation return no partial batch. The migration generator uses
+this conversion to capture the table that a reverse DROP removes; the prediction
+does not replace a catalog read.
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register
@@ -508,7 +538,8 @@ validates ownership and codecs before feature and common comparison consume
 resolved values. Incomplete or invalid replies and cancellation return no result.
 
 `chprepare.Service` derives column membership from ClickHouse key expressions.
-The shared comparator consumes prepared column flags
+Typed settings use `chresolve.Table` and require complete feature coverage before
+retaining observed values. The shared comparator consumes prepared column flags
 without reading ClickHouse clauses. Tables sharing a Go struct retain separate
 captures. `SchemaDiff.TablePreparation` stores source and prepared captures;
 filtering, cloning, and reversal preserve independent copies of this provenance.

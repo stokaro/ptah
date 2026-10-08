@@ -6,6 +6,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
@@ -15,9 +16,17 @@ import (
 // This is conformance composition, not model dispatch in the schema pipeline.
 func featureCodecs() []schemaext.OwnedCodec {
 	var models []schemaext.OwnedCodec
-	for _, codec := range ydbschema.Codecs() {
-		if codec.Representation == schemaext.Desired {
-			models = append(models, schemaext.OwnedCodec{Owner: "ptah.run/ydb", Codec: codec})
+	for _, provider := range []struct {
+		owner  string
+		codecs []schemaext.Codec
+	}{
+		{owner: "ptah.run/ydb", codecs: ydbschema.Codecs()},
+		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
+	} {
+		for _, codec := range provider.codecs {
+			if codec.Representation == schemaext.Desired {
+				models = append(models, schemaext.OwnedCodec{Owner: provider.owner, Codec: codec})
+			}
 		}
 	}
 	return models
@@ -42,12 +51,16 @@ func visitFeatures(value reflect.Value, walk func(reflect.Value)) bool {
 		}
 		return true
 	case reflect.TypeFor[schemaext.Facets]():
-		values := must.Must(value.Interface().(schemaext.Facets).Values())
+		facets, _ := reflect.TypeAssert[schemaext.Facets](value) // The type switch above established the concrete type.
+		values := must.Must(facets.Values())
 		for _, feature := range values {
 			walk(reflect.ValueOf(feature))
+			if value.CanSet() {
+				facets = must.Must(facets.Replace(feature))
+			}
 		}
 		if value.CanSet() {
-			value.Set(reflect.ValueOf(must.Must(schemaext.NewFacets(values...))))
+			value.Set(reflect.ValueOf(facets))
 		}
 		return true
 	case reflect.TypeFor[schemaext.Coverage]():
