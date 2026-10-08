@@ -29,6 +29,10 @@ type Table struct {
 	Desired          schemacapture.TableDeclaration
 	Current          schemacapture.TableObservation
 	CurrentKnowledge schemaext.Knowledge
+	// ResolvedFacets contains prepared values for facets already declared on
+	// this table. It is output-only; the source declaration stays in Desired.
+	// Applying these values retains the declaration's original target scopes.
+	ResolvedFacets schemaext.Facets
 	// ColumnPrimaryKeysPrepared makes Fields.Primary authoritative for column
 	// comparison instead of deriving membership from common table constraints.
 	ColumnPrimaryKeysPrepared bool
@@ -62,6 +66,7 @@ func (r Request) Clone() Request {
 // Result contains target-normalized comparison inputs in request order. Services
 // may resolve desired Fields.Primary and set ColumnPrimaryKeysPrepared. All
 // other captured state, including observations and coverage, stays unchanged.
+// ResolvedFacets may carry resolved values for existing declared facet kinds.
 // Complete is required even for an empty batch. Errors discard the whole result.
 type Result struct {
 	Complete bool
@@ -145,6 +150,14 @@ func Accept(request Request, result Result) (Capture, error) {
 }
 
 func samePreparedTable(before, after Table) error {
+	if !before.ResolvedFacets.IsZero() {
+		return fmt.Errorf("%w: preparation input already carries resolved facets", ErrInvalid)
+	}
+	for _, kind := range after.ResolvedFacets.DeclaredKinds() {
+		if !slices.Contains(before.Desired.Table.Facets.Kinds(), kind) || len(after.ResolvedFacets.TargetScope(kind)) != 0 {
+			return fmt.Errorf("%w: resolved facets must retain declared kinds and their source scopes", ErrInvalid)
+		}
+	}
 	before, after = before.Clone(), after.Clone()
 	if !retainEqualFeatures(&before, &after) {
 		return fmt.Errorf("%w: preparation changed captured features", ErrInvalid)

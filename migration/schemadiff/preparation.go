@@ -2,6 +2,7 @@ package schemadiff
 
 import (
 	"context"
+	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
@@ -14,11 +15,22 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+type comparisonTables struct {
+	desired   *schemamodel.Database
+	capture   *schemapreparation.Capture
+	bySubject map[objectidentity.Key]schemapreparation.Table
+	parents   []schemaext.ParentState
+}
+
 func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database, current *catalog.Database,
 	target string, semantics identifier.Semantics, caps capability.Capabilities, runtime schemapreparation.Runtime,
-) (*schemapreparation.Capture, map[objectidentity.Key]schemapreparation.Table, error) {
+) (comparisonTables, error) {
 	if target == "" {
-		return nil, nil, nil
+		return comparisonTables{desired: desired}, nil
+	}
+	parents, err := featureParents(desired, current, target, semantics)
+	if err != nil {
+		return comparisonTables{}, err
 	}
 	observed := make(map[objectidentity.Key]catalog.Table, len(current.Tables))
 	for _, table := range current.Tables {
@@ -41,18 +53,43 @@ func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database,
 	source := request.Clone()
 	result, err := runtime.PrepareTables(ctx, request)
 	if err != nil {
-		return nil, nil, err
+		return comparisonTables{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+		return comparisonTables{}, err
 	}
 	capture, err := schemapreparation.Accept(source, result)
 	if err != nil {
-		return nil, nil, err
+		return comparisonTables{}, err
 	}
 	prepared := make(map[objectidentity.Key]schemapreparation.Table, len(capture.Prepared))
 	for _, table := range capture.Prepared {
 		prepared[table.Subject.Key()] = table.Clone()
 	}
-	return &capture, prepared, nil
+	resolved, err := applyResolvedFacets(desired, prepared, target, semantics)
+	if err != nil {
+		return comparisonTables{}, err
+	}
+	return comparisonTables{desired: resolved, capture: &capture, bySubject: prepared, parents: parents}, nil
+}
+
+func applyResolvedFacets(desired *schemamodel.Database, prepared map[objectidentity.Key]schemapreparation.Table,
+	target string, semantics identifier.Semantics,
+) (*schemamodel.Database, error) {
+	resolved := *desired
+	resolved.Tables = slices.Clone(desired.Tables)
+	for i := range resolved.Tables {
+		table := &resolved.Tables[i]
+		values, err := prepared[tableidentity.Subject(table.Schema, table.Name, target, semantics).Key()].ResolvedFacets.Values()
+		if err != nil {
+			return nil, err
+		}
+		for _, value := range values {
+			table.Facets, err = table.Facets.Replace(value)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &resolved, nil
 }

@@ -123,7 +123,16 @@ func compareReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, runtime)
+	desired = compare.AdoptUndescribedColumnTables(desired, database, opts.Dialect, identifierSemantics)
+	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
+	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
+	prepared, err := prepareComparisonTables(ctx, desired, database, opts.Dialect, identifierSemantics, caps, runtime)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	desired, diff.TablePreparation = prepared.desired, prepared.capture
+
+	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -131,15 +140,6 @@ func compareReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	desired = compare.AdoptUndescribedColumnTables(desired, database, opts.Dialect, identifierSemantics)
-	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
-	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
-
-	preparation, preparedTables, err := prepareComparisonTables(ctx, desired, database, opts.Dialect, identifierSemantics, caps, runtime)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	diff.TablePreparation = preparation
 
 	// What each side declined to describe travels with that side rather than
 	// with the options, so every caller that builds options from scratch still
@@ -163,7 +163,7 @@ func compareReportingUndecidedAdditions(
 		identifierSemantics,
 		cov,
 		compare.TableContext{
-			Prepared:       preparedTables,
+			Prepared:       prepared.bySubject,
 			Generated:      opts.GeneratedExpressions,
 			Columns:        opts.ColumnSpellings,
 			DefaultIntSize: defaultIntSize,
