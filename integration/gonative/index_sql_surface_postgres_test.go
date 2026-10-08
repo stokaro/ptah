@@ -54,6 +54,7 @@ func TestPostgreSQLIndexAttributes_ItsOwnSQLDescriptionChangesNothing(t *testing
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	documentResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+		Runtime:     must.Must(builtin.New()),
 		URLs:        []string{dbURL},
 		Format:      "sql",
 		Diagnostics: io.Discard,

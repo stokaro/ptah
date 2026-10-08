@@ -13,6 +13,7 @@ import (
 	"os"
 	"time"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 )
 
@@ -38,7 +39,12 @@ func main() {
 		migrationName = os.Args[4]
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		log.Fatalf("Error selecting schema services: %v", err)
+	}
 	opts := generator.GenerateMigrationOptions{
+		Runtime:       runtime,
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   databaseURL,
 		MigrationName: migrationName,

@@ -283,9 +283,10 @@ func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
 	withheld.Name = undecidedRoleName
 
 	tests := []struct {
-		name string
-		args []string
-		want undecidedDocument
+		name     string
+		args     []string
+		want     undecidedDocument
+		wantExit int
 	}{
 		{
 			name: "schema plan",
@@ -300,7 +301,9 @@ func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
 		{
 			name: "schema drift",
 			args: []string{"schema", "drift", "--format", "json"},
-			want: undecidedDocument{ContractVersion: 2, Failed: true, Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
+			// Drift has its own report shape, without plan/apply's contract version.
+			want:     undecidedDocument{Failed: true, Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
+			wantExit: 1,
 		},
 	}
 
@@ -310,6 +313,8 @@ func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
 
 			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: workDir},
 				append(test.args, "--db-url", target, "--schema-file", "undecided.sql")...)
+			c.Assert(got.ExitCode, qt.Equals, test.wantExit,
+				qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 
 			var document undecidedDocument
 			c.Assert(json.Unmarshal([]byte(got.Stdout), &document), qt.IsNil,

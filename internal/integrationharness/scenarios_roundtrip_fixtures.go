@@ -186,6 +186,7 @@ func generateAndApplyRoundTripVersion(
 	}
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       vem.runtime,
 		GoEntitiesDir: vem.GetEntitiesDir(),
 		DBConn:        conn,
 		OutputDir:     migrationsDir,

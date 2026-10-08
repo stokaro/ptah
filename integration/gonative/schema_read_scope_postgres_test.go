@@ -181,6 +181,7 @@ func readScopeInspected(c *qt.C, sourceURL string) string {
 	c.Helper()
 
 	renderedResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+		Runtime:                must.Must(builtin.New()),
 		URLs:                   []string{sourceURL},
 		Format:                 "hcl",
 		Diagnostics:            io.Discard,

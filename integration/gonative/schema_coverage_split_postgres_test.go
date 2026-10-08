@@ -38,6 +38,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -125,7 +126,10 @@ func coverageSplitInspect(c *qt.C, dbURL, split string) []string {
 	c.Helper()
 
 	root := c.TempDir()
-	_, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	_, err = atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+		Runtime:                runtime,
 		URLs:                   []string{dbURL},
 		Format:                 fmt.Sprintf(`{{ hcl . | %s | write %q }}`, split, root),
 		Diagnostics:            nil,

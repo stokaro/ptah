@@ -24,11 +24,17 @@ import (
     "log"
     "time"
 
+    "ptah.run/engine/builtin"
     "ptah.run/migration/generator"
 )
 
 func main() {
+    runtime, err := builtin.New()
+    if err != nil {
+        log.Fatal(err)
+    }
     opts := generator.GenerateMigrationOptions{
+        Runtime:       runtime,
         GoEntitiesDir: "./entities",           // Directory containing Go entities
         DatabaseURL:   "postgres://user:pass@localhost/db", // Database connection
         MigrationName: "add_user_table",       // Optional: defaults to "migration"
@@ -60,6 +66,10 @@ func main() {
     }
 }
 ```
+
+Every generation call requires a selected `Runtime`. `builtin.New` selects
+Ptah's bundled providers. The generator uses the same selection for comparison,
+forward planning, and rollback; it does not select providers implicitly.
 
 `MigrationFiles.Files` is the authoritative result. It contains every
 generated pair in apply order, including each pair's optional safety report
@@ -164,6 +174,7 @@ Set `ShadowDatabaseURL` to verify generated migrations before they are written:
 
 ```go
 opts := generator.GenerateMigrationOptions{
+    Runtime:           runtime, // Reuse the selected runtime from the example above.
     GoEntitiesDir:      "./entities",
     DatabaseURL:        "postgres://localhost:5432/app_dev",
     MigrationName:      "add_user_table",
@@ -300,6 +311,9 @@ The `GenerateMigrationOptions` struct carries the configuration for migration ge
 
 ```go
 type GenerateMigrationOptions struct {
+    // Runtime selects the required schema and migration services.
+    Runtime Runtime
+
     // GoEntitiesDir is the directory to scan for Go entities
     GoEntitiesDir string
 

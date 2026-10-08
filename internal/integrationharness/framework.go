@@ -16,12 +16,12 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
-	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/integrationfixture"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/testsummary"
+	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -467,7 +467,7 @@ func cleanPostgresFixtureFunctions(ctx context.Context, conn *dbschema.DatabaseC
 
 // VersionedEntityManager manages versioned entity fixtures for tests
 type VersionedEntityManager struct {
-	runtime     engine.SchemaRuntime
+	runtime     generator.Runtime
 	fixturesFS  fs.FS
 	tempDir     string
 	entitiesDir string

@@ -452,6 +452,7 @@ func testMigrationGeneratorValidation(
 		}
 
 		_, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:       vem.runtime,
 			GoEntitiesDir: vem.GetEntitiesDir(),
 			DBConn:        conn,
 			OutputDir:     migrationsDir,
@@ -496,6 +497,7 @@ func testMigrationGeneratorValidation(
 		}
 
 		_, err = generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:       vem.runtime,
 			GoEntitiesDir: vem.GetEntitiesDir(),
 			DBConn:        conn,
 			OutputDir:     migrationsDir,
@@ -529,6 +531,7 @@ func testMigrationGeneratorValidation(
 			return err
 		}
 		_, err = generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:       vem.runtime,
 			GoEntitiesDir: vem.GetEntitiesDir(),
 			DBConn:        conn,
 			OutputDir:     migrationsDir,
