@@ -22,9 +22,20 @@ func validateNamedFeatures(dialect string, caps capability.Capabilities, objects
 	return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
 }
 
-func refuseUnregisteredFacets(dialect string, facets schemaext.Facets) error {
+func prepareFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
 	if facets.IsZero() {
-		return nil
+		return facets, nil
 	}
-	return fmt.Errorf("%w: feature facet %q is not registered for target %q", ptaherr.ErrUnsupportedFeature, facets.Kinds()[0], dialect)
+	selected, err := resolveTargetSelection(dialect)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	projected, err := facets.ForTarget(selected)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	if projected.Len() == 0 {
+		return projected, nil
+	}
+	return schemaext.Facets{}, fmt.Errorf("%w: feature facet %q is not registered for target %q", ptaherr.ErrUnsupportedFeature, projected.Kinds()[0], dialect)
 }

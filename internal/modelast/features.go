@@ -3,6 +3,8 @@ package modelast
 import (
 	"fmt"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -10,16 +12,14 @@ import (
 )
 
 // validateFeatureLowering accounts for feature state before the first node is
-// visited. The current lowering path attaches named children to their CREATE
-// TABLE. Other placements need a selected owner lowering service; dropping them
+// visited. Table facets and named children travel on their CREATE TABLE.
+// Other placements need a selected owner lowering service; dropping them
 // would leave a successful AST that no downstream renderer can refuse.
 func validateFeatureLowering(database schemamodel.Database, dialect string) error {
-	for _, facets := range database.FacetSlots() {
-		if !facets.IsZero() {
-			return fmt.Errorf("%w: no schema-to-AST lowering for feature facet %q", ptaherr.ErrUnsupportedFeature, facets.Kinds()[0])
-		}
-	}
 	if err := validateLoweringCoverage(database.FeatureCoverage); err != nil {
+		return err
+	}
+	if err := validateFacetLowering(&database, dialect); err != nil {
 		return err
 	}
 	if err := schemaprep.ValidateFeatureParents(&database, dialect); err != nil {
@@ -31,6 +31,30 @@ func validateFeatureLowering(database schemamodel.Database, dialect string) erro
 		}
 		if database.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State == schemaext.Absent {
 			return fmt.Errorf("%w: declared feature object %s is marked absent", schemaext.ErrInvalidValue, ref)
+		}
+	}
+	return nil
+}
+
+func validateFacetLowering(database *schemamodel.Database, dialect string) error {
+	builder := objectidentity.NewBuilder(identifier.ForDialect(dialect))
+	tables := make(map[*schemaext.Facets]objectidentity.ID, len(database.Tables))
+	for i := range database.Tables {
+		table := &database.Tables[i]
+		tables[&table.Facets] = builder.TableParts(table.Schema, table.Name)
+	}
+	for _, facets := range database.FacetSlots() {
+		if facets.IsZero() {
+			continue
+		}
+		subject, supported := tables[facets]
+		if !supported {
+			return fmt.Errorf("%w: no schema-to-AST lowering for feature facet %q", ptaherr.ErrUnsupportedFeature, facets.DeclaredKinds()[0])
+		}
+		for _, kind := range facets.Kinds() {
+			if database.FeatureCoverage.Lookup(kind, subject).State == schemaext.Absent {
+				return fmt.Errorf("%w: declared feature facet %q on %s is marked absent", schemaext.ErrInvalidValue, kind, subject)
+			}
 		}
 	}
 	return nil

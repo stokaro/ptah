@@ -14,21 +14,7 @@ import (
 // Direct built-in entry points use the registration naming declaration without
 // constructing a provider registry for every schema.
 func prepareScopedDatabase(database *schemamodel.Database, dialect string, caps capability.Capabilities) (*schemamodel.Database, error) {
-	spelling, err := schemaext.NormalizeTargetSpelling(dialect)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, dialect)
-	}
-	name := platform.NormalizeDialect(spelling)
-	if name == "" {
-		return nil, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, dialect)
-	}
-	var aliases []string
-	for _, candidate := range platform.DialectSpellings() {
-		if candidate != name && platform.NormalizeDialect(candidate) == name {
-			aliases = append(aliases, candidate)
-		}
-	}
-	selected, err := schemaext.NewTargetSelection(name, aliases...)
+	selected, err := resolveTargetSelection(dialect)
 	if err != nil {
 		return nil, err
 	}
@@ -40,4 +26,25 @@ func prepareScopedDatabase(database *schemamodel.Database, dialect string, caps 
 		return nil, err
 	}
 	return scoped, nil
+}
+
+// Both whole-schema and direct AST entry points resolve source bindings with
+// the same names as the built-in registration. An excluded value cannot be
+// reused on a target that its captured source binding includes.
+func resolveTargetSelection(dialect string) (schemaext.TargetSelection, error) {
+	spelling, err := schemaext.NormalizeTargetSpelling(dialect)
+	if err != nil {
+		return schemaext.TargetSelection{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, dialect)
+	}
+	name := platform.NormalizeDialect(spelling)
+	if name == "" {
+		return schemaext.TargetSelection{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, dialect)
+	}
+	var aliases []string
+	for _, candidate := range platform.DialectSpellings() {
+		if candidate != name && platform.NormalizeDialect(candidate) == name {
+			aliases = append(aliases, candidate)
+		}
+	}
+	return schemaext.NewTargetSelection(name, aliases...)
 }

@@ -20,7 +20,7 @@ func changefeedTableRef(table schemamodel.Table) objectidentity.ID {
 func (ctx *renderContext) captureFeatureObjects() error {
 	for _, facets := range ctx.db.FacetSlots() {
 		if !facets.IsZero() {
-			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, facets.Kinds()[0])
+			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, facets.DeclaredKinds()[0])
 		}
 	}
 	parents := make(map[objectidentity.Key]struct{}, len(ctx.db.Tables))

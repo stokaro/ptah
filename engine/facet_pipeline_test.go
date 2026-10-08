@@ -7,8 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/atlascompat"
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine"
@@ -19,6 +22,32 @@ func facetSchemas() (*schemamodel.Database, *catalog.Database) {
 	request := facetRequest()
 	return &schemamodel.Database{Tables: []schemamodel.Table{{Name: "orders", StructName: "Orders", Facets: request.Desired.Records[0].Values}}},
 		&catalog.Database{Tables: []catalog.Table{{Name: "orders", Facets: request.Current.Records[0].Values}}}
+}
+
+func TestTableFacetsReachSelectedASTRenderer(t *testing.T) {
+	c := qt.New(t)
+	desired, _ := facetSchemas()
+	list, err := atlascompat.SchemaToAST(*desired, "custom")
+	c.Assert(err, qt.IsNil)
+	c.Assert(list.Statements, qt.HasLen, 1)
+	calls := 0
+	runtime := mustRuntime(c, engine.Provider{ID: "example.org/table-rendering", Targets: []engine.Target{{
+		Name: "custom", Aliases: []string{"alternate"},
+		Rendering: renderingFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
+			calls++
+			c.Assert(request.Target, qt.Equals, "custom")
+			c.Assert(request.Nodes, qt.HasLen, 1)
+			table, ok := request.Nodes[0].(*ast.CreateTableNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(table.Facets, qt.DeepEquals, desired.Tables[0].Facets)
+			c.Assert(table.Facets.Len(), qt.Equals, 2)
+			return renderer.Result{Complete: true, Fragments: []string{"owned table settings;"}}, nil
+		}),
+	}}})
+	result, err := runtime.Render(t.Context(), renderer.Request{Target: "alternate", Nodes: list.Statements})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.SQL(), qt.Equals, "owned table settings;")
+	c.Assert(calls, qt.Equals, 1)
 }
 
 func TestTableFacetComparisonAttachesChangesAndCapturesBothStates(t *testing.T) {

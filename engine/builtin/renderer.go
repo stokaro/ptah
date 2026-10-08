@@ -586,7 +586,8 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			Message: "index node is nil",
 		}
 	}
-	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateIndexInclude(dialect, caps, node.Name, node.Type, node.IncludeColumns); err != nil {
@@ -614,7 +615,9 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			return nil, err
 		}
 	}
-	return node, nil
+	cloned := *node
+	cloned.Facets = facets
+	return &cloned, nil
 }
 
 func prepareStatementListNode(
@@ -673,9 +676,11 @@ func prepareCreateTableNode(
 	if err := validateNamedFeatures(dialect, caps, node.OwnedObjects); err != nil {
 		return nil, err
 	}
-	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
 		return nil, err
 	}
+	cloned.Facets = facets
 	if err := refuseColumnFamilies(dialect, caps, declaringFamilies(node.Name), node.YDBColumnFamilies); err != nil {
 		return nil, err
 	}
@@ -1434,7 +1439,7 @@ func validateDeclaredTableSettings(dialect string, caps capability.Capabilities,
 
 func validateDeclaredFeatures(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	for _, facets := range database.FacetSlots() {
-		if err := refuseUnregisteredFacets(dialect, *facets); err != nil {
+		if _, err := prepareFacets(dialect, *facets); err != nil {
 			return err
 		}
 	}
@@ -1710,9 +1715,12 @@ func prepareColumnNode(
 	if node == nil {
 		return nil, nilNodeError(dialect, "column node")
 	}
-	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
 		return nil, err
 	}
+	cloned := *node
+	cloned.Facets = facets
 	if node.Name == "" {
 		return nil, unnamedColumnError(dialect, table)
 	}
@@ -1722,13 +1730,12 @@ func prepareColumnNode(
 		}
 	}
 	if node.ForeignKey == nil {
-		return node, nil
+		return &cloned, nil
 	}
 	if !caps.Has(capability.ForeignKeys) {
 		return nil, foreignKeysUnsupportedError(dialect)
 	}
 
-	cloned := *node
 	cloned.ForeignKey = cloneForeignKeyRef(node.ForeignKey)
 	if err := validateASTForeignKey(dialect, []string{node.Name}, cloned.ForeignKey); err != nil {
 		return nil, err
@@ -1739,7 +1746,6 @@ func prepareColumnNode(
 	); err != nil {
 		return nil, err
 	}
-	var err error
 	cloned.ForeignKey.OnDelete, cloned.ForeignKey.OnUpdate, err = normalizeReferentialActions(
 		dialect,
 		cloned.ForeignKey.OnDelete,
@@ -1875,9 +1881,12 @@ func prepareConstraintNode(
 	if node == nil {
 		return nil, nilNodeError(dialect, "constraint node")
 	}
-	if err := refuseUnregisteredFacets(dialect, node.Facets); err != nil {
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
 		return nil, err
 	}
+	cloned := *node
+	cloned.Facets = facets
 	// Before the foreign-key early return, not after it: a UNIQUE or PRIMARY KEY
 	// constraint takes that return, and its INCLUDE payload is exactly what was
 	// being dropped in silence (stokaro/ptah#2538).
@@ -1911,13 +1920,12 @@ func prepareConstraintNode(
 		}
 	}
 	if node.Type != ast.ForeignKeyConstraint {
-		return node, nil
+		return &cloned, nil
 	}
 	if !caps.Has(capability.ForeignKeys) {
 		return nil, foreignKeysUnsupportedError(dialect)
 	}
 
-	cloned := *node
 	cloned.Columns = slices.Clone(node.Columns)
 	cloned.Reference = cloneForeignKeyRef(node.Reference)
 	if err := validateASTForeignKey(dialect, cloned.Columns, cloned.Reference); err != nil {
@@ -1929,7 +1937,6 @@ func prepareConstraintNode(
 	); err != nil {
 		return nil, err
 	}
-	var err error
 	cloned.Reference.OnDelete, cloned.Reference.OnUpdate, err = normalizeReferentialActions(
 		dialect,
 		cloned.Reference.OnDelete,

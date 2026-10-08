@@ -102,6 +102,8 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 // Invalid identities and feature state without a lowering path return an error
 // and a nil list. No partial statement list is returned. Feature coverage records
 // source knowledge; they do not become SQL or authorize deletion of absent objects.
+// Table facets preserve their values and source target bindings on CREATE TABLE.
+// The selected renderer decides support; other facet placements are refused.
 //
 // Canonical platform names are declared in core/platform.
 func SchemaToAST(database schemamodel.Database, targetPlatform string) (*ast.StatementList, error) {

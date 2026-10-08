@@ -73,9 +73,13 @@ packages importable directly.
 
 `atlascompat.SchemaToAST` returns a statement list and an error. Invalid
 identities and feature state without an AST lowering path return a nil list.
-Named feature children remain attached to their table. Unhandled facets and
+Table facets and named feature children remain attached to their table. Facet
+values and target bindings reach the selected renderer unchanged; lowering
+does not establish that the renderer supports them. Other facet placements and
 standalone feature objects are refused before any statements are returned.
 Coverage records describe source knowledge and never authorize destructive SQL.
+A concrete table facet with an explicit absent claim is refused before visiting
+any statement.
 
 `config/projectconfig` is the canonical typed project configuration IR. Its
 online-DDL policy is parsed, merged, validated, and then passed to migration
@@ -422,6 +426,13 @@ An excluded value retains its binding without its payload. `Kinds` and `Len`
 describe concrete values; `DeclaredKinds` includes exclusions, and `IsZero`
 remains false when an exclusion is present. Reproject the source declaration
 when selecting a target that needs a previously excluded value.
+
+Built-in schema rendering and direct AST rendering resolve facet scopes before
+checking support. An excluded table facet contributes no SQL; its source
+binding remains available in the captured model. Included unknown facets are
+refused, as is rendering a captured exclusion on a target that needs its value.
+Go annotation export refuses facet bindings it cannot preserve, including
+bindings whose payload was excluded.
 
 `EncodeFacets` and `DecodeFacets` carry `EncodedFacet` records with separate
 host-owned target bindings and owner-defined payload envelopes. An excluded
