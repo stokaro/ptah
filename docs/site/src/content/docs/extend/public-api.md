@@ -58,6 +58,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership for shared column comparison. |
+| `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
 | `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
@@ -179,6 +180,15 @@ Feature providers register their local model codecs through `Provider.Codecs`.
 fingerprints. A document records its provider, kind, representation, version,
 and model-definition hash. Unknown or incompatible definitions are errors;
 registering a codec alone does not grant a target support for that feature.
+
+`chschema.DesiredTable` distinguishes an omitted setting, a request for its
+default, and an explicit value. Explicit empty settings remain distinct from
+default requests. `ObservedTable` requires every setting, including empty
+optional values, and keeps sorting and primary keys separate. Register
+`chschema.Codecs()` with a provider to preserve these distinctions in envelopes.
+The bundled reader, renderer, and migration planner do not yet consume these
+typed table settings; [#4140](https://github.com/stokaro/ptah/issues/4140) owns
+their integration.
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.
