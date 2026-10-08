@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
 )
@@ -50,7 +51,7 @@ func TestEnumsFor(t *testing.T) {
 		{Type: "priority"},
 	}
 
-	c.Assert(schemaprep.EnumsFor(fields, enums), qt.DeepEquals, []schemamodel.Enum{
+	c.Assert(schemacapture.EnumsFor(fields, enums), qt.DeepEquals, []schemamodel.Enum{
 		{Name: "priority"},
 		{Name: "status"},
 	})

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemaproperties"
 )
 
 // ErrInvalid identifies an incomplete or malformed preparation exchange.
@@ -105,9 +106,11 @@ type Service interface {
 }
 
 // Runtime selects preparation and feature comparison using the same target
-// registry and codecs. It does not select a built-in implementation implicitly.
+// registry and codecs. Source properties are decoded before preparation captures
+// declarations. It does not select a built-in implementation implicitly.
 type Runtime interface {
 	schemaext.ComparisonRuntime
+	schemaproperties.Runtime
 	Service
 }
 

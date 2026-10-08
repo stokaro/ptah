@@ -119,9 +119,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseYDBObjects(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseFeatureChanges(platform.ClickHouse, diff); err != nil {
-		return nil, err
-	}
 	if err := schemaprecondition.RefuseRoleMemberships(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
@@ -152,6 +149,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	}
 
 	if err := refusePrimaryKeyChanges(diff); err != nil {
+		return nil, err
+	}
+	if err := schemaprecondition.RefuseFeatureChanges(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
 	result = reportUnsupportedObjectsBeforeTables(result, diff)

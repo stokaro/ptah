@@ -27,6 +27,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
@@ -91,7 +92,7 @@ type Report struct {
 // Runtime supplies conversion, reporting, and schema rendering for replayed
 // schema captures.
 type Runtime interface {
-	schemaext.ConversionRuntime
+	goschematodb.Runtime
 	schemaext.ReportingRuntime
 	renderer.SchemaService
 }

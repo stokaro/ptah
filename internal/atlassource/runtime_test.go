@@ -11,9 +11,10 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/convert/goschematodb"
 )
 
-func sourceRuntime(c *qt.C) schemaext.ConversionRuntime {
+func sourceRuntime(c *qt.C) goschematodb.Runtime {
 	c.Helper()
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
@@ -53,7 +54,7 @@ func TestResolveRequiresRuntimeBeforeSourceValidation(t *testing.T) {
 func TestStartingPointConversionFailureReturnsNoPartialState(t *testing.T) {
 	c := qt.New(t)
 	wantErr := errors.New("conversion unavailable")
-	runtime := failedSourceConversion{ConversionRuntime: sourceRuntime(c), err: wantErr}
+	runtime := failedSourceConversion{Runtime: sourceRuntime(c), err: wantErr}
 	state := replayedOnStartingPoint()
 	got, err := state.WithoutStartingPoint(t.Context(), atlassource.State{}, "postgres", runtime)
 	c.Assert(err, qt.ErrorIs, wantErr)
@@ -63,7 +64,7 @@ func TestStartingPointConversionFailureReturnsNoPartialState(t *testing.T) {
 }
 
 type failedSourceConversion struct {
-	schemaext.ConversionRuntime
+	goschematodb.Runtime
 	err error
 }
 

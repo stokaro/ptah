@@ -3,7 +3,6 @@ package clickhouse
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -116,6 +115,10 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		Views:    views,
 		MatViews: matViews,
 	}, revisiontable.NativeNames())
+	schema.FeatureCoverage, err = observedTableCoverage(schema.Tables)
+	if err != nil {
+		return nil, err
+	}
 	if r.caps.Has(capability.RoleManagement) {
 		if err := r.readRBACInto(ctx, dbName, schema); err != nil {
 			// An account that may not read the access catalog must not lose the
@@ -284,15 +287,10 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 		}
 		t := catalog.Table{Name: name, Type: "TABLE", Comment: comment}
 		t.Columns = columnsByTable[name]
-		t.ClickHouseSortingKey = sortingKeyBeyondPrimaryKey(sortingKey, primaryKey)
-		t.ClickHouseOrderBy = sortingKey
-		clauses := parseEngineFull(engineFull)
-		t.ClickHouseEngine = clauses.Engine
-		t.ClickHousePartitionKey = partitionKey
-		t.ClickHouseSamplingKey = samplingKey
-		t.ClickHousePrimaryKey = primaryKeyBeyondSortingKey(primaryKey, sortingKey)
-		t.ClickHouseTTL = clauses.TTL
-		t.ClickHouseSettings = clauses.Settings
+		t.Facets, err = observedTableSettings(engineFull, sortingKey, primaryKey, partitionKey, samplingKey)
+		if err != nil {
+			return nil, fmt.Errorf("table %q: %w", name, err)
+		}
 		tables = append(tables, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -564,59 +562,6 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 		return nil, err
 	}
 	return indexes, nil
-}
-
-// sortingKeyBeyondPrimaryKey returns the ORDER BY a description has to carry
-// explicitly, and the empty string when the primary key already implies it.
-//
-// A MergeTree table's ORDER BY and PRIMARY KEY are usually the same expression,
-// and the renderer derives the ORDER BY from the primary-key columns — so
-// carrying it again would put an override on every table for no gain. They come
-// apart when the table declares both: measured on 26.7.3.19,
-// `PRIMARY KEY (a) ORDER BY (a, b)` reports primary_key `(a)` and sorting_key
-// `a, b`, and a description built from the primary key alone sorts by `a`
-// only. That is a different table, not a formatting difference: applying such a
-// description creates one whose rows are ordered differently (stokaro/ptah#1603).
-//
-// The two are compared after stripping the parentheses and spaces the catalog
-// puts on one and not the other -- primary_key comes back as `(a)` and
-// sorting_key as `a, b` for the same table -- so an equal pair is recognized as
-// equal rather than recorded as an override that changes nothing.
-func sortingKeyBeyondPrimaryKey(sortingKey, primaryKey string) string {
-	if normalizeKeyExpression(sortingKey) == normalizeKeyExpression(primaryKey) {
-		return ""
-	}
-	return strings.TrimSpace(sortingKey)
-}
-
-// primaryKeyBeyondSortingKey returns the PRIMARY KEY a description has to carry
-// explicitly, and the empty string when it is the whole sorting key.
-//
-// It is the mirror of sortingKeyBeyondPrimaryKey: that one answers "does the
-// ORDER BY say more than the primary key", this one answers "does the primary
-// key say less than the ORDER BY". A MergeTree table is tuned by making the
-// primary key a prefix of the sorting key, and a description that names only
-// the ORDER BY replays with the primary key widened to match it -- a bigger
-// sparse index over the same rows (stokaro/ptah#2198).
-//
-// The comparison strips what the catalog puts on one column and not the other,
-// for the same reason its mirror does: primary_key comes back as `(id)` and
-// sorting_key as `id, s` for one table.
-func primaryKeyBeyondSortingKey(primaryKey, sortingKey string) string {
-	if normalizeKeyExpression(primaryKey) == normalizeKeyExpression(sortingKey) {
-		return ""
-	}
-	return strings.TrimSpace(primaryKey)
-}
-
-// normalizeKeyExpression reduces a key expression to a form that can be
-// compared across the two columns the catalog reports it in. It is used only
-// for that comparison; what a description carries is the catalog's own text.
-func normalizeKeyExpression(expression string) string {
-	trimmed := strings.TrimSpace(expression)
-	trimmed = strings.TrimPrefix(trimmed, "(")
-	trimmed = strings.TrimSuffix(trimmed, ")")
-	return strings.Join(strings.Fields(strings.ReplaceAll(trimmed, ",", " ")), ",")
 }
 
 // readRefreshableViews returns the names of the materialized views the server

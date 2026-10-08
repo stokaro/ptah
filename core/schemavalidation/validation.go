@@ -162,7 +162,7 @@ func Validate(ctx context.Context, service Service, request Request) (Result, er
 		return Result{}, err
 	}
 	if request.Schema == nil {
-		return Result{}, fmt.Errorf("%w: cannot validate a nil database schema", ptaherr.ErrInvalidSchemaDiff)
+		return Result{}, &ptaherr.RenderError{Dialect: request.Target, Err: ptaherr.ErrInvalidSchemaDiff, Message: "cannot validate a nil database schema"}
 	}
 	request.Capabilities = request.Capabilities.Clone()
 	request.Identifiers = request.Identifiers.Clone()

@@ -10,6 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -159,64 +161,43 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(*tables[1].Columns[1].ColumnDefault, qt.Equals, "0")
 }
 
-// TestReaderReadTablesCarriesTheSortingKey pins both halves of what
-// stokaro/ptah#1603 was about, and they are one root cause: the read dropped
-// the key a MergeTree table sorts by.
-//
-// Without the primary-key flag, a declaration carrying `primary="true"` differs
-// from its own table on every comparison -- `ALTER TABLE ... MODIFY COLUMN` was
-// re-planned forever -- and the renderer, which falls back to the primary-key
-// columns for the ORDER BY a MergeTree engine requires, had nothing to fall back
-// to, so `ptah db read` could not render the schema it had just read.
-//
-// The sorting key is carried separately only when it says something the primary
-// key does not, which is the `PRIMARY KEY (a) ORDER BY (a, b)` case: a
-// description built from the primary key alone sorts by `a` only, and applying
-// it creates a table whose rows are ordered differently.
+// Key clauses preserve catalog spelling even when the engine considers them
+// equivalent. Column membership remains available to common comparison.
 func TestReaderReadTablesCarriesTheSortingKey(t *testing.T) {
 	tests := []struct {
-		name           string
-		sortingKey     string
-		primaryKey     string
-		keyColumns     []uint8
-		wantPrimary    []bool
-		wantSortingKey string
+		name        string
+		sortingKey  string
+		primaryKey  string
+		keyColumns  []uint8
+		wantPrimary []bool
 	}{
 		{
-			name:           "the ordinary case, where the two agree",
-			sortingKey:     "(id)",
-			primaryKey:     "(id)",
-			keyColumns:     []uint8{1, 0},
-			wantPrimary:    []bool{true, false},
-			wantSortingKey: "",
+			name:        "the ordinary case, where the two agree",
+			sortingKey:  "(id)",
+			primaryKey:  "(id)",
+			keyColumns:  []uint8{1, 0},
+			wantPrimary: []bool{true, false},
 		},
 		{
-			// The catalog reports the same key in two spellings -- `(a)` for the
-			// primary key and `a, b` for the sorting key -- so an equal pair has
-			// to be recognized as equal rather than recorded as an override that
-			// changes nothing.
-			name:           "the same key, spelled differently by the two columns",
-			sortingKey:     "id",
-			primaryKey:     "(id)",
-			keyColumns:     []uint8{1, 0},
-			wantPrimary:    []bool{true, false},
-			wantSortingKey: "",
+			name:        "the same key, spelled differently by the two columns",
+			sortingKey:  "id",
+			primaryKey:  "(id)",
+			keyColumns:  []uint8{1, 0},
+			wantPrimary: []bool{true, false},
 		},
 		{
-			name:           "a sorting key wider than the primary key",
-			sortingKey:     "a, b",
-			primaryKey:     "(a)",
-			keyColumns:     []uint8{1, 0},
-			wantPrimary:    []bool{true, false},
-			wantSortingKey: "a, b",
+			name:        "a sorting key wider than the primary key",
+			sortingKey:  "a, b",
+			primaryKey:  "(a)",
+			keyColumns:  []uint8{1, 0},
+			wantPrimary: []bool{true, false},
 		},
 		{
-			name:           "a table with no key at all",
-			sortingKey:     "",
-			primaryKey:     "",
-			keyColumns:     []uint8{0, 0},
-			wantPrimary:    []bool{false, false},
-			wantSortingKey: "",
+			name:        "a table with no key at all",
+			sortingKey:  "",
+			primaryKey:  "",
+			keyColumns:  []uint8{0, 0},
+			wantPrimary: []bool{false, false},
 		},
 	}
 
@@ -231,7 +212,12 @@ func TestReaderReadTablesCarriesTheSortingKey(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tables, qt.HasLen, 1)
-			c.Assert(tables[0].ClickHouseSortingKey, qt.Equals, test.wantSortingKey)
+			value, found, err := schemaext.FacetAs[*chschema.ObservedTable](tables[0].Facets, chschema.TableKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(value.OrderBy, qt.Equals, test.sortingKey)
+			c.Assert(value.PrimaryKey, qt.Equals, test.primaryKey)
+
 			c.Assert(tables[0].Columns[0].IsPrimaryKey, qt.Equals, test.wantPrimary[0])
 			c.Assert(tables[0].Columns[1].IsPrimaryKey, qt.Equals, test.wantPrimary[1])
 		})

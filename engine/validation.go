@@ -6,7 +6,6 @@ import (
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
 )
 
@@ -25,7 +24,7 @@ func (r *Runtime) ValidateSchema(ctx context.Context, request schemavalidation.R
 		return schemavalidation.Result{}, fmt.Errorf("%w: target %q has no schema validation service", ptaherr.ErrUnsupportedFeature, selected.name)
 	}
 	request.Target = selected.name
-	scoped, err := schemamodel.ScopeToTarget(request.Schema, selected.selection)
+	scoped, err := r.prepareSchemaProperties(ctx, request.Schema, selected.selection)
 	if err != nil {
 		return schemavalidation.Result{}, err
 	}

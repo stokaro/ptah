@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaproperties"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/crdbttl"
@@ -96,6 +97,10 @@ func compareReportingUndecidedAdditions(
 		// present in the target and absent from the declaration -- the shape of
 		// a drop. See suppressScopedAway.
 		desired, database, err = scopeComparison(desired, database, selected)
+		if err != nil {
+			return nil, Diagnostics{}, err
+		}
+		desired, err = schemaproperties.DecodeTables(ctx, desired, selected.Name(), runtime)
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}

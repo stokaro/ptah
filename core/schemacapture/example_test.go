@@ -3,6 +3,7 @@ package schemacapture_test
 import (
 	"fmt"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 )
@@ -22,4 +23,16 @@ func ExampleTableDeclaration_Clone() {
 	// Output:
 	// true id
 	// external_id
+}
+
+// ExampleDeclareTable captures declared children independently of comparison.
+func ExampleDeclareTable() {
+	source := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "events", StructName: "Event"}},
+		Fields: []schemamodel.Field{{Name: "id", StructName: "Event", Type: "int64"}},
+	}
+	captured := schemacapture.DeclareTable(source, source.Tables[0], identifier.ForDialect("postgres"))
+	source.Fields[0].Name = "later_edit"
+	fmt.Println(captured.Table.Name, captured.Fields[0].Name)
+	// Output: events id
 }

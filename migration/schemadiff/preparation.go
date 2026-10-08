@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
@@ -40,7 +41,7 @@ func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database,
 	for _, table := range desired.Tables {
 		subject := tableidentity.Subject(table.Schema, table.Name, target, semantics)
 		captured := schemapreparation.Table{
-			Subject: subject, Desired: difftypes.TableDeclarationFor(desired, table, semantics),
+			Subject: subject, Desired: schemacapture.DeclareTable(desired, table, semantics),
 		}
 		if found, exists := observed[subject.Key()]; exists {
 			captured.Current = difftypes.TableObservationFor(current, found, target, semantics)

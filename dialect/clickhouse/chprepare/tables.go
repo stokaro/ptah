@@ -59,10 +59,8 @@ func prepareTable(table *schemapreparation.Table) error {
 		return err
 	}
 	if typed {
-		for _, key := range chresolve.StorageOptionKeys() {
-			if _, found := table.Desired.Table.Overrides[platform.ClickHouse][strings.ToLower(key)]; found {
-				return fmt.Errorf("%w: ClickHouse table setting %s has both typed and override declarations", schemaext.ErrInvalidValue, key)
-			}
+		if err := refuseStorageOverrides(table.Desired.Table.Overrides); err != nil {
+			return err
 		}
 		observed, _, err := schemaext.FacetAs[*chschema.ObservedTable](table.Current.Table.Facets, chschema.TableKind)
 		if err != nil {
@@ -73,7 +71,7 @@ func prepareTable(table *schemapreparation.Table) error {
 			observed = nil
 		}
 		resolved, err := chresolve.Table(chresolve.Request{
-			Desired: value, Current: observed, Creating: table.CurrentKnowledge.State == schemaext.Absent, CommonKey: chkey.CommonColumns(table.Desired),
+			Desired: value, Current: observed, BaseEngine: table.Desired.Table.Engine, Creating: table.CurrentKnowledge.State == schemaext.Absent, CommonKey: chkey.CommonColumns(table.Desired),
 		})
 		if err != nil {
 			return err
@@ -91,5 +89,21 @@ func prepareTable(table *schemapreparation.Table) error {
 		table.Desired.Fields[i].Primary = keys[table.Desired.Fields[i].Name]
 	}
 	table.ColumnPrimaryKeysPrepared = true
+	return nil
+}
+
+// Both preparation paths consume decoded settings. Sharing this check prevents
+// direct provider calls from silently dropping an unconsumed source property.
+func refuseStorageOverrides(overrides map[string]map[string]string) error {
+	for target, properties := range overrides {
+		if platform.NormalizeDialect(target) != platform.ClickHouse {
+			continue
+		}
+		for _, key := range chresolve.StorageOptionKeys() {
+			if _, found := properties[strings.ToLower(key)]; found {
+				return fmt.Errorf("%w: ClickHouse table setting %s must be decoded before preparation", schemaext.ErrInvalidValue, key)
+			}
+		}
+	}
 	return nil
 }

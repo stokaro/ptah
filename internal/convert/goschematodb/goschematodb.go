@@ -43,9 +43,21 @@ import (
 // would hold it. The target must be registered in runtime. Named feature
 // objects and facets use its batched conversion service; a failed conversion
 // returns no schema.
-func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, runtime schemaext.ConversionRuntime) (*catalog.Database, error) {
+func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, runtime Runtime) (*catalog.Database, error) {
 	if db == nil {
 		db = &schemamodel.Database{}
+	}
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	selected, err := runtime.ResolveTarget(dialect)
+	if err != nil {
+		return nil, err
+	}
+	dialect = selected.Name()
+	db, prepared, err := prepareSourceTables(ctx, db, dialect, runtime)
+	if err != nil {
+		return nil, err
 	}
 	// A UNIQUE constraint is a unique index on YDB, so a document converted to
 	// stand for a YDB database holds the index its database would.
@@ -108,6 +120,7 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		NotDescribed: db.NotDescribed,
 	}
 	applyTablePrimaryKeys(out, db.Tables)
+	applyPreparedColumnKeys(out, prepared)
 	if err := features.RequireFacetPreservation(db.FacetSlots(), out.FacetSlots()); err != nil {
 		return nil, err
 	}

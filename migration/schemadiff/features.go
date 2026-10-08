@@ -127,7 +127,7 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 			}
 			position = len(diff.TablesModified)
 			positions[parent.Key()] = position
-			diff.TablesModified = append(diff.TablesModified, difftypes.TableDiff{TableName: catalog.QualifyTableName(table.Schema, table.Name), Desired: difftypes.TableDeclarationFor(desired, table, semantics)})
+			diff.TablesModified = append(diff.TablesModified, difftypes.TableDiff{TableName: catalog.QualifyTableName(table.Schema, table.Name), Desired: schemacapture.DeclareTable(desired, table, semantics)})
 		}
 		diff.TablesModified[position].FeatureChanges = append(diff.TablesModified[position].FeatureChanges, change)
 	}

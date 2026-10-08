@@ -182,11 +182,13 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseTypeWidthBetweenDeclarations(
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := must.Must(schemadiff.CompareSchemas(
-				t.Context(), widDeclared(schemamodel.Field{Type: test.desired}),
-				widDeclared(schemamodel.Field{Type: test.current}),
-				platform.ClickHouse, must.Must(builtin.New()),
-			))
+			desired := widDeclared(schemamodel.Field{Type: test.desired})
+			current := widDeclared(schemamodel.Field{Type: test.current})
+			// Memory has no sorting-key requirement. This fixture varies only
+			// the column type, and both documents must describe a valid CREATE.
+			desired.Tables[0].Engine = "Memory"
+			current.Tables[0].Engine = "Memory"
+			diff := must.Must(schemadiff.CompareSchemas(t.Context(), desired, current, platform.ClickHouse, must.Must(builtin.New())))
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),

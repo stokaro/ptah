@@ -48,6 +48,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/clickhouse/chresolve`
 - `ptah.run/dialect/clickhouse/chschema`
 - `ptah.run/dialect/clickhouse/chsource`
+- `ptah.run/dialect/clickhouse/chreport`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
@@ -141,8 +142,9 @@ feature coverage. `Clone` isolates mutable common definitions; feature container
 retain immutable ownership. The zero value means no table was captured. Neither
 an empty child list nor a projected observation proves absence or execution.
 These data contracts import no migration pipeline or concrete provider package.
-Comparison-time assembly remains in `difftypes.TableDeclarationFor` and
-`difftypes.TableObservationFor`; both return the neutral capture types.
+`schemacapture.DeclareTable` assembles declarations for comparison and document
+projection. `ConstraintsFor` and `EnumsFor` select independent child definitions.
+`difftypes.TableObservationFor` assembles comparison-time observations.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and
@@ -493,8 +495,8 @@ Other targets and non-table
 attachment points refuse active ClickHouse table facets.
 
 Existing-table comparison needs complete captured typed settings. The bundled
-reader does not produce them yet, and migration planning refuses storage-setting
-changes. Reader, frontend, and ALTER integration remain part of
+reader supplies them with subject-level coverage. Migration planning refuses
+storage-setting changes; ALTER integration remains part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `chcompare.Service` compares resolved table settings through a selected
@@ -512,7 +514,8 @@ undecided. These services perform no database I/O or ALTER planning.
 
 `chresolve.Table` retains the declaration beside fully explicit settings and
 records each property's origin. Creation uses `MergeTree` and common ordered
-primary-key columns when the engine and sorting key are omitted. A default
+primary-key columns when the engine and sorting key are omitted. A common engine
+declaration is a fallback; target-specific engine intent takes precedence. A default
 primary key inherits the resolved sorting key. An explicit empty sorting or
 primary key renders as `tuple()` and stays empty in the table's catalog state.
 Missing sorting-key input for a MergeTree table returns `ErrMissingSortingKey`.
@@ -548,7 +551,7 @@ carries an explicit setting, including empty. A `.state` suffix with value
 `default` requests its creation rule; a setting cannot have both spellings.
 An omitted setting writes neither key. Register `chsource.Definitions()` and the
 service in an application-selected provider. The bundled runtime registers this
-service for Go annotation export.
+service for source lowering and Go annotation export.
 
 `schemaproperties.DecodeTables` attaches decoded property groups as desired
 facets bound to the selected target. It consumes only claimed keys; other keys
@@ -560,9 +563,18 @@ inspection coverage or resolves omitted settings.
 
 An export refuses excluded facets, bindings outside the selected target, missing
 source codecs, and empty fragments that cannot preserve a facet's presence.
-Native Go export uses both operations before writing annotations. Other source
-consumers must call `DecodeTables` explicitly after parsing Go or YAML; automatic
-lowering for rendering and comparison remains part of
+Native Go export uses both operations before writing annotations. Whole-schema
+rendering, validation, and comparison decode source properties after target
+selection. Document-to-catalog projection resolves creation rules through the
+selected creation projector before converting representations. Its coverage
+describes predicted values, preserves explicit source limits, and proves no
+inspection or execution.
+
+The ClickHouse reader attaches `chschema.ObservedTable` to each returned table.
+It preserves both key expressions, including equal or empty keys. Coverage is
+complete only for tables retained in that read. `chreport.Service` supplies the
+storage-settings count and omission label for formats that cannot retain facets.
+Table-setting ALTER planning remains part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
@@ -573,6 +585,22 @@ resolved values for declared table models owned by the target provider. Source
 facets, target bindings, observations, and knowledge stay unchanged. The runtime
 validates ownership and codecs before feature and common comparison consume
 resolved values. Incomplete or invalid replies and cancellation return no result.
+
+`Target.Creations` selects `schemaprojection.TableCreationService` for offline
+source projection. It receives decoded table captures and returns a complete
+ordered batch of computed facets and column key membership. Computed facets use
+the desired representation for subsequent owner conversion; they may describe
+creation defaults absent from the source. They cannot restore an excluded kind
+or change a source binding. The runtime validates identities, keys, model
+ownership, and codecs. Missing services, partial replies, errors, and cancellation
+return no prediction. `IdentityCreations` explicitly selects no additional effects.
+
+Document projection preserves explicit source knowledge limits. New computed
+kinds are bound to the selected target and gain coverage only for their captured
+tables. The source declaration stays unchanged. `CompareSchemas` requires
+`schemadiff.DocumentRuntime`; it predicts the current document before comparison.
+Column-only changes use representation conversion without applying table
+creation defaults.
 
 `chprepare.Service` derives column membership from ClickHouse key expressions.
 Typed settings use `chresolve.Table` and require complete feature coverage before
@@ -712,7 +740,8 @@ left something out on purpose; leaving it zero there is how an object nobody
 looked at becomes a `DROP`.
 
 Every schema comparison takes a context and an explicitly selected runtime.
-Pure comparisons accept `schemapreparation.Runtime`. Offline target-aware
+Catalog comparisons accept `schemapreparation.Runtime`. Document comparisons
+accept `schemadiff.DocumentRuntime`, which also selects CREATE prediction. Offline target-aware
 entry points accept `schemadiff.TargetRuntime`, which also validates the desired
 schema against target facts.
 
@@ -1398,7 +1427,7 @@ anything a per-entry operand could carry. A `TableCreation` carries the columns
 whose references become constraints and the self-references the declaration
 recorded for it; this is the other half.
 
-`TableCreationFor`, `TableDeclarationFor`, `TableObservationFor`, and
+`TableCreationFor`, `TableObservationFor`, and
 `TableCreationsFor` require the
 target's identifier semantics. `TableObservationFor` also requires the target
 dialect so SQLite names retain their exact whitespace. Each capture selects named feature children by

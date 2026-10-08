@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/defaultprivnote"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/fileplan"
@@ -32,7 +33,7 @@ import (
 // InspectRuntime supplies conversion, reporting, and schema rendering through
 // one selected build.
 type InspectRuntime interface {
-	schemaext.ConversionRuntime
+	goschematodb.Runtime
 	atlasreport.InspectRuntime
 }
 

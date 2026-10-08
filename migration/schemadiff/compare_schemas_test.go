@@ -140,7 +140,7 @@ func TestCompareSchemas_MatchesExplicitConversionThenCompare(t *testing.T) {
 // drives the conversion of the current side, not only the comparison. The
 // conversion reports schemamodel.Index.Type as a PostgreSQL access method only on
 // a PostgreSQL-family target, so a self-compare of a hash index is clean under
-// the postgres dialect, while the same current side converted with no dialect
+// the postgres dialect, while the same current side converted for SQLite
 // loses the method and the same postgres comparison plans a rebuild.
 func TestCompareSchemas_DialectReachesTheConversion(t *testing.T) {
 	c := qt.New(t)
@@ -163,7 +163,7 @@ func TestCompareSchemas_DialectReachesTheConversion(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 
 	otherTarget := must.Must(schemadiff.CompareWithDialect(
-		t.Context(), db, must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.ClickHouse, must.Must(builtin.New()))), platform.Postgres, must.Must(builtin.New()),
+		t.Context(), db, must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.SQLite, must.Must(builtin.New()))), platform.Postgres, must.Must(builtin.New()),
 	))
 	c.Assert(otherTarget.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_users_email_hash", TableName: "users"},

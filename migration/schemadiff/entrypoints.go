@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitevirtual"
@@ -35,12 +36,19 @@ func CompareWithDialect(ctx context.Context, desired *schemamodel.Database, curr
 	return CompareWithOptions(ctx, desired, current, opts, runtime)
 }
 
-// CompareSchemas compares desired documents after the selected runtime converts
-// the current document to its observed representation. Conversion preserves
-// knowledge limits; it cannot establish facts that inspection did not supply.
+// DocumentRuntime selects comparison and offline CREATE prediction together.
+// Transport adapters must preserve the separate operation contracts.
+type DocumentRuntime interface {
+	schemapreparation.Runtime
+	schemaprojection.TableCreationService
+}
+
+// CompareSchemas compares desired documents after the selected runtime predicts
+// the current document's CREATE result and converts it to Observed representation.
+// Explicit source knowledge limits survive. Prediction is not live inspection.
 // Both documents must be non-nil; otherwise ErrInvalidSchemaDiff is returned
 // before invoking a conversion service.
-func CompareSchemas(ctx context.Context, desired, current *schemamodel.Database, dialect string, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
+func CompareSchemas(ctx context.Context, desired, current *schemamodel.Database, dialect string, runtime DocumentRuntime) (*difftypes.SchemaDiff, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}

@@ -95,7 +95,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseSortingKey_FailurePath(t *tes
 	}{
 		{
 			name:     "a column joins the key",
-			declared: map[string]string{"engine": "MergeTree", "order_by": "(id, n)"},
+			declared: map[string]string{"engine": "MergeTree", "order_by": "(id, n)", "primary_key.state": "default"},
 			live:     map[string]string{"engine": "MergeTree", "order_by": "id"},
 			keys:     []string{"id"},
 			want:     "column n: false -> true",

@@ -39,12 +39,17 @@ func resolveOwnedTableEngineSpec(node *ast.CreateTableNode) (tableEngineSpec, er
 		return resolveTableEngineSpec(node), nil
 	}
 	for _, key := range tableEngineOptionKeys {
+		// The common ENGINE declaration is a fallback that platform properties
+		// override. Other storage clauses cannot have two declarations.
+		if key == "ENGINE" && node.Options[key] != "" {
+			continue
+		}
 		if _, present := node.Options[key]; present {
 			return tableEngineSpec{}, fmt.Errorf("%w: ClickHouse table %q declares %s in both a typed facet and table options", ptaherr.ErrInvalidSchemaDiff, node.Name, key)
 		}
 	}
 	resolved, err := chresolve.Table(chresolve.Request{
-		Desired: value, Creating: true, CommonKey: tablePrimaryKeyColumns(node),
+		Desired: value, Creating: true, BaseEngine: node.Options["ENGINE"], CommonKey: tablePrimaryKeyColumns(node),
 	})
 	if err != nil {
 		return tableEngineSpec{}, fmt.Errorf("clickhouse: table %q: %w", node.Name, err)

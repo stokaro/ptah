@@ -206,7 +206,7 @@ func (s State) ExtensionNames() map[string]bool {
 // other reads what the source built rather than what the dev database started
 // from. A state read from no such dev database comes back as it is. See
 // [devclean.Baseline.WithoutStartingPoint].
-func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect string, runtime schemaext.ConversionRuntime) (State, error) {
+func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect string, runtime goschematodb.Runtime) (State, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return State{}, err
 	}

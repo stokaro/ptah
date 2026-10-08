@@ -927,7 +927,7 @@ func scopeDiffStates(
 	fromState, toState atlassource.State,
 	scope atlasfilter.Scope,
 	dialect string,
-	runtime schemaext.ConversionRuntime,
+	runtime goschematodb.Runtime,
 ) (fromSide, toSide scopedDiffState) {
 	fromSide = scopeDiffState(ctx, fromState, scope, "--from schema", dialect, runtime)
 	toSide = scopeDiffState(ctx, toState, scope, "--to schema", dialect, runtime)
@@ -954,7 +954,7 @@ func scopeDiffState(
 	scope atlasfilter.Scope,
 	side,
 	dialect string,
-	runtime schemaext.ConversionRuntime,
+	runtime goschematodb.Runtime,
 ) scopedDiffState {
 	desired, generatedReports, generatedErr := scopeGeneratedSide(state.Schema, scope, side)
 	if generatedErr != nil && !emptySelection(generatedErr) {

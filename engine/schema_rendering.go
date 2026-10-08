@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaproperties"
 )
 
 // RenderSchema invokes the selected target's whole-schema rendering service.
@@ -24,7 +25,7 @@ func (r *Runtime) RenderSchema(ctx context.Context, request renderer.SchemaReque
 	if selected.schemaRendering == nil {
 		return renderer.SchemaResult{}, fmt.Errorf("%w: target %q has no schema rendering service", ptaherr.ErrUnsupportedFeature, selected.name)
 	}
-	scoped, err := schemamodel.ScopeToTarget(request.Schema, selected.selection)
+	scoped, err := r.prepareSchemaProperties(ctx, request.Schema, selected.selection)
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
@@ -55,4 +56,14 @@ func (r *Runtime) validateDeclaredModels(ctx context.Context, schema *schemamode
 		}
 	}
 	return nil
+}
+
+// prepareSchemaProperties scopes declarations before decoding selected source
+// properties. Both whole-schema services use the same immutable lowering path.
+func (r *Runtime) prepareSchemaProperties(ctx context.Context, schema *schemamodel.Database, target schemaext.TargetSelection) (*schemamodel.Database, error) {
+	scoped, err := schemamodel.ScopeToTarget(schema, target)
+	if err != nil || scoped == nil {
+		return scoped, err
+	}
+	return schemaproperties.DecodeTables(ctx, scoped, target.Name(), r)
 }
