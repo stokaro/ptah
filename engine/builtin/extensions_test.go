@@ -12,6 +12,10 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/clickhouse/chdiff"
+	"ptah.run/dialect/clickhouse/chrender"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
@@ -42,6 +46,17 @@ func extensionFixtures() []extensionFixture {
 	}
 }
 
+func clickhouseTTLFixture() extensionFixture {
+	before := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "tuple()", TTL: "created_at + INTERVAL 1 DAY"}
+	after := before.Desired()
+	after.TTL.Value = ""
+	return extensionFixture{payload: &chast.AlterTTL{Change: chdiff.Table{Before: before, After: after}}, wantSQL: "ALTER TABLE items REMOVE TTL;\n"}
+}
+
+func allExtensionFixtures() []extensionFixture {
+	return append(extensionFixtures(), clickhouseTTLFixture())
+}
+
 // The source inventory is independent of both owner registration and fixtures.
 // Moving a concrete node out of core cannot remove its routing evidence.
 func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
@@ -57,11 +72,13 @@ func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
 	}
 	registry, err := ydbextensions.Registry()
 	c.Assert(err, qt.IsNil)
+	clickhouseRegistry, err := chrender.Registry()
+	c.Assert(err, qt.IsNil)
 	var registered, fixtures []string
-	for _, payloadType := range registry.PayloadTypes() {
+	for _, payloadType := range append(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes()...) {
 		registered = append(registered, payloadType.Elem().PkgPath()+"."+payloadType.Elem().Name())
 	}
-	for _, fixture := range extensionFixtures() {
+	for _, fixture := range allExtensionFixtures() {
 		payloadType := reflect.TypeOf(fixture.payload).Elem()
 		fixtures = append(fixtures, payloadType.PkgPath()+"."+payloadType.Name())
 	}
@@ -72,7 +89,7 @@ func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
 }
 
 func TestExtensionPayloads_AllEntryPoints(t *testing.T) {
-	for _, fixture := range extensionFixtures() {
+	for _, fixture := range allExtensionFixtures() {
 		for _, dialect := range renderedDialects() {
 			t.Run(dialect+"/"+string(fixture.payload.Kind()), func(t *testing.T) {
 				c := qt.New(t)
@@ -112,6 +129,28 @@ func mustYDBRenderer(c *qt.C) renderer.RenderVisitor {
 	r, err := builtin.NewRendererWithCapabilities("ydb", capability.YDB262())
 	c.Assert(err, qt.IsNil)
 	return r
+}
+
+func TestClickHouseExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	fixture := clickhouseTTLFixture()
+	for _, dialect := range renderedDialects() {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			parent := &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}}
+			answer := renderSQLAnswer(dialect, parent)
+			c.Assert(answer, qt.DeepEquals, visitAnswer(c, dialect, parent))
+			c.Assert(answer, qt.DeepEquals, renderAnswer(c, dialect, parent))
+		})
+	}
+	c := qt.New(t)
+	sql, err := builtin.RenderSQL("clickhouse", &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, fixture.wantSQL)
+	for _, dialect := range []string{"postgres", "mysql", "sqlite", "sqlserver", "oracle", "ydb"} {
+		sql, err := builtin.RenderSQL(dialect, &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(sql, qt.Equals, "")
+	}
 }
 
 func TestExtensionPayloads_RefuseMalformedDrop(t *testing.T) {

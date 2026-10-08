@@ -1,4 +1,7 @@
-package chcompare
+// Package chsql shares ClickHouse storage expression comparisons between the
+// owning comparator, planner, and renderer. It does not assert general SQL
+// equivalence; only token spacing and outer key-list grouping are normalized.
+package chsql
 
 import (
 	"slices"
@@ -10,10 +13,11 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-func sameTable(a, b *chschema.ObservedTable) bool {
-	return sameExpression(a.Engine, b.Engine) && sameKey(a.OrderBy, b.OrderBy) && sameKey(a.PrimaryKey, b.PrimaryKey) &&
-		sameKey(a.PartitionBy, b.PartitionBy) && sameExpression(a.SampleBy, b.SampleBy) &&
-		sameExpression(a.TTL, b.TTL) && sameExpression(a.Settings, b.Settings)
+// SameTable compares all captured storage properties using their clause rules.
+func SameTable(a, b *chschema.ObservedTable) bool {
+	return SameExpression(a.Engine, b.Engine) && SameKey(a.OrderBy, b.OrderBy) && SameKey(a.PrimaryKey, b.PrimaryKey) &&
+		SameKey(a.PartitionBy, b.PartitionBy) && SameExpression(a.SampleBy, b.SampleBy) &&
+		SameExpression(a.TTL, b.TTL) && SameExpression(a.Settings, b.Settings)
 }
 
 // Preserve token boundaries, quoted text, identifier case, and order. Removing
@@ -34,9 +38,11 @@ func expressionTokens(expression string) []string {
 	}
 }
 
-func sameExpression(a, b string) bool { return slices.Equal(expressionTokens(a), expressionTokens(b)) }
+// SameExpression compares tokens while preserving literals, case, and order.
+func SameExpression(a, b string) bool { return slices.Equal(expressionTokens(a), expressionTokens(b)) }
 
-func sameKey(a, b string) bool { return slices.Equal(keyTokens(a), keyTokens(b)) }
+// SameKey also accepts catalog key lists without their outer tuple grouping.
+func SameKey(a, b string) bool { return slices.Equal(keyTokens(a), keyTokens(b)) }
 
 func keyTokens(expression string) []string {
 	tokens := expressionTokens(expression)

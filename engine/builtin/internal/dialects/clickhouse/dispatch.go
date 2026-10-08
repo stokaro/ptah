@@ -37,9 +37,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.CreateTableNode:
 		return r.renderCreateTable(n)
 	case *ast.AlterTableNode:
-		if err := nodedispatch.RefuseAlterExtensions(r.GetDialect(), n); err != nil {
-			return err
-		}
 		return r.renderAlterTable(n)
 	case *ast.DropTableNode:
 		return r.renderDropTable(n)
@@ -203,7 +200,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 
 	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
-		return nodedispatch.RefuseExtension(r.GetDialect(), node)
+		return r.renderExtensionNode(node)
 	case *ast.StatementList:
 		return r.renderStatementList(n)
 

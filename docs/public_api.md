@@ -41,14 +41,18 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/sqlutil`
 - `ptah.run/core/yamlschema`
 - `ptah.run/dbschema`
+- `ptah.run/dialect/clickhouse/chast`
 - `ptah.run/dialect/clickhouse/chcompare`
 - `ptah.run/dialect/clickhouse/chconvert`
 - `ptah.run/dialect/clickhouse/chdiff`
+- `ptah.run/dialect/clickhouse/chplan`
 - `ptah.run/dialect/clickhouse/chprepare`
 - `ptah.run/dialect/clickhouse/chresolve`
 - `ptah.run/dialect/clickhouse/chschema`
 - `ptah.run/dialect/clickhouse/chsource`
 - `ptah.run/dialect/clickhouse/chreport`
+- `ptah.run/dialect/clickhouse/chrender`
+- `ptah.run/dialect/clickhouse/chreverse`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
@@ -528,9 +532,23 @@ Other targets and non-table
 attachment points refuse active ClickHouse table facets.
 
 Existing-table comparison needs complete captured typed settings. The bundled
-reader supplies them with subject-level coverage. Migration planning refuses
-storage-setting changes; ALTER integration remains part of
-[stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
+reader supplies them with subject-level coverage. `chplan.Service` plans TTL
+changes on MergeTree tables and assesses storage dependencies before common
+column changes. Required column additions precede the TTL change; removal of a
+column used by the prior rule follows it. Removing or modifying a column used
+by retained storage rules is refused. Missing observations and coverage remain
+unknown and prevent planning.
+
+`chast.AlterTTL` carries both complete storage operands. Its codec and
+`chrender` handlers refuse changes to other settings inside a TTL operation.
+The planner contributes explicit object effects and requires execution outside
+a transaction. Its result must join the host's complete graph before execution.
+Engine, key, partitioning, sampling, and table-setting changes remain refused.
+
+`chreverse.Service` reconstructs the prior TTL definition and projects the
+forward state for reverse planning. This projection establishes no inspection
+evidence. Its recovery limitations report that restoring TTL rules cannot
+recover expired or aggregated rows and values, or undo TTL data movement.
 
 `chcompare.Service` compares resolved table settings through a selected
 provider's `FacetComparisons` registration. Each `chdiff.Table` captures the

@@ -11,11 +11,14 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chcompare"
 	"ptah.run/dialect/clickhouse/chconvert"
 	"ptah.run/dialect/clickhouse/chdiff"
+	"ptah.run/dialect/clickhouse/chplan"
 	"ptah.run/dialect/clickhouse/chprepare"
 	"ptah.run/dialect/clickhouse/chreport"
+	"ptah.run/dialect/clickhouse/chreverse"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/postgres/pgproject"
@@ -69,7 +72,9 @@ func New() (*engine.Runtime, error) {
 		if name == platform.ClickHouse {
 			provider.Targets[0].Preparation = chprepare.Service{}
 			provider.Targets[0].Creations = chprepare.Service{}
-			provider.Codecs = append(chschema.Codecs(), chdiff.Codecs()...)
+			provider.Codecs = append(append(chschema.Codecs(), chdiff.Codecs()...), chast.Codecs()...)
+			provider.Reversals = []engine.Reversal{{Target: name, Kinds: []schemaext.Kind{chdiff.TableKind}, Service: chreverse.Service{}}}
+			provider.Planning = []engine.Planning{{Target: name, Kinds: []schemaext.Kind{chdiff.TableKind}, ParentKinds: []schemaext.Kind{chschema.TableKind}, OperationKinds: []schemaext.Kind{chast.AlterTTLKind}, Service: chplan.Service{}}}
 			provider.Properties = []engine.PropertySource{{Target: name, Format: schemaext.TablePlatformProperties, Definitions: chsource.Definitions(), Service: chsource.Service{}}}
 			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{chschema.TableKind}, Service: chconvert.Service{}}}
 			provider.FacetComparisons = []engine.FacetComparison{{Target: name, Kinds: []schemaext.Kind{chschema.TableKind}, ChangeKinds: []schemaext.Kind{chdiff.TableKind}, Service: chcompare.Service{}}}

@@ -64,6 +64,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
+| `dialect/clickhouse/chast`, `chrender` | Typed TTL operations, explicit codecs, and owner-selected rendering. |
+| `dialect/clickhouse/chplan`, `chreverse` | TTL planning, common-column dependencies, and reverse definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
@@ -232,8 +234,18 @@ Register `chcompare.Service` in a selected provider's `FacetComparisons` to
 compare resolved table settings. `chdiff.Table` and its codec retain complete
 before and after operands. Missing evidence needed for declared settings produces
 an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
-limits remain visible. The bundled runtime registers these services; migration
-planning refuses changes to existing table settings.
+limits remain visible. The bundled runtime registers these services.
+
+`chplan.Service` plans MergeTree TTL changes and assesses common column
+operations against captured storage. It orders required column additions before
+the TTL change and dependent removals after it. Unknown observations and
+modifications to columns used by retained storage rules are refused.
+`chast.AlterTTL` has explicit codecs and `chrender` handlers; it requires
+execution outside a transaction. Other storage-setting changes remain refused.
+
+`chreverse.Service` restores the captured TTL definition and reports data that
+the reverse cannot recover. Its forward-state projection feeds reverse planning
+without establishing new inspection evidence.
 
 `chresolve.Table` keeps the original declaration beside fully explicit settings
 and records each property's source. On creation, omitted settings use creation

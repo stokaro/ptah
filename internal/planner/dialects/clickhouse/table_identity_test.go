@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
@@ -26,13 +27,8 @@ func eventsTable(tableSchema string) *schemamodel.Database {
 	}
 }
 
-// TestColumnDDLResolvesTheTableAcrossSchemaSpellings pins clickhouse's
-// lookupStructName.
-//
-// Reverting it to the raw `QualifiedName() == tableName` loop left the whole
-// suite green. The failure is not silent here -- the planner emits
-// `WARNING: ClickHouse planner could not find struct for table …` -- but a
-// comment is not a column, and the plan applies cleanly having changed nothing.
+// Captured operands and the diff use the same connection-derived identity,
+// including an omitted default database. No declaration lookup is needed.
 func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -63,14 +59,14 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			semantics := identifier.ForDialect("clickhouse")
+			semantics.DefaultSchema = "app"
+			change := capturedColumnFixture(eventsTable(test.tableSchema).Tables[0])
+			change.TableName = test.diffName
+			change.ColumnsAdded = difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}}
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				context.Background(), must.Must(builtin.New()),
-				withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
-					TableName:    test.diffName,
-					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
-				}}}, eventsTable(test.tableSchema)),
-
-				"clickhouse",
+				t.Context(), must.Must(builtin.New()),
+				&difftypes.SchemaDiff{IdentifierSemantics: &semantics, TablesModified: []difftypes.TableDiff{change}}, "clickhouse",
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -88,18 +84,15 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
+	change := capturedColumnFixture(eventsTable("reporting").Tables[0])
+	change.TableName = "app.events"
+	change.ColumnsAdded = difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}}
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		context.Background(), must.Must(builtin.New()),
-		withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
-			TableName:    "app.events",
-			ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
-		}}}, eventsTable("reporting")),
-
-		"clickhouse",
+		t.Context(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{change}}, "clickhouse",
 	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "ADD COLUMN")
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(statements, qt.HasLen, 0)
 }
 
 // TestCreateTableResolvesTheTableAcrossSchemaSpellings pins addNewTables, which

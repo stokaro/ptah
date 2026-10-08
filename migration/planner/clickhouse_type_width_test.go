@@ -42,10 +42,9 @@ func widLive(dType string) *catalog.Database {
 			IsNullable: nullable, OrdinalPosition: position,
 		}
 	}
-	return &catalog.Database{Tables: []catalog.Table{{
-		Name: "wid", Type: "TABLE",
-		Columns: []catalog.Column{column("id", "Int32", 1), column("d", dType, 2)},
-	}}}
+	captured := clickhouseTableCapture("", "wid")
+	captured.Table.Columns = []catalog.Column{column("id", "Int32", 1), column("d", dType, 2)}
+	return &catalog.Database{Tables: []catalog.Table{captured.Table}, FeatureCoverage: captured.FeatureCoverage}
 }
 
 // A ClickHouse column whose type changes width is planned. The comparison

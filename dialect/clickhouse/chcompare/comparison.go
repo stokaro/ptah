@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/clickhouse/internal/chsql"
 )
 
 // Service compares resolved table settings without database access. Its zero
@@ -102,7 +103,7 @@ func compareTable(request schemaext.FacetComparisonRequest, owner schemaext.Pare
 	if err != nil {
 		return err
 	}
-	if sameTable(projected, current) {
+	if chsql.SameTable(projected, current) {
 		return nil
 	}
 	result.Changes = append(result.Changes, schemaext.FacetChange{
