@@ -115,26 +115,19 @@ checks before comparison use `schemadiff.RefusalError` with the original cause.
 The schema census discards its measurement when any selected service fails,
 including after earlier cells completed.
 
-`Runtime.PlanFeatures` returns completed refusals as `featureplan.Diagnostic`
-data, with optional change or parent indexes. It validates each service's
-assignment and maps change indexes to the original request. A refusal leaves
-no operations or receipts from any service. Failures and cancellation also
-discard diagnostics. The planning host calls `Result.Err(request)` before
-lowering operations; its `featureplan.RefusalError` preserves the report and
-schema or capability error identities. Process adapters carry diagnostics
-without encoding Go errors.
+`Runtime.PlanFeatures` returns `featureplan.Diagnostic` data with original change
+or parent indexes. Refusals discard all operations and receipts; service failures
+and cancellation also discard diagnostics. Call `Result.Err(request)` before
+lowering operations. Its `featureplan.RefusalError` preserves the report and error
+identities. Process adapters transfer diagnostic data instead of Go errors.
 
-`plangraph.ScheduleRewritten` replaces explicitly claimed host steps with an
-owner-contributed unit, redirects dependencies, and runs the common scheduler.
-It rejects duplicate claims, unknown source effects, lost logical writes,
-conflicting emitters, and cycles. The owner supplies the complete replacement
-semantics and execution requirements; grouping does not imply a transaction.
-Providers receive accepted host operations through `Request.CommonSteps` and
-return claims in `Result.Rewrites`. The runtime isolates common operands between
-services and validates claim identities. The host applies claims before returning
-any operations. `AlterTable` requests assessment of unchanged attached state when
-common table objects change. Process adapters define an explicit wire model for
-common operands; Go AST structs are local representations.
+`Request.CommonSteps` supplies isolated accepted operations; `Result.Rewrites`
+claims their replacements. `plangraph.ScheduleRewritten` validates claims,
+preserves logical writes, redirects dependencies, and rejects conflicts and cycles.
+Owners supply replacement semantics and execution requirements; grouping implies
+no transaction. `AlterTable` requests assessment of unchanged attached state.
+Process adapters define explicit common-operand wire models instead of
+serializing Go AST structs.
 
 `Provider.Conversions` registers a batched conversion service for explicit target
 and feature-kind pairs. `Runtime.ConvertFeatures` validates each ordered batch,
