@@ -64,8 +64,10 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
-| `dialect/clickhouse/chast`, `chrender` | Typed TTL operations, explicit codecs, and owner-selected rendering. |
-| `dialect/clickhouse/chplan`, `chreverse` | TTL planning, common-column dependencies, and reverse definitions with recovery limits. |
+| `dialect/clickhouse/chast` | Typed TTL operations and explicit codecs. |
+| `dialect/clickhouse/chrender` | Owner-selected TTL rendering. |
+| `dialect/clickhouse/chplan` | TTL planning and common-column dependencies. |
+| `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
