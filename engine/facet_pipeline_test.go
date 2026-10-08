@@ -14,9 +14,60 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/engine"
 	"ptah.run/migration/schemadiff"
 )
+
+func TestResolvedTableFacetsReachComparisonAndCapturedPlans(t *testing.T) {
+	c := qt.New(t)
+	var compared schemaext.FacetComparisonRequest
+	provider := facetProvider(facetComparisonFunc(func(_ context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		compared = request
+		return facetReply(request), nil
+	}))
+	provider.Targets[0].Preparation = preparationFunc(func(_ context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
+		request.Tables[0].ResolvedFacets = must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst, Number: 42}))
+		return schemapreparation.Result{Complete: true, Tables: request.Tables}, nil
+	})
+	runtime := mustRuntime(c, provider)
+	desired, current := facetSchemas()
+	desired.Tables[0].Facets = must.Must(desired.Tables[0].Facets.WithTargetScope(conversionFirst, "custom"))
+	source := desired.Tables[0].Facets
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "alternate", runtime)
+	c.Assert(err, qt.IsNil)
+	resolved, found, err := schemaext.FacetAs[*conversionValue](compared.Desired.Records[0].Values, conversionFirst)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(resolved.Number, qt.Equals, 42)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	prepared := diff.TablesModified[0].Desired.Table.Facets
+	c.Assert(prepared, qt.DeepEquals, compared.Desired.Records[0].Values)
+	c.Assert(prepared.TargetScope(conversionFirst), qt.DeepEquals, []string{"custom"})
+	c.Assert(prepared.Kinds(), qt.DeepEquals, source.Kinds())
+	c.Assert(diff.TablePreparation.Source[0].Desired.Table.Facets, qt.DeepEquals, source)
+	c.Assert(diff.TablePreparation.Prepared[0].Desired.Table.Facets, qt.DeepEquals, source)
+	c.Assert(diff.TablePreparation.Source[0].ResolvedFacets.IsZero(), qt.IsTrue)
+	c.Assert(desired.Tables[0].Facets, qt.DeepEquals, source)
+	c.Assert(compared.Current.Records[0].Values, qt.DeepEquals, current.Tables[0].Facets)
+}
+
+func TestInvalidTableIdentityIsRefusedBeforePreparation(t *testing.T) {
+	c := qt.New(t)
+	called := false
+	provider := preparationProvider(preparationFunc(func(context.Context, schemapreparation.Request) (schemapreparation.Result, error) {
+		called = true
+		return schemapreparation.Result{}, nil
+	}))
+	runtime := mustRuntime(c, provider)
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Event"}}}
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, "alternate", runtime)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	var refusal *schemadiff.RefusalError
+	c.Assert(err, qt.ErrorAs, &refusal)
+	c.Assert(diff, qt.IsNil)
+	c.Assert(called, qt.IsFalse)
+}
 
 func facetSchemas() (*schemamodel.Database, *catalog.Database) {
 	request := facetRequest()

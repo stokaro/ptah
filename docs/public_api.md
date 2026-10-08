@@ -465,9 +465,11 @@ collections is refused so callers cannot lose concrete payload types.
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register
 `schemapreparation.Identity` explicitly. The service may resolve desired column
-primary-key flags and mark them prepared. It preserves every other declaration,
-all observations, and the source knowledge. Incomplete or invalid replies and
-cancellation return no comparison result.
+primary-key flags and mark them prepared. `ResolvedFacets` carries separate
+resolved values for declared table models owned by the target provider. Source
+facets, target bindings, observations, and knowledge stay unchanged. The runtime
+validates ownership and codecs before feature and common comparison consume
+resolved values. Incomplete or invalid replies and cancellation return no result.
 
 `chprepare.Service` derives column membership from ClickHouse key expressions.
 The shared comparator consumes prepared column flags

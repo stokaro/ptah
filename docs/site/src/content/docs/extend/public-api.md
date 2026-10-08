@@ -46,7 +46,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
 | `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
-| `core/schemapreparation` | Selected column-key normalization with independent source and prepared captures. |
+| `core/schemapreparation` | Selected column-key and facet resolution with independent source and prepared captures. |
 | `core/schemaext` | Typed immutable feature values, positive source coverage, versioned codecs, and conservative operation effects. |
 | `core/schemaprojection` | Target-owned constraint effects and independent table-state predictions. |
 | `core/schemavalidation` | Whole-schema validation services with structured diagnostics and explicit completion. |
@@ -166,12 +166,13 @@ return established changes, `Diagnostics`, and an error. Reports must retain
 both `Diagnostics.Common` and `Diagnostics.Features`; an empty diff with a
 knowledge limit does not establish agreement.
 
-`Target.Preparation` selects table preparation before common column comparison.
+`Target.Preparation` selects table preparation before feature and column comparison.
 Providers that preserve input flags register `schemapreparation.Identity`;
-a missing service is an error. Services may resolve column key membership but
-cannot change other declarations, observations, or knowledge. Incomplete replies
-return no diff. `SchemaDiff.TablePreparation` retains independent source and
-prepared captures as comparison provenance, including through reversal.
+a missing service is an error. Services may resolve column key membership and
+return `ResolvedFacets` for declared table models they own. Source facets, target
+bindings, observations, and knowledge stay unchanged. Incomplete replies return
+no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
+captures as comparison provenance, including through reversal.
 
 Feature providers register their local model codecs through `Provider.Codecs`.
 `Runtime.Codecs` exposes context-aware batch encoding, decoding, and canonical
