@@ -73,7 +73,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
-| `dialect/ydb/ydbcoordination` | Standalone node declarations, observations, settings, and codecs. |
+| `dialect/ydb/ydbcoordination` | Coordination-node models and codecs. |
 | `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
 | `dialect/ydb/ydbrender` | Rendering and validation of YDB feature operations. |
 | `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |
@@ -82,8 +82,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
 | `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
 | `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
-| `dialect/ydb/ydbsyntax` | YQL identifier and string-literal quoting for owner packages. |
-| `dialect/ydb/ydbworkload` | Resource-pool and classifier declarations, observations, settings, and codecs. |
+| `dialect/ydb/ydbsyntax` | YQL quoting helpers. |
+| `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
