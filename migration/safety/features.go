@@ -26,7 +26,8 @@ func appendFeatureFindings(findings *[]Finding, changes []schemaext.ChangeRecord
 		}
 		add(findings, "feature_changes:"+kind, 1, severity)
 		if source, ok := snapshot.Value.(schemaext.AccessEffectSource); ok {
-			access := readAccess(source.AccessEffect()).Access
+			// Clone refused an invalid assessment above, so this one is valid.
+			access := source.AccessEffect().Access
 			add(findings, accessCategory(access)+":"+kind, 1, accessSeverity(access))
 		}
 	}

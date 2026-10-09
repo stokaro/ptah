@@ -12,7 +12,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -39,7 +38,6 @@ import (
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type ApplyOptions struct {
@@ -88,9 +86,10 @@ type ApplyOptions struct {
 	// pre-resolver loading behavior. `schema plan` sets it because a saved
 	// plan fingerprints local desired-state files only.
 	LocalFilesOnly bool
-	// assessOwnedOperations also assesses the owned feature operations of the
-	// plan, so a saved plan can record their owners' verdicts. It plans the
-	// diff a second time, as AST, which only a saved plan pays for.
+	// assessOwnedOperations also attributes the owned feature operations'
+	// verdicts to the statements they rendered, so a saved plan can record
+	// them. It reuses the one planning pass; a node carrying an owned
+	// operation beside common ones is rendered once more without them.
 	assessOwnedOperations bool
 	// ToSources carries the same desired-state sources as ToURLs, each with the
 	// variable scope its atlas.hcl `data "hcl_schema"` block put around it. It
@@ -279,8 +278,10 @@ func (c applyComputation) dataIndex() int {
 // re-reading the database.
 type applyComputation struct {
 	statements []string
-	// owned holds the owners' verdicts for the statements their feature
-	// operations render, when [ApplyOptions.assessOwnedOperations] asked.
+	// owned holds, position for position with statements, the verdict of
+	// the owned feature operation that rendered each statement, when
+	// [ApplyOptions.assessOwnedOperations] asked; a zero entry is a statement
+	// no owned operation rendered.
 	owned []safety.StatementAssessment
 	// undecided are the declared objects the comparison withheld because the
 	// read did not describe their kind; see [ApplyRuntimePlan.Undecided].
@@ -452,17 +453,18 @@ func computeApplyPlan(
 			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
 		}
-		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		plan, err := planner.GenerateSchemaDiffRenderedPlan(
 			ctx, opts.Runtime,
 			diff, info.Dialect, planOptions,
 		)
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 		}
+		computation.statements = plan.Statements()
 		if opts.assessOwnedOperations {
-			computation.owned, err = assessOwnedOperations(ctx, opts.Runtime, diff, info.Dialect, planOptions)
+			computation.owned, err = safety.OwnerVerdicts(ctx, opts.Runtime, plan.Request, plan.Result, computation.statements, info.Dialect)
 			if err != nil {
-				return applyComputation{}, err
+				return applyComputation{}, fmt.Errorf("assess owned operations: %w", err)
 			}
 		}
 	}
@@ -476,29 +478,6 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	return computation, nil
-}
-
-// assessOwnedOperations returns the owners' verdicts for the statements their
-// feature operations render in this plan. It renders with the capability set
-// the SQL plan rendered with, extensions the plan installs included, so each
-// verdict's statement text is the text the plan executes.
-func assessOwnedOperations(
-	ctx context.Context,
-	runtime engine.SchemaRuntime,
-	diff *difftypes.SchemaDiff,
-	dialect string,
-	options planner.Options,
-) ([]safety.StatementAssessment, error) {
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(ctx, runtime, diff, dialect, options)
-	if err != nil {
-		return nil, fmt.Errorf("plan owned operations for assessment: %w", err)
-	}
-	caps := capability.WithDeclaredExtensions(options.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
-	assessments, err := safety.AssessOwnedRendered(ctx, runtime, nodes, dialect, caps)
-	if err != nil {
-		return nil, fmt.Errorf("assess owned operations: %w", err)
-	}
-	return assessments, nil
 }
 
 // selectApplyStates checks selectors against both sides before planning. One

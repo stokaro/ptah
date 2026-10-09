@@ -256,6 +256,12 @@ func AssessRendered(ctx context.Context, service renderer.Service, nodes []ast.N
 // the node-level verdict is folded into the statements it applies to — so a
 // narrowing type change stays destructive where the SQL alone would not say so
 // — never lowering a statement's own classification.
+//
+// An owned operation's verdict, its access assessment included, applies to the
+// statements that operation rendered and to no other. A node carrying an owned
+// operation beside common ones is rendered once more without the owned ones, in
+// the same batch, and a statement both renderings share is assessed as the
+// common part's.
 func AssessRenderedWithCapabilities(
 	ctx context.Context,
 	service renderer.Service,
@@ -274,28 +280,35 @@ func AssessRenderedWithCapabilities(
 	if target == "" {
 		target = dialect
 	}
-	result, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: units})
+	batch, commons := commonParts(units, slices.Clone(units))
+	result, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: batch})
 	if err != nil {
 		return nil, err
 	}
 	var assessments []StatementAssessment
 	for i, node := range units {
 		nodeAssessment := assessNode(node)
-		rendered := result.Fragments[i]
-		statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
-		if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
-			statements = []string{strings.TrimSpace(rendered)}
+		commonAssessment := nodeAssessment
+		var commonStatements []string
+		if commons[i] >= 0 {
+			commonAssessment = assessNode(batch[commons[i]])
+			commonStatements = renderedStatements(result.Fragments[commons[i]], dialect)
 		}
+		statements := renderedStatements(result.Fragments[i], dialect)
+		owned := ownedStatements(node, statements, commonStatements, dialect)
 		keepsNull := keepsNullability(node)
 		fills := fillsNullRows(node)
-		for _, statement := range statements {
+		for j, statement := range statements {
 			assessment := assessStatement(statement, keepsNull)
 			assessment.NodeType = nodeAssessment.NodeType
 			if assessment.Subject == "" {
 				assessment.Subject = nodeAssessment.Subject
 			}
-			if len(statements) == 1 || hasExtensionEffect(node) || isTypeChangeSQL(statement) {
+			switch {
+			case owned[j]:
 				raiseAssessment(&assessment, nodeAssessment)
+			case len(statements) == 1 || isTypeChangeSQL(statement):
+				raiseAssessment(&assessment, commonAssessment)
 			}
 			if fills {
 				judgeNullFillPair(&assessment, statement)
@@ -308,35 +321,6 @@ func AssessRenderedWithCapabilities(
 		return nil, err
 	}
 	return assessments, nil
-}
-
-// AssessOwnedRendered is [AssessRenderedWithCapabilities] limited to the nodes
-// that carry an owned extension operation, alone or inside an ALTER TABLE or a
-// statement list. Other nodes are neither rendered nor returned, and Index
-// numbers the returned statements only. A plan without owned operations
-// returns no assessments and calls no service. Each returned Statement is the
-// rendered SQL the assessment belongs to, so a caller holding the same plan as
-// text can attach the owner's verdict to the statement it executes.
-func AssessOwnedRendered(
-	ctx context.Context,
-	service renderer.Service,
-	nodes []ast.Node,
-	dialect string,
-	caps capability.Capabilities,
-) ([]StatementAssessment, error) {
-	if err := schemaext.RequireRuntime(ctx, service); err != nil {
-		return nil, err
-	}
-	owned := make([]ast.Node, 0, len(nodes))
-	for _, node := range nodes {
-		if hasExtensionEffect(node) {
-			owned = append(owned, node)
-		}
-	}
-	if len(owned) == 0 {
-		return nil, ctx.Err()
-	}
-	return AssessRenderedWithCapabilities(ctx, service, owned, dialect, caps)
 }
 
 // assessmentUnits is node, or one ALTER TABLE per operation when node is a
@@ -693,6 +677,9 @@ func assessStatementList(nodes *ast.StatementList, assessment StatementAssessmen
 	return assessment
 }
 
+// assessAlterTable reads an owned operation through its owner's verdict and
+// every other operation through classifyAlterOperation, which has no case for
+// an owned one.
 func assessAlterTable(n *ast.AlterTableNode, assessment StatementAssessment) StatementAssessment {
 	for _, op := range n.Operations {
 		if extension, ok := op.(*ast.ExtensionAlterOperation); ok {
@@ -746,9 +733,6 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return classifyReplaceIndex(o)
 	case *ast.AlterIndexVisibilityOperation:
 		return Warning, "ALTER INDEX changes which index the optimizer can use, and so query plans"
-	case *ast.ExtensionAlterOperation:
-		verdict := classifyExtensionNode(o)
-		return verdict.severity, verdict.reason
 	default:
 		return Safe, "does not remove data or tighten constraints"
 	}

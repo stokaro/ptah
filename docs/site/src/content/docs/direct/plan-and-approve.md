@@ -125,9 +125,13 @@ verdict when it is higher than what the SQL text says, because the text of
 such a statement says little about its effect. When the owner assesses what
 the statement does to access, the statement also carries `access` --
 `widens`, `narrows`, `unchanged` or `unknown` -- and `access_reason`. A
-widening or unknown access effect makes the statement destructive. The Atlas
-`.plan.hcl` format stores only the SQL, so a plan read back from it carries
-the text's verdict alone.
+widening or unknown access effect makes the statement destructive. When the
+plan cannot tell which statements an owner's operation rendered, every
+statement is destructive with an unknown access effect. An `--edit` that
+changes or removes a statement carrying an access assessment does the same to
+the statements the edit introduced, because SQL text cannot say what they do
+to access. The Atlas `.plan.hcl` format stores only the SQL, so a plan read
+back from it carries the text's verdict alone.
 
 `from_fingerprint` describes the schemas the database URL covers. A URL that
 names no schema covers every schema in the database; one pinned with

@@ -566,9 +566,11 @@ func renderAtlasSchemaPlanFormat(format string, plan atlasschema.PlanFile) (stri
 	changes := make([]atlasreport.SchemaPlanChange, 0, len(plan.Statements))
 	for _, statement := range plan.Statements {
 		changes = append(changes, atlasreport.SchemaPlanChange{
-			Cmd:      statement.SQL,
-			Severity: string(statement.Severity),
-			Reason:   statement.Reason,
+			Cmd:          statement.SQL,
+			Severity:     string(statement.Severity),
+			Reason:       statement.Reason,
+			Access:       string(statement.Access),
+			AccessReason: statement.AccessReason,
 		})
 	}
 	var out strings.Builder

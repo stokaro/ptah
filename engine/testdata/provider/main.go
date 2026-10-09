@@ -124,8 +124,7 @@ func (p *grantWidget) AccessEffect() schemaext.AccessEffect { return p.Access }
 func grantCodec() schemaext.Codec {
 	encode := func(payload schemaext.Payload) (json.RawMessage, error) { return json.Marshal(payload) }
 	return schemaext.Codec{
-		Prototype:      &grantWidget{Access: schemaext.AccessEffect{Access: schemaext.AccessUnknown, Reason: "prototype"}},
-		Representation: schemaext.Operation, Version: 1,
+		Prototype: &grantWidget{}, Representation: schemaext.Operation, Version: 1,
 		Definition: json.RawMessage(`{"type":"object","required":["role","access"],"additionalProperties":false,"properties":{"role":{"type":"string"},"access":` +
 			string(schemaext.AccessEffectSchema()) + `}}`),
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
@@ -454,8 +453,11 @@ func verifyAccessEffects(runtime *engine.Runtime) error {
 	if err != nil {
 		return err
 	}
+	if len(decoded) != 1 {
+		return fmt.Errorf("operation codec returned %d payloads for one", len(decoded))
+	}
 	source, ok := decoded[0].(schemaext.AccessEffectSource)
-	if len(decoded) != 1 || !ok || source.AccessEffect() != grant.Access {
+	if !ok || source.AccessEffect() != grant.Access {
 		return fmt.Errorf("operation codec lost the access assessment: %+v", decoded)
 	}
 	_, err = runtime.Codecs().Marshal(ctx, schemaext.Operation, []schemaext.Payload{&grantWidget{Role: "reader"}})

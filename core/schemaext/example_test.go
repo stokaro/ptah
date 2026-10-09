@@ -111,7 +111,7 @@ func (v *policyChange) CloneChange() schemaext.ChangeValue {
 }
 func (v *policyChange) AccessEffect() schemaext.AccessEffect { return v.Access }
 
-// ExampleAccessEffectSource shows an owner's access assessment travelling
+// ExampleAccessEffectSource shows an owner's access assessment traveling
 // through a versioned change codec. The owner computes the assessment while it
 // still has the captured context and stores it in the payload; the codec embeds
 // the published record schema, so a reader decodes the same assessment.
@@ -122,8 +122,7 @@ func ExampleAccessEffectSource() {
 	registry, err := schemaext.NewRegistry(schemaext.OwnedCodec{
 		Owner: "example.org/provider",
 		Codec: schemaext.Codec{
-			Prototype:      &policyChange{Access: schemaext.AccessEffect{Access: schemaext.AccessUnknown, Reason: "prototype"}},
-			Representation: schemaext.Change, Version: 1,
+			Prototype: &policyChange{}, Representation: schemaext.Change, Version: 1,
 			Definition: json.RawMessage(`{"type":"object","required":["policy","access"],"additionalProperties":false,` +
 				`"properties":{"policy":{"type":"string"},"access":` + string(schemaext.AccessEffectSchema()) + `}}`),
 			Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {

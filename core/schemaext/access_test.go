@@ -3,6 +3,7 @@ package schemaext_test
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -30,8 +31,7 @@ func (v *grantChange) AccessEffect() schemaext.AccessEffect { return v.Access }
 
 func grantCodec(encode func(schemaext.Payload) (json.RawMessage, error)) schemaext.Codec {
 	return schemaext.Codec{
-		Prototype:      &grantChange{Access: schemaext.AccessEffect{Access: schemaext.AccessUnknown, Reason: "prototype"}},
-		Representation: schemaext.Change, Version: 1,
+		Prototype: &grantChange{}, Representation: schemaext.Change, Version: 1,
 		Definition: json.RawMessage(`{"type":"object","required":["role","access"],"additionalProperties":false,` +
 			`"properties":{"role":{"type":"string"},"access":` + string(schemaext.AccessEffectSchema()) + `}}`),
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
@@ -82,6 +82,8 @@ func TestAccessEffect_Validate_FailurePath(t *testing.T) {
 		{name: "padded reason", effect: schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: " grants reads"}},
 		{name: "two-line reason", effect: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "first\nsecond"}},
 		{name: "line separator", effect: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "first\u2028second"}},
+		{name: "invalid UTF-8", effect: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "grants \xff reads"}},
+		{name: "no-break space padding", effect: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "grants reads\u00a0"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,6 +120,10 @@ func TestAccessEffect_JSON_FailurePath(t *testing.T) {
 		{name: "empty access", data: `{"access":"","reason":"r"}`},
 		{name: "blank reason", data: `{"access":"unknown","reason":" "}`},
 		{name: "duplicate field", data: `{"access":"narrows","access":"widens","reason":"r"}`},
+		{name: "case variant key", data: `{"ACCESS":"widens","access":"narrows","reason":"r"}`},
+		{name: "case variant key alone", data: `{"Access":"narrows","reason":"r"}`},
+		{name: "access is not a string", data: `{"access":1,"reason":"r"}`},
+		{name: "reason is not a string", data: `{"access":"narrows","reason":["r"]}`},
 		{name: "not an object", data: `"widens"`},
 		{name: "null", data: `null`},
 	}
@@ -132,9 +138,9 @@ func TestAccessEffect_JSON_FailurePath(t *testing.T) {
 	}
 }
 
-// TestAccessEffectSchema_NamesExactlyTheValidAssessments ties the published
-// record schema to Valid, so a fifth assessment cannot be added to one alone.
-func TestAccessEffectSchema_NamesExactlyTheValidAssessments(t *testing.T) {
+// TestAccessEffectSchema_MatchesValidate ties the published record schema to
+// Validate, so neither can admit an assessment or a reason the other refuses.
+func TestAccessEffectSchema_MatchesValidate(t *testing.T) {
 	c := qt.New(t)
 	schema, err := schemaext.DecodeJSON[struct {
 		Type                 string   `json:"type"`
@@ -147,6 +153,7 @@ func TestAccessEffectSchema_NamesExactlyTheValidAssessments(t *testing.T) {
 			Reason struct {
 				Type      string `json:"type"`
 				MinLength int    `json:"minLength"`
+				Pattern   string `json:"pattern"`
 			} `json:"reason"`
 		} `json:"properties"`
 	}](schemaext.AccessEffectSchema())
@@ -159,21 +166,49 @@ func TestAccessEffectSchema_NamesExactlyTheValidAssessments(t *testing.T) {
 		c.Assert(access.Valid(), qt.IsTrue, qt.Commentf("%s", access))
 	}
 	c.Assert(schema.Properties.Reason.MinLength, qt.Equals, 1)
+	pattern, err := regexp.Compile(schema.Properties.Reason.Pattern)
+	c.Assert(err, qt.IsNil)
+	samples := []string{
+		"grants reads", "a", "caf\u00e9 policy", "two  spaces inside", "trailing dot.",
+		"", " padded", "padded ", "\tpadded", "padded\u00a0", "\u3000padded", "padded\u2000", "\u0085padded",
+		"two\nlines", "tab\tinside", "line\u2028separator", "paragraph\u2029separator", "delete\u007fcharacter",
+		"next\u0085line", "escape\u001bcharacter", "a\u00a0b", "a\u3000b",
+	}
+	for _, sample := range samples {
+		valid := schemaext.AccessEffect{Access: schemaext.AccessUnknown, Reason: sample}.Validate() == nil
+		c.Assert(pattern.MatchString(sample), qt.Equals, valid, qt.Commentf("%q", sample))
+	}
 }
 
-func TestValidatePayload_HappyPath_AcceptsAnAssessedPayload(t *testing.T) {
+func TestChangeRecordClone_HappyPath_KeepsTheAccessAssessment(t *testing.T) {
 	c := qt.New(t)
 	payload := &grantChange{Role: "reader", Access: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "revokes reads"}}
-	c.Assert(schemaext.ValidatePayload(payload), qt.IsNil)
 	cloned, err := schemaext.ChangeRecord{Subject: grantSubject(), Value: payload}.Clone()
 	c.Assert(err, qt.IsNil)
 	c.Assert(cloned.Value, qt.DeepEquals, schemaext.ChangeValue(payload))
 }
 
-func TestValidatePayload_FailurePath_RefusesAnUnassessedPayload(t *testing.T) {
+// ValidatePayload checks identity only, so a codec prototype and a lint pass
+// need no assessment; the clone and every codec boundary refuse its absence.
+func TestChangeRecordClone_FailurePath_RefusesAnUnassessedPayload(t *testing.T) {
 	c := qt.New(t)
 	payload := &grantChange{Role: "reader"}
-	c.Assert(schemaext.ValidatePayload(payload), qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(schemaext.ValidatePayload(payload), qt.IsNil)
+	cloned, err := schemaext.ChangeRecord{Subject: grantSubject(), Value: payload}.Clone()
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(cloned, qt.DeepEquals, schemaext.ChangeRecord{})
+}
+
+// droppingGrant is a change whose clone forgets the assessment.
+type droppingGrant struct{ grantChange }
+
+func (v *droppingGrant) CloneChange() schemaext.ChangeValue {
+	return &droppingGrant{grantChange{Role: v.Role}}
+}
+
+func TestChangeRecordClone_FailurePath_RefusesACloneThatDropsTheAssessment(t *testing.T) {
+	c := qt.New(t)
+	payload := &droppingGrant{grantChange{Role: "reader", Access: schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: "grants reads"}}}
 	_, err := schemaext.ChangeRecord{Subject: grantSubject(), Value: payload}.Clone()
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 }

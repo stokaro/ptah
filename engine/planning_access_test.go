@@ -30,8 +30,7 @@ func (p *accessOperation) AccessEffect() schemaext.AccessEffect { return p.Acces
 func accessOperationCodec() schemaext.Codec {
 	encode := func(payload schemaext.Payload) (json.RawMessage, error) { return json.Marshal(payload) }
 	return schemaext.Codec{
-		Prototype:      &accessOperation{Access: schemaext.AccessEffect{Access: schemaext.AccessUnknown, Reason: "prototype"}},
-		Representation: schemaext.Operation, Version: 1,
+		Prototype: &accessOperation{}, Representation: schemaext.Operation, Version: 1,
 		Definition: json.RawMessage(`{"type":"object","required":["access"],"additionalProperties":false,"properties":{"access":` +
 			string(schemaext.AccessEffectSchema()) + `}}`),
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
@@ -71,6 +70,8 @@ func TestPlanning_HappyPath_KeepsTheOwnersAccessAssessment(t *testing.T) {
 	result, err := mustRuntime(c, accessPlanningProvider(access)).PlanFeatures(t.Context(), planningRequest())
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Contributions, qt.HasLen, 1)
+	c.Assert(result.Contributions[0].Steps, qt.HasLen, len(planningRequest().Changes))
+	c.Assert(len(result.Contributions[0].Steps) > 0, qt.IsTrue)
 	for _, step := range result.Contributions[0].Steps {
 		source, ok := step.Payload.Payload.(schemaext.AccessEffectSource)
 		c.Assert(ok, qt.IsTrue)

@@ -661,20 +661,84 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 	dialect string,
 	opts Options,
 ) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(
-		ctx, runtime,
-		diff, dialect, opts,
-	)
+	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
 	if err != nil {
 		return nil, err
 	}
+	return plan.Statements(), nil
+}
+
+// RenderedPlan is a schema diff planned and rendered once. Nodes are the
+// planned AST nodes, Request is the rendering request they went out in, and
+// Result holds one fragment per node, so a statement can be traced to the
+// node that rendered it without planning again. Its SQL and Statements are
+// what [GenerateSchemaDiffSQLWithOptions] and
+// [GenerateSchemaDiffSQLStatementsWithOptions] return for the same input.
+type RenderedPlan struct {
+	Nodes   []ast.Node
+	Request renderer.Request
+	Result  renderer.Result
+	// Dialect is the caller's spelling of the target, which decides where one
+	// statement ends.
+	Dialect string
+}
+
+// SQL returns the rendered plan as one script.
+func (p RenderedPlan) SQL() string { return p.Result.SQL() }
+
+// Statements splits the rendered plan into the statements it executes.
+func (p RenderedPlan) Statements() []string {
 	// The dialect decides where one statement ends. The blind splitter treats
 	// every semicolon outside a BEGIN block as a boundary, which is right for
 	// most targets and wrong for the one whose routine body is opened by IS:
 	// an Oracle function with a declaration section came out of here as four
 	// fragments, each of which the server refuses on its own.
-	statements := sqlutil.SplitSQLStatementsForDialect(output, dialect)
-	return statements, nil
+	return sqlutil.SplitSQLStatementsForDialect(p.SQL(), p.Dialect)
+}
+
+// GenerateSchemaDiffRenderedPlan plans diff and renders the planned nodes
+// once, keeping the nodes, the request, and the per-node result together. It
+// fails with the errors [GenerateSchemaDiffSQLWithOptions] documents, and
+// returns the zero plan on any failure or cancellation.
+func GenerateSchemaDiffRenderedPlan(
+	ctx context.Context, runtime Runtime,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	opts Options,
+) (RenderedPlan, error) {
+	// An extension this plan installs is installed before the statements that
+	// need it. A connection opened before the extension existed answers about
+	// the past, so its capability set alone would emit
+	// `CREATE EXTENSION "timescaledb"` and then skip the create_hypertable that
+	// needs it (stokaro/ptah#1026).
+	//
+	// The names come from the change rather than from the desired schema
+	// because installing is what makes them available: an extension the schema
+	// declares and the target already has is already in the capability set the
+	// connection reported (stokaro/ptah#2315).
+	astNodes, err := GenerateSchemaDiffASTWithOptions(
+		ctx, runtime,
+		diff, dialect, opts,
+	)
+	if err != nil {
+		return RenderedPlan{}, err
+	}
+	caps := capability.WithDeclaredExtensions(opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
+	// The planner resolves built-in transport spellings before selecting a
+	// target. Rendering must use that same target, not reinterpret the spelling.
+	target := platform.NormalizeDialect(dialect)
+	if target == "" {
+		target = dialect
+	}
+	request := renderer.Request{Target: target, Capabilities: caps, Nodes: astNodes}
+	output, err := renderer.Render(ctx, runtime, request)
+	if err != nil {
+		return RenderedPlan{}, wrapRenderError(dialect, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return RenderedPlan{}, wrapRenderError(dialect, err)
+	}
+	return RenderedPlan{Nodes: astNodes, Request: request, Result: output, Dialect: dialect}, nil
 }
 
 // GenerateSchemaDiffSQL generates complete SQL for schema differences as a single string.
@@ -761,38 +825,11 @@ func GenerateSchemaDiffSQLWithOptions(
 	dialect string,
 	opts Options,
 ) (string, error) {
-	// An extension this plan installs is installed before the statements that
-	// need it. A connection opened before the extension existed answers about
-	// the past, so its capability set alone would emit
-	// `CREATE EXTENSION "timescaledb"` and then skip the create_hypertable that
-	// needs it (stokaro/ptah#1026).
-	//
-	// The names come from the change rather than from the desired schema
-	// because installing is what makes them available: an extension the schema
-	// declares and the target already has is already in the capability set the
-	// connection reported (stokaro/ptah#2315).
-	astNodes, err := GenerateSchemaDiffASTWithOptions(
-		ctx, runtime,
-		diff, dialect, opts,
-	)
+	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
 	if err != nil {
 		return "", err
 	}
-	caps := capability.WithDeclaredExtensions(opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
-	// The planner resolves built-in transport spellings before selecting a
-	// target. Rendering must use that same target, not reinterpret the spelling.
-	target := platform.NormalizeDialect(dialect)
-	if target == "" {
-		target = dialect
-	}
-	output, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: astNodes})
-	if err != nil {
-		return "", wrapRenderError(dialect, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return "", wrapRenderError(dialect, err)
-	}
-	return output.SQL(), nil
+	return plan.SQL(), nil
 }
 
 func wrapPlanError(dialect string, err error) error {

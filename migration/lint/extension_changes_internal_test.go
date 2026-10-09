@@ -24,6 +24,17 @@ func (p *reportedChange) SchemaChange() ast.ExtensionChange {
 	return ast.ExtensionChange{Action: p.action, Name: p.name}
 }
 
+// reportedAccessChange also declares an access assessment, which lint does not
+// read: a missing or invalid one must not turn the reported change into a
+// generic modification of the parent table.
+type reportedAccessChange struct {
+	reportedChange
+	access schemaext.AccessEffect
+}
+
+func (p *reportedAccessChange) CloneExtension() ast.ExtensionPayload { return new(*p) }
+func (p *reportedAccessChange) AccessEffect() schemaext.AccessEffect { return p.access }
+
 func TestExtensionChangeReportsStayScopedAndConservative(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -39,6 +50,8 @@ func TestExtensionChangeReportsStayScopedAndConservative(t *testing.T) {
 		{name: "empty name", payload: &reportedChange{action: ast.ExtensionAdd}, wantKind: SchemaChangeModify, wantName: "parent"},
 		{name: "nil", wantKind: SchemaChangeModify, wantName: "parent"},
 		{name: "typed nil", payload: (*reportedChange)(nil), wantKind: SchemaChangeModify, wantName: "parent"},
+		{name: "unassessed access", payload: &reportedAccessChange{reportedChange: reportedChange{action: ast.ExtensionAdd, name: "policy"}},
+			wantKind: SchemaChangeAdd, wantName: "policy"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

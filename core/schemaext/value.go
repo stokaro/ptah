@@ -48,21 +48,13 @@ func CloneValue(value Value) (Value, error) {
 }
 
 // ValidatePayload refuses nil, typed-nil, and invalid identities without
-// invoking a method on a typed-nil receiver. A payload that implements
-// AccessEffectSource must also return a valid assessment. Codec snapshots,
-// encoding, decoding, and change and value clones check payloads here, so an
-// assessment cannot be lost or left unset at those boundaries.
+// invoking a method on a typed-nil receiver.
 func ValidatePayload(payload Payload) error {
 	if absent(payload) {
 		return fmt.Errorf("%w: payload is nil", ErrInvalidValue)
 	}
 	if !payload.Kind().Valid() {
 		return fmt.Errorf("%w: invalid kind %q", ErrInvalidValue, payload.Kind())
-	}
-	if source, ok := payload.(AccessEffectSource); ok {
-		if err := source.AccessEffect().Validate(); err != nil {
-			return fmt.Errorf("%q: %w", payload.Kind(), err)
-		}
 	}
 	return nil
 }

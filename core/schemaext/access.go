@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Access is an owner's assessment of how a change or operation can affect what
@@ -50,23 +51,22 @@ type AccessEffect struct {
 	Reason string `json:"reason"`
 }
 
-// Validate refuses an unrecognized or missing assessment and a reason that is
-// empty, padded with spaces, or contains control characters.
+// Validate refuses an unrecognized or missing assessment, and a reason that is
+// empty, not valid UTF-8, padded with white space, or that contains a control
+// character or a line or paragraph separator.
 func (e AccessEffect) Validate() error {
 	if !e.Access.Valid() {
 		return fmt.Errorf("%w: unrecognized access assessment %q", ErrInvalidValue, e.Access)
 	}
-	if e.Reason == "" || strings.TrimSpace(e.Reason) != e.Reason || strings.ContainsFunc(e.Reason, func(r rune) bool {
-		return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
-	}) {
+	if e.Reason == "" || !utf8.ValidString(e.Reason) || strings.TrimSpace(e.Reason) != e.Reason ||
+		strings.ContainsFunc(e.Reason, forbiddenInReason) {
 		return fmt.Errorf("%w: access assessment %q needs a reason on one trimmed line", ErrInvalidValue, e.Access)
 	}
 	return nil
 }
 
-type accessEffectRecord struct {
-	Access Access `json:"access"`
-	Reason string `json:"reason"`
+func forbiddenInReason(r rune) bool {
+	return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
 }
 
 // MarshalJSON writes the explicit record after validating it.
@@ -74,28 +74,47 @@ func (e AccessEffect) MarshalJSON() ([]byte, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(accessEffectRecord(e))
+	return json.Marshal(struct {
+		Access Access `json:"access"`
+		Reason string `json:"reason"`
+	}{e.Access, e.Reason})
 }
 
-// UnmarshalJSON reads the explicit record. Unknown or duplicate fields, a
-// missing field, and an invalid assessment are refused; the receiver is left
-// unchanged on error.
+// UnmarshalJSON reads the explicit record. The object must hold exactly the
+// keys "access" and "reason", spelled as written: encoding/json would match a
+// key in any letter case, and the record schema admits no other property.
+// Duplicate keys, values that are not strings, and an invalid assessment are
+// refused; the receiver is left unchanged on error.
 func (e *AccessEffect) UnmarshalJSON(data []byte) error {
 	record, err := DecodeJSON[map[string]json.RawMessage](data)
 	if err != nil {
 		return err
 	}
-	if _, found := record["access"]; !found {
+	if record == nil {
+		return fmt.Errorf("%w: access assessment is not an object", ErrInvalidValue)
+	}
+	for key := range record {
+		if key != "access" && key != "reason" {
+			return fmt.Errorf("%w: access assessment has an unknown field %q", ErrInvalidValue, key)
+		}
+	}
+	rawAccess, found := record["access"]
+	if !found {
 		return fmt.Errorf("%w: access assessment has no access field", ErrInvalidValue)
 	}
-	if _, found := record["reason"]; !found {
+	rawReason, found := record["reason"]
+	if !found {
 		return fmt.Errorf("%w: access assessment has no reason field", ErrInvalidValue)
 	}
-	decoded, err := DecodeJSON[accessEffectRecord](data)
+	access, err := DecodeJSON[string](rawAccess)
 	if err != nil {
 		return err
 	}
-	effect := AccessEffect(decoded)
+	reason, err := DecodeJSON[string](rawReason)
+	if err != nil {
+		return err
+	}
+	effect := AccessEffect{Access: Access(access), Reason: reason}
 	if err := effect.Validate(); err != nil {
 		return err
 	}
@@ -103,21 +122,45 @@ func (e *AccessEffect) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// AccessEffectSchema returns the JSON Schema of the encoded record. An owner
-// embeds it in the Definition of a change or operation codec that carries an
-// assessment, so the definition hash changes with the record's shape.
+// accessReasonPattern is the reason constraint Validate enforces, as a JSON
+// Schema pattern: no control character, line separator or paragraph separator
+// anywhere, and no white space at either end. The escapes are JSON's, so the
+// pattern reaches a regular expression engine as literal characters.
+const accessReasonPattern = `^[^\u0000-\u0020\u007f-\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]` +
+	`(?:[^\u0000-\u001f\u007f-\u009f\u2028\u2029]*[^\u0000-\u0020\u007f-\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000])?$`
+
+// AccessEffectSchema returns the JSON Schema of the encoded record, including
+// the reason constraint Validate enforces. An owner embeds it in the Definition
+// of a change or operation codec that carries an assessment, so the definition
+// hash changes with the record's shape.
 func AccessEffectSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","required":["access","reason"],"additionalProperties":false,` +
-		`"properties":{"access":{"enum":["widens","narrows","unchanged","unknown"]},"reason":{"type":"string","minLength":1}}}`)
+		`"properties":{"access":{"enum":["widens","narrows","unchanged","unknown"]},` +
+		`"reason":{"type":"string","minLength":1,"pattern":"` + accessReasonPattern + `"}}}`)
 }
 
 // AccessEffectSource provides an owner's access assessment for a change or
 // operation payload. Like EffectSource, it must be pure and local: the owner
 // computes the assessment from the model, enforcement state, and sibling
 // objects it captured, and the payload carries the result as data. A payload
-// that implements this interface must return a valid assessment: ValidatePayload
-// refuses it otherwise, so a codec that drops the record fails when it decodes.
-// A payload without this interface makes no claim about access.
+// that implements this interface must return a valid assessment. Codec
+// snapshots, encoding, decoding, and ChangeRecord.Clone refuse it otherwise, so
+// a codec that drops the record fails when it decodes. ValidatePayload checks
+// identity only, so a codec prototype needs no assessment. A payload without
+// this interface makes no claim about access.
 type AccessEffectSource interface {
 	AccessEffect() AccessEffect
+}
+
+// validateAccess refuses a payload that declares an access assessment and does
+// not carry a valid one.
+func validateAccess(payload Payload) error {
+	source, ok := payload.(AccessEffectSource)
+	if !ok {
+		return nil
+	}
+	if err := source.AccessEffect().Validate(); err != nil {
+		return fmt.Errorf("%q: %w", payload.Kind(), err)
+	}
+	return nil
 }

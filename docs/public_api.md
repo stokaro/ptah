@@ -1211,18 +1211,22 @@ required one-line explanation:
 The owner computes the assessment while it holds the captured model,
 enforcement state, and sibling objects, and stores it in the payload as data.
 `Access.Valid` and `AccessEffect.Validate` reject the zero value, other
-spellings, and a blank, padded, or multi-line reason with `ErrInvalidValue`.
-The JSON form is the record `{"access": ..., "reason": ...}`. Encoding or
-decoding an invalid record fails, and decoding refuses unknown, duplicate, or
-missing fields. An owner embeds `schemaext.AccessEffectSchema()` in its codec
-`Definition`, so the definition hash follows the record shape.
+spellings, and a reason that is empty, not valid UTF-8, padded with white
+space, or that holds a control character or a line or paragraph separator,
+with `ErrInvalidValue`. The JSON form is the record
+`{"access": ..., "reason": ...}`. Encoding or decoding an invalid record fails.
+Decoding refuses unknown, duplicate, or missing fields, a key spelled in
+another letter case, and a value that is not a string. An owner embeds
+`schemaext.AccessEffectSchema()` in its codec `Definition`, so the definition
+hash follows the record shape; its reason pattern states the same constraint
+`Validate` enforces.
 
-`ValidatePayload` refuses a payload that implements the interface without a
-valid assessment. Codec snapshots, encoding, decoding, change clones, and value
-clones all call it. A codec that drops the record therefore fails when it
-decodes, and a planning reply whose operation lacks one is refused with no
-partial result. The prototype registered for such a codec must carry a valid
-assessment too. A payload without the interface makes no claim about access.
+Codec snapshots, encoding, decoding, and `ChangeRecord.Clone` refuse a payload
+that implements the interface without a valid assessment, and refuse a clone
+that lost it. A codec that drops the record therefore fails when it decodes,
+and a planning reply whose operation lacks one is refused with no partial
+result. `ValidatePayload` checks identity only, so a codec prototype needs no
+assessment. A payload without the interface makes no claim about access.
 
 `migration/safety` reads the assessment beside the lifecycle effect and takes
 the higher severity. `AccessWidens` and `AccessUnknown` are `Destructive`,
@@ -1230,8 +1234,11 @@ the higher severity. `AccessWidens` and `AccessUnknown` are `Destructive`,
 it cannot validate is reported as `AccessUnknown`, never as unchanged.
 
 `StatementAssessment.Access` and `AccessReason` report the assessment for each
-statement an assessed operation renders. They stay empty for every other
-statement. A statement carrying several assessed operations reports the
+statement an assessed operation rendered. They stay empty for every other
+statement, including a common statement beside an owned one in the same node:
+`AssessRendered` renders such a node once more without its owned operations,
+in the same batch, and a statement both renderings share takes the common
+part's verdict. A statement carrying several assessed operations reports the
 strongest, in the order unchanged, narrows, unknown, widens. The text and HTML
 reports print it under the statement.
 
@@ -1241,12 +1248,32 @@ reports print it under the statement.
 from their `feature_changes:<kind>` lifecycle finding. A change it cannot
 snapshot is counted under `feature_access_unknown`.
 
-`AssessOwnedRendered` renders and assesses only the nodes carrying an owned
-operation. `Fold` attaches such a verdict to the same statement classified from
-its text: the severity only rises and the strongest access assessment is kept.
-A saved schema plan uses both, so the JSON plan's statements carry `access`,
-`access_reason`, and an owner's higher verdict. The Atlas `.plan.hcl` format
-stores SQL alone, so a plan read back from it has only the text verdict.
+`migration/planner.GenerateSchemaDiffRenderedPlan` plans and renders a diff
+once and returns a `RenderedPlan`: the planned nodes, the rendering request,
+and one fragment per node. Its `SQL` and `Statements` are what
+`GenerateSchemaDiffSQLWithOptions` and
+`GenerateSchemaDiffSQLStatementsWithOptions` return for the same input.
+`safety.OwnerVerdicts` takes that request, result, and statement list and
+returns, position for position, the verdict of the owned operation that
+rendered each statement, or a zero assessment. Attribution is by node and
+position, never by matching text from a second planning pass.
+
+When the
+statements cannot be lined up with the fragments, as when a fragment does not
+terminate its last statement, and the plan carries an owned operation, every
+statement gets a `Destructive` verdict with an unknown access effect. A plan
+without owned operations calls no service. `Fold` attaches a verdict to the
+same statement classified from its text: the severity only rises and the
+strongest access assessment is kept.
+
+A saved schema plan uses `OwnerVerdicts` and `Fold`, so the JSON plan's
+statements carry `access`, `access_reason`, and an owner's higher verdict.
+Reading a plan refuses an unrecognized access value, an access value without
+its reason, and a reason without a value. An edit that changes or removes a
+statement carrying an access assessment makes every statement the edit
+introduced `Destructive` with an unknown access effect. The Atlas `.plan.hcl`
+format stores SQL alone, so a plan read back from it has only the text
+verdict.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
