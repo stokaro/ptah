@@ -80,6 +80,6 @@ func TestReadYQLSecretRefusedOnOlderLine(t *testing.T) {
 func TestReadYQLSecretDeclaredTwice(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE SECRET `a/b` WITH (value = $PTAH_SECRET_X); CREATE SECRET `a/b` WITH (value = $PTAH_SECRET_X);"), "ydb")
-	c.Assert(err, qt.ErrorMatches, `.*secret "a/b" is declared twice`)
+	c.Assert(err, qt.ErrorMatches, `.*secret a/b is declared twice`)
 	c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 }

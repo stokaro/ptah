@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbsecret"
 )
 
@@ -63,26 +65,64 @@ func TestParseValueEnv_FailurePath(t *testing.T) {
 	}
 }
 
-func TestCheckName_HappyPath(t *testing.T) {
+// TestDeclare_HappyPath adds each declaration under its path, with a dot kept
+// in the name and the directory read relative to the database root, and leaves
+// the input collection as it was.
+func TestDeclare_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ydbsecret.CheckName("pg.password-1"), qt.IsNil)
+	empty := schemaext.Objects{}
+	objects, err := ydbsecret.Declare(empty, " /ext/aws/ ", " s3.key ", "Credentials", "PTAH_SECRET_S3")
+	c.Assert(err, qt.IsNil)
+	objects, err = ydbsecret.Declare(objects, "", "pg.password-1", "", "PTAH_SECRET_PG")
+	c.Assert(err, qt.IsNil)
+
+	values, err := objects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(values, qt.ContentEquals, []schemaext.Object{
+		ydbsecret.DesiredObject("ext/aws", "s3.key", "Credentials", "PTAH_SECRET_S3"),
+		ydbsecret.DesiredObject("", "pg.password-1", "", "PTAH_SECRET_PG"),
+	})
+	c.Assert(empty.Len(), qt.Equals, 0)
 }
 
-func TestCheckName_FailurePath(t *testing.T) {
+// TestDeclare_FailurePath refuses a declaration a secret cannot take, naming
+// the attribute, and a second declaration of one path, naming the path.
+func TestDeclare_FailurePath(t *testing.T) {
+	declared := must.Must(ydbsecret.Declare(schemaext.Objects{}, "ext", "pw", "", "PTAH_SECRET_PW"))
 	tests := []struct {
-		name    string
-		input   string
-		wantErr string
+		name         string
+		schema, leaf string
+		valueEnv     string
+		wantErr      string
+		attribute    string
 	}{
-		{name: "empty", input: " ", wantErr: "invalid name: a secret needs a name"},
-		{name: "a path", input: "app/pw", wantErr: `invalid name: "app/pw" holds a slash; name the directory with schema`},
+		{name: "no name", leaf: " ", valueEnv: "PTAH_SECRET_PW", wantErr: "invalid name: a secret needs a name", attribute: ydbsecret.AttributeName},
+		{name: "a path as the name", leaf: "app/pw", valueEnv: "PTAH_SECRET_PW",
+			wantErr: `invalid name: "app/pw" holds a slash; name the directory with schema`, attribute: ydbsecret.AttributeName},
+		{name: "a parent segment as the name", leaf: "..", valueEnv: "PTAH_SECRET_PW", wantErr: `invalid name: ".." is not a path segment`, attribute: ydbsecret.AttributeName},
+		{name: "an unclean directory", schema: "ext//aws", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
+			wantErr: `invalid schema: "ext//aws" is not a directory path relative to the database root`, attribute: ydbsecret.AttributeSchema},
+		{name: "a parent directory", schema: "../ext", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
+			wantErr: `invalid schema: "../ext" is not a directory path relative to the database root`, attribute: ydbsecret.AttributeSchema},
+		{name: "no variable", leaf: "pw", wantErr: "invalid value_env: a secret names the environment variable that holds its value", attribute: ydbsecret.AttributeValueEnv},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ydbsecret.CheckName(tc.input), qt.ErrorMatches, tc.wantErr)
+			objects, err := ydbsecret.Declare(declared, test.schema, test.leaf, "", test.valueEnv)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			declarationError, ok := errors.AsType[*ydbsecret.DeclarationError](err)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(declarationError.Attribute, qt.Equals, test.attribute)
+			c.Assert(objects.Refs(), qt.DeepEquals, declared.Refs())
 		})
 	}
+	t.Run("a second declaration", func(t *testing.T) {
+		c := qt.New(t)
+		objects, err := ydbsecret.Declare(declared, "/ext/", "pw", "Other", "PTAH_SECRET_OTHER")
+		c.Assert(err, qt.ErrorMatches, "secret ext/pw is declared twice")
+		c.Assert(objects.Refs(), qt.DeepEquals, declared.Refs())
+	})
 }
 
 func TestDefaultValueEnv_HappyPath(t *testing.T) {

@@ -51,12 +51,14 @@
 package ydbsecret
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/sqlident"
 )
 
@@ -152,18 +154,44 @@ func variableName(name string) bool {
 	return name != ""
 }
 
-// CheckName reports why name cannot be a secret's name, or nil. A name is one
-// path segment; the directories of a path are the secret's schema.
-func CheckName(name string) error {
+// Declare returns objects with the secret name in the directory schema added,
+// declared by the Go struct holder (empty for every other source format) with
+// its value read from valueEnv. Every source format declares a secret through
+// it, so they agree on what a declaration may hold and on what a repeated one
+// is told. objects is not modified.
+//
+// The name is one segment of the secret's path: it holds no slash, and a dot
+// is part of it. The directory is relative to the database root; surrounding
+// space and slashes are ignored. A name, directory or variable a secret cannot
+// take is refused with a [DeclarationError] naming the attribute, and a secret
+// declared twice is refused by its path.
+func Declare(objects schemaext.Objects, schema, name, holder, valueEnv string) (schemaext.Objects, error) {
+	name = strings.TrimSpace(name)
 	switch {
-	case strings.TrimSpace(name) == "":
-		return &DeclarationError{Attribute: AttributeName, Reason: "a secret needs a name"}
+	case name == "":
+		return objects, &DeclarationError{Attribute: AttributeName, Reason: "a secret needs a name"}
 	case strings.Contains(name, "/"):
-		return &DeclarationError{Attribute: AttributeName,
+		return objects, &DeclarationError{Attribute: AttributeName,
 			Reason: fmt.Sprintf("%q holds a slash; name the directory with %s", name, AttributeSchema)}
-	default:
-		return nil
+	case ValidateIdentity(Ref("", name)) != nil:
+		return objects, &DeclarationError{Attribute: AttributeName, Reason: fmt.Sprintf("%q is not a path segment", name)}
 	}
+	if err := CheckValueEnv(valueEnv); err != nil {
+		return objects, err
+	}
+	object := DesiredObject(strings.Trim(strings.TrimSpace(schema), "/"), name, holder, valueEnv)
+	if ValidateIdentity(object.Ref) != nil {
+		return objects, &DeclarationError{Attribute: AttributeSchema,
+			Reason: fmt.Sprintf("%q is not a directory path relative to the database root", schema)}
+	}
+	declared, err := objects.With(object)
+	if errors.Is(err, schemaext.ErrDuplicate) {
+		return objects, fmt.Errorf("secret %s is declared twice", Display(object.Ref.Schema.Source, name))
+	}
+	if err != nil {
+		return objects, err
+	}
+	return declared, nil
 }
 
 // DefaultValueEnv is the variable Ptah names for a secret it did not declare

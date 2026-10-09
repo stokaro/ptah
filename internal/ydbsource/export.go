@@ -124,9 +124,9 @@ func limitSubjectName(kind schemaext.Kind, ref objectidentity.ID) (string, error
 			return "", err
 		}
 	case ydbsecret.Kind:
-		if err := ydbsecret.ValidateIdentity(ref); err != nil {
-			return "", err
-		}
+		// A secret limit is read as a path, so its directory and name
+		// need no leading slash to keep a dot literal.
+		return ydbsecret.Display(ref.Schema.Source, ref.Name.Source), ydbsecret.ValidateIdentity(ref)
 	default:
 		return "", fmt.Errorf("%w: no source limit spelling for %s", schemaext.ErrInvalidValue, kind)
 	}

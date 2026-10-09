@@ -4,11 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"strings"
 
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbsecret"
 )
 
@@ -33,23 +31,16 @@ func (s *schemaParseState) parseSecretComment(comment *ast.Comment, structName s
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	name := strings.TrimSpace(kv[ydbsecret.AttributeName])
-	if err := ydbsecret.CheckName(name); err != nil {
-		return secretAttributeError(ctx, err)
-	}
 	valueEnv, err := ydbsecret.ParseValueEnv(kv)
 	if err != nil {
 		return secretAttributeError(ctx, err)
 	}
-	object := ydbsecret.DesiredObject(strings.Trim(strings.TrimSpace(kv[ydbsecret.AttributeSchema]), "/"), name, structName, valueEnv)
-	if err := ydbsecret.ValidateIdentity(object.Ref); err != nil {
+	objects, err := ydbsecret.Declare(s.featureObjects, kv[ydbsecret.AttributeSchema], kv[ydbsecret.AttributeName], structName, valueEnv)
+	if err != nil {
 		return secretAttributeError(ctx, err)
 	}
-	s.featureObjects, err = s.featureObjects.With(object)
-	if errors.Is(err, schemaext.ErrDuplicate) {
-		return secretAttributeError(ctx, fmt.Errorf("secret %s is declared twice", ydbsecret.Display(object.Ref.Schema.Source, name)))
-	}
-	return err
+	s.featureObjects = objects
+	return nil
 }
 
 // secretAttributeError reports a value a secret declaration cannot carry,

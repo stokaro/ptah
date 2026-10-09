@@ -66,6 +66,41 @@ type Unmanaged struct{}
 	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "ext.pg.pw")).State, qt.Equals, schemaext.Complete)
 }
 
+// TestGoSecretLimitsReadThePath reads a Go source's secret limit as the
+// secret's path: a dot stays in its segment and only a slash separates a
+// directory.
+func TestGoSecretLimitsReadThePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		limit     string
+		unmanaged objectidentity.ID
+		described objectidentity.ID
+	}{
+		{name: "a dotted root name", limit: "pg.pw", unmanaged: ydbsecret.Ref("", "pg.pw"), described: ydbsecret.Ref("pg", "pw")},
+		{name: "a directory", limit: "pg/pw", unmanaged: ydbsecret.Ref("pg", "pw"), described: ydbsecret.Ref("", "pg.pw")},
+		{name: "a leading slash", limit: "/pg.pw", unmanaged: ydbsecret.Ref("", "pg.pw"), described: ydbsecret.Ref("pg", "pw")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := goschema.ParseSource("limits.go", fmt.Sprintf("package entities\n//ptah:schema:notdescribed kind=%q name=%q\ntype Unmanaged struct{}\n", "secret", test.limit))
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, test.unmanaged).State, qt.Equals, schemaext.Uninspected)
+			c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, test.described).State, qt.Equals, schemaext.Complete)
+		})
+	}
+}
+
+// TestYQLSecretLimitsReadThePath reads a YQL header's secret limit as the
+// secret's path, as the Go annotation reads it.
+func TestYQLSecretLimitsReadThePath(t *testing.T) {
+	c := qt.New(t)
+	db, _, err := sqlschema.Read([]byte("-- ptah:not-described secret \"pg.pw\"\nCREATE SECRET `other` WITH (value = $PTAH_SECRET_OTHER);\n"), "ydb")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "pg.pw")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("pg", "pw")).State, qt.Equals, schemaext.Complete)
+}
+
 func TestSQLHeaderWorkloadLimitsRemainScoped(t *testing.T) {
 	c := qt.New(t)
 	db, _, err := sqlschema.Read([]byte(`-- ptah:not-described resource_pool "batch.jobs"
@@ -185,6 +220,7 @@ func TestGoExportPreservesAuthoredSubjectLimitsInEveryFile(t *testing.T) {
 //ptah:schema:notdescribed kind="resource_pool" name="Batch.jobs"
 //ptah:schema:notdescribed kind="resource_pool_classifier" name="route.jobs"
 //ptah:schema:notdescribed kind="secret" name="ext/pg.pw"
+//ptah:schema:notdescribed kind="secret" name="pg.pw"
 type Limits struct{}
 `)
 			c.Assert(err, qt.IsNil)

@@ -1,11 +1,8 @@
 package yamlschema
 
 import (
-	"errors"
 	"fmt"
-	"strings"
 
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
 )
@@ -34,20 +31,9 @@ func (d document) addSecrets(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("secret %q: %w", key, err)
 		}
-		name := valueOrDefault(spec.Name, key)
-		if err := ydbsecret.CheckName(name); err != nil {
-			return fmt.Errorf("secret %q: %w", key, err)
-		}
-		object := ydbsecret.DesiredObject(strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"), name, "", valueEnv)
-		if err := ydbsecret.ValidateIdentity(object.Ref); err != nil {
-			return fmt.Errorf("secret %q: %w", key, err)
-		}
-		db.FeatureObjects, err = db.FeatureObjects.With(object)
-		if errors.Is(err, schemaext.ErrDuplicate) {
-			return fmt.Errorf("secret %q: secret %s is declared twice", key, ydbsecret.Display(object.Ref.Schema.Source, name))
-		}
+		db.FeatureObjects, err = ydbsecret.Declare(db.FeatureObjects, string(spec.Schema), valueOrDefault(spec.Name, key), "", valueEnv)
 		if err != nil {
-			return err
+			return fmt.Errorf("secret %q: %w", key, err)
 		}
 	}
 	return nil

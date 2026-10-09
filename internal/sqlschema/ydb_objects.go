@@ -1,12 +1,10 @@
 package sqlschema
 
 import (
-	"errors"
 	"fmt"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -90,9 +88,6 @@ func appendSecret(database *schemamodel.Database, node *ydbast.Secret) error {
 		return fmt.Errorf("%w: only CREATE declares a secret", ErrUnmodeledStatement)
 	}
 	var err error
-	database.FeatureObjects, err = database.FeatureObjects.With(ydbsecret.DesiredObject(node.Schema, node.Name, "", node.ValueEnv))
-	if errors.Is(err, schemaext.ErrDuplicate) {
-		return fmt.Errorf("secret %q is declared twice", node.Path())
-	}
+	database.FeatureObjects, err = ydbsecret.Declare(database.FeatureObjects, node.Schema, node.Name, "", node.ValueEnv)
 	return err
 }

@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -187,4 +188,22 @@ func TestCompare_YDBSecretRotationFailurePath(t *testing.T) {
 			c.Assert(diff, qt.IsNil)
 		})
 	}
+}
+
+// TestCompare_YDBSecretLimitKeepsADottedRootSecret leaves the secret pg.pw at
+// the root alone when the source leaves `pg.pw` unmanaged: the limit names
+// that path, not a secret pw in a directory pg. The rest of the namespace is
+// still described, so a secret only the database holds is dropped.
+func TestCompare_YDBSecretLimitKeepsADottedRootSecret(t *testing.T) {
+	c := qt.New(t)
+	desired, err := goschema.ParseSource("limits.go", "package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\"pg.pw\"\ntype Unmanaged struct{}\n")
+	c.Assert(err, qt.IsNil)
+	held := heldSecrets(ydbsecret.ObservedObject("", "pg.pw"), ydbsecret.ObservedObject("pg", "pw"))
+
+	diff, _, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), &desired, held, &config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: ydbsecret.Ref("pg", "pw"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}},
+	})
 }

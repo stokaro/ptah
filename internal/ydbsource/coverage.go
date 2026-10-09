@@ -134,7 +134,7 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	secrets, err := namespaceCoverage(limits.Secrets, ydbsecret.Kind, schemeIdentity(ydbsecret.Ref), ydbsecret.ValidateIdentity, ydbsecret.Coverage)
+	secrets, err := namespaceCoverage(limits.Secrets, ydbsecret.Kind, secretIdentity, ydbsecret.ValidateIdentity, ydbsecret.Coverage)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
@@ -195,6 +195,14 @@ func namespaceCoverage(limits []string, kind schemaext.Kind,
 		}
 	}
 	return enroll(schemaext.Desired, namespace, subjects)
+}
+
+// secretIdentity reads a secret limit as the secret's path: a slash separates
+// directories and a dot stays in its segment, as in every other spelling of a
+// secret (see [ydbsecret.ParsePath]). `pg.pw` is one secret at the root, never
+// pw in a directory pg.
+func secretIdentity(name string) objectidentity.ID {
+	return ydbsecret.Ref(ydbsecret.SplitPath(name))
 }
 
 // Scheme paths and database-wide workload names have different grammars. A

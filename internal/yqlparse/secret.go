@@ -25,9 +25,6 @@ func (p *parser) secret() *ast.ExtensionStatement {
 	if slash := strings.LastIndex(path, "/"); slash >= 0 {
 		schema, name = path[:slash], path[slash+1:]
 	}
-	if err := ydbsecret.CheckName(name); err != nil {
-		p.failf("%v", err)
-	}
 	if err := ydbsecret.ValidateIdentity(ydbsecret.Ref(schema, name)); err != nil {
 		p.failf("%v", err)
 	}
