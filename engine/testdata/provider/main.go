@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing/fstest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -105,8 +107,11 @@ func verify() error {
 	if err != nil {
 		return err
 	}
-	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec()},
-		Targets: []engine.Target{{Name: "widget", Rendering: service{extensions: handlers}, Validation: service{}, SchemaRendering: service{}, Creations: service{}}}})
+	observed := codec()
+	observed.Representation = schemaext.Observed
+	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec(), observed},
+		Planning: []engine.Planning{{Target: "widget", ParentKinds: []schemaext.Kind{(&widget{}).Kind()}, Service: service{}}},
+		Targets:  []engine.Target{{Name: "widget", Rendering: service{extensions: handlers}, Validation: service{}, SchemaRendering: service{}, Creations: service{}}}})
 	if err != nil {
 		return err
 	}
@@ -158,12 +163,57 @@ func verify() error {
 	if err := verifyCreationProjection(runtime); err != nil {
 		return err
 	}
+	if err := verifyPlanningRefusal(runtime); err != nil {
+		return err
+	}
 	if err := verifyImport(); err != nil {
 		return err
 	}
 	value.Levels[0] = "changed"
 	if original.Levels[0] != "two" {
 		return fmt.Errorf("round trip exposed aliased state")
+	}
+	return nil
+}
+
+func (service) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return featureplan.Result{}, err
+	}
+	for index, table := range request.Tables {
+		if table.Action != "" {
+			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{
+				Problem: schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string((&widget{}).Kind()),
+					Object: table.Subject.String(), Feature: "widget-history", Message: "widget history cannot be reconstructed"},
+				Parent: new(index),
+			}}}, nil
+		}
+	}
+	return featureplan.Result{Complete: true}, nil
+}
+
+func verifyPlanningRefusal(runtime *engine.Runtime) error {
+	semantics := identifier.ForDialect("widget")
+	request := featureplan.Request{Target: "widget", Identifiers: semantics, Tables: []featureplan.Table{{
+		Action: featureplan.DropTable, Subject: objectidentity.NewBuilder(semantics).TableParts("", "items"),
+		Current: schemacapture.TableObservation{Table: catalog.Table{Name: "items"}},
+	}}}
+	result, err := runtime.PlanFeatures(context.Background(), request)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	var transported featureplan.Result
+	if err := json.Unmarshal(data, &transported); err != nil {
+		return err
+	}
+	refused, ok := errors.AsType[*featureplan.RefusalError](transported.Err(request))
+	if !ok || !errors.Is(refused, ptaherr.ErrUnsupportedFeature) || len(transported.Diagnostics) != 1 ||
+		transported.Diagnostics[0].Parent == nil || *transported.Diagnostics[0].Parent != 0 || len(transported.Contributions) != 0 || len(transported.Parents) != 0 {
+		return fmt.Errorf("planning refusal lost provenance or exposed output: %+v", transported)
 	}
 	return nil
 }

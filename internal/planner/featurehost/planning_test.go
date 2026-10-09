@@ -14,10 +14,29 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/internal/planner/featurehost"
 )
+
+func TestHostConvertsCompletedRefusalBeforeLoweringAnyOperation(t *testing.T) {
+	c := qt.New(t)
+	request, _, names := fixture()
+	diagnostics := []featureplan.Diagnostic{{Problem: schemavalidation.Diagnostic{
+		Code: schemavalidation.UnsupportedFeature, Kind: "example.org/host-operation", Message: "cannot preserve attached state",
+	}}}
+	runtime := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) {
+		return featureplan.Result{Complete: true, Diagnostics: diagnostics}, nil
+	}}
+	contributions, err := featurehost.Plan(t.Context(), runtime, request, names)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	var refused *featureplan.RefusalError
+	c.Assert(err, qt.ErrorAs, &refused)
+	c.Assert(refused.Diagnostics(), qt.DeepEquals, diagnostics)
+	c.Assert(contributions, qt.IsNil)
+}
 
 type selectedRuntime struct {
 	*engine.Runtime

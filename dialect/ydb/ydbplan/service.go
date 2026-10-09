@@ -4,6 +4,7 @@ package ydbplan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -13,6 +14,8 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // Service lowers changefeed changes into stream and backing-topic operations.
@@ -29,8 +32,9 @@ type tableChanges struct {
 
 // PlanFeatures validates captured stream state before contributing any operations.
 // A host-selected table rebuild owns its streams; those changes are validated
-// and explicitly accounted for without a second emitter. A failure or canceled
-// context discards the entire result, including already planned tables.
+// and explicitly accounted for without a second emitter. A semantic refusal
+// returns diagnostic data without operations. A failure or canceled context
+// discards the entire result, including already planned tables and diagnostics.
 func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
 	if ctx == nil {
 		return featureplan.Result{}, fmt.Errorf("%w: planning requires a context", schemaext.ErrInvalidValue)
@@ -44,6 +48,20 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 	if !request.Identifiers.Equal(identifier.ForDialect(platform.YDB)) {
 		return featureplan.Result{}, fmt.Errorf("%w: invalid YDB planning identifier semantics", schemaext.ErrInvalidValue)
 	}
+	result, err := planChanges(ctx, request)
+	if canceled := ctx.Err(); canceled != nil {
+		return featureplan.Result{}, canceled
+	}
+	if refused, ok := errors.AsType[*ptaherr.CapabilityError](err); ok && errors.Is(err, ptaherr.ErrUnsupportedFeature) {
+		return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{Problem: schemavalidation.Diagnostic{
+			Code: schemavalidation.UnsupportedFeature, Kind: string(ydbschema.ChangefeedKind),
+			Feature: refused.Feature, Message: refused.Message,
+		}}}}, nil
+	}
+	return result, err
+}
+
+func planChanges(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
 	parents, err := planParents(request)
 	if err != nil {
 		return featureplan.Result{}, err

@@ -116,8 +116,13 @@ func TestServiceRefusesUnknownOrContradictoryCapturedState(t *testing.T) {
 			request := planningRequest(c)
 			test.edit(&request)
 			result, err := (ydbplan.Service{}).PlanFeatures(t.Context(), request)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(result, qt.DeepEquals, featureplan.Result{})
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(result.Complete, qt.IsTrue)
+			c.Assert(result.Diagnostics, qt.HasLen, 1)
+			c.Assert(result.Contributions, qt.HasLen, 0)
+			c.Assert(result.Changes, qt.HasLen, 0)
+			c.Assert(result.Parents, qt.HasLen, 0)
 		})
 	}
 }

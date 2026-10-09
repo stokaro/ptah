@@ -35,8 +35,8 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !result.Complete {
-		return nil, fmt.Errorf("%w: planning did not complete", schemaext.ErrInvalidValue)
+	if err := result.Err(request); err != nil {
+		return nil, err
 	}
 	contributions := make([]plangraph.Contribution[[]ast.Node], len(result.Contributions))
 	for i, feature := range result.Contributions {

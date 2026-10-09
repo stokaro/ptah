@@ -95,24 +95,28 @@ type ChangePlan struct {
 	Steps    []plangraph.StepID
 }
 
-// Result is an owner's complete reply, with one ChangePlan per input in input
-// order. Dependencies may name steps supplied by other owners. The caller must
-// schedule the complete graph before using any payload. A reply alone is not an
-// executable plan; missing external dependencies remain a graph error.
+// Result is an owner's complete reply. A successful reply has one ChangePlan per
+// input in input order. Dependencies may name steps supplied by other owners.
+// The caller must schedule the complete graph before using any payload. A reply
+// alone is not an executable plan; missing external dependencies remain a graph error.
 type Result struct {
-	// Complete confirms that every requested change and parent assessment ran.
-	// The zero result is never a successful no-op.
+	// Complete confirms a completed decision for the whole batch, including a
+	// refusal. The zero result is never a successful no-op.
 	Complete      bool
 	Contributions []plangraph.Contribution[Operation]
 	Changes       []ChangePlan
 	// Parents accounts for every table with an Action, in table order, and
 	// every assigned ParentKind, in kind order. Missing receipts are errors.
 	Parents []ParentPlan
+	// Diagnostics describes a completed refusal. A refused batch carries no
+	// contributions or change/parent receipts, including a successful prefix.
+	Diagnostics []Diagnostic
 }
 
 // Service plans a complete batch without mutating its inputs or performing I/O.
-// It is safe for concurrent calls and honors cancellation. Errors discard all
-// results, including any operations returned alongside the error.
+// Semantic refusals are diagnostics in a complete result. Errors mean planning
+// could not be performed and discard all results. Implementations are safe for
+// concurrent calls and honor cancellation.
 type Service interface {
 	PlanFeatures(context.Context, Request) (Result, error)
 }

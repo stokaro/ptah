@@ -358,6 +358,9 @@ Planning uses its feature services and renderer; a service failure or cancellati
 returns no usable SQL prefix. `core/featureplan` defines the contextual planning
 batch for provider implementations. Owners receive typed changes, captured parent
 state, identifier rules, and target capabilities without opening a database.
+Completed refusals carry structured diagnostics without operations. The host
+converts them to `featureplan.RefusalError` before lowering the plan. Provider
+failures and cancellation return no diagnostics or operations.
 
 Pass that context and runtime to `safety.AssessRendered` or
 `AssessRenderedWithCapabilities` as well. Safety renders the assessment units
