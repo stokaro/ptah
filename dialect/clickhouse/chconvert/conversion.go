@@ -1,4 +1,4 @@
-// Package chconvert projects ClickHouse table settings between desired and
+// Package chconvert projects ClickHouse storage settings between desired and
 // observed representations. Target default resolution belongs to preparation.
 package chconvert
 
@@ -11,7 +11,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 )
 
-// Service preserves every observed table property when reconstructing a
+// Service preserves observed table and skipping-index properties when reconstructing a
 // declaration. Projection to observed state requires fully explicit intent;
 // unresolved settings cannot become claims about an inspected database.
 type Service struct{}
@@ -37,7 +37,7 @@ func (Service) ConvertFeatures(ctx context.Context, request schemaext.Conversion
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		converted, err := convertTable(request.From, value)
+		converted, err := convertValue(request.From, value)
 		if err != nil {
 			return nil, err
 		}
@@ -49,24 +49,29 @@ func (Service) ConvertFeatures(ctx context.Context, request schemaext.Conversion
 	return result, nil
 }
 
-func convertTable(from schemaext.Representation, value schemaext.Value) (schemaext.Value, error) {
+func convertValue(from schemaext.Representation, value schemaext.Value) (schemaext.Value, error) {
 	if from == schemaext.Desired {
-		v, ok := value.(*chschema.DesiredTable)
-		if !ok {
-			return nil, fmt.Errorf("%w: expected a desired ClickHouse table, got %T", schemaext.ErrInvalidValue, value)
+		switch v := value.(type) {
+		case *chschema.DesiredTable:
+			return v.Observed()
+		case *chschema.DesiredIndex:
+			return v.Observed()
+		default:
+			return nil, fmt.Errorf("%w: expected desired ClickHouse storage settings, got %T", schemaext.ErrInvalidValue, value)
 		}
-		observed, err := v.Observed()
-		if err != nil {
+	}
+	switch v := value.(type) {
+	case *chschema.ObservedTable:
+		if err := chschema.ValidateObserved(v); err != nil {
 			return nil, err
 		}
-		return observed, nil
+		return v.Desired(), nil
+	case *chschema.ObservedIndex:
+		if err := chschema.ValidateObservedIndex(v); err != nil {
+			return nil, err
+		}
+		return v.Desired(), nil
+	default:
+		return nil, fmt.Errorf("%w: expected observed ClickHouse storage settings, got %T", schemaext.ErrInvalidValue, value)
 	}
-	v, ok := value.(*chschema.ObservedTable)
-	if !ok {
-		return nil, fmt.Errorf("%w: expected an observed ClickHouse table, got %T", schemaext.ErrInvalidValue, value)
-	}
-	if err := chschema.ValidateObserved(v); err != nil {
-		return nil, err
-	}
-	return v.Desired(), nil
 }

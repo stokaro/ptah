@@ -2,12 +2,14 @@ package schemadiff
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -79,16 +81,30 @@ func applyResolvedFacets(desired *schemamodel.Database, prepared map[objectident
 ) (*schemamodel.Database, error) {
 	resolved := *desired
 	resolved.Tables = slices.Clone(desired.Tables)
-	for i := range resolved.Tables {
-		table := &resolved.Tables[i]
-		values, err := prepared[tableidentity.Subject(table.Schema, table.Name, target, semantics).Key()].ResolvedFacets.Values()
-		if err != nil {
-			return nil, err
-		}
-		for _, value := range values {
-			table.Facets, err = table.Facets.Replace(value)
+	resolved.Indexes = slices.Clone(desired.Indexes)
+	declared, err := declaredFacetSlots(&resolved, target, semantics)
+	if err != nil {
+		return nil, err
+	}
+	slots := make(map[objectidentity.Key]*schemaext.Facets)
+	for _, slot := range declared {
+		slots[slot.subject.Key()] = slot.values
+	}
+	for _, table := range prepared {
+		for _, record := range table.ResolvedFacets {
+			facets, found := slots[record.Subject.Key()]
+			if !found {
+				return nil, fmt.Errorf("%w: resolved facets have no declared owner %s", ptaherr.ErrInvalidSchemaDiff, record.Subject)
+			}
+			values, err := record.Values.Values()
 			if err != nil {
 				return nil, err
+			}
+			for _, value := range values {
+				*facets, err = facets.Replace(value)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

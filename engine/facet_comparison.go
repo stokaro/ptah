@@ -19,12 +19,18 @@ type FacetComparison struct {
 	Kinds       []schemaext.Kind
 	ChangeKinds []schemaext.Kind
 	Service     schemaext.FacetComparisonService
+	// OwnerKinds declares the common object kinds these models attach to.
+	// It is required even for a service that accepts only table owners.
+	OwnerKinds []objectidentity.Kind
 }
 
 func (r *Runtime) registerFacetComparison(owner string, declaration FacetComparison) error {
 	target, found := r.targets[declaration.Target]
 	if !found || target.name != declaration.Target || len(declaration.Kinds) == 0 || len(declaration.ChangeKinds) == 0 || declaration.Service == nil || nilService(declaration.Service) {
 		return fmt.Errorf("%w: incomplete facet comparison for %q", ErrInvalidRegistration, declaration.Target)
+	}
+	if err := validateFacetOwnerKinds(declaration.OwnerKinds); err != nil {
+		return err
 	}
 	for _, kind := range declaration.Kinds {
 		if !r.ownsCodec(owner, kind, schemaext.Desired) || !r.ownsCodec(owner, kind, schemaext.Observed) {
@@ -48,6 +54,7 @@ func (r *Runtime) registerFacetComparison(owner string, declaration FacetCompari
 	}
 	declaration.Kinds = slices.Clone(declaration.Kinds)
 	declaration.ChangeKinds = slices.Clone(declaration.ChangeKinds)
+	declaration.OwnerKinds = slices.Clone(declaration.OwnerKinds)
 	r.facetServices = append(r.facetServices, declaration)
 	return nil
 }
@@ -80,6 +87,12 @@ func (r *Runtime) CompareFacets(ctx context.Context, request schemaext.FacetComp
 		batch := request
 		batch.Kinds = kinds
 		batch.Desired, batch.Current = selectFacetState(request.Desired, kinds), selectFacetState(request.Current, kinds)
+		var retained schemaext.FacetState
+		batch, retained = selectFacetOwners(batch, r.facetServices[service].OwnerKinds)
+		result.Desired, err = mergeFacetStates(result.Desired, retained)
+		if err != nil {
+			return schemaext.FacetComparisonResult{}, err
+		}
 		sent, err := r.snapshotFacetComparison(ctx, batch)
 		if err != nil {
 			return schemaext.FacetComparisonResult{}, err
@@ -114,7 +127,7 @@ func (r *Runtime) snapshotFacetComparison(ctx context.Context, request schemaext
 	if err != nil {
 		return schemaext.FacetComparisonRequest{}, err
 	}
-	request, err = scopeFacetComparison(request, target)
+	request, err = r.scopeFacetComparison(request, target)
 	if err != nil {
 		return schemaext.FacetComparisonRequest{}, err
 	}
@@ -139,6 +152,9 @@ func (r *Runtime) snapshotFacetComparison(ctx context.Context, request schemaext
 	}
 	slices.SortFunc(request.Owners, func(a, b schemaext.ParentState) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
 	if err := facetInputSubjects(request); err != nil {
+		return schemaext.FacetComparisonRequest{}, err
+	}
+	if err := r.facetInputOwnerKinds(request); err != nil {
 		return schemaext.FacetComparisonRequest{}, err
 	}
 	return request, nil
@@ -175,7 +191,7 @@ func (r *Runtime) facetComparisonBatches(request schemaext.FacetComparisonReques
 		if !kind.Valid() || kinds[kind] {
 			return nil, nil, fmt.Errorf("%w: invalid or duplicate facet comparison kind %q", schemaext.ErrInvalidValue, kind)
 		}
-		kinds[kind], required[kind] = true, !facetKindExcluded(request, kind)
+		kinds[kind], required[kind] = true, !r.facetKindExcluded(request, kind)
 	}
 	for _, state := range []schemaext.FacetState{request.Desired, request.Current} {
 		for _, record := range state.Records {
@@ -191,7 +207,7 @@ func (r *Runtime) facetComparisonBatches(request schemaext.FacetComparisonReques
 	batches := make([][]schemaext.Kind, len(r.facetServices))
 	var inactive []schemaext.Kind
 	for _, kind := range slices.Sorted(maps.Keys(kinds)) {
-		if facetKindExcluded(request, kind) {
+		if r.facetKindExcluded(request, kind) {
 			inactive = append(inactive, kind)
 			continue
 		}

@@ -381,8 +381,11 @@ to the selected target; its knowledge remains unchanged without a handler.
 Concrete values, explicit defaults, and subject limitations require a handler.
 
 `Provider.FacetComparisons` assigns attached model kinds and their change codecs
-to a contextual comparison service. `Runtime.CompareFacets` uses the common
-owner's identity and lifecycle. Several models may attach to one owner, but a
+to a contextual comparison service. Each registration must declare its common
+object kinds in `OwnerKinds`. The runtime captures that list and sends only those
+owners, including owners without concrete facet values. Values and subject
+coverage attached to the wrong kind fail before any comparison service runs.
+`Runtime.CompareFacets` uses the common owner's identity and lifecycle. Several models may attach to one owner, but a
 model cannot also be registered as a named object on the same target. Replies
 must set `Complete`, retain explicit declarations, and preserve source knowledge.
 A change requires declared intent and observed state; an explicit subject limit
@@ -403,14 +406,16 @@ retains its actual settings for rebuild and reversal.
 both input surfaces before dispatch and returns no result if either fails.
 Installing a provider never enrolls its models in a captured source. The
 migration comparator consumes this combined service through
-`schemapreparation.Runtime`. It captures table facets on both sides, applies
-effective desired settings before common table captures, and attaches changes
-to the table diff. Non-table facets currently refuse because their comparison
-identity capture is not implemented. A successful runtime reply sets `Complete`;
+`schemapreparation.Runtime`. It captures table and index facets on both sides and
+applies effective desired settings before common table captures. Index identities
+follow the selected table or schema namespace. Table-owned changes attach to the
+table diff; schema-scoped index changes use the schema diff. Other attachment
+points currently refuse because their comparison identity capture is not
+implemented. A successful runtime reply sets `Complete`;
 undecided diagnostics remain distinct from operational failures.
 
-Before table preparation, comparison binds table coverage claims to the same
-identifier semantics and default database as common tables. Explicit schemas
+Before table preparation, comparison binds table and index coverage claims to the
+same identifier semantics and default database as their common owners. Explicit schemas
 remain explicit. Binding preserves source knowledge, refuses identity collisions,
 and leaves the source snapshots unchanged.
 
@@ -570,6 +575,16 @@ refuses unresolved settings. This projection records a prediction, not a new
 database observation. Invalid model values return `schemaext.InvalidModelError`,
 which identifies the kind and representation and wraps `ErrInvalidValue`.
 
+`chschema.IndexCodecs()` handles data-skipping facets under `IndexKind`.
+`DesiredIndex` retains type and granularity intent; key expressions remain in
+the common index parts.
+`ObservedIndex` requires a nonempty type and positive granularity. Integer
+values retain their full precision through the codecs. `ObservedIndex.Desired`
+makes settings explicit, while `DesiredIndex.Observed` refuses unresolved
+settings. Null, duplicate or unknown fields, and invalid intent are refused.
+Registering these codecs establishes model understanding without granting
+target support or inspection completeness.
+
 The bundled runtime registers the table model, preparation, conversion, and
 comparison.
 Programmatically supplied desired facets render through the schema API and new
@@ -637,10 +652,19 @@ before supplying that observation. Missing evidence required by an omitted
 setting returns `ErrUnknownCurrent` without a partial result. Resolution does
 not establish server support or a new observation.
 
-`chconvert.Service` projects complete observed settings into explicit declarations
-and fully resolved declarations into predicted observations. It preserves empty
-properties and separate sorting and primary keys. Unresolved settings, invalid
-inputs, and cancellation return no partial batch. The migration generator uses
+`chresolve.Index` applies the same separation to skipping-index settings.
+`IndexRequest` accepts captured settings or established creation intent;
+`IndexResult` retains the declaration, prepared values, and `IndexOrigins`.
+Omitted creation settings and explicit default requests select Ptah's `minmax`
+type and granularity `1`. These rules do not describe server configuration.
+Existing indexes retain usable observations for omitted settings. Key expressions
+remain in the common index, and unknown required settings return `ErrUnknownCurrent`.
+
+`chconvert.Service` projects complete table and index observations into explicit
+declarations and fully resolved declarations into predicted observations. It
+preserves empty table properties, separate sorting and primary keys, and unsigned
+64-bit index granularity. Unresolved settings, invalid inputs, and cancellation
+return no partial batch, including mixed table and index batches. The migration generator uses
 this conversion to capture the table that a reverse DROP removes; the prediction
 does not replace a catalog read.
 
@@ -691,31 +715,40 @@ Planning changes to storage settings other than TTL remains part of
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register
 `schemapreparation.Identity` explicitly. The service may resolve desired column
-primary-key flags and mark them prepared. `ResolvedFacets` carries separate
-resolved values for declared table models owned by the target provider. Source
-facets, target bindings, observations, and knowledge stay unchanged. The runtime
-validates ownership and codecs before feature and common comparison consume
-resolved values. Incomplete or invalid replies and cancellation return no result.
+primary-key flags and mark them prepared. `ResolvedFacets` contains
+`schemaext.FacetRecord` values keyed by declared table or index identities.
+The runtime rejects duplicate or invented owners, undeclared kinds, and new
+target scopes. Source facets, target bindings, observations, and knowledge stay
+unchanged. The runtime validates ownership and snapshots values through codecs
+before comparison. Incomplete or invalid replies and cancellation return no result.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for offline
 source projection. It receives decoded table captures and returns a complete
-ordered batch of computed facets and column key membership. Computed facets use
-the desired representation for subsequent owner conversion; they may describe
-creation defaults absent from the source. They cannot restore an excluded kind
-or change a source binding. The runtime validates identities, keys, model
-ownership, and codecs. Missing services, partial replies, errors, and cancellation
+ordered batch of computed facets and column key membership. `TableCreation.Facets`
+contains `schemaext.FacetRecord` values keyed by the captured table or index.
+Computed facets use the desired representation for subsequent owner conversion;
+they may describe creation defaults absent from the source. Duplicate or invented
+owners, changed identity spelling, excluded kinds, and new bindings are refused.
+The runtime validates keys, model ownership, and codecs. Missing services, partial replies, errors, and cancellation
 return no prediction. `IdentityCreations` explicitly selects no additional effects.
 
 Document projection preserves explicit source knowledge limits. New computed
 kinds are bound to the selected target and gain coverage only for their captured
-tables. The source declaration stays unchanged. `CompareSchemas` requires
+owners; sibling objects remain uninspected. The source declaration stays unchanged. `CompareSchemas` requires
 `schemadiff.DocumentRuntime`; it predicts the current document before comparison.
 Column-only changes use representation conversion without applying table
 creation defaults.
 
 `chprepare.Service` derives column membership from ClickHouse key expressions.
-Typed settings use `chresolve.Table` and require complete feature coverage before
-retaining observed values. The shared comparator consumes prepared column flags
+Table settings use `chresolve.Table` and require complete feature coverage before
+retaining observed values. Typed index settings use `chresolve.Index`. Captured
+index settings remain usable when sibling enumeration is incomplete; an explicit
+limit on that index takes precedence. Native index settings must be decoded into
+facets before preparation, without competing common type or granularity values.
+CREATE prediction resolves typed index facets independently of table-facet
+exclusions. Key expressions stay in common index fields and parts.
+
+The shared comparator consumes prepared column flags
 without reading ClickHouse clauses. Tables sharing a Go struct retain separate
 captures. `SchemaDiff.TablePreparation` stores source and prepared captures;
 filtering, cloning, and reversal preserve independent copies of this provenance.

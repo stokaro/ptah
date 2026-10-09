@@ -15,7 +15,7 @@ import (
 
 func facetPreparation() engine.Provider {
 	provider := preparationProvider(preparationFunc(func(_ context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
-		request.Tables[0].ResolvedFacets = must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst, Number: 2}))
+		request.Tables[0].ResolvedFacets = []schemaext.FacetRecord{{Subject: request.Tables[0].Subject, Values: must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst, Number: 2}))}}
 		return schemapreparation.Result{Complete: true, Tables: request.Tables}, nil
 	}))
 	provider.Codecs = []schemaext.Codec{conversionCodec(conversionFirst, schemaext.Desired)}
@@ -35,7 +35,7 @@ func TestPreparationResolvesOnlyItsOwnModels(t *testing.T) {
 	runtime := mustRuntime(c, provider)
 	result, err := runtime.PrepareTables(t.Context(), source)
 	c.Assert(err, qt.IsNil)
-	resolved, found, err := schemaext.FacetAs[*conversionValue](result.Tables[0].ResolvedFacets, conversionFirst)
+	resolved, found, err := schemaext.FacetAs[*conversionValue](result.Tables[0].ResolvedFacets[0].Values, conversionFirst)
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
 	c.Assert(resolved.Number, qt.Equals, 2)
@@ -79,7 +79,7 @@ func TestPreparationRefusesResolvedInputBeforeDispatch(t *testing.T) {
 	})
 	runtime := mustRuntime(c, provider)
 	request := facetPreparationRequest()
-	request.Tables[0].ResolvedFacets = request.Tables[0].Desired.Table.Facets
+	request.Tables[0].ResolvedFacets = []schemaext.FacetRecord{{Subject: request.Tables[0].Subject, Values: request.Tables[0].Desired.Table.Facets}}
 	result, err := runtime.PrepareTables(t.Context(), request)
 	c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
 	c.Assert(result, qt.DeepEquals, schemapreparation.Result{})

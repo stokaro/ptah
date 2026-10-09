@@ -44,14 +44,16 @@ func (r *Runtime) ProjectTableCreations(ctx context.Context, request schemaproje
 		return schemaprojection.TableCreationResult{}, err
 	}
 	for i := range result.Tables {
-		for _, kind := range result.Tables[i].Facets.Kinds() {
-			if !r.ownsCodec(selected.owner, kind, schemaext.Desired) {
-				return schemaprojection.TableCreationResult{}, fmt.Errorf("%w: creation projection returned a model outside its owner: %q", schemaprojection.ErrInvalid, kind)
+		for j, record := range result.Tables[i].Facets {
+			for _, kind := range record.Values.Kinds() {
+				if !r.ownsCodec(selected.owner, kind, schemaext.Desired) {
+					return schemaprojection.TableCreationResult{}, fmt.Errorf("%w: creation projection returned a model outside its owner: %q", schemaprojection.ErrInvalid, kind)
+				}
 			}
-		}
-		result.Tables[i].Facets, err = r.codecs.SnapshotFacets(ctx, schemaext.Desired, result.Tables[i].Facets)
-		if err != nil {
-			return schemaprojection.TableCreationResult{}, err
+			result.Tables[i].Facets[j].Values, err = r.codecs.SnapshotFacets(ctx, schemaext.Desired, record.Values)
+			if err != nil {
+				return schemaprojection.TableCreationResult{}, err
+			}
 		}
 	}
 	if err := ctx.Err(); err != nil {

@@ -26,3 +26,23 @@ func ExampleTable() {
 	// tenant, id
 	// observation creation-rule
 }
+
+// ExampleIndex retains an inspected type while resolving an explicit granularity
+// default. The original request remains distinct from the prepared settings.
+func ExampleIndex() {
+	result, err := chresolve.Index(chresolve.IndexRequest{
+		Desired: &chschema.DesiredIndex{Granularity: chschema.GranularitySetting{State: chschema.Default}},
+		Current: &chschema.ObservedIndex{IndexType: "bloom_filter(0.01)", Granularity: 4},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(result.Declared.Granularity.State)
+	fmt.Println(result.Prepared.IndexType.Value, result.Prepared.Granularity.Value)
+	fmt.Println(result.Origins.IndexType, result.Origins.Granularity)
+	// Output:
+	// default
+	// bloom_filter(0.01) 1
+	// observation creation-rule
+}

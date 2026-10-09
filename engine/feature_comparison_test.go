@@ -16,7 +16,7 @@ import (
 func combinedProvider(objects schemaext.ObjectComparisonService, facets schemaext.FacetComparisonService) engine.Provider {
 	provider := comparisonProvider(objects)
 	provider.Comparisons[0].Kinds = []schemaext.Kind{conversionFirst}
-	provider.FacetComparisons = []engine.FacetComparison{{Target: "custom", Kinds: []schemaext.Kind{conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: facets}}
+	provider.FacetComparisons = []engine.FacetComparison{{Target: "custom", OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: []schemaext.Kind{conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: facets}}
 	return provider
 }
 

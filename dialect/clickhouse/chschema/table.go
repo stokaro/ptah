@@ -1,4 +1,4 @@
-// Package chschema owns ClickHouse table settings and their desired and observed
+// Package chschema owns ClickHouse storage settings and their desired and observed
 // representations. It contains no provider selection, database access, or DDL.
 package chschema
 

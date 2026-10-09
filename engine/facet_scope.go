@@ -9,7 +9,7 @@ import (
 // Scope precedes codec validation on both sides. Otherwise an excluded foreign
 // model still needs its implementation, or complete coverage turns it into a
 // removal request. The retained binding makes repeated selection idempotent.
-func scopeFacetComparison(request schemaext.FacetComparisonRequest, target schemaext.TargetSelection) (schemaext.FacetComparisonRequest, error) {
+func (r *Runtime) scopeFacetComparison(request schemaext.FacetComparisonRequest, target schemaext.TargetSelection) (schemaext.FacetComparisonRequest, error) {
 	request.Desired.Records = slices.Clone(request.Desired.Records)
 	for i, record := range request.Desired.Records {
 		projected, err := record.Values.ForTarget(target)
@@ -28,23 +28,23 @@ func scopeFacetComparison(request schemaext.FacetComparisonRequest, target schem
 		request.Current.Records[i] = record
 	}
 	var err error
-	request.Desired.Coverage, err = selectedFacetCoverage(request, request.Desired.Coverage)
+	request.Desired.Coverage, err = r.selectedFacetCoverage(request, request.Desired.Coverage)
 	if err != nil {
 		return schemaext.FacetComparisonRequest{}, err
 	}
-	request.Current.Coverage, err = selectedFacetCoverage(request, request.Current.Coverage)
+	request.Current.Coverage, err = r.selectedFacetCoverage(request, request.Current.Coverage)
 	if err != nil {
 		return schemaext.FacetComparisonRequest{}, err
 	}
 	return request, nil
 }
 
-func selectedFacetCoverage(request schemaext.FacetComparisonRequest, coverage schemaext.Coverage) (schemaext.Coverage, error) {
+func (r *Runtime) selectedFacetCoverage(request schemaext.FacetComparisonRequest, coverage schemaext.Coverage) (schemaext.Coverage, error) {
 	if coverage.IsZero() {
 		return coverage, nil
 	}
 	kinds := slices.DeleteFunc(coverage.KindRecords(), func(record schemaext.KindCoverage) bool {
-		return facetKindExcluded(request, record.Model.Kind)
+		return r.facetKindExcluded(request, record.Model.Kind)
 	})
 	subjects := slices.DeleteFunc(coverage.SubjectRecords(), func(record schemaext.SubjectCoverage) bool {
 		return !request.Includes(record.Kind, record.Subject)
@@ -52,8 +52,12 @@ func selectedFacetCoverage(request schemaext.FacetComparisonRequest, coverage sc
 	return schemaext.NewCoverage(coverage.Representation(), kinds, subjects)
 }
 
-func facetKindExcluded(request schemaext.FacetComparisonRequest, kind schemaext.Kind) bool {
-	return len(request.Owners) != 0 && !slices.ContainsFunc(request.Owners, func(owner schemaext.ParentState) bool {
+func (r *Runtime) facetKindExcluded(request schemaext.FacetComparisonRequest, kind schemaext.Kind) bool {
+	owners := request.Owners
+	if service, found := r.facetComparisons[conversionKey{target: request.Target, kind: kind}]; found {
+		owners = facetOwnersOfKinds(owners, r.facetServices[service].OwnerKinds)
+	}
+	return len(owners) != 0 && !slices.ContainsFunc(owners, func(owner schemaext.ParentState) bool {
 		return request.Includes(kind, owner.Subject)
 	})
 }

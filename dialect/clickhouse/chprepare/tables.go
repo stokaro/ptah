@@ -1,4 +1,4 @@
-// Package chprepare resolves ClickHouse table settings and column key membership
+// Package chprepare resolves ClickHouse storage settings and column key membership
 // before shared comparison. Key clauses belong to the dialect, not to the common
 // comparator.
 package chprepare
@@ -17,7 +17,7 @@ import (
 	"ptah.run/dialect/clickhouse/internal/chkey"
 )
 
-// Service resolves typed table settings and desired column primary-key flags.
+// Service resolves typed table/index settings and desired column primary-key flags.
 // It keeps declared facets and all observed state unchanged. The zero value is
 // usable and safe for concurrent calls; no live server is consulted.
 type Service struct{}
@@ -38,7 +38,13 @@ func (Service) PrepareTables(ctx context.Context, request schemapreparation.Requ
 	}
 	request = request.Clone()
 	for i := range request.Tables {
+		if len(request.Tables[i].ResolvedFacets) != 0 {
+			return schemapreparation.Result{}, fmt.Errorf("%w: preparation input already carries resolved facets", schemapreparation.ErrInvalid)
+		}
 		if err := prepareTable(&request.Tables[i]); err != nil {
+			return schemapreparation.Result{}, err
+		}
+		if err := prepareIndexes(&request.Tables[i], request.Identifiers); err != nil {
 			return schemapreparation.Result{}, err
 		}
 	}
@@ -76,10 +82,11 @@ func prepareTable(table *schemapreparation.Table) error {
 		if err != nil {
 			return err
 		}
-		table.ResolvedFacets, err = schemaext.NewFacets(&resolved.Prepared)
+		facets, err := schemaext.NewFacets(&resolved.Prepared)
 		if err != nil {
 			return err
 		}
+		table.ResolvedFacets = append(table.ResolvedFacets, schemaext.FacetRecord{Subject: table.Subject, Values: facets})
 		keys, declared = chkey.ReferencedColumns(resolved.Prepared.PrimaryKey.Value, names), true
 	}
 	if !declared {

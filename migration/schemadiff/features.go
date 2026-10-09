@@ -69,22 +69,26 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 }
 
 func featureParents(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) ([]schemaext.ParentState, error) {
+	declared, err := declaredFacetSlots(desired, target, semantics)
+	if err != nil {
+		return nil, err
+	}
 	parents := make(map[objectidentity.Key]schemaext.ParentState)
-	for _, table := range desired.Tables {
-		ref := tableidentity.Subject(table.Schema, table.Name, target, semantics)
+	for _, slot := range declared {
+		ref := slot.subject
 		if ref.Name.Source == "" || ref.Name.Normalized == "" {
-			return nil, &RefusalError{cause: fmt.Errorf("%w: desired table requires a name", ptaherr.ErrInvalidSchemaDiff)}
+			return nil, &RefusalError{cause: fmt.Errorf("%w: desired %s requires a name", ptaherr.ErrInvalidSchemaDiff, ref.Kind)}
 		}
 		if parents[ref.Key()].Desired {
-			return nil, fmt.Errorf("%w: duplicate desired table identity %s", ptaherr.ErrInvalidSchemaDiff, ref)
+			return nil, fmt.Errorf("%w: duplicate desired owner identity %s", ptaherr.ErrInvalidSchemaDiff, ref)
 		}
 		parents[ref.Key()] = schemaext.ParentState{Subject: ref, Desired: true}
 	}
-	for _, table := range current.Tables {
-		ref := tableidentity.Subject(table.Schema, table.Name, target, semantics)
+	for _, slot := range observedFacetSlots(current, target, semantics) {
+		ref := slot.subject
 		parent, found := parents[ref.Key()]
 		if parent.Current {
-			return nil, fmt.Errorf("%w: duplicate current table identity %s", ptaherr.ErrInvalidSchemaDiff, ref)
+			return nil, fmt.Errorf("%w: duplicate current owner identity %s", ptaherr.ErrInvalidSchemaDiff, ref)
 		}
 		if !found {
 			parent.Subject = ref

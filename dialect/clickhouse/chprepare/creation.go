@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"slices"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemaprojection"
@@ -36,6 +38,11 @@ func (Service) ProjectTableCreations(ctx context.Context, request schemaprojecti
 		if err != nil {
 			return schemaprojection.TableCreationResult{}, err
 		}
+		indexes, err := projectIndexCreations(table, request.Identifiers)
+		if err != nil {
+			return schemaprojection.TableCreationResult{}, err
+		}
+		prediction.Facets = append(prediction.Facets, indexes...)
 		result.Tables = append(result.Tables, prediction)
 	}
 	if err := ctx.Err(); err != nil {
@@ -66,10 +73,11 @@ func projectCreation(input schemaprojection.TableCreationInput) (schemaprojectio
 	if err != nil {
 		return schemaprojection.TableCreation{}, err
 	}
-	result.Facets, err = schemaext.NewFacets(&resolved.Prepared)
+	facets, err := schemaext.NewFacets(&resolved.Prepared)
 	if err != nil {
 		return schemaprojection.TableCreation{}, err
 	}
+	result.Facets = []schemaext.FacetRecord{{Subject: input.Subject, Values: facets}}
 	names := make([]string, 0, len(declaration.Fields))
 	for _, field := range declaration.Fields {
 		names = append(names, field.Name)
@@ -82,4 +90,30 @@ func projectCreation(input schemaprojection.TableCreationInput) (schemaprojectio
 	}
 	result.ColumnPrimaryKeysPrepared = true
 	return result, nil
+}
+
+func projectIndexCreations(input schemaprojection.TableCreationInput, semantics identifier.Semantics) ([]schemaext.FacetRecord, error) {
+	var records []schemaext.FacetRecord
+	builder := objectidentity.NewBuilder(semantics)
+	for _, index := range input.Declaration.Indexes {
+		value, err := declaredIndexSettings(index)
+		if err != nil {
+			return nil, err
+		}
+		if value == nil {
+			continue
+		}
+		resolved, err := chresolve.Index(chresolve.IndexRequest{Desired: value, Creating: true})
+		if err != nil {
+			return nil, err
+		}
+		facets, err := schemaext.NewFacets(&resolved.Prepared)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, schemaext.FacetRecord{
+			Subject: builder.IndexParts(input.Subject.Schema.Source, input.Subject.Name.Source, index.Name), Values: facets,
+		})
+	}
+	return records, nil
 }

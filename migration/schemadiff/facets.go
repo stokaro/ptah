@@ -10,34 +10,34 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/internal/tableidentity"
 )
 
 func captureFeatureStates(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) (declared, observed schemaext.FeatureState, err error) {
 	declared = schemaext.FeatureState{Objects: desired.FeatureObjects, Coverage: desired.FeatureCoverage}
 	observed = schemaext.FeatureState{Objects: current.FeatureObjects, Coverage: current.FeatureCoverage}
-	// Table identity is shared with named child comparison and common changes.
 	// Other attachment points require their own identity capture before they can
 	// participate. Refuse them here so no attached value silently disappears.
+	declaredSlots, err := declaredFacetSlots(desired, target, semantics)
+	if err != nil {
+		return schemaext.FeatureState{}, schemaext.FeatureState{}, err
+	}
 	captured := make(map[*schemaext.Facets]bool)
-	for i := range desired.Tables {
-		table := &desired.Tables[i]
-		captured[&table.Facets] = true
-		if !table.Facets.IsZero() {
-			declared.Facets = append(declared.Facets, schemaext.FacetRecord{Subject: tableidentity.Subject(table.Schema, table.Name, target, semantics), Values: table.Facets})
+	for _, slot := range declaredSlots {
+		captured[slot.values] = true
+		if !slot.values.IsZero() {
+			declared.Facets = append(declared.Facets, schemaext.FacetRecord{Subject: slot.subject, Values: *slot.values})
 		}
 	}
-	for i := range current.Tables {
-		table := &current.Tables[i]
-		captured[&table.Facets] = true
-		if !table.Facets.IsZero() {
-			observed.Facets = append(observed.Facets, schemaext.FacetRecord{Subject: tableidentity.Subject(table.Schema, table.Name, target, semantics), Values: table.Facets})
+	for _, slot := range observedFacetSlots(current, target, semantics) {
+		captured[slot.values] = true
+		if !slot.values.IsZero() {
+			observed.Facets = append(observed.Facets, schemaext.FacetRecord{Subject: slot.subject, Values: *slot.values})
 		}
 	}
 	for _, slots := range [][]*schemaext.Facets{desired.FacetSlots(), current.FacetSlots()} {
 		for _, slot := range slots {
 			if !captured[slot] && !slot.IsZero() {
-				return schemaext.FeatureState{}, schemaext.FeatureState{}, fmt.Errorf("%w: no comparison identity capture for non-table facets %v", ptaherr.ErrUnsupportedFeature, slot.Kinds())
+				return schemaext.FeatureState{}, schemaext.FeatureState{}, fmt.Errorf("%w: no comparison identity capture for attached facets %v", ptaherr.ErrUnsupportedFeature, slot.Kinds())
 			}
 		}
 	}
@@ -48,21 +48,28 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 	effective := *desired
 	effective.FeatureObjects, effective.FeatureCoverage = state.Objects, state.Coverage
 	effective.Tables = slices.Clone(desired.Tables)
-	positions := make(map[objectidentity.Key]int, len(effective.Tables))
-	for i := range effective.Tables {
-		table := &effective.Tables[i]
-		positions[tableidentity.Subject(table.Schema, table.Name, target, semantics).Key()] = i
-		table.Facets = schemaext.Facets{}
+	effective.Indexes = slices.Clone(desired.Indexes)
+	declared, err := declaredFacetSlots(&effective, target, semantics)
+	if err != nil {
+		return nil, err
+	}
+	positions := make(map[objectidentity.Key]*schemaext.Facets)
+	for _, slot := range declared {
+		if _, duplicate := positions[slot.subject.Key()]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate facet owner %s", ptaherr.ErrInvalidSchemaDiff, slot.subject)
+		}
+		positions[slot.subject.Key()] = slot.values
+		*slot.values = schemaext.Facets{}
 	}
 	seen := make(map[objectidentity.Key]bool)
 	for _, record := range state.Facets {
 		key := record.Subject.Key()
-		i, found := positions[key]
+		values, found := positions[key]
 		if !found || seen[key] {
-			return nil, fmt.Errorf("%w: missing or duplicate table facet owner %s", ptaherr.ErrInvalidSchemaDiff, record.Subject)
+			return nil, fmt.Errorf("%w: missing or duplicate facet owner %s", ptaherr.ErrInvalidSchemaDiff, record.Subject)
 		}
 		seen[key] = true
-		effective.Tables[i].Facets = record.Values
+		*values = record.Values
 	}
 	return &effective, nil
 }

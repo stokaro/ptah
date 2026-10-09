@@ -58,8 +58,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
-| `dialect/clickhouse/chresolve` | Table-setting resolution with retained intent and property origins. |
-| `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
+| `dialect/clickhouse/chresolve` | Storage-setting resolution with retained intent and property origins. |
+| `dialect/clickhouse/chschema` | Desired and observed storage settings with versioned model codecs. |
 | `dialect/clickhouse/chsource` | Table property encoding and decoding that preserves setting intent. |
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
@@ -68,7 +68,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chrender` | Owner-selected TTL rendering. |
 | `dialect/clickhouse/chplan` | TTL planning and common-column dependencies. |
 | `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
-| `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
+| `dialect/clickhouse/chconvert` | Conversion between complete table/index declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
@@ -154,25 +154,26 @@ rejects dropped declarations and duplicate child changes during parent creation
 or removal. Service errors and cancellation return no partial result. The YDB
 service preserves inspected changefeeds omitted by an incomplete desired source.
 
-`Provider.FacetComparisons` registers comparison of settings attached to common
-objects. `Runtime.CompareFacets` keeps their common owner identity and source
-knowledge. Explicit knowledge limits prevent a partial value from authorizing
-a change. Parent creation or removal captures attached settings without a
-separate facet operation. A provider checks `FacetComparisonRequest.Includes`
-for each model and owner. Source scope may exclude one setting while retaining
-another on the same object. The runtime refuses changes and diagnostics for
-excluded pairs, even when source coverage is complete.
+`Provider.FacetComparisons` registers attached settings and required `OwnerKinds`.
+Each service receives only matching owners, including those without values.
+Misplaced values or subject coverage fail before dispatch.
 
-`Runtime.CompareFeatures` combines named objects and attached facets. It validates
-both sources before dispatch and discards all output if either comparison fails.
-Replies must set `Complete`. The migration comparator captures table facets and
-applies effective desired settings before capturing common table changes. Other
-attachment points currently refuse because they lack comparison identity capture.
-Adding a provider does not add coverage claims to an existing source.
-Comparison and reverse CREATE projection bind table coverage claims to the
-connection's identifier semantics before selecting parent state. The default database applies to unqualified table
-claims; explicit schemas and knowledge limits remain intact. Conflicting claims
-for the resulting identity are refused.
+`Runtime.CompareFacets` preserves common identity and source knowledge. Explicit
+knowledge limits override partial values. Parent creation or removal includes
+attached settings, so separate facet operations are refused. Providers check
+`FacetComparisonRequest.Includes` for each model/owner pair: exclusions permit
+neither changes nor diagnostics, even with complete coverage.
+
+`Runtime.CompareFeatures` validates named objects and facets before dispatch,
+discarding output if either comparison fails. Replies set `Complete`. The
+migration comparator applies effective table/index facets before capturing common
+changes; index identity follows the target's table or schema namespace. Other
+attachment points refuse until identity capture exists. Registering providers
+never enrolls source coverage.
+
+Comparison binds table and index coverage to connection identifiers and the default
+database; reverse CREATE projection binds table coverage. Binding preserves explicit
+schemas, knowledge limits, and source snapshots and rejects colliding claims.
 
 Table selection preserves the selected tables' feature children and their source
 coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering
@@ -203,18 +204,20 @@ knowledge limit does not establish agreement.
 `Target.Preparation` selects table preparation before feature and column comparison.
 Providers that preserve input flags register `schemapreparation.Identity`;
 a missing service is an error. Services may resolve column key membership and
-return `ResolvedFacets` for declared table models they own. Source facets, target
-bindings, observations, and knowledge stay unchanged. Incomplete replies return
+return `ResolvedFacets` records keyed by declared table or index identities.
+Duplicate owners, undeclared kinds, and new target scopes are refused. Source
+facets, bindings, observations, and knowledge stay unchanged. Incomplete replies return
 no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
 captures as comparison provenance, including through reversal.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
-files used as current state. The service predicts CREATE defaults and column key
-membership from decoded declarations. Computed facets stay separate from source
-intent; they may describe defaults the author did not declare. The host validates
-ordered completeness, identities, column names, model ownership, and codecs.
-It retains source bindings, exclusions, and explicit knowledge limits. New kinds
-are bound to the selected target. Predictions prove no inspection or execution.
+files used as current state. It predicts CREATE defaults and column keys.
+`TableCreation.Facets` contains records keyed by captured table or index identity,
+separate from source intent. Duplicate or invented owners, changed spelling, and
+new bindings are refused. The host validates completeness, column names, ownership,
+and codecs. Source bindings, exclusions, and knowledge limits stay intact. New
+kinds are target-bound with coverage only for predicted owners, not their siblings.
+Predictions prove no inspection or execution.
 Providers with no additional effects register `IdentityCreations` explicitly;
 a missing service is unavailable.
 
@@ -251,14 +254,15 @@ targets are refused without partial SQL.
 `chreverse.Service` restores the captured TTL definition and reports data loss.
 Its state projection feeds reverse planning without claiming new inspection.
 
-`chresolve.Table` retains the declaration, resolved settings, and each property's
-origin. Omitted creation settings use defaults; a default primary key inherits
-the sorting key. Existing tables require observations for omitted settings.
-Missing evidence returns no partial result.
+`chresolve.Table` and `chresolve.Index` retain declarations, resolved settings,
+and property origins. Existing objects require observations for omitted settings.
+On creation, a default primary key inherits the sorting key; skipping indexes
+use Ptah's `minmax` type and granularity `1`. Missing evidence returns no partial result.
 
-`chconvert.Service` converts complete observations to explicit declarations and
-resolved declarations to predictions. It preserves empty settings and separate
-key roles. Predictions support reverse planning and prove no database inspection.
+`chconvert.Service` converts complete table/index observations to explicit
+declarations and resolved declarations to predictions. It preserves empty table
+settings, key roles, and unsigned 64-bit index granularity. Invalid values or
+unresolved settings discard the whole batch.
 
 `Provider.Properties` declares source property ownership by target, format, and
 feature kind. The runtime validates complete batches before dispatch and rejects

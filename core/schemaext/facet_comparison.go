@@ -27,7 +27,8 @@ type FacetState struct {
 
 // FacetComparisonRequest compares attached settings against captured target
 // facts. Owners describes common object lifecycles even when neither source has
-// a facet value. Includes determines whether each model applies to an owner;
+// a facet value. A dispatched batch contains only the registered owner kinds.
+// Includes determines whether each model applies to an owner;
 // an exclusion for one model does not exclude another on the same owner. The
 // service performs no inspection or mutation of its inputs.
 type FacetComparisonRequest struct {

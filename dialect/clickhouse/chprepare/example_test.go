@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-extras/go-kit/must"
+
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -35,6 +39,38 @@ func ExampleService_PrepareTables() {
 	// prepared column flag: true
 }
 
+// ExampleService_ProjectTableCreations_indexes resolves omitted index settings
+// for a new table without replacing the author's omission with explicit intent.
+func ExampleService_ProjectTableCreations_indexes() {
+	semantics := identifier.ForDialect("clickhouse")
+	subject := objectidentity.NewBuilder(semantics).TableParts("", "events")
+	request := schemaprojection.TableCreationRequest{Target: "clickhouse", Identifiers: semantics, Tables: []schemaprojection.TableCreationInput{{
+		Subject: subject,
+		Declaration: schemacapture.TableDeclaration{
+			Table: schemamodel.Table{Name: "events", Engine: "Memory"},
+			Indexes: []schemamodel.Index{{Name: "by_id", Fields: []string{"id"},
+				Facets: must.Must(schemaext.NewFacets(&chschema.DesiredIndex{}))}},
+		},
+	}}}
+	result, err := (chprepare.Service{}).ProjectTableCreations(context.Background(), request)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	settings, _, err := schemaext.FacetAs[*chschema.DesiredIndex](result.Tables[0].Facets[1].Values, chschema.IndexKind)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("owner:", result.Tables[0].Facets[1].Subject.Name.Source)
+	fmt.Println("predicted type:", settings.IndexType.Value)
+	fmt.Println("predicted granularity:", settings.Granularity.Value)
+	// Output:
+	// owner: by_id
+	// predicted type: minmax
+	// predicted granularity: 1
+}
+
 // ExampleService_ProjectTableCreations predicts storage defaults for a table
 // without platform properties while keeping the declaration unchanged.
 func ExampleService_ProjectTableCreations() {
@@ -49,7 +85,7 @@ func ExampleService_ProjectTableCreations() {
 		fmt.Println(err)
 		return
 	}
-	settings, _, err := schemaext.FacetAs[*chschema.DesiredTable](result.Tables[0].Facets, chschema.TableKind)
+	settings, _, err := schemaext.FacetAs[*chschema.DesiredTable](result.Tables[0].Facets[0].Values, chschema.TableKind)
 	if err != nil {
 		fmt.Println(err)
 		return
