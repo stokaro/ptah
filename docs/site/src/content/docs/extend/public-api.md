@@ -115,14 +115,19 @@ checks before comparison use `schemadiff.RefusalError` with the original cause.
 The schema census discards its measurement when any selected service fails,
 including after earlier cells completed.
 
-`Runtime.PlanFeatures` returns completed refusals as `featureplan.Diagnostic`
-data, with optional change or parent indexes. It validates each service's
-assignment and maps change indexes to the original request. A refusal leaves
-no operations or receipts from any service. Failures and cancellation also
-discard diagnostics. The planning host calls `Result.Err(request)` before
-lowering operations; its `featureplan.RefusalError` preserves the report and
-schema or capability error identities. Process adapters carry diagnostics
-without encoding Go errors.
+`Runtime.PlanFeatures` returns `featureplan.Diagnostic` data with original change
+or parent indexes. Refusals discard all operations and receipts; service failures
+and cancellation also discard diagnostics. Call `Result.Err(request)` before
+lowering operations. Its `featureplan.RefusalError` preserves the report and error
+identities. Process adapters transfer diagnostic data instead of Go errors.
+
+`Request.CommonSteps` supplies isolated accepted operations; `Result.Rewrites`
+claims their replacements. `plangraph.ScheduleRewritten` validates claims,
+preserves logical writes, redirects dependencies, and rejects conflicts and cycles.
+Owners supply replacement semantics and execution requirements; grouping implies
+no transaction. `AlterTable` requests assessment of unchanged attached state.
+Process adapters define explicit common-operand wire models instead of
+serializing Go AST structs.
 
 `Provider.Conversions` registers a batched conversion service for explicit target
 and feature-kind pairs. `Runtime.ConvertFeatures` validates each ordered batch,

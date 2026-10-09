@@ -35,7 +35,7 @@ func TestHostConvertsCompletedRefusalBeforeLoweringAnyOperation(t *testing.T) {
 	var refused *featureplan.RefusalError
 	c.Assert(err, qt.ErrorAs, &refused)
 	c.Assert(refused.Diagnostics(), qt.DeepEquals, diagnostics)
-	c.Assert(contributions, qt.IsNil)
+	c.Assert(contributions, qt.DeepEquals, featurehost.Result{})
 }
 
 type selectedRuntime struct {
@@ -81,15 +81,15 @@ func TestHostRetainsSourceNamesAndCompleteGraphMetadata(t *testing.T) {
 	}}
 	result, err := featurehost.Plan(t.Context(), selected, request, names)
 	c.Assert(err, qt.IsNil)
-	c.Assert(result, qt.HasLen, 1)
-	c.Assert(result[0].Owner, qt.Equals, reply.Contributions[0].Owner)
-	step := result[0].Steps[0]
+	c.Assert(result.Contributions, qt.HasLen, 1)
+	c.Assert(result.Contributions[0].Owner, qt.Equals, reply.Contributions[0].Owner)
+	step := result.Contributions[0].Steps[0]
 	original := reply.Contributions[0].Steps[0]
 	c.Assert(step.ID, qt.Equals, original.ID)
 	c.Assert(step.Effects, qt.DeepEquals, original.Effects)
 	c.Assert(step.Transaction, qt.Equals, original.Transaction)
 	c.Assert(step.Impact, qt.Equals, original.Impact)
-	c.Assert(result[0].Dependencies, qt.DeepEquals, reply.Contributions[0].Dependencies)
+	c.Assert(result.Contributions[0].Dependencies, qt.DeepEquals, reply.Contributions[0].Dependencies)
 	c.Assert(step.Payload, qt.HasLen, 2)
 	c.Assert(step.Payload[0], qt.DeepEquals, ast.NewComment("owner note"))
 	alter := step.Payload[1].(*ast.AlterTableNode)
@@ -100,13 +100,13 @@ func TestHostRetainsSourceNamesAndCompleteGraphMetadata(t *testing.T) {
 	reply.Contributions[0].Dependencies[0].Before.Name = "mutated"
 	c.Assert(payload.Values, qt.DeepEquals, []string{"captured"})
 	c.Assert(step.Effects[0].Action, qt.Equals, plangraph.Alter)
-	c.Assert(result[0].Dependencies[0].Before.Name, qt.Equals, "before")
+	c.Assert(result.Contributions[0].Dependencies[0].Before.Name, qt.Equals, "before")
 	common := plangraph.Contribution[[]ast.Node]{Owner: "example.org/host", Steps: []plangraph.Step[[]ast.Node]{{ID: plangraph.StepID{Owner: "example.org/host", Name: "before"}, Payload: []ast.Node{ast.NewComment("common")}}}}
-	plan, err := plangraph.Schedule(t.Context(), append(result, common)...)
+	plan, err := plangraph.Schedule(t.Context(), append(result.Contributions, common)...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Steps[0].ID.Owner, qt.Equals, "example.org/host")
 	c.Assert(plan.Steps[1].Transaction, qt.Equals, plangraph.TransactionForbidden)
-	_, err = plangraph.Schedule(t.Context(), result...)
+	_, err = plangraph.Schedule(t.Context(), result.Contributions...)
 	c.Assert(err, qt.ErrorIs, plangraph.ErrInvalid)
 }
 
@@ -118,7 +118,27 @@ func TestHostLowersStandaloneOperationsWithoutTableBindings(t *testing.T) {
 	selected := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) { return reply, nil }}
 	result, err := featurehost.Plan(t.Context(), selected, request, nil)
 	c.Assert(err, qt.IsNil)
-	c.Assert(result[0].Steps[0].Payload[1], qt.DeepEquals, &ast.ExtensionStatement{Payload: &operation{Values: []string{"captured"}}})
+	c.Assert(result.Contributions[0].Steps[0].Payload[1], qt.DeepEquals, &ast.ExtensionStatement{Payload: &operation{Values: []string{"captured"}}})
+}
+
+func TestHostRetainsCommonRewriteReceiptsThroughLowering(t *testing.T) {
+	c := qt.New(t)
+	request, reply, names := fixture()
+	original := reply.Contributions[0].Steps[0]
+	source := reply.Contributions[0].Dependencies[0].Before
+	reply.Rewrites = []plangraph.Rewrite{{Sources: []plangraph.StepID{source}, Replacement: original.ID}}
+	selected := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) { return reply, nil }}
+	result, err := featurehost.Plan(t.Context(), selected, request, names)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Rewrites, qt.DeepEquals, reply.Rewrites)
+	reply.Rewrites[0].Sources[0].Name = "changed"
+	c.Assert(result.Rewrites[0].Sources[0], qt.Equals, source)
+	common := plangraph.Contribution[[]ast.Node]{Owner: source.Owner, Steps: []plangraph.Step[[]ast.Node]{{ID: source, Effects: original.Effects}}}
+	plan, err := plangraph.ScheduleRewritten(t.Context(), common, result.Rewrites, result.Contributions...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Steps, qt.HasLen, 1)
+	c.Assert(plan.Steps[0].ID, qt.Equals, original.ID)
+	c.Assert(plan.Steps[0].Payload, qt.HasLen, 2)
 }
 
 func TestHostRejectsInvalidEmissionBindingsBeforeDispatch(t *testing.T) {
@@ -134,7 +154,7 @@ func TestHostRejectsInvalidEmissionBindingsBeforeDispatch(t *testing.T) {
 			}}
 			result, err := featurehost.Plan(t.Context(), selected, request, names)
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-			c.Assert(result, qt.IsNil)
+			c.Assert(result, qt.DeepEquals, featurehost.Result{})
 			c.Assert(called, qt.IsFalse)
 		})
 	}
@@ -156,7 +176,7 @@ func TestHostRejectsIncompleteAndUnlowerableReplies(t *testing.T) {
 			selected := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) { return reply, nil }}
 			result, err := featurehost.Plan(t.Context(), selected, request, names)
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-			c.Assert(result, qt.IsNil)
+			c.Assert(result, qt.DeepEquals, featurehost.Result{})
 		})
 	}
 }
@@ -168,11 +188,11 @@ func TestHostFailureAndCancellationDiscardOperations(t *testing.T) {
 	selected := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) { return reply, failure }}
 	result, err := featurehost.Plan(t.Context(), selected, request, names)
 	c.Assert(err, qt.ErrorIs, failure)
-	c.Assert(result, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, featurehost.Result{})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	selected.plan = func(context.Context, featureplan.Request) (featureplan.Result, error) { cancel(); return reply, nil }
 	result, err = featurehost.Plan(ctx, selected, request, names)
 	c.Assert(err, qt.ErrorIs, context.Canceled)
-	c.Assert(result, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, featurehost.Result{})
 }

@@ -15,28 +15,35 @@ import (
 	"ptah.run/core/schemaext"
 )
 
+// Result retains lowered contributions and explicit common-step rewrites.
+// The caller must apply the rewrites while scheduling the complete graph.
+type Result struct {
+	Contributions []plangraph.Contribution[[]ast.Node]
+	Rewrites      []plangraph.Rewrite
+}
+
 // Plan dispatches one contextual batch and converts complete operation replies
 // into AST contributions without scheduling them independently. Names binds
 // captured table identities to the host's source-spelled emission names. A
 // parent without a binding cannot receive an ALTER operation. The caller must
 // join these contributions to its common graph before returning any nodes.
-func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.Request, names map[objectidentity.Key]string) ([]plangraph.Contribution[[]ast.Node], error) {
+func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.Request, names map[objectidentity.Key]string) (Result, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	names = maps.Clone(names)
 	if err := validateNames(request, names); err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	result, err := runtime.PlanFeatures(ctx, request)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	if err := result.Err(request); err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	contributions := make([]plangraph.Contribution[[]ast.Node], len(result.Contributions))
 	for i, feature := range result.Contributions {
@@ -44,7 +51,7 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 		for _, step := range feature.Steps {
 			nodes, err := operationNodes(step.Payload, names)
 			if err != nil {
-				return nil, err
+				return Result{}, err
 			}
 			contribution.Steps = append(contribution.Steps, plangraph.Step[[]ast.Node]{
 				ID: step.ID, Payload: nodes, Effects: slices.Clone(step.Effects), Transaction: step.Transaction, Impact: step.Impact,
@@ -53,9 +60,13 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 		contributions[i] = contribution
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return Result{}, err
 	}
-	return contributions, nil
+	rewrites := make([]plangraph.Rewrite, len(result.Rewrites))
+	for i, rewrite := range result.Rewrites {
+		rewrites[i] = rewrite.Clone()
+	}
+	return Result{Contributions: contributions, Rewrites: rewrites}, nil
 }
 
 func validateNames(request featureplan.Request, names map[objectidentity.Key]string) error {

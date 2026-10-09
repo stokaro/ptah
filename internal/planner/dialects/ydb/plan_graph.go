@@ -5,12 +5,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/plangraph"
+	"ptah.run/internal/planner/featurehost"
 )
 
 // scheduleChangefeeds joins feature contributions before flattening any nodes.
 // The surrounding planner phases retain their existing order. Their missing
 // object footprints remain unknown until those families contribute effects.
-func scheduleChangefeeds(ctx context.Context, before, after []ast.Node, features []plangraph.Contribution[[]ast.Node]) ([]ast.Node, error) {
+func scheduleChangefeeds(ctx context.Context, before, after []ast.Node, features featurehost.Result) ([]ast.Node, error) {
 	common := plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/ydb"}
 	var first, last, featureIDs []plangraph.StepID
 	if len(before) > 0 {
@@ -23,7 +24,7 @@ func scheduleChangefeeds(ctx context.Context, before, after []ast.Node, features
 		last = append(last, id)
 		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{ID: id, Payload: after})
 	}
-	for _, contribution := range features {
+	for _, contribution := range features.Contributions {
 		for _, step := range contribution.Steps {
 			featureIDs = append(featureIDs, step.ID)
 		}
@@ -31,7 +32,7 @@ func scheduleChangefeeds(ctx context.Context, before, after []ast.Node, features
 	common.Dependencies = append(common.Dependencies, dependencies(first, last)...)
 	common.Dependencies = append(common.Dependencies, dependencies(first, featureIDs)...)
 	common.Dependencies = append(common.Dependencies, dependencies(featureIDs, last)...)
-	plan, err := plangraph.Schedule(ctx, append(features, common)...)
+	plan, err := plangraph.ScheduleRewritten(ctx, common, features.Rewrites, features.Contributions...)
 	if err != nil {
 		return nil, err
 	}

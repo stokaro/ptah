@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -91,6 +92,19 @@ func codec() schemaext.Codec {
 	}
 }
 
+func operationCodec() schemaext.Codec {
+	encode := func(payload schemaext.Payload) (json.RawMessage, error) { return json.Marshal(payload) }
+	return schemaext.Codec{
+		Prototype: &addWidget{}, Representation: schemaext.Operation, Version: 1,
+		Definition: json.RawMessage(`{"Name":"string"}`),
+		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
+			return payload.(*addWidget).CloneExtension(), nil
+		},
+		Encode: encode, Canonical: encode,
+		Decode: func(data json.RawMessage) (schemaext.Payload, error) { return schemaext.DecodeJSON[*addWidget](data) },
+	}
+}
+
 func main() {
 	if err := verify(); err != nil {
 		panic(err)
@@ -109,8 +123,8 @@ func verify() error {
 	}
 	observed := codec()
 	observed.Representation = schemaext.Observed
-	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec(), observed},
-		Planning: []engine.Planning{{Target: "widget", ParentKinds: []schemaext.Kind{(&widget{}).Kind()}, Service: service{}}},
+	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec(), observed, operationCodec()},
+		Planning: []engine.Planning{{Target: "widget", ParentKinds: []schemaext.Kind{(&widget{}).Kind()}, OperationKinds: []schemaext.Kind{(&addWidget{}).Kind()}, Service: service{}}},
 		Targets:  []engine.Target{{Name: "widget", Rendering: service{extensions: handlers}, Validation: service{}, SchemaRendering: service{}, Creations: service{}}}})
 	if err != nil {
 		return err
@@ -166,6 +180,9 @@ func verify() error {
 	if err := verifyPlanningRefusal(runtime); err != nil {
 		return err
 	}
+	if err := verifyCommonRewrite(runtime); err != nil {
+		return err
+	}
 	if err := verifyImport(); err != nil {
 		return err
 	}
@@ -181,6 +198,9 @@ func (service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		return featureplan.Result{}, err
 	}
 	for index, table := range request.Tables {
+		if table.Action == featureplan.AlterTable {
+			return planCommonRewrite(request, table)
+		}
 		if table.Action != "" {
 			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{
 				Problem: schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string((&widget{}).Kind()),
@@ -190,6 +210,86 @@ func (service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		}
 	}
 	return featureplan.Result{Complete: true}, nil
+}
+
+func planCommonRewrite(request featureplan.Request, table featureplan.Table) (featureplan.Result, error) {
+	if len(request.CommonSteps) != 1 || request.CommonSteps[0].AddedColumn == nil {
+		return featureplan.Result{}, fmt.Errorf("a widget rewrite requires the accepted column addition")
+	}
+	common := request.CommonSteps[0]
+	id := plangraph.StepID{Owner: "example.org/widget", Name: "column-with-widget"}
+	return featureplan.Result{
+		Complete: true,
+		Contributions: []plangraph.Contribution[featureplan.Operation]{{Owner: id.Owner, Steps: []plangraph.Step[featureplan.Operation]{{
+			ID: id, Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &addWidget{Name: common.AddedColumn.Name}},
+			Effects: slices.Clone(common.Effects), Transaction: plangraph.TransactionForbidden,
+			Impact: schemaext.Effect{Impact: schemaext.Behavioral, Reason: "the combined operation changes a widget and its column"},
+		}}}},
+		Parents:  []featureplan.ParentPlan{{Subject: table.Subject, Kind: (&widget{}).Kind(), Action: table.Action, Strategy: "add the column and widget in one owner operation", Steps: []plangraph.StepID{id}}},
+		Rewrites: []plangraph.Rewrite{{Sources: []plangraph.StepID{common.ID}, Replacement: id}},
+	}, nil
+}
+
+func verifyCommonRewrite(runtime *engine.Runtime) error {
+	ctx := context.Background()
+	semantics := identifier.ForDialect("widget")
+	builder := objectidentity.NewBuilder(semantics)
+	parent := builder.Table("items")
+	common := featureplan.CommonStep{
+		ID: plangraph.StepID{Owner: "example.org/common", Name: "add-extra"}, Parent: parent,
+		Effects: []plangraph.Effect{{Subject: builder.Column("items", "extra"), Action: plangraph.Create}}, AddedColumn: ast.NewColumn("extra", "INTEGER"),
+	}
+	request := featureplan.Request{Target: "widget", Identifiers: semantics, CommonSteps: []featureplan.CommonStep{common}, Tables: []featureplan.Table{{
+		Subject: parent, Action: featureplan.AlterTable,
+		Current: schemacapture.TableObservation{Table: catalog.Table{Name: "items"}},
+		Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "items"}},
+	}}}
+	result, err := runtime.PlanFeatures(ctx, request)
+	if err != nil {
+		return err
+	}
+	if err := result.Err(request); err != nil {
+		return err
+	}
+	if len(result.Contributions) != 1 || len(result.Contributions[0].Steps) != 1 || len(result.Rewrites) != 1 {
+		return fmt.Errorf("rewrite planning returned incomplete receipts")
+	}
+	// A process adapter transfers claims as data and operations through their
+	// explicit codec. It never serializes a common Go AST or executable closure.
+	claimData, err := json.Marshal(result.Rewrites)
+	if err != nil {
+		return err
+	}
+	var claims []plangraph.Rewrite
+	if err := json.Unmarshal(claimData, &claims); err != nil {
+		return err
+	}
+	contribution := result.Contributions[0]
+	operationData, err := runtime.Codecs().Marshal(ctx, schemaext.Operation, []schemaext.Payload{contribution.Steps[0].Payload.Payload})
+	if err != nil {
+		return err
+	}
+	operations, err := runtime.Codecs().Unmarshal(ctx, operationData)
+	if err != nil {
+		return err
+	}
+	contribution.Steps[0].Payload.Payload = operations[0].(ast.ExtensionPayload)
+	host := plangraph.Contribution[featureplan.Operation]{Owner: common.ID.Owner, Steps: []plangraph.Step[featureplan.Operation]{{ID: common.ID, Effects: common.Effects}}}
+	plan, err := plangraph.ScheduleRewritten(ctx, host, claims, contribution)
+	if err != nil {
+		return err
+	}
+	if len(plan.Steps) != 1 || plan.Steps[0].ID != claims[0].Replacement || plan.Steps[0].Transaction != plangraph.TransactionForbidden || plan.Steps[0].Impact.Impact != schemaext.Behavioral {
+		return fmt.Errorf("rewrite scheduling lost replacement identity or execution metadata")
+	}
+	rendered, err := runtime.Render(ctx, renderer.Request{Target: "widget", Nodes: []ast.Node{&ast.ExtensionStatement{Payload: plan.Steps[0].Payload.Payload}}})
+	if err != nil {
+		return err
+	}
+	if rendered.SQL() != "CREATE WIDGET extra\n" {
+		return fmt.Errorf("rewritten operation lost the accepted common operand: %q", rendered.SQL())
+	}
+	return nil
 }
 
 func verifyPlanningRefusal(runtime *engine.Runtime) error {

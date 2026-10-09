@@ -27,15 +27,15 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for i, table := range request.Tables {
 		switch table.Action {
-		case "", featureplan.DropTable, featureplan.RebuildTable:
+		case "", featureplan.DropTable, featureplan.RebuildTable, featureplan.AlterTable:
 		default:
 			return featureplan.Request{}, fmt.Errorf("%w: unknown parent action %q", schemaext.ErrInvalidValue, table.Action)
 		}
 		if table.Action != "" && !table.Current.HasTable() {
 			return featureplan.Request{}, fmt.Errorf("%w: parent operation has no observed table state", schemaext.ErrInvalidValue)
 		}
-		if table.Action == featureplan.RebuildTable && !table.Desired.HasTable() {
-			return featureplan.Request{}, fmt.Errorf("%w: rebuild has no declared table state", schemaext.ErrInvalidValue)
+		if (table.Action == featureplan.RebuildTable || table.Action == featureplan.AlterTable) && !table.Desired.HasTable() {
+			return featureplan.Request{}, fmt.Errorf("%w: surviving parent has no declared table state", schemaext.ErrInvalidValue)
 		}
 		if table.Action == featureplan.DropTable && table.Desired.HasTable() {
 			return featureplan.Request{}, fmt.Errorf("%w: removed table carries a declaration", schemaext.ErrInvalidValue)
@@ -58,6 +58,10 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 			return featureplan.Request{}, err
 		}
 		request.Tables[i] = table
+	}
+	request.CommonSteps, err = r.snapshotCommonSteps(ctx, request)
+	if err != nil {
+		return featureplan.Request{}, err
 	}
 	return request, ctx.Err()
 }

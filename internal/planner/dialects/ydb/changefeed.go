@@ -6,10 +6,8 @@ import (
 	"maps"
 	"slices"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -17,7 +15,7 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, rebuilds map[string]*tableRebuild, semantics identifier.Semantics) ([]plangraph.Contribution[[]ast.Node], error) {
+func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, rebuilds map[string]*tableRebuild, semantics identifier.Semantics) (featurehost.Result, error) {
 	names := make(map[objectidentity.Key]string)
 	request := featureplan.Request{Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: slices.Clone(diff.FeatureChanges)}
 	for _, table := range diff.TablesModified {
@@ -28,7 +26,7 @@ func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Ru
 		ref := table.FeatureChanges[0].Subject
 		subject := featureParent(ref)
 		if objectidentity.NewBuilder(semantics).Table(table.TableName).Key() != subject.Key() {
-			return nil, fmt.Errorf("%w: feature parent disagrees with the changed table", schemaext.ErrInvalidValue)
+			return featurehost.Result{}, fmt.Errorf("%w: feature parent disagrees with the changed table", schemaext.ErrInvalidValue)
 		}
 		if !rebuilt {
 			request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Desired: table.Desired, Current: table.Current})
@@ -47,16 +45,16 @@ func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Ru
 		current := removal.Current.Table
 		subject := builder.TableParts(current.Schema, current.Name)
 		if removal.Current.HasTable() && builder.Table(removal.Name).Key() != subject.Key() {
-			return nil, fmt.Errorf("%w: removal name disagrees with captured table", schemaext.ErrInvalidValue)
+			return featurehost.Result{}, fmt.Errorf("%w: removal name disagrees with captured table", schemaext.ErrInvalidValue)
 		}
 		request.Tables = append(request.Tables, featureplan.Table{Action: featureplan.DropTable, Subject: subject, Current: removal.Current})
 	}
 	result, err := featurehost.Plan(ctx, runtime, request, names)
 	if err != nil {
-		return nil, err
+		return featurehost.Result{}, err
 	}
 	if err := capturePlannedRebuilds(rebuilds); err != nil {
-		return nil, err
+		return featurehost.Result{}, err
 	}
 	return result, nil
 }
