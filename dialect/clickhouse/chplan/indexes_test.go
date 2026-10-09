@@ -250,3 +250,61 @@ func TestIndexSettingsRegistrationOwnsBothOperations(t *testing.T) {
 		c.Assert(slices.ContainsFunc(kinds, func(model schemaext.CodecIdentity) bool { return model.Kind == kind }), qt.IsTrue, qt.Commentf("%s", kind))
 	}
 }
+
+// The replacement builds the declared index: a key expression that changed
+// beside the settings is applied too, and a key the catalog reports as a bare
+// list, as system.data_skipping_indices does for `INDEX i (a, b)`, is written as
+// the tuple ADD INDEX accepts rather than as the list it would refuse.
+func TestIndexSettingsPlanWritesTheDeclaredExpression(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		captured []string
+		fields   []string
+		parts    []schemamodel.IndexPart
+		want     string
+	}{
+		{name: "a tuple key the catalog reports as a list", captured: []string{"a, b"}, fields: []string{"a, b"}, want: "(a, b)"},
+		{name: "a tuple key declared as fields", captured: []string{"a, b"}, fields: []string{"a", "b"}, want: "(a, b)"},
+		{name: "a changed column", captured: []string{"a"}, fields: []string{"b"}, want: "b"},
+		{name: "an expression part", captured: []string{"lower(payload)"}, parts: []schemamodel.IndexPart{{Expr: "upper(payload)"}}, want: "upper(payload)"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := indexRequest(c)
+			request.CommonSteps = nil
+			request.Tables[0].Current.Indexes[0].Columns = test.captured
+			request.Tables[0].Desired.Indexes[0].Fields = test.fields
+			request.Tables[0].Desired.Indexes[0].Parts = test.parts
+			result, err := (chplan.IndexService{}).PlanFeatures(t.Context(), request)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Diagnostics, qt.HasLen, 0)
+			c.Assert(result.Contributions, qt.HasLen, 1)
+			add := result.Contributions[0].Steps[1].Payload.Payload.(*chast.AddSkippingIndex)
+			c.Assert(add.Expression, qt.Equals, test.want)
+		})
+	}
+}
+
+// The old index goes before a column only it reads disappears, and the new one
+// comes after a column only it reads is added.
+func TestIndexSettingsPlanOrdersBothExpressionsAroundColumns(t *testing.T) {
+	c := qt.New(t)
+	request := indexRequest(c)
+	builder := objectidentity.NewBuilder(request.Identifiers)
+	table := request.Tables[0].Subject
+	request.Tables[0].Current.Indexes[0].Columns = []string{"payload"}
+	request.Tables[0].Desired.Indexes[0].Fields = []string{"body"}
+	request.Tables[0].Desired.Fields = append(request.Tables[0].Desired.Fields, schemamodel.Field{StructName: "Event", Name: "body", Type: "String"})
+	request.CommonSteps = []featureplan.CommonStep{
+		{ID: plangraph.StepID{Owner: "example.org/common", Name: "add-body"}, Parent: table,
+			Effects: []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: builder.Column("events", "body"), Action: plangraph.Create}}},
+		{ID: plangraph.StepID{Owner: "example.org/common", Name: "drop-payload"}, Parent: table,
+			Effects: []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: builder.Column("events", "payload"), Action: plangraph.Drop}}},
+	}
+	result, err := (chplan.IndexService{}).PlanFeatures(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
+	feature := result.Contributions[0]
+	c.Assert(feature.Dependencies, qt.Contains, plangraph.Dependency{Before: request.CommonSteps[0].ID, After: feature.Steps[1].ID})
+	c.Assert(feature.Dependencies, qt.Contains, plangraph.Dependency{Before: feature.Steps[0].ID, After: request.CommonSteps[1].ID})
+}

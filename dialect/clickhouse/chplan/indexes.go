@@ -1,6 +1,7 @@
 package chplan
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -127,7 +128,14 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 	if err != nil {
 		return contribution, plan, err
 	}
-	expression, err := indexExpression(captured.current)
+	// The replacement builds the declared index, as a rebuild does on every
+	// other target. The captured expression only orders the old index's
+	// removal around changes to the columns it reads.
+	previous, err := indexExpression(captured.current.Name, captured.current.Columns)
+	if err != nil {
+		return contribution, plan, err
+	}
+	expression, err := indexExpression(captured.desired.Name, declaredParts(captured.desired))
 	if err != nil {
 		return contribution, plan, err
 	}
@@ -137,7 +145,7 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 	add := &chast.AddSkippingIndex{Name: captured.current.Name, Expression: expression, IndexType: after.IndexType, Granularity: after.Granularity}
 	dropID := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("index-settings/%d/drop", position)}
 	addID := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("index-settings/%d/add", position)}
-	reads, dependencies, err := indexColumnDependencies(request, captured.table, expression, dropID, addID)
+	reads, dependencies, err := indexColumnDependencies(request, captured.table, previous, expression, dropID, addID)
 	if err != nil {
 		return plangraph.Contribution[featureplan.Operation]{}, plan, err
 	}
@@ -154,7 +162,7 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 		},
 	}
 	contribution.Dependencies = append([]plangraph.Dependency{{Before: dropID, After: addID}}, dependencies...)
-	plan.Strategy = "replace the index with its captured key expression and the desired settings; data built for existing parts is discarded"
+	plan.Strategy = "replace the index with its declared key expression and the desired settings; data built for existing parts is discarded"
 	plan.Steps = []plangraph.StepID{dropID, addID}
 	return contribution, plan, nil
 }
@@ -241,27 +249,37 @@ func commonReplacement(request featureplan.Request, subject objectidentity.ID) (
 	return dropped, nil
 }
 
-// indexExpression rebuilds the key expression the way the ClickHouse renderer
-// writes it: one captured part as it stands, several as a tuple.
-func indexExpression(index catalog.Index) (string, error) {
-	if len(index.Columns) == 0 || slices.ContainsFunc(index.Columns, func(column string) bool { return strings.TrimSpace(column) == "" }) {
-		return "", fmt.Errorf("%w: captured index %q has no key expression", schemaext.ErrInvalidValue, index.Name)
+// indexExpression writes key parts the way the ClickHouse renderer does.
+func indexExpression(name string, parts []string) (string, error) {
+	if len(parts) == 0 || slices.ContainsFunc(parts, func(part string) bool { return strings.TrimSpace(part) == "" }) {
+		return "", fmt.Errorf("%w: index %q has no key expression", schemaext.ErrInvalidValue, name)
 	}
-	if len(index.Columns) == 1 {
-		return index.Columns[0], nil
+	return chast.SkippingIndexExpression(parts), nil
+}
+
+// declaredParts are the key parts a declaration renders: each structured
+// part's expression or column, or the field list when it has no parts.
+func declaredParts(index schemamodel.Index) []string {
+	if len(index.Parts) == 0 {
+		return index.Fields
 	}
-	return "(" + strings.Join(index.Columns, ", ") + ")", nil
+	parts := make([]string, 0, len(index.Parts))
+	for _, part := range index.Parts {
+		parts = append(parts, cmp.Or(part.Expr, part.Name))
+	}
+	return parts
 }
 
 // indexColumnDependencies orders the replacement around common changes to the
-// columns its expression reads: the old index goes before a column changes and
-// the new one comes after. Removing such a column cannot be scheduled because
-// the replacement would name a column that no longer exists.
-func indexColumnDependencies(request featureplan.Request, table featureplan.Table, expression string, drop, add plangraph.StepID) ([]plangraph.Effect, []plangraph.Dependency, error) {
-	used := chkey.ReferencedColumns(expression, capturedColumns(request, table))
+// columns either expression reads: the old index goes before a column it reads
+// changes or disappears, and the new one comes after a column it reads is added
+// or changed. Removing a column the new expression reads cannot be scheduled.
+func indexColumnDependencies(request featureplan.Request, table featureplan.Table, previous, expression string, drop, add plangraph.StepID) ([]plangraph.Effect, []plangraph.Dependency, error) {
+	columns := capturedColumns(request, table)
+	before, after := chkey.ReferencedColumns(previous, columns), chkey.ReferencedColumns(expression, columns)
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	var reads []plangraph.Effect
-	for _, column := range slices.Sorted(maps.Keys(used)) {
+	for _, column := range slices.Sorted(maps.Keys(after)) {
 		reads = append(reads, plangraph.Effect{Subject: builder.ColumnParts(table.Subject.Schema.Source, table.Subject.Name.Source, column), Action: plangraph.Read})
 	}
 	var dependencies []plangraph.Dependency
@@ -270,16 +288,18 @@ func indexColumnDependencies(request featureplan.Request, table featureplan.Tabl
 			continue
 		}
 		for _, effect := range common.Effects {
-			if !columnOf(effect.Subject, table.Subject) || !usesColumn(request, table, used, effect.Subject) {
+			if !columnOf(effect.Subject, table.Subject) {
 				continue
 			}
-			switch effect.Action {
-			case plangraph.Create:
-				dependencies = append(dependencies, plangraph.Dependency{Before: common.ID, After: add})
-			case plangraph.Alter:
-				dependencies = append(dependencies, plangraph.Dependency{Before: drop, After: common.ID}, plangraph.Dependency{Before: common.ID, After: add})
-			case plangraph.Drop:
+			old, current := usesColumn(request, table, before, effect.Subject), usesColumn(request, table, after, effect.Subject)
+			if effect.Action == plangraph.Drop && current {
 				return nil, nil, fmt.Errorf("column %q is used by the expression of an index whose settings change; its removal cannot be scheduled", effect.Subject.Name.Source)
+			}
+			if old && (effect.Action == plangraph.Alter || effect.Action == plangraph.Drop) {
+				dependencies = append(dependencies, plangraph.Dependency{Before: drop, After: common.ID})
+			}
+			if current && (effect.Action == plangraph.Alter || effect.Action == plangraph.Create) {
+				dependencies = append(dependencies, plangraph.Dependency{Before: common.ID, After: add})
 			}
 		}
 	}

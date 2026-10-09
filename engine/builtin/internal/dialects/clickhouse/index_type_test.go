@@ -86,36 +86,25 @@ func TestRenderSQL_RefusesAForeignIndexAccessMethod_FailurePath(t *testing.T) {
 	}
 }
 
-// TestRenderSQL_RefusesAForeignMethodInTheCommonType_FailurePath keeps the
-// refusal for an AST built by hand. A foreign method there names no ClickHouse
-// type, so the same message applies.
-func TestRenderSQL_RefusesAForeignMethodInTheCommonType_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	node := clickHouseIndex("")
-	node.Type = "GIN"
+// TestRenderSQL_RefusesAnyCommonType_FailurePath pins the one representation
+// of the skipping-index type. Source decoding moves a declared `type` into the
+// owner's settings, so a common type that reaches this renderer is a second
+// spelling nothing decoded, whether or not it names a ClickHouse type, and
+// rendering either one would ignore the other.
+func TestRenderSQL_RefusesAnyCommonType_FailurePath(t *testing.T) {
+	for _, indexType := range []string{"GIN", "minmax"} {
+		t.Run(indexType, func(t *testing.T) {
+			c := qt.New(t)
+			node := clickHouseIndex("set(100)")
+			node.Type = indexType
 
-	sql, err := builtin.RenderSQL(platform.ClickHouse, node)
+			sql, err := builtin.RenderSQL(platform.ClickHouse, node)
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `(?s).*names a PostgreSQL or MySQL access method.*`)
-	c.Assert(sql, qt.Equals, "")
-}
-
-// TestRenderSQL_RefusesASkippingTypeInTheCommonType_FailurePath pins the one
-// representation of the skipping-index type. Source decoding moves a declared
-// `type` into the owner's settings, so a common type that reaches this renderer
-// is a second spelling nothing decoded, and rendering either one would ignore
-// the other.
-func TestRenderSQL_RefusesASkippingTypeInTheCommonType_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	node := clickHouseIndex("set(100)")
-	node.Type = "minmax"
-
-	sql, err := builtin.RenderSQL(platform.ClickHouse, node)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `(?s).*carries type "minmax" in the common index type.*`)
-	c.Assert(sql, qt.Equals, "")
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `(?s).*carries type "`+indexType+`" in the common index type.*`)
+			c.Assert(sql, qt.Equals, "")
+		})
+	}
 }
 
 // TestRenderSQL_KeepsAClickHouseIndexType_HappyPath is the control that the
@@ -165,4 +154,18 @@ func TestRenderSQL_KeepsAnIndexTypeThisRepositoryDoesNotKnow(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "TYPE quantum_index")
+}
+
+// TestRenderSQL_WritesACatalogKeyListAsATuple replays a tuple key the way an
+// inspection reports it. system.data_skipping_indices gives the key of
+// `INDEX i (a, b)` as the bare list `a, b`, which ADD INDEX reads as the end of
+// its expression and refuses with a syntax error on 24.10.
+func TestRenderSQL_WritesACatalogKeyListAsATuple(t *testing.T) {
+	c := qt.New(t)
+	node := &ast.IndexNode{Name: "idx_ab", Table: "docs", Columns: []string{"a, b"}}
+
+	sql, err := builtin.RenderSQL(platform.ClickHouse, node)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ADD INDEX `idx_ab` (a, b) TYPE minmax GRANULARITY 1;")
 }

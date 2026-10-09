@@ -1158,13 +1158,9 @@ func (r *Renderer) renderConstraint(*ast.ConstraintNode) error { return nil }
 // attribute or `platform.clickhouse.type`, and the granularity through
 // `platform.clickhouse.granularity`.
 func (r *Renderer) renderIndex(node *ast.IndexNode) error {
-	// Before anything is recorded or written: a type this server cannot read
-	// makes the whole ALTER fail, so the author gets no index rather than a
-	// weaker one, and a record about a lesser loss would describe the wrong
-	// problem.
-	if err := refuseForeignIndexAccessMethod(node.Name, node.Type); err != nil {
-		return err
-	}
+	// Source decoding moves a declared type into the owner's settings, so a
+	// common type here is a second spelling nothing decoded: an AST built by
+	// hand, or a lowering path that skipped the selected target's decoding.
 	if node.Type != "" {
 		return fmt.Errorf("%w: ClickHouse index %q carries type %q in the common index type; "+
 			"a data-skipping type is a ClickHouse index setting", ptaherr.ErrInvalidSchemaDiff, node.Name, node.Type)
@@ -1173,6 +1169,10 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if err != nil {
 		return err
 	}
+	// Before anything is recorded or written: a type this server cannot read
+	// makes the whole ALTER fail, so the author gets no index rather than a
+	// weaker one, and a record about a lesser loss would describe the wrong
+	// problem.
 	if err := refuseForeignIndexAccessMethod(node.Name, settings.IndexType); err != nil {
 		return err
 	}
@@ -1212,12 +1212,8 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if node.Unique {
 		r.w.WriteLinef("-- CLICKHOUSE: UNIQUE index %q downgraded to a minmax skipping index; uniqueness is not enforced by ClickHouse", node.Name)
 	}
-	expr := strings.Join(node.Columns, ", ")
-	if len(node.Columns) > 1 {
-		expr = "(" + expr + ")"
-	}
 	return r.renderOwnedExtension(&ast.AlterTableNode{Name: node.Table}, ast.AlterExtension, &chast.AddSkippingIndex{
-		Name: node.Name, Expression: expr, IndexType: settings.IndexType, Granularity: settings.Granularity,
+		Name: node.Name, Expression: chast.SkippingIndexExpression(node.Columns), IndexType: settings.IndexType, Granularity: settings.Granularity,
 	})
 }
 

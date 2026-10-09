@@ -136,3 +136,30 @@ func TestSkippingIndexSettingsJoinACommonReplacement(t *testing.T) {
 	c.Assert(drops, qt.HasLen, 1)
 	c.Assert(adds, qt.DeepEquals, []string{"ALTER TABLE `events` ADD INDEX `idx_payload` lower(payload) TYPE set(100) GRANULARITY 4"})
 }
+
+// The common comparison matches ClickHouse indexes by name, so a settings
+// change can arrive beside a changed key. The replacement builds the declared
+// index, and the rollback restores the captured one, so neither direction
+// leaves the index on a key nobody declared.
+func TestSkippingIndexSettingsChangeAppliesTheDeclaredKey(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	source := indexedSource(schemamodel.Index{Overrides: map[string]map[string]string{"clickhouse": {"granularity": "4"}}})
+	source.Indexes[0].Fields = []string{"id", "payload"}
+	current := indexedCatalog(&chschema.ObservedIndex{IndexType: "minmax", Granularity: 1})
+	diff, err := schemadiff.CompareWithDialect(t.Context(), source, current, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), runtime, diff, "clickhouse")
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"ALTER TABLE `events` DROP INDEX `idx_payload`",
+		"ALTER TABLE `events` ADD INDEX `idx_payload` (id, payload) TYPE minmax GRANULARITY 4",
+	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: source, CurrentSchema: current, Dialect: "clickhouse",
+	})
+	c.Assert(err, qt.IsNil)
+	reverse, err := builtin.RenderSQL("clickhouse", plan.Reverse.Nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(reverse, qt.Contains, "ADD INDEX `idx_payload` lower(payload) TYPE minmax GRANULARITY 1;")
+}
