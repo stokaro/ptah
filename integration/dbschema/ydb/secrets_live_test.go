@@ -11,12 +11,14 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
@@ -262,4 +264,189 @@ func TestYDBSecrets_DropDirectoryDropsThem(t *testing.T) {
 	c.Assert(dropper.DropDirectory(c.Context(), "ptah_ydb_dropdir_secrets/probe"), qt.IsNil)
 
 	c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropdir_secrets"), qt.DeepEquals, []string{"keep"})
+}
+
+// The root secrets the limit test makes: one whose name holds a dot, which
+// the source leaves unmanaged, and one the source describes by leaving it out.
+const (
+	secretsLimitKept    = "ptah_ydb_secrets_limit.pw"    // #nosec G101 -- a secret's path, not a credential
+	secretsLimitDropped = "ptah_ydb_secrets_limit_other" // #nosec G101 -- a secret's path, not a credential
+)
+
+// dropRootSecrets drops the root secrets the limit test makes, and no other.
+func dropRootSecrets(c *qt.C, conn *dbschema.DatabaseConnection) {
+	c.Helper()
+	for _, path := range liveSecrets(c, readScoped(c, conn, []string{""})) {
+		if path != secretsLimitKept && path != secretsLimitDropped {
+			continue
+		}
+		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP SECRET "+sqlident.Quote("ydb", path)), qt.IsNil)
+	}
+}
+
+// TestYDBSecrets_LimitNamesADottedRootSecret reads a Go source that leaves the
+// root secret ptah_ydb_secrets_limit.pw unmanaged and plans it against a
+// database that holds it: the limit names that path, not pw in a directory
+// ptah_ydb_secrets_limit, so the secret is left alone. The source still
+// describes every other secret, so another root secret is dropped.
+func TestYDBSecrets_LimitNamesADottedRootSecret(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	dropRootSecrets(c, conn)
+	c.Cleanup(func() { dropRootSecrets(c, conn) })
+	for _, path := range []string{secretsLimitKept, secretsLimitDropped} {
+		c.Assert(conn.Writer().ExecuteSQL(c.Context(), "CREATE SECRET "+sqlident.Quote("ydb", path)+" WITH (value = 'probe')"), qt.IsNil)
+	}
+	source, err := goschema.ParseSource("limits.go",
+		"package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\""+secretsLimitKept+"\"\ntype Unmanaged struct{}\n")
+	c.Assert(err, qt.IsNil)
+	declared := &schemamodel.Database{FeatureCoverage: source.FeatureCoverage.SelectKinds([]schemaext.Kind{ydbsecret.Kind})}
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, []string{""}), conn.Info(), nil, must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: ydbsecret.Ref("", secretsLimitDropped), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}},
+	})
+}
+
+// TestYDBSecrets_CreatedBeneathADroppedTable plans a secret beneath the path of
+// a table the plan drops. YDB needs the directory above a secret to hold no
+// other object, so CREATE SECRET runs after DROP TABLE, and the server takes
+// both; nothing is left to plan after.
+func TestYDBSecrets_CreatedBeneathADroppedTable(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	schemas := []string{secretsSchema, secretsSchema + "/holder"}
+	dropSecrets(c, conn, schemas)
+	dropTables(c, conn, schemas)
+	c.Cleanup(func() {
+		dropSecrets(c, conn, schemas)
+		dropTables(c, conn, schemas)
+	})
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `ptah_ydb_secrets/holder` (id Int64 NOT NULL, PRIMARY KEY (id))"), qt.IsNil)
+	declared := &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbsecret.DesiredObject(secretsSchema+"/holder", "pw", "", secretPasswordEnv))),
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+
+	plan := planAgainst(c, conn, declared, schemas)
+	apply(c, conn, plan)
+
+	c.Assert(plan, qt.DeepEquals, []string{
+		"DROP TABLE `ptah_ydb_secrets/holder`",
+		"CREATE SECRET `ptah_ydb_secrets/holder/pw` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)",
+	})
+	c.Assert(liveSecrets(c, readScoped(c, conn, schemas)), qt.DeepEquals, []string{"ptah_ydb_secrets/holder/pw"})
+	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
+}
+
+// planFailure plans the declaration against the directories a test owns and
+// returns why the plan was refused.
+func planFailure(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, schemas []string) error {
+	c.Helper()
+	info := conn.Info()
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, schemas), info, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()), diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	c.Assert(statements, qt.IsNil)
+	return err
+}
+
+// absoluteSecretSource declares the secret ptah_ydb_external/abs_pw, unless
+// secret is false, and a PostgreSQL source at location whose password the
+// secret at path holds.
+func absoluteSecretSource(secret bool, location, path string) *schemamodel.Database {
+	declared := &schemamodel.Database{
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "warehouse", Schema: externalSchema, SourceType: "PostgreSQL",
+			Location: location, AuthMethod: "BASIC",
+			Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": path}}},
+	}
+	if secret {
+		declared.FeatureObjects = must.Must(schemaext.NewObjects(ydbsecret.DesiredObject(externalSchema, "abs_pw", "", externalSecretEnv)))
+	}
+	return declared
+}
+
+// TestYDBSecrets_ReadThroughAnAbsolutePath declares a data source that names
+// its secret by an absolute path, as YDB stores it. The path is read against
+// the database the plan runs in: the secret is created before the source, the
+// two compare equal after, and a plan that drops the secret while it creates
+// the source again is refused, as is a path outside the database.
+func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
+	t.Setenv(externalSecretEnv, "probe")
+	c := qt.New(t)
+	line := lineNamed(c, "26.2")
+	setClusterFlags(c, line, externalSourcesOn)
+	conn := openYDB(c, line)
+	c.Cleanup(func() {
+		externalTeardown(c, conn, nil)
+		dropSecrets(c, conn, externalSchemas)
+	})
+	root := readScoped(c, conn, externalSchemas).DatabasePath
+	declared := absoluteSecretSource(true, "pg.invalid:5432", root+"/"+externalSchema+"/abs_pw")
+
+	first := planAgainst(c, conn, declared, externalSchemas)
+	apply(c, conn, first)
+
+	c.Assert(first, qt.HasLen, 2)
+	c.Assert(first[0], qt.Equals, "CREATE SECRET `ptah_ydb_external/abs_pw` WITH (value = $PTAH_SECRET_LIVE_EXTERNAL_PG)")
+	c.Assert(planAgainst(c, conn, declared, externalSchemas), qt.HasLen, 0)
+	c.Assert(planFailure(c, conn, absoluteSecretSource(false, "pg2.invalid:5432", root+"/"+externalSchema+"/abs_pw"), externalSchemas),
+		qt.ErrorMatches, ".*secret ptah_ydb_external/abs_pw is dropped while a statement of this plan reads it by its path.*")
+	c.Assert(planFailure(c, conn, absoluteSecretSource(true, "pg2.invalid:5432", "/elsewhere/abs_pw"), externalSchemas),
+		qt.ErrorMatches, `.*secret path "/elsewhere/abs_pw" is outside the database `+root+`.*`)
+}
+
+// TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns compares the secret a
+// database holds against a target without the secrets key, as a 25.3 server
+// with EnableSchemaSecrets on lists one: a declaration that keeps it and a
+// source with no claim on it plan no secret statement, so neither is refused.
+// On 25.1 a source that describes every secret and declares none plans
+// nothing either.
+func TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	dropSecrets(c, conn, secretsSchemas)
+	c.Cleanup(func() { dropSecrets(c, conn, secretsSchemas) })
+	apply(c, conn, planAgainst(c, conn, secretsDeclaration("pg_password"), secretsSchemas))
+	info := conn.Info()
+	info.Capabilities = capability.YDB253()
+
+	for _, declared := range []*schemamodel.Database{secretsDeclaration("pg_password"), {}} {
+		diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+		c.Assert(err, qt.IsNil)
+		c.Assert(diff.FeatureChanges, qt.HasLen, 0)
+	}
+
+	old := openYDB(c, lineNamed(c, "25.1"))
+	described := &schemamodel.Database{FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))}
+	c.Assert(planAgainst(c, old, described, secretsSchemas), qt.HasLen, 0)
+}
+
+// TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement compares the
+// same database against a target without the secrets key for a declaration
+// that leaves the secret out: dropping it is a statement the target cannot
+// run, so the comparison refuses it by name.
+func TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	dropSecrets(c, conn, secretsSchemas)
+	c.Cleanup(func() { dropSecrets(c, conn, secretsSchemas) })
+	apply(c, conn, planAgainst(c, conn, secretsDeclaration("pg_password"), secretsSchemas))
+	info := conn.Info()
+	info.Capabilities = capability.YDB253()
+	described := &schemamodel.Database{FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))}
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), described, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+
+	c.Assert(err, qt.ErrorMatches, "secret ptah_ydb_secrets/pg_password, which requires target capability secrets, unavailable on this ydb target")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(diff, qt.IsNil)
 }
