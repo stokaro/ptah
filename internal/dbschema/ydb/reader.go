@@ -190,6 +190,9 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 	if err := r.walk(ctx, source, "", db); err != nil {
 		return nil, err
 	}
+	if err := r.unmanagedSecrets(db); err != nil {
+		return nil, err
+	}
 	if err := r.principals(ctx, source, db); err != nil {
 		return nil, err
 	}

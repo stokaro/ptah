@@ -257,3 +257,42 @@ func TestGoExportPartialFilesKeepUnknownNamespaces(t *testing.T) {
 		}
 	}
 }
+
+func secretExportSource(c *qt.C, knowledge schemaext.Knowledge) *schemamodel.Database {
+	c.Helper()
+	known, err := ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: ydbsecret.Kind, Subject: ydbsecret.Ref("ext", "pg.pw"), Knowledge: knowledge}})
+	c.Assert(err, qt.IsNil)
+	return &schemamodel.Database{FeatureCoverage: known}
+}
+
+// TestGoExport_CarriesASecretAReadLeftUnmanaged writes a secret that a read
+// of a line without the secrets capability left unmanaged as a limit on that
+// secret, so the exported source leaves it unmanaged as well.
+func TestGoExport_CarriesASecretAReadLeftUnmanaged(t *testing.T) {
+	c := qt.New(t)
+	db := secretExportSource(c, schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbsecret.UnsupportedReason})
+
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(string(files[0].Data), qt.Contains, `//ptah:schema:notdescribed kind="secret" name="ext/pg.pw"`)
+	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "pg.pw")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "other")).State, qt.Equals, schemaext.Complete)
+}
+
+// TestGoExport_RefusesASecretLeftUnknownForAnotherReason refuses to write a
+// secret whose record says something a limit cannot: a directive would turn a
+// read failure into an authored decision.
+func TestGoExport_RefusesASecretLeftUnknownForAnotherReason(t *testing.T) {
+	c := qt.New(t)
+	db := secretExportSource(c, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the read failed"})
+
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+
+	c.Assert(err, qt.ErrorMatches, `.*secrets object .* cannot be exported without losing its coverage record.*`)
+	c.Assert(files, qt.IsNil)
+}

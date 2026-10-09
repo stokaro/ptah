@@ -130,6 +130,12 @@ func observedPayload(payload schemaext.Payload) (*Observed, error) {
 	return value, nil
 }
 
+// UnsupportedReason is why a read of a target without the secrets capability
+// records each secret it lists as uninspected: Ptah plans no secret statement
+// there, so it neither keeps nor drops one, and a source written from the read
+// carries the secret as a limit rather than a declaration.
+const UnsupportedReason = "target capability secrets is unavailable, so Ptah leaves the secret unmanaged"
+
 // Coverage records a source's claim about the secret namespace. Enrollment is
 // limited to this model's own definition, whatever else a runtime registers.
 func Coverage(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {

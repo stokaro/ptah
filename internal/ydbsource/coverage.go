@@ -36,17 +36,20 @@ type sourceFamily struct {
 	kind  schemaext.Kind
 	token string
 	label string
+	// unmanaged is a reason a database read gives an object it leaves
+	// unmanaged, which a source writes as an unmanaged object, or empty.
+	unmanaged string
 }
 
 // sourceKinds is shared by limit decoding and export. A new spelling must be
 // recognized in both directions or exporting unknown coverage would grant
 // authority that the input never held.
 var sourceKinds = []sourceFamily{
-	{ydbcoordination.Kind, "coordination_node", "coordination nodes"},
-	{ydbstreaming.Kind, "streaming_query", "streaming queries"},
-	{ydbworkload.PoolKind, "resource_pool", "resource pools"},
-	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers"},
-	{ydbsecret.Kind, "secret", "secrets"},
+	{ydbcoordination.Kind, "coordination_node", "coordination nodes", ""},
+	{ydbstreaming.Kind, "streaming_query", "streaming queries", ""},
+	{ydbworkload.PoolKind, "resource_pool", "resource pools", ""},
+	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers", ""},
+	{ydbsecret.Kind, "secret", "secrets", ydbsecret.UnsupportedReason},
 }
 
 func sourceKind(token string) schemaext.Kind {

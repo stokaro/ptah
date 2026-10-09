@@ -96,7 +96,8 @@ func exportFamilyLimits(known schemaext.Coverage, family sourceFamily, model sch
 		if record.Knowledge.State == schemaext.Complete && namespace == schemaext.Complete {
 			continue
 		}
-		if !sourceLimitRepresentable(record.Knowledge, unmanagedObjectReason) {
+		if !sourceLimitRepresentable(record.Knowledge, unmanagedObjectReason) &&
+			(family.unmanaged == "" || !sourceLimitRepresentable(record.Knowledge, family.unmanaged)) {
 			return nil, fmt.Errorf("%w: %s object %s cannot be exported without losing its coverage record: %s %s",
 				ptaherr.ErrUnsupportedFeature, family.label, record.Subject, record.Knowledge.State, record.Knowledge.Reason)
 		}
@@ -107,6 +108,8 @@ func exportFamilyLimits(known schemaext.Coverage, family sourceFamily, model sch
 
 // A source directive has a fixed decoded meaning. Equality with that meaning
 // proves it can round-trip; arbitrary read errors cannot use this spelling.
+// A family's own unmanaged reason is the exception: the read left the object
+// unmanaged on purpose, which is what the directive says.
 func sourceLimitRepresentable(knowledge schemaext.Knowledge, reason string) bool {
 	return knowledge.State == schemaext.Uninspected && knowledge.Reason == reason
 }

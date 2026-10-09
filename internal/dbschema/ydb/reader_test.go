@@ -562,21 +562,43 @@ func TestReader_ReadsASecretByItsPath(t *testing.T) {
 	}
 }
 
-// On a line without the secrets key a secret is recorded as unread rather
-// than observed, as a view is without the views key, so a plan never meets a
-// secret the renderer would refuse and never reads its silence as absence.
+// On a line without the secrets key a secret is recorded as uninspected
+// rather than observed, as a view is without the views key: Ptah plans no
+// secret statement there, so a plan neither keeps nor drops it and never reads
+// its silence as absence. A scoped read records only the secrets of the
+// directories it names.
 func TestReader_RecordsASecretOnALineWithoutSecrets(t *testing.T) {
-	c := qt.New(t)
 	source := fakeSource{
-		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("pg_password", Ydb_Scheme.Entry_SECRET)}},
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local":     {entry("pg_password", Ydb_Scheme.Entry_SECRET), entry("ext", Ydb_Scheme.Entry_DIRECTORY)},
+			"/local/ext": {entry("s3.key", Ydb_Scheme.Entry_SECRET)},
+		},
 	}
+	unmanaged := schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbsecret.UnsupportedReason}
+	tests := []struct {
+		name    string
+		schemas []string
+		want    []schemaext.Knowledge
+	}{
+		{name: "every directory", want: []schemaext.Knowledge{unmanaged, unmanaged}},
+		{name: "one directory", schemas: []string{"ext"}, want: []schemaext.Knowledge{{State: schemaext.Complete}, unmanaged}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := ydbreader.NewReaderFromSource(source, "/local", capability.YDB253())
+			reader.SetSchemas(test.schemas)
 
-	db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB253()).ReadSchemaContext(context.Background())
+			db, err := reader.ReadSchemaContext(context.Background())
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(observedSecrets(c, db), qt.HasLen, 0)
-	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "pg_password")), qt.DeepEquals,
-		schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "target capability secrets is unavailable"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(observedSecrets(c, db), qt.HasLen, 0)
+			c.Assert([]schemaext.Knowledge{
+				db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "pg_password")),
+				db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "s3.key")),
+			}, qt.DeepEquals, test.want)
+		})
+	}
 }
 
 // A storage setting is recorded only where it differs from what a table

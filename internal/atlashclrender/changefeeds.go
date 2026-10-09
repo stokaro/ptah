@@ -9,9 +9,11 @@ import (
 	"ptah.run/internal/ydbsource"
 )
 
-// reportFeatureObjects names every feature value the HCL document leaves out.
-// It reads identities without interpreting payloads, so an unrecognized provider
-// cannot turn export loss into a successful cleanup of the source annotations.
+// reportFeatureObjects names every feature value the HCL document leaves out,
+// and every object the source records as not described, which HCL cannot say
+// outside coordination nodes. It reads identities without interpreting
+// payloads, so an unrecognized provider cannot turn export loss into a
+// successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
 		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) {
@@ -19,8 +21,20 @@ func (r *renderer) reportFeatureObjects() {
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
 			Severity: SeverityWarning,
-			Path:     fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature),
+			Path:     featurePath(ref),
 			Message:  fmt.Sprintf("feature object %s of kind %s is not represented in HCL", ref, ref.Kind),
+		})
+	}
+	for _, record := range r.db.FeatureCoverage.SubjectRecords() {
+		state := record.Knowledge.State
+		if record.Kind == ydbcoordination.Kind || (state != schemaext.Uninspected && state != schemaext.Unrepresentable) {
+			continue
+		}
+		r.diagnostics = append(r.diagnostics, Diagnostic{
+			Severity: SeverityWarning,
+			Path:     featurePath(record.Subject),
+			Message: fmt.Sprintf("feature object %s of kind %s is not described (%s), and HCL cannot record that",
+				record.Subject, record.Kind, record.Knowledge.Reason),
 		})
 	}
 	for _, facets := range r.db.FacetSlots() {
@@ -32,6 +46,10 @@ func (r *renderer) reportFeatureObjects() {
 			})
 		}
 	}
+}
+
+func featurePath(ref objectidentity.ID) string {
+	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)
 }
 
 // reportExternalObjects names every YDB external data source and external
