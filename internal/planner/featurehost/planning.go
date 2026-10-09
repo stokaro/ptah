@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/featureops"
+	"ptah.run/internal/tableref"
 )
 
 // Result retains lowered contributions and explicit common-step rewrites.
@@ -25,8 +26,9 @@ type Result struct {
 
 // Plan dispatches one contextual batch and converts complete operation replies
 // into AST contributions without scheduling them independently. Names binds
-// captured table identities to the host's source-spelled emission names. A
-// parent without a binding cannot receive an ALTER operation. The caller must
+// captured table identities, and the materialized views whose attached
+// settings the request changes, to the host's source-spelled emission names.
+// A parent without a binding cannot receive an ALTER operation. The caller must
 // join these contributions to its common graph before returning any nodes.
 func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.Request, names map[objectidentity.Key]string) (Result, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
@@ -75,11 +77,28 @@ func validateNames(request featureplan.Request, names map[objectidentity.Key]str
 	for _, table := range request.Tables {
 		captured[table.Subject.Key()] = true
 	}
+	views := make(map[objectidentity.Key]bool)
+	for _, change := range request.Changes {
+		if change.Subject.Kind == objectidentity.KindMatView {
+			views[change.Subject.Key()] = true
+		}
+	}
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for key, name := range names {
-		if name == "" || !captured[key] || builder.Table(name).Key() != key {
+		table := captured[key] && builder.Table(name).Key() == key
+		view := views[key] && materializedView(builder, name).Key() == key
+		if name == "" || !table && !view {
 			return fmt.Errorf("%w: feature table name disagrees with its captured identity", schemaext.ErrInvalidValue)
 		}
 	}
 	return nil
+}
+
+// materializedView is the identity of a materialized view named the way the
+// host spells it, with or without its schema.
+func materializedView(builder objectidentity.Builder, name string) objectidentity.ID {
+	if ref, valid := tableref.Parse(name); valid {
+		return builder.SchemaScopedParts(objectidentity.KindMatView, ref.Schema, ref.Name)
+	}
+	return builder.SchemaScopedParts(objectidentity.KindMatView, "", name)
 }

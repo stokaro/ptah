@@ -2805,9 +2805,20 @@ type ViewDiff struct {
 }
 
 // MaterializedViewDiff represents changes to a materialized view definition.
+//
+// Changes holds the common definition's changes, and any of them replaces the
+// view. FeatureChanges holds owner-defined changes to settings attached to the
+// view; a view whose only changes are attached settings keeps its rows unless
+// one of those changes reports [schemaext.OwnerReplacement], in which case it
+// is replaced like any other modified view. [MaterializedViewDiff.Replaces]
+// answers which.
 type MaterializedViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`
+
+	// FeatureChanges carries owner-defined changes to settings attached to
+	// this view, in the order the comparison reported them.
+	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 
 	// RefreshChange carries a ClickHouse refresh-schedule transition, and is
 	// nil when the schedule is unchanged.
@@ -2835,6 +2846,18 @@ type MaterializedViewDiff struct {
 	//
 	// It stays off the wire. The change map is the change; this is the operand.
 	Desired schemamodel.MaterializedView `json:"-"`
+}
+
+// Replaces reports whether planning this change drops and recreates the view.
+// Every modification does, except one whose only changes are attached settings
+// their owner applies in place.
+func (d MaterializedViewDiff) Replaces() bool {
+	if len(d.Changes) > 0 || len(d.FeatureChanges) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(d.FeatureChanges, func(change schemaext.ChangeRecord) bool {
+		return schemaext.ReplacesOwner(change.Value)
+	})
 }
 
 // MatViewRefreshChange is one materialized view's refresh-schedule transition.

@@ -21,6 +21,9 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 	for _, table := range forward.TablesModified {
 		changes = append(changes, table.FeatureChanges...)
 	}
+	for _, view := range forward.MaterializedViewsModified {
+		changes = append(changes, view.FeatureChanges...)
+	}
 	recovery, err := runtime.ReverseChanges(ctx, schemaext.ReversalRequest{
 		Target: dialect, Identifiers: forward.EffectiveIdentifierSemantics(dialect), Capabilities: caps, Changes: changes,
 	})
@@ -49,6 +52,14 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 		}
 		reverse.TablesModified[i].Current = current
 		projected[semantics.QualifiedTableIdentityKey(table.TableName)] = current
+		offset += count
+	}
+	// A materialized view's attached settings need no projected capture: the
+	// reverse entry already carries the prior declaration, and each reversed
+	// change states whether undoing it replaces the view.
+	for i, view := range forward.MaterializedViewsModified {
+		count := len(view.FeatureChanges)
+		reverse.MaterializedViewsModified[i].FeatureChanges = reversedRecords(recovery[offset : offset+count])
 		offset += count
 	}
 	for _, observed := range forward.ObservedConstraintHosts {

@@ -1619,6 +1619,9 @@ func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterial
 	// Cloned rather than shared: a node handed to a renderer must not be a
 	// window onto the schema it came from (stokaro/ptah#1802).
 	node.Refresh = view.Refresh.Clone()
+	// Facets keep immutable value ownership, so the node holds the same
+	// collection; the selected renderer interprets or refuses it.
+	node.Facets = view.Facets
 	return node
 }
 

@@ -23,7 +23,7 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 		return featureplan.Result{}, fmt.Errorf("%w: planning changed the result count", schemaext.ErrInvalidValue)
 	}
 	owner := r.planningServices[service]
-	contributions, steps, err := r.snapshotPlanningContributions(ctx, owner.owner, owner.OperationKinds, request.Tables, reply.Contributions)
+	contributions, steps, err := r.snapshotPlanningContributions(ctx, owner.owner, owner.OperationKinds, planningParents(request), reply.Contributions)
 	if err != nil {
 		return featureplan.Result{}, err
 	}
@@ -52,7 +52,7 @@ func (r *Runtime) snapshotPlanningContributions(
 	ctx context.Context,
 	owner string,
 	kinds []schemaext.Kind,
-	tables []featureplan.Table,
+	parents []objectidentity.ID,
 	contributions []plangraph.Contribution[featureplan.Operation],
 ) ([]plangraph.Contribution[featureplan.Operation], map[plangraph.StepID]bool, error) {
 	result := make([]plangraph.Contribution[featureplan.Operation], len(contributions))
@@ -69,7 +69,7 @@ func (r *Runtime) snapshotPlanningContributions(
 				return nil, nil, fmt.Errorf("%w: duplicate or invalid planning step", schemaext.ErrInvalidValue)
 			}
 			steps[step.ID] = true
-			operation, err := r.snapshotPlannedOperation(ctx, kinds, tables, step.Payload)
+			operation, err := r.snapshotPlannedOperation(ctx, kinds, parents, step.Payload)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -114,7 +114,23 @@ func validatePlannedChanges(inputs []schemaext.ChangeRecord, changes []featurepl
 	return nil
 }
 
-func (r *Runtime) snapshotPlannedOperation(ctx context.Context, kinds []schemaext.Kind, tables []featureplan.Table, operation featureplan.Operation) (featureplan.Operation, error) {
+// planningParents are the objects an ALTER operation of a planning reply may
+// name: every captured table, and every materialized view whose attached
+// settings the request changes.
+func planningParents(request featureplan.Request) []objectidentity.ID {
+	parents := make([]objectidentity.ID, 0, len(request.Tables))
+	for _, table := range request.Tables {
+		parents = append(parents, table.Subject)
+	}
+	for _, change := range request.Changes {
+		if change.Subject.Kind == objectidentity.KindMatView && !slices.Contains(parents, change.Subject) {
+			parents = append(parents, change.Subject)
+		}
+	}
+	return parents
+}
+
+func (r *Runtime) snapshotPlannedOperation(ctx context.Context, kinds []schemaext.Kind, parents []objectidentity.ID, operation featureplan.Operation) (featureplan.Operation, error) {
 	for _, note := range operation.Notes {
 		if !reversalText(note) {
 			return featureplan.Operation{}, fmt.Errorf("%w: planning operation has an invalid note", schemaext.ErrInvalidValue)
@@ -132,7 +148,7 @@ func (r *Runtime) snapshotPlannedOperation(ctx context.Context, kinds []schemaex
 			return featureplan.Operation{}, fmt.Errorf("%w: standalone operation carries an ALTER parent", schemaext.ErrInvalidValue)
 		}
 	case ast.AlterExtension:
-		if operation.Parent.Kind != objectidentity.KindTable || !slices.ContainsFunc(tables, func(table featureplan.Table) bool { return table.Subject == operation.Parent }) {
+		if (operation.Parent.Kind != objectidentity.KindTable && operation.Parent.Kind != objectidentity.KindMatView) || !slices.Contains(parents, operation.Parent) {
 			return featureplan.Operation{}, fmt.Errorf("%w: operation has no captured parent", schemaext.ErrInvalidValue)
 		}
 	default:

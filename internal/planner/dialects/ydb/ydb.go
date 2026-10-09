@@ -175,6 +175,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if diff == nil {
 		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
 	}
+	if err := schemaprecondition.RefuseMaterializedViewFeatureChanges(platform.YDB, diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseServerSchemas(platform.YDB, diff); err != nil {
 		return nil, err
 	}

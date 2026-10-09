@@ -13,9 +13,9 @@ import (
 )
 
 // validateFeatureLowering accounts for feature state before the first node is
-// visited. Table facets and named children travel on their CREATE TABLE, and
-// index facets on their index node, where the selected renderer consumes or
-// refuses them. Other placements need a selected owner lowering service;
+// visited. Table facets and named children travel on their CREATE TABLE, index
+// facets on their index node, and materialized view facets on their CREATE
+// MATERIALIZED VIEW, where the selected renderer consumes or refuses them. Other placements need a selected owner lowering service;
 // dropping them would leave a successful AST that no downstream renderer can
 // refuse.
 func validateFeatureLowering(database schemamodel.Database, dialect string) error {
@@ -46,6 +46,13 @@ func validateFacetLowering(database *schemamodel.Database, dialect string) error
 	for i, owner := range schemamodel.ResolveIndexOwners(database.Indexes, database.Tables, database.MaterializedViews) {
 		if ref, valid := tableref.Parse(owner); valid {
 			owners[&database.Indexes[i].Facets] = builder.IndexParts(ref.Schema, ref.Name, database.Indexes[i].Name)
+		}
+	}
+	for i := range database.MaterializedViews {
+		view := &database.MaterializedViews[i]
+		owners[&view.Facets] = builder.SchemaScopedParts(objectidentity.KindMatView, "", view.Name)
+		if ref, valid := tableref.Parse(view.Name); valid {
+			owners[&view.Facets] = builder.SchemaScopedParts(objectidentity.KindMatView, ref.Schema, ref.Name)
 		}
 	}
 	for _, facets := range database.FacetSlots() {

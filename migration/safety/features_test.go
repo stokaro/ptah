@@ -25,7 +25,7 @@ func (v *classifiedChange) CloneChange() schemaext.ChangeValue {
 }
 func (v *classifiedChange) Effect() schemaext.Effect { return v.effect }
 
-// Both standalone and table-bound changes must appear in pre-plan reports.
+// Standalone, table-bound and view-bound changes must appear in pre-plan reports.
 // Unknown effects cannot make a nonempty diff read as safe.
 func TestClassifySchemaDiffKeepsUnknownFeatureRisk(t *testing.T) {
 	values := []schemaext.ChangeValue{&unknownChange{}, &classifiedChange{},
@@ -36,8 +36,12 @@ func TestClassifySchemaDiffKeepsUnknownFeatureRisk(t *testing.T) {
 		c := qt.New(t)
 		ref := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts("example.org/subject", "app", "name")
 		record := schemaext.ChangeRecord{Subject: ref, Value: value}
-		diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{record}, TablesModified: []difftypes.TableDiff{{FeatureChanges: []schemaext.ChangeRecord{record}}}}
+		diff := &difftypes.SchemaDiff{
+			FeatureChanges:            []schemaext.ChangeRecord{record},
+			TablesModified:            []difftypes.TableDiff{{FeatureChanges: []schemaext.ChangeRecord{record}}},
+			MaterializedViewsModified: []difftypes.MaterializedViewDiff{{FeatureChanges: []schemaext.ChangeRecord{record}}},
+		}
 		findings := safety.ClassifySchemaDiff(diff)
-		c.Assert(findings, qt.DeepEquals, []safety.Finding{{Category: "feature_changes:" + string(value.Kind()), Count: 2, Severity: safety.Destructive}})
+		c.Assert(findings, qt.DeepEquals, []safety.Finding{{Category: "feature_changes:" + string(value.Kind()), Count: 3, Severity: safety.Destructive}})
 	}
 }

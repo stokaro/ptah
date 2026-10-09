@@ -147,13 +147,24 @@ func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (sch
 	return projected, nil
 }
 
+// prepareMaterializedViewFacets projects a materialized view's facets onto the
+// target. No built-in renderer interprets one yet, so an active value is
+// refused rather than rendered without it.
+func prepareMaterializedViewFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
+	return prepareFacets(dialect, facets)
+}
+
 func validateDeclaredFacets(dialect string, database *schemamodel.Database) error {
-	owners := make(map[*schemaext.Facets]func(string, schemaext.Facets) (schemaext.Facets, error), len(database.Tables)+len(database.Indexes))
+	owners := make(map[*schemaext.Facets]func(string, schemaext.Facets) (schemaext.Facets, error),
+		len(database.Tables)+len(database.Indexes)+len(database.MaterializedViews))
 	for i := range database.Tables {
 		owners[&database.Tables[i].Facets] = prepareTableFacets
 	}
 	for i := range database.Indexes {
 		owners[&database.Indexes[i].Facets] = prepareIndexFacets
+	}
+	for i := range database.MaterializedViews {
+		owners[&database.MaterializedViews[i].Facets] = prepareMaterializedViewFacets
 	}
 	for _, facets := range database.FacetSlots() {
 		prepare := prepareFacets

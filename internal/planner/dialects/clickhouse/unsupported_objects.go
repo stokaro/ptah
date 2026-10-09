@@ -271,6 +271,11 @@ func reportViewLikes(
 			result = append(result, alter)
 			continue
 		}
+		// A view whose only changes are attached settings the owner applies
+		// in place keeps its rows: the owner plans those changes.
+		if !view.Replaces() {
+			continue
+		}
 		object, node, err := clickHouseMaterializedViewChange(view, caps)
 		if err != nil {
 			return nil, err

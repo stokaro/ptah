@@ -2352,6 +2352,9 @@ func (n *ExtendedPropertyNode) Accept(visitor Visitor) error { return visitor.Vi
 // operation, not schema state (stokaro/ptah#1625). [RefreshMaterializedViewNode]
 // is the operation, and nothing in schema reconciliation produces one.
 type CreateMaterializedViewNode struct {
+	// Facets carries settings interpreted by the selected feature owner, such
+	// as a refresh schedule the CREATE statement states inline.
+	Facets  schemaext.Facets
 	Name    string
 	Body    string
 	Comment string

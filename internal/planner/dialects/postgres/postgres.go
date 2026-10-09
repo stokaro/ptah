@@ -1806,6 +1806,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
 		return nil, err
 	}
+	// No owner on this family plans a setting attached to a materialized view,
+	// and scheduleFeatures dispatches only standalone and table changes.
+	if err := schemaprecondition.RefuseMaterializedViewFeatureChanges(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}

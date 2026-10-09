@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -36,6 +37,24 @@ func comparisonIdentifiers(desired *schemamodel.Database, current *catalog.Datab
 		return identifier.Semantics{}, err
 	}
 	return candidate, nil
+}
+
+// compareEffectiveFeatures compares the owned features and returns the result
+// with the desired state the owners made effective, such as an observed
+// setting a source that cannot describe it leaves unmanaged.
+func compareEffectiveFeatures(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, target string,
+	semantics identifier.Semantics, caps capability.Capabilities, parents []schemaext.ParentState, requests []schemaext.ChangeRequest,
+	runtime schemaext.ComparisonRuntime,
+) (schemaext.ComparisonResult, *schemamodel.Database, error) {
+	result, err := compareFeatures(ctx, desired, current, target, semantics, caps, parents, requests, runtime)
+	if err != nil {
+		return schemaext.ComparisonResult{}, nil, err
+	}
+	effective, err := effectiveFeatureState(desired, result.Desired, target, semantics)
+	if err != nil {
+		return schemaext.ComparisonResult{}, nil, err
+	}
+	return result, effective, nil
 }
 
 func compareFeatures(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, target string,
@@ -156,6 +175,18 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 		declarations[ref.Key()] = table
 	}
 	for _, change := range changes {
+		// A materialized view's changes join its entry once the view
+		// comparison has run; see attachMaterializedViewChanges.
+		if change.Subject.Kind == objectidentity.KindMatView {
+			continue
+		}
+		// Only a materialized view can be replaced for an attached setting:
+		// rebuilding a table or an index for one would destroy state the host
+		// has no way to restore.
+		if schemaext.ReplacesOwner(change.Value) {
+			return fmt.Errorf("%w: feature change %q on %s requires replacing an object this host cannot replace",
+				ptaherr.ErrUnsupportedFeature, change.Value.Kind(), change.Subject)
+		}
 		if change.Subject.Parent.Empty() && change.Subject.Kind != objectidentity.KindTable {
 			diff.FeatureChanges = append(diff.FeatureChanges, change)
 			continue
@@ -221,4 +252,75 @@ func constraintHostDeclarations(desired *schemamodel.Database, diff *difftypes.S
 		hosts = append(hosts, difftypes.ConstraintRemovalInfo{TableName: change.TableName})
 	}
 	return difftypes.ConstraintHostDeclarationsOf(desired, diff.ConstraintsAdded, hosts, semantics)
+}
+
+// attachMaterializedViewChanges attaches the feature changes of materialized
+// views to their entries. It runs after the view comparison, so a view whose
+// definition also changed holds both in one entry.
+func attachMaterializedViewChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, changes []schemaext.ChangeRecord, semantics identifier.Semantics) error {
+	views, err := newMaterializedViewChanges(diff, desired, semantics)
+	if err != nil {
+		return err
+	}
+	for _, change := range changes {
+		if change.Subject.Kind != objectidentity.KindMatView {
+			continue
+		}
+		if err := views.attach(change); err != nil {
+			return err
+		}
+	}
+	slices.SortStableFunc(diff.MaterializedViewsModified, func(a, b difftypes.MaterializedViewDiff) int {
+		return strings.Compare(a.ViewName, b.ViewName)
+	})
+	return nil
+}
+
+// materializedViewChanges attaches feature changes to the materialized views
+// they describe. A view whose only changes are attached settings gains a
+// MaterializedViewsModified entry carrying its effective declaration, so its
+// planner has the operand a replacement needs.
+type materializedViewChanges struct {
+	diff         *difftypes.SchemaDiff
+	semantics    identifier.Semantics
+	positions    map[objectidentity.Key]int
+	declarations map[objectidentity.Key]schemamodel.MaterializedView
+}
+
+func newMaterializedViewChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, semantics identifier.Semantics) (materializedViewChanges, error) {
+	views := materializedViewChanges{
+		diff: diff, semantics: semantics,
+		positions:    make(map[objectidentity.Key]int, len(diff.MaterializedViewsModified)),
+		declarations: make(map[objectidentity.Key]schemamodel.MaterializedView, len(desired.MaterializedViews)),
+	}
+	for _, view := range desired.MaterializedViews {
+		subject := declaredMaterializedViewSubject(view.Name, semantics)
+		if _, duplicate := views.declarations[subject.Key()]; duplicate {
+			return materializedViewChanges{}, fmt.Errorf("%w: duplicate desired materialized view %s", ptaherr.ErrInvalidSchemaDiff, subject)
+		}
+		views.declarations[subject.Key()] = view
+	}
+	for i, view := range diff.MaterializedViewsModified {
+		views.positions[declaredMaterializedViewSubject(view.ViewName, semantics).Key()] = i
+	}
+	return views, nil
+}
+
+func (v materializedViewChanges) attach(change schemaext.ChangeRecord) error {
+	key := change.Subject.Key()
+	position, found := v.positions[key]
+	if !found {
+		declaration, exists := v.declarations[key]
+		if !exists {
+			return fmt.Errorf("%w: feature change has no desired materialized view %s", ptaherr.ErrInvalidSchemaDiff, change.Subject)
+		}
+		position = len(v.diff.MaterializedViewsModified)
+		v.positions[key] = position
+		v.diff.MaterializedViewsModified = append(v.diff.MaterializedViewsModified, difftypes.MaterializedViewDiff{
+			ViewName: declaration.Name, Changes: make(map[string]string), Desired: declaration,
+		})
+	}
+	view := &v.diff.MaterializedViewsModified[position]
+	view.FeatureChanges = append(view.FeatureChanges, change)
+	return nil
 }

@@ -82,6 +82,7 @@ func applyResolvedFacets(desired *schemamodel.Database, prepared map[objectident
 	resolved := *desired
 	resolved.Tables = slices.Clone(desired.Tables)
 	resolved.Indexes = slices.Clone(desired.Indexes)
+	resolved.MaterializedViews = slices.Clone(desired.MaterializedViews)
 	declared, err := declaredFacetSlots(&resolved, target, semantics)
 	if err != nil {
 		return nil, err
