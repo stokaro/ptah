@@ -62,11 +62,9 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 	}
 }
 
-// TestNativeRenderDeclaresNoLimits is the control that keeps the header from
-// becoming an unconditional decoration. The native surface omits nothing, so it
-// claims everything, and a removal a native document asks for is still a
-// removal.
-func TestNativeRenderDeclaresNoLimits(t *testing.T) {
+// The native surface retains common objects while leaving unenrolled feature
+// namespaces unknown. An export cannot acquire knowledge from its format.
+func TestNativeRenderDeclaresNoCommonLimits(t *testing.T) {
 	tests := []struct {
 		name   string
 		render func() (atlashclrender.Result, error)
@@ -97,10 +95,9 @@ func TestNativeRenderDeclaresNoLimits(t *testing.T) {
 	}
 }
 
-// TestCompatibilityRenderDeclaresNothingOnSQLite pins that the header follows
-// the refusal it reports. SQLite's Atlas HCL accepts all three block types, so
-// nothing is omitted there and nothing may be claimed.
-func TestCompatibilityRenderDeclaresNothingOnSQLite(t *testing.T) {
+// SQLite's HCL retains common block types. That says nothing about coordination
+// nodes, whose absent coverage must remain unknown through a format conversion.
+func TestCompatibilityRenderDeclaresNoCommonLimitsOnSQLite(t *testing.T) {
 	c := qt.New(t)
 
 	result, err := atlashclrender.RenderInspectedForAtlasCLI(

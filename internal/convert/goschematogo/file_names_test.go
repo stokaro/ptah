@@ -32,7 +32,7 @@ func TestRender_PerTableFileNames_HappyPath(t *testing.T) {
 					{StructName: "Docs2", Name: "b", Type: "integer", FieldName: "B"},
 				},
 			},
-			want: []string{"app_docs.go", "app_docs2.go"},
+			want: []string{"schema_objects.go", "app_docs.go", "app_docs2.go"},
 		},
 		{
 			name: "a table named after the enum file",
@@ -41,7 +41,15 @@ func TestRender_PerTableFileNames_HappyPath(t *testing.T) {
 				Tables: []schemamodel.Table{{Name: "enums", StructName: "Enums"}},
 				Fields: []schemamodel.Field{{StructName: "Enums", Name: "a", Type: "integer", FieldName: "A"}},
 			},
-			want: []string{"enums.go", "enums2.go"},
+			want: []string{"enums.go", "schema_objects.go", "enums2.go"},
+		},
+		{
+			name: "a table named after the coverage holder file",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "schema_objects", StructName: "SourceRecords"}},
+				Fields: []schemamodel.Field{{StructName: "SourceRecords", Name: "id", Type: "integer", FieldName: "ID"}},
+			},
+			want: []string{"schema_objects.go", "schema_objects2.go"},
 		},
 	}
 	for _, test := range tests {

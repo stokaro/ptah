@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
 )
@@ -94,9 +95,9 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(hcl, "// ptah:not-described extension reason=suppressed provenance=defaulted\n"), qt.IsTrue)
 	c.Assert(hcl, qt.Not(qt.Contains), atlashclrender.GeneratedCodeMarker)
-	covered, err := coverage.DecodeHeader(hcl)
+	parsed, err := atlashcl.Parse([]byte(hcl), "inspect.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(covered, qt.DeepEquals, suppressedBlocks(
+	c.Assert(parsed.NotDescribed, qt.DeepEquals, suppressedBlocks(
 		coverage.Extension,
 		coverage.Policy,
 		coverage.Sequence,
@@ -124,7 +125,7 @@ func TestCompatibilityHCLFraming_IsIndependentOfBlockPolicy(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hcl, qt.Contains, `extension "pgcrypto"`)
-	c.Assert(hcl, qt.Not(qt.Contains), "ptah:not-described")
+	c.Assert(leadingCommentLines(hcl), qt.HasLen, 0)
 	c.Assert(hcl, qt.Not(qt.Contains), atlashclrender.GeneratedCodeMarker)
 	c.Assert(strings.HasSuffix(hcl, "\n"), qt.IsTrue)
 	c.Assert(strings.HasSuffix(hcl, "\n\n"), qt.IsFalse)

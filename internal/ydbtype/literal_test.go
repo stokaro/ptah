@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -124,12 +125,12 @@ func TestStringLiteral_IsTheSpellingLiteralGivesAString(t *testing.T) {
 			c := qt.New(t)
 			want, err := ydbtype.Literal(ydbtype.String, value, capability.YDB262())
 			c.Assert(err, qt.IsNil)
-			c.Assert(ydbtype.StringLiteral(value), qt.Equals, want)
+			c.Assert(ydbsyntax.StringLiteral(value), qt.Equals, want)
 		})
 	}
 	t.Run("a quote and a backslash are escaped", func(t *testing.T) {
 		c := qt.New(t)
-		c.Assert(ydbtype.StringLiteral(`a'b\c`), qt.Equals, `'a\'b\\c'`)
+		c.Assert(ydbsyntax.StringLiteral(`a'b\c`), qt.Equals, `'a\'b\\c'`)
 	})
 }
 

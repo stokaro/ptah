@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasreport"
 )
 
@@ -95,9 +96,9 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 
 	whole, err := atlasreport.RenderSchemaInspect(`{{ hcl . }}`, coverageSplitReport(c))
 	c.Assert(err, qt.IsNil)
-	wantSet, err := coverage.DecodeHeader(whole.Text)
+	wholeDB, err := atlashcl.Parse([]byte(whole.Text), "inspect.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(wantSet, qt.DeepEquals, suppressedBlocks(
+	c.Assert(wholeDB.NotDescribed, qt.DeepEquals, suppressedBlocks(
 		coverage.Extension, coverage.Policy, coverage.Sequence,
 	))
 
@@ -107,9 +108,10 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 	for path, data := range txtarMembers(split.Text) {
 		t.Run(path, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := coverage.DecodeHeader(data)
+			got, err := atlashcl.Parse([]byte(data), path)
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.DeepEquals, wantSet)
+			c.Assert(got.NotDescribed, qt.DeepEquals, wholeDB.NotDescribed)
+			c.Assert(got.FeatureCoverage.Equal(wholeDB.FeatureCoverage), qt.IsTrue)
 		})
 	}
 }
@@ -132,21 +134,17 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 		t.Run(file.Path, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(file.Dir, qt.Equals, "out")
-			got, err := coverage.DecodeHeader(file.Data)
+			got, err := atlashcl.Parse([]byte(file.Data), file.Path)
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.DeepEquals, suppressedBlocks(
+			c.Assert(got.NotDescribed, qt.DeepEquals, suppressedBlocks(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
 			))
 		})
 	}
 }
 
-// TestSplitOfADocumentThatDescribesEverythingIsUnchanged is the other half of
-// the pair. A record that claims nothing must add nothing: this is what
-// PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 and every dialect with no refused block types
-// produce, and a header prepended there would be a claim the document has no
-// basis for.
-func TestSplitOfADocumentThatDescribesEverythingIsUnchanged(t *testing.T) {
+// Keeping all common objects cannot grant knowledge of an unenrolled feature.
+func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 	c := qt.New(t)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split "type" }}`, sampleSchemaInspectReport(c))
@@ -154,6 +152,9 @@ func TestSplitOfADocumentThatDescribesEverythingIsUnchanged(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	for path, data := range txtarMembers(output.Text) {
 		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
+		parsed, err := atlashcl.Parse([]byte(data), path)
+		c.Assert(err, qt.IsNil)
+		c.Assert(parsed.FeatureCoverage.IsZero(), qt.IsTrue)
 	}
 }
 
@@ -172,7 +173,7 @@ func TestSplitCarriesTheRecordWithSQLCommentSyntax(t *testing.T) {
 	members := txtarMembers(output.Text)
 	c.Assert(memberPaths(members), qt.DeepEquals, []string{"tables.sql"})
 	for path, data := range members {
-		got, err := coverage.DecodeHeader(data)
+		got, err := coverage.DecodeHeader(data, nil)
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Sequence), qt.Commentf("member %s", path))
 	}

@@ -6,7 +6,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -35,16 +38,16 @@ func TestClassify_ResourcePool(t *testing.T) {
 				"or to the pool default",
 		},
 		{
-			wantSubject: "batch", name: "a pool created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{}}},
+			wantSubject: "batch", name: "a pool created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ydbworkload.PoolSpec{}}},
 			wantSeverity: safety.Safe,
 			wantReason:   "does not remove data or tighten constraints",
 		},
 		{
-			wantSubject: "batch", name: "a pool altered", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{ResourceWeight: new(25.0)}, Previous: &ast.ResourcePoolSpec{}}},
+			wantSubject: "batch", name: "a pool altered", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ydbworkload.PoolSpec{ResourceWeight: new(25.0)}, Previous: &ydbworkload.PoolSpec{}}},
 			wantSeverity: safety.Warning, wantReason: "ALTER RESOURCE POOL changes the limits of running and queued queries",
 		},
 		{
-			wantSubject: "etl", name: "a classifier created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "etl", Spec: &ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}}},
+			wantSubject: "etl", name: "a classifier created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "etl", Spec: &ydbworkload.ClassifierSpec{ResourcePool: "batch"}}},
 			wantSeverity: safety.Warning, wantReason: "resource pool classifier settings change which pool receives matching queries",
 		},
 	}
@@ -67,13 +70,13 @@ func TestClassify_ResourcePool(t *testing.T) {
 func TestClassifySchemaDiff_ResourcePools(t *testing.T) {
 	c := qt.New(t)
 
-	added := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{
-		ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch"}},
-	})
-	routed := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{
-		ResourcePoolsAdded:           difftypes.ResourcePoolChanges{{Name: "batch"}},
-		ResourcePoolClassifiersAdded: difftypes.ResourcePoolClassifierChanges{{Name: "etl"}},
-	})
+	pool := schemaext.ChangeRecord{Subject: ydbworkload.PoolRef("batch"), Value: &ydbdiff.ResourcePool{After: &ydbworkload.DesiredPool{}}}
+	classifier := schemaext.ChangeRecord{Subject: ydbworkload.ClassifierRef("etl"), Value: &ydbdiff.ResourcePoolClassifier{After: &ydbworkload.DesiredClassifier{Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch"}}}}
+	added := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{pool}})
+	routed := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{pool, classifier}})
+	c.Assert(added, qt.HasLen, 1)
+	c.Assert(added[0].Category, qt.Equals, "feature_changes:"+string(ydbdiff.ResourcePoolKind))
+	c.Assert(routed, qt.HasLen, 2)
 
 	c.Assert(safety.Highest(added), qt.Equals, safety.Safe)
 	c.Assert(safety.Highest(routed), qt.Equals, safety.Warning)

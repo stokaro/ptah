@@ -10,10 +10,10 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbfamily"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/yqlddl"
@@ -1747,7 +1747,7 @@ func ydbDefaultPoolDropRule() Rule {
 				return false, ""
 			}
 			read := yqlddl.Read(stmt.SQL)
-			if read.Kind != yqlddl.DropResourcePool || read.Name != ydbpool.DefaultPool {
+			if read.Kind != yqlddl.DropResourcePool || read.Name != ydbworkload.DefaultPool {
 				return false, ""
 			}
 			return true, "DROP RESOURCE POOL default drops the pool YDB runs every query in that no classifier " +

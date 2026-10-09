@@ -7,6 +7,37 @@ import (
 	"ptah.run/core/coverage"
 )
 
+func ExampleHeaderComments() {
+	for body := range coverage.HeaderComments("// schema metadata\n\n# source note\ntable {}\n// outside header") {
+		fmt.Println(body)
+	}
+	// Output:
+	// schema metadata
+	// source note
+}
+
+// ExampleObject_Directive transports an owner-defined limit without adding it
+// to common coverage. The owner must validate the kind before encoding it.
+func ExampleObject_Directive() {
+	input := coverage.Object{Kind: "native_kind", Name: "batch.jobs", Reason: coverage.NotInspected}
+	var owned []coverage.Object
+	common, err := coverage.DecodeHeader("-- "+input.Directive(), func(record coverage.Object) (bool, error) {
+		if record.Kind != "native_kind" {
+			return false, nil
+		}
+		owned = append(owned, record)
+		return true, nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(common.IsZero())
+	fmt.Println(owned[0].Directive())
+	// Output:
+	// true
+	// ptah:not-described native_kind reason=not-inspected "batch.jobs"
+}
+
 // Example walks the whole story end to end: a reader that was refused the
 // extension catalog and never read the "extra" schema records both limits,
 // serializes them into the comment header of the document it writes, and a
@@ -26,7 +57,7 @@ func Example() {
 	document.WriteString("\nCREATE TABLE users (id BIGINT PRIMARY KEY);\n")
 	fmt.Print(document.String())
 
-	decoded, err := coverage.DecodeHeader(document.String())
+	decoded, err := coverage.DecodeHeader(document.String(), nil)
 	if err != nil {
 		fmt.Println("decode:", err)
 		return
@@ -99,7 +130,7 @@ CREATE TABLE users (id BIGINT PRIMARY KEY);
 
 -- ptah:not-described sequence
 `
-	set, err := coverage.DecodeHeader(document)
+	set, err := coverage.DecodeHeader(document, nil)
 	if err != nil {
 		fmt.Println("refused:", err)
 		return

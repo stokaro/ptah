@@ -24,6 +24,7 @@ func Handlers() []renderer.ExtensionHandler {
 		ydbrender.StreamingHandler(),
 		ydbrender.ResourcePoolHandler(),
 		ydbrender.ResourcePoolClassifierHandler(),
+		ydbrender.DefaultPoolSettingsHandler(),
 		renderer.TypedHandler(&ydbast.AddChangefeed{}, ast.AlterExtension, validateAdd, renderAdd),
 		renderer.TypedHandler(&ydbast.DropChangefeed{}, ast.AlterExtension, validateDrop, renderDrop),
 		renderer.TypedHandler(&ydbast.AlterChangefeedTopic{}, ast.AlterExtension, validateTopic, renderTopic),

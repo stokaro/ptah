@@ -289,7 +289,7 @@ func TestDirectivesCarryReasonAndProvenanceAcrossTheProcessBoundary(t *testing.T
 					fmt.Fprintf(&document, "// %s\n", directive)
 				}
 
-				decoded, err := coverage.DecodeHeader(document.String())
+				decoded, err := coverage.DecodeHeader(document.String(), nil)
 				c.Assert(err, qt.IsNil)
 				c.Assert(decoded, qt.DeepEquals, set)
 
@@ -353,7 +353,7 @@ func TestDirectivesOmitUnspecifiedAttributes(t *testing.T) {
 			for _, directive := range test.set.Directives() {
 				fmt.Fprintf(&document, "// %s\n", directive)
 			}
-			decoded, err := coverage.DecodeHeader(document.String())
+			decoded, err := coverage.DecodeHeader(document.String(), nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(decoded, qt.DeepEquals, test.set)
 		})
@@ -406,7 +406,7 @@ func TestDecodeHeaderRefusesMalformedAttributes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := coverage.DecodeHeader(test.document)
+			got, err := coverage.DecodeHeader(test.document, nil)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.IsZero(), qt.IsTrue)

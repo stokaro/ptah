@@ -33,7 +33,7 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/internal/ydbtype"
+	"ptah.run/dialect/ydb/ydbsyntax"
 )
 
 // Permission names YDB takes in GRANT and reports in an object's access list,
@@ -174,7 +174,7 @@ func IsPasswordHash(password string) bool {
 // value is escaped the way every other YQL string Ptah writes is.
 func PasswordClause(password string) string {
 	if IsPasswordHash(password) {
-		return "HASH " + ydbtype.StringLiteral(strings.TrimSpace(password))
+		return "HASH " + ydbsyntax.StringLiteral(strings.TrimSpace(password))
 	}
-	return "PASSWORD " + ydbtype.StringLiteral(password)
+	return "PASSWORD " + ydbsyntax.StringLiteral(password)
 }

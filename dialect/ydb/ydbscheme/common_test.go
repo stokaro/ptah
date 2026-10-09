@@ -40,3 +40,37 @@ func TestCommonEffectsUseRenderedSchemePaths(t *testing.T) {
 		})
 	}
 }
+
+func TestPrincipalEffectsDoNotOccupySchemePaths(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		node   ast.Node
+		action plangraph.Action
+	}{
+		{"create user", &ast.CreateRoleNode{Name: "App.Team"}, plangraph.Create},
+		{"create group", &ast.CreateRoleNode{Name: "App.Team", Group: true}, plangraph.Create},
+		{"alter user", &ast.AlterRoleNode{Name: "App.Team"}, plangraph.Alter},
+		{"drop user", &ast.DropRoleNode{Name: "App.Team"}, plangraph.Drop},
+		{"drop group", &ast.DropRoleNode{Name: "App.Team", Group: true}, plangraph.Drop},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			builder := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
+			effects, err := ydbscheme.CommonEffects(builder, test.node)
+			c.Assert(err, qt.IsNil)
+			c.Assert(effects, qt.DeepEquals, []plangraph.Effect{{Subject: builder.Role("App.Team"), Action: test.action}})
+			c.Assert(effects[0].Subject.Schema.Empty(), qt.IsTrue)
+			c.Assert(effects[0].Subject.Name.Source, qt.Equals, "App.Team")
+			c.Assert(effects[0].Subject.Name.Normalized, qt.Equals, "App.Team")
+		})
+	}
+}
+
+func TestPrincipalEffectsRefuseAnEmptyIdentity(t *testing.T) {
+	for _, node := range []ast.Node{&ast.CreateRoleNode{}, &ast.AlterRoleNode{}, &ast.DropRoleNode{}} {
+		c := qt.New(t)
+		effects, err := ydbscheme.CommonEffects(objectidentity.NewBuilder(identifier.ForDialect("ydb")), node)
+		c.Assert(err, qt.ErrorMatches, "YDB principal operation requires an object name")
+		c.Assert(effects, qt.IsNil)
+	}
+}

@@ -5,40 +5,42 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/ydbpool"
 )
 
 // poolNodes cover creation, alteration, and removal of both workload objects.
 var poolNodes = []struct {
 	node ast.Node
 }{
-	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{}}}},
-	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{}, Previous: &ast.ResourcePoolSpec{}}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ydbworkload.PoolSpec{}}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ydbworkload.PoolSpec{}, Previous: &ydbworkload.PoolSpec{}}}},
 	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "batch"}}},
-	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "c", Spec: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch"})}}},
-	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: "c", Spec: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}), Previous: new(ast.ResourcePoolClassifierSpec{ResourcePool: "default"})}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "c", Spec: new(ydbworkload.ClassifierSpec{ResourcePool: "batch"})}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: "c", Spec: new(ydbworkload.ClassifierSpec{ResourcePool: "batch"}), Previous: new(ydbworkload.ClassifierSpec{ResourcePool: "default"})}}},
 	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolDrop, Name: "c"}}},
 }
 
 // poolSchema declares a pool, the pool default's settings and a classifier.
 func poolSchema() *schemamodel.Database {
-	return &schemamodel.Database{
-		ResourcePools: []schemamodel.ResourcePool{
-			{Name: "batch", Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(5))}},
-			{Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
-		},
-		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{
-			Name: "etl_users", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10},
-		}},
-	}
+	return workloadSchema(
+		ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(5))}),
+		ydbworkload.DesiredPoolObject("default", "", ydbworkload.PoolSpec{ResourceWeight: new(30.0)}),
+		ydbworkload.DesiredClassifierObject("etl_users", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}),
+	)
+}
+
+func workloadSchema(objects ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...))}
 }
 
 // TestRender_ResourcePool_HappyPath writes a declared pool, the pool default
@@ -53,8 +55,8 @@ func TestRender_ResourcePool_HappyPath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
-		"CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = 10, QUEUE_SIZE = 5);\n",
 		"ALTER RESOURCE POOL `default` SET (RESOURCE_WEIGHT = 30);\n",
+		"CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = 10, QUEUE_SIZE = 5);\n",
 		"CREATE RESOURCE POOL CLASSIFIER `etl_users` WITH (RESOURCE_POOL = 'batch', RANK = 10, MEMBER_NAME = 'etl');\n",
 	})
 }
@@ -82,7 +84,7 @@ func TestRender_ResourcePool_FailurePath(t *testing.T) {
 
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(poolSchema(), test.dialect, test.caps)
 			c.Assert(err, qt.ErrorMatches,
-				`resource pool "batch", which requires target capability resource_pools, unavailable on this \w+ target`)
+				`unsupported feature: feature objects are not registered for target "`+test.dialect+`"`)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(statements, qt.IsNil)
 
@@ -110,8 +112,7 @@ func TestRender_ResourcePool_YDBWithoutTheFlag(t *testing.T) {
 
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(poolSchema(), platform.YDB,
 				test.preset())
-			c.Assert(err, qt.ErrorMatches, `resource pool "batch", which requires target capability resource_pools, `+
-				`unavailable on this ydb target; `+regexp.QuoteMeta(ydbpool.FlagHint))
+			c.Assert(err, qt.ErrorMatches, `resource pools require target capability resource_pools; `+regexp.QuoteMeta(ydbworkload.FlagHint))
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(statements, qt.IsNil)
 		})
@@ -128,26 +129,16 @@ func TestRender_ResourcePool_RefusesWhatYDBKeepsDifferently(t *testing.T) {
 	}{
 		{
 			name: "two classifiers on one rank",
-			schema: &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
-				{Name: "a", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 1}},
-				{Name: "b", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 1}},
-			}},
-			wantErr: `resource pool classifier "b": its rank 1 is the rank of classifier "a", and YDB keeps one ` +
-				`classifier per rank`,
+			schema: workloadSchema(
+				ydbworkload.DesiredClassifierObject("a", "", ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 1}),
+				ydbworkload.DesiredClassifierObject("b", "", ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 1}),
+			),
+			wantErr: `classifiers ptah\.run/ydb/resource-pool-classifier a and ptah\.run/ydb/resource-pool-classifier b cannot share rank 1`,
 		},
 		{
-			name: "a classifier naming a pool nobody declared",
-			schema: &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
-				{Name: "a", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1}},
-			}},
-			wantErr: `resource pool classifier "a": it names resource pool "batch", which is not declared; .*`,
-		},
-		{
-			name: "a pool built by hand with a queue and nothing to wait for",
-			schema: &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{
-				{Name: "batch", Spec: ast.ResourcePoolSpec{QueueSize: new(int32(3))}},
-			}},
-			wantErr: `resource pool "batch": a queue needs concurrent_query_limit or database_load_cpu_threshold .*`,
+			name:    "a classifier naming a pool nobody declared",
+			schema:  workloadSchema(ydbworkload.DesiredClassifierObject("a", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1})),
+			wantErr: `it names resource pool "batch", which is not declared; YDB runs the queries of a classifier whose pool does not exist in the pool "default" without a word`,
 		},
 	}
 	for _, test := range tests {
@@ -156,7 +147,7 @@ func TestRender_ResourcePool_RefusesWhatYDBKeepsDifferently(t *testing.T) {
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(test.schema, platform.YDB,
 				capability.YDB262().With(capability.ResourcePools, true))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(statements, qt.IsNil)
 		})
 	}
@@ -171,11 +162,11 @@ func TestRender_ResourcePoolNodes_YDB(t *testing.T) {
 		node ast.Node
 		want string
 	}{
-		{name: "alter", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: new((ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(20))}).Clone()), Previous: new((ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(5))}).Clone())}},
+		{name: "alter", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: new((ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(20))}).Clone()), Previous: new((ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(5))}).Clone())}},
 			want: "ALTER RESOURCE POOL `batch` SET (CONCURRENT_QUERY_LIMIT = 20), RESET (QUEUE_SIZE);\n"},
-		{name: "an alter that changes nothing writes nothing", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{}, Previous: &ast.ResourcePoolSpec{}}}, want: ""},
+		{name: "an alter that changes nothing writes nothing", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ydbworkload.PoolSpec{}, Previous: &ydbworkload.PoolSpec{}}}, want: ""},
 		{name: "drop", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "batch"}}, want: "DROP RESOURCE POOL `batch`;\n"},
-		{name: "alter a classifier", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: "c", Spec: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 2}), Previous: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 1})}},
+		{name: "alter a classifier", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: "c", Spec: new(ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 2}), Previous: new(ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 1})}},
 			want: "ALTER RESOURCE POOL CLASSIFIER `c` SET (RESOURCE_POOL = 'batch', RANK = 2), RESET (MEMBER_NAME);\n"},
 		{name: "drop a classifier", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolDrop, Name: "c"}},
 			want: "DROP RESOURCE POOL CLASSIFIER `c`;\n"},
@@ -229,4 +220,16 @@ func TestRender_ResourcePool_RenderersWithoutPoolsRefuse(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A source value can be represented before target validation. Rendering must
+// refuse a queue YDB would silently ignore without a concurrency or CPU limit.
+func TestRenderResourcePoolRefusesAQueueWithoutALimit(t *testing.T) {
+	c := qt.New(t)
+	schema := workloadSchema(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{QueueSize: new(int32(3))}))
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, platform.YDB,
+		capability.YDB262().With(capability.ResourcePools, true))
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*a queue needs concurrent_query_limit or database_load_cpu_threshold .*`)
+	c.Assert(statements, qt.IsNil)
 }

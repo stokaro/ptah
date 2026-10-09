@@ -14,10 +14,8 @@ overlaps: []
 disposition: keep
 ---
 
-Ptah is pre-GA, but embedders need a documented import surface. The packages on
-this page are the stable embedder API, and the table below is enforced: a
-ledger in the repository is the source of truth, and
-`scripts/check-public-api-docs-sync.sh` keeps this page's table equal to it.
+Embedders use the packages below as Ptah's stable import surface. The repository
+ledger defines it; `scripts/check-public-api-docs-sync.sh` keeps the table aligned.
 
 The ledger classifies every importable library package into one of two
 categories, and only the first is on this page. Anything it does not classify is
@@ -73,7 +71,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
-| `dialect/ydb/ydbcoordination` | Standalone node declarations, observations, settings, and codecs. |
+| `dialect/ydb/ydbcoordination` | Coordination-node models and codecs. |
 | `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
 | `dialect/ydb/ydbrender` | Rendering and validation of YDB feature operations. |
 | `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |
@@ -82,6 +80,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
 | `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
 | `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
+| `dialect/ydb/ydbsyntax` | YQL quoting helpers. |
+| `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
@@ -509,6 +509,12 @@ automatic retry.
 
 ## Pinned database sessions
 
+`dbschema.ReadRehearsalSchemaContext` selects a reader's optional
+`catalog.RehearsalSchemaReader` to observe baseline environment, otherwise using
+its ordinary read. Unknown state stays unknown. Observations grant no write
+authority: validate the entire generated baseline against its execution scope
+before applying any statement.
+
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for the duration of a callback and rebinds the dialect reader, writer, and SQL
 runner to that session. Use it for cleanup, replay, and inspection workflows
@@ -519,12 +525,9 @@ connection refines its referenced-key policy from
 `restrict_fk_on_non_standard_key` on the pinned physical session before the
 callback, so planning and execution use the same effective policy.
 
-The scoped connection must not escape the callback. Ptah discards the physical
-connection afterward so session-local state cannot leak to a later pool user.
-Use `dbschema.DatabaseConnection.WithSessionOrCurrent` when the same operation
-can be called either from a pool-backed connection or from an existing pinned
-session; it pins only when needed and otherwise reuses the caller's current
-session lifecycle.
+The scoped connection must stay inside the callback. Ptah discards the physical
+connection afterward to prevent state leaks. `WithSessionOrCurrent` reuses an
+existing pinned session and its lifecycle, or pins a pool-backed connection.
 
 `dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
 `dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers

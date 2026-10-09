@@ -58,12 +58,6 @@ ptah_schema_topics{dialect="sqlite"} 0
 # HELP ptah_schema_topic_consumers Consumers of standalone topics.
 # TYPE ptah_schema_topic_consumers gauge
 ptah_schema_topic_consumers{dialect="sqlite"} 0
-# HELP ptah_schema_resource_pools Resource pools.
-# TYPE ptah_schema_resource_pools gauge
-ptah_schema_resource_pools{dialect="sqlite"} 0
-# HELP ptah_schema_resource_pool_classifiers Resource pool classifiers.
-# TYPE ptah_schema_resource_pool_classifiers gauge
-ptah_schema_resource_pool_classifiers{dialect="sqlite"} 0
 # HELP ptah_schema_async_replications Async replications.
 # TYPE ptah_schema_async_replications gauge
 ptah_schema_async_replications{dialect="sqlite"} 0
@@ -94,6 +88,12 @@ ptah_schema_changefeed_consumers{dialect="sqlite"} 0
 # HELP ptah_schema_coordination_nodes Standalone coordination nodes.
 # TYPE ptah_schema_coordination_nodes gauge
 ptah_schema_coordination_nodes{dialect="sqlite"} 0
+# HELP ptah_schema_resource_pools Resource pools.
+# TYPE ptah_schema_resource_pools gauge
+ptah_schema_resource_pools{dialect="sqlite"} 0
+# HELP ptah_schema_resource_pool_classifiers Resource pool classifiers.
+# TYPE ptah_schema_resource_pool_classifiers gauge
+ptah_schema_resource_pool_classifiers{dialect="sqlite"} 0
 # HELP ptah_schema_streaming_queries Standalone streaming queries.
 # TYPE ptah_schema_streaming_queries gauge
 ptah_schema_streaming_queries{dialect="sqlite"} 0

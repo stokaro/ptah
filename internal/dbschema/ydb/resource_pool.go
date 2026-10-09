@@ -9,9 +9,9 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // ResourcePools is what a YDB database reports of its resource pools and the
@@ -21,11 +21,9 @@ type ResourcePools struct {
 	// /local. A pool and a classifier belong to a database, not to a
 	// directory in it.
 	Database string
-	// Pools are the pools, the pool `default` among them, each with every
-	// setting the database holds and an unset one nil.
-	Pools []catalog.ResourcePool
-	// Classifiers are the classifiers.
-	Classifiers []catalog.ResourcePoolClassifier
+	// Objects carries individual pool and classifier observations. Empty views
+	// do not establish absence when the cluster disables workload management.
+	Objects []schemaext.Object
 }
 
 // ErrResourcePoolsRefused reports a database that would not let the read see
@@ -34,6 +32,13 @@ type ResourcePools struct {
 // [ErrPrincipalsRefused] says, to a user who may list the database and not
 // read it.
 var ErrResourcePoolsRefused = errors.New("the server refused to report its resource pools")
+
+type workloadReadScope uint8
+
+const (
+	workloadDirectory workloadReadScope = iota
+	workloadEnvironment
+)
 
 // readResourcePools reads the two views through run, which executes one
 // read-only query and returns its first result set.
@@ -57,18 +62,15 @@ func readResourcePools(
 		return ResourcePools{}, err
 	}
 	for _, row := range pools.GetRows() {
-		read.Pools = append(read.Pools, catalog.ResourcePool{
-			Name: textOf(row, pools, "Name"),
-			Spec: ast.ResourcePoolSpec{
-				ConcurrentQueryLimit:           int32Setting(cell(row, pools, "ConcurrentQueryLimit")),
-				QueueSize:                      int32Setting(cell(row, pools, "QueueSize")),
-				DatabaseLoadCPUThreshold:       doubleSetting(cell(row, pools, "DatabaseLoadCpuThreshold")),
-				QueryMemoryLimitPercentPerNode: doubleSetting(cell(row, pools, "QueryMemoryLimitPercentPerNode")),
-				QueryCPULimitPercentPerNode:    doubleSetting(cell(row, pools, "QueryCpuLimitPercentPerNode")),
-				TotalCPULimitPercentPerNode:    doubleSetting(cell(row, pools, "TotalCpuLimitPercentPerNode")),
-				ResourceWeight:                 doubleSetting(cell(row, pools, "ResourceWeight")),
-			},
-		})
+		read.Objects = append(read.Objects, ydbworkload.ObservedPoolObject(textOf(row, pools, "Name"), ydbworkload.PoolSpec{
+			ConcurrentQueryLimit:           int32Setting(cell(row, pools, "ConcurrentQueryLimit")),
+			QueueSize:                      int32Setting(cell(row, pools, "QueueSize")),
+			DatabaseLoadCPUThreshold:       doubleSetting(cell(row, pools, "DatabaseLoadCpuThreshold")),
+			QueryMemoryLimitPercentPerNode: doubleSetting(cell(row, pools, "QueryMemoryLimitPercentPerNode")),
+			QueryCPULimitPercentPerNode:    doubleSetting(cell(row, pools, "QueryCpuLimitPercentPerNode")),
+			TotalCPULimitPercentPerNode:    doubleSetting(cell(row, pools, "TotalCpuLimitPercentPerNode")),
+			ResourceWeight:                 doubleSetting(cell(row, pools, "ResourceWeight")),
+		}))
 	}
 	classifiers, err := run(ctx, "SELECT Name, Rank, MemberName, ResourcePool FROM "+
 		systemView(database, "resource_pool_classifiers"))
@@ -76,14 +78,11 @@ func readResourcePools(
 		return ResourcePools{}, err
 	}
 	for _, row := range classifiers.GetRows() {
-		read.Classifiers = append(read.Classifiers, catalog.ResourcePoolClassifier{
-			Name: textOf(row, classifiers, "Name"),
-			Spec: ast.ResourcePoolClassifierSpec{
-				ResourcePool: textOf(row, classifiers, "ResourcePool"),
-				MemberName:   textOf(row, classifiers, "MemberName"),
-				Rank:         cell(row, classifiers, "Rank").GetInt64Value(),
-			},
-		})
+		read.Objects = append(read.Objects, ydbworkload.ObservedClassifierObject(textOf(row, classifiers, "Name"), ydbworkload.ClassifierSpec{
+			ResourcePool: textOf(row, classifiers, "ResourcePool"),
+			MemberName:   textOf(row, classifiers, "MemberName"),
+			Rank:         cell(row, classifiers, "Rank").GetInt64Value(),
+		}))
 	}
 	return read, nil
 }
@@ -127,46 +126,110 @@ func (s *grpcSource) ResourcePools(ctx context.Context) (ResourcePools, error) {
 	return read, err
 }
 
-// resourcePools reads the resource pools and classifiers into db.
-//
-// They belong to the whole database, so the read describes them wherever it
-// walks the database itself, and records each kind whole as outside the read's
-// scope where it walks a dev realm: a realm is a directory standing in for a
-// database, and the pools are those of the database that holds it. On a server
-// without [capability.ResourcePools], which every YDB line is until its
-// cluster turns EnableResourcePools on, each pool and classifier the views
-// report is recorded rather than described, so a plan meets none it would
-// refuse. A database that refuses the read is recorded as such rather than
-// failing it, as [Reader.principals] records one; any other error fails it.
-func (r *Reader) resourcePools(ctx context.Context, source Source, db *catalog.Database) error {
+// resourcePools records individual observations independently of target support.
+// An ordinary dev realm read cannot claim its database's global pools. The
+// rehearsal read includes observed environment without changing write scope.
+// A disabled cluster can
+// return empty views even when configuration exists, so only returned objects
+// are known; missing names remain uninspected. A refused read has no known names.
+func (r *Reader) resourcePools(ctx context.Context, source Source, db *catalog.Database, scope workloadReadScope) error {
 	read, err := source.ResourcePools(ctx)
 	if errors.Is(err, ErrResourcePoolsRefused) {
-		db.NotDescribed = db.NotDescribed.With(
-			coverage.Refused(coverage.ResourcePool), coverage.Refused(coverage.ResourcePoolClassifier))
-		return nil
+		return recordWorkloadCoverage(db, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the server refused to report resource pools and classifiers"}, nil)
 	}
 	if err != nil {
 		return fmt.Errorf("read the YDB resource pools: %w", err)
 	}
 	if read.Database != r.database {
-		db.NotDescribed = db.NotDescribed.With(
-			coverage.Object{Kind: coverage.ResourcePool, Reason: coverage.OutsideScope, Provenance: coverage.Observed},
-			coverage.Object{
-				Kind: coverage.ResourcePoolClassifier, Reason: coverage.OutsideScope, Provenance: coverage.Observed,
-			},
-		)
-		return nil
+		if scope != workloadEnvironment {
+			return recordWorkloadCoverage(db, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "database-wide workload objects are outside this directory's scope"}, nil)
+		}
+		if read.Database == "" || !strings.HasPrefix(r.database, strings.TrimRight(read.Database, "/")+"/") {
+			return fmt.Errorf("%w: workload environment %q does not contain the read root %q", schemaext.ErrInvalidValue, read.Database, r.database)
+		}
 	}
+	namespace := schemaext.Knowledge{State: schemaext.Complete}
 	if !r.caps.Has(capability.ResourcePools) {
-		for _, pool := range read.Pools {
-			db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.ResourcePool, "", pool.Name))
+		namespace = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "resource pool support is unavailable; empty system views do not establish absence"}
+	}
+	var subjects []schemaext.SubjectCoverage
+	for _, object := range read.Objects {
+		if err := schemaext.ValidatePayload(object.Value); err != nil {
+			return err
 		}
-		for _, classifier := range read.Classifiers {
-			db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.ResourcePoolClassifier, "", classifier.Name))
+		if err := ydbworkload.ValidateIdentity(object.Ref, object.Value.Kind()); err != nil {
+			return err
 		}
+		knowledge := schemaext.Knowledge{State: schemaext.Complete}
+		if err := validateWorkloadObservation(object); err != nil {
+			knowledge = schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: err.Error()}
+		} else {
+			db.FeatureObjects, err = db.FeatureObjects.With(object)
+			if err != nil {
+				return err
+			}
+		}
+		subjects = append(subjects, schemaext.SubjectCoverage{Kind: object.Value.Kind(), Subject: object.Ref, Knowledge: knowledge})
+	}
+	return recordWorkloadCoverage(db, namespace, subjects)
+}
+
+func validateWorkloadObservation(object schemaext.Object) error {
+	switch value := object.Value.(type) {
+	case *ydbworkload.ObservedPool:
+		if value != nil {
+			return ydbworkload.ValidatePoolRef(object.Ref, value.Spec)
+		}
+	case *ydbworkload.ObservedClassifier:
+		if value != nil {
+			return ydbworkload.ValidateClassifier(value.Spec)
+		}
+	}
+	return fmt.Errorf("%w: expected a captured pool or classifier, got %T", schemaext.ErrInvalidValue, object.Value)
+}
+
+func recordWorkloadCoverage(db *catalog.Database, namespace schemaext.Knowledge, subjects []schemaext.SubjectCoverage) error {
+	for _, kind := range []schemaext.Kind{ydbworkload.PoolKind, ydbworkload.ClassifierKind} {
+		var selected []schemaext.SubjectCoverage
+		for _, subject := range subjects {
+			if subject.Kind == kind {
+				selected = append(selected, subject)
+			}
+		}
+		coverage, err := ydbworkload.Coverage(kind, schemaext.Observed, namespace, selected)
+		if err != nil {
+			return err
+		}
+		db.FeatureCoverage, err = db.FeatureCoverage.Combine(coverage)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// A scheme listing establishes existence but carries no workload settings.
+// Preserve that limit unless the system view already described this subject,
+// including a more precise refusal about settings it cannot represent.
+func (r *Reader) listedResourcePool(db *catalog.Database, name string) error {
+	if r.realm {
 		return nil
 	}
-	db.ResourcePools = read.Pools
-	db.ResourcePoolClassifiers = read.Classifiers
+	ref := ydbworkload.PoolRef(name)
+	if err := ydbworkload.ValidateIdentity(ref, ydbworkload.PoolKind); err != nil {
+		return err
+	}
+	if _, found := db.FeatureCoverage.SubjectKnowledge(ydbworkload.PoolKind, ref); found {
+		return nil
+	}
+	subjects := append(db.FeatureCoverage.SubjectRecords(), schemaext.SubjectCoverage{
+		Kind: ydbworkload.PoolKind, Subject: ref,
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the scheme listing names a resource pool whose settings were not captured"},
+	})
+	known, err := schemaext.NewCoverage(schemaext.Observed, db.FeatureCoverage.KindRecords(), subjects)
+	if err != nil {
+		return err
+	}
+	db.FeatureCoverage = known
 	return nil
 }

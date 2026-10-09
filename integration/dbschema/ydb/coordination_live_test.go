@@ -13,10 +13,13 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/ydburl"
 )
@@ -112,7 +115,7 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, declared, coordinationSchemas))
 			c.Assert(planAgainst(c, conn, declared, coordinationSchemas), qt.HasLen, 0)
 
-			c.Assert(must.Must(readScoped(c, conn, coordinationSchemas).FeatureObjects.All()), qt.ContentEquals, []schemaext.Object{
+			c.Assert(must.Must(readScoped(c, conn, coordinationSchemas).FeatureObjects.Select(isCoordinationNode).All()), qt.ContentEquals, []schemaext.Object{
 				ydbcoordination.ObservedObject(coordinationSchema, "limits", limits),
 				ydbcoordination.ObservedObject(coordinationSchema, "plain", ydbcoordination.Spec{}),
 			})
@@ -154,6 +157,45 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 			c.Assert(planAgainst(c, conn, declared, coordinationSchemas), qt.HasLen, 0)
 			_, err = nodeConfig(c, driver, coordinationSchema+"/plain")
 			c.Assert(err, qt.ErrorMatches, noNode)
+		})
+	}
+}
+
+// Plain Atlas HCL does not claim YDB namespace completeness. An explicitly
+// captured empty namespace can request removal, and its header must survive
+// export and parsing before the live planner may act on that absence.
+func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			driver := coordinationDriver(c, line)
+			dropCoordinationDirectory(c, conn, coordinationSchema)
+			c.Cleanup(func() { dropCoordinationDirectory(c, conn, coordinationSchema) })
+			apply(c, conn, []string{"CREATE COORDINATION NODE `ptah_ydb_coordination/plain`"})
+
+			plain, err := atlashcl.Parse([]byte(`schema "ptah_ydb_coordination" {}`), "plain.hcl")
+			c.Assert(err, qt.IsNil)
+			preserved := planAgainst(c, conn, plain, coordinationSchemas)
+			c.Assert(preserved, qt.HasLen, 0)
+			apply(c, conn, preserved)
+			_, err = nodeConfig(c, driver, coordinationSchema+"/plain")
+			c.Assert(err, qt.IsNil)
+
+			declared := &schemamodel.Database{
+				Schemas:         []schemamodel.Schema{{Name: coordinationSchema}},
+				FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+			}
+			exported, err := atlashclrender.RenderForDialect(declared, "ydb")
+			c.Assert(err, qt.IsNil)
+			complete, err := atlashcl.Parse(exported.Data, "complete.hcl")
+			c.Assert(err, qt.IsNil)
+			drop := planAgainst(c, conn, complete, coordinationSchemas)
+			c.Assert(drop, qt.DeepEquals, []string{"DROP COORDINATION NODE `ptah_ydb_coordination/plain`"})
+			apply(c, conn, drop)
+			_, err = nodeConfig(c, driver, coordinationSchema+"/plain")
+			c.Assert(err, qt.ErrorMatches, noNode)
+			c.Assert(planAgainst(c, conn, complete, coordinationSchemas), qt.HasLen, 0)
 		})
 	}
 }
@@ -285,7 +327,7 @@ func TestYDBCoordinationNodes_ReaderLeavesTheLockNodeOut(t *testing.T) {
 
 			live := readScoped(c, conn, []string{"", coordinationSchema})
 
-			c.Assert(must.Must(live.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
+			c.Assert(must.Must(live.FeatureObjects.Select(isCoordinationNode).All()), qt.DeepEquals, []schemaext.Object{
 				ydbcoordination.ObservedObject(coordinationSchema, "ptah_locks", ydbcoordination.Spec{}),
 			})
 		})
@@ -343,4 +385,8 @@ func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, noNode)
 		})
 	}
+}
+
+func isCoordinationNode(ref objectidentity.ID) bool {
+	return ref.Kind == objectidentity.Kind(ydbcoordination.Kind)
 }

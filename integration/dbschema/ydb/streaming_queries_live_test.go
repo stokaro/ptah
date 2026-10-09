@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -50,7 +51,7 @@ func TestYDBStreamingQueries_RoundTripAndRollback(t *testing.T) {
 	c.Cleanup(func() { c.Check(dropper.DropDirectory(context.Background(), streamingSchema), qt.IsNil) })
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 	live := readScoped(c, conn, schemas)
-	c.Assert(live.FeatureObjects.Len(), qt.Equals, 1)
+	c.Assert(live.FeatureObjects.Select(isStreamingQuery).Len(), qt.Equals, 1)
 	object, found, err := live.FeatureObjects.Get(ydbstreaming.Ref(streamingSchema, "copy"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
@@ -95,7 +96,11 @@ func TestYDBStreamingQueries_RoundTripAndRollback(t *testing.T) {
 	c.Assert(removal, qt.HasLen, 3)
 	c.Assert(removal[0], qt.Contains, "DROP STREAMING QUERY")
 	apply(c, conn, removal)
-	c.Assert(readScoped(c, conn, schemas).FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(readScoped(c, conn, schemas).FeatureObjects.Select(isStreamingQuery).Len(), qt.Equals, 0)
+}
+
+func isStreamingQuery(ref objectidentity.ID) bool {
+	return ref.Kind == objectidentity.Kind(ydbstreaming.Kind)
 }
 
 func editStreamingDeclaration(c *qt.C, declared *schemamodel.Database, edit func(*ydbstreaming.Desired)) {

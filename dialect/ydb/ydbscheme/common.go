@@ -10,21 +10,26 @@ import (
 	"ptah.run/core/schemavalidation"
 )
 
-// CommonEffects describes shared path occupancy for a local common AST node.
+// CommonEffects describes scheme paths and principals used by a common AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
 // batch, not the Go AST node or a per-node remote call.
 func CommonEffects(builder objectidentity.Builder, node ast.Node) ([]plangraph.Effect, error) {
+	if name, action := principalUse(node); action != "" {
+		ref := builder.Role(name)
+		if ref.Name.Source == "" || ref.Name.Normalized == "" {
+			return nil, invalidCommonName("role", name)
+		}
+		return []plangraph.Effect{{Subject: ref, Action: action}}, nil
+	}
 	use := commonSchemeUse(node)
 	if use.action == "" {
 		return nil, nil
 	}
 	ref := builder.Table(use.name)
 	if ref.Name.Source == "" || ref.Name.Normalized == "" {
-		return nil, (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
-			Code: schemavalidation.InvalidSchema, Kind: "schema", Object: use.name, Message: "YDB scheme operation requires an object name",
-		}}}).Err(platform.YDB)
+		return nil, invalidCommonName("schema", use.name)
 	}
 	physical := ObjectPath(use.name)
 	schema, name := "", physical
@@ -36,6 +41,32 @@ func CommonEffects(builder objectidentity.Builder, node ast.Node) ([]plangraph.E
 		effects = append(effects, plangraph.Effect{Subject: ref, Action: use.action})
 	}
 	return effects, nil
+}
+
+func invalidCommonName(kind, name string) error {
+	message := "YDB scheme operation requires an object name"
+	if kind == "role" {
+		message = "YDB principal operation requires an object name"
+	}
+	return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+		Code: schemavalidation.InvalidSchema, Kind: kind, Object: name, Message: message,
+	}}}).Err(platform.YDB)
+}
+
+// Workload classifiers refer to users and groups by their database identity,
+// never by scheme paths. Capturing the footprint lets their owner order routing
+// changes around principal creation and removal without receiving host AST nodes.
+func principalUse(node ast.Node) (string, plangraph.Action) {
+	switch principal := node.(type) {
+	case *ast.CreateRoleNode:
+		return principal.Name, plangraph.Create
+	case *ast.AlterRoleNode:
+		return principal.Name, plangraph.Alter
+	case *ast.DropRoleNode:
+		return principal.Name, plangraph.Drop
+	default:
+		return "", ""
+	}
 }
 
 type schemeUse struct {

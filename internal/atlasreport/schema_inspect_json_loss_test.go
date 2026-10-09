@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -26,18 +27,17 @@ func TestSchemaInspectJSON_ReportsOmittedYDBFamilies(t *testing.T) {
 			var diagnostics bytes.Buffer
 			db := &schemamodel.Database{
 				AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
-				FeatureObjects:    must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false))),
+				FeatureObjects:    must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false))),
 
-				ExternalDataSources:     []schemamodel.ExternalDataSource{{Name: "bucket"}},
-				ExternalTables:          []schemamodel.ExternalTable{{Name: "files"}},
-				ResourcePools:           []schemamodel.ResourcePool{{Name: "batch"}},
-				ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "route"}},
-				Secrets:                 []schemamodel.Secret{{Name: "credentials"}},
-				Topics:                  []schemamodel.Topic{{Name: "events"}},
-				Transfers:               []schemamodel.Transfer{{Name: "copy"}},
-				Roles:                   []schemamodel.Role{{Name: "user"}},
-				Grants:                  []schemamodel.Grant{{}},
-				Views:                   []schemamodel.View{{Name: "v"}},
+				ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "bucket"}},
+				ExternalTables:      []schemamodel.ExternalTable{{Name: "files"}},
+
+				Secrets:   []schemamodel.Secret{{Name: "credentials"}},
+				Topics:    []schemamodel.Topic{{Name: "events"}},
+				Transfers: []schemamodel.Transfer{{Name: "copy"}},
+				Roles:     []schemamodel.Role{{Name: "user"}},
+				Grants:    []schemamodel.Grant{{}},
+				Views:     []schemamodel.View{{Name: "v"}},
 			}
 			report := newInspectReport(c, db, &catalog.Database{},
 				catalog.ServerInfo{Dialect: "ydb"}, &diagnostics, atlasreport.SchemaInspectReportOptions{})

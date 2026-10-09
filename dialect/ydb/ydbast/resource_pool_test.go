@@ -8,16 +8,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 func TestPoolOperationRoundTripPreservesZeroUnsetAndBothOperands(t *testing.T) {
 	c := qt.New(t)
 	value := &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch.jobs",
-		Spec:     &ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(0)), ResourceWeight: new(0.0), DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(20.25), QueryCPULimitPercentPerNode: new(10.75), TotalCPULimitPercentPerNode: new(60.5)},
-		Previous: &ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(7)), QueueSize: new(int32(9)), ResourceWeight: new(12.5)}}
+		Spec:     &ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(0)), ResourceWeight: new(0.0), DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(20.25), QueryCPULimitPercentPerNode: new(10.75), TotalCPULimitPercentPerNode: new(60.5)},
+		Previous: &ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(7)), QueueSize: new(int32(9)), ResourceWeight: new(12.5)}}
 	registry, err := schemaext.NewRegistry(schemaext.OwnedCodec{Owner: "ptah.run/ydb", Codec: ydbast.ResourcePoolCodec()})
 	c.Assert(err, qt.IsNil)
 	data, err := registry.Marshal(c.Context(), schemaext.Operation, []schemaext.Payload{value})
@@ -39,8 +39,8 @@ func TestPoolOperationRoundTripPreservesZeroUnsetAndBothOperands(t *testing.T) {
 func TestClassifierOperationRoundTripPreservesRankAndMemberReset(t *testing.T) {
 	c := qt.New(t)
 	value := &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: "route.jobs",
-		Spec:     &ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 0},
-		Previous: &ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: math.MaxInt64}}
+		Spec:     &ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 0},
+		Previous: &ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: math.MaxInt64}}
 	codec := ydbast.ResourcePoolClassifierCodec()
 	data, err := codec.Encode(value)
 	c.Assert(err, qt.IsNil)
@@ -96,9 +96,9 @@ func TestPoolCodecsRefuseInvalidModelsAndUnknownEffects(t *testing.T) {
 		{"nil", nil},
 		{"default drop", &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "default"}},
 		{"path", &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "directory/batch"}},
-		{"queue without limit", &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{QueueSize: new(int32(1))}}},
-		{"nonfinite", &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{ResourceWeight: new(math.Inf(1))}}},
-		{"invalid previous", &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{}, Previous: &ast.ResourcePoolSpec{ResourceWeight: new(math.NaN())}}},
+		{"queue without limit", &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ydbworkload.PoolSpec{QueueSize: new(int32(1))}}},
+		{"nonfinite", &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ydbworkload.PoolSpec{ResourceWeight: new(math.Inf(1))}}},
+		{"invalid previous", &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ydbworkload.PoolSpec{}, Previous: &ydbworkload.PoolSpec{ResourceWeight: new(math.NaN())}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

@@ -227,12 +227,6 @@ func reverseSchemaDiffWithPrior(
 		// direction drops what the up direction created, and creates what it
 		// dropped from the settings the removal carried. A change carries
 		// both of its states, so the reversal swaps them.
-		ResourcePoolsAdded:              cloneResourcePools(diff.ResourcePoolsRemoved),
-		ResourcePoolsRemoved:            cloneResourcePools(diff.ResourcePoolsAdded),
-		ResourcePoolsModified:           reverseResourcePoolDiffs(diff.ResourcePoolsModified),
-		ResourcePoolClassifiersAdded:    slices.Clone(diff.ResourcePoolClassifiersRemoved),
-		ResourcePoolClassifiersRemoved:  slices.Clone(diff.ResourcePoolClassifiersAdded),
-		ResourcePoolClassifiersModified: reverseResourcePoolClassifierDiffs(diff.ResourcePoolClassifiersModified),
 
 		// An external object the change dropped carries everything the
 		// database described of it, so the rollback creates it again as it
@@ -839,37 +833,6 @@ func reverseReplicationContext(context difftypes.ReplicationContext) difftypes.R
 	}
 	reversed.CurrentTopics = slices.Clone(context.DeclaredTopics)
 	reversed.DeclaredTopics = slices.Clone(context.CurrentTopics)
-	return reversed
-}
-
-// reverseResourcePoolDiffs swaps the two states of every pool change.
-func reverseResourcePoolDiffs(changes []difftypes.ResourcePoolDiff) []difftypes.ResourcePoolDiff {
-	if changes == nil {
-		return nil
-	}
-	reversed := make([]difftypes.ResourcePoolDiff, 0, len(changes))
-	for _, change := range changes {
-		reversed = append(reversed, difftypes.ResourcePoolDiff{
-			Name: change.Name, Desired: change.Current.Clone(), Current: change.Desired.Clone(),
-		})
-	}
-	return reversed
-}
-
-// reverseResourcePoolClassifierDiffs swaps the two states of every classifier
-// change. The rank changes back exactly when it changed forward.
-func reverseResourcePoolClassifierDiffs(
-	changes []difftypes.ResourcePoolClassifierDiff,
-) []difftypes.ResourcePoolClassifierDiff {
-	if changes == nil {
-		return nil
-	}
-	reversed := make([]difftypes.ResourcePoolClassifierDiff, 0, len(changes))
-	for _, change := range changes {
-		reversed = append(reversed, difftypes.ResourcePoolClassifierDiff{
-			Name: change.Name, RankChanged: change.RankChanged, Desired: change.Current, Current: change.Desired,
-		})
-	}
 	return reversed
 }
 

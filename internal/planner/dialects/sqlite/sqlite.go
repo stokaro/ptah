@@ -87,9 +87,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseResourcePools(DialectName, diff); err != nil {
-		return nil, err
-	}
 	if err := schemaprecondition.RefuseReplications(DialectName, diff); err != nil {
 		return nil, err
 	}

@@ -30,7 +30,8 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 
 	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
-	pools, err := streamingPools(out.FeatureObjects)
+	var err error
+	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +67,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 		return generatedTableNameKept(out.Tables, data.Table)
 	})
 
-	s.projectGeneratedTopLevel(db, out, pools)
+	s.projectGeneratedTopLevel(db, out)
 	s.projectGeneratedSupport(db, out)
 	s.projectGeneratedExtensions(db, out)
 	out.Schemas = s.keepGeneratedSchemas(db, out)
@@ -84,7 +85,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 // "schema." name prefix. Roles are database-scoped and skip the schema
 // universe. Extensions are projected after support objects, when the selection
 // knows whether a non-extension resource matched.
-func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database, pools map[string]bool) {
+func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database) {
 	out.Views = keep(db.Views, func(view schemamodel.View) bool {
 		return s.selectedQualifiedName(typeList("view"), view.Name)
 	})
@@ -145,20 +146,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database,
 		func(privilege schemamodel.DefaultPrivilege) bool {
 			return s.defaultPrivilegeSelected(privilege.Schema)
 		})
-	// A YDB classifier is selected on its own name, and a pool on its own or
-	// because a kept classifier sends queries to it: a description keeping
-	// the classifier and dropping its pool would name a pool it says is
-	// absent.
-	out.ResourcePoolClassifiers = keep(db.ResourcePoolClassifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
-		return s.selectedNames(typeList("resource_pool_classifier"), classifier.Name)
-	})
-	out.ResourcePools = keep(db.ResourcePools, func(pool schemamodel.ResourcePool) bool {
-		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
-			pools[pool.Name] ||
-			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
-				return classifier.Spec.ResourcePool == pool.Name
-			})
-	})
 	out.Roles = keep(db.Roles, func(role schemamodel.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true

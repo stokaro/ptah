@@ -134,6 +134,16 @@ partition counts and size, and a quoted value such as `ANY_AZ:2` for
 `read_replicas_settings`. These are Ptah extensions; Atlas has no YDB driver.
 An omitted setting leaves the existing index's value unchanged.
 
+Omitted YDB coordination nodes remain unmanaged unless the document explicitly
+claims a complete namespace. Ptah exports that claim in a versioned
+`// ptah:feature-coverage` header. Keep the header when editing the export;
+incompatible model definitions and duplicate accounts are refused. See
+[coordination nodes](../../databases/ydb/#coordination-nodes) for declaration
+and limit semantics.
+
+The header belongs to HCL sources. Renaming the document to `.sql` does not
+convert it; SQL source loading refuses this metadata instead of discarding it.
+
 ## API export metadata attributes
 
 API export metadata is a Ptah HCL extension. All values are quoted strings:

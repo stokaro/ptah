@@ -934,6 +934,18 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-ydb-ydbsyntax",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbsyntax",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbworkload",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbworkload",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-docs",
       "kind": "public-package",
       "surface": "ptah.run/docs",

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/defaultlit"
 )
 
@@ -71,11 +72,11 @@ func literalFor(ydbType, value string) (string, error) {
 	case Float, Double, DyNumber:
 		return numberConstructor(ydbType, value)
 	case String:
-		return quote(value), nil
+		return ydbsyntax.StringLiteral(value), nil
 	case Utf8:
-		return quote(value) + "u", nil
+		return ydbsyntax.StringLiteral(value) + "u", nil
 	case JSON, JSONDocument, Yson:
-		return ydbType + "(" + quote(value) + ")", nil
+		return ydbType + "(" + ydbsyntax.StringLiteral(value) + ")", nil
 	case UUID:
 		return uuidLiteral(value)
 	case Date, Date32:
@@ -166,7 +167,7 @@ func numberConstructor(ydbType, value string) (string, error) {
 		}
 		text = strconv.FormatFloat(number, 'g', -1, bits)
 	}
-	return ydbType + "(" + quote(text) + ")", nil
+	return ydbType + "(" + ydbsyntax.StringLiteral(text) + ")", nil
 }
 
 // DecimalArguments reads the precision and scale out of a YDB type spelled
@@ -200,7 +201,7 @@ func decimalLiteral(value string, precision, scale int) (string, error) {
 	if len(fraction) > scale || len(strings.TrimLeft(integerPart, "0")) > precision-scale {
 		return "", valueRefusal(declared, value)
 	}
-	return fmt.Sprintf("Decimal(%s, %d, %d)", quote(canonical), precision, scale), nil
+	return fmt.Sprintf("Decimal(%s, %d, %d)", ydbsyntax.StringLiteral(canonical), precision, scale), nil
 }
 
 // DecimalText writes a decimal value, an optional sign and digits with an
@@ -235,7 +236,7 @@ func uuidLiteral(value string) (string, error) {
 	if !uuidPattern.MatchString(text) {
 		return "", valueRefusal(UUID, value)
 	}
-	return UUID + "(" + quote(strings.ToLower(text)) + ")", nil
+	return UUID + "(" + ydbsyntax.StringLiteral(strings.ToLower(text)) + ")", nil
 }
 
 // narrowStart and narrowEnd bound the 32-bit Date, Datetime and Timestamp.
@@ -264,7 +265,7 @@ func dateLiteral(ydbType, value string) (string, error) {
 	if err != nil || outOfNarrowRange(ydbType, day) {
 		return "", valueRefusal(ydbType, value)
 	}
-	return ydbType + "(" + quote(text) + ")", nil
+	return ydbType + "(" + ydbsyntax.StringLiteral(text) + ")", nil
 }
 
 // instantLayouts are the spellings a declared instant default arrives in: ISO
@@ -296,9 +297,9 @@ func instantLiteral(ydbType, value string, micros bool) (string, error) {
 			outOfNarrowRange(ydbType, instant):
 			return "", valueRefusal(ydbType, value)
 		case micros:
-			return ydbType + "(" + quote(instant.Format("2006-01-02T15:04:05.999999Z")) + ")", nil
+			return ydbType + "(" + ydbsyntax.StringLiteral(instant.Format("2006-01-02T15:04:05.999999Z")) + ")", nil
 		default:
-			return ydbType + "(" + quote(instant.Format("2006-01-02T15:04:05Z")) + ")", nil
+			return ydbType + "(" + ydbsyntax.StringLiteral(instant.Format("2006-01-02T15:04:05Z")) + ")", nil
 		}
 	}
 	return "", valueRefusal(ydbType, value)
@@ -316,7 +317,7 @@ func intervalLiteral(ydbType, value string) (string, error) {
 		return "", &Refusal{Declared: fmt.Sprintf("default %q", value),
 			Reason: ydbType + " takes an ISO 8601 duration such as P1D or PT30M"}
 	}
-	return ydbType + "(" + quote(IntervalText(micros)) + ")", nil
+	return ydbType + "(" + ydbsyntax.StringLiteral(IntervalText(micros)) + ")", nil
 }
 
 // ParseInterval reads an ISO 8601 duration in the form YDB's Interval takes
@@ -429,43 +430,6 @@ func IntervalText(micros int64) string {
 
 func valueRefusal(ydbType, value string) *Refusal {
 	return &Refusal{Declared: fmt.Sprintf("default %q", value), Reason: "it is not a " + ydbType + " value"}
-}
-
-// StringLiteral writes value as a YQL String literal, the spelling [Literal]
-// gives a String value. A caller that builds a query rather than a default
-// takes it here, so the two cannot escape differently.
-func StringLiteral(value string) string {
-	return quote(value)
-}
-
-// quote writes value as a single-quoted YQL string. YQL reads backslash
-// escapes in a string and does not read a quote written twice: measured, the
-// SQL spelling of "it's" with a doubled quote is a parse error. So a quote and
-// a backslash are escaped with a backslash, and a control character is written
-// as `\xHH`; `'a\x01b'u` and `'by\x00te'` read back as the bytes they name.
-func quote(value string) string {
-	var b strings.Builder
-	b.WriteByte('\'')
-	for i := 0; i < len(value); i++ {
-		c := value[i]
-		switch {
-		case c == '\\' || c == '\'':
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		case c == '\n':
-			b.WriteString(`\n`)
-		case c == '\r':
-			b.WriteString(`\r`)
-		case c == '\t':
-			b.WriteString(`\t`)
-		case c < 0x20 || c == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, c)
-		default:
-			b.WriteByte(c)
-		}
-	}
-	b.WriteByte('\'')
-	return b.String()
 }
 
 // DeclaredValue reads a declared default's text into the value it denotes,

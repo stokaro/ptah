@@ -60,6 +60,8 @@ import (
 // rather than ignored, because ignoring it is the exact failure this package
 // exists to prevent: a directive nothing understands reads as no directive at
 // all, and the absence it was protecting becomes a removal.
+// Source adapters can handle owner-defined kinds through [HeaderExtension]
+// without adding those records to a common [Set].
 //
 // Three declared kinds sit outside that serialized grammar: [Hypertable],
 // [ContinuousAggregate] and [ReplicaTable] are built and consulted in process
@@ -185,7 +187,7 @@ const (
 // records each one it meets, by the path of the object or of the table that
 // carries it, so a description's silence about them is never read as their
 // absence and nothing plans their removal. Like [ChangeStream], none of them
-// but [Topic], [ResourcePool], [ResourcePoolClassifier], [Replication],
+// but [Topic], [Replication],
 // [Transfer], [Secret] and [ReplicaTable] is consulted by a comparator or a planner,
 // because no planner writes the others.
 const (
@@ -236,17 +238,6 @@ const (
 	// kind in both directions, so a description that cannot express secrets,
 	// such as an HCL document, does not plan their removal.
 	Secret Kind = "secret"
-	// ResourcePool is a YDB resource pool, which limits the resources a class
-	// of queries may use. A read of a server without the resource_pools
-	// capability records each pool it finds, and a read of a dev realm, a
-	// directory standing in for a database, records the whole kind, since a
-	// pool belongs to the database that holds the realm. The resource pool
-	// comparator consults it before it plans a creation.
-	ResourcePool Kind = "resource_pool"
-	// ResourcePoolClassifier is a YDB resource pool classifier, which sends a
-	// user's or a group's queries to a resource pool. It is recorded as
-	// [ResourcePool] is.
-	ResourcePoolClassifier Kind = "resource_pool_classifier"
 	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
 	// named by the table's path and the changefeed's name.
 	Changefeed Kind = "changefeed"
@@ -285,7 +276,7 @@ const (
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
-	ResourcePool, ResourcePoolClassifier, Role, Schema, Secret, Sequence, Synonym, TableOption,
+	Role, Schema, Secret, Sequence, Synonym, TableOption,
 	Topic, Transfer, TTL, View, VirtualTable,
 }
 
@@ -332,6 +323,25 @@ func Refused(kind Kind) Object {
 // WholeKind reports whether this record covers a whole kind rather than one
 // named object.
 func (o Object) WholeKind() bool { return strings.TrimSpace(o.Name) == "" }
+
+// Directive renders a record without a comment prefix. It quotes the name and
+// omits unspecified attributes. It does not validate the record: common kinds
+// use [Object.Validate], while an extension owner validates its own kind before
+// encoding. This lets a document transport owner records without adding them
+// to its common coverage [Set].
+func (o Object) Directive() string {
+	line := fmt.Sprintf("%s %s", DirectiveMarker, o.Kind)
+	if o.Reason != ReasonUnspecified {
+		line += fmt.Sprintf(" %s=%s", reasonAttribute, o.Reason)
+	}
+	if o.Provenance != ProvenanceUnspecified {
+		line += fmt.Sprintf(" %s=%s", provenanceAttribute, o.Provenance)
+	}
+	if !o.WholeKind() {
+		line += " " + strconv.Quote(o.Name)
+	}
+	return line
+}
 
 // Validate reports whether every token in the record is one this build
 // understands. An unknown one is refused rather than tolerated, for the reason
@@ -578,17 +588,7 @@ func (s Set) Directives() []string {
 	normalized := s.Normalize()
 	lines := make([]string, 0, len(normalized.Objects))
 	for _, object := range normalized.Objects {
-		line := fmt.Sprintf("%s %s", DirectiveMarker, object.Kind)
-		if object.Reason != ReasonUnspecified {
-			line += fmt.Sprintf(" %s=%s", reasonAttribute, object.Reason)
-		}
-		if object.Provenance != ProvenanceUnspecified {
-			line += fmt.Sprintf(" %s=%s", provenanceAttribute, object.Provenance)
-		}
-		if !object.WholeKind() {
-			line += " " + strconv.Quote(object.Name)
-		}
-		lines = append(lines, line)
+		lines = append(lines, object.Directive())
 	}
 	return lines
 }
@@ -596,6 +596,13 @@ func (s Set) Directives() []string {
 // commentPrefixes are the line-comment spellings a serialized schema document
 // can use: HCL accepts the first two, SQL the third.
 var commentPrefixes = []string{"//", "#", "--"}
+
+// HeaderExtension consumes a parsed directive whose kind is outside the common
+// coverage vocabulary. It returns true only when it recognizes and records the
+// directive in its owner's coverage. Common kinds never reach this callback.
+// Syntax, reason, and provenance are validated before it is called. A caller
+// must discard captured extension state if DecodeHeader returns an error.
+type HeaderExtension func(Object) (bool, error)
 
 // DecodeHeader reads the coverage a document declares about itself out of its
 // leading comment header: the run of comment and blank lines before the first
@@ -606,17 +613,13 @@ var commentPrefixes = []string{"//", "#", "--"}
 // table comment or a string literal, and it would suppress a removal the author
 // asked for -- a silent, destructive false negative in the one direction this
 // package must never fail.
-func DecodeHeader(document string) (Set, error) {
+//
+// extension handles owner-defined source kinds without adding them to the
+// common Set. Nil recognizes common kinds only. An unclaimed kind or a callback
+// error returns an empty Set and an error, never a partially decoded result.
+func DecodeHeader(document string, extension HeaderExtension) (Set, error) {
 	var set Set
-	for line := range strings.SplitSeq(document, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		body, isComment := commentBody(trimmed)
-		if !isComment {
-			break
-		}
+	for body := range HeaderComments(document) {
 		object, ok, err := parseDirective(body)
 		if err != nil {
 			return Set{}, err
@@ -624,9 +627,33 @@ func DecodeHeader(document string) (Set, error) {
 		if !ok {
 			continue
 		}
-		set.Objects = append(set.Objects, object)
+		common, err := commonDirective(object, extension)
+		if err != nil {
+			return Set{}, err
+		}
+		if common {
+			set.Objects = append(set.Objects, object)
+		}
 	}
 	return set.Normalize(), nil
+}
+
+func commonDirective(object Object, extension HeaderExtension) (bool, error) {
+	_, err := ParseKind(string(object.Kind))
+	if err == nil {
+		return true, nil
+	}
+	if extension == nil {
+		return false, err
+	}
+	accepted, extensionErr := extension(object)
+	if extensionErr != nil {
+		return false, extensionErr
+	}
+	if !accepted {
+		return false, err
+	}
+	return false, nil
 }
 
 func commentBody(trimmed string) (string, bool) {
@@ -666,11 +693,7 @@ func parseDirective(body string) (Object, bool, error) {
 	if len(fields) == 0 {
 		return Object{}, false, malformedDirective(body)
 	}
-	kind, err := ParseKind(fields[0])
-	if err != nil {
-		return Object{}, false, err
-	}
-	object := Object{Kind: kind}
+	object := Object{Kind: Kind(strings.ToLower(fields[0]))}
 	for _, field := range fields[1:] {
 		if err := applyAttribute(&object, field, body); err != nil {
 			return Object{}, false, err

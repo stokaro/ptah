@@ -432,7 +432,7 @@ func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {
 	}, goschematogo.Options{PackageName: "models"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(fileNames(files), qt.DeepEquals, []string{"auth_users.go", "billing_users.go"})
+	c.Assert(fileNames(files), qt.DeepEquals, []string{"schema_objects.go", "auth_users.go", "billing_users.go"})
 }
 
 func TestRenderRejectsInvalidPackageName(t *testing.T) {

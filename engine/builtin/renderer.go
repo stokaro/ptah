@@ -2418,9 +2418,6 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
 		return err
 	}
-	if err := validateDeclaredResourcePools(dialect, caps, database); err != nil {
-		return err
-	}
 	// Row-level TTL is refused here as well as at the table it belongs to,
 	// because these are the refusals that must arrive before ANY statement is
 	// emitted: a knob without an enabler, or a value the server stores

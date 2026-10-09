@@ -275,7 +275,7 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 			for _, directive := range test.set.Directives() {
 				fmt.Fprintf(&document, "// %s\n", directive)
 			}
-			decoded, err := coverage.DecodeHeader(document.String())
+			decoded, err := coverage.DecodeHeader(document.String(), nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(decoded, qt.DeepEquals, test.set)
 		})
@@ -328,7 +328,7 @@ func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
 			c.Assert(directives[0], qt.Not(qt.Contains), "\n")
 			c.Assert(directives[0], qt.Not(qt.Contains), "\r")
 
-			decoded, err := coverage.DecodeHeader("// " + directives[0] + "\n")
+			decoded, err := coverage.DecodeHeader("// "+directives[0]+"\n", nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(decoded.Objects, qt.DeepEquals, []coverage.Object{
 				{Kind: coverage.Schema, Name: test.want},
@@ -377,7 +377,7 @@ func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
 				fmt.Fprintf(&document, "// %s\n", directive)
 			}
 
-			decoded, err := coverage.DecodeHeader(document.String())
+			decoded, err := coverage.DecodeHeader(document.String(), nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(decoded, qt.DeepEquals, test.set)
 			c.Assert(decoded.Objects, qt.HasLen, 1)
@@ -436,7 +436,7 @@ func TestDecodeHeader_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := coverage.DecodeHeader(test.document)
+			got, err := coverage.DecodeHeader(test.document, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
@@ -456,7 +456,7 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 		{
 			name:     "unknown kind",
 			document: "// ptah:not-described publication\n",
-			wantErr:  `unknown coverage kind "publication": valid kinds are changefeed, change_stream, column_family, column_table, composite, default_privilege, domain, extension, extended_property, external_data_source, external_table, grant, policy, range, replication, resource_pool, resource_pool_classifier, role, schema, secret, sequence, synonym, table_option, topic, transfer, ttl, view, virtual_table`,
+			wantErr:  `unknown coverage kind "publication": valid kinds are changefeed, change_stream, column_family, column_table, composite, default_privilege, domain, extension, extended_property, external_data_source, external_table, grant, policy, range, replication, role, schema, secret, sequence, synonym, table_option, topic, transfer, ttl, view, virtual_table`,
 		},
 		{
 			name:     "no kind",
@@ -498,7 +498,7 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := coverage.DecodeHeader(test.document)
+			got, err := coverage.DecodeHeader(test.document, nil)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.IsZero(), qt.IsTrue)
 		})

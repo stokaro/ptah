@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 func TestCollect_YDBFamilies(t *testing.T) {
@@ -27,12 +28,10 @@ func TestCollect_YDBFamilies(t *testing.T) {
 			{Columns: make([]schemamodel.ExternalColumn, 3)},
 			{},
 		},
-		ResourcePools:           make([]schemamodel.ResourcePool, 5),
-		ResourcePoolClassifiers: make([]schemamodel.ResourcePoolClassifier, 6),
-		AsyncReplications:       make([]schemamodel.AsyncReplication, 7),
-		Transfers:               make([]schemamodel.Transfer, 8),
-		Secrets:                 make([]schemamodel.Secret, 9),
-		ExternalDataSources:     make([]schemamodel.ExternalDataSource, 10),
+		AsyncReplications:   make([]schemamodel.AsyncReplication, 7),
+		Transfers:           make([]schemamodel.Transfer, 8),
+		Secrets:             make([]schemamodel.Secret, 9),
+		ExternalDataSources: make([]schemamodel.ExternalDataSource, 10),
 	}
 	var err error
 	db.FeatureObjects, err = schemaext.NewObjects(
@@ -45,6 +44,14 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		ydbschema.DesiredObject("", "users", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}}),
 	)
 	c.Assert(err, qt.IsNil)
+	for i := range 5 {
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbworkload.DesiredPoolObject(fmt.Sprintf("pool_%d", i), "", ydbworkload.PoolSpec{}))
+		c.Assert(err, qt.IsNil)
+	}
+	for i := range 6 {
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbworkload.DesiredClassifierObject(fmt.Sprintf("classifier_%d", i), "", ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: int64(i)}))
+		c.Assert(err, qt.IsNil)
+	}
 	db.FeatureObjects = addStreamingMetricFixtures(c, db.FeatureObjects)
 	body := render(c, db, nil)
 	for _, test := range []struct{ name, want string }{

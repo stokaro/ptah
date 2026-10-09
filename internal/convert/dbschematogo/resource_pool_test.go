@@ -7,50 +7,47 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/convert/goschematodb"
 )
 
-// A read's resource pools and classifiers become declarations, except the
-// pool default while it holds no setting: YDB creates it with every setting
-// unset, so a declaration of it would change nothing, and every model
-// introspected from a database would carry it. A default with a setting is
-// kept, since the declaration then says something.
+// Conversion keeps a captured default pool even when all its settings are
+// unset. A set-only declaration emits no operation for that empty value; the
+// conversion itself must not discard a known object or its inspection limits.
 func TestConvert_ResourcePools(t *testing.T) {
-	tests := []struct {
+	for _, test := range []struct {
 		name string
-		read []catalog.ResourcePool
-		want []schemamodel.ResourcePool
+		spec ydbworkload.PoolSpec
 	}{
-		{
-			name: "an untouched default is left out",
-			read: []catalog.ResourcePool{{Name: "default"}, {Name: "batch",
-				Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(3))}}},
-			want: []schemamodel.ResourcePool{{Name: "batch",
-				Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(3))}}},
-		},
-		{
-			name: "a default with a setting is kept",
-			read: []catalog.ResourcePool{{Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}}},
-			want: []schemamodel.ResourcePool{{Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}}},
-		},
-	}
-	for _, test := range tests {
+		{name: "untouched default"},
+		{name: "configured default", spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			classifier := catalog.ResourcePoolClassifier{Name: "etl",
-				Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}
-
-			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
-				ResourcePools: test.read, ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{classifier},
-			}, "ydb", must.Must(builtin.New())))
-
-			c.Assert(converted.ResourcePools, qt.DeepEquals, test.want)
-			c.Assert(converted.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{
-				{Name: "etl", Spec: classifier.Spec},
-			})
+			runtime := must.Must(builtin.New())
+			original := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+				ydbworkload.ObservedPoolObject("default", test.spec),
+				ydbworkload.ObservedPoolObject("batch", ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(3))}),
+				ydbworkload.ObservedClassifierObject("etl", ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}),
+			))}
+			pools := must.Must(ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+			classifiers := must.Must(ydbworkload.Coverage(ydbworkload.ClassifierKind, schemaext.Observed, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not enumerated"}, nil))
+			original.FeatureCoverage = must.Must(pools.Combine(classifiers))
+			converted, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), original, "ydb", runtime)
+			c.Assert(err, qt.IsNil)
+			c.Assert(converted.FeatureObjects.Len(), qt.Equals, 3)
+			object, found, err := converted.FeatureObjects.Get(ydbworkload.PoolRef("default"))
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(object.Value, qt.DeepEquals, &ydbworkload.DesiredPool{Spec: test.spec})
+			c.Assert(converted.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("missing")).State, qt.Equals, schemaext.Uninspected)
+			restored, err := goschematodb.ToDBSchema(t.Context(), converted, "ydb", runtime)
+			c.Assert(err, qt.IsNil)
+			c.Assert(restored.FeatureObjects.Equal(original.FeatureObjects), qt.IsTrue)
+			c.Assert(restored.FeatureCoverage.Equal(original.FeatureCoverage), qt.IsTrue)
 		})
 	}
 }

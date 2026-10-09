@@ -11,12 +11,13 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
 func TestWorkloadOperationsUseRegisteredCodecsAndOwnerRendering(t *testing.T) {
-	for _, fixture := range []extensionFixture{poolFixture(), classifierFixture()} {
+	for _, fixture := range []extensionFixture{poolFixture(), classifierFixture(), defaultPoolFixture()} {
 		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
 			c := qt.New(t)
 			runtime, err := builtin.New()
@@ -45,8 +46,8 @@ func TestWorkloadOperationsUseRegisteredCodecsAndOwnerRendering(t *testing.T) {
 func TestWorkloadOperationsRejectInvalidLaterStatementWithoutPartialSQL(t *testing.T) {
 	for _, payload := range []ast.ExtensionPayload{
 		&ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "default"},
-		&ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{}},
-		&ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ast.ResourcePoolClassifierSpec{}},
+		&ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ydbworkload.PoolSpec{}},
+		&ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ydbworkload.ClassifierSpec{}},
 	} {
 		t.Run(string(payload.Kind()), func(t *testing.T) {
 			c := qt.New(t)

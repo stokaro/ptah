@@ -8,7 +8,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/schemafile"
 )
 
@@ -29,9 +31,36 @@ func TestYQLSupportedFamilyCoverageSurvivesFileLoading(t *testing.T) {
 			c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id));"), 0o600), qt.IsNil)
 			database, err := load.read(path, schemafile.Options{Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
-			for _, kind := range []coverage.Kind{coverage.Replication, coverage.Transfer, coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Role, coverage.Grant, coverage.Changefeed, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.ColumnTable, coverage.View, coverage.Topic} {
+			for _, kind := range []coverage.Kind{coverage.Replication, coverage.Transfer, coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Role, coverage.Grant, coverage.Changefeed, coverage.ColumnTable, coverage.View, coverage.Topic} {
 				c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 			}
+		})
+	}
+}
+
+func TestYQLWorkloadHeaderLimitsSurviveFileLoading(t *testing.T) {
+	for _, load := range []struct {
+		name string
+		read func(string, schemafile.Options) (*schemamodel.Database, error)
+	}{
+		{"single file", schemafile.LoadPath},
+		{"source list", func(path string, opts schemafile.Options) (*schemamodel.Database, error) {
+			return schemafile.LoadAll([]string{path}, opts)
+		}},
+	} {
+		t.Run(load.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(path, []byte(`-- ptah:not-described resource_pool "batch.jobs"
+-- ptah:not-described resource_pool_classifier
+CREATE RESOURCE POOL other WITH (CONCURRENT_QUERY_LIMIT = 0);
+`), 0o600), qt.IsNil)
+			db, err := load.read(path, schemafile.Options{Dialect: "ydb"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.FeatureObjects.Len(), qt.Equals, 1)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch.jobs")).State, qt.Equals, schemaext.Uninspected)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("other")).State, qt.Equals, schemaext.Complete)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("other")).State, qt.Equals, schemaext.Uninspected)
 		})
 	}
 }

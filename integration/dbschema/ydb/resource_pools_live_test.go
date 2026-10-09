@@ -7,20 +7,19 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -60,8 +59,8 @@ func newPoolNames(c *qt.C) poolNames {
 func removePools(conn *dbschema.DatabaseConnection, names poolNames) {
 	ctx := context.Background()
 	for _, statement := range []string{
-		ydbpool.DropClassifierStatement(names.toBatch), ydbpool.DropClassifierStatement(names.toIdle),
-		ydbpool.DropPoolStatement(names.batch), ydbpool.DropPoolStatement(names.idle),
+		ydbworkload.DropClassifierStatement(names.toBatch), ydbworkload.DropClassifierStatement(names.toIdle),
+		ydbworkload.DropPoolStatement(names.batch), ydbworkload.DropPoolStatement(names.idle),
 		"ALTER RESOURCE POOL default RESET (RESOURCE_WEIGHT);",
 	} {
 		_ = conn.Writer().ExecuteSQL(ctx, statement)
@@ -80,41 +79,42 @@ func poolDeclaration(
 	memory *float64,
 	batchRank, idleRank int64,
 ) *schemamodel.Database {
+	pools := must.Must(ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	classifiers := must.Must(ydbworkload.Coverage(ydbworkload.ClassifierKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return &schemamodel.Database{
-		ResourcePools: []schemamodel.ResourcePool{
-			{Name: names.batch, Spec: ast.ResourcePoolSpec{
+		FeatureCoverage: must.Must(pools.Combine(classifiers)),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			ydbworkload.DesiredPoolObject(names.batch, "", ydbworkload.PoolSpec{
 				ConcurrentQueryLimit: new(limit), QueueSize: queue, QueryMemoryLimitPercentPerNode: memory,
-			}},
-			{Name: names.idle},
-			{Name: ydbpool.DefaultPool, Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
-		},
-		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
-			{Name: names.toBatch, Spec: ast.ResourcePoolClassifierSpec{
+			}),
+			ydbworkload.DesiredPoolObject(names.idle, "", ydbworkload.PoolSpec{}),
+			ydbworkload.DesiredPoolObject(ydbworkload.DefaultPool, "", ydbworkload.PoolSpec{ResourceWeight: new(30.0)}),
+			ydbworkload.DesiredClassifierObject(names.toBatch, "", ydbworkload.ClassifierSpec{
 				ResourcePool: names.batch, MemberName: names.member, Rank: batchRank,
-			}},
-			{Name: names.toIdle, Spec: ast.ResourcePoolClassifierSpec{
+			}),
+			ydbworkload.DesiredClassifierObject(names.toIdle, "", ydbworkload.ClassifierSpec{
 				ResourcePool: names.idle, MemberName: names.member + "g", Rank: idleRank,
-			}},
-		},
+			}),
+		)),
 	}
 }
 
 // poolsOf is what a read reports of the run's pools and classifiers, in
 // declaration order, with the pool default.
-func poolsOf(live *catalog.Database, names poolNames) ([]catalog.ResourcePool, []catalog.ResourcePoolClassifier) {
-	var pools []catalog.ResourcePool
-	for _, name := range []string{names.batch, names.idle, ydbpool.DefaultPool} {
-		index := slices.IndexFunc(live.ResourcePools, func(pool catalog.ResourcePool) bool { return pool.Name == name })
-		if index >= 0 {
-			pools = append(pools, live.ResourcePools[index])
+func poolsOf(c *qt.C, live *catalog.Database, names poolNames) (pools, classifiers []schemaext.Object) {
+	c.Helper()
+	for _, name := range []string{names.batch, names.idle, ydbworkload.DefaultPool} {
+		object, found, err := live.FeatureObjects.Get(ydbworkload.PoolRef(name))
+		c.Assert(err, qt.IsNil)
+		if found {
+			pools = append(pools, object)
 		}
 	}
-	var classifiers []catalog.ResourcePoolClassifier
 	for _, name := range []string{names.toBatch, names.toIdle} {
-		index := slices.IndexFunc(live.ResourcePoolClassifiers,
-			func(classifier catalog.ResourcePoolClassifier) bool { return classifier.Name == name })
-		if index >= 0 {
-			classifiers = append(classifiers, live.ResourcePoolClassifiers[index])
+		object, found, err := live.FeatureObjects.Get(ydbworkload.ClassifierRef(name))
+		c.Assert(err, qt.IsNil)
+		if found {
+			classifiers = append(classifiers, object)
 		}
 	}
 	return pools, classifiers
@@ -141,30 +141,32 @@ func TestYDBResourcePools_RoundTrip(t *testing.T) {
 			c.Assert(first, qt.Contains, "CREATE RESOURCE POOL `"+names.idle+"` WITH (CONCURRENT_QUERY_LIMIT = \"-1\")")
 			apply(c, conn, first)
 
-			pools, classifiers := poolsOf(readScoped(c, conn, poolSchemas), names)
-			c.Assert(pools, qt.DeepEquals, []catalog.ResourcePool{
-				{Name: names.batch, Spec: declared.ResourcePools[0].Spec},
-				{Name: names.idle},
-				{Name: ydbpool.DefaultPool, Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
+			pools, classifiers := poolsOf(c, readScoped(c, conn, poolSchemas), names)
+			c.Assert(pools, qt.DeepEquals, []schemaext.Object{
+				ydbworkload.ObservedPoolObject(names.batch, ydbworkload.PoolSpec{
+					ConcurrentQueryLimit: new(int32(5)), QueueSize: new(int32(4)), QueryMemoryLimitPercentPerNode: new(12.5),
+				}),
+				ydbworkload.ObservedPoolObject(names.idle, ydbworkload.PoolSpec{}),
+				ydbworkload.ObservedPoolObject(ydbworkload.DefaultPool, ydbworkload.PoolSpec{ResourceWeight: new(30.0)}),
 			})
-			c.Assert(classifiers, qt.DeepEquals, []catalog.ResourcePoolClassifier{
-				{Name: names.toBatch, Spec: declared.ResourcePoolClassifiers[0].Spec},
-				{Name: names.toIdle, Spec: declared.ResourcePoolClassifiers[1].Spec},
+			c.Assert(classifiers, qt.DeepEquals, []schemaext.Object{
+				ydbworkload.ObservedClassifierObject(names.toBatch, ydbworkload.ClassifierSpec{ResourcePool: names.batch, MemberName: names.member, Rank: names.rank}),
+				ydbworkload.ObservedClassifierObject(names.toIdle, ydbworkload.ClassifierSpec{ResourcePool: names.idle, MemberName: names.member + "g", Rank: names.rank + 1}),
 			})
 			c.Assert(planAgainst(c, conn, declared, poolSchemas), qt.HasLen, 0)
 
 			changed := poolDeclaration(names, 7, nil, nil, names.rank+1, names.rank)
 			apply(c, conn, planAgainst(c, conn, changed, poolSchemas))
 
-			pools, classifiers = poolsOf(readScoped(c, conn, poolSchemas), names)
-			c.Assert(pools, qt.DeepEquals, []catalog.ResourcePool{
-				{Name: names.batch, Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(7))}},
-				{Name: names.idle},
-				{Name: ydbpool.DefaultPool, Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
+			pools, classifiers = poolsOf(c, readScoped(c, conn, poolSchemas), names)
+			c.Assert(pools, qt.DeepEquals, []schemaext.Object{
+				ydbworkload.ObservedPoolObject(names.batch, ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(7))}),
+				ydbworkload.ObservedPoolObject(names.idle, ydbworkload.PoolSpec{}),
+				ydbworkload.ObservedPoolObject(ydbworkload.DefaultPool, ydbworkload.PoolSpec{ResourceWeight: new(30.0)}),
 			})
-			c.Assert(classifiers, qt.DeepEquals, []catalog.ResourcePoolClassifier{
-				{Name: names.toBatch, Spec: changed.ResourcePoolClassifiers[0].Spec},
-				{Name: names.toIdle, Spec: changed.ResourcePoolClassifiers[1].Spec},
+			c.Assert(classifiers, qt.DeepEquals, []schemaext.Object{
+				ydbworkload.ObservedClassifierObject(names.toBatch, ydbworkload.ClassifierSpec{ResourcePool: names.batch, MemberName: names.member, Rank: names.rank + 1}),
+				ydbworkload.ObservedClassifierObject(names.toIdle, ydbworkload.ClassifierSpec{ResourcePool: names.idle, MemberName: names.member + "g", Rank: names.rank}),
 			})
 			c.Assert(planAgainst(c, conn, changed, poolSchemas), qt.HasLen, 0)
 		})
@@ -183,6 +185,9 @@ func TestYDBResourcePools_Rollback(t *testing.T) {
 			c.Cleanup(func() { removePools(conn, names) })
 			info := conn.Info()
 			current := readScoped(c, conn, poolSchemas)
+			defaultPool, found, err := current.FeatureObjects.Get(ydbworkload.PoolRef(ydbworkload.DefaultPool))
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
 			declared := poolDeclaration(names, 5, nil, nil, names.rank, names.rank+1)
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, current, info, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
@@ -201,12 +206,9 @@ func TestYDBResourcePools_Rollback(t *testing.T) {
 			c.Assert(planAgainst(c, conn, declared, poolSchemas), qt.HasLen, 0)
 			applyScript(c, conn, reverse)
 
-			pools, classifiers := poolsOf(readScoped(c, conn, poolSchemas), names)
+			pools, classifiers := poolsOf(c, readScoped(c, conn, poolSchemas), names)
 			c.Assert(classifiers, qt.HasLen, 0)
-			c.Assert(pools, qt.DeepEquals, []catalog.ResourcePool{
-				current.ResourcePools[slices.IndexFunc(current.ResourcePools,
-					func(pool catalog.ResourcePool) bool { return pool.Name == ydbpool.DefaultPool })],
-			})
+			c.Assert(pools, qt.DeepEquals, []schemaext.Object{defaultPool})
 		})
 	}
 }
@@ -224,10 +226,13 @@ func TestYDBResourcePools_ADevRealmLeavesThemOut(t *testing.T) {
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), realm, nil)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(live.ResourcePools, qt.HasLen, 0)
-			c.Assert(live.ResourcePoolClassifiers, qt.HasLen, 0)
-			c.Assert(live.NotDescribed.Describes(coverage.ResourcePool), qt.IsFalse)
-			c.Assert(live.NotDescribed.Describes(coverage.ResourcePoolClassifier), qt.IsFalse)
+			for _, kind := range []schemaext.Kind{ydbworkload.PoolKind, ydbworkload.ClassifierKind} {
+				objects := live.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+					return ref.Kind == objectidentity.Kind(kind)
+				})
+				c.Assert(objects.Len(), qt.Equals, 0)
+				c.Assert(live.FeatureCoverage.Lookup(kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
+			}
 		})
 	}
 }

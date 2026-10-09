@@ -167,7 +167,7 @@ var blockCoverageKinds = map[string]coverage.Kind{
 // document describes everything Ptah models and claims so by carrying no
 // record.
 func (r *renderer) notDescribed() coverage.Set {
-	set := r.topicsNotDescribed().Merge(r.resourcePoolsNotDescribed()).Merge(r.replicationsNotDescribed())
+	set := r.topicsNotDescribed().Merge(r.replicationsNotDescribed())
 	if !r.omitAtlasRefusedBlocks {
 		return set
 	}
@@ -194,6 +194,9 @@ func (r *renderer) notDescribed() coverage.Set {
 // a warning on a terminal cannot reach the second one.
 func (r *renderer) renderCoverageHeader() {
 	for _, directive := range r.notDescribed().Directives() {
+		r.builder.WriteString("// " + directive + "\n")
+	}
+	for _, directive := range r.coordinationDirectives {
 		r.builder.WriteString("// " + directive + "\n")
 	}
 }

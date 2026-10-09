@@ -1,13 +1,10 @@
-package ydbpool
+package ydbworkload
 
 import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/platform"
-	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbtype"
+	"ptah.run/dialect/ydb/ydbsyntax"
 )
 
 // setting is one WITH option of a pool and its value, nil when unset.
@@ -18,7 +15,7 @@ type setting struct {
 }
 
 // settingsOf lists spec's options in the order a statement names them.
-func settingsOf(spec ast.ResourcePoolSpec) []setting {
+func settingsOf(spec PoolSpec) []setting {
 	return []setting{
 		{option: "CONCURRENT_QUERY_LIMIT", integer: spec.ConcurrentQueryLimit},
 		{option: "QUEUE_SIZE", integer: spec.QueueSize},
@@ -44,7 +41,7 @@ func (s setting) literal() string {
 	}
 	text := strconv.FormatFloat(*s.fraction, 'f', -1, 64)
 	if strings.ContainsAny(text, ".eE") {
-		return ydbtype.StringLiteral(text)
+		return ydbsyntax.StringLiteral(text)
 	}
 	return text
 }
@@ -64,7 +61,7 @@ func (s setting) equal(other setting) bool {
 }
 
 // PoolsEqual reports whether two pool specs hold the same settings.
-func PoolsEqual(desired, current ast.ResourcePoolSpec) bool {
+func PoolsEqual(desired, current PoolSpec) bool {
 	left, right := settingsOf(desired), settingsOf(current)
 	for i := range left {
 		if !left[i].equal(right[i]) {
@@ -75,7 +72,7 @@ func PoolsEqual(desired, current ast.ResourcePoolSpec) bool {
 }
 
 // ClassifiersEqual reports whether two classifier specs are the same.
-func ClassifiersEqual(desired, current ast.ResourcePoolClassifierSpec) bool {
+func ClassifiersEqual(desired, current ClassifierSpec) bool {
 	return desired == current
 }
 
@@ -88,18 +85,34 @@ const unsetLimit = `CONCURRENT_QUERY_LIMIT = "-1"`
 
 // CreatePoolStatement is the CREATE RESOURCE POOL that creates the pool name
 // with spec. A setting spec leaves unset is not named.
-func CreatePoolStatement(name string, spec ast.ResourcePoolSpec) string {
+func CreatePoolStatement(name string, spec PoolSpec) string {
+	assignments := poolAssignments(spec)
+	if len(assignments) == 0 {
+		assignments = append(assignments, unsetLimit)
+	}
+	return "CREATE RESOURCE POOL " + ydbsyntax.QuoteIdentifier(name) +
+		" WITH (" + strings.Join(assignments, ", ") + ");"
+}
+
+// SetPoolStatement writes only the supplied settings, without resetting omitted
+// limits or assuming an observed state. Empty settings return an empty string.
+// Callers validate the name, settings, and target capability before rendering.
+func SetPoolStatement(name string, spec PoolSpec) string {
+	assignments := poolAssignments(spec)
+	if len(assignments) == 0 {
+		return ""
+	}
+	return "ALTER RESOURCE POOL " + ydbsyntax.QuoteIdentifier(name) + " SET (" + strings.Join(assignments, ", ") + ");"
+}
+
+func poolAssignments(spec PoolSpec) []string {
 	var assignments []string
 	for _, s := range settingsOf(spec) {
 		if s.set() {
 			assignments = append(assignments, s.option+" = "+s.literal())
 		}
 	}
-	if len(assignments) == 0 {
-		assignments = append(assignments, unsetLimit)
-	}
-	return "CREATE RESOURCE POOL " + sqlident.Quote(platform.YDB, name) +
-		" WITH (" + strings.Join(assignments, ", ") + ");"
+	return assignments
 }
 
 // AlterPoolStatement is the ALTER RESOURCE POOL that moves the pool name from
@@ -113,7 +126,7 @@ func CreatePoolStatement(name string, spec ast.ResourcePoolSpec) string {
 // 25.1.4.7 to 26.2.1.14, `SET (CONCURRENT_QUERY_LIMIT = 20)` kept the queue,
 // the threshold and the percentages, and `RESET (QUEUE_SIZE)` returned the
 // queue alone to -1.
-func AlterPoolStatement(name string, desired, current ast.ResourcePoolSpec) string {
+func AlterPoolStatement(name string, desired, current PoolSpec) string {
 	wanted, held := settingsOf(desired), settingsOf(current)
 	var sets, resets []string
 	for i := range wanted {
@@ -135,28 +148,28 @@ func AlterPoolStatement(name string, desired, current ast.ResourcePoolSpec) stri
 	if len(clauses) == 0 {
 		return ""
 	}
-	return "ALTER RESOURCE POOL " + sqlident.Quote(platform.YDB, name) + " " + strings.Join(clauses, ", ") + ";"
+	return "ALTER RESOURCE POOL " + ydbsyntax.QuoteIdentifier(name) + " " + strings.Join(clauses, ", ") + ";"
 }
 
 // DropPoolStatement is the DROP RESOURCE POOL that drops the pool name. YDB
 // has no IF EXISTS here (`mismatched input 'EXISTS'`).
 func DropPoolStatement(name string) string {
-	return "DROP RESOURCE POOL " + sqlident.Quote(platform.YDB, name) + ";"
+	return "DROP RESOURCE POOL " + ydbsyntax.QuoteIdentifier(name) + ";"
 }
 
 // CreateClassifierStatement is the CREATE RESOURCE POOL CLASSIFIER that
 // creates the classifier name with spec. The pool and the member are string
 // literals, as YDB takes them (`RESOURCE_POOL value should be a string literal
 // or integer`), and a classifier without a member names none.
-func CreateClassifierStatement(name string, spec ast.ResourcePoolClassifierSpec) string {
+func CreateClassifierStatement(name string, spec ClassifierSpec) string {
 	assignments := []string{
-		"RESOURCE_POOL = " + ydbtype.StringLiteral(spec.ResourcePool),
+		"RESOURCE_POOL = " + ydbsyntax.StringLiteral(spec.ResourcePool),
 		"RANK = " + strconv.FormatInt(spec.Rank, 10),
 	}
 	if spec.MemberName != "" {
-		assignments = append(assignments, "MEMBER_NAME = "+ydbtype.StringLiteral(spec.MemberName))
+		assignments = append(assignments, "MEMBER_NAME = "+ydbsyntax.StringLiteral(spec.MemberName))
 	}
-	return "CREATE RESOURCE POOL CLASSIFIER " + sqlident.Quote(platform.YDB, name) +
+	return "CREATE RESOURCE POOL CLASSIFIER " + ydbsyntax.QuoteIdentifier(name) +
 		" WITH (" + strings.Join(assignments, ", ") + ");"
 }
 
@@ -170,18 +183,18 @@ func CreateClassifierStatement(name string, spec ast.ResourcePoolClassifierSpec)
 // of another classifier is refused (`Classifier with rank 20 already exists`),
 // which is the planner's to order around; and the pool cannot be reset
 // (`Cannot reset required property resource_pool`).
-func AlterClassifierStatement(name string, desired, current ast.ResourcePoolClassifierSpec) string {
+func AlterClassifierStatement(name string, desired, current ClassifierSpec) string {
 	if ClassifiersEqual(desired, current) {
 		return ""
 	}
 	sets := []string{
-		"RESOURCE_POOL = " + ydbtype.StringLiteral(desired.ResourcePool),
+		"RESOURCE_POOL = " + ydbsyntax.StringLiteral(desired.ResourcePool),
 		"RANK = " + strconv.FormatInt(desired.Rank, 10),
 	}
 	if desired.MemberName != "" {
-		sets = append(sets, "MEMBER_NAME = "+ydbtype.StringLiteral(desired.MemberName))
+		sets = append(sets, "MEMBER_NAME = "+ydbsyntax.StringLiteral(desired.MemberName))
 	}
-	statement := "ALTER RESOURCE POOL CLASSIFIER " + sqlident.Quote(platform.YDB, name) +
+	statement := "ALTER RESOURCE POOL CLASSIFIER " + ydbsyntax.QuoteIdentifier(name) +
 		" SET (" + strings.Join(sets, ", ") + ")"
 	if desired.MemberName == "" && current.MemberName != "" {
 		statement += ", RESET (MEMBER_NAME)"
@@ -192,5 +205,5 @@ func AlterClassifierStatement(name string, desired, current ast.ResourcePoolClas
 // DropClassifierStatement is the DROP RESOURCE POOL CLASSIFIER that drops the
 // classifier name.
 func DropClassifierStatement(name string) string {
-	return "DROP RESOURCE POOL CLASSIFIER " + sqlident.Quote(platform.YDB, name) + ";"
+	return "DROP RESOURCE POOL CLASSIFIER " + ydbsyntax.QuoteIdentifier(name) + ";"
 }

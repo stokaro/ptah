@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/dialect/ydb/ydbsyntax"
 )
 
 // Quote returns name as a safely-quoted identifier for dialect. The dialect
@@ -16,7 +17,7 @@ import (
 // square brackets for SQL Server; and double quotes for the PostgreSQL family,
 // SQLite, and any unrecognized dialect. Embedded quote characters are doubled
 // per the SQL standard so the value cannot terminate the quoted identifier,
-// except on YDB, where a backslash escapes them; see [quoteYQL]. The dialect is
+// except on YDB, where a backslash escapes them; see [ydbsyntax.QuoteIdentifier]. The dialect is
 // resolved through platform.NormalizeDialect, so every documented spelling of
 // an engine (`mssql`, `tsql`, `sql-server`, `sql_server`; `ch`) picks the same
 // quote style as its canonical name. name itself is quoted verbatim (it is not
@@ -24,7 +25,7 @@ import (
 func Quote(dialect, name string) string {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.YDB:
-		return quoteYQL(name)
+		return ydbsyntax.QuoteIdentifier(name)
 	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 	case platform.SQLServer:
@@ -32,20 +33,6 @@ func Quote(dialect, name string) string {
 	default:
 		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
-}
-
-// yqlIdentifierEscaper escapes what would end or change a YQL backtick
-// identifier.
-var yqlIdentifierEscaper = strings.NewReplacer(`\`, `\\`, "`", "\\`")
-
-// quoteYQL quotes a YQL identifier. A backslash starts a C escape inside
-// backticks (the grammar's ID_QUOTED rule), so a backslash in the name is
-// doubled, and a backtick is escaped with one: measured on YDB 26.2.1.14,
-// CREATE TABLE `tick\`name` created a table named tick`name. The grammar
-// also reads a doubled backtick as one; the backslash form is used because a
-// backslash in the name has to be escaped either way.
-func quoteYQL(name string) string {
-	return "`" + yqlIdentifierEscaper.Replace(name) + "`"
 }
 
 // Ident returns the spelling that refers to name in dialect.

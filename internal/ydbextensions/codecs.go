@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // Codecs returns the explicit current operation codecs. These describe the
@@ -18,11 +19,13 @@ import (
 func Codecs() []schemaext.Codec {
 	models := append(ydbschema.Codecs(), ydbcoordination.Codecs()...)
 	models = append(models, ydbstreaming.Codecs()...)
+	models = append(models, ydbworkload.Codecs()...)
 	return append(append(models, ydbdiff.Codecs()...), []schemaext.Codec{
 		ydbast.CoordinationCodec(),
 		ydbast.StreamingCodec(),
 		ydbast.ResourcePoolCodec(),
 		ydbast.ResourcePoolClassifierCodec(),
+		ydbast.DefaultPoolSettingsCodec(),
 		operationCodec(&ydbast.AddChangefeed{}, decodeOperation[*ydbast.AddChangefeed]),
 		operationCodec(&ydbast.DropChangefeed{}, decodeOperation[*ydbast.DropChangefeed]),
 		operationCodec(&ydbast.AlterChangefeedTopic{}, decodeOperation[*ydbast.AlterChangefeedTopic]),

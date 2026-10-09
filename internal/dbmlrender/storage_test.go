@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dbmlrender"
 )
 
@@ -19,15 +20,14 @@ func TestRender_ReportsYDBObjectsWithoutDBMLBlocks(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
 		AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
-		FeatureObjects:    must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false))),
+		FeatureObjects:    must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false))),
 
-		ExternalDataSources:     []schemamodel.ExternalDataSource{{Name: "bucket"}},
-		ExternalTables:          []schemamodel.ExternalTable{{Name: "files"}},
-		ResourcePools:           []schemamodel.ResourcePool{{Name: "batch"}},
-		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "route"}},
-		Secrets:                 []schemamodel.Secret{{Name: "credentials"}},
-		Topics:                  []schemamodel.Topic{{Name: "events"}, {Name: "audit"}},
-		Transfers:               []schemamodel.Transfer{{Name: "copy"}},
+		ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "bucket"}},
+		ExternalTables:      []schemamodel.ExternalTable{{Name: "files"}},
+
+		Secrets:   []schemamodel.Secret{{Name: "credentials"}},
+		Topics:    []schemamodel.Topic{{Name: "events"}, {Name: "audit"}},
+		Transfers: []schemamodel.Transfer{{Name: "copy"}},
 	}
 
 	result, err := renderDBML(c, db, dbmlrender.Options{})

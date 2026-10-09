@@ -192,41 +192,6 @@ func RefuseTopics(dialect string, diff *difftypes.SchemaDiff) error {
 	}
 }
 
-// RefuseResourcePools refuses a diff that creates, drops or changes a YDB
-// resource pool or classifier, for a planner of dialect that plans none. The
-// comparison records one whenever a desired schema declares it, and only the
-// YDB planner plans it, so planning nothing here would report the pool
-// applied while the database has none.
-func RefuseResourcePools(dialect string, diff *difftypes.SchemaDiff) error {
-	if diff == nil {
-		return nil
-	}
-	var subject string
-	switch {
-	case len(diff.ResourcePoolsAdded) > 0:
-		subject = "creates resource pool " + diff.ResourcePoolsAdded[0].Name
-	case len(diff.ResourcePoolsRemoved) > 0:
-		subject = "drops resource pool " + diff.ResourcePoolsRemoved[0].Name
-	case len(diff.ResourcePoolsModified) > 0:
-		subject = "changes resource pool " + diff.ResourcePoolsModified[0].Name
-	case len(diff.ResourcePoolClassifiersAdded) > 0:
-		subject = "creates resource pool classifier " + diff.ResourcePoolClassifiersAdded[0].Name
-	case len(diff.ResourcePoolClassifiersRemoved) > 0:
-		subject = "drops resource pool classifier " + diff.ResourcePoolClassifiersRemoved[0].Name
-	case len(diff.ResourcePoolClassifiersModified) > 0:
-		subject = "changes resource pool classifier " + diff.ResourcePoolClassifiersModified[0].Name
-	default:
-		return nil
-	}
-	return &ptaherr.CapabilityError{
-		Dialect: dialect,
-		Feature: string(capability.ResourcePools),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("the diff %s, which requires target capability %s, unavailable on this %s target; "+
-			"only a YDB plan creates, drops or changes a resource pool", subject, capability.ResourcePools, dialect),
-	}
-}
-
 // RefuseYDBObjects refuses a diff that changes a YDB topic, secret, external
 // data source or external table, for a planner of dialect that plans none of
 // them, through [RefuseTopics], [RefuseSecrets] and [RefuseExternalObjects] in

@@ -71,7 +71,7 @@ func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 	}
 	definition.Values[schemaext.Operation] = definition.Operations
 	definition.Values[schemaext.Change] = definition.Changes
-	c.Assert(codecs, qt.HasLen, 16)
+	c.Assert(codecs, qt.HasLen, 23)
 	for _, codec := range codecs {
 		var fields, described []string
 		modelType := reflect.TypeOf(codec.Prototype).Elem()

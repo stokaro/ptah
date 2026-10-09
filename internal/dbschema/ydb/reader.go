@@ -133,6 +133,18 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 // ReadSchemaContext reads the database. Tables come out ordered by schema and
 // name, and each table's columns in the order the table declares them.
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	return r.readSchemaContext(ctx, workloadDirectory)
+}
+
+// ReadRehearsalSchemaContext includes observed database-wide workload settings
+// when reading a dev directory. Equal environment settings need no recreation;
+// unknown settings stay unknown. The replay guard must refuse changes outside
+// the directory. ReadSchemaContext keeps its ordinary directory scope.
+func (r *Reader) ReadRehearsalSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	return r.readSchemaContext(ctx, workloadEnvironment)
+}
+
+func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope) (*catalog.Database, error) {
 	source, end, err := r.open(ctx)
 	if err != nil {
 		return nil, err
@@ -160,13 +172,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, err
 	}
 	db := &catalog.Database{FeatureCoverage: featureCoverage, DatabasePath: "/" + strings.Trim(r.database, "/")}
+	// System views supply the settings of database-wide workload objects.
+	// The later walk retains any listed pool that those views did not describe.
+	if err := r.resourcePools(ctx, source, db, scope); err != nil {
+		return nil, err
+	}
 	if err := r.walk(ctx, source, "", db); err != nil {
 		return nil, err
 	}
 	if err := r.principals(ctx, source, db); err != nil {
-		return nil, err
-	}
-	if err := r.resourcePools(ctx, source, db); err != nil {
 		return nil, err
 	}
 	// The walk descends into a directory where its name sorts, so a secret
@@ -242,6 +256,8 @@ func (r *Reader) entry(
 		return r.streamingQuery(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		return r.coordinationNode(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_RESOURCE_POOL:
+		return r.listedResourcePool(db, name)
 	}
 	if !r.inScope(schema) {
 		return nil
@@ -365,7 +381,6 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: coverage.ExternalDataSource,
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       coverage.ExternalTable,
 	Ydb_Scheme.Entry_SECRET:               coverage.Secret,
-	Ydb_Scheme.Entry_RESOURCE_POOL:        coverage.ResourcePool,
 }
 
 // EntryStreamingQuery is the scheme entry type of a streaming query, which the

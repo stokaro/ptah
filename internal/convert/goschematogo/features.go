@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/ydbsource"
 )
 
@@ -22,11 +23,14 @@ func changefeedTableRef(table schemamodel.Table) objectidentity.ID {
 // table, an unknown kind, or a facet without an annotation must not disappear
 // from a successful export.
 func (ctx *renderContext) captureFeatureObjects() error {
-	if err := ydbsource.ValidateCoordinationExport(ctx.db.FeatureCoverage); err != nil {
+	limits, err := ydbsource.ExportLimits(ctx.db.FeatureCoverage)
+	if err != nil {
 		return err
 	}
-	if err := ydbsource.ValidateStreamingExport(ctx.db.FeatureCoverage); err != nil {
-		return err
+	for _, limit := range limits {
+		ctx.featureLimitAnnotations = append(ctx.featureLimitAnnotations,
+			annotation("ptah:schema:notdescribed", attr{name: "kind", value: string(limit.Kind), set: true},
+				attr{name: "name", value: limit.Name, set: limit.Name != ""}))
 	}
 	for _, facets := range ctx.db.FacetSlots() {
 		if !facets.IsZero() {
@@ -51,6 +55,23 @@ func (ctx *renderContext) captureFeatureObjects() error {
 }
 
 func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents map[objectidentity.Key]struct{}) error {
+	if pool, ok := object.Value.(*ydbworkload.DesiredPool); ok {
+		if err := ydbworkload.ValidatePoolRef(object.Ref, pool.Spec); err != nil {
+			return err
+		}
+		ctx.workloadAnnotations = append(ctx.workloadAnnotations, resourcePoolAnnotation(object.Ref.Name.Source, pool.Spec))
+		return nil
+	}
+	if classifier, ok := object.Value.(*ydbworkload.DesiredClassifier); ok {
+		if err := ydbworkload.ValidateIdentity(object.Ref, ydbworkload.ClassifierKind); err != nil {
+			return err
+		}
+		if err := ydbworkload.ValidateClassifier(classifier.Spec); err != nil {
+			return err
+		}
+		ctx.workloadAnnotations = append(ctx.workloadAnnotations, resourcePoolClassifierAnnotation(object.Ref.Name.Source, classifier.Spec))
+		return nil
+	}
 	if query, ok := object.Value.(*ydbstreaming.Desired); ok {
 		if err := ydbstreaming.ValidateIdentity(object.Ref); err != nil {
 			return err

@@ -108,8 +108,7 @@ func New() (*engine.Runtime, error) {
 			provider.Conversions = append(provider.Conversions, engine.Conversion{Target: name, Kinds: []schemaext.Kind{ydbstreaming.Kind}, Service: ydbconvert.StreamingService{}})
 			provider.Comparisons = append(provider.Comparisons, engine.ObjectComparison{Target: name, Kinds: []schemaext.Kind{ydbstreaming.Kind}, ChangeKinds: []schemaext.Kind{ydbdiff.StreamingQueryKind}, Service: ydbcompare.StreamingService{}})
 			provider.Reversals = append(provider.Reversals, engine.Reversal{Target: name, Kinds: []schemaext.Kind{ydbdiff.StreamingQueryKind}, Service: ydbreverse.StreamingService{}})
-			provider.Planning = append(provider.Planning, engine.Planning{Target: name, Kinds: []schemaext.Kind{ydbdiff.StreamingQueryKind}, OperationKinds: []schemaext.Kind{ydbast.StreamingQueryKind}, Service: ydbplan.StreamingService{}})
-			provider.Declarations = append(provider.Declarations, engine.DeclarationPlanning{Target: name, Kinds: []schemaext.Kind{ydbstreaming.Kind}, OperationKinds: []schemaext.Kind{ydbast.StreamingQueryKind}, Service: ydbplan.StreamingService{}})
+			registerWorkloadServices(&provider, name)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

@@ -66,6 +66,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbschema`
 - `ptah.run/dialect/ydb/ydbscheme`
 - `ptah.run/dialect/ydb/ydbstreaming`
+- `ptah.run/dialect/ydb/ydbsyntax`
+- `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/migration/datadiff`
@@ -777,9 +779,64 @@ neither. Invalid operations fail before any SQL is returned.
 
 Pool and classifier payloads expose structured subjects and workload effects.
 Safety reports retain their names and classify routing or limit changes as
-warnings. Removing the server-owned `default` pool is refused. Settings remain
-in `core/ast.ResourcePoolSpec` and `ResourcePoolClassifierSpec`; concrete
-operation nodes belong to `ydbast`.
+warnings. Removing the server-owned `default` pool is refused.
+`dialect/ydb/ydbworkload` owns `PoolSpec`, `ClassifierSpec`, and distinct desired
+and observed values. Go, YAML, and YQL sources carry these values in
+`Database.FeatureObjects`, with exact database-scoped names. Dots in a pool or
+classifier name are literal. They never introduce a scheme directory.
+The common desired and observed models hold no separate pool or classifier
+collections. Merging declarations with the same feature identity returns
+`schemaext.ErrDuplicate`, including identical settings from different holders.
+
+Include selectors retain captured destination pools of selected classifiers
+and streaming queries. Explicit exclusions still remove those pools. Filtering
+preserves namespace knowledge and limits subject records to the retained scope.
+HCL cannot declare workload objects: export reports omitted objects, and reading
+the document leaves these namespaces uninspected.
+
+The workload services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
+`ydbreport` handle these objects through the selected runtime. Changes retain
+complete before and after settings in `ydbdiff.ResourcePool` and
+`ydbdiff.ResourcePoolClassifier`, carried by `SchemaDiff.FeatureChanges`.
+Safety reports classify these records through their owner-provided effects.
+Reversal restores captured settings and reports that past query execution
+cannot be undone.
+
+`ydbplan.WorkloadStreamingService` plans
+pools, classifiers, and streaming queries together: a classifier rank swap
+releases occupied ranks before assigning them, and running queries stop before
+workload mutations and resume afterward. These operations cannot run inside a
+SQL transaction.
+
+`ydbast.DefaultPoolSettings` is a set-only declaration of the existing default
+pool. It preserves omitted settings without inventing an observation. An empty
+declaration emits no SQL. A migration that changes default-pool settings still
+requires an inspected before state.
+
+Pool and classifier inspection records namespace and subject coverage
+separately. A refused read, a directory outside the database-wide scope, or an
+empty system view without enabled resource-pool support cannot establish
+absence. Valid returned objects remain captured independently of target
+capabilities. Unsupported settings leave the affected subject unrepresentable.
+
+Workload comparison requires `resource_pools` capability for changes, not for
+retaining observed objects. Incomplete namespace enumeration does not block an
+unrelated table migration because source omission never removes workload objects.
+A declared workload object still requires evidence of its current settings or
+absence. Explicit subject limitations remain undecided; comparison preserves
+source coverage without claiming new inspection.
+
+Go export writes explicit unmanaged-namespace annotations when workload
+coverage is missing and preserves source-authored namespace and object limits
+through repeated export. It refuses recorded inspection limits it cannot preserve.
+The generated Go keeps unmanaged scopes unmanaged when parsed.
+Explicit absence and default coverage assertions also require a lossless
+spelling; Go export refuses them instead of replacing them with omission.
+Coverage must name the exact desired model definition the source supports.
+Matching a kind's name alone does not establish that the model is understood.
+
+`dialect/ydb/ydbsyntax` provides YQL identifier and string-literal quoting to
+owner packages without importing host implementation helpers.
 
 `dialect/ydb/ydbstreaming` owns the query `Spec` and its desired and observed
 representations in `Database.FeatureObjects`. `Desired.AllowStateReset` carries
@@ -910,11 +967,28 @@ schema IR; dropping it can move an extension into the wrong namespace.
 describe. `schemamodel.Database.NotDescribed` and
 `catalog.Database.NotDescribed` hold one, and schema comparison consults both:
 the desired state's record gates removals and the introspected state's record
-gates additions. Its zero value claims everything, so an embedder that never
-sets one gets exactly the comparison it got before the field existed. Set it
+gates additions. Its zero value applies no limits to common kinds. Set it
 when a reader was asked about less than the whole database, or a projection
 left something out on purpose; leaving it zero there is how an object nobody
 looked at becomes a `DROP`.
+
+Feature models use `schemaext.Coverage`, whose zero value is unknown.
+Resource pools and classifiers have no common coverage kind.
+`coverage.DecodeHeader` takes an explicit `HeaderExtension` callback, or nil
+for common kinds only. The callback receives validated directives outside the
+common vocabulary and records them in the owning feature's coverage. It cannot
+override common kinds. Unclaimed kinds and callback errors refuse the document.
+`Object.Directive` encodes an owner-validated record without adding it to the
+common set. Split exports carry recognized owner records, including their
+reason, provenance, and exact name, in every output file.
+
+`Registry.EncodeCoverageHeader` and `DecodeCoverageHeader` transport a versioned
+feature account in a leading `ptah:feature-coverage` comment. They validate exact
+model identities without adding registered models to the account. No header
+means no claims. `coverage.HeaderComments` supplies the shared boundary before
+the first content line. HCL uses this account for coordination nodes; ordinary
+Atlas HCL does not establish their absence. Split HCL preserves the account in
+every member.
 
 Every schema comparison takes a context and an explicitly selected runtime.
 Catalog comparisons accept `schemapreparation.Runtime`. Document comparisons
@@ -1177,6 +1251,16 @@ migration before executing its first statement, so a rejected later statement
 cannot leave an earlier statement applied. Validators inspect SQL but do not
 replace the migrator's execution path; use `WithStatementInterceptor` only when
 an external executor must take over accepted statements.
+
+`dbschema.ReadRehearsalSchemaContext` uses a private reader and selects its
+optional `catalog.RehearsalSchemaReader` service. This service can include
+observed environment objects outside the reader's writable scope for baseline
+comparison. Readers without it perform an ordinary schema read. Unknown state
+stays unknown, and a failed read returns no partial schema. The caller must
+validate the entire generated baseline against the allowed execution scope
+before applying any statement. An environment observation grants no permission
+to change it. YDB uses this to compare database-wide workload settings while
+rehearsing directory-local table changes.
 
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.

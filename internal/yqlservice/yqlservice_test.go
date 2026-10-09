@@ -108,7 +108,7 @@ func TestLocate_FailurePath(t *testing.T) {
 }
 
 // A YQL string reads back as the text it denotes, in either quote style, with
-// the escapes ydbtype.StringLiteral writes.
+// the escapes ydbsyntax.StringLiteral writes.
 func TestStringValue_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string

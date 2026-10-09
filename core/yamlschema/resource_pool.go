@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // resourcePoolSpec is one YDB resource pool in a YAML document, keyed by its
@@ -22,17 +22,17 @@ type resourcePoolSpec struct {
 }
 
 // values are the pool's settings keyed by attribute name, as
-// [ydbpool.ParsePool] reads them.
+// [ydbworkload.ParsePool] reads them.
 func (spec resourcePoolSpec) values(name string) map[string]string {
-	values := map[string]string{ydbpool.AttributeName: name}
+	values := map[string]string{ydbworkload.AttributeName: name}
 	for attribute, value := range map[string]*stringScalar{
-		ydbpool.AttributeConcurrentQueryLimit:           spec.ConcurrentQueryLimit,
-		ydbpool.AttributeQueueSize:                      spec.QueueSize,
-		ydbpool.AttributeDatabaseLoadCPUThreshold:       spec.DatabaseLoadCPUThreshold,
-		ydbpool.AttributeQueryMemoryLimitPercentPerNode: spec.QueryMemoryLimitPercentPerNode,
-		ydbpool.AttributeQueryCPULimitPercentPerNode:    spec.QueryCPULimitPercentPerNode,
-		ydbpool.AttributeTotalCPULimitPercentPerNode:    spec.TotalCPULimitPercentPerNode,
-		ydbpool.AttributeResourceWeight:                 spec.ResourceWeight,
+		ydbworkload.AttributeConcurrentQueryLimit:           spec.ConcurrentQueryLimit,
+		ydbworkload.AttributeQueueSize:                      spec.QueueSize,
+		ydbworkload.AttributeDatabaseLoadCPUThreshold:       spec.DatabaseLoadCPUThreshold,
+		ydbworkload.AttributeQueryMemoryLimitPercentPerNode: spec.QueryMemoryLimitPercentPerNode,
+		ydbworkload.AttributeQueryCPULimitPercentPerNode:    spec.QueryCPULimitPercentPerNode,
+		ydbworkload.AttributeTotalCPULimitPercentPerNode:    spec.TotalCPULimitPercentPerNode,
+		ydbworkload.AttributeResourceWeight:                 spec.ResourceWeight,
 	} {
 		if value != nil {
 			values[attribute] = string(*value)
@@ -50,15 +50,15 @@ type resourcePoolClassifierSpec struct {
 }
 
 // values are the classifier's settings keyed by attribute name, as
-// [ydbpool.ParseClassifier] reads them.
+// [ydbworkload.ParseClassifier] reads them.
 func (spec resourcePoolClassifierSpec) values(name string) map[string]string {
 	values := map[string]string{
-		ydbpool.AttributeName:         name,
-		ydbpool.AttributeResourcePool: string(spec.ResourcePool),
-		ydbpool.AttributeMemberName:   string(spec.MemberName),
+		ydbworkload.AttributeName:         name,
+		ydbworkload.AttributeResourcePool: string(spec.ResourcePool),
+		ydbworkload.AttributeMemberName:   string(spec.MemberName),
 	}
 	if spec.Rank != nil {
-		values[ydbpool.AttributeRank] = string(*spec.Rank)
+		values[ydbworkload.AttributeRank] = string(*spec.Rank)
 	}
 	return values
 }
@@ -67,19 +67,24 @@ func (spec resourcePoolClassifierSpec) values(name string) map[string]string {
 // checked by the rules the annotation parser reads one with.
 func (d document) addResourcePools(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.ResourcePools) {
-		name, spec, err := ydbpool.ParsePool(d.ResourcePools[key].values(key))
+		name, spec, err := ydbworkload.ParsePool(d.ResourcePools[key].values(key))
 		if err != nil {
 			return fmt.Errorf("resource pool %q: %w", key, err)
 		}
-		db.ResourcePools = append(db.ResourcePools, schemamodel.ResourcePool{Name: name, Spec: spec})
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbworkload.DesiredPoolObject(name, "", spec))
+		if err != nil {
+			return err
+		}
 	}
 	for _, key := range sortedKeys(d.ResourcePoolClassifiers) {
-		name, spec, err := ydbpool.ParseClassifier(d.ResourcePoolClassifiers[key].values(key))
+		name, spec, err := ydbworkload.ParseClassifier(d.ResourcePoolClassifiers[key].values(key))
 		if err != nil {
 			return fmt.Errorf("resource pool classifier %q: %w", key, err)
 		}
-		db.ResourcePoolClassifiers = append(db.ResourcePoolClassifiers,
-			schemamodel.ResourcePoolClassifier{Name: name, Spec: spec})
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbworkload.DesiredClassifierObject(name, "", spec))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

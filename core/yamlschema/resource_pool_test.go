@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // TestParse_ResourcePool_HappyPath reads YDB resource pools and classifiers
@@ -34,18 +34,15 @@ resource_pool_classifiers:
 `))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.ResourcePools, qt.DeepEquals, []schemamodel.ResourcePool{
-		{Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
-		{Name: "reporting", Spec: ast.ResourcePoolSpec{
-			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)),
-			QueryMemoryLimitPercentPerNode: new(25.5),
-		}},
-	})
-	c.Assert(db.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{
-		{Name: "everyone", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default"}},
-		{Name: "reporters", Spec: ast.ResourcePoolClassifierSpec{
-			ResourcePool: "reporting", MemberName: "analysts", Rank: 100,
-		}},
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.ContentEquals, []schemaext.Object{
+		ydbworkload.DesiredPoolObject("default", "", ydbworkload.PoolSpec{ResourceWeight: new(30.0)}),
+		ydbworkload.DesiredPoolObject("reporting", "", ydbworkload.PoolSpec{
+			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)), QueryMemoryLimitPercentPerNode: new(25.5),
+		}),
+		ydbworkload.DesiredClassifierObject("everyone", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}),
+		ydbworkload.DesiredClassifierObject("reporters", "", ydbworkload.ClassifierSpec{ResourcePool: "reporting", MemberName: "analysts", Rank: 100}),
 	})
 }
 
