@@ -60,6 +60,12 @@
     "reason": "The engine reference keeps YDB object, migration, data and dev-database behavior together for target-specific lookup, beside the gaps Ptah still refuses on YDB and the issue that owns them."
   },
   {
+    "route": "/extend/public-api/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The stable package table needs one row per package in the public API ledger, and check-public-api-docs-sync refuses a package without one; each feature owner extracted for #4140 adds its packages here."
+  },
+  {
     "route": "/faq/",
     "check": "page-length",
     "target": "page",
