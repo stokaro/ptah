@@ -55,7 +55,9 @@ import (
 // ClickHouse engine is.
 
 // validateYDBReplayStatement is [ReplayGuard.ValidateStatement] for YDB.
-func validateYDBReplayStatement(tokens []lexer.Token, realm ReplayRealm) error {
+// baselineRoot is the absolute path of the dev realm a baseline writes in, and
+// "" for a replay; see [ydbGrantInRealm].
+func validateYDBReplayStatement(tokens []lexer.Token, realm ReplayRealm, baselineRoot string) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -70,7 +72,51 @@ func validateYDBReplayStatement(tokens []lexer.Token, realm ReplayRealm) error {
 	if realm == ReplayRealmServer {
 		return nil
 	}
+	if ydbGrantInRealm(tokens, baselineRoot) {
+		return nil
+	}
 	return validateYDBRealmStatement(tokens)
+}
+
+// ydbGrantInRealm reports a GRANT or REVOKE that names only the dev realm
+// itself or paths under it, by their absolute paths, so the realm's removal
+// takes the permission with it.
+//
+// It is a baseline's case: the realm's root stands in for the target's
+// database, and the baseline recreates the permissions the target holds on its
+// root by granting them on the realm's. A replay refuses every grant in a
+// realm, and so does a baseline for any other path. YDB resolves a relative
+// grant path against the database root, never against the realm's prefix (see
+// ptah.run/internal/ydbacl.StatementPath), so a relative path names an object
+// outside the realm, and only an absolute one under root is known to be inside.
+func ydbGrantInRealm(tokens []lexer.Token, root string) bool {
+	if root == "" || len(tokens) == 0 {
+		return false
+	}
+	if first := ydbKeyword(tokens[0]); first != "GRANT" && first != "REVOKE" {
+		return false
+	}
+	on := slices.IndexFunc(tokens, func(token lexer.Token) bool { return ydbKeyword(token) == "ON" })
+	if on < 0 {
+		return false
+	}
+	paths := 0
+	for _, token := range tokens[on+1:] {
+		switch {
+		case ydbKeyword(token) == "TO" || ydbKeyword(token) == "FROM":
+			return paths > 0
+		case token.MatchOperatorValue(","):
+			continue
+		case token.Type != lexer.TokenIdentifier || strings.HasPrefix(token.Value, "$"):
+			return false
+		}
+		target := ydbUnquote(token.Value)
+		if target != root && !strings.HasPrefix(target, root+"/") || slices.Contains(strings.Split(target, "/"), "..") {
+			return false
+		}
+		paths++
+	}
+	return false
 }
 
 // ydbBeyondTheServer names the operation of a statement that reads from or

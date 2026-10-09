@@ -310,3 +310,44 @@ func TestYDBBinary_DevDatabaseOnAnotherServer(t *testing.T) {
 		})
 	}
 }
+
+// TestYDBBinary_ARehearsalRefusesAUserItsRealmCannotHold pins the baseline's
+// confinement on a dev realm of another server. The target holds a user the
+// other server does not, so recreating the target there would create a user
+// of the other server's whole database, which removing the realm leaves
+// behind. The rehearsal refuses before any statement runs, names the
+// statement, and the target is not changed.
+func TestYDBBinary_ARehearsalRefusesAUserItsRealmCannotHold(t *testing.T) {
+	c := qt.New(t)
+	binary := buildBinary(c, c.Context())
+	for i, line := range ydbLines {
+		other := ydbLines[(i+1)%len(ydbLines)]
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			devURL := dbtarget.URL(t, other.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			const user = "ptahbaselineuser"
+			dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+			c.Assert(conn.Writer().ExecuteSQL(ctx, "CREATE USER "+user), qt.IsNil)
+			c.Cleanup(func() {
+				dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+				c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP USER IF EXISTS "+user), qt.IsNil)
+			})
+			entities := filepath.Join(c.TempDir(), "entities")
+			writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
+
+			refused, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
+				"--schemas", "ptah_ydb_devrealm", "--dev-url", devURL, "--auto-approve")
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(refused, qt.Contains, "(CREATE USER `"+user+"`) cannot be rehearsed: "+
+				"ydb rehearsal baseline refuses a user of the whole database")
+			c.Assert(refused, qt.Contains, "PTAH_DEV_SERVER_DISPOSABLE=1")
+			c.Assert(tableNames(readScoped(c, conn, []string{"ptah_ydb_devrealm"})), qt.HasLen, 0)
+			c.Assert(directoryNames(c, ctx, other), qt.Not(qt.Contains), ydburl.RealmDirectory)
+		})
+	}
+}

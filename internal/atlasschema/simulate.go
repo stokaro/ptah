@@ -536,16 +536,42 @@ func recreateCurrentSchema(
 	return nameColumnSequencesAsTarget(ctx, devConn, current)
 }
 
-// Environment observations allow a no-op comparison, not writes beyond the
-// dev realm. Validate the whole baseline before any of its statements execute.
+// guardRehearsalBaseline holds the whole baseline to the dev database's realm
+// before any of its statements executes; see [devclean.NewBaselineGuard].
+//
+// The read the baseline is compared against includes environment the dev
+// database observes outside its realm, so that an equal environment plans
+// nothing. That grants no permission to write it, and neither does deriving a
+// statement from the target: a role, a grant in a YDB dev realm or a
+// replication escapes the realm whoever wrote it. The migration replay policy
+// is not the answer either, since it refuses the target's own routines,
+// triggers and comments, which stay in the dev database.
 func guardRehearsalBaseline(statements []string, info catalog.ServerInfo) error {
-	guard := devclean.NewDevReplayGuard(info)
+	guard := devclean.NewBaselineGuard(info)
 	for i, statement := range statements {
 		if err := guard.ValidateStatement(statement); err != nil {
-			return fmt.Errorf("baseline statement %d cannot be rehearsed: %w", i+1, err)
+			return fmt.Errorf("baseline statement %d (%s) cannot be rehearsed: %w", i+1, statementExcerpt(statement), err)
 		}
 	}
 	return nil
+}
+
+// statementExcerpt is the first line of a statement that is not a comment,
+// cut to a length an error message can carry, so a refusal names what it
+// refused.
+func statementExcerpt(statement string) string {
+	const limit = 80
+	for line := range strings.SplitSeq(statement, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "--") {
+			continue
+		}
+		if runes := []rune(line); len(runes) > limit {
+			return string(runes[:limit]) + "..."
+		}
+		return line
+	}
+	return strings.TrimSpace(statement)
 }
 
 // nameColumnSequencesAsTarget renames each sequence a dev column owns to the

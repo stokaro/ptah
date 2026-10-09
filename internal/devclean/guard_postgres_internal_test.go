@@ -89,7 +89,7 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			tokens := significantTokens(test.statement, replayLexerOptions(test.dialect))
-			err := validatePostgresReplayStatement(test.dialect, tokens)
+			err := validatePostgresReplayStatement(test.dialect, tokens, purposeMigration)
 			c.Assert(err, qt.IsNil)
 		})
 	}
@@ -426,7 +426,7 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			tokens := significantTokens(test.statement, replayLexerOptions(test.dialect))
-			err := validatePostgresReplayStatement(test.dialect, tokens)
+			err := validatePostgresReplayStatement(test.dialect, tokens, purposeMigration)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}

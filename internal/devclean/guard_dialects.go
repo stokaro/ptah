@@ -55,13 +55,13 @@ func validatePostgresReplayStatementBase(dialect string, tokens []lexer.Token) e
 	return nil
 }
 
-func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token, realm ReplayRealm) error {
+func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token, realm ReplayRealm, purpose replayPurpose) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 	tokens = leadingCTEExecutableTokens(tokens)
 	first := normalizedIdentifier(tokens[0])
-	if err := rejectMySQLExecutableObjects(dialect, first, tokens); err != nil {
+	if err := rejectMySQLExecutableObjects(dialect, first, tokens, purpose); err != nil {
 		return err
 	}
 	if operation := unsafeMySQLReplayOperation(tokens); operation != "" {
@@ -119,8 +119,11 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token) string {
 	return ""
 }
 
-func rejectMySQLExecutableObjects(dialect, first string, tokens []lexer.Token) error {
-	if definesMySQLExecutableBody(tokens) {
+func rejectMySQLExecutableObjects(dialect, first string, tokens []lexer.Token, purpose replayPurpose) error {
+	// A baseline's routine or trigger is the target's own and stays in the dev
+	// database. An event is not lifted: the scheduler runs it on its own
+	// timetable, during the rest of the run.
+	if kind := mysqlExecutableBodyKind(tokens); kind != "" && (purpose != purposeBaseline || kind == "EVENT") {
 		return unsafeReplayStatement(dialect, first+" executable stored body")
 	}
 	if engine := unconfinedMySQLStorageEngine(tokens); engine != "" {
@@ -444,10 +447,6 @@ func usesTemporaryObject(tokens []lexer.Token) bool {
 	}
 	return containsIdentifier(tokens[1:kindIndex], "TEMP") ||
 		containsIdentifier(tokens[1:kindIndex], "TEMPORARY")
-}
-
-func definesMySQLExecutableBody(tokens []lexer.Token) bool {
-	return mysqlExecutableBodyKind(tokens) != ""
 }
 
 // mysqlExecutableBodyKind names the kind of executable object a CREATE or

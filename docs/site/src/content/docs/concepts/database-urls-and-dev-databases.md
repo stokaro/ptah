@@ -340,6 +340,23 @@ before any work, whether or not it replays. Strict Atlas
 compatibility keeps the variable, because the pinned community binary runs
 these statements on any dev database.
 
+### The baseline a rehearsal writes
+
+Before `schema apply` rehearses its plan, it recreates the target's current
+schema in the dev database. That baseline is Ptah's DDL for the target's own
+objects, and it is held to the same realm as a replay before its first
+statement runs. It refuses what escapes the realm or reaches past the server,
+as a replay does: a role, user, group or privilege the cleanup leaves behind,
+a YDB resource pool, and a replication, transfer, external source or
+streaming query. It runs what a migration file is refused only because the
+body is opaque: a routine in a trusted language, a trigger, and a comment on
+the dev database's own schema or extension. A routine in an untrusted
+language such as `plpython3u`, and a MySQL or MariaDB event, stay refused.
+
+On a server Ptah provisions or one declared disposable, the baseline also
+writes roles, users, privileges and YDB resource pools. A refusal names the
+statement it refused.
+
 ## Where it appears
 
 - Replay validation with a dev database: [Integrity and safety](../../versioned/integrity-and-safety/).
