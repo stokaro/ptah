@@ -1684,10 +1684,10 @@ line, never reads `.metadata`, and lint rule `YD140` reports a migration that
 writes a secret's value, in either form.
 
 A plan refuses a line without the `secrets` key, naming the secret, only when
-it would create, rotate or drop one. On such a line the reader records each secret it lists as unmanaged: no
-plan keeps or drops it, a comparison reports it only when the desired schema
-declares it or describes every secret, and Go export writes a `notdescribed`
-limit for it.
+it would create, rotate or drop one. On such a line the reader records each
+secret it lists as unmanaged: no plan keeps or drops it, a comparison reports
+it only when the desired schema declares it or describes every secret, and Go
+export writes a `notdescribed` limit for it.
 
 HCL, DBML and SQL documents of other dialects cannot name a secret. They make
 no claim about secrets, so their silence plans no drop and an unread secret
@@ -1830,15 +1830,15 @@ statement needs one that has not run yet:
 Secrets are planned by their owner, around these steps rather than in one of
 them. A secret depends on nothing but its path, so the plan drops, creates and
 rotates secrets before step 1, except that a secret created at a path a
-dropped table frees, or beneath a directory one frees, follows that drop: every
-directory above a secret must hold nothing else. A dropped secret precedes a
-statement that creates an object at its path or at a directory above it. Every
-external data source, async replication and transfer that names a secret by its
-path, relative or absolute, comes after the secret's creation or rotation, and
-a plan that drops a secret one of its own statements still names is
-refused. So is a plan in which a secret and another
-standalone object, such as a coordination node, trade one path: neither owner
-orders its statement against the other's, so apply the drop on its own first.
+dropped table frees, or below such a path, follows that drop: every directory
+above a secret must hold nothing else. A dropped secret precedes a statement
+that creates an object at its path or at a directory above it. Every external
+data source, async replication and transfer that names a secret by its path,
+relative or absolute, comes after the secret's creation or rotation, and a plan
+that drops a secret one of its own statements still names is refused. So is a
+plan in which a secret and another standalone object, such as a coordination
+node, trade one path: neither owner orders its statement against the other's,
+so apply the drop on its own first.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
