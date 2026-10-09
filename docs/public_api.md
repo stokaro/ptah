@@ -493,6 +493,29 @@ Duplicate kinds or object identities and nil payloads are errors. `Value.Equal`
 compares local representations; target-aware comparison resolves defaults and
 inspection limits separately.
 
+`engine.Provider.Relations` assigns dependency discovery by target, model kind,
+and source representation. `runtime.CaptureRelations` validates a complete
+`schemaext.RelationRequest` before dispatching one batch per owner. Each concrete
+value has an ordered receipt. Missing handlers, malformed receipts, errors, and
+cancellation return no snapshot. A receipt can explicitly report unresolved
+references; source coverage remains unchanged.
+
+`RelationSnapshot.CaptureRelated` captures the connected feature context around
+structured object references. It retains each multi-table object once, with its
+complete definition, and includes other values sharing its dependencies.
+Exclusive table ownership comes from the object identity; facet ownership comes
+from its location. Unknown namespaces or unresolved references return
+`ErrIncompleteRelations`, even when some definitions are known. Runtime growth
+does not enroll an older source in a new model. Returned references establish
+neither the existence of their targets nor permission to expand user scope.
+
+These are explicit embedding contracts. Built-in comparison and filtering do
+not yet invoke relationship discovery automatically. Policy extraction and that
+pipeline integration remain part of #4140. The external-provider fixture checks
+the public path without built-in providers. Process adapters must map model
+values and references into explicit records; implicit JSON encoding of a
+relation value or snapshot is refused.
+
 `Facets.WithTargetScope` binds a value to target names from its source.
 `ForTarget` uses an explicit `TargetSelection`, including its registered aliases.
 An excluded value retains its binding without its payload. `Kinds` and `Len`

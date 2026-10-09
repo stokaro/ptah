@@ -52,6 +52,8 @@ type Provider struct {
 	Planning []Planning
 	// Declarations lowers authored standalone objects into creation operations.
 	Declarations []DeclarationPlanning
+	// Relations describes dependencies of captured model values without I/O.
+	Relations []RelationDiscovery
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -102,6 +104,8 @@ type Runtime struct {
 	planningServices    []ownedPlanning
 	declarations        map[conversionKey]int
 	declarationServices []ownedDeclarationPlanning
+	relations           map[relationKey]int
+	relationServices    []RelationDiscovery
 }
 
 type target struct {
@@ -126,6 +130,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		reports:          make(map[reportingKey]int), reversals: make(map[conversionKey]int), planning: make(map[conversionKey]int),
 		parentPlanning: make(map[conversionKey]int),
 		declarations:   make(map[conversionKey]int),
+		relations:      make(map[relationKey]int),
 		properties:     make(map[propertyKey]int),
 	}
 	owners := make(map[string]struct{}, len(providers))
@@ -163,6 +168,11 @@ func New(providers ...Provider) (*Runtime, error) {
 func (r *Runtime) registerServices(provider Provider) error {
 	for _, declaration := range provider.Declarations {
 		if err := r.registerDeclarationPlanning(provider.ID, declaration); err != nil {
+			return err
+		}
+	}
+	for _, discovery := range provider.Relations {
+		if err := r.registerRelations(provider.ID, discovery); err != nil {
 			return err
 		}
 	}

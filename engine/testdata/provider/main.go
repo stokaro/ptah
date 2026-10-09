@@ -31,15 +31,16 @@ import (
 type widget struct {
 	Name   string   `json:"name"`
 	Levels []string `json:"levels"`
+	Tables []string `json:"tables"`
 }
 
 func (*widget) Kind() schemaext.Kind { return "example.org/widget/model" }
 func (v *widget) Clone() schemaext.Value {
-	return &widget{Name: v.Name, Levels: slices.Clone(v.Levels)}
+	return &widget{Name: v.Name, Levels: slices.Clone(v.Levels), Tables: slices.Clone(v.Tables)}
 }
 func (v *widget) Equal(other schemaext.Value) bool {
 	w, ok := other.(*widget)
-	return ok && v.Name == w.Name && slices.Equal(v.Levels, w.Levels)
+	return ok && v.Name == w.Name && slices.Equal(v.Levels, w.Levels) && slices.Equal(v.Tables, w.Tables)
 }
 
 type addWidget struct{ Name string }
@@ -79,7 +80,7 @@ func codec() schemaext.Codec {
 	encode := func(payload schemaext.Payload) (json.RawMessage, error) { return json.Marshal(payload) }
 	return schemaext.Codec{
 		Prototype: &widget{}, Representation: schemaext.Desired, Version: 1,
-		Definition: json.RawMessage(`{"name":"string","levels":"ordered string list"}`),
+		Definition: json.RawMessage(`{"name":"string","levels":"ordered string list","tables":"ordered table reference list"}`),
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
 			value, ok := payload.(*widget)
 			if !ok {
@@ -125,7 +126,9 @@ func verify() error {
 	observed.Representation = schemaext.Observed
 	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec(), observed, operationCodec()},
 		Planning: []engine.Planning{{Target: "widget", ParentKinds: []schemaext.Kind{(&widget{}).Kind()}, OperationKinds: []schemaext.Kind{(&addWidget{}).Kind()}, Service: service{}}},
-		Targets:  []engine.Target{{Name: "widget", Rendering: service{extensions: handlers}, Validation: service{}, SchemaRendering: service{}, Creations: service{}}}})
+		Relations: []engine.RelationDiscovery{{Target: "widget", Representation: schemaext.Desired,
+			Kinds: []schemaext.Kind{(&widget{}).Kind()}, Service: service{}}},
+		Targets: []engine.Target{{Name: "widget", Rendering: service{extensions: handlers}, Validation: service{}, SchemaRendering: service{}, Creations: service{}}}})
 	if err != nil {
 		return err
 	}
@@ -183,12 +186,77 @@ func verify() error {
 	if err := verifyCommonRewrite(runtime); err != nil {
 		return err
 	}
+	if err := verifyRelations(runtime); err != nil {
+		return err
+	}
 	if err := verifyImport(); err != nil {
 		return err
 	}
 	value.Levels[0] = "changed"
 	if original.Levels[0] != "two" {
 		return fmt.Errorf("round trip exposed aliased state")
+	}
+	return nil
+}
+
+func (service) DescribeRelations(ctx context.Context, request schemaext.RelationRequest) (schemaext.RelationResult, error) {
+	result := schemaext.RelationResult{Complete: true}
+	b := objectidentity.NewBuilder(request.Identifiers)
+	for _, input := range request.Values {
+		if err := ctx.Err(); err != nil {
+			return schemaext.RelationResult{}, err
+		}
+		value, ok := input.Value.(*widget)
+		if !ok {
+			return schemaext.RelationResult{}, fmt.Errorf("unexpected relation model %T", input.Value)
+		}
+		record := schemaext.ValueRelations{Subject: input.Subject, Complete: true}
+		for _, table := range value.Tables {
+			record.Dependencies = append(record.Dependencies, b.Table(table))
+		}
+		result.Values = append(result.Values, record)
+	}
+	return result, nil
+}
+
+func verifyRelations(runtime *engine.Runtime) error {
+	ctx := context.Background()
+	semantics := identifier.ForDialect("postgres")
+	b := objectidentity.NewBuilder(semantics)
+	value := &widget{Name: "shared", Tables: []string{"orders", "tenants"}}
+	var kinds []schemaext.KindCoverage
+	for _, model := range runtime.Codecs().Definitions() {
+		if model.Representation == schemaext.Desired {
+			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+		}
+	}
+	coverage, err := schemaext.NewCoverage(schemaext.Desired, kinds, nil)
+	if err != nil {
+		return err
+	}
+	request := schemaext.RelationRequest{Target: "widget", Representation: schemaext.Desired, Identifiers: semantics, Coverage: coverage,
+		Values: []schemaext.RelationValue{{Subject: schemaext.RelationSubject{Kind: value.Kind(), Placement: schemaext.ObjectPlacement,
+			Subject: b.SchemaScopedParts(objectidentity.Kind(value.Kind()), "security", value.Name)}, Value: value}}}
+	snapshot, err := runtime.CaptureRelations(ctx, request)
+	if err != nil {
+		return err
+	}
+	related, err := snapshot.CaptureRelated(ctx, []objectidentity.ID{b.Table("orders")})
+	if err != nil {
+		return err
+	}
+	if len(related.Values) != 1 || !related.Values[0].Value.Equal(value) || len(related.Required) != 2 ||
+		!slices.Contains(related.Required, b.Table("orders")) || !slices.Contains(related.Required, b.Table("tenants")) {
+		return fmt.Errorf("related capture lost or split a multi-table object")
+	}
+	request.Coverage = schemaext.Coverage{}
+	snapshot, err = runtime.CaptureRelations(ctx, request)
+	if err != nil {
+		return err
+	}
+	_, err = snapshot.CaptureRelated(ctx, []objectidentity.ID{b.Table("orders")})
+	if !errors.Is(err, schemaext.ErrIncompleteRelations) {
+		return fmt.Errorf("relation registration manufactured source coverage: %v", err)
 	}
 	return nil
 }
