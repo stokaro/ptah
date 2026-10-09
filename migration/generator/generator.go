@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
@@ -166,7 +167,7 @@ type DiffPolicy struct {
 	// RotateSecrets names the YDB secrets, by path, the up migration gives the
 	// value their declared variable holds when it runs. The down migration
 	// does not restore the earlier value, which was never read. See
-	// [difftypes.SchemaDiff.RotateSecrets].
+	// [ydbsecret.RequestRotation].
 	RotateSecrets []string
 }
 
@@ -386,7 +387,7 @@ func declaredExtensions(desired *schemamodel.Database) map[string]bool {
 }
 
 // compareForPlan compares desired with the database a migration is planned
-// against, under the options' diff policy, and adds the secret rotations the
+// against, under the options' diff policy, with the secret rotations the
 // caller asked for, which no comparison finds by itself.
 func compareForPlan(
 	ctx context.Context,
@@ -395,16 +396,17 @@ func compareForPlan(
 	dbSchema *catalog.Database,
 	opts GenerateMigrationOptions,
 ) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
+	rotated, err := ydbsecret.RequestRotation(desired, opts.DiffPolicy.RotateSecrets)
+	if err != nil {
+		return nil, schemadiff.Diagnostics{}, err
+	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		ctx, conn, desired, dbSchema, compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy), opts.Runtime,
+		ctx, conn, rotated, dbSchema, compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy), opts.Runtime,
 	)
 	if err != nil {
 		return nil, schemadiff.Diagnostics{}, fmt.Errorf("error comparing generated and database schemas: %w", err)
 	}
 	if err := opts.reportUndecided(undecided); err != nil {
-		return nil, schemadiff.Diagnostics{}, err
-	}
-	if err := diff.RotateSecrets(opts.DiffPolicy.RotateSecrets); err != nil {
 		return nil, schemadiff.Diagnostics{}, err
 	}
 	return diff, undecided, nil

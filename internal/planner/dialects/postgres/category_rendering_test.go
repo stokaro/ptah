@@ -44,7 +44,6 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
 	"ObservedConstraintHosts":         "PostgreSQL changes constraints in place; observed rebuild operands do not add PostgreSQL operations",
 	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
-	"DeclaredSecrets":                 "every YDB secret the declaration holds, carried so a rotation request can find the variable a secret's value comes from. It is an input to a rotation rather than a change, and a PostgreSQL plan reaches no secret, so on its own it plans nothing",
 	"DeclaredExternalTables":          "every YDB external table the declaration holds, carried so a YDB plan that drops a data source and creates it again can create the tables over it again. It is an input to that plan rather than a change, and a PostgreSQL plan reaches no external table, so on its own it plans nothing",
 	"CurrentNotDescribed":             "what the read of the database declined to describe, carried for a target that rebuilds a table and must not drop a setting the read left out. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere; a fixture here would assert that a coverage set plans nothing",
 	"CurrentYDBSettings":              "what each YDB row table and global index holds of its partitioning, carried for a YDB plan that rebuilds a table and gives the new one every setting the declaration leaves out. PostgreSQL never rebuilds a table and has no such setting, so this planner reads the field nowhere; a fixture here would assert that a list of settings plans nothing",
@@ -146,14 +145,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "a changed transfer is YDB's for the same reason",
 		diff: &difftypes.SchemaDiff{TransfersModified: []difftypes.TransferDiff{{Name: "ingest", LambdaChanged: true}}},
 	},
-	"SecretsAdded": {
-		why:  "a secret is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a secret created that the database does not hold",
-		diff: &difftypes.SchemaDiff{SecretsAdded: difftypes.SecretChanges{{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"}}},
-	},
-	"SecretsRemoved": {
-		why:  "no PostgreSQL read reports a secret, so a removal reaches the planner only through a diff built by hand, and planning nothing would report it dropped",
-		diff: &difftypes.SchemaDiff{SecretsRemoved: difftypes.SecretChanges{{Name: "pg_password"}}},
-	},
 	"ExternalDataSourcesAdded": {
 		why:  "an external data source is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a data source created that the database does not hold",
 		diff: &difftypes.SchemaDiff{ExternalDataSourcesAdded: difftypes.ExternalDataSourceChanges{{Name: "s3", SourceType: "ObjectStorage", AuthMethod: "NONE"}}},
@@ -177,10 +168,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 	"ExternalTablesChanged": {
 		why:  "a replaced external table is one both sides hold, which no PostgreSQL read reports, so it reaches the planner only through a diff built by hand",
 		diff: &difftypes.SchemaDiff{ExternalTablesChanged: []difftypes.ExternalTableChange{{Declared: schemamodel.ExternalTable{Name: "events"}}}},
-	},
-	"SecretsRotated": {
-		why:  "a rotation names a declared secret, which a PostgreSQL comparison refuses, so a plan reaches one only through a diff built by hand, and planning nothing would report a value given that was not",
-		diff: &difftypes.SchemaDiff{SecretsRotated: difftypes.SecretChanges{{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"}}},
 	},
 	"RLSPolicyIdentityConflicts": {
 		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",

@@ -988,6 +988,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-ydb-ydbsecret",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbsecret",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-ydb-ydbstreaming",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbstreaming",

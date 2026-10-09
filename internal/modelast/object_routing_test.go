@@ -46,7 +46,6 @@ var routedKinds = []routedKind{
 	{name: "topic", want: 1, count: countNodes[*ast.CreateTopicNode]},
 	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
-	{name: "secret", want: 1, count: countNodes[*ast.CreateSecretNode]},
 	{name: "external data source", want: 1, count: countNodes[*ast.CreateExternalDataSourceNode]},
 	{name: "external table", want: 1, count: countNodes[*ast.CreateExternalTableNode]},
 	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
@@ -103,7 +102,6 @@ func routingFixture() schemamodel.Database {
 			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
 		}}},
 
-		Secrets: []schemamodel.Secret{{StructName: "SE", Name: "secret_probe", ValueEnv: "PTAH_SECRET_PROBE"}},
 		ExternalDataSources: []schemamodel.ExternalDataSource{{StructName: "ES", Name: "source_probe",
 			SourceType: "ObjectStorage", Location: "https://storage.example.test/b/", AuthMethod: "NONE"}},
 		ExternalTables: []schemamodel.ExternalTable{{StructName: "ET", Name: "external_probe",

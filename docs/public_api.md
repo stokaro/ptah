@@ -75,6 +75,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbreverse`
 - `ptah.run/dialect/ydb/ydbschema`
 - `ptah.run/dialect/ydb/ydbscheme`
+- `ptah.run/dialect/ydb/ydbsecret`
 - `ptah.run/dialect/ydb/ydbstreaming`
 - `ptah.run/dialect/ydb/ydbsyntax`
 - `ptah.run/dialect/ydb/ydbworkload`
@@ -991,6 +992,23 @@ operands. Explicit namespace and subject coverage distinguish absence from
 uninspected or unrepresentable queries. Planning stops running queries before
 common operations and restarts them afterward. Reverse planning preserves
 permission from an accepted body change and reports checkpoint recovery limits.
+
+`dialect/ydb/ydbsecret` owns YDB secrets: the desired and observed models in
+`Database.FeatureObjects`, the declaration grammar and the statements. No
+model carries a secret's value. `Desired.ValueEnv` names the environment
+variable the value comes from, and an empty one selects `DefaultValueEnv` for
+the secret's path. `Observed` is empty, because the server returns a secret's
+path and nothing else. A desired and an observed secret compare by path alone;
+`RequestRotation` is the only way a plan writes `ALTER SECRET`. The common
+schema, catalog, AST, and diff types contain no secret fields.
+
+The secret services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
+`ydbreport` consume this model, `ydbdiff.Secret` captures both change operands,
+and `ydbast.Secret` is the statement payload `ydbrender.SecretHandler` writes.
+Planning creates or drops a secret before the common statements, except a
+creation at a path the plan frees, and before every external data source,
+async replication, or transfer that names the secret by path. Reverse planning
+reports the values a rollback cannot restore.
 
 `dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
 are distinct values in `Database.FeatureObjects`, with their table recorded as

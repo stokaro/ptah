@@ -94,8 +94,13 @@ func streamingFixture() extensionFixture {
 		wantSQL: "CREATE STREAMING QUERY `jobs.daily/copy.events` WITH (RUN = FALSE, RESOURCE_POOL = `default`) AS DO BEGIN\nSELECT 1;\nEND DO;\n"}
 }
 
+func secretFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.Secret{Operation: ydbast.SecretCreate, Schema: "ext", Name: "pg.password", ValueEnv: "PTAH_SECRET_PG"},
+		wantSQL: "CREATE SECRET `ext/pg.password` WITH (value = $PTAH_SECRET_PG);\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture())
 }
 
 func defaultPoolFixture() extensionFixture {

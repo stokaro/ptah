@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/convert/goschematogo"
@@ -49,6 +50,20 @@ type Unmanaged struct{}
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch.jobs")).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("other")).State, qt.Equals, schemaext.Complete)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("other")).State, qt.Equals, schemaext.Uninspected)
+}
+
+// A Go source's secret limit belongs to the secret owner's coverage: the named
+// secret is unmanaged, and the rest of the namespace is still described.
+func TestGoSourceSecretLimitsBelongToFeatureCoverage(t *testing.T) {
+	c := qt.New(t)
+	db, err := goschema.ParseSource("limits.go", `package entities
+//ptah:schema:notdescribed kind="secret" name="ext/pg.pw"
+type Unmanaged struct{}
+`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.NotDescribed.IsZero(), qt.IsTrue)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "pg.pw")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "ext.pg.pw")).State, qt.Equals, schemaext.Complete)
 }
 
 func TestSQLHeaderWorkloadLimitsRemainScoped(t *testing.T) {
@@ -149,7 +164,7 @@ func TestGoExportPreservesUnenrolledNamespaces(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
 				c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("missing")).State, qt.Equals, test.pools)
-				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing")} {
+				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing"), ydbsecret.Ref("", "missing")} {
 					c.Assert(parsed.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State, qt.Equals, schemaext.Uninspected)
 				}
 				again, err := goschematogo.Render(t.Context(), parsed, goschematogo.Options{SingleFile: layout.single, Dialect: "ydb"})
@@ -169,6 +184,7 @@ func TestGoExportPreservesAuthoredSubjectLimitsInEveryFile(t *testing.T) {
 //ptah:schema:notdescribed kind="streaming_query" name="app.v1/copy"
 //ptah:schema:notdescribed kind="resource_pool" name="Batch.jobs"
 //ptah:schema:notdescribed kind="resource_pool_classifier" name="route.jobs"
+//ptah:schema:notdescribed kind="secret" name="ext/pg.pw"
 type Limits struct{}
 `)
 			c.Assert(err, qt.IsNil)

@@ -4,11 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 )
 
@@ -17,9 +20,10 @@ import (
 // over the first, and a row table.
 func externalSchema() *schemamodel.Database {
 	schema := &schemamodel.Database{
-		Tables:  []schemamodel.Table{{StructName: "T", Name: "notes", Schema: "app"}},
-		Fields:  []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
-		Secrets: []schemamodel.Secret{{Name: "pw", Schema: "ext", ValueEnv: "PTAH_SECRET_PW"}},
+		Tables:          []schemamodel.Table{{StructName: "T", Name: "notes", Schema: "app"}},
+		Fields:          []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbsecret.DesiredObject("ext", "pw", "", "PTAH_SECRET_PW"))),
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		ExternalDataSources: []schemamodel.ExternalDataSource{
 			{Name: "bucket", Schema: "ext", SourceType: "ObjectStorage", Location: "https://s3.example.test/b/",
 				AuthMethod: "NONE"},
@@ -33,8 +37,9 @@ func externalSchema() *schemamodel.Database {
 	return schema
 }
 
-// A declared external object renders after the secret a data source names
-// and before the tables, an external table after its source.
+// A declared external object renders after the secret a data source names,
+// which its owner places first, and before the tables, an external table
+// after its source.
 func TestRender_External_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	caps := capability.YDB262().With(capability.ExternalDataSources, true)
@@ -61,7 +66,7 @@ func TestRender_External_RefusedWithoutTheKey(t *testing.T) {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
 			schema := externalSchema()
-			schema.Secrets = nil
+			schema.FeatureObjects = schemaext.Objects{}
 			schema.ExternalDataSources[1].Options = nil
 
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, test.dialect, test.caps)
@@ -81,8 +86,6 @@ func TestRender_External_FailurePath(t *testing.T) {
 	onTablePath := externalSchema()
 	onTablePath.ExternalDataSources[0].Schema, onTablePath.ExternalDataSources[0].Name = "app", "notes"
 	onTablePath.ExternalTables[0].DataSource = "app/notes"
-	onSecretPath := externalSchema()
-	onSecretPath.ExternalTables[0].Name = "pw"
 	overPostgres := externalSchema()
 	overPostgres.ExternalTables[0].DataSource = "ext/pg"
 	tests := []struct {
@@ -93,8 +96,6 @@ func TestRender_External_FailurePath(t *testing.T) {
 		{name: "a data source on a table's path", schema: onTablePath,
 			want: "external data source app.notes has the path of a declared table, and YDB keeps one object at a " +
 				"path \\(`unexpected path type`\\)"},
-		{name: "an external table on a secret's path", schema: onSecretPath,
-			want: "external table ext.pw has the path of a declared secret, .*"},
 		{name: "an external table over a PostgreSQL source", schema: overPostgres,
 			want: "external table ext.events reads data source ext/pg, a PostgreSQL source; an external table reads " +
 				"files, from an ObjectStorage source \\(`Only ObjectStorage source type supported`\\)"},
@@ -111,4 +112,19 @@ func TestRender_External_FailurePath(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// An external table on the path of a declared secret is refused by the
+// secret's owner before anything is written, since a path names one object.
+func TestRender_External_OnASecretPath(t *testing.T) {
+	c := qt.New(t)
+	schema := externalSchema()
+	schema.ExternalTables[0].Name = "pw"
+	caps := capability.YDB262().With(capability.ExternalDataSources, true)
+
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, platform.YDB, caps)
+
+	c.Assert(err, qt.ErrorMatches, ".*secret create conflicts with create at scheme path.*")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(statements, qt.IsNil)
 }

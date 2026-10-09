@@ -23,6 +23,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
@@ -146,12 +147,6 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "transfers_added", len(diff.TransfersAdded), Safe)
 	add(&findings, "transfers_removed", len(diff.TransfersRemoved), Destructive)
 	add(&findings, "transfers_modified", len(diff.TransfersModified), Warning)
-	// A dropped YDB secret takes a value nothing can read back, and an
-	// external data source that names it fails at its next read; a rotated
-	// one replaces the value every such source uses.
-	add(&findings, "secrets_added", len(diff.SecretsAdded), Safe)
-	add(&findings, "secrets_removed", len(diff.SecretsRemoved), Destructive)
-	add(&findings, "secrets_rotated", len(diff.SecretsRotated), Warning)
 	// A YDB external data source or table holds no data in YDB, so dropping
 	// or replacing one loses none; a query that reads one fails or reads
 	// something else afterwards.
@@ -618,7 +613,7 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropAsyncReplicationNode, *ast.DropTransferNode,
 		*ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
 		return assessYDBObjectNode(n, assessment)
-	case *ast.DropSecretNode, *ast.AlterSecretNode, *ast.DropExternalDataSourceNode, *ast.DropExternalTableNode,
+	case *ast.DropExternalDataSourceNode, *ast.DropExternalTableNode,
 		*ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode:
 		return assessYDBObject(n, assessment)
 	case *ast.RawSQLNode:
@@ -1066,7 +1061,7 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "ASYNC", "REPLICATION"}, reason: dropReplicationReason},
 	{words: []string{"DROP", "TRANSFER"}, reason: dropTransferReason},
 	{words: []string{"DROP", "COORDINATION", "NODE"}, reason: dropCoordinationNodeReason},
-	{words: []string{"DROP", "SECRET"}, reason: dropSecretReason},
+	{words: []string{"DROP", "SECRET"}, reason: ydbsecret.DropReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
 
@@ -1127,15 +1122,10 @@ const (
 const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
 	"resources, even while a session holds a lock on it"
 
-// dropSecretReason is why DROP SECRET is destructive, in the words both the
-// AST and the SQL-text classifiers report.
-const dropSecretReason = "DROP SECRET removes a YDB secret whose value nothing can read back"
-
-// assessYDBObject judges a YDB topic, secret or external object statement. A
-// dropped topic loses the messages it holds, and a dropped secret a value
-// nothing can read back; a rotated secret replaces the value every external
-// data source naming it uses; and no external object holds data in YDB, so
-// dropping or replacing one warns.
+// assessYDBObject judges a YDB topic or external object statement. A dropped
+// topic loses the messages it holds, and no external object holds data in
+// YDB, so dropping or replacing one warns. A secret statement is an extension
+// payload its owner classifies.
 func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAssessment {
 	switch n := node.(type) {
 	case *ast.DropTopicNode:
@@ -1143,11 +1133,6 @@ func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAss
 	case *ast.AlterTopicNode:
 		assessment.Subject = n.Name
 		return assessAlterTopic(n, assessment)
-	case *ast.DropSecretNode:
-		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Destructive, dropSecretReason
-	case *ast.AlterSecretNode:
-		assessment.Subject, assessment.Severity = n.Name, Warning
-		assessment.Reason = "ALTER SECRET replaces the value every external data source naming the secret uses"
 	case *ast.DropExternalDataSourceNode:
 		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Warning, dropExternalDataSourceReason
 	case *ast.DropExternalTableNode:

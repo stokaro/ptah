@@ -1,12 +1,14 @@
 package ydbsecret_test
 
 import (
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
 func TestParseValueEnv_HappyPath(t *testing.T) {
@@ -110,16 +112,19 @@ func TestStatements_HappyPath(t *testing.T) {
 		got  string
 		want string
 	}{
-		{name: "create at the root", got: ydbsecret.CreateStatement("pw", "PTAH_SECRET_PW"),
+		{name: "create at the root", got: ydbsecret.CreateStatement("", "pw", "PTAH_SECRET_PW"),
 			want: "CREATE SECRET `pw` WITH (value = $PTAH_SECRET_PW);"},
-		{name: "create in a directory", got: ydbsecret.CreateStatement("app.pw", "PTAH_SECRET_PW"),
+		{name: "create in a directory", got: ydbsecret.CreateStatement("app", "pw", "PTAH_SECRET_PW"),
 			want: "CREATE SECRET `app/pw` WITH (value = $PTAH_SECRET_PW);"},
 		{name: "a dotted name at the root stays one segment",
-			got:  ydbsecret.CreateStatement(`"pg.pw"`, "PTAH_SECRET_PW"),
+			got:  ydbsecret.CreateStatement("", "pg.pw", "PTAH_SECRET_PW"),
 			want: "CREATE SECRET `pg.pw` WITH (value = $PTAH_SECRET_PW);"},
-		{name: "rotate", got: ydbsecret.AlterStatement("app.pw", "PTAH_SECRET_PW"),
+		{name: "a dotted directory stays one segment",
+			got:  ydbsecret.CreateStatement("jobs.daily", "pw", "PTAH_SECRET_PW"),
+			want: "CREATE SECRET `jobs.daily/pw` WITH (value = $PTAH_SECRET_PW);"},
+		{name: "rotate", got: ydbsecret.AlterStatement("app", "pw", "PTAH_SECRET_PW"),
 			want: "ALTER SECRET `app/pw` WITH (value = $PTAH_SECRET_PW);"},
-		{name: "drop", got: ydbsecret.DropStatement("app.pw"), want: "DROP SECRET `app/pw`;"},
+		{name: "drop", got: ydbsecret.DropStatement("app", "pw"), want: "DROP SECRET `app/pw`;"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,48 +134,33 @@ func TestStatements_HappyPath(t *testing.T) {
 	}
 }
 
-func TestCheck_HappyPath(t *testing.T) {
-	tests := []struct {
-		name     string
-		valueEnv string
-	}{
-		{name: "a creation", valueEnv: "PTAH_SECRET_PW"},
-		{name: "a drop names no variable"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(ydbsecret.Check("app.pw", tc.valueEnv, capability.YDB262()), qt.IsNil)
-		})
-	}
+func TestRefuse_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(ydbsecret.Refuse("ydb", capability.YDB262(), "secret app/pw"), qt.IsNil)
 }
 
-func TestCheck_FailurePath(t *testing.T) {
+func TestRefuse_FailurePath(t *testing.T) {
 	tests := []struct {
-		name     string
-		secret   string
-		valueEnv string
-		caps     capability.Capabilities
-		want     *ydbsecret.Refusal
+		name    string
+		dialect string
+		caps    capability.Capabilities
+		wantErr string
 	}{
-		{name: "a line without schema secrets", secret: "app.pw", valueEnv: "PTAH_SECRET_PW",
-			caps: capability.YDB251(),
-			want: &ydbsecret.Refusal{Subject: "secret app.pw", Key: capability.Secrets}},
-		{name: "a line whose flag is off by default", secret: "app.pw", caps: capability.YDB253(),
-			want: &ydbsecret.Refusal{Subject: "secret app.pw", Key: capability.Secrets}},
-		{name: "another engine", secret: "pw", valueEnv: "PTAH_SECRET_PW", caps: capability.Postgres17(),
-			want: &ydbsecret.Refusal{Subject: "secret pw", Key: capability.Secrets}},
-		{name: "no name", secret: " ", valueEnv: "PTAH_SECRET_PW", caps: capability.YDB262(),
-			want: &ydbsecret.Refusal{Subject: "a secret", Reason: "a secret needs a name"}},
-		{name: "a variable outside the prefix", secret: "pw", valueEnv: "HOME", caps: capability.YDB262(),
-			want: &ydbsecret.Refusal{Subject: "secret pw", Reason: `invalid value_env: "HOME" does not start with ` +
-				`PTAH_SECRET_ and a name after it; Ptah reads a secret's value only from a variable under that ` +
-				`prefix, so a migration file cannot copy any other variable of the machine that applies it`}},
+		{name: "a line without schema secrets", dialect: "ydb", caps: capability.YDB251(),
+			wantErr: "secret app/pw, which requires target capability secrets, unavailable on this ydb target"},
+		{name: "a line whose flag is off by default", dialect: "ydb", caps: capability.YDB253(),
+			wantErr: "secret app/pw, which requires target capability secrets, unavailable on this ydb target"},
+		{name: "another engine", dialect: "postgresql", caps: capability.Postgres17(),
+			wantErr: "secret app/pw, which requires target capability secrets, unavailable on this postgres target"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ydbsecret.Check(tc.secret, tc.valueEnv, tc.caps), qt.DeepEquals, tc.want)
+			err := ydbsecret.Refuse(tc.dialect, tc.caps, "secret app/pw")
+			c.Assert(err, qt.ErrorMatches, tc.wantErr)
+			refusal, ok := errors.AsType[*ptaherr.CapabilityError](err)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(refusal.Feature, qt.Equals, string(capability.Secrets))
 		})
 	}
 }

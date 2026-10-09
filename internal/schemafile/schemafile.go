@@ -361,12 +361,13 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     through `ptah-compat schema inspect` and applied back from that HCL,
 //     planned `ALTER COLUMN body SET FAMILY default`, and a rebuild the same
 //     document asked for kept the family but moved the column out of it.
-//   - Of the formats here, only YAML declares a YDB secret, as a Go schema
-//     does; HCL, DBML and SQL have no spelling for one. A document in any of
-//     them describes no secret, and applying it to a database that holds one
-//     would otherwise plan `DROP SECRET`, which loses a value nothing can read
-//     back. The same holds for a YDB external data source and an external
-//     table, which only YAML and a Go schema declare.
+//   - Of the formats here, YAML and YQL declare a YDB secret, as a Go schema
+//     does; HCL, DBML and other SQL have no spelling for one. Those make no
+//     claim about the secret namespace, so applying one to a database that
+//     holds a secret keeps it rather than planning `DROP SECRET`, which loses
+//     a value nothing can read back. A YDB external data source and an
+//     external table are declared only in YAML and a Go schema, so the other
+//     formats record them as not described.
 func withFormatLimits(database *schemamodel.Database, resolved, dialect string) *schemamodel.Database {
 	if database == nil {
 		return nil
@@ -395,7 +396,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	if !slices.Contains(yamlOnlyExtensions, extension) && !yql {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Topic,
-			coverage.Replication, coverage.Transfer, coverage.Secret,
+			coverage.Replication, coverage.Transfer,
 			coverage.ExternalDataSource, coverage.ExternalTable)...)
 	}
 	if extension == dbmlExtension {
@@ -883,7 +884,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
-	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
 	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)

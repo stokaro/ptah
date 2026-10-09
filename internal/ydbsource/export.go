@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
@@ -120,6 +121,10 @@ func limitSubjectName(kind schemaext.Kind, ref objectidentity.ID) (string, error
 		}
 	case ydbstreaming.Kind:
 		if err := ydbstreaming.ValidateIdentity(ref); err != nil {
+			return "", err
+		}
+	case ydbsecret.Kind:
+		if err := ydbsecret.ValidateIdentity(ref); err != nil {
 			return "", err
 		}
 	default:

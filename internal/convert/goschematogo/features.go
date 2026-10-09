@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/ydbsource"
@@ -80,6 +81,14 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 			return err
 		}
 		ctx.streamingAnnotations = append(ctx.streamingAnnotations, streamingQueryAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, query))
+		return nil
+	}
+	if secret, ok := object.Value.(*ydbsecret.Desired); ok {
+		annotation, err := secretAnnotation(object.Ref, secret)
+		if err != nil {
+			return err
+		}
+		ctx.secretAnnotations = append(ctx.secretAnnotations, annotation)
 		return nil
 	}
 	if node, ok := object.Value.(*ydbcoordination.Desired); ok {

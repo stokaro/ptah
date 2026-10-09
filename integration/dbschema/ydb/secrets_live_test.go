@@ -10,10 +10,13 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -38,12 +41,35 @@ const (
 	secretKeyValue      = "s3-SENTINEL-v1"                  // #nosec G101 -- a made-up value every output is searched for
 )
 
-// secretsDeclaration declares the two secrets.
-func secretsDeclaration() *schemamodel.Database {
-	return &schemamodel.Database{Secrets: []schemamodel.Secret{
-		{Name: "pg_password", Schema: secretsSchema, ValueEnv: secretPasswordEnv},
-		{Name: "s3.key", Schema: secretsNestedSchema, ValueEnv: secretKeyEnv},
-	}}
+// secretsDeclaration declares the given secrets, of the two the tests use,
+// from a source that describes the secret namespace: a secret it leaves out
+// is one it asks to drop.
+func secretsDeclaration(names ...string) *schemamodel.Database {
+	all := map[string]schemaext.Object{
+		"pg_password": ydbsecret.DesiredObject(secretsSchema, "pg_password", "", secretPasswordEnv),
+		"s3.key":      ydbsecret.DesiredObject(secretsNestedSchema, "s3.key", "", secretKeyEnv),
+	}
+	if len(names) == 0 {
+		names = []string{"pg_password", "s3.key"}
+	}
+	var objects []schemaext.Object
+	for _, name := range names {
+		objects = append(objects, all[name])
+	}
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+}
+
+// liveSecrets names, by path, every secret a read observed.
+func liveSecrets(c *qt.C, db *catalog.Database) []string {
+	c.Helper()
+	var paths []string
+	for _, ref := range db.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbsecret.Kind) }).Refs() {
+		paths = append(paths, ydbsecret.Display(ref.Schema.Source, ref.Name.Source))
+	}
+	return paths
 }
 
 // dropSecrets drops every secret in the directories a test owns.
@@ -51,8 +77,8 @@ func dropSecrets(c *qt.C, conn *dbschema.DatabaseConnection, schemas []string) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(context.Background(), conn, schemas)
 	c.Assert(err, qt.IsNil)
-	for _, secret := range live.Secrets {
-		statement := "DROP SECRET " + sqlident.Quote("ydb", secret.Schema+"/"+secret.Name)
+	for _, path := range liveSecrets(c, live) {
+		statement := "DROP SECRET " + sqlident.Quote("ydb", path)
 		c.Assert(conn.Writer().ExecuteSQL(context.Background(), statement), qt.IsNil)
 	}
 }
@@ -77,9 +103,8 @@ func TestYDBSecrets_RoundTrip_NothingLeftToPlan(t *testing.T) {
 		"CREATE SECRET `ptah_ydb_secrets/pg_password` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)",
 		"CREATE SECRET `ptah_ydb_secrets/ext/s3.key` WITH (value = $PTAH_SECRET_LIVE_S3_KEY)",
 	})
-	c.Assert(readScoped(c, conn, secretsSchemas).Secrets, qt.DeepEquals, []catalog.Secret{
-		{Name: "pg_password", Schema: secretsSchema},
-		{Name: "s3.key", Schema: secretsNestedSchema},
+	c.Assert(liveSecrets(c, readScoped(c, conn, secretsSchemas)), qt.ContentEquals, []string{
+		"ptah_ydb_secrets/pg_password", "ptah_ydb_secrets/ext/s3.key",
 	})
 	c.Assert(planAgainst(c, conn, secretsDeclaration(), secretsSchemas), qt.HasLen, 0)
 	apply(c, conn, planAgainst(c, conn, secretsDeclaration(), secretsSchemas))
@@ -110,16 +135,13 @@ func TestYDBSecrets_RotatedOnlyWhenAsked(t *testing.T) {
 		"ALTER SECRET `ptah_ydb_secrets/pg_password` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)",
 	})
 
-	kept := secretsDeclaration()
-	kept.Secrets = kept.Secrets[:1]
+	kept := secretsDeclaration("pg_password")
 	dropped := planAgainst(c, conn, kept, secretsSchemas)
 	apply(c, conn, dropped)
 
 	c.Assert(dropped, qt.DeepEquals, []string{"DROP SECRET `ptah_ydb_secrets/ext/s3.key`"})
 	c.Assert(planAgainst(c, conn, kept, secretsSchemas), qt.HasLen, 0)
-	c.Assert(readScoped(c, conn, secretsSchemas).Secrets, qt.DeepEquals, []catalog.Secret{
-		{Name: "pg_password", Schema: secretsSchema},
-	})
+	c.Assert(liveSecrets(c, readScoped(c, conn, secretsSchemas)), qt.DeepEquals, []string{"ptah_ydb_secrets/pg_password"})
 }
 
 // TestYDBSecrets_FailurePath_RefusesWithoutSendingTheValue runs the statements
@@ -152,7 +174,7 @@ func TestYDBSecrets_FailurePath_RefusesWithoutSendingTheValue(t *testing.T) {
 	c.Assert(refused, qt.ErrorMatches, "(?s)ydb: SQL execution failed: .*unexpected path type.*\n"+
 		"SQL: CREATE SECRET `ptah_ydb_secrets/taken` WITH \\(value = \\$PTAH_SECRET_LIVE_S3_KEY\\)")
 	c.Assert(refused, qt.Not(qt.ErrorMatches), "(?s).*SENTINEL.*")
-	c.Assert(readScoped(c, conn, secretsSchemas).Secrets, qt.HasLen, 0)
+	c.Assert(liveSecrets(c, readScoped(c, conn, secretsSchemas)), qt.HasLen, 0)
 }
 
 // TestYDBSecrets_FailurePath_RefusedOnALineWithout plans a declared secret
@@ -166,7 +188,7 @@ func TestYDBSecrets_FailurePath_RefusedOnALineWithout(t *testing.T) {
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), secretsDeclaration(), readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches,
-		"secret ptah_ydb_secrets.pg_password, which requires target capability secrets, unavailable on this ydb target")
+		"secret ptah_ydb_secrets/pg_password, which requires target capability secrets, unavailable on this ydb target")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(diff, qt.IsNil)
 	c.Assert(info.Capabilities.Has(capability.Secrets), qt.IsFalse)
@@ -177,9 +199,10 @@ func TestYDBSecrets_FailurePath_RefusedOnALineWithout(t *testing.T) {
 func planRotating(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, path string) []string {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+	rotated, err := ydbsecret.RequestRotation(declared, []string{path})
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.RotateSecrets([]string{path}), qt.IsNil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), rotated, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
@@ -212,7 +235,7 @@ func TestYDBSecrets_DropAllTablesDropsThem(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.Secrets, qt.HasLen, 0)
+	c.Assert(liveSecrets(c, live), qt.HasLen, 0)
 	c.Assert(live.Tables, qt.HasLen, 0)
 	c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), "ptah_ydb_dropall_secrets")
 }

@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
 // parseSecretComment reads a YDB secret declaration: the secret's path and
@@ -41,13 +41,15 @@ func (s *schemaParseState) parseSecretComment(comment *ast.Comment, structName s
 	if err != nil {
 		return secretAttributeError(ctx, err)
 	}
-	s.secrets = append(s.secrets, schemamodel.Secret{
-		StructName: structName,
-		Name:       name,
-		Schema:     strings.Trim(strings.TrimSpace(kv[ydbsecret.AttributeSchema]), "/"),
-		ValueEnv:   valueEnv,
-	})
-	return nil
+	object := ydbsecret.DesiredObject(strings.Trim(strings.TrimSpace(kv[ydbsecret.AttributeSchema]), "/"), name, structName, valueEnv)
+	if err := ydbsecret.ValidateIdentity(object.Ref); err != nil {
+		return secretAttributeError(ctx, err)
+	}
+	s.featureObjects, err = s.featureObjects.With(object)
+	if errors.Is(err, schemaext.ErrDuplicate) {
+		return secretAttributeError(ctx, fmt.Errorf("secret %s is declared twice", ydbsecret.Display(object.Ref.Schema.Source, name)))
+	}
+	return err
 }
 
 // secretAttributeError reports a value a secret declaration cannot carry,

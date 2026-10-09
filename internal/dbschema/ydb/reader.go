@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
@@ -51,10 +52,11 @@ import (
 // A view is read only on a server with [capability.Views], and a topic only on
 // one with [capability.Topics]; every YDB line Ptah measured has both. On a
 // server without the key, the object is recorded like the objects below, so a
-// plan never meets one the renderer would refuse. A secret is read the same
-// way under [capability.Secrets], by its path alone: the listing names it, and
-// no request the reader sends returns its value. A table's TTL is read as its
-// row deletion policy.
+// plan never meets one the renderer would refuse. A secret is observed under
+// [capability.Secrets] by its path alone, as an owned feature object: the
+// listing names it, and no request the reader sends returns its value. On a
+// server without the key a listed secret is recorded as unread. A table's TTL
+// is read as its row deletion policy.
 //
 // It describes each coordination node with the coordination service, except
 // Ptah's own lock node at the root ([LockNode]), which it leaves out of every
@@ -171,6 +173,14 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 	if err != nil {
 		return nil, err
 	}
+	secrets, err := ydbsecret.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return nil, err
+	}
+	featureCoverage, err = featureCoverage.Combine(secrets)
+	if err != nil {
+		return nil, err
+	}
 	db := &catalog.Database{FeatureCoverage: featureCoverage, DatabasePath: "/" + strings.Trim(r.database, "/")}
 	// System views supply the settings of database-wide workload objects.
 	// The later walk retains any listed pool that those views did not describe.
@@ -183,12 +193,9 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 	if err := r.principals(ctx, source, db); err != nil {
 		return nil, err
 	}
-	// The walk descends into a directory where its name sorts, so a secret
-	// or an external object in a directory can come before one at the root;
-	// a description lists them by directory and name, as it lists tables.
-	slices.SortFunc(db.Secrets, func(a, b catalog.Secret) int {
-		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
-	})
+	// The walk descends into a directory where its name sorts, so an external
+	// object in a directory can come before one at the root; a description
+	// lists them by directory and name, as it lists tables.
 	slices.SortFunc(db.ExternalDataSources, func(a, b catalog.ExternalDataSource) int {
 		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
 	})
@@ -241,7 +248,7 @@ func (r *Reader) entry(
 			return r.columnTableEntry(ctx, source, schema, name, db)
 		}
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER,
-		Ydb_Scheme.Entry_SECRET, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
+		Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
 			return err
 		}
@@ -256,6 +263,8 @@ func (r *Reader) entry(
 		return r.streamingQuery(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		return r.coordinationNode(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_SECRET:
+		return r.secret(schema, name, db)
 	case Ydb_Scheme.Entry_RESOURCE_POOL:
 		return r.listedResourcePool(db, name)
 	}
@@ -306,7 +315,6 @@ func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name str
 var keyedEntries = map[Ydb_Scheme.Entry_Type]capability.Capability{
 	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: capability.ExternalDataSources,
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       capability.ExternalDataSources,
-	Ydb_Scheme.Entry_SECRET:               capability.Secrets,
 	Ydb_Scheme.Entry_VIEW:                 capability.Views,
 	Ydb_Scheme.Entry_TOPIC:                capability.Topics,
 	Ydb_Scheme.Entry_REPLICATION:          capability.AsyncReplication,
@@ -336,9 +344,6 @@ func (r *Reader) keyedEntry(
 		return true, r.view(ctx, source, schema, name, described, db)
 	case Ydb_Scheme.Entry_TOPIC:
 		return true, r.topic(ctx, source, schema, name, db)
-	case Ydb_Scheme.Entry_SECRET:
-		db.Secrets = append(db.Secrets, catalog.Secret{Name: name, Schema: schema})
-		return true, nil
 	case Ydb_Scheme.Entry_REPLICATION:
 		return true, r.replication(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
@@ -380,7 +385,6 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_TRANSFER:             coverage.Transfer,
 	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: coverage.ExternalDataSource,
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       coverage.ExternalTable,
-	Ydb_Scheme.Entry_SECRET:               coverage.Secret,
 }
 
 // EntryStreamingQuery is the scheme entry type of a streaming query, which the

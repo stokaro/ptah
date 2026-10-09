@@ -89,6 +89,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbplan` | Feature declaration and migration planning. |
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
 | `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
+| `dialect/ydb/ydbsecret` | Secret declarations, observations, rotation requests, statements, and codecs, without values. |
 | `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
 | `dialect/ydb/ydbsyntax` | YQL quoting helpers. |
 | `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |

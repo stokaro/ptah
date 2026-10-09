@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
@@ -22,6 +23,7 @@ type Limits struct {
 	Streaming    []string
 	Pools        []string
 	Classifiers  []string
+	Secrets      []string
 }
 
 const unmanagedObjectReason = "the source leaves this object unmanaged"
@@ -44,6 +46,7 @@ var sourceKinds = []sourceFamily{
 	{ydbstreaming.Kind, "streaming_query", "streaming queries"},
 	{ydbworkload.PoolKind, "resource_pool", "resource pools"},
 	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers"},
+	{ydbsecret.Kind, "secret", "secrets"},
 }
 
 func sourceKind(token string) schemaext.Kind {
@@ -82,6 +85,8 @@ func (l *Limits) Add(kind, name string) bool {
 		l.Pools = append(l.Pools, name)
 	case ydbworkload.ClassifierKind:
 		l.Classifiers = append(l.Classifiers, name)
+	case ydbsecret.Kind:
+		l.Secrets = append(l.Secrets, name)
 	default:
 		return false
 	}
@@ -129,13 +134,19 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
+	secrets, err := namespaceCoverage(limits.Secrets, ydbsecret.Kind, schemeIdentity(ydbsecret.Ref), ydbsecret.ValidateIdentity, ydbsecret.Coverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
 	combined, err := feeds.Combine(nodes)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	combined, err = combined.Combine(queries)
-	if err != nil {
-		return schemaext.Coverage{}, err
+	for _, known := range []schemaext.Coverage{queries, secrets} {
+		combined, err = combined.Combine(known)
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
 	}
 	for _, family := range []struct {
 		limits   []string

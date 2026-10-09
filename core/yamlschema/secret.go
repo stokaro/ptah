@@ -1,11 +1,13 @@
 package yamlschema
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
 // secretSpec is one YDB secret in a YAML document: its directory and the
@@ -36,11 +38,17 @@ func (d document) addSecrets(db *schemamodel.Database) error {
 		if err := ydbsecret.CheckName(name); err != nil {
 			return fmt.Errorf("secret %q: %w", key, err)
 		}
-		db.Secrets = append(db.Secrets, schemamodel.Secret{
-			Name:     name,
-			Schema:   strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"),
-			ValueEnv: valueEnv,
-		})
+		object := ydbsecret.DesiredObject(strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"), name, "", valueEnv)
+		if err := ydbsecret.ValidateIdentity(object.Ref); err != nil {
+			return fmt.Errorf("secret %q: %w", key, err)
+		}
+		db.FeatureObjects, err = db.FeatureObjects.With(object)
+		if errors.Is(err, schemaext.ErrDuplicate) {
+			return fmt.Errorf("secret %q: secret %s is declared twice", key, ydbsecret.Display(object.Ref.Schema.Source, name))
+		}
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

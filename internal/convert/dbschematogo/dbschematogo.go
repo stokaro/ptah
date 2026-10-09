@@ -23,7 +23,6 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/uniquename"
-	"ptah.run/internal/ydbsecret"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
@@ -76,7 +75,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertTopics(database, dbSchema.Topics)
 	convertReplications(database, dbSchema.AsyncReplications, dbSchema.Transfers)
-	convertSecrets(database, dbSchema.Secrets)
 	convertExternalObjects(database, dbSchema)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
@@ -610,22 +608,6 @@ func convertReplications(database *schemamodel.Database, replications []catalog.
 			Name:   transfer.Name,
 			Schema: transfer.Schema,
 			Spec:   transfer.Spec,
-		})
-	}
-}
-
-// convertSecrets carries the YDB secrets a read found into the IR. The read
-// holds no value and names no variable, so each secret is declared with the
-// variable [ydbsecret.DefaultValueEnv] names for its path: a document written
-// from the read declares every secret the database holds, and applying it
-// back plans nothing for them, because a secret both sides hold is equal by
-// its presence.
-func convertSecrets(database *schemamodel.Database, secrets []catalog.Secret) {
-	for _, secret := range secrets {
-		database.Secrets = append(database.Secrets, schemamodel.Secret{
-			Name:     secret.Name,
-			Schema:   secret.Schema,
-			ValueEnv: ydbsecret.DefaultValueEnv(secret.Schema, secret.Name),
 		})
 	}
 }

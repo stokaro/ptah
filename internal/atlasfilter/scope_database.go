@@ -31,6 +31,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 
 	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
 	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
@@ -90,11 +91,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	out.Transfers = keep(db.Transfers, func(transfer catalog.Transfer) bool {
 		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
-	})
-	// A YDB secret is selected on its own name, in the directory that holds
-	// it.
-	out.Secrets = keep(db.Secrets, func(secret catalog.Secret) bool {
-		return s.selected(typeList("secret"), secret.Schema, secret.Name)
 	})
 	out.ExternalDataSources = keep(db.ExternalDataSources, func(source catalog.ExternalDataSource) bool {
 		return s.selected(typeList("external_data_source"), source.Schema, source.Name)

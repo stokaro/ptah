@@ -16,8 +16,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/dbtarget"
@@ -52,7 +54,7 @@ const externalSecretEnv = "PTAH_SECRET_LIVE_EXTERNAL_PG" // #nosec G101 -- a var
 type externalLine struct {
 	line     string
 	password map[string]string
-	secrets  []schemamodel.Secret
+	secrets  []schemaext.Object
 	setup    []string
 	teardown []string
 	// statements is how many statements the first plan holds.
@@ -61,11 +63,9 @@ type externalLine struct {
 
 var externalLines = []externalLine{
 	{
-		line:     "26.2",
-		password: map[string]string{"PASSWORD_SECRET_PATH": externalSchema + "/pg_password"},
-		secrets: []schemamodel.Secret{
-			{Name: "pg_password", Schema: externalSchema, ValueEnv: externalSecretEnv},
-		},
+		line:       "26.2",
+		password:   map[string]string{"PASSWORD_SECRET_PATH": externalSchema + "/pg_password"},
+		secrets:    []schemaext.Object{ydbsecret.DesiredObject(externalSchema, "pg_password", "", externalSecretEnv)},
 		statements: 4,
 	},
 	{
@@ -83,7 +83,7 @@ var externalLines = []externalLine{
 // a semicolon in an option.
 func externalDeclaration(line externalLine, location string) *schemamodel.Database {
 	return &schemamodel.Database{
-		Secrets: line.secrets,
+		FeatureObjects: must.Must(schemaext.NewObjects(line.secrets...)),
 		ExternalDataSources: []schemamodel.ExternalDataSource{
 			{Name: "warehouse", Schema: externalSchema, SourceType: "PostgreSQL", Location: "pg.invalid:5432",
 				AuthMethod: "BASIC", Options: merged(map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader"},

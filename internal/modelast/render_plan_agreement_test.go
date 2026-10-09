@@ -130,8 +130,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	}
 	// Remove refused YDB families in the order shared validation checks them,
 	// then run the census over the rest of the fixture.
-	refused := assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
-	refused += assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
+	refused := assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
@@ -284,38 +283,13 @@ func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *s
 	return 2
 }
 
-// assertBothSurfacesRefuseTheSecret checks that a target without the secrets
-// key refuses the fixture's secret on both surfaces, through the one
-// validation they share, and takes the secret out of desired so the census can
-// run over the rest. It returns how many routed kinds it took out.
-//
-// The fixture holds a topic and external objects too, which the same targets
-// refuse, so the probe leaves them out: the refusal measured here is the
-// secret's whichever family the validation reaches first.
-func assertBothSurfacesRefuseTheSecret(c *qt.C, dialect string, desired *schemamodel.Database) int {
-	c.Helper()
-	if capability.ForDialect(dialect).Has(capability.Secrets) {
-		return 0
-	}
-	probe := *desired
-	probe.Topics, probe.ExternalDataSources, probe.ExternalTables = nil, nil, nil
-	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		c.Context(), &probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-	renderErr := builtin.ValidateSchema(&probe, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "requires target capability secrets")
-	c.Assert(renderErr.Error(), qt.Contains, "requires target capability secrets")
-	desired.Secrets = nil
-	return 1
-}
-
 // assertBothSurfacesRefuseTheExternalObjects checks that a target without the
 // external_data_sources key refuses the fixture's data source on both
 // surfaces, and takes the data source and the external table out of desired.
-// It returns how many routed kinds it took out. The probe leaves the topic
-// out, for the reason [assertBothSurfacesRefuseTheSecret] gives.
+// It returns how many routed kinds it took out. The fixture holds a topic,
+// which the same targets refuse, so the probe leaves it out: the refusal
+// measured here is the external objects' whichever family the validation
+// reaches first.
 func assertBothSurfacesRefuseTheExternalObjects(c *qt.C, dialect string, desired *schemamodel.Database) int {
 	c.Helper()
 	if capability.ForDialect(dialect).Has(capability.ExternalDataSources) {

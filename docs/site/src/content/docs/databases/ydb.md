@@ -1651,10 +1651,16 @@ ALTER SECRET `ext/pg_password` WITH (value = $PTAH_SECRET_PG_PASSWORD);
 ```
 
 The flag is repeatable and reads no environment variable. A name the
-declaration does not hold is refused. A rollback drops a secret the change
-created, and creates a dropped one again with the value of the variable its
-path names, `PTAH_SECRET_EXT_PG_PASSWORD` for `ext/pg_password`. It does not
-restore a rotated value, which Ptah never read.
+declaration does not hold is refused. A secret the database does not hold is
+created rather than rotated, and one whose presence the read did not establish
+is reported rather than rotated. A rollback drops a secret the change created,
+and creates a dropped one again with the value of the variable its path names,
+`PTAH_SECRET_EXT_PG_PASSWORD` for `ext/pg_password`. It does not restore a
+rotated value, which Ptah never read. The rollback migration notes each value
+it cannot restore.
+
+A declaration names each secret once: two declarations of one path are refused,
+even when they name the same variable.
 
 Ptah creates a secret with YDB's default permissions: it inherits only
 `DESCRIBE SCHEMA` from its directory, and its owner holds every right on it.
@@ -1667,9 +1673,13 @@ disabled. Please contact your system administrator to enable it`). 25.1 and
 list such a secret, and the database administrator reads its value, and every
 value it ever held, in clear from `.metadata/secrets`. Ptah models it on no
 line, never reads `.metadata`, and lint rule `YD140` reports a migration that
-writes a secret's value, in either form. HCL, DBML and SQL documents cannot
-name a secret, so their silence does not plan a drop, and `schema inspect`
-warns about each secret it leaves out of an HCL document.
+writes a secret's value, in either form. On a line without the `secrets` key,
+the reader records each secret it lists as unread, so no plan reads its
+silence as absence.
+
+HCL, DBML and SQL documents of other dialects cannot name a secret. They make
+no claim about secrets, so their silence does not plan a drop, and `schema
+inspect` warns about each secret it leaves out of an HCL document.
 
 ## External data sources and external tables
 
@@ -1766,7 +1776,7 @@ statement needs one that has not run yet:
 3. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
 4. Drop removed or recreated external tables, then their data sources.
-   Drop the removed topics and secrets, then the removed coordination nodes, so an object
+   Drop the removed topics, then the removed coordination nodes, so an object
    created at one's path finds it free.
 5. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
@@ -1786,9 +1796,8 @@ statement needs one that has not run yet:
     changefeed for another stays within YDB's limit.
 12. Drop the removed tables.
 13. Create the added topics, then change the changed ones, then create and
-    change coordination nodes, create secrets and rotate the requested secrets, so an object created at a dropped table's path
-    finds it free. Create or replace the external data sources and tables
-    after their secrets.
+    change coordination nodes, so an object created at a dropped table's path
+    finds it free. Create or replace the external data sources and tables.
 14. Create the added async replications and change the changed ones, then
     the transfers, once the tables, changefeeds and topics a transfer uses
     exist.
@@ -1802,6 +1811,16 @@ statement needs one that has not run yet:
 18. Drop the removed users and groups, after revoking what they hold:
     `DROP USER` leaves its permissions behind, and a user created later under
     the name would hold them.
+
+Secrets are planned by their owner, around these steps rather than in one of
+them. A secret depends on nothing but its path, so the plan drops, creates and
+rotates secrets before step 1, except that a secret created at a path a
+dropped table frees follows that drop. Every external data source, async
+replication and transfer that names a secret by its path comes after the
+secret's creation or rotation, and a plan that drops a secret one of its own
+statements still names is refused. So is a plan in which a secret and another
+standalone object, such as a coordination node, trade one path: neither owner
+orders its statement against the other's, so apply the drop on its own first.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it

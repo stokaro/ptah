@@ -5,16 +5,16 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbsecret"
 )
 
 // secret accepts only the environment reference emitted by the renderer.
 // A malformed declaration may contain a literal credential anywhere, including
 // an option name or trailing token. Never expose the ordinary parser's token
 // diagnostics for this statement.
-func (p *parser) secret() *ast.CreateSecretNode {
+func (p *parser) secret() *ast.ExtensionStatement {
 	defer func() {
 		if p.err != nil {
 			p.err = fmt.Errorf("YQL schema at position %d: invalid CREATE SECRET declaration; use a database-relative path and WITH (value = $PTAH_SECRET_<name>); literal values and other options are not supported", p.peek().Start)
@@ -26,6 +26,9 @@ func (p *parser) secret() *ast.CreateSecretNode {
 		schema, name = path[:slash], path[slash+1:]
 	}
 	if err := ydbsecret.CheckName(name); err != nil {
+		p.failf("%v", err)
+	}
+	if err := ydbsecret.ValidateIdentity(ydbsecret.Ref(schema, name)); err != nil {
 		p.failf("%v", err)
 	}
 	p.wantWord("WITH")
@@ -47,5 +50,5 @@ func (p *parser) secret() *ast.CreateSecretNode {
 	if !p.done() && p.peek().Type != lexer.TokenSemicolon {
 		p.failf("expected ';' after the declaration")
 	}
-	return ast.NewCreateSecret(tableref.Canonical(schema, name), variable)
+	return &ast.ExtensionStatement{Payload: &ydbast.Secret{Operation: ydbast.SecretCreate, Schema: schema, Name: name, ValueEnv: variable}}
 }

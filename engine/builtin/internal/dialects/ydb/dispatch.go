@@ -172,11 +172,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.DropTransferNode:
 		return r.renderDropTransfer(n)
 
-	// Secrets, whose value is a reference the connection defines when the
-	// statement runs.
-	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
-		return r.renderSecretNode(node)
-
 	// External data sources and external tables, which hold no data in YDB.
 	case *ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode,
 		*ast.DropExternalDataSourceNode, *ast.DropExternalTableNode:

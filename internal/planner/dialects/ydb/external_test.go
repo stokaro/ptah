@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
@@ -47,8 +48,8 @@ func movedBucket() schemamodel.ExternalDataSource {
 // TestGenerateMigrationAST_External_Order pins where external objects go in a
 // YDB plan: removed external tables and then removed data sources early,
 // before any table is created; created data sources after the secrets they
-// name, external tables after their sources, and both before the views, which
-// may read an external table.
+// name, which the secret owner creates first, external tables after their
+// sources, and both before the views, which may read an external table.
 func TestGenerateMigrationAST_External_Order(t *testing.T) {
 	c := qt.New(t)
 	stale := schemamodel.ExternalTable{Name: "stale", DataSource: "old", Location: "x/",
@@ -56,7 +57,7 @@ func TestGenerateMigrationAST_External_Order(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		ExternalTablesRemoved:      difftypes.ExternalTableChanges{stale},
 		ExternalDataSourcesRemoved: difftypes.ExternalDataSourceChanges{{Name: "old"}},
-		SecretsAdded:               difftypes.SecretChanges{{Name: "pw", Schema: "ext", ValueEnv: "PTAH_SECRET_PW"}},
+		FeatureChanges:             []schemaext.ChangeRecord{secretCreated("ext", "pw", "PTAH_SECRET_PW")},
 		ExternalDataSourcesAdded:   difftypes.ExternalDataSourceChanges{plannedBucket, plannedWarehouse},
 		ExternalTablesAdded:        difftypes.ExternalTableChanges{plannedEvents},
 		DeclaredExternalTables:     []schemamodel.ExternalTable{plannedEvents},
@@ -65,9 +66,9 @@ func TestGenerateMigrationAST_External_Order(t *testing.T) {
 
 	got := render(c, externalPlanCaps(false), diff)
 
-	c.Assert(got, qt.Equals, "DROP EXTERNAL TABLE `stale`;\n"+
+	c.Assert(got, qt.Equals, "CREATE SECRET `ext/pw` WITH (value = $PTAH_SECRET_PW);\n"+
+		"DROP EXTERNAL TABLE `stale`;\n"+
 		"DROP EXTERNAL DATA SOURCE `old`;\n"+
-		"CREATE SECRET `ext/pw` WITH (value = $PTAH_SECRET_PW);\n"+
 		"CREATE EXTERNAL DATA SOURCE `ext/bucket` WITH (\n    SOURCE_TYPE = 'ObjectStorage',\n"+
 		"    LOCATION = 'https://s3.example.test/b/',\n    AUTH_METHOD = 'NONE'\n);\n"+
 		"CREATE EXTERNAL DATA SOURCE `ext/warehouse` WITH (\n    SOURCE_TYPE = 'PostgreSQL',\n"+

@@ -16,7 +16,6 @@ import (
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
-	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -192,14 +191,6 @@ func reverseSchemaDiffWithPrior(
 		SynonymsAdded:    diff.SynonymsRemoved,
 		SynonymsRemoved:  diff.SynonymsAdded,
 		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified, prior),
-		// A secret the change created is dropped, and one it dropped is
-		// created again with the value of the variable its path names: the
-		// database never returned the old value, so the rollback takes it
-		// from the environment as every creation does. A rotation has no
-		// reverse, because the earlier value was never Ptah's to restore.
-		SecretsAdded:   secretsRestoredByRollback(diff.SecretsRemoved),
-		SecretsRemoved: diff.SecretsAdded,
-
 		// A topic reverses like a synonym: the down direction drops what the
 		// up direction created, and creates what it dropped from the settings
 		// and consumers the removal carried. A change carries both of its
@@ -826,24 +817,6 @@ func reverseReplicationContext(context difftypes.ReplicationContext) difftypes.R
 	reversed.CurrentTopics = slices.Clone(context.DeclaredTopics)
 	reversed.DeclaredTopics = slices.Clone(context.CurrentTopics)
 	return reversed
-}
-
-// secretsRestoredByRollback is the secrets a rollback creates again: the ones
-// the change dropped, each taking its value from the variable
-// [ydbsecret.DefaultValueEnv] names for its path, since a database read never
-// says which variable a secret's value came from.
-func secretsRestoredByRollback(removed difftypes.SecretChanges) difftypes.SecretChanges {
-	if removed == nil {
-		return nil
-	}
-	restored := make(difftypes.SecretChanges, 0, len(removed))
-	for _, secret := range removed {
-		if secret.ValueEnv == "" {
-			secret.ValueEnv = ydbsecret.DefaultValueEnv(secret.Schema, secret.Name)
-		}
-		restored = append(restored, secret)
-	}
-	return restored
 }
 
 // reverseExternalDataSourceChanges swaps each change's sides, so the rollback

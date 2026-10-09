@@ -1,11 +1,11 @@
-package ydbsecret_test
+package ydbsecretvalue_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/internal/ydbsecretvalue"
 )
 
 // environment answers lookups from a fixed set of variables, the way
@@ -81,7 +81,7 @@ func TestExpand_HappyPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := ydbsecret.Expand(tc.query, env)
+			got, err := ydbsecretvalue.Expand(tc.query, env)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Text, qt.Equals, tc.want)
 			c.Assert(got.Defines(), qt.Equals, tc.defines)
@@ -114,8 +114,8 @@ func TestExpand_FailurePath(t *testing.T) {
 	for _, tc := range references {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := ydbsecret.Expand(tc.query, env)
-			c.Assert(err, qt.ErrorIs, ydbsecret.ErrReference)
+			got, err := ydbsecretvalue.Expand(tc.query, env)
+			c.Assert(err, qt.ErrorIs, ydbsecretvalue.ErrReference)
 			c.Assert(err, qt.Not(qt.ErrorMatches), ".*SENTINEL.*")
 			c.Assert(got.Text, qt.Equals, "")
 			c.Assert(got.Defines(), qt.IsFalse)
@@ -124,7 +124,7 @@ func TestExpand_FailurePath(t *testing.T) {
 
 	t.Run("a variable that is not set", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := ydbsecret.Expand("CREATE SECRET s WITH (value = $PTAH_SECRET_MISSING);", env)
+		got, err := ydbsecretvalue.Expand("CREATE SECRET s WITH (value = $PTAH_SECRET_MISSING);", env)
 		c.Assert(err, qt.ErrorMatches,
 			"a secret's value comes from environment variable PTAH_SECRET_MISSING, which is not set")
 		c.Assert(got.Text, qt.Equals, "")
@@ -133,7 +133,7 @@ func TestExpand_FailurePath(t *testing.T) {
 
 	t.Run("a value spelled in another case than the prefix", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := ydbsecret.Expand("CREATE SECRET s WITH (value = $ptah_secret_key);", env)
+		got, err := ydbsecretvalue.Expand("CREATE SECRET s WITH (value = $ptah_secret_key);", env)
 		c.Assert(err, qt.ErrorMatches, `secret value \$ptah_secret_key: invalid value_env: "ptah_secret_key" does `+
 			`not start with PTAH_SECRET_ .*`)
 		c.Assert(got.Text, qt.Equals, "")
@@ -144,14 +144,14 @@ func TestExpand_FailurePath(t *testing.T) {
 func TestExpansion_Redact_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	env := environment(map[string]string{"PTAH_SECRET_A": "abc", "PTAH_SECRET_B": "abcdef"})
-	expanded, err := ydbsecret.Expand(
+	expanded, err := ydbsecretvalue.Expand(
 		"CREATE SECRET a WITH (value = $PTAH_SECRET_A); CREATE SECRET b WITH (value = $PTAH_SECRET_B);", env)
 	c.Assert(err, qt.IsNil)
 
 	// The longer value goes first, so a value holding another is replaced
 	// whole rather than leaving its tail behind.
 	c.Assert(expanded.Redact("failed near 'abcdef' and 'abc'"), qt.Equals, "failed near '[secret]' and '[secret]'")
-	c.Assert(ydbsecret.Expansion{Text: "SELECT 1"}.Redact("abc"), qt.Equals, "abc")
+	c.Assert(ydbsecretvalue.Expansion{Text: "SELECT 1"}.Redact("abc"), qt.Equals, "abc")
 }
 
 func TestReferences_HappyPath(t *testing.T) {
@@ -169,7 +169,7 @@ func TestReferences_HappyPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ydbsecret.References(tc.query), qt.DeepEquals, tc.want)
+			c.Assert(ydbsecretvalue.References(tc.query), qt.DeepEquals, tc.want)
 		})
 	}
 }
@@ -203,7 +203,7 @@ func TestClearValue_HappyPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			form, path, writes := ydbsecret.ClearValue(tc.statement)
+			form, path, writes := ydbsecretvalue.ClearValue(tc.statement)
 			c.Assert(form, qt.Equals, tc.form)
 			c.Assert(path, qt.Equals, tc.path)
 			c.Assert(writes, qt.Equals, tc.writes)

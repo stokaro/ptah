@@ -22,7 +22,6 @@ func NewDatabase() *Database {
 		Topics:               make([]Topic, 0),
 		AsyncReplications:    make([]AsyncReplication, 0),
 		Transfers:            make([]Transfer, 0),
-		Secrets:              make([]Secret, 0),
 		ExternalDataSources:  make([]ExternalDataSource, 0),
 		ExternalTables:       make([]ExternalTable, 0),
 		ExtendedProperties:   make([]ExtendedProperty, 0),
@@ -91,7 +90,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
-	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
 	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)

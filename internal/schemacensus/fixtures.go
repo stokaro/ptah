@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/capabilityprobe"
@@ -1553,9 +1554,8 @@ func ownedCoordinationNodeFixture() schemamodel.Database {
 // value comes from.
 func secretFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Secrets = []schemamodel.Secret{{
-		StructName: "SE", Name: "pg_password", Schema: "ext", ValueEnv: "PTAH_SECRET_PG_PASSWORD",
-	}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbsecret.DesiredObject("ext", "pg_password", "SE", "PTAH_SECRET_PG_PASSWORD")))
+	db.FeatureCoverage = must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
 

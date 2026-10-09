@@ -1,6 +1,8 @@
 package ydbscheme
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -8,9 +10,11 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
-// CommonEffects describes scheme paths and principals used by a common AST node.
+// CommonEffects describes scheme paths, principals and secret reads of a common
+// AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
@@ -40,7 +44,52 @@ func CommonEffects(builder objectidentity.Builder, node ast.Node) ([]plangraph.E
 	if use.table {
 		effects = append(effects, plangraph.Effect{Subject: ref, Action: use.action})
 	}
-	return effects, nil
+	return append(effects, secretReads(node)...), nil
+}
+
+// secretReads names each YDB secret a statement reads by its path when it
+// runs: the _SECRET_PATH options of an external data source and the
+// credentials of an async replication or a transfer. YDB looks the secret up
+// when the object is created or its connection changes (`secret ... not
+// found`), so a secret's owner orders its creation before these reads. A path
+// that is absolute, or that cannot name a secret, is left out: it may lie
+// outside the database root the plan addresses.
+func secretReads(node ast.Node) []plangraph.Effect {
+	var paths []string
+	switch n := node.(type) {
+	case *ast.CreateExternalDataSourceNode:
+		for _, option := range slices.Sorted(maps.Keys(n.Options)) {
+			if strings.HasSuffix(strings.ToUpper(option), "_SECRET_PATH") {
+				paths = append(paths, n.Options[option])
+			}
+		}
+	case *ast.CreateAsyncReplicationNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	case *ast.AlterAsyncReplicationNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	case *ast.CreateTransferNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	case *ast.AlterTransferNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	}
+	var effects []plangraph.Effect
+	seen := make(map[objectidentity.Key]bool)
+	for _, path := range paths {
+		if path == "" || strings.HasPrefix(strings.TrimSpace(path), "/") {
+			continue
+		}
+		ref := ydbsecret.Ref(ydbsecret.SplitPath(path))
+		if ydbsecret.ValidateIdentity(ref) != nil || seen[ref.Key()] {
+			continue
+		}
+		seen[ref.Key()] = true
+		effects = append(effects, plangraph.Effect{Subject: ref, Action: plangraph.Read})
+	}
+	return effects
+}
+
+func connectionSecretPaths(connection ast.ReplicationConnectionSpec) []string {
+	return []string{connection.TokenSecretPath, connection.PasswordSecretPath}
 }
 
 func invalidCommonName(kind, name string) error {
@@ -95,12 +144,6 @@ func commonSchemeUse(node ast.Node) schemeUse {
 	case *ast.AlterTopicNode:
 		return schemeUse{n.Name, plangraph.Alter, false}
 	case *ast.DropTopicNode:
-		return schemeUse{n.Name, plangraph.Drop, false}
-	case *ast.CreateSecretNode:
-		return schemeUse{n.Name, plangraph.Create, false}
-	case *ast.AlterSecretNode:
-		return schemeUse{n.Name, plangraph.Alter, false}
-	case *ast.DropSecretNode:
 		return schemeUse{n.Name, plangraph.Drop, false}
 	default:
 		return externalSchemeUse(node)

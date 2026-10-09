@@ -13,6 +13,8 @@ package secretrotation
 import (
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/cli/internal/cmdflags"
 )
 
@@ -36,4 +38,15 @@ func Register(cmd *cobra.Command) {
 // order given.
 func Requested(cmd *cobra.Command) ([]string, error) {
 	return cmd.Flags().GetStringArray(FlagName)
+}
+
+// Apply returns desired with each secret the operator asked cmd to rotate
+// asking for a new value, through [ydbsecret.RequestRotation]. A path the
+// declaration does not hold is refused before anything is compared.
+func Apply(cmd *cobra.Command, desired *schemamodel.Database) (*schemamodel.Database, error) {
+	requested, err := Requested(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return ydbsecret.RequestRotation(desired, requested)
 }

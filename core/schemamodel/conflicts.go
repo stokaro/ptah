@@ -303,7 +303,6 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.topics,
 		validator.asyncReplications,
 		validator.transfers,
-		validator.secrets,
 		validator.externalDataSources,
 		validator.externalTables,
 		validator.triggers,
@@ -541,23 +540,6 @@ func (v compositeDefinitionValidator) transfers() error {
 		},
 		func(_ Transfer, key string) error {
 			return fmt.Errorf("conflicting transfer %q definitions", key)
-		},
-	)
-}
-
-// secrets refuses two declarations of one YDB secret that differ, which is
-// two declarations naming different variables for its value. A secret is
-// identified by its directory and name, as a YDB table is.
-func (v compositeDefinitionValidator) secrets() error {
-	return validateNamedDefinitions(
-		v.database.Secrets,
-		func(secret Secret) string { return secret.QualifiedName() },
-		func(secret Secret) Secret {
-			secret.StructName = ""
-			return secret
-		},
-		func(_ Secret, key string) error {
-			return fmt.Errorf("conflicting secret %q definitions", key)
 		},
 	)
 }

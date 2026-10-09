@@ -5,8 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
 // TestParse_YDBSecret_HappyPath reads a secret keyed by its name, or named
@@ -22,10 +23,13 @@ func TestParse_YDBSecret_HappyPath(t *testing.T) {
     value_env: PTAH_SECRET_S3
 `))
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Secrets, qt.DeepEquals, []schemamodel.Secret{
-		{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG_PASSWORD"},
-		{Name: "s3.key", Schema: "ext/aws", ValueEnv: "PTAH_SECRET_S3"},
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.ContentEquals, []schemaext.Object{
+		ydbsecret.DesiredObject("", "pg_password", "", "PTAH_SECRET_PG_PASSWORD"),
+		ydbsecret.DesiredObject("ext/aws", "s3.key", "", "PTAH_SECRET_S3"),
 	})
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestParse_YDBSecret_FailurePath refuses a document that writes the value,
@@ -57,6 +61,11 @@ func TestParse_YDBSecret_FailurePath(t *testing.T) {
 			name:     "a path in the name",
 			document: "secrets:\n  pw:\n    name: ext/pw\n    value_env: PTAH_SECRET_PW\n",
 			wantErr:  `secret "pw": invalid name: "ext/pw" holds a slash; name the directory with schema`,
+		},
+		{
+			name:     "one path declared twice",
+			document: "secrets:\n  a:\n    name: pw\n    value_env: PTAH_SECRET_PW\n  b:\n    name: pw\n    value_env: PTAH_SECRET_PW\n",
+			wantErr:  `secret "b": secret pw is declared twice`,
 		},
 	}
 	for _, test := range tests {

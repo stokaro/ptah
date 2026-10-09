@@ -730,7 +730,6 @@ type schemaParseState struct {
 	ranges                []schemamodel.Range
 	views                 []schemamodel.View
 	synonyms              []schemamodel.Synonym
-	secrets               []schemamodel.Secret
 	externalDataSources   []schemamodel.ExternalDataSource
 	externalTables        []schemamodel.ExternalTable
 	extendedProperties    []schemamodel.ExtendedProperty
@@ -1080,7 +1079,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Topics:               state.topics,
 		AsyncReplications:    state.asyncReplications,
 		Transfers:            state.transfers,
-		Secrets:              state.secrets,
 		ExternalDataSources:  state.externalDataSources,
 		ExternalTables:       state.externalTables,
 		ExtendedProperties:   state.extendedProperties,

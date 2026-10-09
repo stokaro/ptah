@@ -1299,9 +1299,6 @@ func deduplicateComposite(r *Database) {
 	r.Transfers = deduplicateNamedDefinitions(r.Transfers, func(transfer Transfer) string {
 		return transfer.QualifiedName()
 	})
-	r.Secrets = deduplicateNamedDefinitions(r.Secrets, func(secret Secret) string {
-		return secret.QualifiedName()
-	})
 	r.ExternalDataSources = deduplicateNamedDefinitions(r.ExternalDataSources, func(source ExternalDataSource) string {
 		return source.QualifiedName()
 	})
