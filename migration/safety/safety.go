@@ -583,6 +583,7 @@ func assessNode(node ast.Node) StatementAssessment {
 		return assessStatementList(n, assessment)
 	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
 		assessment.Severity, assessment.Reason = classifyExtensionNode(node)
+		assessment.Subject = extensionSubject(node)
 	case *ast.AlterTableNode:
 		assessment.Subject = n.Name
 		return assessAlterTable(n, assessment)
@@ -622,8 +623,6 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
-	case *ast.DropResourcePoolNode, *ast.DropResourcePoolClassifierNode:
-		return assessResourcePoolNode(node, assessment)
 	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropAsyncReplicationNode, *ast.DropTransferNode,
 		*ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
 		return assessYDBObjectNode(n, assessment)
@@ -1251,23 +1250,6 @@ func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int
 		unforced++
 	}
 	return forced, unforced
-}
-
-// assessResourcePoolNode assesses changes to YDB resource pools and their
-// classifiers. Any other node is safe.
-func assessResourcePoolNode(node ast.Node, assessment StatementAssessment) StatementAssessment {
-	switch n := node.(type) {
-	case *ast.DropResourcePoolNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Warning
-		assessment.Reason = "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default"
-	case *ast.DropResourcePoolClassifierNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Warning
-		assessment.Reason = "DROP RESOURCE POOL CLASSIFIER sends its member's queries to another classifier's pool " +
-			"or to the pool default"
-	}
-	return assessment
 }
 
 // runtimeObjectChangeReason covers schema operations that change ongoing

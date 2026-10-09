@@ -734,6 +734,20 @@ reset permission. `StreamingCodec` provides the versioned operation record;
 Clones preserve independent optional run settings. Safety uses the owner's
 checkpoint-loss effect, including guarded replacement and body changes.
 
+`ydbast.ResourcePool` and `ResourcePoolClassifier` travel inside an
+`ExtensionStatement`. Create requires desired settings, alter requires both
+operands, and drop carries neither. Their versioned codecs distinguish missing
+settings from explicit zero limits and require an explicit classifier rank.
+`ydbrender.ResourcePoolHandler` and `ResourcePoolClassifierHandler` require the
+selected YDB target and its resource-pool capability. A registered codec grants
+neither. Invalid operations fail before any SQL is returned.
+
+Pool and classifier payloads expose structured subjects and workload effects.
+Safety reports retain their names and classify routing or limit changes as
+warnings. Removing the server-owned `default` pool is refused. Settings remain
+in `core/ast.ResourcePoolSpec` and `ResourcePoolClassifierSpec`; concrete
+operation nodes belong to `ydbast`.
+
 `dialect/ydb/ydbstreaming` owns the query `Spec` and its desired and observed
 representations in `Database.FeatureObjects`. `Desired.AllowStateReset` carries
 authored permission; conversion from an observation never grants it. The common

@@ -29,6 +29,9 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
 	case *ast.ExtensionStatement:
+		if handled, err := appendPoolDeclaration(database, node.Payload); handled {
+			return true, err
+		}
 		if value, ok := node.Payload.(*ydbast.StreamingQuery); ok {
 			return true, appendStreamingQuery(database, document.base, value)
 		}
@@ -39,12 +42,32 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		var err error
 		database.FeatureObjects, err = database.FeatureObjects.With(ydbcoordination.DesiredObject(value.Schema, value.Name, value.Change.After.StructName, value.Change.After.Spec))
 		return true, err
-	case *ast.CreateResourcePoolNode:
-		database.ResourcePools = append(database.ResourcePools, schemamodel.ResourcePool{Name: node.Name, Spec: node.Spec.Clone()})
-	case *ast.CreateResourcePoolClassifierNode:
-		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: node.Name, Spec: node.Spec})
 	default:
 		return appendYDBReplication(database, document, statement, sourcePlatform)
+	}
+	return true, nil
+}
+
+func appendPoolDeclaration(database *schemamodel.Database, payload ast.ExtensionPayload) (bool, error) {
+	switch value := payload.(type) {
+	case *ydbast.ResourcePool:
+		if err := value.Validate(); err != nil {
+			return true, err
+		}
+		if value.Operation != ydbast.PoolCreate {
+			return false, nil
+		}
+		database.ResourcePools = append(database.ResourcePools, schemamodel.ResourcePool{Name: value.Name, Spec: value.Spec.Clone()})
+	case *ydbast.ResourcePoolClassifier:
+		if err := value.Validate(); err != nil {
+			return true, err
+		}
+		if value.Operation != ydbast.PoolCreate {
+			return false, nil
+		}
+		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: value.Name, Spec: *value.Spec})
+	default:
+		return false, nil
 	}
 	return true, nil
 }

@@ -403,6 +403,9 @@ v0.13.0 ptah.run/core/renderer
 # dialect/clickhouse/chast. ModifyTTLOperation is removed; callers supply the
 # complete before/after storage operands required by chast.AlterTTL.
 # StreamingQuerySpec moves to dialect/ydb/ydbstreaming.Spec.
+# Resource pool and classifier CREATE/ALTER/DROP nodes and constructors are
+# replaced by ydbast.ResourcePool and ResourcePoolClassifier payloads inside
+# ExtensionStatement, with explicit optional before/after operands.
 # AddSkippingIndexOperation also moves to chast.AddSkippingIndex. Other targets
 # refuse that operation, and zero index granularity uses the server default 1.
 # Callers wrap the owner payload in ExtensionAlterOperation. The common ALTER

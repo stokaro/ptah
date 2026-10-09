@@ -72,7 +72,7 @@ func streamingFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture(), streamingFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture())
 }
 
 // The source inventory is independent of both owner registration and fixtures.
@@ -267,4 +267,12 @@ func TestStreamingExtensionRendersAfterSelectedCodecRoundTrip(t *testing.T) {
 	result, err := runtime.Render(c.Context(), renderer.Request{Target: "ydb", Capabilities: caps, Nodes: []ast.Node{node}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Fragments, qt.DeepEquals, []string{fixture.wantSQL})
+}
+
+func poolFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{}}, wantSQL: "CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = \"-1\");\n"}
+}
+
+func classifierFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 0}}, wantSQL: "CREATE RESOURCE POOL CLASSIFIER `route` WITH (RESOURCE_POOL = 'default', RANK = 0);\n"}
 }

@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/migration/safety"
 )
@@ -46,4 +48,24 @@ func TestAssess_UnknownExtensionsRequireReview(t *testing.T) {
 			c.Assert(assessment.Reason, qt.Equals, "extension effects are unknown; manual review is required")
 		}
 	}
+}
+
+type scopedPayload struct{ subject objectidentity.ID }
+
+func (*scopedPayload) Kind() schemaext.Kind { return "example.org/scoped" }
+func (p *scopedPayload) CloneExtension() ast.ExtensionPayload {
+	return &scopedPayload{subject: p.subject}
+}
+func (p *scopedPayload) Subject() objectidentity.ID { return p.subject }
+func (*scopedPayload) Effect() schemaext.Effect {
+	return schemaext.Effect{Impact: schemaext.Behavioral, Reason: "changes routing"}
+}
+
+func TestAssessExtensionPreservesScopedSubject(t *testing.T) {
+	c := qt.New(t)
+	ref := objectidentity.NewBuilder(identifier.ForDialect("ydb")).SchemaScopedParts("example.org/scoped", "jobs", "route.daily")
+	assessments := safety.Assess([]ast.Node{&ast.ExtensionStatement{Payload: &scopedPayload{subject: ref}}})
+	c.Assert(assessments, qt.HasLen, 1)
+	c.Assert(assessments[0].Subject, qt.Equals, "jobs.route.daily")
+	c.Assert(assessments[0].Severity, qt.Equals, safety.Warning)
 }

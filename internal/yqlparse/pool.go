@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/ydbpool"
 )
 
@@ -22,7 +23,7 @@ func (p *parser) resourcePool() ast.Node {
 // defaultPool reads the declaration spelling emitted by the renderer for the
 // server-owned pool. Unlike user and membership changes, this spelling is a
 // declaration by itself because the server owns the default pool.
-func (p *parser) defaultPool() *ast.CreateResourcePoolNode {
+func (p *parser) defaultPool() *ast.ExtensionStatement {
 	p.wantWord("RESOURCE")
 	p.wantWord("POOL")
 	name := decodedName(p.identifier())
@@ -33,7 +34,7 @@ func (p *parser) defaultPool() *ast.CreateResourcePoolNode {
 	return p.poolSettings(name)
 }
 
-func (p *parser) poolSettings(name string) *ast.CreateResourcePoolNode {
+func (p *parser) poolSettings(name string) *ast.ExtensionStatement {
 	raw := p.options()
 	values := map[string]string{ydbpool.AttributeName: name}
 	for _, key := range slices.Sorted(maps.Keys(raw)) {
@@ -55,10 +56,10 @@ func (p *parser) poolSettings(name string) *ast.CreateResourcePoolNode {
 	if parsed != name {
 		p.failf("resource pool name %q cannot be represented exactly", name)
 	}
-	return ast.NewCreateResourcePool(name, spec)
+	return &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: name, Spec: new(spec.Clone())}}
 }
 
-func (p *parser) poolClassifier() *ast.CreateResourcePoolClassifierNode {
+func (p *parser) poolClassifier() *ast.ExtensionStatement {
 	name := decodedName(p.identifier())
 	if !p.word("WITH") {
 		p.failf("a resource pool classifier needs WITH settings")
@@ -72,7 +73,7 @@ func (p *parser) poolClassifier() *ast.CreateResourcePoolClassifierNode {
 	if parsed != name {
 		p.failf("classifier name %q cannot be represented exactly", name)
 	}
-	return ast.NewCreateResourcePoolClassifier(name, spec)
+	return &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: name, Spec: new(spec)}}
 }
 
 func classifierSetting(key string) string {

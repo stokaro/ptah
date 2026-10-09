@@ -3,7 +3,6 @@ package builtin
 import (
 	"fmt"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -31,28 +30,6 @@ func refuseResourcePool(dialect string, caps capability.Capabilities, subject st
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: message,
 	}
-}
-
-// refuseResourcePoolNode refuses a resource pool or classifier node on a
-// target without [capability.ResourcePools], before a dialect renderer sees
-// it.
-func refuseResourcePoolNode(dialect string, caps capability.Capabilities, node ast.Node) error {
-	var subject string
-	switch typed := node.(type) {
-	case *ast.CreateResourcePoolNode:
-		subject = "resource pool " + typed.Name
-	case *ast.AlterResourcePoolNode:
-		subject = "ALTER RESOURCE POOL " + typed.Name
-	case *ast.DropResourcePoolNode:
-		subject = "DROP RESOURCE POOL " + typed.Name
-	case *ast.CreateResourcePoolClassifierNode:
-		subject = "resource pool classifier " + typed.Name
-	case *ast.AlterResourcePoolClassifierNode:
-		subject = "ALTER RESOURCE POOL CLASSIFIER " + typed.Name
-	case *ast.DropResourcePoolClassifierNode:
-		subject = "DROP RESOURCE POOL CLASSIFIER " + typed.Name
-	}
-	return refuseResourcePool(dialect, caps, subject)
 }
 
 // validateDeclaredResourcePools refuses a declared pool or classifier the

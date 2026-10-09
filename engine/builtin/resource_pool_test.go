@@ -11,25 +11,21 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/ydbpool"
 )
 
-// poolNodes are the six resource pool and classifier statements, as nodes,
-// with the subject the renderer's central check names each by.
+// poolNodes cover creation, alteration, and removal of both workload objects.
 var poolNodes = []struct {
-	node    ast.Node
-	subject string
+	node ast.Node
 }{
-	{node: ast.NewCreateResourcePool("batch", ast.ResourcePoolSpec{}), subject: "resource pool batch"},
-	{node: ast.NewAlterResourcePool("batch", ast.ResourcePoolSpec{}, ast.ResourcePoolSpec{}),
-		subject: "ALTER RESOURCE POOL batch"},
-	{node: ast.NewDropResourcePool("batch"), subject: "DROP RESOURCE POOL batch"},
-	{node: ast.NewCreateResourcePoolClassifier("c", ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}),
-		subject: "resource pool classifier c"},
-	{node: ast.NewAlterResourcePoolClassifier("c", ast.ResourcePoolClassifierSpec{ResourcePool: "batch"},
-		ast.ResourcePoolClassifierSpec{ResourcePool: "default"}), subject: "ALTER RESOURCE POOL CLASSIFIER c"},
-	{node: ast.NewDropResourcePoolClassifier("c"), subject: "DROP RESOURCE POOL CLASSIFIER c"},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{}}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{}, Previous: &ast.ResourcePoolSpec{}}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "batch"}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "c", Spec: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch"})}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: "c", Spec: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}), Previous: new(ast.ResourcePoolClassifierSpec{ResourcePool: "default"})}}},
+	{node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolDrop, Name: "c"}}},
 }
 
 // poolSchema declares a pool, the pool default's settings and a classifier.
@@ -93,7 +89,7 @@ func TestRender_ResourcePool_FailurePath(t *testing.T) {
 			for _, node := range poolNodes {
 				sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps, node.node)
 				c.Assert(err, qt.ErrorMatches,
-					node.subject+`, which requires target capability resource_pools, unavailable on this \w+ target`)
+					`target "`+test.dialect+`" does not support extension "ptah\.run/ydb/resource-pool(-classifier)?-operation" in role "statement"`)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
 			}
@@ -175,18 +171,13 @@ func TestRender_ResourcePoolNodes_YDB(t *testing.T) {
 		node ast.Node
 		want string
 	}{
-		{name: "alter", node: ast.NewAlterResourcePool("batch",
-			ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(20))},
-			ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(5))}),
+		{name: "alter", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: new((ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(20))}).Clone()), Previous: new((ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(5))}).Clone())}},
 			want: "ALTER RESOURCE POOL `batch` SET (CONCURRENT_QUERY_LIMIT = 20), RESET (QUEUE_SIZE);\n"},
-		{name: "an alter that changes nothing writes nothing", node: ast.NewAlterResourcePool("batch",
-			ast.ResourcePoolSpec{}, ast.ResourcePoolSpec{}), want: ""},
-		{name: "drop", node: ast.NewDropResourcePool("batch"), want: "DROP RESOURCE POOL `batch`;\n"},
-		{name: "alter a classifier", node: ast.NewAlterResourcePoolClassifier("c",
-			ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 2},
-			ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 1}),
+		{name: "an alter that changes nothing writes nothing", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{}, Previous: &ast.ResourcePoolSpec{}}}, want: ""},
+		{name: "drop", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "batch"}}, want: "DROP RESOURCE POOL `batch`;\n"},
+		{name: "alter a classifier", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: "c", Spec: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 2}), Previous: new(ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 1})}},
 			want: "ALTER RESOURCE POOL CLASSIFIER `c` SET (RESOURCE_POOL = 'batch', RANK = 2), RESET (MEMBER_NAME);\n"},
-		{name: "drop a classifier", node: ast.NewDropResourcePoolClassifier("c"),
+		{name: "drop a classifier", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolDrop, Name: "c"}},
 			want: "DROP RESOURCE POOL CLASSIFIER `c`;\n"},
 	}
 	for _, test := range tests {
@@ -203,18 +194,16 @@ func TestRender_ResourcePoolNodes_YDB_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB,
-		capability.YDB262().With(capability.ResourcePools, true), ast.NewDropResourcePool("default"))
+		capability.YDB262().With(capability.ResourcePools, true), &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "default"}})
 
-	c.Assert(err, qt.ErrorMatches, "DROP RESOURCE POOL default: it is the pool YDB runs every query in that no "+
+	c.Assert(err, qt.ErrorMatches, "invalid feature value: DROP RESOURCE POOL default: it is the pool YDB runs every query in that no "+
 		"classifier sends elsewhere, and after it is dropped every query of the database fails with `Resource pool "+
 		"default not found`")
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(sql, qt.Equals, "")
 }
 
-// A caller that claims the key for a target whose renderer writes no pool
-// passes the central check, and the renderer refuses the node itself, naming
-// itself.
+// Claiming a capability cannot install an owner handler on another target.
 func TestRender_ResourcePool_RenderersWithoutPoolsRefuse(t *testing.T) {
 	tests := []struct {
 		dialect string
@@ -234,8 +223,7 @@ func TestRender_ResourcePool_RenderersWithoutPoolsRefuse(t *testing.T) {
 			for _, node := range poolNodes {
 				sql, err := builtin.RenderSQLWithCapabilities(test.dialect,
 					test.caps.With(capability.ResourcePools, true), node.node)
-				c.Assert(err, qt.ErrorMatches, node.subject+`: the \w+ renderer writes no resource pool; a resource `+
-					`pool needs target capability resource_pools, which only YDB has`)
+				c.Assert(err, qt.ErrorMatches, `target "`+test.dialect+`" does not support extension "ptah\.run/ydb/resource-pool(-classifier)?-operation" in role "statement"`)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
 			}

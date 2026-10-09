@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/ydbpool"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -51,30 +52,30 @@ func (p *Planner) planResourcePools(diff *difftypes.SchemaDiff) (poolPlan, error
 	}
 	var dropped, moved, created []ast.Node
 	for _, classifier := range diff.ResourcePoolClassifiersRemoved {
-		dropped = append(dropped, ast.NewDropResourcePoolClassifier(classifier.Name))
+		dropped = append(dropped, &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolDrop, Name: classifier.Name}})
 	}
 	for _, change := range diff.ResourcePoolClassifiersModified {
 		holder, held := ranks[change.Desired.Rank]
 		if change.RankChanged && held && holder != change.Name {
-			dropped = append(dropped, ast.NewDropResourcePoolClassifier(change.Name))
-			created = append(created, ast.NewCreateResourcePoolClassifier(change.Name, change.Desired))
+			dropped = append(dropped, &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolDrop, Name: change.Name}})
+			created = append(created, &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: change.Name, Spec: new(change.Desired)}})
 			continue
 		}
-		moved = append(moved, ast.NewAlterResourcePoolClassifier(change.Name, change.Desired, change.Current))
+		moved = append(moved, &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolAlter, Name: change.Name, Spec: new(change.Desired), Previous: new(change.Current)}})
 	}
 	for _, classifier := range diff.ResourcePoolClassifiersAdded {
-		created = append(created, ast.NewCreateResourcePoolClassifier(classifier.Name, classifier.Spec))
+		created = append(created, &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: classifier.Name, Spec: new(classifier.Spec)}})
 	}
 
 	nodes := dropped
 	for _, pool := range diff.ResourcePoolsRemoved {
-		nodes = append(nodes, ast.NewDropResourcePool(pool.Name))
+		nodes = append(nodes, &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: pool.Name}})
 	}
 	for _, pool := range diff.ResourcePoolsAdded {
-		nodes = append(nodes, ast.NewCreateResourcePool(pool.Name, pool.Spec))
+		nodes = append(nodes, &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: pool.Name, Spec: new(pool.Spec.Clone())}})
 	}
 	for _, change := range diff.ResourcePoolsModified {
-		nodes = append(nodes, ast.NewAlterResourcePool(change.Name, change.Desired, change.Current))
+		nodes = append(nodes, &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: change.Name, Spec: new(change.Desired.Clone()), Previous: new(change.Current.Clone())}})
 	}
 	nodes = append(nodes, moved...)
 	nodes = append(nodes, created...)
