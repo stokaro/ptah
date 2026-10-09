@@ -8,8 +8,9 @@ import (
 )
 
 // DecodeIndexes replaces claimed source properties with desired index facets.
-// It consumes Index.Type only when a selected definition owns the type key;
-// otherwise that common declaration stays unchanged. Target property groups
+// It consumes Index.Type only when a selected definition declares that it
+// absorbs schemaext.IndexTypeAttribute; otherwise that common declaration
+// stays unchanged. Target property groups
 // follow DecodeTables' ownership, alias, conflict, and error rules. An index
 // with no properties gains no intent. Index data is copied; other schema data
 // stays shared and read-only. Errors and cancellation return no partial schema.

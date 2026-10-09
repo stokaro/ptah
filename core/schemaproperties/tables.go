@@ -36,9 +36,19 @@ type propertyOwner struct {
 	name       string
 	facets     *schemaext.Facets
 	properties *map[string]map[string]string
-	// common holds the common declaration fields an owner's definition may
-	// absorb. Only a declared absorption moves a value out of them.
-	common map[schemaext.CommonAttribute]*string
+	// indexType is the common index type an owner's definition may absorb,
+	// and nil for an owner that has none. Only a declared absorption moves a
+	// value out of it.
+	indexType *string
+}
+
+// commonField returns the owner's common declaration field for attribute, or
+// nil when the owner has no such field.
+func (o propertyOwner) commonField(attribute schemaext.CommonAttribute) *string {
+	if attribute == schemaext.IndexTypeAttribute {
+		return o.indexType
+	}
+	return nil
 }
 
 // selection is a resolved target and the property definitions it has for one
@@ -103,16 +113,16 @@ func isolateOwners(db *schemamodel.Database, format schemaext.PropertyFormat) {
 // of the model; which common fields an owner absorbs is the owner's
 // declaration, never inferred here.
 func ownerSlots(db *schemamodel.Database, format schemaext.PropertyFormat) ([]propertyOwner, bool) {
-	var owners []propertyOwner
 	if format == schemaext.IndexPlatformProperties {
+		owners := make([]propertyOwner, 0, len(db.Indexes))
 		for i := range db.Indexes {
 			index := &db.Indexes[i]
-			owners = append(owners, propertyOwner{"index", index.Name, &index.Facets, &index.Overrides,
-				map[schemaext.CommonAttribute]*string{schemaext.IndexTypeAttribute: &index.Type}})
+			owners = append(owners, propertyOwner{"index", index.Name, &index.Facets, &index.Overrides, &index.Type})
 		}
 		// Index properties have no reader besides their feature owners.
 		return owners, true
 	}
+	owners := make([]propertyOwner, 0, len(db.Tables))
 	for i := range db.Tables {
 		table := &db.Tables[i]
 		owners = append(owners, propertyOwner{"table", table.QualifiedName(), &table.Facets, &table.Overrides, nil})
@@ -123,17 +133,16 @@ func ownerSlots(db *schemamodel.Database, format schemaext.PropertyFormat) ([]pr
 }
 
 // needsDecoding reports whether any owner holds properties, or a common field
-// a selected definition absorbs. Without either, decoding changes nothing and
-// the schema is returned as it is rather than copied.
-func needsDecoding(db *schemamodel.Database, format schemaext.PropertyFormat, definitions []schemaext.PropertyDefinition) bool {
-	owners, _ := ownerSlots(db, format)
+// a selected definition absorbs. Without either, decoding changes nothing, and
+// the copy is returned without running the batch.
+func needsDecoding(owners []propertyOwner, definitions []schemaext.PropertyDefinition) bool {
 	return slices.ContainsFunc(owners, func(owner propertyOwner) bool {
 		if len(*owner.properties) > 0 {
 			return true
 		}
 		return slices.ContainsFunc(definitions, func(definition schemaext.PropertyDefinition) bool {
 			return slices.ContainsFunc(definition.Absorbs, func(absorption schemaext.Absorption) bool {
-				field := owner.common[absorption.Attribute]
+				field := owner.commonField(absorption.Attribute)
 				return field != nil && *field != ""
 			})
 		})
@@ -156,10 +165,13 @@ func decode(ctx context.Context, db *schemamodel.Database, target string, format
 	if err != nil {
 		return nil, err
 	}
-	if !needsDecoding(db, format, chosen.definitions) {
-		return db, ctx.Err()
-	}
 	batch := capture(db, chosen, format)
+	if !needsDecoding(batch.owners, batch.definitions) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return batch.database, nil
+	}
 	var fragments []schemaext.PropertyFragment
 	var owners []int
 	for i, owner := range batch.owners {
@@ -238,7 +250,7 @@ func (b propertyBatch) decode(ctx context.Context, runtime Runtime, fragments []
 func takeProperties(owner propertyOwner, target schemaext.TargetSelection, definition schemaext.PropertyDefinition) (map[string]string, error) {
 	properties := make(map[string]string)
 	for _, absorption := range definition.Absorbs {
-		if field := owner.common[absorption.Attribute]; field != nil && *field != "" {
+		if field := owner.commonField(absorption.Attribute); field != nil && *field != "" {
 			properties[absorption.Key] = *field
 			*field = ""
 		}

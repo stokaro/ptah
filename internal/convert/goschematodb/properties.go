@@ -3,7 +3,6 @@ package goschematodb
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
@@ -39,21 +38,18 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err != nil {
 		return nil, nil, err
 	}
-	decoded, err := schemaproperties.Decode(ctx, scoped, selected.Name(), runtime)
+	// Decoding copies the tables and indexes, so the creation facets and
+	// coverage written below stay out of the caller's schema.
+	database, err := schemaproperties.Decode(ctx, scoped, selected.Name(), runtime)
 	if err != nil {
 		return nil, nil, err
 	}
-	// Creation facets and coverage are written below. Decoding may return the
-	// source itself when it holds no properties, so they go into a copy.
-	database := *decoded
-	database.Tables = slices.Clone(decoded.Tables)
-	database.Indexes = slices.Clone(decoded.Indexes)
 	semantics := identifier.ForDialect(selected.Name())
 	identities := objectidentity.NewBuilder(semantics)
 	request := schemaprojection.TableCreationRequest{Target: selected.Name(), Identifiers: semantics, Capabilities: capability.ForDialect(selected.Name())}
 	for _, table := range database.Tables {
 		request.Tables = append(request.Tables, schemaprojection.TableCreationInput{
-			Subject: identities.TableParts(table.Schema, table.Name), Declaration: schemacapture.DeclareTable(&database, table, semantics),
+			Subject: identities.TableParts(table.Schema, table.Name), Declaration: schemacapture.DeclareTable(database, table, semantics),
 		})
 	}
 	result, err := runtime.ProjectTableCreations(ctx, request.Clone())
@@ -64,7 +60,7 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err != nil {
 		return nil, nil, err
 	}
-	slots, err := creationFacetSlots(&database, semantics)
+	slots, err := creationFacetSlots(database, semantics)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -78,7 +74,7 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	return &database, projection.Tables, nil
+	return database, projection.Tables, nil
 }
 
 // An unenrolled declaration gains knowledge only for successfully projected
