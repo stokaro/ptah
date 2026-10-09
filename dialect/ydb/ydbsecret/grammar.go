@@ -154,6 +154,18 @@ func variableName(name string) bool {
 	return name != ""
 }
 
+// DuplicateError is a second declaration of one secret path. It wraps
+// [schemaext.ErrDuplicate].
+type DuplicateError struct {
+	// Path is the secret's path relative to the database root.
+	Path string
+}
+
+func (e *DuplicateError) Error() string { return "secret " + e.Path + " is declared twice" }
+
+// Unwrap returns [schemaext.ErrDuplicate].
+func (e *DuplicateError) Unwrap() error { return schemaext.ErrDuplicate }
+
 // Declare returns objects with the secret name in the directory schema added,
 // declared by the Go struct holder (empty for every other source format) with
 // its value read from valueEnv. Every source format declares a secret through
@@ -161,10 +173,12 @@ func variableName(name string) bool {
 // is told. objects is not modified.
 //
 // The name is one segment of the secret's path: it holds no slash, and a dot
-// is part of it. The directory is relative to the database root; surrounding
-// space and slashes are ignored. A name, directory or variable a secret cannot
-// take is refused with a [DeclarationError] naming the attribute, and a secret
-// declared twice is refused by its path.
+// is part of it. The directory is relative to the database root and takes no
+// leading or trailing slash; surrounding space is ignored. A name, directory or
+// variable a secret cannot take is refused with a [DeclarationError] naming the
+// attribute, and a secret declared twice with a [DuplicateError] naming its
+// path. Two declarations that meet only when sources are merged are refused by
+// the merge, with [schemaext.ErrDuplicate] and the secret's identity.
 func Declare(objects schemaext.Objects, schema, name, holder, valueEnv string) (schemaext.Objects, error) {
 	name = strings.TrimSpace(name)
 	switch {
@@ -179,14 +193,20 @@ func Declare(objects schemaext.Objects, schema, name, holder, valueEnv string) (
 	if err := CheckValueEnv(valueEnv); err != nil {
 		return objects, err
 	}
-	object := DesiredObject(strings.Trim(strings.TrimSpace(schema), "/"), name, holder, valueEnv)
+	schema = strings.TrimSpace(schema)
+	if strings.HasPrefix(schema, "/") {
+		return objects, &DeclarationError{Attribute: AttributeSchema,
+			Reason: fmt.Sprintf("%q starts with a slash; name the directory relative to the database root, "+
+				"without the database's own path", schema)}
+	}
+	object := DesiredObject(schema, name, holder, valueEnv)
 	if ValidateIdentity(object.Ref) != nil {
 		return objects, &DeclarationError{Attribute: AttributeSchema,
 			Reason: fmt.Sprintf("%q is not a directory path relative to the database root", schema)}
 	}
 	declared, err := objects.With(object)
 	if errors.Is(err, schemaext.ErrDuplicate) {
-		return objects, fmt.Errorf("secret %s is declared twice", Display(object.Ref.Schema.Source, name))
+		return objects, &DuplicateError{Path: Display(object.Ref.Schema.Source, name)}
 	}
 	if err != nil {
 		return objects, err

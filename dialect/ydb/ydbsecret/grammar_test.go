@@ -71,7 +71,7 @@ func TestParseValueEnv_FailurePath(t *testing.T) {
 func TestDeclare_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	empty := schemaext.Objects{}
-	objects, err := ydbsecret.Declare(empty, " /ext/aws/ ", " s3.key ", "Credentials", "PTAH_SECRET_S3")
+	objects, err := ydbsecret.Declare(empty, " ext/aws ", " s3.key ", "Credentials", "PTAH_SECRET_S3")
 	c.Assert(err, qt.IsNil)
 	objects, err = ydbsecret.Declare(objects, "", "pg.password-1", "", "PTAH_SECRET_PG")
 	c.Assert(err, qt.IsNil)
@@ -102,6 +102,11 @@ func TestDeclare_FailurePath(t *testing.T) {
 		{name: "a parent segment as the name", leaf: "..", valueEnv: "PTAH_SECRET_PW", wantErr: `invalid name: ".." is not a path segment`, attribute: ydbsecret.AttributeName},
 		{name: "an unclean directory", schema: "ext//aws", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
 			wantErr: `invalid schema: "ext//aws" is not a directory path relative to the database root`, attribute: ydbsecret.AttributeSchema},
+		{name: "an absolute directory", schema: "/local/ext", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
+			wantErr: `invalid schema: "/local/ext" starts with a slash; name the directory relative to the database root, without the database's own path`,
+			attribute: ydbsecret.AttributeSchema},
+		{name: "a trailing slash", schema: "ext/", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
+			wantErr: `invalid schema: "ext/" is not a directory path relative to the database root`, attribute: ydbsecret.AttributeSchema},
 		{name: "a parent directory", schema: "../ext", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
 			wantErr: `invalid schema: "../ext" is not a directory path relative to the database root`, attribute: ydbsecret.AttributeSchema},
 		{name: "no variable", leaf: "pw", wantErr: "invalid value_env: a secret names the environment variable that holds its value", attribute: ydbsecret.AttributeValueEnv},
@@ -119,8 +124,10 @@ func TestDeclare_FailurePath(t *testing.T) {
 	}
 	t.Run("a second declaration", func(t *testing.T) {
 		c := qt.New(t)
-		objects, err := ydbsecret.Declare(declared, "/ext/", "pw", "Other", "PTAH_SECRET_OTHER")
+		objects, err := ydbsecret.Declare(declared, " ext ", "pw", "Other", "PTAH_SECRET_OTHER")
 		c.Assert(err, qt.ErrorMatches, "secret ext/pw is declared twice")
+		c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+		c.Assert(err, qt.ErrorAs, new(*ydbsecret.DuplicateError))
 		c.Assert(objects.Refs(), qt.DeepEquals, declared.Refs())
 	})
 }

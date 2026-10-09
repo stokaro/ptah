@@ -19,7 +19,7 @@ func TestParse_YDBSecret_HappyPath(t *testing.T) {
     value_env: PTAH_SECRET_PG_PASSWORD
   s3:
     name: s3.key
-    schema: /ext/aws/
+    schema: ext/aws
     value_env: PTAH_SECRET_S3
 `))
 	c.Assert(err, qt.IsNil)
@@ -61,6 +61,11 @@ func TestParse_YDBSecret_FailurePath(t *testing.T) {
 			name:     "a path in the name",
 			document: "secrets:\n  pw:\n    name: ext/pw\n    value_env: PTAH_SECRET_PW\n",
 			wantErr:  `secret "pw": invalid name: "ext/pw" holds a slash; name the directory with schema`,
+		},
+		{
+			name:     "a directory written from the server root",
+			document: "secrets:\n  pw:\n    schema: /local/ext\n    value_env: PTAH_SECRET_PW\n",
+			wantErr:  `secret "pw": invalid schema: "/local/ext" starts with a slash; name the directory relative to the database root, .*`,
 		},
 		{
 			name:     "one path declared twice",

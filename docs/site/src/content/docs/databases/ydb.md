@@ -1668,7 +1668,10 @@ read, so the rollback of a rotation runs no statement. The rollback migration
 notes each value it cannot restore.
 
 A declaration names each secret once: two declarations of one path are refused,
-even when they name the same variable.
+even when they name the same variable. Within one file the refusal names the
+secret's path; two files that each declare it are refused when they are merged,
+by the secret's identity. A directory is written relative to the database
+root, and one that starts with a slash is refused.
 
 Ptah creates a secret with YDB's default permissions: it inherits only
 `DESCRIBE SCHEMA` from its directory, and its owner holds every right on it.

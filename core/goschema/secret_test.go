@@ -39,8 +39,8 @@ func TestParseSource_Secret_HappyPath(t *testing.T) {
 			want:     ydbsecret.DesiredObject("", "pg_password", "Credentials", "PTAH_SECRET_PG_PASSWORD"),
 		},
 		{
-			name:    "on a field, in a directory written with its slashes",
-			onField: "\t//ptah:schema:secret name=\"s3.key\" schema=\"/ext/aws/\" value_env=\"PTAH_SECRET_S3\"",
+			name:    "on a field, in a directory",
+			onField: "\t//ptah:schema:secret name=\"s3.key\" schema=\" ext/aws \" value_env=\"PTAH_SECRET_S3\"",
 			want:    ydbsecret.DesiredObject("ext/aws", "s3.key", "Credentials", "PTAH_SECRET_S3"),
 		},
 	}
@@ -91,6 +91,12 @@ func TestParseSource_Secret_FailurePath(t *testing.T) {
 			annotation: `//ptah:schema:secret name="ext/pw" value_env="PTAH_SECRET_PW"`,
 			attribute:  "name",
 			wantErr:    `invalid name: "ext/pw" holds a slash; name the directory with schema on //ptah:schema:secret at Credentials`,
+		},
+		{
+			name:       "a directory written from the server root",
+			annotation: `//ptah:schema:secret name="pw" schema="/local/ext" value_env="PTAH_SECRET_PW"`,
+			attribute:  "schema",
+			wantErr:    `invalid schema: "/local/ext" starts with a slash; name the directory relative to the database root, .*`,
 		},
 		{
 			name:       "an attribute a secret does not take",
