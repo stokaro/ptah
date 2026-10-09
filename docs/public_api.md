@@ -576,7 +576,8 @@ database observation. Invalid model values return `schemaext.InvalidModelError`,
 which identifies the kind and representation and wraps `ErrInvalidValue`.
 
 `chschema.IndexCodecs()` handles data-skipping facets under `IndexKind`.
-`DesiredIndex` retains an expression and separate type and granularity intent;
+`DesiredIndex` retains type and granularity intent; key expressions remain in
+the common index parts.
 `ObservedIndex` requires a nonempty type and positive granularity. Integer
 values retain their full precision through the codecs. `ObservedIndex.Desired`
 makes settings explicit, while `DesiredIndex.Observed` refuses unresolved
@@ -651,6 +652,14 @@ before supplying that observation. Missing evidence required by an omitted
 setting returns `ErrUnknownCurrent` without a partial result. Resolution does
 not establish server support or a new observation.
 
+`chresolve.Index` applies the same separation to skipping-index settings.
+`IndexRequest` accepts captured settings or established creation intent;
+`IndexResult` retains the declaration, prepared values, and `IndexOrigins`.
+Omitted creation settings and explicit default requests select Ptah's `minmax`
+type and granularity `1`. These rules do not describe server configuration.
+Existing indexes retain usable observations for omitted settings. Key expressions
+remain in the common index, and unknown required settings return `ErrUnknownCurrent`.
+
 `chconvert.Service` projects complete observed settings into explicit declarations
 and fully resolved declarations into predicted observations. It preserves empty
 properties and separate sorting and primary keys. Unresolved settings, invalid
@@ -705,11 +714,12 @@ Planning changes to storage settings other than TTL remains part of
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register
 `schemapreparation.Identity` explicitly. The service may resolve desired column
-primary-key flags and mark them prepared. `ResolvedFacets` carries separate
-resolved values for declared table models owned by the target provider. Source
-facets, target bindings, observations, and knowledge stay unchanged. The runtime
-validates ownership and codecs before feature and common comparison consume
-resolved values. Incomplete or invalid replies and cancellation return no result.
+primary-key flags and mark them prepared. `ResolvedFacets` contains
+`schemaext.FacetRecord` values keyed by declared table or index identities.
+The runtime rejects duplicate or invented owners, undeclared kinds, and new
+target scopes. Source facets, target bindings, observations, and knowledge stay
+unchanged. The runtime validates ownership and snapshots values through codecs
+before comparison. Incomplete or invalid replies and cancellation return no result.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for offline
 source projection. It receives decoded table captures and returns a complete
@@ -728,8 +738,13 @@ Column-only changes use representation conversion without applying table
 creation defaults.
 
 `chprepare.Service` derives column membership from ClickHouse key expressions.
-Typed settings use `chresolve.Table` and require complete feature coverage before
-retaining observed values. The shared comparator consumes prepared column flags
+Table settings use `chresolve.Table` and require complete feature coverage before
+retaining observed values. Typed index settings use `chresolve.Index`. Captured
+index settings remain usable when sibling enumeration is incomplete; an explicit
+limit on that index takes precedence. Native index settings must be decoded into
+facets before preparation, without competing common type or granularity values.
+
+The shared comparator consumes prepared column flags
 without reading ClickHouse clauses. Tables sharing a Go struct retain separate
 captures. `SchemaDiff.TablePreparation` stores source and prepared captures;
 filtering, cloning, and reversal preserve independent copies of this provenance.

@@ -17,9 +17,9 @@ func TestSkippingIndexCapturedValuesRoundTripWithoutDefaulting(t *testing.T) {
 		name  string
 		value chschema.ObservedIndex
 	}{
-		{"ordinary", chschema.ObservedIndex{Expression: "payload", IndexType: "minmax", Granularity: 1}},
-		{"expression", chschema.ObservedIndex{Expression: "tuple(lower(payload), 'a  b')", IndexType: "bloom_filter(0.01)", Granularity: 64}},
-		{"exact integer", chschema.ObservedIndex{Expression: "payload", IndexType: "set(100)", Granularity: math.MaxUint64}},
+		{"ordinary", chschema.ObservedIndex{IndexType: "minmax", Granularity: 1}},
+		{"parameterized type", chschema.ObservedIndex{IndexType: "bloom_filter(0.01)", Granularity: 64}},
+		{"exact integer", chschema.ObservedIndex{IndexType: "set(100)", Granularity: math.MaxUint64}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -48,13 +48,13 @@ func TestSkippingIndexDeclarationIntentStaysDistinct(t *testing.T) {
 		value chschema.DesiredIndex
 		wire  string
 	}{
-		{"unmanaged", chschema.DesiredIndex{Expression: "payload"}, `{"expression":"payload"}`},
-		{"default", chschema.DesiredIndex{Expression: "payload", IndexType: chschema.Setting{State: chschema.Default},
+		{"unmanaged", chschema.DesiredIndex{}, `{}`},
+		{"default", chschema.DesiredIndex{IndexType: chschema.Setting{State: chschema.Default},
 			Granularity: chschema.GranularitySetting{State: chschema.Default}},
-			`{"expression":"payload","index_type":{"state":"default"},"granularity":{"state":"default"}}`},
-		{"explicit", chschema.DesiredIndex{Expression: "payload", IndexType: chschema.Setting{State: chschema.Explicit, Value: "minmax"},
+			`{"index_type":{"state":"default"},"granularity":{"state":"default"}}`},
+		{"explicit", chschema.DesiredIndex{IndexType: chschema.Setting{State: chschema.Explicit, Value: "minmax"},
 			Granularity: chschema.GranularitySetting{State: chschema.Explicit, Value: 1}},
-			`{"expression":"payload","index_type":{"state":"explicit","value":"minmax"},"granularity":{"state":"explicit","value":1}}`},
+			`{"index_type":{"state":"explicit","value":"minmax"},"granularity":{"state":"explicit","value":1}}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -73,7 +73,7 @@ func TestSkippingIndexUnresolvedSettingsCannotBecomeObservations(t *testing.T) {
 	for _, state := range []chschema.SettingState{chschema.Unspecified, chschema.Default} {
 		t.Run(string(state), func(t *testing.T) {
 			c := qt.New(t)
-			value := &chschema.DesiredIndex{Expression: "payload", IndexType: chschema.Setting{State: state},
+			value := &chschema.DesiredIndex{IndexType: chschema.Setting{State: state},
 				Granularity: chschema.GranularitySetting{State: state}}
 			observed, err := value.Observed()
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
@@ -89,31 +89,30 @@ func TestSkippingIndexCodecsRefuseAmbiguousOrInvalidValues(t *testing.T) {
 		wire  string
 	}{
 		{"desired null", 0, `null`},
-		{"missing expression", 0, `{}`},
-		{"empty expression", 0, `{"expression":" "}`},
-		{"null setting", 0, `{"expression":"payload","index_type":null}`},
-		{"missing intent", 0, `{"expression":"payload","index_type":{"value":"minmax"}}`},
-		{"empty explicit type", 0, `{"expression":"payload","index_type":{"state":"explicit"}}`},
-		{"contradictory type", 0, `{"expression":"payload","index_type":{"state":"default","value":"minmax"}}`},
-		{"unknown type intent", 0, `{"expression":"payload","index_type":{"state":"future"}}`},
-		{"unknown granularity intent", 0, `{"expression":"payload","granularity":{"state":"future"}}`},
-		{"zero explicit granularity", 0, `{"expression":"payload","granularity":{"state":"explicit"}}`},
-		{"contradictory granularity", 0, `{"expression":"payload","granularity":{"state":"","value":1}}`},
-		{"null granularity value", 0, `{"expression":"payload","granularity":{"state":"explicit","value":null}}`},
-		{"field alias", 0, `{"expression":"payload","Expression":"other"}`},
-		{"nested Unicode alias", 0, `{"expression":"payload","index_type":{"state":"default","\u017ftate":"explicit","value":"minmax"}}`},
-		{"duplicate field", 0, `{"expression":"payload","expression":"other"}`},
-		{"unknown field", 0, `{"expression":"payload","future":true}`},
-		{"NUL expression", 0, `{"expression":"payload\u0000"}`},
+		{"expression belongs to common index", 0, `{"expression":"payload"}`},
+		{"null setting", 0, `{"index_type":null}`},
+		{"missing intent", 0, `{"index_type":{"value":"minmax"}}`},
+		{"empty explicit type", 0, `{"index_type":{"state":"explicit"}}`},
+		{"contradictory type", 0, `{"index_type":{"state":"default","value":"minmax"}}`},
+		{"unknown type intent", 0, `{"index_type":{"state":"future"}}`},
+		{"unknown granularity intent", 0, `{"granularity":{"state":"future"}}`},
+		{"zero explicit granularity", 0, `{"granularity":{"state":"explicit"}}`},
+		{"contradictory granularity", 0, `{"granularity":{"state":"","value":1}}`},
+		{"null granularity value", 0, `{"granularity":{"state":"explicit","value":null}}`},
+		{"field alias", 0, `{"index_type":{"state":"default"},"Index_type":{"state":"explicit","value":"set(100)"}}`},
+		{"nested Unicode alias", 0, `{"index_type":{"state":"default","\u017ftate":"explicit","value":"minmax"}}`},
+		{"duplicate field", 0, `{"index_type":{"state":"default"},"index_type":{"state":"default"}}`},
+		{"unknown field", 0, `{"future":true}`},
+		{"NUL type", 0, `{"index_type":{"state":"explicit","value":"minmax\u0000"}}`},
 		{"observed null", 1, `null`},
-		{"missing observed granularity", 1, `{"expression":"payload","index_type":"minmax"}`},
-		{"missing observed type", 1, `{"expression":"payload","granularity":1}`},
-		{"empty observed type", 1, `{"expression":"payload","index_type":"","granularity":1}`},
-		{"zero observed granularity", 1, `{"expression":"payload","index_type":"minmax","granularity":0}`},
-		{"negative granularity", 1, `{"expression":"payload","index_type":"minmax","granularity":-1}`},
-		{"fractional granularity", 1, `{"expression":"payload","index_type":"minmax","granularity":1.5}`},
-		{"overflow", 1, `{"expression":"payload","index_type":"minmax","granularity":18446744073709551616}`},
-		{"string number", 1, `{"expression":"payload","index_type":"minmax","granularity":"1"}`},
+		{"missing observed granularity", 1, `{"index_type":"minmax"}`},
+		{"missing observed type", 1, `{"granularity":1}`},
+		{"empty observed type", 1, `{"index_type":"","granularity":1}`},
+		{"zero observed granularity", 1, `{"index_type":"minmax","granularity":0}`},
+		{"negative granularity", 1, `{"index_type":"minmax","granularity":-1}`},
+		{"fractional granularity", 1, `{"index_type":"minmax","granularity":1.5}`},
+		{"overflow", 1, `{"index_type":"minmax","granularity":18446744073709551616}`},
+		{"string number", 1, `{"index_type":"minmax","granularity":"1"}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -131,7 +130,7 @@ func TestSkippingIndexRegistryPreservesScopeAndRepresentation(t *testing.T) {
 		owned = append(owned, schemaext.OwnedCodec{Owner: "ptah.run/clickhouse", Codec: codec})
 	}
 	registry := must.Must(schemaext.NewRegistry(owned...))
-	observed := &chschema.ObservedIndex{Expression: "payload", IndexType: "minmax", Granularity: 1}
+	observed := &chschema.ObservedIndex{IndexType: "minmax", Granularity: 1}
 	for index, value := range []schemaext.Value{observed.Desired(), observed} {
 		t.Run(string(codecs[index].Representation), func(t *testing.T) {
 			c := qt.New(t)
@@ -153,8 +152,8 @@ func TestSkippingIndexCodecsRefuseWrongRepresentationAndTypedNil(t *testing.T) {
 		codec int
 		value schemaext.Value
 	}{
-		{"observed in desired", 0, &chschema.ObservedIndex{Expression: "payload", IndexType: "minmax", Granularity: 1}},
-		{"desired in observed", 1, &chschema.DesiredIndex{Expression: "payload"}},
+		{"observed in desired", 0, &chschema.ObservedIndex{IndexType: "minmax", Granularity: 1}},
+		{"desired in observed", 1, &chschema.DesiredIndex{}},
 		{"nil desired", 0, (*chschema.DesiredIndex)(nil)},
 		{"nil observed", 1, (*chschema.ObservedIndex)(nil)},
 	} {

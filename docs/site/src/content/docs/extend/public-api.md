@@ -58,7 +58,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
-| `dialect/clickhouse/chresolve` | Table-setting resolution with retained intent and property origins. |
+| `dialect/clickhouse/chresolve` | Storage-setting resolution with retained intent and property origins. |
 | `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
 | `dialect/clickhouse/chsource` | Table property encoding and decoding that preserves setting intent. |
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
@@ -204,8 +204,9 @@ knowledge limit does not establish agreement.
 `Target.Preparation` selects table preparation before feature and column comparison.
 Providers that preserve input flags register `schemapreparation.Identity`;
 a missing service is an error. Services may resolve column key membership and
-return `ResolvedFacets` for declared table models they own. Source facets, target
-bindings, observations, and knowledge stay unchanged. Incomplete replies return
+return `ResolvedFacets` records keyed by declared table or index identities.
+Duplicate owners, undeclared kinds, and new target scopes are refused. Source
+facets, bindings, observations, and knowledge stay unchanged. Incomplete replies return
 no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
 captures as comparison provenance, including through reversal.
 
@@ -252,10 +253,10 @@ targets are refused without partial SQL.
 `chreverse.Service` restores the captured TTL definition and reports data loss.
 Its state projection feeds reverse planning without claiming new inspection.
 
-`chresolve.Table` retains the declaration, resolved settings, and each property's
-origin. Omitted creation settings use defaults; a default primary key inherits
-the sorting key. Existing tables require observations for omitted settings.
-Missing evidence returns no partial result.
+`chresolve.Table` and `chresolve.Index` retain declarations, resolved settings,
+and property origins. Existing objects require observations for omitted settings.
+On creation, a default primary key inherits the sorting key; skipping indexes
+use Ptah's `minmax` type and granularity `1`. Missing evidence returns no partial result.
 
 `chconvert.Service` converts complete observations to explicit declarations and
 resolved declarations to predictions. It preserves empty settings and separate

@@ -61,7 +61,7 @@ func validateObservedIndexPayload(payload schemaext.Payload) error {
 }
 
 func decodeDesiredIndex(data json.RawMessage) (schemaext.Payload, error) {
-	fields, err := wireObject(data, "index", []string{"expression", "index_type", "granularity"}, []string{"expression"})
+	fields, err := wireObject(data, "index", []string{"index_type", "granularity"}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func decodeDesiredIndex(data json.RawMessage) (schemaext.Payload, error) {
 }
 
 func decodeObservedIndex(data json.RawMessage) (schemaext.Payload, error) {
-	names := []string{"expression", "index_type", "granularity"}
+	names := []string{"index_type", "granularity"}
 	if _, err := wireObject(data, "index", names, names); err != nil {
 		return nil, err
 	}

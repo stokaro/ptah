@@ -9,7 +9,7 @@ import (
 )
 
 func ExampleObservedIndex_Desired() {
-	observed := &chschema.ObservedIndex{Expression: "payload", IndexType: "minmax", Granularity: 1}
+	observed := &chschema.ObservedIndex{IndexType: "minmax", Granularity: 1}
 	desired := observed.Desired()
 	fmt.Println(desired.IndexType.State, desired.Granularity.State)
 	fmt.Println(must.Must(desired.Observed()).Equal(observed))
@@ -19,10 +19,10 @@ func ExampleObservedIndex_Desired() {
 }
 
 func ExampleIndexCodecs() {
-	value := &chschema.DesiredIndex{Expression: "payload", IndexType: chschema.Setting{State: chschema.Default},
+	value := &chschema.DesiredIndex{IndexType: chschema.Setting{State: chschema.Default},
 		Granularity: chschema.GranularitySetting{State: chschema.Default}}
 	encoded := must.Must(chschema.IndexCodecs()[0].Canonical(value))
 	fmt.Println(string(encoded))
 	// Output:
-	// {"expression":"payload","index_type":{"state":"default"},"granularity":{"state":"default"}}
+	// {"index_type":{"state":"default"},"granularity":{"state":"default"}}
 }

@@ -102,7 +102,7 @@ func TestClickHouseResolvedFacetsRetainCatalogStateBeforeComparison(t *testing.T
 	diff, err := schemadiff.CompareWithDialect(t.Context(), source, current, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
-	resolved, found, err := schemaext.FacetAs[*chschema.DesiredTable](diff.TablePreparation.Prepared[0].ResolvedFacets, chschema.TableKind)
+	resolved, found, err := schemaext.FacetAs[*chschema.DesiredTable](diff.TablePreparation.Prepared[0].ResolvedFacets[0].Values, chschema.TableKind)
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
 	c.Assert(resolved, qt.DeepEquals, observed.Desired())

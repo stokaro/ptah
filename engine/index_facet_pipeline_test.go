@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -178,4 +179,37 @@ func TestIndexCoverageBindingRefusesCollidingClaimsBeforeDispatch(t *testing.T) 
 			c.Assert(*states[side], qt.DeepEquals, coverage)
 		})
 	}
+}
+
+func TestPreparedIndexFacetsReachComparisonAndCapturesWithoutSourceChanges(t *testing.T) {
+	c := qt.New(t)
+	received := make(map[schemaext.Kind]schemaext.FacetComparisonRequest)
+	provider := mixedFacetProvider(facetComparisonFunc(func(_ context.Context, r schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		received[r.Kinds[0]] = r
+		return schemaext.FacetComparisonResult{Complete: true, Desired: r.Desired}, nil
+	}))
+	provider.Targets[0].Preparation = preparationFunc(func(_ context.Context, r schemapreparation.Request) (schemapreparation.Result, error) {
+		table := &r.Tables[0]
+		index := objectidentity.NewBuilder(r.Identifiers).IndexParts(table.Subject.Schema.Source, table.Subject.Name.Source, table.Desired.Indexes[0].Name)
+		table.ResolvedFacets = []schemaext.FacetRecord{{Subject: index, Values: must.Must(schemaext.NewFacets(&conversionValue{ID: conversionSecond, Number: 33}))}}
+		return schemapreparation.Result{Complete: true, Tables: r.Tables}, nil
+	})
+	runtime := mustRuntime(c, provider)
+	desired, current := indexFacetSchemas()
+	desired.Indexes[0].Facets = must.Must(desired.Indexes[0].Facets.WithTargetScope(conversionSecond, "custom"))
+	desired.Tables[0].Comment = "capture the prepared index"
+	source := desired.Indexes[0].Facets
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, "alternate", runtime))
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	prepared := diff.TablesModified[0].Desired.Indexes[0].Facets
+	c.Assert(prepared.TargetScope(conversionSecond), qt.DeepEquals, []string{"custom"})
+	value, found, err := schemaext.FacetAs[*conversionValue](prepared, conversionSecond)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(value.Number, qt.Equals, 33)
+	c.Assert(received[conversionSecond].Desired.Records[0].Values, qt.DeepEquals, prepared)
+	c.Assert(desired.Indexes[0].Facets, qt.DeepEquals, source)
+	c.Assert(diff.TablePreparation.Source[0].Desired.Indexes[0].Facets, qt.DeepEquals, source)
+	c.Assert(diff.TablePreparation.Prepared[0].Desired.Indexes[0].Facets, qt.DeepEquals, source)
+	c.Assert(diff.TablesModified[0].Current.Indexes[0].Facets, qt.DeepEquals, current.Indexes[0].Facets)
 }

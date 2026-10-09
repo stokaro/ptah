@@ -21,20 +21,19 @@ type GranularitySetting struct {
 // IsZero reports an omitted granularity for explicit omitzero serialization.
 func (s GranularitySetting) IsZero() bool { return s.State == Unspecified && s.Value == 0 }
 
-// DesiredIndex declares one data-skipping expression and its storage settings.
+// DesiredIndex declares storage settings attached to one common index.
+// Key expressions remain in the common index parts, not in this facet.
 // Omitted settings remain unmanaged until the owner resolves a creation or
-// comparison request. Equality preserves intent and expression spelling.
+// comparison request. Equality preserves intent and index-type spelling.
 type DesiredIndex struct {
-	Expression  string             `json:"expression"`
 	IndexType   Setting            `json:"index_type,omitzero"`
 	Granularity GranularitySetting `json:"granularity,omitzero"`
 }
 
-// ObservedIndex contains the complete data-skipping definition reported by a
+// ObservedIndex contains complete data-skipping storage settings reported by a
 // server. Empty types and zero granularity are invalid observations. Incomplete
 // inspection belongs in coverage rather than in a fabricated default value.
 type ObservedIndex struct {
-	Expression  string `json:"expression"`
 	IndexType   string `json:"index_type"`
 	Granularity uint64 `json:"granularity"`
 }
@@ -85,7 +84,7 @@ func (v *ObservedIndex) Desired() *DesiredIndex {
 	if v == nil {
 		return nil
 	}
-	return &DesiredIndex{Expression: v.Expression,
+	return &DesiredIndex{
 		IndexType:   Setting{State: Explicit, Value: v.IndexType},
 		Granularity: GranularitySetting{State: Explicit, Value: v.Granularity}}
 }
@@ -100,7 +99,7 @@ func (v *DesiredIndex) Observed() (*ObservedIndex, error) {
 	if v.IndexType.State != Explicit || v.Granularity.State != Explicit {
 		return nil, fmt.Errorf("%w: ClickHouse index settings need target resolution before observation projection", schemaext.ErrInvalidValue)
 	}
-	return &ObservedIndex{Expression: v.Expression, IndexType: v.IndexType.Value, Granularity: v.Granularity.Value}, nil
+	return &ObservedIndex{IndexType: v.IndexType.Value, Granularity: v.Granularity.Value}, nil
 }
 
 // ValidateDesiredIndex checks representation invariants without parsing SQL or
@@ -112,9 +111,6 @@ func ValidateDesiredIndex(v *DesiredIndex) error {
 func validateDesiredIndex(v *DesiredIndex) error {
 	if v == nil {
 		return fmt.Errorf("%w: nil ClickHouse index declaration", schemaext.ErrInvalidValue)
-	}
-	if err := indexText(v.Expression, "expression"); err != nil {
-		return err
 	}
 	if err := validateSetting(v.IndexType); err != nil {
 		return err

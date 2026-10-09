@@ -29,7 +29,7 @@ func (r *Runtime) PrepareTables(ctx context.Context, request schemapreparation.R
 	request.Target = selected.name
 	request = request.Clone()
 	for _, table := range request.Tables {
-		if !table.ResolvedFacets.IsZero() {
+		if len(table.ResolvedFacets) != 0 {
 			return schemapreparation.Result{}, fmt.Errorf("%w: preparation input already carries resolved facets", schemapreparation.ErrInvalid)
 		}
 	}
@@ -47,9 +47,13 @@ func (r *Runtime) PrepareTables(ctx context.Context, request schemapreparation.R
 	if err != nil {
 		return schemapreparation.Result{}, err
 	}
-	for _, table := range capture.Prepared {
-		if err := r.validateResolvedFacets(ctx, selected.owner, table.ResolvedFacets); err != nil {
-			return schemapreparation.Result{}, err
+	for i := range capture.Prepared {
+		for j, record := range capture.Prepared[i].ResolvedFacets {
+			facets, err := r.snapshotResolvedFacets(ctx, selected.owner, record.Values)
+			if err != nil {
+				return schemapreparation.Result{}, err
+			}
+			capture.Prepared[i].ResolvedFacets[j].Values = facets
 		}
 	}
 	prepared := request
@@ -89,12 +93,11 @@ func (r *Runtime) validatePreparation(ctx context.Context, request schemaprepara
 	return ctx.Err()
 }
 
-func (r *Runtime) validateResolvedFacets(ctx context.Context, owner string, facets schemaext.Facets) error {
+func (r *Runtime) snapshotResolvedFacets(ctx context.Context, owner string, facets schemaext.Facets) (schemaext.Facets, error) {
 	for _, kind := range facets.Kinds() {
 		if !r.ownsCodec(owner, kind, schemaext.Desired) {
-			return fmt.Errorf("%w: preparation resolved a model outside its owner: %q", schemapreparation.ErrInvalid, kind)
+			return schemaext.Facets{}, fmt.Errorf("%w: preparation resolved a model outside its owner: %q", schemapreparation.ErrInvalid, kind)
 		}
 	}
-	_, err := r.codecs.SnapshotFacets(ctx, schemaext.Desired, facets)
-	return err
+	return r.codecs.SnapshotFacets(ctx, schemaext.Desired, facets)
 }

@@ -1,4 +1,4 @@
-// Package chresolve resolves ClickHouse table-setting intent against captured
+// Package chresolve resolves ClickHouse storage intent against captured
 // state and creation rules. It neither inspects a server nor changes a source.
 package chresolve
 
@@ -13,7 +13,7 @@ import (
 
 // ErrUnknownCurrent means an omitted setting needs an unavailable observation.
 // It is not a successful no-op or permission to select a creation default.
-var ErrUnknownCurrent = errors.New("ClickHouse table setting was not inspected")
+var ErrUnknownCurrent = errors.New("ClickHouse setting was not inspected")
 
 // ErrMissingSortingKey means creation rules cannot supply a MergeTree ORDER BY.
 // An explicit empty sorting key is valid and does not produce this error.
@@ -29,7 +29,7 @@ const (
 	// Observation means an omitted setting retained captured current state.
 	Observation Origin = "observation"
 	// CreationRule means omitted creation intent or an explicit default request
-	// selected the same value a new table would receive.
+	// selected the same value a new object would receive.
 	CreationRule Origin = "creation-rule"
 )
 
@@ -97,16 +97,19 @@ func Table(request Request) (Result, error) {
 		engine = chschema.Setting{State: chschema.Explicit, Value: request.BaseEngine}
 	}
 	properties := []property{
-		{"engine", engine, current.Engine, "MergeTree", &p.Engine, &o.Engine},
-		{"order_by", request.Desired.OrderBy, current.OrderBy, "", &p.OrderBy, &o.OrderBy},
-		{"primary_key", request.Desired.PrimaryKey, current.PrimaryKey, "", &p.PrimaryKey, &o.PrimaryKey},
-		{"partition_by", request.Desired.PartitionBy, current.PartitionBy, "", &p.PartitionBy, &o.PartitionBy},
-		{"sample_by", request.Desired.SampleBy, current.SampleBy, "", &p.SampleBy, &o.SampleBy},
-		{"ttl", request.Desired.TTL, current.TTL, "", &p.TTL, &o.TTL},
-		{"settings", request.Desired.Settings, current.Settings, "", &p.Settings, &o.Settings},
+		{"engine", engine, &current.Engine, "MergeTree", &p.Engine, &o.Engine},
+		{"order_by", request.Desired.OrderBy, &current.OrderBy, "", &p.OrderBy, &o.OrderBy},
+		{"primary_key", request.Desired.PrimaryKey, &current.PrimaryKey, "", &p.PrimaryKey, &o.PrimaryKey},
+		{"partition_by", request.Desired.PartitionBy, &current.PartitionBy, "", &p.PartitionBy, &o.PartitionBy},
+		{"sample_by", request.Desired.SampleBy, &current.SampleBy, "", &p.SampleBy, &o.SampleBy},
+		{"ttl", request.Desired.TTL, &current.TTL, "", &p.TTL, &o.TTL},
+		{"settings", request.Desired.Settings, &current.Settings, "", &p.Settings, &o.Settings},
 	}
 	for _, property := range properties {
-		if err := resolveProperty(request, property); err != nil {
+		if request.Current == nil {
+			property.current = nil
+		}
+		if err := resolveProperty(property, request.Creating); err != nil {
 			return Result{}, err
 		}
 	}
@@ -132,23 +135,23 @@ func Table(request Request) (Result, error) {
 type property struct {
 	name     string
 	desired  chschema.Setting
-	current  string
+	current  *string
 	fallback string
 	value    *chschema.Setting
 	origin   *Origin
 }
 
-func resolveProperty(request Request, property property) error {
+func resolveProperty(property property, creating bool) error {
 	property.value.State = chschema.Explicit
 	switch {
 	case property.desired.State == chschema.Explicit:
 		property.value.Value = strings.TrimSpace(property.desired.Value)
 		*property.origin = Declaration
-	case property.desired.State == chschema.Unspecified && !request.Creating:
-		if request.Current == nil {
+	case property.desired.State == chschema.Unspecified && !creating:
+		if property.current == nil {
 			return fmt.Errorf("%w: %s", ErrUnknownCurrent, property.name)
 		}
-		property.value.Value = property.current
+		property.value.Value = *property.current
 		*property.origin = Observation
 	default:
 		property.value.Value = property.fallback

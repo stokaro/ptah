@@ -31,9 +31,10 @@ type Table struct {
 	Current          schemacapture.TableObservation
 	CurrentKnowledge schemaext.Knowledge
 	// ResolvedFacets contains prepared values for facets already declared on
-	// this table. It is output-only; the source declaration stays in Desired.
+	// this table or its indexes, keyed by the common object's identity.
+	// It is output-only; the source declaration stays in Desired.
 	// Applying these values retains the declaration's original target scopes.
-	ResolvedFacets schemaext.Facets
+	ResolvedFacets []schemaext.FacetRecord
 	// ColumnPrimaryKeysPrepared makes Fields.Primary authoritative for column
 	// comparison instead of deriving membership from common table constraints.
 	ColumnPrimaryKeysPrepared bool
@@ -43,6 +44,7 @@ type Table struct {
 func (t Table) Clone() Table {
 	t.Desired = t.Desired.Clone()
 	t.Current = t.Current.Clone()
+	t.ResolvedFacets = slices.Clone(t.ResolvedFacets)
 	return t
 }
 
@@ -145,21 +147,16 @@ func Accept(request Request, result Result) (Capture, error) {
 		return Capture{}, fmt.Errorf("%w: preparation did not complete the captured batch", ErrInvalid)
 	}
 	for i, table := range request.Tables {
-		if err := samePreparedTable(table, result.Tables[i]); err != nil {
+		if err := samePreparedTable(table, result.Tables[i], request.Identifiers); err != nil {
 			return Capture{}, err
 		}
 	}
 	return (Capture{Source: request.Tables, Prepared: result.Tables}).Clone(), nil
 }
 
-func samePreparedTable(before, after Table) error {
-	if !before.ResolvedFacets.IsZero() {
-		return fmt.Errorf("%w: preparation input already carries resolved facets", ErrInvalid)
-	}
-	for _, kind := range after.ResolvedFacets.DeclaredKinds() {
-		if !slices.Contains(before.Desired.Table.Facets.Kinds(), kind) || len(after.ResolvedFacets.TargetScope(kind)) != 0 {
-			return fmt.Errorf("%w: resolved facets must retain declared kinds and their source scopes", ErrInvalid)
-		}
+func samePreparedTable(before, after Table, semantics identifier.Semantics) error {
+	if err := acceptResolvedFacets(before, after.ResolvedFacets, semantics); err != nil {
+		return err
 	}
 	before, after = before.Clone(), after.Clone()
 	if !retainEqualFeatures(&before, &after) {

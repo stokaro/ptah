@@ -28,7 +28,7 @@ func TestResolvedTableFacetsReachComparisonAndCapturedPlans(t *testing.T) {
 		return facetReply(request), nil
 	}))
 	provider.Targets[0].Preparation = preparationFunc(func(_ context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
-		request.Tables[0].ResolvedFacets = must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst, Number: 42}))
+		request.Tables[0].ResolvedFacets = []schemaext.FacetRecord{{Subject: request.Tables[0].Subject, Values: must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst, Number: 42}))}}
 		return schemapreparation.Result{Complete: true, Tables: request.Tables}, nil
 	})
 	runtime := mustRuntime(c, provider)
@@ -48,7 +48,7 @@ func TestResolvedTableFacetsReachComparisonAndCapturedPlans(t *testing.T) {
 	c.Assert(prepared.Kinds(), qt.DeepEquals, source.Kinds())
 	c.Assert(diff.TablePreparation.Source[0].Desired.Table.Facets, qt.DeepEquals, source)
 	c.Assert(diff.TablePreparation.Prepared[0].Desired.Table.Facets, qt.DeepEquals, source)
-	c.Assert(diff.TablePreparation.Source[0].ResolvedFacets.IsZero(), qt.IsTrue)
+	c.Assert(diff.TablePreparation.Source[0].ResolvedFacets, qt.HasLen, 0)
 	c.Assert(desired.Tables[0].Facets, qt.DeepEquals, source)
 	c.Assert(compared.Current.Records[0].Values, qt.DeepEquals, current.Tables[0].Facets)
 }
