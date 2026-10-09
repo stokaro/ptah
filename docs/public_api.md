@@ -776,8 +776,8 @@ into the effective declaration so a rebuild keeps it.
 
 `crdbast.AlterRowTTL` carries one change in `ast.ExtensionAlterOperation`.
 `crdbrender` lowers it to `RESET (ttl)` for a removal, and otherwise to a
-`RESET` of the parameters the new policy stops naming followed by a `SET` of
-every parameter it names. `crdbrender.CreateTableClause` renders the `WITH`
+`SET` of every parameter the new policy names followed by a `RESET` of the
+parameters it stops naming, so an enabler stays set at every step. `crdbrender.CreateTableClause` renders the `WITH`
 clause of a CREATE TABLE. Both refuse a target without
 `capability.RowLevelTTL`, and other targets refuse the payload and the facet.
 `crdbplan.Service` plans changes in place, accounts for the policy a dropped

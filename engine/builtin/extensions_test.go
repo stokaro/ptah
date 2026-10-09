@@ -72,8 +72,8 @@ func cockroachDBRowTTLFixture() extensionFixture {
 		After:  &crdbschema.DesiredRowTTL{Policy: crdbschema.Policy{ExpirationExpression: "expires_at + INTERVAL '1 day'"}},
 	}
 	return extensionFixture{payload: &crdbast.AlterRowTTL{Change: change},
-		wantSQL: "-- ALTER statements: --\nALTER TABLE \"items\" RESET (ttl_job_cron);\n" +
-			"ALTER TABLE \"items\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');\n\n"}
+		wantSQL: "-- ALTER statements: --\nALTER TABLE \"items\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');\n" +
+			"ALTER TABLE \"items\" RESET (ttl_job_cron);\n\n"}
 }
 
 func clickhouseIndexFixture() extensionFixture {

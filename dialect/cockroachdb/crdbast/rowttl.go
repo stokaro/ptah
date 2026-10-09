@@ -14,8 +14,8 @@ const AlterRowTTLKind schemaext.Kind = "ptah.run/cockroachdb/alter-row-ttl"
 
 // AlterRowTTL retains the complete transition, so the statements it lowers to
 // are a function of the two states alone: `RESET (ttl)` for a removal, and
-// otherwise `RESET` of the parameters the new policy stops naming followed by
-// `SET` of every parameter it names.
+// otherwise `SET` of every parameter the new policy names followed by `RESET`
+// of the parameters it stops naming.
 type AlterRowTTL struct {
 	Change crdbdiff.RowTTL `json:"change"`
 }

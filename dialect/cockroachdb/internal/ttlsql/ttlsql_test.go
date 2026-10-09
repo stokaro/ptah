@@ -166,11 +166,14 @@ func TestStatements_LowersEachTransition(t *testing.T) {
 			want: []string{`ALTER TABLE "t" RESET (ttl);`},
 		},
 		{
-			name:   "changing the policy resets what it stops naming first",
+			// The server keeps an enabler set at every step, so the policy
+			// that replaces the expression with an interval sets the interval
+			// before it resets the expression.
+			name:   "changing the policy sets the new parameters before it resets the old",
 			change: change(&crdbschema.Policy{ExpirationExpression: "e", JobCron: "@daily", DeleteBatchSize: new(int64(1))}, &crdbschema.Policy{ExpireAfter: "1 day"}),
 			want: []string{
-				`ALTER TABLE "t" RESET (ttl_expiration_expression, ttl_job_cron, ttl_delete_batch_size);`,
 				`ALTER TABLE "t" SET (ttl_expire_after = '1 day');`,
+				`ALTER TABLE "t" RESET (ttl_expiration_expression, ttl_job_cron, ttl_delete_batch_size);`,
 			},
 		},
 	}

@@ -222,14 +222,15 @@ func TestRender_RowTTLAlterOperations(t *testing.T) {
 		},
 		{
 			// RESET takes several names at once, which is why a plan needs one
-			// statement rather than one per dropped parameter, and it comes
-			// before the SET so the text is a function of the two states.
-			name: "a dropped parameter is reset before the rest is set",
+			// statement rather than one per dropped parameter. It comes after
+			// the SET: the server refuses a RESET that leaves the table with
+			// neither ttl_expire_after nor ttl_expiration_expression.
+			name: "a dropped parameter is reset after the rest is set",
 			operation: alterRowTTL(
 				&crdbschema.Policy{ExpirationExpression: "expires_at", JobCron: "@daily", SelectBatchSize: new(int64(500))},
 				&crdbschema.Policy{ExpirationExpression: "expires_at + INTERVAL '1 hour'"}),
-			want: "ALTER TABLE \"sessions\" RESET (ttl_job_cron, ttl_select_batch_size);\n" +
-				`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 hour''');`,
+			want: "ALTER TABLE \"sessions\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 hour''');\n" +
+				`ALTER TABLE "sessions" RESET (ttl_job_cron, ttl_select_batch_size);`,
 		},
 	}
 

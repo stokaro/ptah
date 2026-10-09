@@ -487,3 +487,50 @@ func TestCockroachDBRowLevelTTL_RowStatsPollIntervalBelowASecondIsRefused(t *tes
 	c.Assert(live.ExpireAfter, qt.Not(qt.Equals), "")
 	c.Assert(live.RowStatsPollInterval, qt.Equals, "")
 }
+
+// TestCockroachDBRowLevelTTL_SwitchesItsEnablerLive moves a table from one
+// enabler to the other.
+//
+// The server refuses any statement that leaves a TTL table with neither
+// ttl_expire_after nor ttl_expiration_expression, so the plan has to set the
+// new enabler before it resets the old one. A plan in the other order fails on
+// its RESET, which is how this was found.
+func TestCockroachDBRowLevelTTL_SwitchesItsEnablerLive(t *testing.T) {
+	tests := []struct {
+		name string
+		from crdbschema.Policy
+		to   crdbschema.Policy
+	}{
+		{
+			name: "from an expression to an interval, dropping a knob",
+			from: crdbschema.Policy{ExpirationExpression: "expires_at", JobCron: "@daily", SelectBatchSize: new(int64(500))},
+			to:   crdbschema.Policy{ExpireAfter: "3 days"},
+		},
+		{
+			name: "from an interval to an expression",
+			from: crdbschema.Policy{ExpireAfter: "3 days", JobCron: "@daily"},
+			to:   crdbschema.Policy{ExpirationExpression: "expires_at", JobCron: "@daily"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dsn := skipIfNoCockroachDB(t)
+			c := qt.New(t)
+			db, err := sql.Open("pgx", dsn)
+			c.Assert(err, qt.IsNil)
+			defer db.Close()
+			dropRowTTLTable(db)
+			defer dropRowTTLTable(db)
+
+			applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, rowTTLDeclaration(&test.from)))
+			c.Assert(readRowTTL(c, t, dsn), qt.DeepEquals, &test.from)
+
+			switched := rowTTLDeclaration(&test.to)
+			applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, switched))
+
+			c.Assert(readRowTTL(c, t, dsn), qt.DeepEquals, &test.to)
+			c.Assert(planRowTTLAgainstLive(c, t, dsn, switched), qt.HasLen, 0)
+		})
+	}
+}

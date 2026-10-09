@@ -95,13 +95,13 @@ func TestCockroachDBRowTTLPlansBothDirections(t *testing.T) {
 			current: &crdbschema.Policy{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 			wantForward: []string{
 				"-- Row-level TTL on table: sessions",
-				`ALTER TABLE "sessions" RESET (ttl_expiration_expression, ttl_select_batch_size);`,
 				`ALTER TABLE "sessions" SET (ttl_expire_after = '3 days');`,
+				`ALTER TABLE "sessions" RESET (ttl_expiration_expression, ttl_select_batch_size);`,
 			},
 			wantReverse: []string{
 				"-- Row-level TTL on table: sessions",
-				`ALTER TABLE "sessions" RESET (ttl_expire_after);`,
 				`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at', ttl_select_batch_size = 500);`,
+				`ALTER TABLE "sessions" RESET (ttl_expire_after);`,
 			},
 			wantLimitations: 1,
 		},

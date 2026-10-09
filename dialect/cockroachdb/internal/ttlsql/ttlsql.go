@@ -120,19 +120,24 @@ func ValidateChange(change *crdbdiff.RowTTL) error {
 
 // Statements lowers a validated change to its ALTER TABLE statements for the
 // already-quoted table name: `RESET (ttl)` when the policy goes, and otherwise
-// a `RESET` of what the new policy stops naming before a `SET` of everything it
-// names. RESET comes first so the text is fixed; either order converges.
-// Measured, `RESET (ttl)` also succeeds on a table without a TTL, so the
-// removal is idempotent.
+// a `SET` of everything the new policy names followed by a `RESET` of what it
+// stops naming. Measured, `RESET (ttl)` also succeeds on a table without a
+// TTL, so the removal is idempotent.
+//
+// The SET comes first because the server keeps an enabler set at every step:
+// measured on v26.3.2, a policy moving from ttl_expiration_expression to
+// ttl_expire_after cannot reset the first before the second is set, and is
+// answered `"ttl_expire_after" and/or "ttl_expiration_expression" must be set`.
+// Every declaration names an enabler, so after its SET any reset leaves one.
 func Statements(table string, change *crdbdiff.RowTTL) []string {
 	if change.After == nil {
 		return []string{fmt.Sprintf("ALTER TABLE %s RESET (%s);", table, crdbschema.MarkerParameter)}
 	}
-	var statements []string
+	statements := []string{fmt.Sprintf("ALTER TABLE %s SET (%s);", table, strings.Join(Options(change.After.Policy), ", "))}
 	if change.Before != nil {
 		if dropped := Dropped(change.After.Policy, change.Before.Policy); len(dropped) > 0 {
 			statements = append(statements, fmt.Sprintf("ALTER TABLE %s RESET (%s);", table, strings.Join(dropped, ", ")))
 		}
 	}
-	return append(statements, fmt.Sprintf("ALTER TABLE %s SET (%s);", table, strings.Join(Options(change.After.Policy), ", ")))
+	return statements
 }

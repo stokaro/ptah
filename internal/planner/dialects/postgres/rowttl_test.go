@@ -84,8 +84,8 @@ func TestPlanner_RowTTLTransitions(t *testing.T) {
 			desired: &crdbschema.Policy{ExpirationExpression: "expires_at"},
 			current: &crdbschema.Policy{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 			want: []string{
-				`ALTER TABLE "sessions" RESET (ttl_select_batch_size);`,
 				`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at');`,
+				`ALTER TABLE "sessions" RESET (ttl_select_batch_size);`,
 			},
 		},
 		{
@@ -104,8 +104,8 @@ func TestPlanner_RowTTLTransitions(t *testing.T) {
 				DeleteBatchSize:      new(int64(100)),
 			},
 			want: []string{
-				`ALTER TABLE "sessions" RESET (ttl_job_cron, ttl_delete_batch_size);`,
 				`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at');`,
+				`ALTER TABLE "sessions" RESET (ttl_job_cron, ttl_delete_batch_size);`,
 			},
 		},
 	}

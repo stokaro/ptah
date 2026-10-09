@@ -13,8 +13,8 @@ import (
 )
 
 // ExampleRegistry renders a row-level TTL change inside its ALTER TABLE
-// parent: the parameter the new policy stops naming is reset before the rest
-// is set.
+// parent: the new policy is set before the parameter it stops naming is
+// reset, so an enabler stays set at every step.
 func ExampleRegistry() {
 	registry, err := crdbrender.Registry()
 	if err != nil {
@@ -36,6 +36,6 @@ func ExampleRegistry() {
 		fmt.Println(statement)
 	}
 	// Output:
-	// ALTER TABLE "sessions" RESET (ttl_job_cron);
 	// ALTER TABLE "sessions" SET (ttl_expire_after = '7 days');
+	// ALTER TABLE "sessions" RESET (ttl_job_cron);
 }
