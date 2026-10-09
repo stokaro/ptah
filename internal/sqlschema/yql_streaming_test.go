@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
-	"ptah.run/internal/ydbstream"
 )
 
 const streamBody = "INSERT INTO sink SELECT * FROM source;"
@@ -22,11 +22,9 @@ func TestReadYQLStreamingQuery(t *testing.T) {
 			body := "$f = ($x) -> { RETURN $x + 1; }; /* keep ; */ INSERT INTO sink SELECT $f(id) FROM source;"
 			database, _, err := sqlschema.Read([]byte("CREATE STREAMING QUERY `jobs/copy.v1` WITH (RUN=FALSE, RESOURCE_POOL="+pool+") AS DO BEGIN\n"+body+"\nEND DO; CREATE TOPIC source;"), "ydb")
 			c.Assert(err, qt.IsNil)
-			c.Assert(database.StreamingQueries, qt.HasLen, 1)
-			query := database.StreamingQueries[0]
-			c.Assert(query.Name, qt.Equals, "copy.v1")
-			c.Assert(query.Schema, qt.Equals, "jobs")
-			c.Assert(query.Spec, qt.DeepEquals, ast.StreamingQuerySpec{Text: body, Run: new(false), ResourcePool: "default"})
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 1)
+			query := streamingValue(c, database.FeatureObjects, "jobs", "copy.v1")
+			c.Assert(query.Spec, qt.DeepEquals, ydbstreaming.Spec{Text: body, Run: new(false), ResourcePool: "default"})
 			c.Assert(query.AllowStateReset, qt.IsFalse)
 			c.Assert(database.Topics, qt.HasLen, 1)
 		})
@@ -48,10 +46,10 @@ func TestReadYQLStreamingQueryGuardsAcrossFiles(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			added, _, err := sqlschema.ReadOnto([]byte(test.prefix+" `jobs.copy` AS DO BEGIN SELECT 2; END DO;"), "ydb", sqlschema.NewDocument(&database))
 			c.Assert(err, qt.IsNil)
-			c.Assert(added.StreamingQueries, qt.HasLen, 0)
-			c.Assert(database.StreamingQueries[0].Spec.Text, qt.Equals, test.wantBody)
-			c.Assert(database.StreamingQueries[0].AllowStateReset, qt.Equals, test.reset)
-			c.Assert(database.StreamingQueries[1].Spec.Text, qt.Equals, "SELECT 1;")
+			c.Assert(added.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(streamingValue(c, database.FeatureObjects, "", "jobs.copy").Spec.Text, qt.Equals, test.wantBody)
+			c.Assert(streamingValue(c, database.FeatureObjects, "", "jobs.copy").AllowStateReset, qt.Equals, test.reset)
+			c.Assert(streamingValue(c, database.FeatureObjects, "jobs", "copy").Spec.Text, qt.Equals, "SELECT 1;")
 		})
 	}
 }
@@ -68,8 +66,8 @@ func TestReadYQLStreamingQueryRoundTrip(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			again, _, err := sqlschema.Read([]byte(strings.Join(rendered, "\n")), "ydb")
 			c.Assert(err, qt.IsNil)
-			c.Assert(ydbstream.Equal(database.StreamingQueries[0].Spec, again.StreamingQueries[0].Spec), qt.IsTrue)
-			c.Assert(again.StreamingQueries[0].AllowStateReset, qt.Equals, database.StreamingQueries[0].AllowStateReset)
+			c.Assert(ydbstreaming.Equal(streamingValue(c, database.FeatureObjects, "jobs", "copy").Spec, streamingValue(c, again.FeatureObjects, "jobs", "copy").Spec), qt.IsTrue)
+			c.Assert(streamingValue(c, again.FeatureObjects, "jobs", "copy").AllowStateReset, qt.Equals, streamingValue(c, database.FeatureObjects, "jobs", "copy").AllowStateReset)
 		})
 	}
 }
@@ -94,7 +92,7 @@ func TestReadYQLStreamingQueryRefusals(t *testing.T) {
 			database, statements, err := sqlschema.Read([]byte(source), "ydb")
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(statements, qt.IsNil)
-			c.Assert(database.StreamingQueries, qt.HasLen, 0)
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
 }
@@ -103,5 +101,15 @@ func TestReadYQLStreamingQueryGuardDoesNotAuthorizeReset(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE OR REPLACE STREAMING QUERY IF NOT EXISTS copy AS DO BEGIN SELECT 1; END DO;"), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.StreamingQueries[0].AllowStateReset, qt.IsFalse)
+	c.Assert(streamingValue(c, database.FeatureObjects, "", "copy").AllowStateReset, qt.IsFalse)
+}
+
+func streamingValue(c *qt.C, objects schemaext.Objects, schema, name string) *ydbstreaming.Desired {
+	c.Helper()
+	object, found, err := objects.Get(ydbstreaming.Ref(schema, name))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	value, ok := object.Value.(*ydbstreaming.Desired)
+	c.Assert(ok, qt.IsTrue)
+	return value
 }

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/goschematogo"
@@ -23,7 +24,7 @@ import (
 
 // Empty supported documents establish absence. Enrollment stays tied to each
 // format's declared vocabulary, including the Go walk with no entity files.
-func TestEmptySourcesRecordTheirCoordinationNamespace(t *testing.T) {
+func TestEmptySourcesRecordSupportedFeatureNamespaces(t *testing.T) {
 	tests := []struct {
 		name        string
 		parse       func() (*schemamodel.Database, error)
@@ -47,13 +48,14 @@ func TestEmptySourcesRecordTheirCoordinationNamespace(t *testing.T) {
 			c.Assert(db.FeatureCoverage.Representation(), qt.Equals, schemaext.Desired)
 			c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "absent")).State, qt.Equals, schemaext.Complete)
 			c.Assert(db.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef("app", "t", "absent")).State, qt.Equals, test.changefeeds)
+			c.Assert(db.FeatureCoverage.Lookup(ydbstreaming.Kind, ydbstreaming.Ref("app", "absent")).State, qt.Equals, test.changefeeds)
 		})
 	}
 }
 
 func TestCoordinationLimitsPreserveLiteralPathDots(t *testing.T) {
 	c := qt.New(t)
-	known, err := ydbsource.Coverage("app/locks.v1", "app.v1/locks")
+	known, err := ydbsource.Coverage(ydbsource.Limits{Coordination: []string{"app/locks.v1", "app.v1/locks"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(known.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "locks.v1")).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(known.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app.v1", "locks")).State, qt.Equals, schemaext.Uninspected)
@@ -81,6 +83,25 @@ func TestExportsDoNotTurnCoordinationLimitsIntoAbsence(t *testing.T) {
 			c.Assert(hclErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(files, qt.IsNil)
 			c.Assert(hcl, qt.DeepEquals, atlashclrender.Result{})
+		})
+	}
+}
+
+func TestGoExportDoesNotTurnStreamingLimitsIntoAbsence(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		namespace schemaext.Knowledge
+		subjects  []schemaext.SubjectCoverage
+	}{
+		{name: "namespace", namespace: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not enumerated"}},
+		{name: "subject", namespace: schemaext.Knowledge{State: schemaext.Complete}, subjects: []schemaext.SubjectCoverage{{Kind: ydbstreaming.Kind, Subject: ydbstreaming.Ref("app", "copy"), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "permission denied"}}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := &schemamodel.Database{FeatureCoverage: must.Must(ydbstreaming.Coverage(schemaext.Desired, test.namespace, test.subjects))}
+			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(files, qt.IsNil)
 		})
 	}
 }

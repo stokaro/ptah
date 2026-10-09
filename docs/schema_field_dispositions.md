@@ -44,14 +44,14 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-594 fields are reachable from the desired schema, and each one carries
+591 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 516 | reaches rendered SQL on at least one target |
+| `ddl` | 514 | reaches rendered SQL on at least one target |
 | `comparison` | 9 | read when two schemas are compared, and written into no statement |
-| `planning` | 12 | read while a change set is assembled or ordered |
+| `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 26 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
@@ -113,9 +113,6 @@ None.
 | `ast.RowTTLSpec.RowStatsPollInterval` | `ddl` | — |
 | `ast.RowTTLSpec.SelectBatchSize` | `ddl` | — |
 | `ast.RowTTLSpec.SelectRateLimit` | `ddl` | — |
-| `ast.StreamingQuerySpec.ResourcePool` | `ddl` | — |
-| `ast.StreamingQuerySpec.Run` | `ddl` | — |
-| `ast.StreamingQuerySpec.Text` | `ddl` | — |
 | `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
 | `ast.TopicConsumerSpec.Important` | `ddl` | — |
 | `ast.TopicConsumerSpec.Name` | `ddl` | — |
@@ -265,7 +262,6 @@ None.
 | `schemamodel.Database.Secrets` | `ddl` | — |
 | `schemamodel.Database.SelfReferencingForeignKeys` | `derived` | derived by Finalize from the declared foreign keys, so the planner can create the table before the reference to itself |
 | `schemamodel.Database.Sequences` | `ddl` | — |
-| `schemamodel.Database.StreamingQueries` | `ddl` | — |
 | `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
 | `schemamodel.Database.Topics` | `ddl` | — |
@@ -555,11 +551,6 @@ None.
 | `schemamodel.Sequence.Schema` | `ddl` | — |
 | `schemamodel.Sequence.Start` | `ddl` | — |
 | `schemamodel.Sequence.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.StreamingQuery.AllowStateReset` | `planning` | permits an ALTER that discards aggregation state; creation does not consume this permission |
-| `schemamodel.StreamingQuery.Name` | `ddl` | — |
-| `schemamodel.StreamingQuery.Schema` | `ddl` | — |
-| `schemamodel.StreamingQuery.Spec` | `ddl` | — |
-| `schemamodel.StreamingQuery.StructName` | `source` | the annotation holder, not the query identity |
 | `schemamodel.Synonym.Comment` | `ddl` | — |
 | `schemamodel.Synonym.Name` | `ddl` | — |
 | `schemamodel.Synonym.Schema` | `ddl` | — |
@@ -659,4 +650,10 @@ None.
 | `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
 | `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |
 | `ydbschema.ReplicationBinding.SupportsTopicAutopartitioning` | `planning` | preserves observed controller behavior through snapshots and codecs |
+| `ydbstreaming.Desired.AllowStateReset` | `ddl` | — |
+| `ydbstreaming.Desired.Spec` | `ddl` | — |
+| `ydbstreaming.Desired.StructName` | `source` | the annotation holder, independent of query identity |
+| `ydbstreaming.Spec.ResourcePool` | `ddl` | — |
+| `ydbstreaming.Spec.Run` | `ddl` | — |
+| `ydbstreaming.Spec.Text` | `ddl` | — |
 <!-- END GENERATED FIELD DISPOSITIONS -->

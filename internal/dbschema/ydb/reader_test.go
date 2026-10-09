@@ -24,6 +24,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	ydbreader "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/ydbcolumn"
 )
@@ -503,9 +504,9 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.Sequence, "seq"),
 		observed(coverage.ExternalDataSource, "src"),
 		observed(coverage.ColumnTable, "store"),
-		observed(coverage.StreamingQuery, "stream"),
 		observed(coverage.Transfer, "xfer"),
 	))
+	c.Assert(db.FeatureCoverage.Lookup(ydbstreaming.Kind, ydbstreaming.Ref("", "stream")).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
 	c.Assert(db.Secrets, qt.DeepEquals, []catalog.Secret{{Name: "key"}})

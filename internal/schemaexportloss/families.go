@@ -44,7 +44,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 		{"row-level security policies", len(db.RLSPolicies)},
 		{"secrets", len(db.Secrets)},
 		{"sequences", len(db.Sequences)},
-		{"streaming queries", len(db.StreamingQueries)},
 		{"synonyms", len(db.Synonyms)},
 		{"topics", len(db.Topics)},
 		{"transfers", len(db.Transfers)},

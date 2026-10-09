@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
@@ -19,36 +17,7 @@ type CoordinationService struct{}
 // ReverseChanges projects partial ALTER semantics before constructing inverses.
 // The projection is a prediction of stored settings, never inspection evidence.
 func (CoordinationService) ReverseChanges(ctx context.Context, request schemaext.ReversalRequest) ([]schemaext.Reversal, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("%w: reversal requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if request.Target != "ydb" {
-		return nil, fmt.Errorf("%w: YDB reversal on %q", ptaherr.ErrUnsupportedDialect, request.Target)
-	}
-	if !request.Identifiers.Equal(identifier.ForDialect("ydb")) {
-		return nil, fmt.Errorf("%w: invalid coordination reversal identifier semantics", schemaext.ErrInvalidValue)
-	}
-	if len(request.Changes) > 0 && !request.Capabilities.Has(capability.CoordinationNodes) {
-		return nil, fmt.Errorf("%w: reversing coordination nodes requires %s", ptaherr.ErrUnsupportedFeature, capability.CoordinationNodes)
-	}
-	result := make([]schemaext.Reversal, 0, len(request.Changes))
-	for _, record := range request.Changes {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		reversed, err := reverseCoordination(record)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, reversed)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return reverseStandalone(ctx, request, "coordination", capability.CoordinationNodes, reverseCoordination)
 }
 
 func reverseCoordination(record schemaext.ChangeRecord) (schemaext.Reversal, error) {

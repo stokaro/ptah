@@ -23,6 +23,5 @@ func ydbMetrics(db *schemamodel.Database) []Metric {
 		{Name: "external_data_sources", Help: "External data sources", Value: len(db.ExternalDataSources)},
 		{Name: "external_tables", Help: "External tables", Value: len(db.ExternalTables)},
 		{Name: "external_columns", Help: "Columns across external tables", Value: externalColumns},
-		{Name: "streaming_queries", Help: "Streaming queries", Value: len(db.StreamingQueries)},
 	}
 }

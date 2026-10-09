@@ -69,7 +69,7 @@ func (CoordinationService) PlanFeatures(ctx context.Context, request featureplan
 		action := coordinationAction(operation.value)
 		id := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("coordination/%06d/%s", index, action)}
 		slot := ydbscheme.Path(operation.value.Schema, operation.value.Name)
-		edges, err := coordinationPathDependencies(id, slot, action, request.CommonSteps)
+		edges, err := schemePathDependencies("coordination", id, slot, action, request.CommonSteps)
 		if err != nil {
 			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{Change: new(operation.input), Problem: schemavalidation.Diagnostic{
 				Code: schemavalidation.InvalidSchema, Kind: string(ydbdiff.CoordinationNodeKind), Object: operation.value.Subject().String(), Message: err.Error(),
@@ -96,7 +96,7 @@ func (CoordinationService) PlanFeatures(ctx context.Context, request featureplan
 // The slot is shared with tables and other scheme objects, while the model
 // identity stays specific to coordination nodes. Only replacing a dropped
 // occupant is valid; an ALTER cannot turn another object kind into a node.
-func coordinationPathDependencies(id plangraph.StepID, slot objectidentity.ID, action plangraph.Action, common []featureplan.CommonStep) ([]plangraph.Dependency, error) {
+func schemePathDependencies(family string, id plangraph.StepID, slot objectidentity.ID, action plangraph.Action, common []featureplan.CommonStep) ([]plangraph.Dependency, error) {
 	type use struct {
 		id     plangraph.StepID
 		action plangraph.Action
@@ -117,7 +117,7 @@ func coordinationPathDependencies(id plangraph.StepID, slot objectidentity.ID, a
 			case plangraph.Read, plangraph.Alter:
 			default:
 				if effect.Action != wanted || replacement != (plangraph.StepID{}) || action == plangraph.Alter {
-					return nil, fmt.Errorf("coordination %s conflicts with %s at scheme path %s", action, effect.Action, slot)
+					return nil, fmt.Errorf("%s %s conflicts with %s at scheme path %s", family, action, effect.Action, slot)
 				}
 				replacement = step.ID
 			}
@@ -127,7 +127,7 @@ func coordinationPathDependencies(id plangraph.StepID, slot objectidentity.ID, a
 		return nil, nil
 	}
 	if replacement == (plangraph.StepID{}) || action == plangraph.Alter {
-		return nil, fmt.Errorf("coordination %s conflicts with an existing occupant at scheme path %s", action, slot)
+		return nil, fmt.Errorf("%s %s conflicts with an existing occupant at scheme path %s", family, action, slot)
 	}
 	// Changes to the other occupant must belong to its side of the handoff.
 	// If the common graph requires the opposite order, scheduling finds a cycle.

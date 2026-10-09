@@ -65,6 +65,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbreverse`
 - `ptah.run/dialect/ydb/ydbschema`
 - `ptah.run/dialect/ydb/ydbscheme`
+- `ptah.run/dialect/ydb/ydbstreaming`
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/migration/datadiff`
@@ -725,14 +726,25 @@ durable plan serialization requires an explicit capture codec.
 cloneable owner payloads. The ALTER interface stays sealed. YDB changefeed
 operations live in `dialect/ydb/ydbast`: `AddChangefeed`, `DropChangefeed`, and
 `AlterChangefeedTopic` each travel inside an `ExtensionAlterOperation`.
+
 `ydbast.StreamingQuery` travels inside an `ExtensionStatement`, with separate
 directory and leaf names, creation guards, both ALTER operands, and explicit
 reset permission. `StreamingCodec` provides the versioned operation record;
 `ydbrender.StreamingHandler` validates captured capabilities and renders it.
 Clones preserve independent optional run settings. Safety uses the owner's
 checkpoint-loss effect, including guarded replacement and body changes.
-Streaming schema models and comparison remain separate extraction work (#4140).
 
+`dialect/ydb/ydbstreaming` owns the query `Spec` and its desired and observed
+representations in `Database.FeatureObjects`. `Desired.AllowStateReset` carries
+authored permission; conversion from an observation never grants it. The common
+schema, catalog, AST, and diff types contain no streaming-query fields.
+
+The streaming services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
+`ydbreport` consume this model. `ydbdiff.StreamingQuery` captures both change
+operands. Explicit namespace and subject coverage distinguish absence from
+uninspected or unrepresentable queries. Planning stops running queries before
+common operations and restarts them afterward. Reverse planning preserves
+permission from an accepted body change and reports checkpoint recovery limits.
 
 `dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
 are distinct values in `Database.FeatureObjects`, with their table recorded as

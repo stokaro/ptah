@@ -82,9 +82,6 @@ ptah_schema_external_tables{dialect="sqlite"} 0
 # HELP ptah_schema_external_columns Columns across external tables.
 # TYPE ptah_schema_external_columns gauge
 ptah_schema_external_columns{dialect="sqlite"} 0
-# HELP ptah_schema_streaming_queries Streaming queries.
-# TYPE ptah_schema_streaming_queries gauge
-ptah_schema_streaming_queries{dialect="sqlite"} 0
 # HELP ptah_schema_clickhouse_table_settings Tables with captured ClickHouse storage settings.
 # TYPE ptah_schema_clickhouse_table_settings gauge
 ptah_schema_clickhouse_table_settings{dialect="sqlite"} 0
@@ -97,4 +94,7 @@ ptah_schema_changefeed_consumers{dialect="sqlite"} 0
 # HELP ptah_schema_coordination_nodes Standalone coordination nodes.
 # TYPE ptah_schema_coordination_nodes gauge
 ptah_schema_coordination_nodes{dialect="sqlite"} 0
+# HELP ptah_schema_streaming_queries Standalone streaming queries.
+# TYPE ptah_schema_streaming_queries gauge
+ptah_schema_streaming_queries{dialect="sqlite"} 0
 # EOF

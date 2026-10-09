@@ -1,13 +1,13 @@
-// Package ydbstream validates and renders YDB streaming-query declarations.
+// Package ydbstreaming validates and renders YDB streaming-query declarations.
 // Native schema rendering and migration planning share these rules.
-package ydbstream
+package ydbstreaming
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -17,10 +17,10 @@ import (
 )
 
 // Running resolves the server default of RUN=TRUE.
-func Running(spec ast.StreamingQuerySpec) bool { return spec.Run == nil || *spec.Run }
+func Running(spec Spec) bool { return spec.Run == nil || *spec.Run }
 
 // Pool resolves the server default resource pool.
-func Pool(spec ast.StreamingQuerySpec) string {
+func Pool(spec Spec) string {
 	if spec.ResourcePool == "" {
 		return "default"
 	}
@@ -28,14 +28,17 @@ func Pool(spec ast.StreamingQuerySpec) string {
 }
 
 // Equal compares persistent settings, normalizing defaults, whitespace, and comments.
-func Equal(a, b ast.StreamingQuerySpec) bool {
+func Equal(a, b Spec) bool {
 	return SameBody(a.Text, b.Text) && Running(a) == Running(b) && Pool(a) == Pool(b)
 }
 
 // Validate checks the body remains one streaming-query statement when wrapped.
 // YDB validates the data query itself; Ptah rejects schema operations and text
 // that escapes the enclosing DO block before any migration is executed.
-func Validate(spec ast.StreamingQuerySpec) error {
+func Validate(spec Spec) error {
+	if !utf8.ValidString(spec.Text) || !utf8.ValidString(spec.ResourcePool) || strings.ContainsRune(spec.ResourcePool, 0) {
+		return fmt.Errorf("streaming query text and resource pool must be valid UTF-8 without a NUL in the pool name")
+	}
 	if strings.TrimSpace(spec.Text) == "" {
 		return fmt.Errorf("streaming query text is required")
 	}
@@ -82,7 +85,7 @@ type CreateOptions struct {
 func (o CreateOptions) ReplacesExisting() bool { return o.OrReplace && !o.IfNotExists }
 
 // Create renders one CREATE STREAMING QUERY, including explicit run and pool settings.
-func Create(name string, spec ast.StreamingQuerySpec, options CreateOptions) string {
+func Create(name string, spec Spec, options CreateOptions) string {
 	prefix := "CREATE "
 	if options.OrReplace {
 		prefix += "OR REPLACE "
@@ -103,7 +106,7 @@ type AlterOptions struct {
 // Alter changes persistent settings in place. A changed body requires an
 // explicit permission because YDB discards aggregation state. Topic offsets
 // remain in the checkpoint; no DROP/CREATE fallback is used.
-func Alter(name string, desired, current ast.StreamingQuerySpec, options AlterOptions) (string, error) {
+func Alter(name string, desired, current Spec, options AlterOptions) (string, error) {
 	if err := ValidateAlter(name, desired, current, options); err != nil {
 		return "", err
 	}
@@ -122,13 +125,13 @@ func Alter(name string, desired, current ast.StreamingQuerySpec, options AlterOp
 // Drop renders a removal; YDB deletes the query's checkpoints with it.
 func Drop(name string) string { return "DROP STREAMING QUERY " + ydbexternal.Path(name) + ";" }
 
-func settings(spec ast.StreamingQuerySpec) string {
+func settings(spec Spec) string {
 	return "RUN = " + strings.ToUpper(strconv.FormatBool(Running(spec))) + ", RESOURCE_POOL = " + sqlident.Quote("ydb", Pool(spec))
 }
 
 // ValidateAlter checks reset permission without rendering. Both typed operation
 // validation and SQL generation use this predicate so they cannot disagree.
-func ValidateAlter(name string, desired, current ast.StreamingQuerySpec, options AlterOptions) error {
+func ValidateAlter(name string, desired, current Spec, options AlterOptions) error {
 	if !SameBody(desired.Text, current.Text) && !options.AllowStateReset {
 		return fmt.Errorf("streaming query %q: changing text resets aggregation state; declare allow_state_reset=true to permit it", name)
 	}

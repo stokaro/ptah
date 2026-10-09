@@ -1,4 +1,4 @@
-package ydbstream
+package ydbstreaming
 
 import "slices"
 

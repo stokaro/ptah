@@ -402,6 +402,7 @@ v0.13.0 ptah.run/core/renderer
 # #4140 puts changefeed operations in dialect/ydb/ydbast and TTL operations in
 # dialect/clickhouse/chast. ModifyTTLOperation is removed; callers supply the
 # complete before/after storage operands required by chast.AlterTTL.
+# StreamingQuerySpec moves to dialect/ydb/ydbstreaming.Spec.
 # AddSkippingIndexOperation also moves to chast.AddSkippingIndex. Other targets
 # refuse that operation, and zero index granularity uses the server default 1.
 # Callers wrap the owner payload in ExtensionAlterOperation. The common ALTER
@@ -434,6 +435,10 @@ v0.13.0 ptah.run/core/ast
 # values in FeatureObjects, with explicit namespace and subject coverage.
 # The common CoordinationNode structs, Database.CoordinationNodes fields,
 # coordination diff buckets, coverage kind, and concrete AST nodes are removed.
+# Streaming queries use dialect/ydb/ydbstreaming with the same explicit
+# namespace and subject knowledge. Common StreamingQuery models, collection
+# fields, diff buckets, and coverage kind are removed. Reset permission remains
+# desired-only and is retained for an accepted change's reverse plan.
 # Consumers use the owner model, change, and operation codecs directly.
 # This changes behavior; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.

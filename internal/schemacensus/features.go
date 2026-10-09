@@ -9,6 +9,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 // featureCodecs supplies the concrete models to this bundled-provider census.
@@ -23,6 +24,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 	}{
 		{owner: "ptah.run/ydb", codecs: ydbschema.Codecs()},
 		{owner: "ptah.run/ydb", codecs: ydbcoordination.Codecs()},
+		{owner: "ptah.run/ydb", codecs: ydbstreaming.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
 	} {
 		for _, codec := range provider.codecs {

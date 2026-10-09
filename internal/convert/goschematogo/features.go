@@ -6,9 +6,11 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/ydbsource"
 )
 
@@ -21,6 +23,9 @@ func changefeedTableRef(table schemamodel.Table) objectidentity.ID {
 // from a successful export.
 func (ctx *renderContext) captureFeatureObjects() error {
 	if err := ydbsource.ValidateCoordinationExport(ctx.db.FeatureCoverage); err != nil {
+		return err
+	}
+	if err := ydbsource.ValidateStreamingExport(ctx.db.FeatureCoverage); err != nil {
 		return err
 	}
 	for _, facets := range ctx.db.FacetSlots() {
@@ -38,37 +43,54 @@ func (ctx *renderContext) captureFeatureObjects() error {
 	}
 	ctx.changefeedsByTable = make(map[objectidentity.Key][]ydbschema.ChangefeedSpec)
 	for _, object := range objects {
-		if node, ok := object.Value.(*ydbcoordination.Desired); ok {
-			if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
-				return err
-			}
-			if err := ydbcoordination.Validate(node.Spec); err != nil {
-				return err
-			}
-			ctx.coordinationAnnotations = append(ctx.coordinationAnnotations, coordinationNodeAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, node.Spec))
-			continue
-		}
-		feed, ok := object.Value.(*ydbschema.DesiredChangefeed)
-		if !ok {
-			return fmt.Errorf("%w: Go annotations cannot represent feature object %s with value %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
-		}
-		if err := ydbschema.ValidateChangefeed(feed.Spec); err != nil {
+		if err := ctx.captureFeatureObject(object, parents); err != nil {
 			return err
 		}
-		if feed.Spec.Disabled {
-			return fmt.Errorf("%w: Go annotations cannot preserve disabled changefeed %s", ptaherr.ErrUnsupportedFeature, object.Ref)
-		}
-		if feed.RetainedReplication != nil {
-			return fmt.Errorf("%w: Go annotations cannot preserve the retained replication binding of changefeed %s", ptaherr.ErrUnsupportedFeature, object.Ref)
-		}
-		parent := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts(object.Ref.Schema.Source, object.Ref.Parent.Source)
-		if _, found := parents[parent.Key()]; !found {
-			return fmt.Errorf("%w: feature object %s has no declared parent table", ptaherr.ErrInvalidSchemaDiff, object.Ref)
-		}
-		if object.Ref.Key() != ydbschema.ChangefeedRef(object.Ref.Schema.Source, object.Ref.Parent.Source, feed.Spec.Name).Key() {
-			return fmt.Errorf("%w: changefeed name disagrees with its reference", ptaherr.ErrInvalidSchemaDiff)
-		}
-		ctx.changefeedsByTable[parent.Key()] = append(ctx.changefeedsByTable[parent.Key()], feed.Spec)
 	}
+	return nil
+}
+
+func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents map[objectidentity.Key]struct{}) error {
+	if query, ok := object.Value.(*ydbstreaming.Desired); ok {
+		if err := ydbstreaming.ValidateIdentity(object.Ref); err != nil {
+			return err
+		}
+		if err := ydbstreaming.Validate(query.Spec); err != nil {
+			return err
+		}
+		ctx.streamingAnnotations = append(ctx.streamingAnnotations, streamingQueryAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, query))
+		return nil
+	}
+	if node, ok := object.Value.(*ydbcoordination.Desired); ok {
+		if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
+			return err
+		}
+		if err := ydbcoordination.Validate(node.Spec); err != nil {
+			return err
+		}
+		ctx.coordinationAnnotations = append(ctx.coordinationAnnotations, coordinationNodeAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, node.Spec))
+		return nil
+	}
+	feed, ok := object.Value.(*ydbschema.DesiredChangefeed)
+	if !ok {
+		return fmt.Errorf("%w: Go annotations cannot represent feature object %s with value %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
+	}
+	if err := ydbschema.ValidateChangefeed(feed.Spec); err != nil {
+		return err
+	}
+	if feed.Spec.Disabled {
+		return fmt.Errorf("%w: Go annotations cannot preserve disabled changefeed %s", ptaherr.ErrUnsupportedFeature, object.Ref)
+	}
+	if feed.RetainedReplication != nil {
+		return fmt.Errorf("%w: Go annotations cannot preserve the retained replication binding of changefeed %s", ptaherr.ErrUnsupportedFeature, object.Ref)
+	}
+	parent := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts(object.Ref.Schema.Source, object.Ref.Parent.Source)
+	if _, found := parents[parent.Key()]; !found {
+		return fmt.Errorf("%w: feature object %s has no declared parent table", ptaherr.ErrInvalidSchemaDiff, object.Ref)
+	}
+	if object.Ref.Key() != ydbschema.ChangefeedRef(object.Ref.Schema.Source, object.Ref.Parent.Source, feed.Spec.Name).Key() {
+		return fmt.Errorf("%w: changefeed name disagrees with its reference", ptaherr.ErrInvalidSchemaDiff)
+	}
+	ctx.changefeedsByTable[parent.Key()] = append(ctx.changefeedsByTable[parent.Key()], feed.Spec)
 	return nil
 }

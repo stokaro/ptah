@@ -131,7 +131,7 @@ func bindManagedDataSourceRoot(result *schemamodel.Database, root string) {
 // multiple roots can accumulate into one result before a single finalize pass.
 func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string) error {
 	if result.FeatureCoverage.Representation() == "" {
-		known, err := ydbsource.Coverage()
+		known, err := ydbsource.Coverage(ydbsource.Limits{})
 		if err != nil {
 			return err
 		}

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 type streamingSpecWire struct {
@@ -83,7 +83,7 @@ func decodeStreaming(data json.RawMessage) (schemaext.Payload, error) {
 		return nil, err
 	}
 	value := &StreamingQuery{Operation: wire.Operation, Schema: wire.Schema, Name: wire.Name, Creation: wire.Creation,
-		Spec: ast.StreamingQuerySpec(wire.Spec), Previous: ast.StreamingQuerySpec(wire.Previous), AllowStateReset: wire.AllowStateReset}
+		Spec: ydbstreaming.Spec(wire.Spec), Previous: ydbstreaming.Spec(wire.Previous), AllowStateReset: wire.AllowStateReset}
 	return streamingPayload(value)
 }
 

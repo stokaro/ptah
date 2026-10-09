@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydburl"
@@ -150,6 +151,14 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, err
 	}
+	queries, err := ydbstreaming.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return nil, err
+	}
+	featureCoverage, err = featureCoverage.Combine(queries)
+	if err != nil {
+		return nil, err
+	}
 	db := &catalog.Database{FeatureCoverage: featureCoverage, DatabasePath: "/" + strings.Trim(r.database, "/")}
 	if err := r.walk(ctx, source, "", db); err != nil {
 		return nil, err
@@ -170,9 +179,6 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
 	})
 	slices.SortFunc(db.ExternalTables, func(a, b catalog.ExternalTable) int {
-		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
-	})
-	slices.SortFunc(db.StreamingQueries, func(a, b catalog.StreamingQuery) int {
 		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
 	})
 	return db, nil
@@ -221,7 +227,7 @@ func (r *Reader) entry(
 			return r.columnTableEntry(ctx, source, schema, name, db)
 		}
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER,
-		Ydb_Scheme.Entry_SECRET, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE, EntryStreamingQuery:
+		Ydb_Scheme.Entry_SECRET, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
 			return err
 		}
@@ -232,6 +238,8 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_SYS_VIEW:
 		// A system view outside a dot-directory belongs to the server too.
 		return nil
+	case EntryStreamingQuery:
+		return r.streamingQuery(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		return r.coordinationNode(ctx, source, schema, name, db)
 	}
@@ -280,7 +288,6 @@ func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name str
 // the capability each names, and records rather than describes on one
 // without it.
 var keyedEntries = map[Ydb_Scheme.Entry_Type]capability.Capability{
-	EntryStreamingQuery:                   capability.StreamingQueries,
 	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: capability.ExternalDataSources,
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       capability.ExternalDataSources,
 	Ydb_Scheme.Entry_SECRET:               capability.Secrets,
@@ -320,8 +327,6 @@ func (r *Reader) keyedEntry(
 		return true, r.replication(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		return true, r.externalObject(ctx, source, schema, entry, db)
-	case EntryStreamingQuery:
-		return true, r.streamingQuery(ctx, source, schema, name, db)
 	default:
 		return true, r.transfer(ctx, source, schema, name, db)
 	}
@@ -361,7 +366,6 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       coverage.ExternalTable,
 	Ydb_Scheme.Entry_SECRET:               coverage.Secret,
 	Ydb_Scheme.Entry_RESOURCE_POOL:        coverage.ResourcePool,
-	EntryStreamingQuery:                   coverage.StreamingQuery,
 }
 
 // EntryStreamingQuery is the scheme entry type of a streaming query, which the

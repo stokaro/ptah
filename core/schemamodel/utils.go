@@ -1310,7 +1310,6 @@ func deduplicateComposite(r *Database) {
 	r.ExternalDataSources = deduplicateNamedDefinitions(r.ExternalDataSources, func(source ExternalDataSource) string {
 		return source.QualifiedName()
 	})
-	r.StreamingQueries = deduplicateNamedDefinitions(r.StreamingQueries, StreamingQuery.QualifiedName)
 	r.ExternalTables = deduplicateNamedDefinitions(r.ExternalTables, func(table ExternalTable) string {
 		return table.QualifiedName()
 	})

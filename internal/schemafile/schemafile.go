@@ -396,7 +396,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Topic, coverage.ResourcePool, coverage.ResourcePoolClassifier,
 			coverage.Replication, coverage.Transfer, coverage.Secret,
-			coverage.ExternalDataSource, coverage.ExternalTable, coverage.StreamingQuery)...)
+			coverage.ExternalDataSource, coverage.ExternalTable)...)
 	}
 	if extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
@@ -900,7 +900,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
 	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
-	dst.StreamingQueries = append(dst.StreamingQueries, src.StreamingQueries...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only

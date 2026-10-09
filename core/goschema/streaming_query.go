@@ -5,10 +5,9 @@ import (
 	"go/ast"
 	"strconv"
 
-	coreast "ptah.run/core/ast"
 	"ptah.run/core/goschema/internal/parseutils"
-	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbstream"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 func (s *schemaParseState) parseStreamingQueryComment(comment *ast.Comment, structName string) error {
@@ -20,25 +19,30 @@ func (s *schemaParseState) parseStreamingQueryComment(comment *ast.Comment, stru
 	if err := requireAttributes(values, ctx); err != nil {
 		return err
 	}
-	query := schemamodel.StreamingQuery{StructName: structName, Name: values["name"], Schema: values["schema"],
-		Spec: coreast.StreamingQuerySpec{Text: values["text"], ResourcePool: values["resource_pool"]}}
+	query := ydbstreaming.Desired{StructName: structName,
+		Spec: ydbstreaming.Spec{Text: values["text"], ResourcePool: values["resource_pool"]}}
 	if raw, exists := values["run"]; exists {
 		value, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf("streaming query %q run: %w", query.Name, err)
+			return fmt.Errorf("streaming query %q run: %w", values["name"], err)
 		}
 		query.Spec.Run = new(value)
 	}
 	if raw, exists := values["allow_state_reset"]; exists {
 		value, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf("streaming query %q allow_state_reset: %w", query.Name, err)
+			return fmt.Errorf("streaming query %q allow_state_reset: %w", values["name"], err)
 		}
 		query.AllowStateReset = value
 	}
-	if err := ydbstream.Validate(query.Spec); err != nil {
-		return fmt.Errorf("streaming query %q: %w", query.Name, err)
+	if err := ydbstreaming.Validate(query.Spec); err != nil {
+		return fmt.Errorf("streaming query %q: %w", values["name"], err)
 	}
-	s.streamingQueries = append(s.streamingQueries, query)
-	return nil
+	ref := ydbstreaming.Ref(values["schema"], values["name"])
+	if err := ydbstreaming.ValidateIdentity(ref); err != nil {
+		return err
+	}
+	var err error
+	s.featureObjects, err = s.featureObjects.With(schemaext.Object{Ref: ref, Value: &query})
+	return err
 }

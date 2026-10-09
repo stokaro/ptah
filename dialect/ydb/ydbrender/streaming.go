@@ -7,7 +7,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/internal/ydbstream"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 // StreamingHandler supplies the selected owner's validation and rendering for
@@ -20,7 +20,7 @@ func validateStreaming(ctx renderer.ExtensionContext, value *ydbast.StreamingQue
 	if ctx.Target != "ydb" {
 		return fmt.Errorf("%w: streaming queries require YDB", ptaherr.ErrUnsupportedDialect)
 	}
-	if err := ydbstream.Refuse(ctx.Target, ctx.Capabilities, "streaming query "+value.QualifiedName()); err != nil {
+	if err := ydbstreaming.Refuse(ctx.Target, ctx.Capabilities, "streaming query "+value.QualifiedName()); err != nil {
 		return err
 	}
 	if err := value.Validate(); err != nil {
@@ -32,15 +32,15 @@ func validateStreaming(ctx renderer.ExtensionContext, value *ydbast.StreamingQue
 func renderStreaming(_ renderer.ExtensionContext, value *ydbast.StreamingQuery) ([]string, error) {
 	switch value.Operation {
 	case ydbast.StreamingCreate:
-		return []string{ydbstream.Create(value.QualifiedName(), value.Spec, ydbstream.CreateOptions{OrReplace: value.Creation.OrReplace, IfNotExists: value.Creation.IfNotExists})}, nil
+		return []string{ydbstreaming.Create(value.QualifiedName(), value.Spec, ydbstreaming.CreateOptions{OrReplace: value.Creation.OrReplace, IfNotExists: value.Creation.IfNotExists})}, nil
 	case ydbast.StreamingAlter:
-		statement, err := ydbstream.Alter(value.QualifiedName(), value.Spec, value.Previous, ydbstream.AlterOptions{AllowStateReset: value.AllowStateReset})
+		statement, err := ydbstreaming.Alter(value.QualifiedName(), value.Spec, value.Previous, ydbstreaming.AlterOptions{AllowStateReset: value.AllowStateReset})
 		if err != nil {
 			return nil, err
 		}
 		return []string{statement}, nil
 	case ydbast.StreamingDrop:
-		return []string{ydbstream.Drop(value.QualifiedName())}, nil
+		return []string{ydbstreaming.Drop(value.QualifiedName())}, nil
 	default:
 		return nil, fmt.Errorf("%w: unknown streaming operation %q", ptaherr.ErrInvalidSchemaDiff, value.Operation)
 	}

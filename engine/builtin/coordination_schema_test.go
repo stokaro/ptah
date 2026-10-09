@@ -29,21 +29,24 @@ func coordinationFeatureSchema(c *qt.C, name string) *schemamodel.Database {
 
 func TestCoordinationFeatureSchemaUsesSelectedOwnerOnEveryEntryPoint(t *testing.T) {
 	c := qt.New(t)
+	assertOwnedSchemaEntryPoints(c, coordinationFeatureSchema(c, "node.with.dot"), capability.YDB262(), "CREATE COORDINATION NODE `app/node.with.dot` WITH (read_consistency_mode = 'strict');")
+}
+
+func assertOwnedSchemaEntryPoints(c *qt.C, database *schemamodel.Database, caps capability.Capabilities, sql string) {
+	c.Helper()
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	database := coordinationFeatureSchema(c, "node.with.dot")
-	caps := capability.YDB262()
 	request := renderer.SchemaRequest{Target: "ydb", Capabilities: caps, Schema: database}
-	rendered, err := runtime.RenderSchema(t.Context(), request)
+	rendered, err := runtime.RenderSchema(c.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Statements, qt.HasLen, 2)
-	c.Assert(strings.Join(rendered.Statements, "\n"), qt.Contains, "CREATE COORDINATION NODE `app/node.with.dot` WITH (read_consistency_mode = 'strict');")
-	validated, err := runtime.ValidateSchema(t.Context(), schemavalidation.Request{Target: "ydb", Capabilities: caps, Schema: database, NoSkipped: true})
+	c.Assert(strings.Join(rendered.Statements, "\n"), qt.Contains, sql)
+	validated, err := runtime.ValidateSchema(c.Context(), schemavalidation.Request{Target: "ydb", Capabilities: caps, Schema: database, NoSkipped: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(validated.Err("ydb"), qt.IsNil)
-	list, err := atlascompat.SchemaToAST(t.Context(), runtime, *database, "ydb", caps)
+	list, err := atlascompat.SchemaToAST(c.Context(), runtime, *database, "ydb", caps)
 	c.Assert(err, qt.IsNil)
-	direct, err := runtime.Render(t.Context(), renderer.Request{Target: "ydb", Capabilities: caps, Nodes: list.Statements})
+	direct, err := runtime.Render(c.Context(), renderer.Request{Target: "ydb", Capabilities: caps, Nodes: list.Statements})
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.TrimSpace(direct.SQL()), qt.Equals, strings.TrimSpace(strings.Join(rendered.Statements, "")))
 	c.Assert(database.FeatureObjects.Len(), qt.Equals, 1)

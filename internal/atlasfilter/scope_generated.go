@@ -14,7 +14,7 @@ import (
 // referenced support objects (enums, domains, composite types, ranges,
 // sequences owned by selected tables, roles named by selected grants) are
 // retained as dependencies even when no selector names them.
-func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel.Database {
+func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamodel.Database, error) {
 	out := cloneGenerated(db)
 	out.Tables = keep(db.Tables, func(table schemamodel.Table) bool {
 		return s.selected(typeList("table"), table.Schema, table.Name)
@@ -29,6 +29,11 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel
 	})
 
 	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
+	pools, err := streamingPools(out.FeatureObjects)
+	if err != nil {
+		return nil, err
+	}
 	out.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
 		_, ok := keptByStruct[field.StructName]
 		return ok
@@ -61,7 +66,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel
 		return generatedTableNameKept(out.Tables, data.Table)
 	})
 
-	s.projectGeneratedTopLevel(db, out)
+	s.projectGeneratedTopLevel(db, out, pools)
 	s.projectGeneratedSupport(db, out)
 	s.projectGeneratedExtensions(db, out)
 	out.Schemas = s.keepGeneratedSchemas(db, out)
@@ -70,7 +75,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel
 	out.FunctionDependencies = nil
 	out.SelfReferencingForeignKeys = nil
 	schemamodel.Finalize(out)
-	return out
+	return out, nil
 }
 
 // projectGeneratedTopLevel selects independently includable top-level
@@ -79,7 +84,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel
 // "schema." name prefix. Roles are database-scoped and skip the schema
 // universe. Extensions are projected after support objects, when the selection
 // knows whether a non-extension resource matched.
-func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database) {
+func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database, pools map[string]bool) {
 	out.Views = keep(db.Views, func(view schemamodel.View) bool {
 		return s.selectedQualifiedName(typeList("view"), view.Name)
 	})
@@ -103,9 +108,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	})
 	out.ExternalDataSources = keep(db.ExternalDataSources, func(source schemamodel.ExternalDataSource) bool {
 		return s.selected(typeList("external_data_source"), source.Schema, source.Name)
-	})
-	out.StreamingQueries = keep(db.StreamingQueries, func(query schemamodel.StreamingQuery) bool {
-		return s.selected(typeList("streaming_query"), query.Schema, query.Name)
 	})
 	out.ExternalTables = keep(db.ExternalTables, func(table schemamodel.ExternalTable) bool {
 		return s.selected(typeList("external_table"), table.Schema, table.Name)
@@ -152,7 +154,7 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	})
 	out.ResourcePools = keep(db.ResourcePools, func(pool schemamodel.ResourcePool) bool {
 		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
-			slices.ContainsFunc(out.StreamingQueries, func(query schemamodel.StreamingQuery) bool { return query.Spec.ResourcePool == pool.Name }) ||
+			pools[pool.Name] ||
 			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
 				return classifier.Spec.ResourcePool == pool.Name
 			})

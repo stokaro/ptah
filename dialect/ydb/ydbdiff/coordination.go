@@ -93,35 +93,11 @@ func CoordinationCodec() schemaext.Codec {
 }
 
 func decodeCoordinationChange(data json.RawMessage) (schemaext.Payload, error) {
-	fields, err := schemaext.DecodeJSON[map[string]json.RawMessage](data)
+	before, after, err := decodeStandaloneOperands[*ydbcoordination.Observed, *ydbcoordination.Desired](data, "coordination", ydbcoordination.Codecs())
 	if err != nil {
 		return nil, err
 	}
-	if len(fields) != 2 || len(fields["before"]) == 0 || len(fields["after"]) == 0 {
-		return nil, fmt.Errorf("%w: coordination change requires explicit before and after fields", schemaext.ErrInvalidValue)
-	}
-	value := &CoordinationNode{}
-	for _, codec := range ydbcoordination.Codecs() {
-		field := "after"
-		if codec.Representation == schemaext.Observed {
-			field = "before"
-		}
-		if string(fields[field]) == "null" {
-			continue
-		}
-		operand, err := codec.Decode(fields[field])
-		if err != nil {
-			return nil, err
-		}
-		switch typed := operand.(type) {
-		case *ydbcoordination.Observed:
-			value.Before = typed
-		case *ydbcoordination.Desired:
-			value.After = typed
-		default:
-			return nil, fmt.Errorf("%w: unexpected coordination operand %T", schemaext.ErrInvalidValue, operand)
-		}
-	}
+	value := &CoordinationNode{Before: before, After: after}
 	if err := value.Validate(); err != nil {
 		return nil, err
 	}

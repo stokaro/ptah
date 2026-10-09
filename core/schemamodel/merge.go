@@ -27,7 +27,6 @@ func NewDatabase() *Database {
 		Secrets:                 make([]Secret, 0),
 		ExternalDataSources:     make([]ExternalDataSource, 0),
 		ExternalTables:          make([]ExternalTable, 0),
-		StreamingQueries:        make([]StreamingQuery, 0),
 		ExtendedProperties:      make([]ExtendedProperty, 0),
 		MaterializedViews:       make([]MaterializedView, 0),
 		Triggers:                make([]Trigger, 0),
@@ -99,7 +98,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
 	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
-	dst.StreamingQueries = append(dst.StreamingQueries, src.StreamingQueries...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)

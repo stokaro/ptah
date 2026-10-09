@@ -5,22 +5,23 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestStreamingQueries_StopBeforeSourcesAndRestartAfterCreation(t *testing.T) {
 	c := qt.New(t)
-	old := schemamodel.StreamingQuery{Name: "copy", Spec: ast.StreamingQuerySpec{Text: "INSERT INTO dst SELECT * FROM src;"}}
-	desired := old
+	old := &ydbstreaming.Observed{Spec: ydbstreaming.Spec{Text: "INSERT INTO dst SELECT * FROM src;"}}
+	desired := old.Desired()
 	desired.Spec.Text = "INSERT INTO dst SELECT * FROM next;"
 	desired.AllowStateReset = true
 	diff := &difftypes.SchemaDiff{
-		StreamingQueriesChanged: []difftypes.StreamingQueryChange{{Current: old, Desired: desired}},
-		TopicsRemoved:           difftypes.TopicChanges{{Name: "src"}},
-		TopicsAdded:             difftypes.TopicChanges{{Name: "next"}},
+		FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbstreaming.Ref("", "copy"), Value: &ydbdiff.StreamingQuery{Before: old, After: desired}}},
+		TopicsRemoved:  difftypes.TopicChanges{{Name: "src"}},
+		TopicsAdded:    difftypes.TopicChanges{{Name: "next"}},
 	}
 	got := render(c, capability.YDB262().With(capability.StreamingQueries, true), diff)
 	c.Assert(got, qt.Equals, "ALTER STREAMING QUERY `copy` SET (RUN = FALSE, RESOURCE_POOL = `default`);\n"+
@@ -30,10 +31,10 @@ func TestStreamingQueries_StopBeforeSourcesAndRestartAfterCreation(t *testing.T)
 
 func TestStreamingQueries_StoppingNeedsOneStatement(t *testing.T) {
 	c := qt.New(t)
-	old := schemamodel.StreamingQuery{Name: "copy", Spec: ast.StreamingQuerySpec{Text: "INSERT INTO dst SELECT * FROM src;"}}
-	desired := old
+	old := &ydbstreaming.Observed{Spec: ydbstreaming.Spec{Text: "INSERT INTO dst SELECT * FROM src;"}}
+	desired := old.Desired()
 	desired.Spec.Run = new(false)
-	diff := &difftypes.SchemaDiff{StreamingQueriesChanged: []difftypes.StreamingQueryChange{{Current: old, Desired: desired}}}
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbstreaming.Ref("", "copy"), Value: &ydbdiff.StreamingQuery{Before: old, After: desired}}}}
 	got := render(c, capability.YDB262().With(capability.StreamingQueries, true), diff)
 	c.Assert(got, qt.Equals, "ALTER STREAMING QUERY `copy` SET (RUN = FALSE, RESOURCE_POOL = `default`);\n")
 }

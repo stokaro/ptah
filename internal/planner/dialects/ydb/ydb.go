@@ -219,10 +219,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := p.refuseUnplannableObjectChanges(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
-	streamBefore, streamAfter, err := p.streamingQueries(diff)
-	if err != nil {
-		return nil, err
-	}
 	external, err := p.planExternal(diff)
 	if err != nil {
 		return nil, err
@@ -246,7 +242,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	}
 
 	var result []ast.Node
-	result = append(result, streamBefore...)
 	result = append(result, dropReplications(diff)...)
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
@@ -281,7 +276,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, viewComments(diff)...)
 	result = append(result, access.after...)
 	result = append(result, pools.nodes...)
-	result = append(result, streamAfter...)
 	result = append(result, access.last...)
 	return p.scheduleFeatureChanges(ctx, runtime, diff, rebuilds, semantics, beforeChangefeeds, result)
 }

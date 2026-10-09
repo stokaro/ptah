@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 const streamingBody = "INSERT INTO sink SELECT * FROM source;"
@@ -18,8 +18,8 @@ const streamingBody = "INSERT INTO sink SELECT * FROM source;"
 func TestStreamingOperationCodecPreservesOperandsAndIndependentRunSettings(t *testing.T) {
 	c := qt.New(t)
 	value := &ydbast.StreamingQuery{Operation: ydbast.StreamingAlter, Schema: "jobs.daily", Name: "copy.events",
-		Spec:     ast.StreamingQuerySpec{Text: streamingBody, Run: new(false), ResourcePool: "workload"},
-		Previous: ast.StreamingQuerySpec{Text: streamingBody + " SELECT 1;", Run: new(true)}, AllowStateReset: true}
+		Spec:     ydbstreaming.Spec{Text: streamingBody, Run: new(false), ResourcePool: "workload"},
+		Previous: ydbstreaming.Spec{Text: streamingBody + " SELECT 1;", Run: new(true)}, AllowStateReset: true}
 	registry, err := schemaext.NewRegistry(schemaext.OwnedCodec{Owner: "ptah.run/ydb", Codec: ydbast.StreamingCodec()})
 	c.Assert(err, qt.IsNil)
 	data, err := registry.Marshal(c.Context(), schemaext.Operation, []schemaext.Payload{value})
@@ -68,14 +68,14 @@ func TestStreamingEffectsRetainCheckpointRisk(t *testing.T) {
 		value  *ydbast.StreamingQuery
 		impact schemaext.Impact
 	}{
-		{"create", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ast.StreamingQuerySpec{Text: streamingBody}}, schemaext.Additive},
-		{"replace", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Creation: ydbast.StreamingCreation{OrReplace: true}, Spec: ast.StreamingQuerySpec{Text: streamingBody}}, schemaext.Destructive},
-		{"guarded replace", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Creation: ydbast.StreamingCreation{OrReplace: true, IfNotExists: true}, Spec: ast.StreamingQuerySpec{Text: streamingBody}}, schemaext.Additive},
-		{"settings", &ydbast.StreamingQuery{Operation: ydbast.StreamingAlter, Name: "q", Spec: ast.StreamingQuerySpec{Text: streamingBody, Run: new(false)}, Previous: ast.StreamingQuerySpec{Text: streamingBody}}, schemaext.Behavioral},
-		{"body", &ydbast.StreamingQuery{Operation: ydbast.StreamingAlter, Name: "q", Spec: ast.StreamingQuerySpec{Text: streamingBody + " SELECT 1;"}, Previous: ast.StreamingQuerySpec{Text: streamingBody}, AllowStateReset: true}, schemaext.Destructive},
+		{"create", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ydbstreaming.Spec{Text: streamingBody}}, schemaext.Additive},
+		{"replace", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Creation: ydbast.StreamingCreation{OrReplace: true}, Spec: ydbstreaming.Spec{Text: streamingBody}}, schemaext.Destructive},
+		{"guarded replace", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Creation: ydbast.StreamingCreation{OrReplace: true, IfNotExists: true}, Spec: ydbstreaming.Spec{Text: streamingBody}}, schemaext.Additive},
+		{"settings", &ydbast.StreamingQuery{Operation: ydbast.StreamingAlter, Name: "q", Spec: ydbstreaming.Spec{Text: streamingBody, Run: new(false)}, Previous: ydbstreaming.Spec{Text: streamingBody}}, schemaext.Behavioral},
+		{"body", &ydbast.StreamingQuery{Operation: ydbast.StreamingAlter, Name: "q", Spec: ydbstreaming.Spec{Text: streamingBody + " SELECT 1;"}, Previous: ydbstreaming.Spec{Text: streamingBody}, AllowStateReset: true}, schemaext.Destructive},
 		{"drop", &ydbast.StreamingQuery{Operation: ydbast.StreamingDrop, Name: "q"}, schemaext.Destructive},
 		{"nil", nil, ""},
-		{"missing previous", &ydbast.StreamingQuery{Operation: ydbast.StreamingAlter, Name: "q", Spec: ast.StreamingQuerySpec{Text: streamingBody}}, ""},
+		{"missing previous", &ydbast.StreamingQuery{Operation: ydbast.StreamingAlter, Name: "q", Spec: ydbstreaming.Spec{Text: streamingBody}}, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -92,11 +92,11 @@ func TestStreamingCodecRefusesLossyOrMisplacedOperands(t *testing.T) {
 		{"nil", nil},
 		{"empty", &ydbast.StreamingQuery{}},
 		{"invalid UTF-8 directory", &ydbast.StreamingQuery{Operation: ydbast.StreamingDrop, Schema: "\xff", Name: "q"}},
-		{"invalid UTF-8 pool", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ast.StreamingQuerySpec{Text: streamingBody, ResourcePool: "\xff"}}},
+		{"invalid UTF-8 pool", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ydbstreaming.Spec{Text: streamingBody, ResourcePool: "\xff"}}},
 		{"unsplit path", &ydbast.StreamingQuery{Operation: ydbast.StreamingDrop, Name: "jobs/q"}},
 		{"drop guard", &ydbast.StreamingQuery{Operation: ydbast.StreamingDrop, Name: "q", Creation: ydbast.StreamingCreation{IfNotExists: true}}},
-		{"create reset permission", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ast.StreamingQuerySpec{Text: streamingBody}, AllowStateReset: true}},
-		{"create previous", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ast.StreamingQuerySpec{Text: streamingBody}, Previous: ast.StreamingQuerySpec{Text: streamingBody}}},
+		{"create reset permission", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ydbstreaming.Spec{Text: streamingBody}, AllowStateReset: true}},
+		{"create previous", &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Name: "q", Spec: ydbstreaming.Spec{Text: streamingBody}, Previous: ydbstreaming.Spec{Text: streamingBody}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

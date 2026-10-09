@@ -3,13 +3,9 @@ package ydbcompare
 import (
 	"context"
 	"fmt"
-	"maps"
-	"slices"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
@@ -36,25 +32,8 @@ func (CoordinationService) CompareObjects(ctx context.Context, request schemaext
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: coverage}}
-	ordered := slices.Collect(maps.Values(nodes))
-	slices.SortFunc(ordered, func(a, b coordinationNode) int { return schemaext.CompareRefs(a.ref, b.ref) })
-	for _, node := range ordered {
-		if err := ctx.Err(); err != nil {
-			return schemaext.ObjectComparisonResult{}, err
-		}
-		if err := compareCoordinationNode(request, node, &result); err != nil {
-			return schemaext.ObjectComparisonResult{}, err
-		}
-	}
-	if knowledge := request.Current.Coverage.Lookup(ydbcoordination.Kind, objectidentity.ID{}); unknown(knowledge) {
-		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: ydbcoordination.Kind,
-			Reason: "coordination-node namespace was not fully inspected: " + knowledge.Reason})
-	}
-	if err := ctx.Err(); err != nil {
-		return schemaext.ObjectComparisonResult{}, err
-	}
-	return result, nil
+	return completeStandaloneComparison(ctx, request, nodes, coverage, ydbcoordination.Kind, "coordination-node",
+		func(value coordinationNode) objectidentity.ID { return value.ref }, compareCoordinationNode)
 }
 
 func compareCoordinationNode(request schemaext.ObjectComparisonRequest, node coordinationNode, result *schemaext.ObjectComparisonResult) error {
@@ -94,69 +73,24 @@ func coordinationLimited(coverage schemaext.Coverage, ref objectidentity.ID) boo
 }
 
 func coordinationInputs(ctx context.Context, request schemaext.ObjectComparisonRequest) (map[objectidentity.Key]coordinationNode, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if request.Target != "ydb" {
-		return nil, fmt.Errorf("%w: YDB comparison on %q", ptaherr.ErrUnsupportedDialect, request.Target)
-	}
-	if !request.Identifiers.Equal(identifier.ForDialect("ydb")) || !slices.Equal(request.Kinds, []schemaext.Kind{ydbcoordination.Kind}) {
-		return nil, fmt.Errorf("%w: invalid coordination comparison vocabulary or identifiers", schemaext.ErrInvalidValue)
-	}
-	nodes := make(map[objectidentity.Key]coordinationNode)
-	for _, source := range []struct {
-		state     schemaext.ObjectState
-		direction schemaext.Representation
-	}{{request.Desired, schemaext.Desired}, {request.Current, schemaext.Observed}} {
-		if err := collectCoordinationNodes(ctx, source.state, source.direction, nodes); err != nil {
-			return nil, err
-		}
-	}
-	if len(nodes) > 0 && !request.Capabilities.Has(capability.CoordinationNodes) {
-		return nil, fmt.Errorf("%w: coordination nodes require %s", ptaherr.ErrUnsupportedFeature, capability.CoordinationNodes)
-	}
-	return nodes, nil
+	return standaloneInputs(ctx, request, ydbcoordination.Kind, capability.CoordinationNodes, "coordination", "coordination nodes", collectCoordinationNodes)
 }
 
 func collectCoordinationNodes(ctx context.Context, state schemaext.ObjectState, direction schemaext.Representation, nodes map[objectidentity.Key]coordinationNode) error {
-	objects, err := state.Objects.All()
+	err := captureStandalone(ctx, state, direction, ydbcoordination.Kind, ydbcoordination.Codecs(), ydbcoordination.ValidateRef,
+		func(ref objectidentity.ID, desired *ydbcoordination.Desired, current *ydbcoordination.Observed) {
+			node := nodes[ref.Key()]
+			node.ref = ref
+			if desired != nil {
+				node.desired = desired
+			}
+			if current != nil {
+				node.current = current
+			}
+			nodes[ref.Key()] = node
+		})
 	if err != nil {
 		return err
-	}
-	for _, object := range objects {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
-			return err
-		}
-		if knowledge := state.Coverage.Lookup(ydbcoordination.Kind, object.Ref); knowledge.State == schemaext.Absent || knowledge.State == schemaext.Defaulted {
-			return fmt.Errorf("%w: a present coordination node cannot be absent or defaulted", schemaext.ErrInvalidValue)
-		}
-		node := nodes[object.Ref.Key()]
-		var spec ydbcoordination.Spec
-		switch value := object.Value.(type) {
-		case *ydbcoordination.Desired:
-			if direction != schemaext.Desired || value == nil {
-				return fmt.Errorf("%w: unexpected desired coordination node", schemaext.ErrInvalidValue)
-			}
-			node.desired, spec = value, value.Spec
-		case *ydbcoordination.Observed:
-			if direction != schemaext.Observed || value == nil {
-				return fmt.Errorf("%w: unexpected observed coordination node", schemaext.ErrInvalidValue)
-			}
-			node.current, spec = value, value.Spec
-		default:
-			return fmt.Errorf("%w: expected a coordination node, got %T", schemaext.ErrInvalidValue, object.Value)
-		}
-		if err := ydbcoordination.Validate(spec); err != nil {
-			return err
-		}
-		node.ref = object.Ref
-		nodes[object.Ref.Key()] = node
 	}
 	return collectCoordinationCoverage(state.Coverage, nodes)
 }

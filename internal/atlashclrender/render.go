@@ -562,7 +562,6 @@ func (r *renderer) renderBody() {
 	r.reportFeatureObjects()
 	r.reportSecrets()
 	r.reportExternalObjects()
-	r.reportStreamingQueries()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
 	r.reportResourcePools()

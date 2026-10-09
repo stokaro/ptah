@@ -1,6 +1,7 @@
 package schemastats_test
 
 import (
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -10,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 func TestCollect_YDBFamilies(t *testing.T) {
@@ -31,7 +33,6 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		Transfers:               make([]schemamodel.Transfer, 8),
 		Secrets:                 make([]schemamodel.Secret, 9),
 		ExternalDataSources:     make([]schemamodel.ExternalDataSource, 10),
-		StreamingQueries:        make([]schemamodel.StreamingQuery, 11),
 	}
 	var err error
 	db.FeatureObjects, err = schemaext.NewObjects(
@@ -44,6 +45,7 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		ydbschema.DesiredObject("", "users", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}}),
 	)
 	c.Assert(err, qt.IsNil)
+	db.FeatureObjects = addStreamingMetricFixtures(c, db.FeatureObjects)
 	body := render(c, db, nil)
 	for _, test := range []struct{ name, want string }{
 		{"tables", "2"}, {"columns", "0"},
@@ -58,4 +60,14 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		c.Check(metricValue(c, body, "ptah_schema_"+test.name), qt.Equals, test.want, qt.Commentf("metric %s", test.name))
 		c.Check(metricValue(c, render(c, nil, nil), "ptah_schema_"+test.name), qt.Equals, "0", qt.Commentf("empty metric %s", test.name))
 	}
+}
+
+func addStreamingMetricFixtures(c *qt.C, objects schemaext.Objects) schemaext.Objects {
+	c.Helper()
+	for i := range 11 {
+		var err error
+		objects, err = objects.With(ydbstreaming.DesiredObject("", fmt.Sprintf("query_%d", i), "", ydbstreaming.Spec{Text: "SELECT 1;"}, false))
+		c.Assert(err, qt.IsNil)
+	}
+	return objects
 }

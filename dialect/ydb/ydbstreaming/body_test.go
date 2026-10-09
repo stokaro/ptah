@@ -1,11 +1,11 @@
-package ydbstream_test
+package ydbstreaming_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/ydbstream"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 func TestSameBody_CommentsDoNotResetState(t *testing.T) {
@@ -25,7 +25,7 @@ func TestSameBody_CommentsDoNotResetState(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ydbstream.SameBody(test.left, test.right), qt.Equals, test.same)
+			c.Assert(ydbstreaming.SameBody(test.left, test.right), qt.Equals, test.same)
 		})
 	}
 }

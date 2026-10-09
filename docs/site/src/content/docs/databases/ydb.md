@@ -1044,6 +1044,11 @@ YQL tokens because YDB removes comments from the stored body. Literal contents
 and operators remain significant. HCL and DBML cannot declare this family, so applying
 those formats preserves queries already in the database.
 
+A listed query whose metadata is unavailable remains an inspection limit.
+Ptah cannot infer its absence or safely plan its replacement. Go export refuses
+incomplete streaming-query inspection rather than producing a source that would
+manage an unknown query as absent.
+
 Changing `run` or `resource_pool` uses `ALTER STREAMING QUERY`. A body change
 requires `allow_state_reset: true` in YAML, or `allow_state_reset="true"` in the
 Go annotation. In desired YQL, `CREATE OR REPLACE STREAMING QUERY` grants

@@ -53,7 +53,7 @@ func ReadOnto(
 		return schemamodel.Database{}, nil, err
 	}
 	if platform.NormalizeDialect(dialect) == platform.YDB {
-		database.FeatureCoverage, err = ydbsource.Coverage()
+		database.FeatureCoverage, err = ydbsource.Coverage(ydbsource.Limits{})
 		if err != nil {
 			return schemamodel.Database{}, nil, err
 		}

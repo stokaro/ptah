@@ -3,9 +3,8 @@ package yamlschema
 import (
 	"fmt"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbstream"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 type streamingQuerySpec struct {
@@ -24,11 +23,19 @@ func (d document) addStreamingQueries(db *schemamodel.Database) error {
 		if name == "" {
 			name = key
 		}
-		spec := ast.StreamingQuerySpec{Text: string(entry.Text), Run: entry.Run, ResourcePool: string(entry.ResourcePool)}
-		if err := ydbstream.Validate(spec); err != nil {
+		spec := ydbstreaming.Spec{Text: string(entry.Text), Run: entry.Run, ResourcePool: string(entry.ResourcePool)}
+		if err := ydbstreaming.Validate(spec); err != nil {
 			return fmt.Errorf("streaming query %q: %w", name, err)
 		}
-		db.StreamingQueries = append(db.StreamingQueries, schemamodel.StreamingQuery{Name: name, Schema: string(entry.Schema), Spec: spec.Clone(), AllowStateReset: entry.AllowStateReset})
+		object := ydbstreaming.DesiredObject(string(entry.Schema), name, "", spec, entry.AllowStateReset)
+		if err := ydbstreaming.ValidateIdentity(object.Ref); err != nil {
+			return err
+		}
+		var err error
+		db.FeatureObjects, err = db.FeatureObjects.With(object)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

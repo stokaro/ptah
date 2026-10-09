@@ -234,7 +234,7 @@ func RefuseResourcePools(dialect string, diff *difftypes.SchemaDiff) error {
 // them at the same point, before it emits anything.
 func RefuseYDBObjects(dialect string, diff *difftypes.SchemaDiff) error {
 	for _, refuse := range []func(string, *difftypes.SchemaDiff) error{
-		RefuseTopics, RefuseSecrets, RefuseExternalObjects, RefuseStreamingQueries,
+		RefuseTopics, RefuseSecrets, RefuseExternalObjects,
 	} {
 		if err := refuse(dialect, diff); err != nil {
 			return err
