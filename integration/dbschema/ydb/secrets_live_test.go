@@ -5,6 +5,7 @@ package ydb_test
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -294,7 +295,8 @@ func dropRootSecrets(c *qt.C, conn *dbschema.DatabaseConnection) {
 // root secret ptah_ydb_secrets_limit.pw unmanaged and plans it against a
 // database that holds it: the limit names that path, not pw in a directory
 // ptah_ydb_secrets_limit, so the secret is left alone. The source still
-// describes every other secret, so another root secret is dropped.
+// describes every other secret, so the test's other root secret is dropped.
+// Only the changes to the test's own secrets are compared.
 func TestYDBSecrets_LimitNamesADottedRootSecret(t *testing.T) {
 	c := qt.New(t)
 	conn := openYDB(c, lineNamed(c, "26.2"))
@@ -311,9 +313,21 @@ func TestYDBSecrets_LimitNamesADottedRootSecret(t *testing.T) {
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, []string{""}), conn.Info(), nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{
-		{Subject: ydbsecret.Ref("", secretsLimitDropped), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}},
-	})
+	c.Assert(changesTo(diff.FeatureChanges, ydbsecret.Ref("", secretsLimitKept), ydbsecret.Ref("", secretsLimitDropped)), qt.DeepEquals,
+		[]schemaext.ChangeRecord{{Subject: ydbsecret.Ref("", secretsLimitDropped), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}}})
+}
+
+// changesTo keeps the changes to the given subjects. The limit test reads the
+// root of a server other tests share, so a root secret another test left
+// behind is planned too, and is not this test's to judge.
+func changesTo(changes []schemaext.ChangeRecord, subjects ...objectidentity.ID) []schemaext.ChangeRecord {
+	var kept []schemaext.ChangeRecord
+	for _, change := range changes {
+		if slices.ContainsFunc(subjects, func(subject objectidentity.ID) bool { return subject.Key() == change.Subject.Key() }) {
+			kept = append(kept, change)
+		}
+	}
+	return kept
 }
 
 // TestYDBSecrets_CreatedBeneathADroppedTable plans a secret beneath the path of
@@ -380,14 +394,11 @@ func absoluteSecretSource(location, path string, secrets ...schemaext.Object) *s
 	}
 }
 
-// TestYDBSecrets_ReadThroughAnAbsolutePath declares a data source that names
-// its secret by an absolute path, as YDB stores it. The path is read against
-// the database the plan runs in: the secret is created before the source, the
-// two compare equal after, and a plan that drops the secret while it creates
-// the source again is refused, as is a path outside the database.
-func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
-	t.Setenv(externalSecretEnv, "probe")
-	c := qt.New(t)
+// openAbsoluteSecretDatabase opens the line the absolute-path tests run on,
+// with external data sources enabled and the tests' directories emptied after
+// them, and returns the database's own path.
+func openAbsoluteSecretDatabase(c *qt.C) (*dbschema.DatabaseConnection, string) {
+	c.Helper()
 	line := lineNamed(c, "26.2")
 	setClusterFlags(c, line, externalSourcesOn)
 	conn := openYDB(c, line)
@@ -395,7 +406,17 @@ func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
 		externalTeardown(c, conn, nil)
 		dropSecrets(c, conn, externalSchemas)
 	})
-	root := readScoped(c, conn, externalSchemas).DatabasePath
+	return conn, readScoped(c, conn, externalSchemas).DatabasePath
+}
+
+// TestYDBSecrets_ReadThroughAnAbsolutePath declares a data source that names
+// its secret by an absolute path, as YDB stores it. The path is read against
+// the database the plan runs in: the secret is created before the source, and
+// the two compare equal after.
+func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
+	t.Setenv(externalSecretEnv, "probe")
+	c := qt.New(t)
+	conn, root := openAbsoluteSecretDatabase(c)
 	declared := absoluteSecretSource("pg.invalid:5432", root+"/"+externalSchema+"/abs_pw", absoluteSecret())
 
 	first := planAgainst(c, conn, declared, externalSchemas)
@@ -404,10 +425,25 @@ func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
 	c.Assert(first, qt.HasLen, 2)
 	c.Assert(first[0], qt.Equals, "CREATE SECRET `ptah_ydb_external/abs_pw` WITH (value = $PTAH_SECRET_LIVE_EXTERNAL_PG)")
 	c.Assert(planAgainst(c, conn, declared, externalSchemas), qt.HasLen, 0)
-	c.Assert(planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", root+"/"+externalSchema+"/abs_pw"), externalSchemas),
-		qt.ErrorMatches, ".*secret ptah_ydb_external/abs_pw is dropped while a statement of this plan reads it by its path.*")
-	c.Assert(planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", "/elsewhere/abs_pw", absoluteSecret()), externalSchemas),
-		qt.ErrorMatches, `.*secret path "/elsewhere/abs_pw" is outside the database `+root+`.*`)
+}
+
+// TestYDBSecrets_FailurePath_ReadThroughAnAbsolutePath starts from a data
+// source that reads its secret by an absolute path. A plan that drops the
+// secret while it creates the source again is refused, and so is a source
+// whose path is outside the database, since no statement of it could read the
+// secret.
+func TestYDBSecrets_FailurePath_ReadThroughAnAbsolutePath(t *testing.T) {
+	t.Setenv(externalSecretEnv, "probe")
+	c := qt.New(t)
+	conn, root := openAbsoluteSecretDatabase(c)
+	path := root + "/" + externalSchema + "/abs_pw"
+	apply(c, conn, planAgainst(c, conn, absoluteSecretSource("pg.invalid:5432", path, absoluteSecret()), externalSchemas))
+
+	dropped := planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", path), externalSchemas)
+	outside := planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", "/elsewhere/abs_pw", absoluteSecret()), externalSchemas)
+
+	c.Assert(dropped, qt.ErrorMatches, ".*secret ptah_ydb_external/abs_pw is dropped while a statement of this plan reads it by its path.*")
+	c.Assert(outside, qt.ErrorMatches, `.*secret path "/elsewhere/abs_pw" is outside the database `+root+`.*`)
 }
 
 // TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns compares the secret a
