@@ -3,6 +3,7 @@ package ydbsource
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -37,7 +38,10 @@ func ReadHCLCoverage(document string, limits Limits) (schemaext.Coverage, bool, 
 	return known, true, nil
 }
 
-func hclCoverageRegistry() (schemaext.Registry, error) {
+// hclCoverageRegistry builds the desired coordination-node registry once.
+// Building one validates and hashes every codec definition, and every HCL load
+// and export asks for it.
+var hclCoverageRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
 	var models []schemaext.OwnedCodec
 	for _, codec := range ydbcoordination.Codecs() {
 		if codec.Representation == schemaext.Desired {
@@ -45,4 +49,4 @@ func hclCoverageRegistry() (schemaext.Registry, error) {
 		}
 	}
 	return schemaext.NewRegistry(models...)
-}
+})

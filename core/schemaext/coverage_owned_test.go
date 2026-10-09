@@ -75,3 +75,48 @@ func TestOwnedCoverage_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestOwnedCoverageSource_HappyPath answers every call as OwnedCoverage does
+// and asks for the codecs once, however many claims it records.
+func TestOwnedCoverageSource_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	codecs := []schemaext.Codec{
+		widgetCodec(widgetKind, schemaext.Desired), widgetCodec(widgetKind, schemaext.Observed), widgetCodec(otherKind, schemaext.Observed),
+	}
+	calls := 0
+	source := schemaext.OwnedCoverageSource("example.org/provider", func() []schemaext.Codec {
+		calls++
+		return codecs
+	})
+	for _, kind := range []schemaext.Kind{widgetKind, otherKind} {
+		want, err := schemaext.OwnedCoverage("example.org/provider", codecs, kind, schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		c.Assert(err, qt.IsNil)
+
+		got, err := source(kind, schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got.KindRecords(), qt.DeepEquals, want.KindRecords())
+	}
+	c.Assert(calls, qt.Equals, 1)
+}
+
+// TestOwnedCoverageSource_FailurePath returns the registry refusal on every
+// call, not only the first, and refuses a kind the codecs do not define.
+func TestOwnedCoverageSource_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	refused := schemaext.OwnedCoverageSource("", func() []schemaext.Codec {
+		return []schemaext.Codec{widgetCodec(widgetKind, schemaext.Desired)}
+	})
+	for range 2 {
+		coverage, err := refused(widgetKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidCodec)
+		c.Assert(coverage.KindRecords(), qt.HasLen, 0)
+	}
+
+	source := schemaext.OwnedCoverageSource("example.org/provider", func() []schemaext.Codec {
+		return []schemaext.Codec{widgetCodec(widgetKind, schemaext.Desired)}
+	})
+	coverage, err := source("example.org/missing", schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	c.Assert(err, qt.ErrorMatches, `invalid feature value: the codecs define no desired model of kind "example.org/missing"`)
+	c.Assert(coverage.KindRecords(), qt.HasLen, 0)
+}
