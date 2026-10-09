@@ -302,11 +302,30 @@ before adopting them:
   keeps the rows the view accumulated. A view gaining its first schedule or
   losing its last is a drop and a create instead, because the server refuses
   that transition in place: `Alter of type 'MODIFY_REFRESH' is not supported by
-  storage MaterializedView`. That drop empties the view.
+  storage MaterializedView`. Adding or removing `APPEND` is a drop and a create
+  for the same reason: 24.10 answers `Adding or removing APPEND is not
+  supported` and 26.9 answers `Changing APPEND or INCREMENTAL is not supported`.
+  That drop empties the view, and the plan reports it as destructive.
 
   `OFFSET`, `RANDOMIZE FOR`, `DEPENDS ON` and `APPEND` are carried too. `OFFSET`
   belongs to `EVERY` alone, and an interval mixing calendar units with clock
-  ones is refused where it is declared, both matching the server.
+  ones is refused where it is declared, both matching the server. 24.10 also
+  refuses `DEPENDS ON` with `AFTER`.
+
+  The schedule is a ClickHouse setting of the view, not part of the shared
+  materialized view, and only Go annotations can declare it. A Go source states
+  every view's schedule, so a view declared without `refresh` is a plain view,
+  and a schedule the server holds for it is removed. A YAML, HCL or SQL source
+  cannot state one, so a schedule the server holds is kept as it is: Ptah plans
+  no change to it, and a view replaced for a changed query is created again
+  with it.
+
+  A schedule the server stores in a form Ptah cannot read is left undecided
+  rather than read as no schedule, so it is never planned as a drop and a
+  create. Other targets do not carry the schedule. A PostgreSQL or Oracle view
+  rendered from the same declaration has none, and
+  [`ptah schema validate --no-skipped`](../../schema/validate-and-format/)
+  does not report it, because the declaration was made for ClickHouse alone.
 
 - The storage clause is written explicitly rather than left to the server.
   ClickHouse 25.x and later accept a materialized view with no storage clause
@@ -339,9 +358,8 @@ before adopting them:
   the statement runs. Treat a materialized-view body change as a change that
   empties the view.
 
-The `TO <target table>` form and refreshable materialized views are not emitted:
-the shared schema model carries a name and a query, so it can name neither a
-separate target table nor a refresh schedule.
+The `TO <target table>` form is not emitted: the shared schema model carries a
+name and a query, so it cannot name a separate target table.
 
 A materialized view created elsewhere with `TO <target table>` is still read, and
 it is read as though it owned its storage: `system.tables` reports the same

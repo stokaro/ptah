@@ -192,7 +192,9 @@ the target dropped on its own, so it stays quiet about:
 - an object a `dialects=` scope excludes from this target, which was never part
   of that target's desired state;
 - a declaration a [platform override](../../reference/go-annotations/) replaced
-  for this target, where the schema already says what this target gets.
+  for this target, where the schema already says what this target gets;
+- a declaration made for one engine alone, such as a ClickHouse materialized
+  view's `refresh` schedule, which was never part of another target's view.
 
 The check reads a render of the create statements, so what it can see is what
 a `CREATE` carries: tables, columns and indexes. It covers what a renderer names
@@ -201,8 +203,7 @@ declares, and an index's condition, operator class, FULLTEXT parser, storage
 parameters, part order and uniqueness.
 
 It also covers what a whole object declares: a table's partitioning, a schema's
-character set and collation, a role's comment, and a materialized view's refresh
-schedule.
+character set and collation, and a role's comment.
 
 Two cases are still outside it, and
 [stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) tracks them. The
@@ -243,19 +244,16 @@ than reported. A target without the clause fails the render, and a plan that
 adds the payload to an existing index fails the same way, which is the louder
 answer, so nothing is dropped for a report to name.
 
-Four declarations belong to a whole object rather than to a column or an index:
+Some declarations belong to a whole object rather than to a column or an index:
 
 | Property | Kept by | Dropped by |
 | --- | --- | --- |
 | Table partitioning | the PostgreSQL family | every other target |
 | Schema character set and collation | the MySQL family | PostgreSQL, SQL Server, ClickHouse |
 | Role comment | the PostgreSQL family | the MySQL family, SQL Server, Oracle, ClickHouse |
-| Materialized view refresh schedule | ClickHouse | PostgreSQL, Oracle |
 
 Losing the partitioning produces one ordinary table where a partitioned one was
-declared, and losing the refresh schedule produces a view that is populated once
-and never again, which reaches its reader as stale data rather than as a missing
-clause. SQLite and Oracle report a schema and a role as unsupported objects
+declared. SQLite and Oracle report a schema and a role as unsupported objects
 outright, so they name the loss already and add no second line about a property.
 
 A generated key reports the values it loses, not the spelling. Every target

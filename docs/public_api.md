@@ -594,6 +594,12 @@ the public path without built-in providers. Process adapters must map model
 values and references into explicit records; implicit JSON encoding of a
 relation value or snapshot is refused.
 
+`ChangeValue` implementations that also implement `OwnerReplacement` report
+whether applying them requires replacing the common owner; `ReplacesOwner`
+answers false for a value that does not. The migration comparator honors it
+for materialized views, which it can replace, and refuses it for tables and
+indexes with `ptaherr.ErrUnsupportedFeature`.
+
 `Facets.WithTargetScope` binds a value to target names from its source.
 `ForTarget` uses an explicit `TargetSelection`, including its registered aliases.
 An excluded value retains its binding without its payload. `Kinds` and `Len`
@@ -829,6 +835,41 @@ replacement cannot restore materialized index data. Reverse planning projects
 the forward settings onto the captured index. `chreport.IndexService` and
 `IndexDefinitions()` supply counts and omission labels.
 
+`chschema.RefreshCodecs()` handles a materialized view's refresh schedule under
+`RefreshKind`. `DesiredRefresh` and `ObservedRefresh` each hold a `Schedule`:
+`EVERY` or `AFTER` with its interval, and the optional `OFFSET`, `RANDOMIZE
+FOR`, `DEPENDS ON` and `APPEND` clauses. A view without a schedule has no
+value; whether that absence is known is coverage, which `RefreshCoverage`
+builds. `Schedule.Clause` renders the clause the CREATE carries, and
+`Schedule.Clone` copies a schedule without sharing its dependency list.
+`chsource.RefreshFacets` reads a declared clause into a facet bound to the
+clickhouse target, in the spelling the server stores, and refuses a clause the
+server would refuse. `chsource.RefreshCoverage` is the knowledge Go annotations
+enroll, so a view declared without a schedule asks for a plain view; YAML, HCL
+and SQL sources enroll none and leave a server's schedule unmanaged.
+
+`chcompare.RefreshService` compares schedules of views both sides hold, reading
+both in the spelling the server stores, with dependencies qualified by the
+view's schema. An unmanaged observed schedule is adopted into the effective
+declaration, so a view replaced for another reason keeps it. A stored schedule
+the reader could not read is undecided. `chdiff.Refresh` carries an observed
+`Before` and a desired `After`, where nil is a plain view; its codec writes
+null for that side. `ReplacesOwner` is true when a schedule is gained or lost,
+or `APPEND` changes, because `MODIFY REFRESH` refuses those; the effect of such
+a change is destructive.
+
+`chplan.RefreshService` plans an in-place change as `chast.ModifyRefresh`
+inside the ALTER envelope that names the view, outside a transaction, and
+contributes nothing when the host replaces the view. `chreverse.RefreshService`
+restores the prior schedule in place, or reports that replacing the view does
+not restore its rows. `chconvert.Service` projects refresh observations and
+declarations; `chreport.RefreshService` and `RefreshDefinitions()` supply the
+count and omission label. The former `ast.MatViewRefreshSpec`,
+`ast.AlterMaterializedViewRefreshNode`, the `Refresh` fields of
+`ast.CreateMaterializedViewNode`, `schemamodel.MaterializedView` and
+`catalog.MaterializedView` are removed without aliases. This changes behavior;
+pre-v1, so no compatibility is owed.
+
 `schemaproperties.DecodeTables` attaches decoded property groups as desired
 facets bound to the selected target. It consumes only claimed keys; other keys
 and target groups remain in `Overrides`. `EncodeTables` writes table facets as
@@ -967,6 +1008,13 @@ formats that cannot retain facets.
 Planning changes to storage settings other than TTL remains part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
+A refreshable materialized view carries a `chschema.ObservedRefresh` read from
+its CREATE statement, for the views `system.view_refreshes` lists. Refresh
+coverage is complete for each view read, except a view whose stored clause
+cannot be read, which is unrepresentable. A server without
+`system.view_refreshes` has no refreshable views; any other failure to read it
+fails the read.
+
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register
 `schemapreparation.Identity` explicitly. The service may resolve desired column
@@ -1011,7 +1059,12 @@ It is not reverse intent or evidence that a migration ran. Report JSON omits it;
 durable plan serialization requires an explicit capture codec.
 
 `core/ast.ExtensionStatement` and `ExtensionAlterOperation` carry typed,
-cloneable owner payloads. The ALTER interface stays sealed. YDB changefeed
+cloneable owner payloads. The ALTER interface stays sealed. An
+`ExtensionAlterOperation` may sit in an `ast.AlterTableNode` that names a
+materialized view, which is how an owner changes a setting of the view in
+place. `ast.CreateMaterializedViewNode.Facets` carries owner settings the
+CREATE states inline; rendering prepares them for the target like table facets
+and refuses an active value the target's owner does not accept. YDB changefeed
 operations live in `dialect/ydb/ydbast`: `AddChangefeed`, `DropChangefeed`, and
 `AlterChangefeedTopic` each travel inside an `ExtensionAlterOperation`.
 
@@ -2334,10 +2387,14 @@ a diff the comparison produced must not plan it while it is non-empty.
 
 `migration/schemadiff/difftypes.MaterializedViewDiff` carries one too. No engine
 has an in-place replacement that keeps a materialized view's rows, so a change
-other than a ClickHouse refresh schedule is a drop and a create, and the create
-renders from this field. The type now has two fields called `Desired`, at
-different scales: this one is the view, and `RefreshChange.Desired` is one
-schedule.
+to the common view is a drop and a create, and the create renders from this
+field. `FeatureChanges` carries owner changes to settings attached to the view,
+as `TableDiff.FeatureChanges` does for a table. `Replaces` reports whether the
+entry needs the drop and the create: a common change does, and so does an owner
+change value that implements `schemaext.OwnerReplacement` and reports true; an
+entry holding only in-place owner changes keeps the view. The former
+`RefreshChange` field and `MatViewRefreshChange` type are removed without
+aliases. This changes behavior; pre-v1, so no compatibility is owed.
 
 `migration/schemadiff/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
 field too, and the reference type is the one place where it means something on

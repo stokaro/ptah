@@ -796,8 +796,16 @@ spelling of the same schedule converges. A schedule the server would refuse is
 refused here instead: an interval mixing calendar units with clock units, a
 zero interval, or `offset` on an `after` schedule.
 
-It is a ClickHouse property and only that. It is not the retired
-cross-dialect strategy below, which described an operation rather than state:
+It is a ClickHouse setting of the view and only that. It reaches ClickHouse
+alone: a PostgreSQL or Oracle view rendered from the same declaration has no
+schedule, and nothing reports one as dropped. Because a Go source states every
+view's schedule, a view declared without `refresh` asks for a plain view, and
+a schedule the server holds for it is removed. A changed schedule is applied
+with `MODIFY REFRESH`; gaining or losing a schedule, or its `append`, replaces
+the view. [ClickHouse](../../databases/clickhouse/) has the details.
+
+It is not the retired cross-dialect strategy below, which described an
+operation rather than state:
 
 `refresh_strategy` is not an attribute. Ptah does not refresh materialized
 views: one is populated when it is created, a changed `body` is reconciled as a
