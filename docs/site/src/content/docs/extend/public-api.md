@@ -162,8 +162,8 @@ Replies must set `Complete`. The migration comparator captures table facets and
 applies effective desired settings before capturing common table changes. Other
 attachment points currently refuse because they lack comparison identity capture.
 Adding a provider does not add coverage claims to an existing source.
-Comparison binds table coverage claims to the connection's identifier semantics
-before selecting parent state. The default database applies to unqualified table
+Comparison and reverse CREATE projection bind table coverage claims to the
+connection's identifier semantics before selecting parent state. The default database applies to unqualified table
 claims; explicit schemas and knowledge limits remain intact. Conflicting claims
 for the resulting identity are refused.
 

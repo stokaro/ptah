@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/migration/internal/tableidentity"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -73,6 +74,10 @@ func projectCreatedTableState(ctx context.Context, diff *difftypes.SchemaDiff, c
 	}
 	if len(converted.Tables) != 1 {
 		return schemacapture.TableObservation{}, fmt.Errorf("cannot project incomplete creation of table %q", creation.Name)
+	}
+	converted.FeatureCoverage, err = tableidentity.BindCoverage(converted.FeatureCoverage, dialect, semantics)
+	if err != nil {
+		return schemacapture.TableObservation{}, err
 	}
 	before := difftypes.TableObservationFor(converted, converted.Tables[0], dialect, semantics)
 	after := before.Clone()
