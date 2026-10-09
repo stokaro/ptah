@@ -52,6 +52,7 @@ func TestPlanLive_RecordsTheOwnersVerdictForOwnedOperations(t *testing.T) {
 	c.Assert(statement.Severity, qt.Equals, safety.Warning)
 	c.Assert(statement.Reason, qt.Equals,
 		"row-level TTL decides which rows a background job deletes; restoring a prior policy cannot recover deleted rows")
+	c.Assert(statement.Owned, qt.IsTrue)
 	c.Assert(string(statement.Access), qt.Equals, "", qt.Commentf("row-level TTL makes no access claim"))
 	// The control: the statement's text alone earns a lower verdict, so the
 	// recorded one came from the owner.

@@ -76,3 +76,63 @@ func absentPayload(payload ExtensionPayload) bool {
 		return false
 	}
 }
+
+// ExtensionPlacement describes how a node carries owner-defined operations.
+// Safety reports attribute an owner's verdict to the statements a node
+// renders, which is sound only when the node holds that one operation.
+type ExtensionPlacement int
+
+const (
+	// NoExtension is a node that carries no owner operation.
+	NoExtension ExtensionPlacement = iota
+	// IsolatedExtension is a node that is exactly one owner operation: an
+	// ExtensionStatement, an ExtensionAlterOperation, an ALTER TABLE whose only
+	// operation is one, or a statement list holding only such a node.
+	IsolatedExtension
+	// MixedExtension is a node that carries an owner operation beside other
+	// operations or statements, or more than one owner operation.
+	MixedExtension
+)
+
+// PlacementOf classifies node. A typed nil extension envelope counts as an
+// isolated owner operation, so its unknown effects are not lost.
+func PlacementOf(node Node) ExtensionPlacement {
+	switch typed := node.(type) {
+	case *ExtensionStatement, *ExtensionAlterOperation:
+		return IsolatedExtension
+	case *AlterTableNode:
+		if typed == nil {
+			return NoExtension
+		}
+		owned := 0
+		for _, operation := range typed.Operations {
+			if _, ok := operation.(*ExtensionAlterOperation); ok {
+				owned++
+			}
+		}
+		switch {
+		case owned == 0:
+			return NoExtension
+		case owned == 1 && len(typed.Operations) == 1:
+			return IsolatedExtension
+		default:
+			return MixedExtension
+		}
+	case *StatementList:
+		if typed == nil {
+			return NoExtension
+		}
+		carried := NoExtension
+		for _, child := range typed.Statements {
+			if placement := PlacementOf(child); placement != NoExtension {
+				carried = max(carried, placement)
+			}
+		}
+		if carried == IsolatedExtension && len(typed.Statements) != 1 {
+			return MixedExtension
+		}
+		return carried
+	default:
+		return NoExtension
+	}
+}

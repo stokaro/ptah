@@ -120,17 +120,20 @@ The file is what a reviewer reads:
 }
 ```
 
-A statement that a feature owner's operation renders records the owner's
-verdict when it is higher than what the SQL text says, because the text of
-such a statement says little about its effect. When the owner assesses what
-the statement does to access, the statement also carries `access` --
-`widens`, `narrows`, `unchanged` or `unknown` -- and `access_reason`. A
-widening or unknown access effect makes the statement destructive. When the
-plan cannot tell which statements an owner's operation rendered, every
-statement is destructive with an unknown access effect. An `--edit` that
-changes or removes a statement carrying an access assessment does the same to
-the statements the edit introduced, because SQL text cannot say what they do
-to access. The Atlas `.plan.hcl` format stores only the SQL, so a plan read
+A statement that a feature owner's operation renders is marked `owned` and
+records the owner's verdict when it is higher than what the SQL text says,
+because the text of such a statement says little about its effect. When the
+owner assesses what the statement does to access, the statement also carries
+`access` -- `widens`, `narrows`, `unchanged` or `unknown` -- and
+`access_reason`. A widening or unknown access effect makes the statement
+destructive. When the plan cannot tell which statements an owner's operation
+rendered, every statement is destructive with an unknown access effect.
+
+An `--edit` that changes or removes an `owned` statement makes every remaining
+`owned` statement and every statement the edit introduced destructive with an
+unknown access effect: SQL text cannot say what they do, and an access verdict
+depends on the policies beside it. The reason each statement had stays beside
+the new one. The Atlas `.plan.hcl` format stores only the SQL, so a plan read
 back from it carries the text's verdict alone.
 
 `from_fingerprint` describes the schemas the database URL covers. A URL that

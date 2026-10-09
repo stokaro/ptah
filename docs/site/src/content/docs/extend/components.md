@@ -403,8 +403,13 @@ Embed `schemaext.AccessEffectSchema()` in the codec definition. A payload that
 implements the interface without a valid assessment is refused at every codec
 boundary, so the assessment cannot be dropped on the way to a report. Safety
 reports print it beside the statement, and diff findings count it under
-`feature_access_<verdict>:<kind>`; a widening or unknown effect is
-destructive, a narrowing is a warning.
+`feature_access_widened:<kind>`, `feature_access_narrowed:<kind>`,
+`feature_access_unchanged:<kind>` or `feature_access_unknown:<kind>`; a
+widening or unknown effect is destructive, a narrowing is a warning.
+
+Plan each owner operation as a node of its own: planning refuses a node that holds one
+beside other work, because a report could not tell which statements the
+operation wrote.
 
 YDB inspection records unknown coordination settings as incomplete subject
 coverage. Go and HCL export refuse those limits before writing output, because

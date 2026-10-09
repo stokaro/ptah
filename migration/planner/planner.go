@@ -551,10 +551,30 @@ func GenerateSchemaDiffASTWithOptions(
 		// a pass over the result reaches every column modification.
 		omitNullBackfill(nodes)
 	}
+	if err := requireIsolatedOwnerOperations(nodes); err != nil {
+		return nil, wrapPlanError(dialect, err)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
 	return nodes, nil
+}
+
+// requireIsolatedOwnerOperations refuses a plan in which an owner operation
+// shares a node with anything else. Safety reports and saved plans give each
+// statement the verdict of the owner operation that rendered it, and they can
+// tell which one that is only when the operation is a node of its own:
+// otherwise an ADD COLUMN beside a policy would carry the policy's access
+// verdict, or the policy the DROP TABLE's. The planners build owner operations
+// that way already, so this guards the boundary rather than reshaping a plan.
+func requireIsolatedOwnerOperations(nodes []ast.Node) error {
+	for index, node := range nodes {
+		if ast.PlacementOf(node) == ast.MixedExtension {
+			return fmt.Errorf("%w: planned node %d (%T) carries an owner operation beside other operations; "+
+				"each owner operation must be planned as a node of its own", ptaherr.ErrInvalidSchemaDiff, index+1, node)
+		}
+	}
+	return nil
 }
 
 // NodeRequiresNoTransaction reports whether a single planned AST node must run
@@ -668,14 +688,14 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 	return plan.Statements(), nil
 }
 
-// RenderedPlan is a schema diff planned and rendered once. Nodes are the
-// planned AST nodes, Request is the rendering request they went out in, and
-// Result holds one fragment per node, so a statement can be traced to the
-// node that rendered it without planning again. Its SQL and Statements are
+// RenderedPlan is a schema diff planned and rendered once. Request is the
+// rendering request the planned AST nodes went out in, and Result holds one
+// fragment per node, so a statement can be traced to the node that rendered it
+// without planning again. Its SQL and Statements are
 // what [GenerateSchemaDiffSQLWithOptions] and
 // [GenerateSchemaDiffSQLStatementsWithOptions] return for the same input.
 type RenderedPlan struct {
-	Nodes   []ast.Node
+	// Request holds the planned nodes in Request.Nodes.
 	Request renderer.Request
 	Result  renderer.Result
 	// Dialect is the caller's spelling of the target, which decides where one
@@ -738,7 +758,7 @@ func GenerateSchemaDiffRenderedPlan(
 	if err := ctx.Err(); err != nil {
 		return RenderedPlan{}, wrapRenderError(dialect, err)
 	}
-	return RenderedPlan{Nodes: astNodes, Request: request, Result: output, Dialect: dialect}, nil
+	return RenderedPlan{Request: request, Result: output, Dialect: dialect}, nil
 }
 
 // GenerateSchemaDiffSQL generates complete SQL for schema differences as a single string.

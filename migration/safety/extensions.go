@@ -1,7 +1,6 @@
 package safety
 
 import (
-	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -54,7 +53,7 @@ func classifyExtension(payload ast.ExtensionPayload) extensionVerdict {
 	}
 	if source, ok := prepared.(schemaext.AccessEffectSource); ok {
 		verdict.access = readAccess(source.AccessEffect())
-		if severity := accessSeverity(verdict.access.Access); severityRank(severity) > severityRank(verdict.severity) {
+		if severity := AccessSeverity(verdict.access.Access); severityRank(severity) > severityRank(verdict.severity) {
 			verdict.severity, verdict.reason = severity, accessReason(verdict.access)
 		}
 	}
@@ -91,12 +90,13 @@ func readAccess(effect schemaext.AccessEffect) schemaext.AccessEffect {
 	return effect
 }
 
-// accessSeverity maps an owner's access assessment onto the shared scale.
+// AccessSeverity is the severity an owner's access assessment requires on the
+// shared scale. An unrecognized or missing assessment is treated as unknown.
 // Widening access removes a protection, the reason DISABLE ROW LEVEL SECURITY
 // is destructive, and an unknown effect takes the same strongest review that
 // unknown extension effects take. Narrowing access can deny a deployed reader
 // or writer what it relies on, which is a behavioral change.
-func accessSeverity(access schemaext.Access) Severity {
+func AccessSeverity(access schemaext.Access) Severity {
 	switch access {
 	case schemaext.AccessUnchanged:
 		return Safe
@@ -150,28 +150,6 @@ func applyExtensionVerdict(target *StatementAssessment, verdict extensionVerdict
 		target.Severity, target.Reason = verdict.severity, verdict.reason
 	}
 	combineAccess(target, verdict.access.Access, verdict.access.Reason)
-}
-
-// hasExtensionEffect keeps the owner's risk on every statement emitted for an
-// extension-bearing unit. SQL keyword rules cannot interpret these operations;
-// splitting their output must not turn unknown effects into an additive change.
-func hasExtensionEffect(node ast.Node) bool {
-	switch typed := node.(type) {
-	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
-		return true
-	case *ast.StatementList:
-		return typed != nil && slices.ContainsFunc(typed.Statements, hasExtensionEffect)
-	case *ast.AlterTableNode:
-		if typed == nil {
-			return false
-		}
-		for _, operation := range typed.Operations {
-			if _, ok := operation.(*ast.ExtensionAlterOperation); ok {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // extensionSubject reads an owner's structured identity after snapshotting the

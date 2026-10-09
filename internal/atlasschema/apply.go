@@ -462,7 +462,7 @@ func computeApplyPlan(
 		}
 		computation.statements = plan.Statements()
 		if opts.assessOwnedOperations {
-			computation.owned, err = safety.OwnerVerdicts(ctx, opts.Runtime, plan.Request, plan.Result, computation.statements, info.Dialect)
+			computation.owned, err = safety.OwnerVerdicts(ctx, plan.Request, plan.Result, computation.statements, info.Dialect)
 			if err != nil {
 				return applyComputation{}, fmt.Errorf("assess owned operations: %w", err)
 			}

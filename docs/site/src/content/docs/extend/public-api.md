@@ -694,7 +694,9 @@ A statement rendered from an operation that implements
 the lifecycle effect and the access effect: a widening or unknown access effect
 is destructive and a narrowing is a warning. An assessment the owner did not
 establish reads as `unknown`, never as `unchanged`. Drift and diff findings
-count these changes under `feature_access_<verdict>:<kind>`.
+count these changes under `feature_access_widened:<kind>`,
+`feature_access_narrowed:<kind>`, `feature_access_unchanged:<kind>` and
+`feature_access_unknown:<kind>`.
 
 `migration/shadow` owns verification against a live disposable database:
 `VerifyMigration` measures a candidate migration, `VerifyBaseline` measures a

@@ -257,11 +257,13 @@ func AssessRendered(ctx context.Context, service renderer.Service, nodes []ast.N
 // narrowing type change stays destructive where the SQL alone would not say so
 // — never lowering a statement's own classification.
 //
-// An owned operation's verdict, its access assessment included, applies to the
-// statements that operation rendered and to no other. A node carrying an owned
-// operation beside common ones is rendered once more without the owned ones, in
-// the same batch, and a statement both renderings share is assessed as the
-// common part's.
+// An owner operation's verdict, its access assessment included, applies to
+// every statement its node renders when the node is that one operation
+// ([ast.IsolatedExtension]), which is how the planners build them. A node
+// carrying an owner operation beside other work ([ast.MixedExtension]) cannot
+// say which of its statements the operation wrote, so each of them is
+// Destructive, with an unknown access effect when the operation makes an
+// access claim.
 func AssessRenderedWithCapabilities(
 	ctx context.Context,
 	service renderer.Service,
@@ -280,35 +282,30 @@ func AssessRenderedWithCapabilities(
 	if target == "" {
 		target = dialect
 	}
-	batch, commons := commonParts(units, slices.Clone(units))
-	result, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: batch})
+	result, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: units})
 	if err != nil {
 		return nil, err
 	}
 	var assessments []StatementAssessment
 	for i, node := range units {
 		nodeAssessment := assessNode(node)
-		commonAssessment := nodeAssessment
-		var commonStatements []string
-		if commons[i] >= 0 {
-			commonAssessment = assessNode(batch[commons[i]])
-			commonStatements = renderedStatements(result.Fragments[commons[i]], dialect)
-		}
+		placement := ast.PlacementOf(node)
 		statements := renderedStatements(result.Fragments[i], dialect)
-		owned := ownedStatements(node, statements, commonStatements, dialect)
 		keepsNull := keepsNullability(node)
 		fills := fillsNullRows(node)
-		for j, statement := range statements {
+		for _, statement := range statements {
 			assessment := assessStatement(statement, keepsNull)
 			assessment.NodeType = nodeAssessment.NodeType
 			if assessment.Subject == "" {
 				assessment.Subject = nodeAssessment.Subject
 			}
 			switch {
-			case owned[j]:
+			case placement == ast.IsolatedExtension:
 				raiseAssessment(&assessment, nodeAssessment)
+			case placement == ast.MixedExtension:
+				raiseAssessment(&assessment, failClosed(mixedReason, node))
 			case len(statements) == 1 || isTypeChangeSQL(statement):
-				raiseAssessment(&assessment, commonAssessment)
+				raiseAssessment(&assessment, nodeAssessment)
 			}
 			if fills {
 				judgeNullFillPair(&assessment, statement)

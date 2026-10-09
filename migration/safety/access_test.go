@@ -216,29 +216,17 @@ func TestAssessRendered_FoldsTheAccessEffectIntoEveryStatementItRendered(t *test
 	}
 }
 
-var widensRows = schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: "a permissive policy admits more rows"}
+var (
+	widensRows   = schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: "a permissive policy admits more rows"}
+	narrowsRows  = schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "a restrictive policy hides rows"}
+	unchangedACL = schemaext.AccessEffect{Access: schemaext.AccessUnchanged, Reason: "only the comment changes"}
+)
 
-// accessNodes are a node pairing an owned operation with a common one in an
-// ALTER TABLE, and another in a statement list.
-func accessNodes() []ast.Node {
-	return []ast.Node{
-		&ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{
-			&ast.AddColumnOperation{Column: &ast.ColumnNode{Name: "note", Type: "TEXT", Nullable: true}},
-			&ast.ExtensionAlterOperation{Payload: &accessPayload{effect: addsObject, access: widensRows}},
-		}},
-		&ast.StatementList{Statements: []ast.Node{
-			&ast.DropTableNode{Name: "old"},
-			&ast.ExtensionStatement{Payload: &accessPayload{effect: addsObject, access: widensRows}},
-		}},
-	}
-}
-
-// policyRenderer renders the nodes accessNodes builds, with each ALTER TABLE
-// operation as its own statement or all of them as one, and records every
-// batch it receives. terminated false leaves the last statement of each
-// fragment without its semicolon, as a defective renderer could.
+// policyRenderer renders the shapes the tests build, one statement per ALTER
+// TABLE operation and per statement-list child, and records every batch it
+// receives. terminated false leaves each fragment's last statement without its
+// semicolon, as a defective renderer could.
 type policyRenderer struct {
-	combined   bool
 	terminated bool
 	batches    [][]ast.Node
 }
@@ -256,20 +244,13 @@ func (r *policyRenderer) fragment(node ast.Node) string {
 	var statements []string
 	switch typed := node.(type) {
 	case *ast.AlterTableNode:
-		var clauses []string
 		for _, operation := range typed.Operations {
 			switch operation.(type) {
 			case *ast.AddColumnOperation:
-				clauses = append(clauses, "ADD COLUMN note TEXT")
+				statements = append(statements, "ALTER TABLE items ADD COLUMN note TEXT")
 			case *ast.ExtensionAlterOperation:
-				clauses = append(clauses, "ENABLE ROW LEVEL SECURITY")
+				statements = append(statements, "ALTER TABLE items ENABLE ROW LEVEL SECURITY")
 			}
-		}
-		if r.combined {
-			clauses = []string{strings.Join(clauses, ", ")}
-		}
-		for _, clause := range clauses {
-			statements = append(statements, "ALTER TABLE items "+clause)
 		}
 	case *ast.StatementList:
 		for _, child := range typed.Statements {
@@ -279,6 +260,8 @@ func (r *policyRenderer) fragment(node ast.Node) string {
 		statements = append(statements, "DROP TABLE "+typed.Name)
 	case *ast.CreateTableNode:
 		statements = append(statements, "CREATE TABLE "+typed.Name+" (id integer)")
+	case *ast.CommentNode:
+		return "-- " + typed.Text + "\n"
 	case *ast.ExtensionStatement:
 		statements = append(statements, "CREATE POLICY p ON t USING (true)")
 	}
@@ -288,40 +271,61 @@ func (r *policyRenderer) fragment(node ast.Node) string {
 	return strings.Join(statements, ";\n")
 }
 
-// An owned operation's verdict belongs to the statements it rendered. When an
-// ALTER TABLE renders one statement per operation, the ADD COLUMN beside the
-// owned operation and the DROP TABLE beside a policy executes nothing owned,
-// so neither takes its access assessment or its severity.
-func TestAssessRendered_AttributesAccessOnlyToTheOwnedStatements(t *testing.T) {
+func policy(access schemaext.AccessEffect) ast.Node {
+	return &ast.ExtensionStatement{Payload: &accessPayload{effect: addsObject, access: access}}
+}
+
+// An owner operation that is a node of its own gives its verdict to what it
+// rendered, and only its own: the DROP TABLE beside it in the plan does not
+// make a harmless policy destructive, and two policies keep two verdicts
+// rather than both taking the stronger one.
+func TestAssessRendered_EachIsolatedOperationKeepsItsOwnVerdict(t *testing.T) {
+	c := qt.New(t)
+	service := &policyRenderer{terminated: true}
+	nodes := []ast.Node{&ast.DropTableNode{Name: "old"}, policy(unchangedACL), policy(narrowsRows), policy(widensRows)}
+
+	assessments, err := safety.AssessRenderedWithCapabilities(t.Context(), service, nodes, "postgres", capability.ForDialect("postgres"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(service.batches, qt.HasLen, 1)
+	c.Assert(service.batches[0], qt.HasLen, len(nodes), qt.Commentf("no node is rendered twice"))
+	c.Assert(assessments, qt.HasLen, 4)
+	wantSeverity := []safety.Severity{safety.Destructive, safety.Safe, safety.Warning, safety.Destructive}
+	wantAccess := []schemaext.Access{"", schemaext.AccessUnchanged, schemaext.AccessNarrows, schemaext.AccessWidens}
+	wantReason := []string{"DROP TABLE removes the table and all rows", "does not remove data or tighten constraints",
+		"can narrow access: a restrictive policy hides rows", "can widen access: a permissive policy admits more rows"}
+	for i, assessment := range assessments {
+		c.Assert(assessment.Severity, qt.Equals, wantSeverity[i], qt.Commentf("%s", assessment.Statement))
+		c.Assert(assessment.Access, qt.Equals, wantAccess[i], qt.Commentf("%s", assessment.Statement))
+		c.Assert(assessment.Reason, qt.Equals, wantReason[i], qt.Commentf("%s", assessment.Statement))
+	}
+}
+
+// A node holding an owner operation beside other work cannot say which of its
+// statements the operation wrote, so every one of them fails closed.
+func TestAssessRendered_FailsClosedOnAMixedNode(t *testing.T) {
 	tests := []struct {
-		name         string
-		combined     bool
-		wantAccess   []schemaext.Access
-		wantSeverity []safety.Severity
+		name string
+		node ast.Node
 	}{
-		{
-			name: "one statement per operation", combined: false,
-			wantAccess:   []schemaext.Access{"", schemaext.AccessWidens, "", schemaext.AccessWidens},
-			wantSeverity: []safety.Severity{safety.Safe, safety.Destructive, safety.Destructive, safety.Destructive},
-		},
-		{
-			name: "one statement for the table", combined: true,
-			wantAccess:   []schemaext.Access{schemaext.AccessWidens, "", schemaext.AccessWidens},
-			wantSeverity: []safety.Severity{safety.Destructive, safety.Destructive, safety.Destructive},
-		},
+		{name: "alter table", node: &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{
+			&ast.AddColumnOperation{Column: &ast.ColumnNode{Name: "note", Type: "TEXT", Nullable: true}},
+			&ast.ExtensionAlterOperation{Payload: &accessPayload{effect: addsObject, access: unchangedACL}},
+		}}},
+		{name: "statement list", node: &ast.StatementList{Statements: []ast.Node{&ast.DropTableNode{Name: "old"}, policy(unchangedACL)}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			service := &policyRenderer{combined: tc.combined, terminated: true}
-			assessments, err := safety.AssessRenderedWithCapabilities(t.Context(), service, accessNodes(), "postgres", capability.ForDialect("postgres"))
+			assessments, err := safety.AssessRenderedWithCapabilities(t.Context(), &policyRenderer{terminated: true}, []ast.Node{tc.node},
+				"postgres", capability.ForDialect("postgres"))
 			c.Assert(err, qt.IsNil)
-			c.Assert(service.batches, qt.HasLen, 1)
-			c.Assert(service.batches[0], qt.HasLen, 4, qt.Commentf("both nodes and both common parts render in one batch"))
-			c.Assert(assessments, qt.HasLen, len(tc.wantAccess))
-			for i, assessment := range assessments {
-				c.Assert(assessment.Access, qt.Equals, tc.wantAccess[i], qt.Commentf("%s", assessment.Statement))
-				c.Assert(assessment.Severity, qt.Equals, tc.wantSeverity[i], qt.Commentf("%s", assessment.Statement))
+			c.Assert(assessments, qt.HasLen, 2)
+			for _, assessment := range assessments {
+				c.Assert(assessment.Severity, qt.Equals, safety.Destructive, qt.Commentf("%s", assessment.Statement))
+				c.Assert(assessment.Access, qt.Equals, schemaext.AccessUnknown, qt.Commentf("%s", assessment.Statement))
+				c.Assert(assessment.AccessReason, qt.Equals,
+					"an owner operation shares its statement with other operations; manual review is required")
 			}
 		})
 	}
@@ -335,79 +339,44 @@ func ownerVerdictsFor(c *qt.C, service renderer.Service, nodes []ast.Node) ([]st
 	result, err := service.Render(c.Context(), request)
 	c.Assert(err, qt.IsNil)
 	statements := sqlutil.SplitSQLStatementsForDialect(result.SQL(), "postgres")
-	verdicts, err := safety.OwnerVerdicts(c.Context(), service, request, result, statements, "postgres")
+	verdicts, err := safety.OwnerVerdicts(c.Context(), request, result, statements, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(verdicts, qt.HasLen, len(statements))
 	return statements, verdicts
 }
 
-func TestOwnerVerdicts_AttributesEachVerdictToTheStatementsItsNodeRendered(t *testing.T) {
+// Attribution is by position. An owner's note renders as a comment the plan
+// joins to the statement after it, and that statement is still the one the
+// owner operation rendered.
+func TestOwnerVerdicts_AttributesEachVerdictByPosition(t *testing.T) {
 	c := qt.New(t)
 	service := &policyRenderer{terminated: true}
-	statements, verdicts := ownerVerdictsFor(c, service, append([]ast.Node{&ast.CreateTableNode{Name: "fresh"}}, accessNodes()...))
-	c.Assert(statements, qt.DeepEquals, []string{
-		"CREATE TABLE fresh (id integer)", "ALTER TABLE items ADD COLUMN note TEXT", "ALTER TABLE items ENABLE ROW LEVEL SECURITY",
-		"DROP TABLE old", "CREATE POLICY p ON t USING (true)",
+	statements, verdicts := ownerVerdictsFor(c, service, []ast.Node{
+		&ast.CreateTableNode{Name: "fresh"}, ast.NewComment("owner note"), policy(narrowsRows), policy(widensRows), &ast.DropTableNode{Name: "old"},
 	})
-	wantAccess := []schemaext.Access{"", "", schemaext.AccessWidens, "", schemaext.AccessWidens}
-	wantSeverity := []safety.Severity{"", "", safety.Destructive, "", safety.Destructive}
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE TABLE fresh (id integer)", "-- owner note\nCREATE POLICY p ON t USING (true)",
+		"CREATE POLICY p ON t USING (true)", "DROP TABLE old",
+	})
+	wantAccess := []schemaext.Access{"", schemaext.AccessNarrows, schemaext.AccessWidens, ""}
+	wantSeverity := []safety.Severity{"", safety.Warning, safety.Destructive, ""}
 	for i, verdict := range verdicts {
 		c.Assert(verdict.Access, qt.Equals, wantAccess[i], qt.Commentf("%s", statements[i]))
 		c.Assert(verdict.Severity, qt.Equals, wantSeverity[i], qt.Commentf("%s", statements[i]))
 	}
-	c.Assert(verdicts[2].AccessReason, qt.Equals, widensRows.Reason)
-	c.Assert(service.batches, qt.HasLen, 2, qt.Commentf("the plan's render, then one batch of common parts"))
-	c.Assert(service.batches[1], qt.HasLen, 2)
+	c.Assert(service.batches, qt.HasLen, 1, qt.Commentf("the plan's own render and nothing else"))
 }
 
-func TestOwnerVerdicts_CallsNoServiceWithoutOwnedOperations(t *testing.T) {
+func TestOwnerVerdicts_FailsClosedOnAMixedNodeOnly(t *testing.T) {
 	c := qt.New(t)
-	service := &policyRenderer{terminated: true}
-	statements, verdicts := ownerVerdictsFor(c, service, []ast.Node{&ast.CreateTableNode{Name: "fresh"}, &ast.DropTableNode{Name: "old"}})
-	c.Assert(statements, qt.HasLen, 2)
-	c.Assert(verdicts, qt.DeepEquals, make([]safety.StatementAssessment, 2))
-	c.Assert(service.batches, qt.HasLen, 1, qt.Commentf("only the plan's own render"))
-}
-
-// A fragment that does not terminate its last statement runs into the next
-// fragment when the plan is joined, so the plan's statements no longer line
-// up with the fragments. No verdict can be attached by position then, and a
-// widening policy must not be saved as the statement its text reads as.
-func TestOwnerVerdicts_FailsClosedWhenStatementsCannotBeAttributed(t *testing.T) {
-	c := qt.New(t)
-	service := &policyRenderer{terminated: false}
-	statements, verdicts := ownerVerdictsFor(c, service, append([]ast.Node{&ast.CreateTableNode{Name: "fresh"}}, accessNodes()...))
-	c.Assert(len(statements) > 0, qt.IsTrue)
-	for i, verdict := range verdicts {
-		c.Assert(verdict, qt.DeepEquals, safety.StatementAssessment{
-			Severity:     safety.Destructive,
-			Reason:       "the statements of an owned operation could not be identified in the plan; manual review is required",
-			Access:       schemaext.AccessUnknown,
-			AccessReason: "the statements of an owned operation could not be identified in the plan; manual review is required",
-		}, qt.Commentf("%s", statements[i]))
+	mixed := &ast.StatementList{Statements: []ast.Node{&ast.DropTableNode{Name: "old"}, policy(unchangedACL)}}
+	statements, verdicts := ownerVerdictsFor(c, &policyRenderer{terminated: true}, []ast.Node{&ast.CreateTableNode{Name: "fresh"}, mixed})
+	c.Assert(statements, qt.HasLen, 3)
+	c.Assert(verdicts[0], qt.DeepEquals, safety.StatementAssessment{})
+	for _, verdict := range verdicts[1:] {
+		c.Assert(verdict.Severity, qt.Equals, safety.Destructive)
+		c.Assert(verdict.Access, qt.Equals, schemaext.AccessUnknown)
 	}
-}
-
-// Without an owned operation there is no verdict to lose, so a plan whose
-// statements do not line up with its fragments is not marked: the text
-// verdicts stand.
-// A plan missing statements its nodes rendered cannot be attributed either:
-// the owned statement may be among the missing ones.
-func TestOwnerVerdicts_FailsClosedWhenThePlanLacksRenderedStatements(t *testing.T) {
-	c := qt.New(t)
-	service := &policyRenderer{terminated: true}
-	request := renderer.Request{Target: "postgres", Capabilities: capability.ForDialect("postgres"), Nodes: accessNodes()}
-	result, err := service.Render(t.Context(), request)
-	c.Assert(err, qt.IsNil)
-	statements := sqlutil.SplitSQLStatementsForDialect(result.SQL(), "postgres")
-	c.Assert(statements, qt.HasLen, 4)
-
-	verdicts, err := safety.OwnerVerdicts(t.Context(), service, request, result, statements[:1], "postgres")
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(verdicts, qt.HasLen, 1)
-	c.Assert(verdicts[0].Severity, qt.Equals, safety.Destructive)
-	c.Assert(verdicts[0].Access, qt.Equals, schemaext.AccessUnknown)
 }
 
 func TestOwnerVerdicts_LeavesAPlanWithoutOwnedOperationsUnmarked(t *testing.T) {
@@ -418,10 +387,83 @@ func TestOwnerVerdicts_LeavesAPlanWithoutOwnedOperationsUnmarked(t *testing.T) {
 	c.Assert(verdicts, qt.DeepEquals, make([]safety.StatementAssessment, 1))
 }
 
+// A fragment that does not terminate its last statement runs into the next
+// fragment when the plan is joined, so the plan no longer has a statement per
+// rendered statement. No verdict can be attached by position then, and a
+// widening policy must not be saved as the statement its text reads as.
+func TestOwnerVerdicts_FailsClosedWhenStatementsCannotBeAttributed(t *testing.T) {
+	c := qt.New(t)
+	statements, verdicts := ownerVerdictsFor(c, &policyRenderer{terminated: false},
+		[]ast.Node{&ast.CreateTableNode{Name: "fresh"}, policy(widensRows), &ast.DropTableNode{Name: "old"}})
+	c.Assert(statements, qt.HasLen, 1)
+	c.Assert(verdicts, qt.DeepEquals, []safety.StatementAssessment{{
+		Severity:     safety.Destructive,
+		Reason:       "the statements of an owner operation could not be identified in the plan; manual review is required",
+		Access:       schemaext.AccessUnknown,
+		AccessReason: "the statements of an owner operation could not be identified in the plan; manual review is required",
+	}})
+}
+
+// A plan missing statements its nodes rendered cannot be attributed either:
+// the owner's statement may be among the missing ones.
+func TestOwnerVerdicts_FailsClosedWhenThePlanLacksRenderedStatements(t *testing.T) {
+	c := qt.New(t)
+	service := &policyRenderer{terminated: true}
+	request := renderer.Request{Target: "postgres", Nodes: []ast.Node{&ast.CreateTableNode{Name: "fresh"}, policy(widensRows)}}
+	result, err := service.Render(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	statements := sqlutil.SplitSQLStatementsForDialect(result.SQL(), "postgres")
+	c.Assert(statements, qt.HasLen, 2)
+
+	verdicts, err := safety.OwnerVerdicts(t.Context(), request, result, statements[:1], "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(verdicts, qt.HasLen, 1)
+	c.Assert(verdicts[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(verdicts[0].Access, qt.Equals, schemaext.AccessUnknown)
+}
+
+// A plan with more statements than its nodes rendered is as unattributable as
+// one with fewer.
+func TestOwnerVerdicts_FailsClosedWhenThePlanHasExtraStatements(t *testing.T) {
+	c := qt.New(t)
+	service := &policyRenderer{terminated: true}
+	request := renderer.Request{Target: "postgres", Nodes: []ast.Node{policy(widensRows)}}
+	result, err := service.Render(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+
+	verdicts, err := safety.OwnerVerdicts(t.Context(), request, result, []string{"CREATE POLICY p ON t USING (true)", "DROP TABLE old"}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(verdicts, qt.HasLen, 2)
+	for _, verdict := range verdicts {
+		c.Assert(verdict.Severity, qt.Equals, safety.Destructive)
+		c.Assert(verdict.Reason, qt.Equals, "the statements of an owner operation could not be identified in the plan; manual review is required")
+	}
+}
+
+// A typed nil node is classified, not dereferenced, at the top of the plan
+// and inside a statement list that also holds an owner operation.
+func TestOwnerVerdicts_ToleratesTypedNilNodes(t *testing.T) {
+	c := qt.New(t)
+	nested := &ast.StatementList{Statements: []ast.Node{(*ast.StatementList)(nil), (*ast.AlterTableNode)(nil), policy(widensRows)}}
+	request := renderer.Request{Target: "postgres", Nodes: []ast.Node{(*ast.StatementList)(nil), (*ast.AlterTableNode)(nil), policy(widensRows), nested}}
+	result := renderer.Result{Complete: true, Fragments: []string{"", "", "CREATE POLICY p ON t USING (true);\n", "CREATE POLICY q ON t USING (true);\n"}}
+
+	verdicts, err := safety.OwnerVerdicts(t.Context(), request, result,
+		[]string{"CREATE POLICY p ON t USING (true)", "CREATE POLICY q ON t USING (true)"}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(verdicts, qt.HasLen, 2)
+	c.Assert(verdicts[0].Access, qt.Equals, schemaext.AccessWidens)
+	c.Assert(verdicts[1].Severity, qt.Equals, safety.Destructive)
+	c.Assert(verdicts[1].Access, qt.Equals, schemaext.AccessUnknown, qt.Commentf("the nested list is a mixed node"))
+}
+
 func TestOwnerVerdicts_FailurePath_RefusesAResultThatDoesNotMatchTheRequest(t *testing.T) {
 	c := qt.New(t)
-	request := renderer.Request{Target: "postgres", Nodes: accessNodes()}
-	verdicts, err := safety.OwnerVerdicts(t.Context(), &policyRenderer{}, request, renderer.Result{Complete: true, Fragments: []string{"x;"}}, []string{"x;"}, "postgres")
+	request := renderer.Request{Target: "postgres", Nodes: []ast.Node{policy(widensRows), &ast.DropTableNode{Name: "old"}}}
+	verdicts, err := safety.OwnerVerdicts(t.Context(), request, renderer.Result{Complete: true, Fragments: []string{"x;"}}, []string{"x;"}, "postgres")
 	c.Assert(err, qt.ErrorIs, renderer.ErrInvalidResult)
 	c.Assert(verdicts, qt.IsNil)
 }
