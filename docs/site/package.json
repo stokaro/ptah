@@ -105,6 +105,12 @@
     "playwright": "^1.62.1"
   },
   "overrides": {
-    "lodash-es": "^4.18.0"
+    "lodash-es": "^4.18.0",
+    "@expressive-code/core": {
+      "postcss-nested": "^7.0.2"
+    },
+    "mermaid": {
+      "katex": "^0.18.2"
+    }
   }
 }
