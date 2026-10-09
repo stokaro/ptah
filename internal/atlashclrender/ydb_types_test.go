@@ -60,6 +60,7 @@ func TestRenderInspectedForAtlasCLIWritesYDBTypesAsYDBSpellsThem(t *testing.T) {
 // ptah:not-described replication reason=unsupported provenance=defaulted
 // ptah:not-described topic reason=unsupported provenance=defaulted
 // ptah:not-described transfer reason=unsupported provenance=defaulted
+// ptah:not-described coordination_node
 
 schema "shop" {
 }

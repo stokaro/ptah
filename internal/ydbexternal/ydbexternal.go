@@ -56,10 +56,9 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/dialect/ydb/ydbsyntax"
-
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"

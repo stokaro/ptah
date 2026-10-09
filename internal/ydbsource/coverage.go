@@ -1,5 +1,5 @@
-// Package ydbsource records feature knowledge shared by the Go, YAML, and YQL
-// schema readers. Each format explicitly supports these declaration namespaces.
+// Package ydbsource records feature knowledge for schema source adapters. Each
+// format explicitly enrolls the declaration namespaces it supports.
 package ydbsource
 
 import (
@@ -25,6 +25,12 @@ type Limits struct {
 	Classifiers  []string
 }
 
+const unmanagedObjectReason = "the source leaves this object unmanaged"
+
+func unmanagedNamespaceReason(label string) string {
+	return "the source leaves " + label + " unmanaged"
+}
+
 // sourceKinds is shared by limit decoding and export. A new spelling must be
 // recognized in both directions or exporting unknown coverage would grant
 // authority that the input never held.
@@ -47,20 +53,39 @@ func sourceKind(token string) schemaext.Kind {
 	return ""
 }
 
+func sourceToken(kind schemaext.Kind) string {
+	for _, family := range sourceKinds {
+		if family.kind == kind {
+			return family.token
+		}
+	}
+	return ""
+}
+
 // UnenrolledNamespaces returns source kind tokens whose knowledge was never
 // captured, in deterministic declaration order. A Go export must explicitly
 // leave them unmanaged; otherwise reading it grants complete source coverage.
-// Explicitly enrolled limits are handled by the export validators.
-func UnenrolledNamespaces(known schemaext.Coverage) []string {
+// Explicitly enrolled limits are handled by the export validators. With no
+// kinds supplied it checks all supported namespaces; otherwise only the named
+// kinds are checked, so HCL cannot acquire the Go source's vocabulary.
+func UnenrolledNamespaces(known schemaext.Coverage, kinds ...schemaext.Kind) []string {
 	var tokens []string
 	records := known.KindRecords()
 	for _, family := range sourceKinds {
+		if len(kinds) > 0 && !slices.Contains(kinds, family.kind) {
+			continue
+		}
 		if !slices.ContainsFunc(records, func(record schemaext.KindCoverage) bool { return record.Model.Kind == family.kind }) {
 			tokens = append(tokens, family.token)
 		}
 	}
 	return tokens
 }
+
+// RecognizesLimit reports whether this adapter owns a source limit's spelling.
+// Document splitting uses it to preserve owner directives without interpreting
+// them as common coverage or admitting unknown kinds.
+func RecognizesLimit(kind coverage.Kind) bool { return sourceKind(string(kind)) != "" }
 
 // Add records a source-level unmanaged-object directive if this adapter owns
 // its spelling. Go annotations and SQL headers share this recognition so one
@@ -87,6 +112,20 @@ func (l *Limits) ConsumeDirective(object coverage.Object) (bool, error) {
 	return l.Add(string(object.Kind), object.Name), nil
 }
 
+// ConsumeHCLDirective records only limits on the namespace HCL can declare.
+// Workload and streaming namespaces remain unenrolled in an HCL source.
+func (l *Limits) ConsumeHCLDirective(object coverage.Object) (bool, error) {
+	if sourceKind(string(object.Kind)) != ydbcoordination.Kind {
+		return false, nil
+	}
+	return l.ConsumeDirective(object)
+}
+
+// HCLCoverage enrolls coordination nodes, the standalone namespace HCL owns.
+func HCLCoverage(limits Limits) (schemaext.Coverage, error) {
+	return namespaceCoverage(limits.Coordination, ydbcoordination.Kind, "coordination nodes", schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
+}
+
 // Coverage enrolls only namespaces these source formats can declare. HCL
 // enrolls coordination separately. Runtime registration never expands a
 // source's vocabulary.
@@ -95,7 +134,7 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	nodes, err := namespaceCoverage(limits.Coordination, ydbcoordination.Kind, "coordination nodes", schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
+	nodes, err := HCLCoverage(limits)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
@@ -141,12 +180,12 @@ func namespaceCoverage(limits []string, kind schemaext.Kind, label string,
 	enroll func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error),
 ) (schemaext.Coverage, error) {
 	namespace := schemaext.Knowledge{State: schemaext.Complete}
-	limit := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves this object unmanaged"}
+	limit := schemaext.Knowledge{State: schemaext.Uninspected, Reason: unmanagedObjectReason}
 	var subjects []schemaext.SubjectCoverage
 	seen := make(map[objectidentity.Key]bool)
 	for _, name := range limits {
 		if name == "" {
-			namespace = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves " + label + " unmanaged"}
+			namespace = schemaext.Knowledge{State: schemaext.Uninspected, Reason: unmanagedNamespaceReason(label)}
 			continue
 		}
 		ref := identity(name)

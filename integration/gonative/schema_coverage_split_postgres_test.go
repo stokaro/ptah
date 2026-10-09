@@ -39,6 +39,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -82,9 +83,9 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 					document, readErr := os.ReadFile(member)
 					c.Assert(readErr, qt.IsNil)
 
-					declared, decodeErr := coverage.DecodeHeader(string(document), nil)
+					declared, decodeErr := atlashcl.Parse(document, member)
 					c.Assert(decodeErr, qt.IsNil)
-					c.Assert(declared, qt.DeepEquals, wantRecord)
+					c.Assert(declared.NotDescribed, qt.DeepEquals, wantRecord)
 
 					// The member is applied back to the database it came from.
 					// A member describes only part of the schema, so it can

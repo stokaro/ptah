@@ -788,6 +788,8 @@ capabilities. Unsupported settings leave the affected subject unrepresentable.
 Go export writes explicit unmanaged-namespace annotations when workload
 coverage is missing. It refuses recorded inspection limits it cannot preserve.
 Neither case can become a complete namespace when the generated Go is parsed.
+Explicit absence and default coverage assertions also require a lossless
+spelling; Go export refuses them instead of replacing them with omission.
 
 `dialect/ydb/ydbsyntax` provides YQL identifier and string-literal quoting to
 owner packages without importing host implementation helpers.
@@ -932,6 +934,9 @@ Resource pools and classifiers have no common coverage kind.
 for common kinds only. The callback receives validated directives outside the
 common vocabulary and records them in the owning feature's coverage. It cannot
 override common kinds. Unclaimed kinds and callback errors refuse the document.
+`Object.Directive` encodes an owner-validated record without adding it to the
+common set. Split exports carry recognized owner records, including their
+reason, provenance, and exact name, in every output file.
 
 Every schema comparison takes a context and an explicitly selected runtime.
 Catalog comparisons accept `schemapreparation.Runtime`. Document comparisons

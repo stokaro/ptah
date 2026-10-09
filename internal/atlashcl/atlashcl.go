@@ -17,14 +17,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
+	"ptah.run/internal/ydbsource"
 )
 
 // Options configures HCL schema parsing.
@@ -207,12 +206,13 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	// survive being read by tools that are not Ptah -- the pinned Atlas
 	// community binary v1.3.0 reads a document carrying it at exit 0 -- and
 	// because a block would need a name that binary refuses.
-	notDescribed, err := coverage.DecodeHeader(string(data), nil)
+	var limits ydbsource.Limits
+	notDescribed, err := coverage.DecodeHeader(string(data), limits.ConsumeHCLDirective)
 	if err != nil {
 		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
 	}
 	p.db.NotDescribed = notDescribed
-	p.db.FeatureCoverage, err = ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	p.db.FeatureCoverage, err = ydbsource.HCLCoverage(limits)
 	if err != nil {
 		return nil, err
 	}

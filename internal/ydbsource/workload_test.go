@@ -88,6 +88,31 @@ func TestGoExportRefusesWorkloadInspectionLoss(t *testing.T) {
 	}
 }
 
+// Omitting a declaration cannot stand in for an explicit absence or default
+// assertion. Workload omission preserves current global objects.
+func TestGoExportRefusesUnrepresentableWorkloadIntent(t *testing.T) {
+	for _, family := range []struct {
+		kind schemaext.Kind
+		ref  objectidentity.ID
+	}{
+		{ydbworkload.PoolKind, ydbworkload.PoolRef("batch")},
+		{ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("route")},
+	} {
+		for _, state := range []schemaext.KnowledgeState{schemaext.Absent, schemaext.Defaulted} {
+			t.Run(string(family.kind)+"/"+string(state), func(t *testing.T) {
+				c := qt.New(t)
+				known := must.Must(ydbworkload.Coverage(family.kind, schemaext.Desired,
+					schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+						Kind: family.kind, Subject: family.ref, Knowledge: schemaext.Knowledge{State: state},
+					}}))
+				files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: known}, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(files, qt.IsNil)
+			})
+		}
+	}
+}
+
 // Export cannot grant a source authority over a namespace it did not inspect.
 // A complete neighboring namespace is a control against marking every family
 // unknown, while the per-table layout checks the declaration holder is emitted.

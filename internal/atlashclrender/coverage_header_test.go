@@ -57,16 +57,15 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 				"// ptah:not-described extension reason=suppressed provenance=defaulted",
 				"// ptah:not-described policy reason=suppressed provenance=defaulted",
 				"// ptah:not-described sequence reason=suppressed provenance=defaulted",
+				"// ptah:not-described coordination_node",
 			})
 		})
 	}
 }
 
-// TestNativeRenderDeclaresNoLimits is the control that keeps the header from
-// becoming an unconditional decoration. The native surface omits nothing, so it
-// claims everything, and a removal a native document asks for is still a
-// removal.
-func TestNativeRenderDeclaresNoLimits(t *testing.T) {
+// The native surface retains common objects while leaving unenrolled feature
+// namespaces unknown. An export cannot acquire knowledge from its format.
+func TestNativeRenderDeclaresNoCommonLimits(t *testing.T) {
 	tests := []struct {
 		name   string
 		render func() (atlashclrender.Result, error)
@@ -92,15 +91,14 @@ func TestNativeRenderDeclaresNoLimits(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.NotDescribed.IsZero(), qt.IsTrue)
-			c.Assert(coverageHeaderLines(string(result.Data)), qt.HasLen, 0)
+			c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{"// ptah:not-described coordination_node"})
 		})
 	}
 }
 
-// TestCompatibilityRenderDeclaresNothingOnSQLite pins that the header follows
-// the refusal it reports. SQLite's Atlas HCL accepts all three block types, so
-// nothing is omitted there and nothing may be claimed.
-func TestCompatibilityRenderDeclaresNothingOnSQLite(t *testing.T) {
+// SQLite's HCL retains common block types. That says nothing about coordination
+// nodes, whose absent coverage must remain unknown through a format conversion.
+func TestCompatibilityRenderDeclaresNoCommonLimitsOnSQLite(t *testing.T) {
 	c := qt.New(t)
 
 	result, err := atlashclrender.RenderInspectedForAtlasCLI(
@@ -109,7 +107,7 @@ func TestCompatibilityRenderDeclaresNothingOnSQLite(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.NotDescribed.IsZero(), qt.IsTrue)
-	c.Assert(coverageHeaderLines(string(result.Data)), qt.HasLen, 0)
+	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{"// ptah:not-described coordination_node"})
 }
 
 // TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser is the

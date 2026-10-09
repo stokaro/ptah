@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/sqlscript"
+	"ptah.run/internal/ydbsource"
 )
 
 // Split modes mirror the documented Atlas schema inspect split strategies:
@@ -69,14 +70,14 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 	// from a parsed block, and a leading comment belongs to no block. Read it
 	// from the input before the split so each member can carry it
 	// (stokaro/ptah#1276).
-	notDescribed, err := coverage.DecodeHeader(input, nil)
+	directives, err := splitCoverageDirectives(input)
 	if err != nil {
 		return schemaInspectArchive{}, fmt.Errorf("split schema output: %w", err)
 	}
 
 	hclArchive, hclErr := splitSchemaInspectHCL(input, opts.withDefaultExtension(".hcl"))
 	if hclErr == nil && len(hclArchive.Files) > 0 {
-		hclArchive = withCoverageHeaders(hclArchive, notDescribed, hclCommentPrefix)
+		hclArchive = withCoverageHeaders(hclArchive, directives, hclCommentPrefix)
 		if err := validateUniqueSchemaInspectArchivePaths(hclArchive); err != nil {
 			return schemaInspectArchive{}, err
 		}
@@ -87,11 +88,31 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 	if err != nil {
 		return schemaInspectArchive{}, err
 	}
-	sqlArchive = withCoverageHeaders(sqlArchive, notDescribed, sqlCommentPrefix)
+	sqlArchive = withCoverageHeaders(sqlArchive, directives, sqlCommentPrefix)
 	if err := validateUniqueSchemaInspectArchivePaths(sqlArchive); err != nil {
 		return schemaInspectArchive{}, err
 	}
 	return sqlArchive, nil
+}
+
+// splitCoverageDirectives transports validated owner records without adding
+// them to the common coverage set. Reason, provenance, and exact names survive
+// even though the splitter does not interpret their schema semantics.
+func splitCoverageDirectives(input string) ([]string, error) {
+	var directives []string
+	common, err := coverage.DecodeHeader(input, func(object coverage.Object) (bool, error) {
+		if !ydbsource.RecognizesLimit(object.Kind) {
+			return false, nil
+		}
+		directives = append(directives, object.Directive())
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	directives = append(directives, common.Directives()...)
+	slices.Sort(directives)
+	return slices.Compact(directives), nil
 }
 
 // Comment spellings the split archive writes its coverage header with. HCL
@@ -121,8 +142,8 @@ const (
 // A record with nothing in it renders no lines and leaves every member byte for
 // byte as it was, which is what `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` and every
 // non-PostgreSQL dialect produce.
-func withCoverageHeaders(archive schemaInspectArchive, set coverage.Set, commentPrefix string) schemaInspectArchive {
-	header := coverageHeader(set, commentPrefix)
+func withCoverageHeaders(archive schemaInspectArchive, directives []string, commentPrefix string) schemaInspectArchive {
+	header := coverageHeader(directives, commentPrefix)
 	if header == "" {
 		return archive
 	}
@@ -136,8 +157,7 @@ func withCoverageHeaders(archive schemaInspectArchive, set coverage.Set, comment
 // coverageHeader renders a coverage record as a leading comment block, blank
 // line included so the directives stay a header rather than a comment attached
 // to the first declaration.
-func coverageHeader(set coverage.Set, commentPrefix string) string {
-	directives := set.Directives()
+func coverageHeader(directives []string, commentPrefix string) string {
 	if len(directives) == 0 {
 		return ""
 	}

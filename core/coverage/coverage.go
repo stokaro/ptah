@@ -60,6 +60,8 @@ import (
 // rather than ignored, because ignoring it is the exact failure this package
 // exists to prevent: a directive nothing understands reads as no directive at
 // all, and the absence it was protecting becomes a removal.
+// Source adapters can handle owner-defined kinds through [HeaderExtension]
+// without adding those records to a common [Set].
 //
 // Three declared kinds sit outside that serialized grammar: [Hypertable],
 // [ContinuousAggregate] and [ReplicaTable] are built and consulted in process
@@ -322,6 +324,25 @@ func Refused(kind Kind) Object {
 // named object.
 func (o Object) WholeKind() bool { return strings.TrimSpace(o.Name) == "" }
 
+// Directive renders a record without a comment prefix. It quotes the name and
+// omits unspecified attributes. It does not validate the record: common kinds
+// use [Object.Validate], while an extension owner validates its own kind before
+// encoding. This lets a document transport owner records without adding them
+// to its common coverage [Set].
+func (o Object) Directive() string {
+	line := fmt.Sprintf("%s %s", DirectiveMarker, o.Kind)
+	if o.Reason != ReasonUnspecified {
+		line += fmt.Sprintf(" %s=%s", reasonAttribute, o.Reason)
+	}
+	if o.Provenance != ProvenanceUnspecified {
+		line += fmt.Sprintf(" %s=%s", provenanceAttribute, o.Provenance)
+	}
+	if !o.WholeKind() {
+		line += " " + strconv.Quote(o.Name)
+	}
+	return line
+}
+
 // Validate reports whether every token in the record is one this build
 // understands. An unknown one is refused rather than tolerated, for the reason
 // [ParseKind] gives.
@@ -567,17 +588,7 @@ func (s Set) Directives() []string {
 	normalized := s.Normalize()
 	lines := make([]string, 0, len(normalized.Objects))
 	for _, object := range normalized.Objects {
-		line := fmt.Sprintf("%s %s", DirectiveMarker, object.Kind)
-		if object.Reason != ReasonUnspecified {
-			line += fmt.Sprintf(" %s=%s", reasonAttribute, object.Reason)
-		}
-		if object.Provenance != ProvenanceUnspecified {
-			line += fmt.Sprintf(" %s=%s", provenanceAttribute, object.Provenance)
-		}
-		if !object.WholeKind() {
-			line += " " + strconv.Quote(object.Name)
-		}
-		lines = append(lines, line)
+		lines = append(lines, object.Directive())
 	}
 	return lines
 }

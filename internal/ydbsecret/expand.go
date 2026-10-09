@@ -7,9 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/dialect/ydb/ydbsyntax"
-
 	"ptah.run/core/platform"
+	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )

@@ -210,9 +210,10 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 }
 
 type renderer struct {
-	coordinationNodes []coordinationNode
-	db                *schemamodel.Database
-	dialect           string
+	coordinationNodes      []coordinationNode
+	coordinationDirectives []string
+	db                     *schemamodel.Database
+	dialect                string
 	// defaultSchema owns every object that arrived without one. Empty means the
 	// IR is taken as written, which is what every parse-and-re-render caller
 	// wants.

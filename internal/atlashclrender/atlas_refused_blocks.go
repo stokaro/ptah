@@ -196,6 +196,9 @@ func (r *renderer) renderCoverageHeader() {
 	for _, directive := range r.notDescribed().Directives() {
 		r.builder.WriteString("// " + directive + "\n")
 	}
+	for _, directive := range r.coordinationDirectives {
+		r.builder.WriteString("// " + directive + "\n")
+	}
 }
 
 // omitRefusedBlock decides one object's fate on the Atlas-compatible surface,

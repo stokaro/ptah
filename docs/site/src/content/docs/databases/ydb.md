@@ -1475,6 +1475,12 @@ to the application declares
 `//ptah:schema:notdescribed kind="coordination_node"`.
 Add `name="app/locks"` to leave only that node unmanaged.
 
+HCL uses a leading `// ptah:not-described coordination_node` comment for the
+whole namespace, or appends `"app/locks"` for one node. HCL export writes the
+namespace comment when the input has no coordination coverage. Reading that
+output cannot authorize removal of nodes the input never described. Splitting
+HCL or YQL output repeats its coverage header in every file.
+
 A read that encounters an unknown node setting records that node as
 unrepresentable. Comparison cannot treat it as absent or plan its removal.
 Go and HCL export refuse that incomplete description because a document that

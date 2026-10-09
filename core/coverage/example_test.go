@@ -7,6 +7,28 @@ import (
 	"ptah.run/core/coverage"
 )
 
+// ExampleObject_Directive transports an owner-defined limit without adding it
+// to common coverage. The owner must validate the kind before encoding it.
+func ExampleObject_Directive() {
+	input := coverage.Object{Kind: "native_kind", Name: "batch.jobs", Reason: coverage.NotInspected}
+	var owned []coverage.Object
+	common, err := coverage.DecodeHeader("-- "+input.Directive(), func(record coverage.Object) (bool, error) {
+		if record.Kind != "native_kind" {
+			return false, nil
+		}
+		owned = append(owned, record)
+		return true, nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(common.IsZero())
+	fmt.Println(owned[0].Directive())
+	// Output:
+	// true
+	// ptah:not-described native_kind reason=not-inspected "batch.jobs"
+}
+
 // Example walks the whole story end to end: a reader that was refused the
 // extension catalog and never read the "extra" schema records both limits,
 // serializes them into the comment header of the document it writes, and a

@@ -77,9 +77,11 @@ type coordinationNode struct {
 // captureCoordinationNodes validates every supported standalone object before
 // rendering. A malformed known value cannot silently become an export warning.
 func (r *renderer) captureCoordinationNodes() error {
-	if err := ydbsource.ValidateCoordinationExport(r.db.FeatureCoverage); err != nil {
+	directives, err := ydbsource.HCLCoordinationDirectives(r.db.FeatureCoverage)
+	if err != nil {
 		return err
 	}
+	r.coordinationDirectives = directives
 	objects, err := r.db.FeatureObjects.All()
 	if err != nil {
 		return err

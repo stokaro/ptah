@@ -82,6 +82,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
 | `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
 | `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
+| `dialect/ydb/ydbsyntax` | YQL identifier and string-literal quoting for owner packages. |
+| `dialect/ydb/ydbworkload` | Resource-pool and classifier declarations, observations, settings, and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |

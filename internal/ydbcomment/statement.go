@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/dialect/ydb/ydbsyntax"
-
 	"ptah.run/core/platform"
+	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/yqlservice"
