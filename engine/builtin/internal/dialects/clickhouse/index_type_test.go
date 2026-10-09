@@ -79,7 +79,7 @@ func TestRenderSQL_RefusesAForeignIndexAccessMethod_FailurePath(t *testing.T) {
 
 			sql, err := builtin.RenderSQL(platform.ClickHouse, clickHouseIndex(test.indexType))
 
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, `(?s).*names a PostgreSQL or MySQL access method.*`)
 			c.Assert(sql, qt.Equals, "")
 		})
