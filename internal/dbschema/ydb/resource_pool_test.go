@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
@@ -14,7 +15,10 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/engine/builtin"
+	"ptah.run/internal/convert/dbschematogo"
 	ydbschema "ptah.run/internal/dbschema/ydb"
+	"ptah.run/migration/schemadiff"
 )
 
 // poolSource is a database holding one table, the pool default, a pool of its
@@ -147,6 +151,68 @@ func realmSource() fakeSource {
 	source.directories = map[string][]*Ydb_Scheme.Entry{"/local/ptah_dev/r1": {entry("t", Ydb_Scheme.Entry_TABLE)}}
 	source.tables = map[string]*Ydb_Table.DescribeTableResult{"/local/ptah_dev/r1/t": plainTable()}
 	return source
+}
+
+func TestReadRehearsalSchemaPreservesObservedWorkloadEnvironment(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			c := qt.New(t)
+			reader := ydbschema.NewReaderFromSource(realmSource(), "/local/ptah_dev/r1", capability.YDB262().With(capability.ResourcePools, enabled))
+			ordinary, err := reader.ReadSchemaContext(t.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(ordinary.FeatureObjects.Len(), qt.Equals, 0)
+			environment, err := reader.ReadRehearsalSchemaContext(t.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(must.Must(environment.FeatureObjects.All()), qt.ContentEquals, poolSource().pools.Objects)
+			c.Assert(environment.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("default")).State, qt.Equals, schemaext.Complete)
+			c.Assert(environment.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("missing")).State, qt.Equals,
+				map[bool]schemaext.KnowledgeState{true: schemaext.Complete, false: schemaext.Uninspected}[enabled])
+			again, err := reader.ReadSchemaContext(t.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(again.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(again.FeatureCoverage, qt.DeepEquals, ordinary.FeatureCoverage)
+		})
+	}
+}
+
+func TestRehearsalBaselineMatchesObservedDefaultPoolWithoutDDL(t *testing.T) {
+	c := qt.New(t)
+	targetSource := poolSource()
+	targetSource.pools.Objects = targetSource.pools.Objects[:1]
+	devSource := realmSource()
+	devSource.pools.Objects = devSource.pools.Objects[:1]
+	caps := capability.YDB262()
+	target, err := ydbschema.NewReaderFromSource(targetSource, "/local", caps).ReadSchemaContext(t.Context())
+	c.Assert(err, qt.IsNil)
+	dev, err := ydbschema.NewReaderFromSource(devSource, "/local/ptah_dev/r1", caps).ReadRehearsalSchemaContext(t.Context())
+	c.Assert(err, qt.IsNil)
+	runtime := must.Must(builtin.New())
+	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), target, "ydb", runtime)
+	c.Assert(err, qt.IsNil)
+	ordinary, err := ydbschema.NewReaderFromSource(devSource, "/local/ptah_dev/r1", caps).ReadSchemaContext(t.Context())
+	c.Assert(err, qt.IsNil)
+	unresolved, err := schemadiff.CompareWithDialect(t.Context(), desired, ordinary, "ydb", runtime)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "the current workload object or its absence was not established")
+	c.Assert(unresolved, qt.IsNil)
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, dev, "ydb", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+}
+
+func TestRehearsalReadPreservesUnknownAndRefusesUnrelatedEnvironment(t *testing.T) {
+	c := qt.New(t)
+	source := realmSource()
+	source.poolsErr = ydbschema.ErrResourcePoolsRefused
+	db, err := ydbschema.NewReaderFromSource(source, "/local/ptah_dev/r1", capability.YDB262()).ReadRehearsalSchemaContext(t.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("default")).State, qt.Equals, schemaext.Uninspected)
+	source.poolsErr = nil
+	source.pools.Database = "/local2"
+	db, err = ydbschema.NewReaderFromSource(source, "/local/ptah_dev/r1", capability.YDB262()).ReadRehearsalSchemaContext(t.Context())
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(db, qt.IsNil)
 }
 
 // Any failure other than a refusal fails the read, rather than describing a

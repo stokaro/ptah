@@ -505,7 +505,7 @@ func recreateCurrentSchema(
 		return err
 	}
 	normalizeBaselineSerialColumns(target, devConn.Info().Dialect)
-	devCurrent, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
+	devCurrent, err := dbschema.ReadRehearsalSchemaContext(ctx, devConn)
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
@@ -526,11 +526,26 @@ func recreateCurrentSchema(
 		if err != nil {
 			return fmt.Errorf("generate current schema DDL for dev database: %w", err)
 		}
+		if err := guardRehearsalBaseline(statements, info); err != nil {
+			return err
+		}
 		if err := executeApplyStatements(ctx, devConn.Writer(), statements); err != nil {
 			return err
 		}
 	}
 	return nameColumnSequencesAsTarget(ctx, devConn, current)
+}
+
+// Environment observations allow a no-op comparison, not writes beyond the
+// dev realm. Validate the whole baseline before any of its statements execute.
+func guardRehearsalBaseline(statements []string, info catalog.ServerInfo) error {
+	guard := devclean.NewDevReplayGuard(info)
+	for i, statement := range statements {
+		if err := guard.ValidateStatement(statement); err != nil {
+			return fmt.Errorf("baseline statement %d cannot be rehearsed: %w", i+1, err)
+		}
+	}
+	return nil
 }
 
 // nameColumnSequencesAsTarget renames each sequence a dev column owns to the

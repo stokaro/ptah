@@ -33,6 +33,13 @@ type ResourcePools struct {
 // read it.
 var ErrResourcePoolsRefused = errors.New("the server refused to report its resource pools")
 
+type workloadReadScope uint8
+
+const (
+	workloadDirectory workloadReadScope = iota
+	workloadEnvironment
+)
+
 // readResourcePools reads the two views through run, which executes one
 // read-only query and returns its first result set.
 //
@@ -120,10 +127,12 @@ func (s *grpcSource) ResourcePools(ctx context.Context) (ResourcePools, error) {
 }
 
 // resourcePools records individual observations independently of target support.
-// A dev realm cannot claim its database's global pools. A disabled cluster can
+// An ordinary dev realm read cannot claim its database's global pools. The
+// rehearsal read includes observed environment without changing write scope.
+// A disabled cluster can
 // return empty views even when configuration exists, so only returned objects
 // are known; missing names remain uninspected. A refused read has no known names.
-func (r *Reader) resourcePools(ctx context.Context, source Source, db *catalog.Database) error {
+func (r *Reader) resourcePools(ctx context.Context, source Source, db *catalog.Database, scope workloadReadScope) error {
 	read, err := source.ResourcePools(ctx)
 	if errors.Is(err, ErrResourcePoolsRefused) {
 		return recordWorkloadCoverage(db, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the server refused to report resource pools and classifiers"}, nil)
@@ -132,7 +141,12 @@ func (r *Reader) resourcePools(ctx context.Context, source Source, db *catalog.D
 		return fmt.Errorf("read the YDB resource pools: %w", err)
 	}
 	if read.Database != r.database {
-		return recordWorkloadCoverage(db, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "database-wide workload objects are outside this directory's scope"}, nil)
+		if scope != workloadEnvironment {
+			return recordWorkloadCoverage(db, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "database-wide workload objects are outside this directory's scope"}, nil)
+		}
+		if read.Database == "" || !strings.HasPrefix(r.database, strings.TrimRight(read.Database, "/")+"/") {
+			return fmt.Errorf("%w: workload environment %q does not contain the read root %q", schemaext.ErrInvalidValue, read.Database, r.database)
+		}
 	}
 	namespace := schemaext.Knowledge{State: schemaext.Complete}
 	if !r.caps.Has(capability.ResourcePools) {

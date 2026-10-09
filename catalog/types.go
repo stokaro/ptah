@@ -1261,6 +1261,16 @@ type SchemaReader interface {
 	ReadSchemaContext(ctx context.Context) (*Database, error)
 }
 
+// RehearsalSchemaReader optionally reads the schema with observed environment
+// objects outside its writable scope. A rehearsal uses these facts to compare
+// its starting state without recreating objects that already match. The read
+// must preserve unknown observations and perform no writes. Its result grants
+// no mutation authority: callers must validate every generated baseline
+// statement against the rehearsal's execution scope before executing any.
+type RehearsalSchemaReader interface {
+	ReadRehearsalSchemaContext(ctx context.Context) (*Database, error)
+}
+
 // SchemaExecutor executes SQL statements produced by schema operations.
 //
 // ExecuteSQL accepts a context and an optional slice of arguments that are

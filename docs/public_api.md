@@ -1219,6 +1219,16 @@ cannot leave an earlier statement applied. Validators inspect SQL but do not
 replace the migrator's execution path; use `WithStatementInterceptor` only when
 an external executor must take over accepted statements.
 
+`dbschema.ReadRehearsalSchemaContext` uses a private reader and selects its
+optional `catalog.RehearsalSchemaReader` service. This service can include
+observed environment objects outside the reader's writable scope for baseline
+comparison. Readers without it perform an ordinary schema read. Unknown state
+stays unknown, and a failed read returns no partial schema. The caller must
+validate the entire generated baseline against the allowed execution scope
+before applying any statement. An environment observation grants no permission
+to change it. YDB uses this to compare database-wide workload settings while
+rehearsing directory-local table changes.
+
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.
 Use it when session-local state must remain consistent across cleanup, replay,

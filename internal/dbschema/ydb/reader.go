@@ -133,6 +133,18 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 // ReadSchemaContext reads the database. Tables come out ordered by schema and
 // name, and each table's columns in the order the table declares them.
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	return r.readSchemaContext(ctx, workloadDirectory)
+}
+
+// ReadRehearsalSchemaContext includes observed database-wide workload settings
+// when reading a dev directory. Equal environment settings need no recreation;
+// unknown settings stay unknown. The replay guard must refuse changes outside
+// the directory. ReadSchemaContext keeps its ordinary directory scope.
+func (r *Reader) ReadRehearsalSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	return r.readSchemaContext(ctx, workloadEnvironment)
+}
+
+func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope) (*catalog.Database, error) {
 	source, end, err := r.open(ctx)
 	if err != nil {
 		return nil, err
@@ -162,7 +174,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	db := &catalog.Database{FeatureCoverage: featureCoverage, DatabasePath: "/" + strings.Trim(r.database, "/")}
 	// System views supply the settings of database-wide workload objects.
 	// The later walk retains any listed pool that those views did not describe.
-	if err := r.resourcePools(ctx, source, db); err != nil {
+	if err := r.resourcePools(ctx, source, db, scope); err != nil {
 		return nil, err
 	}
 	if err := r.walk(ctx, source, "", db); err != nil {

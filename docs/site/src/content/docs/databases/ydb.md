@@ -1011,6 +1011,13 @@ classifiers in place. The read takes them from `.sys/resource_pools` and
 `.sys/resource_pool_classifiers`. HCL and DBML have no spelling for
 either, and a document in one of them leaves both namespaces uninspected.
 
+Rehearsal baseline comparison reads the dev database's workload environment
+separately from the directory's ordinary schema. Matching observed settings need
+no recreation. Unread settings still stop a comparison that needs them, and a
+baseline requiring a database-wide workload change is refused before any of its
+statements execute in a dev directory. Reading this environment grants no wider
+write scope.
+
 An uninspected workload namespace does not block migrations that only change
 tables. An observed pool such as `default` remains untouched without requiring
 workload DDL support. A declared pool or classifier still needs inspected settings
