@@ -533,7 +533,9 @@ collections, positive source coverage, explicit codecs, and operation effects.
 values with structured references. Insertions and lookups clone values.
 Duplicate kinds or object identities and nil payloads are errors. `Value.Equal`
 compares local representations; target-aware comparison resolves defaults and
-inspection limits separately.
+inspection limits separately. `OwnedCoverage` enrolls one model in a source's
+coverage claim from its owner's codecs alone, so a runtime that registers more
+models later cannot widen a claim already captured.
 
 `engine.Provider.Relations` assigns dependency discovery by target, model kind,
 and source representation. `runtime.CaptureRelations` validates a complete
@@ -1013,10 +1015,15 @@ variable the value comes from, and an empty one selects `DefaultValueEnv` for
 the secret's path. `Observed` is empty, because the server returns a secret's
 path and nothing else. A desired and an observed secret compare by path alone;
 a rotation request from `RotationRequests` is the only way a plan writes
-`ALTER SECRET`, and no declaration carries one. `Declare` is how every source
-format adds a declaration, and `ParsePath` reads every other spelling of a
-secret as its path, with a slash as the only separator. The common schema,
-catalog, AST, and diff types contain no secret fields.
+`ALTER SECRET`, and no declaration carries one; `WithRotations` adds them to
+compare options without repeating one.
+
+`Declare` is how every source format adds a secret declaration, and
+`ParsePath` reads every other spelling of a secret as its path below the
+database root, with a slash as the only separator, and refuses a leading or
+trailing slash. `ResolvePath` reads the path a statement names, which YDB
+stores absolute, against the database root, and refuses one outside it. The
+common schema, catalog, AST, and diff types contain no secret fields.
 
 The secret services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
 `ydbreport` consume this model, `ydbdiff.Secret` captures both change operands,
@@ -1024,7 +1031,9 @@ and `ydbast.Secret` is the statement payload `ydbrender.SecretHandler` writes;
 a change with both operands is a rotation. Planning creates or drops a secret
 before the common statements, except a creation at a path the plan frees or
 beneath one, and before every external data source, async replication, or
-transfer that names the secret by path. `ydbscheme.CommonEffects` reads such a
+transfer that names the secret by path. Every standalone YDB object orders
+itself against the paths above it the same way, and the planner orders objects
+of different owners against each other's paths. `ydbscheme.CommonEffects` reads such a
 path relative to the database root it is given. Reverse planning reports the
 values a rollback cannot restore, and the reversal of a rotation carries no
 change.
