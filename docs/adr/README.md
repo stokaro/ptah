@@ -29,6 +29,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0017](0017-a-chunked-corpus-is-a-set-per-source-row.md) | A chunked corpus is a set per source row, and the set is the unit of identity, correctness and replacement | Proposed |
 | [0018](0018-the-session-is-the-unit-of-shared-agent-state.md) | The session is the unit of shared agent state, and Phase 9's deferred items are evaluated against it | Proposed |
 | [0019](0019-a-declared-row-set-is-artifact-content.md) | A declared row set is artifact content, and a checkpoint carries the rows its successors read | Proposed |
+| [0020](0020-row-access-policies-keep-their-engine-semantics.md) | Row-access policies keep their engine semantics | Proposed |
 
 ## Writing one
 
