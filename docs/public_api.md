@@ -947,6 +947,11 @@ rollback keeps that selection through replay and comparison. A generator caller 
 comparison evidence supplies `OnUndecided` and reports its structured limits;
 without that callback, incomplete evidence returns `ErrIncompleteComparison`.
 
+Checkpoint generation compares the captured schema with an explicitly empty
+baseline. That baseline records known absence for the selected runtime's observed
+feature models. This does not change the source's coverage: unreadable source
+definitions still cause refusal before any checkpoint SQL is returned.
+
 Modified table operands capture their effective desired declaration and current
 observation, including owned feature objects and coverage. Preserved observed
 objects reach the desired operand before it is captured. A feature-only change

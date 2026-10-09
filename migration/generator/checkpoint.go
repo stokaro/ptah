@@ -56,7 +56,10 @@ func generateCheckpointWithDatabaseInfo(
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
 
-	empty := &catalog.Database{}
+	empty, err := checkpointEmptyDatabase(ctx, runtime)
+	if err != nil {
+		return "", "", fmt.Errorf("generate checkpoint: %w", err)
+	}
 	diff, err := schemadiff.CompareWithDatabaseInfo(ctx, schema, empty, info, nil, runtime)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
@@ -77,12 +80,37 @@ func generateCheckpointWithDatabaseQualified(
 	if schema == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
-	empty := &catalog.Database{}
+	empty, err := checkpointEmptyDatabase(ctx, runtime)
+	if err != nil {
+		return "", "", fmt.Errorf("generate checkpoint: %w", err)
+	}
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, empty, nil, runtime)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
 	return generateCheckpointFromDiff(ctx, runtime, schema, empty, conn.Info(), diff, qualifier)
+}
+
+// A checkpoint targets an explicitly empty baseline, not an uninspected live
+// catalog. Every observed model in the selected runtime therefore has known
+// absence here. This grants no knowledge about the replayed source schema and
+// does not select providers or capabilities. Both checkpoint entry points must
+// use this baseline so new owned feature families do not become unknown state.
+func checkpointEmptyDatabase(ctx context.Context, runtime Runtime) (*catalog.Database, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	var kinds []schemaext.KindCoverage
+	for _, definition := range runtime.Codecs().Definitions() {
+		if definition.Representation == schemaext.Observed {
+			kinds = append(kinds, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+		}
+	}
+	coverage, err := schemaext.NewCoverage(schemaext.Observed, kinds, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &catalog.Database{FeatureCoverage: coverage}, nil
 }
 
 func generateCheckpointFromDiff(
