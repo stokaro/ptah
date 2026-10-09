@@ -381,8 +381,11 @@ to the selected target; its knowledge remains unchanged without a handler.
 Concrete values, explicit defaults, and subject limitations require a handler.
 
 `Provider.FacetComparisons` assigns attached model kinds and their change codecs
-to a contextual comparison service. `Runtime.CompareFacets` uses the common
-owner's identity and lifecycle. Several models may attach to one owner, but a
+to a contextual comparison service. Each registration must declare its common
+object kinds in `OwnerKinds`. The runtime captures that list and sends only those
+owners, including owners without concrete facet values. Values and subject
+coverage attached to the wrong kind fail before any comparison service runs.
+`Runtime.CompareFacets` uses the common owner's identity and lifecycle. Several models may attach to one owner, but a
 model cannot also be registered as a named object on the same target. Replies
 must set `Complete`, retain explicit declarations, and preserve source knowledge.
 A change requires declared intent and observed state; an explicit subject limit
@@ -403,14 +406,16 @@ retains its actual settings for rebuild and reversal.
 both input surfaces before dispatch and returns no result if either fails.
 Installing a provider never enrolls its models in a captured source. The
 migration comparator consumes this combined service through
-`schemapreparation.Runtime`. It captures table facets on both sides, applies
-effective desired settings before common table captures, and attaches changes
-to the table diff. Non-table facets currently refuse because their comparison
-identity capture is not implemented. A successful runtime reply sets `Complete`;
+`schemapreparation.Runtime`. It captures table and index facets on both sides and
+applies effective desired settings before common table captures. Index identities
+follow the selected table or schema namespace. Table-owned changes attach to the
+table diff; schema-scoped index changes use the schema diff. Other attachment
+points currently refuse because their comparison identity capture is not
+implemented. A successful runtime reply sets `Complete`;
 undecided diagnostics remain distinct from operational failures.
 
-Before table preparation, comparison binds table coverage claims to the same
-identifier semantics and default database as common tables. Explicit schemas
+Before table preparation, comparison binds table and index coverage claims to the
+same identifier semantics and default database as their common owners. Explicit schemas
 remain explicit. Binding preserves source knowledge, refuses identity collisions,
 and leaves the source snapshots unchanged.
 

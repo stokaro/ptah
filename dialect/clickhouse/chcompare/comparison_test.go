@@ -22,7 +22,7 @@ func comparisonRuntime() *engine.Runtime {
 		ID:               "example.org/clickhouse",
 		Targets:          []engine.Target{{Name: "clickhouse"}},
 		Codecs:           append(chschema.Codecs(), chdiff.Codecs()...),
-		FacetComparisons: []engine.FacetComparison{{Target: "clickhouse", Kinds: []schemaext.Kind{chschema.TableKind}, ChangeKinds: []schemaext.Kind{chdiff.TableKind}, Service: chcompare.Service{}}},
+		FacetComparisons: []engine.FacetComparison{{Target: "clickhouse", OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: []schemaext.Kind{chschema.TableKind}, ChangeKinds: []schemaext.Kind{chdiff.TableKind}, Service: chcompare.Service{}}},
 	}))
 }
 

@@ -24,7 +24,7 @@ func (f facetComparisonFunc) CompareFacets(ctx context.Context, request schemaex
 func facetProvider(service schemaext.FacetComparisonService) engine.Provider {
 	provider := comparisonProvider(nil)
 	provider.Comparisons = nil
-	provider.FacetComparisons = []engine.FacetComparison{{Target: "custom", Kinds: []schemaext.Kind{conversionFirst, conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: service}}
+	provider.FacetComparisons = []engine.FacetComparison{{Target: "custom", OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: []schemaext.Kind{conversionFirst, conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: service}}
 	return provider
 }
 
@@ -235,7 +235,7 @@ func TestFacetComparisonRejectsCompetingChangesFromSeparateBatches(t *testing.T)
 	}))
 	provider.FacetComparisons[0].Kinds = []schemaext.Kind{conversionFirst}
 	provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{
-		Target: "custom", Kinds: []schemaext.Kind{conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: facetComparisonFunc(changedFacet),
+		Target: "custom", OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: []schemaext.Kind{conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: facetComparisonFunc(changedFacet),
 	})
 	runtime := mustRuntime(c, provider)
 	result, err := runtime.CompareFacets(t.Context(), facetRequest())

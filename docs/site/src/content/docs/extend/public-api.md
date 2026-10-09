@@ -154,25 +154,26 @@ rejects dropped declarations and duplicate child changes during parent creation
 or removal. Service errors and cancellation return no partial result. The YDB
 service preserves inspected changefeeds omitted by an incomplete desired source.
 
-`Provider.FacetComparisons` registers comparison of settings attached to common
-objects. `Runtime.CompareFacets` keeps their common owner identity and source
-knowledge. Explicit knowledge limits prevent a partial value from authorizing
-a change. Parent creation or removal captures attached settings without a
-separate facet operation. A provider checks `FacetComparisonRequest.Includes`
-for each model and owner. Source scope may exclude one setting while retaining
-another on the same object. The runtime refuses changes and diagnostics for
-excluded pairs, even when source coverage is complete.
+`Provider.FacetComparisons` registers attached settings and required `OwnerKinds`.
+Each service receives only matching owners, including those without values.
+Misplaced values or subject coverage fail before dispatch.
 
-`Runtime.CompareFeatures` combines named objects and attached facets. It validates
-both sources before dispatch and discards all output if either comparison fails.
-Replies must set `Complete`. The migration comparator captures table facets and
-applies effective desired settings before capturing common table changes. Other
-attachment points currently refuse because they lack comparison identity capture.
-Adding a provider does not add coverage claims to an existing source.
-Comparison and reverse CREATE projection bind table coverage claims to the
-connection's identifier semantics before selecting parent state. The default database applies to unqualified table
-claims; explicit schemas and knowledge limits remain intact. Conflicting claims
-for the resulting identity are refused.
+`Runtime.CompareFacets` preserves common identity and source knowledge. Explicit
+knowledge limits override partial values. Parent creation or removal includes
+attached settings, so separate facet operations are refused. Providers check
+`FacetComparisonRequest.Includes` for each model/owner pair: exclusions permit
+neither changes nor diagnostics, even with complete coverage.
+
+`Runtime.CompareFeatures` validates named objects and facets before dispatch,
+discarding output if either comparison fails. Replies set `Complete`. The
+migration comparator applies effective table/index facets before capturing common
+changes; index identity follows the target's table or schema namespace. Other
+attachment points refuse until identity capture exists. Registering providers
+never enrolls source coverage.
+
+Comparison binds table and index coverage to connection identifiers and the default
+database; reverse CREATE projection binds table coverage. Binding preserves explicit
+schemas, knowledge limits, and source snapshots and rejects colliding claims.
 
 Table selection preserves the selected tables' feature children and their source
 coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering
