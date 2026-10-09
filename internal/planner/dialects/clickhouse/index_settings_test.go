@@ -52,7 +52,7 @@ func indexedSource(index schemamodel.Index) *schemamodel.Database {
 }
 
 // ClickHouse changes neither the type nor the granularity of a skipping index
-// in place. The plan replaces the index with its captured expression, and the
+// in place. The plan replaces the index with its declared expression, and the
 // rollback replaces it again with the captured settings.
 func TestSkippingIndexSettingsChangePlansBothDirections(t *testing.T) {
 	c := qt.New(t)
@@ -224,4 +224,44 @@ func TestSQLSkippingIndexWithoutGranularityIsOneGranuleAsTheCurrentDocument(t *t
 			c.Assert(diff.HasChanges(), qt.Equals, test.changed)
 		})
 	}
+}
+
+// A PostgreSQL or MySQL access method absorbed into the ClickHouse settings is
+// refused before planning. The settings replacement drops the index outside a
+// transaction, so a type the server refuses at ADD INDEX would leave the table
+// without it.
+func TestSkippingIndexSettingsRefuseAForeignAccessMethod_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		index schemamodel.Index
+	}{
+		{name: "a ClickHouse property", index: schemamodel.Index{Overrides: map[string]map[string]string{"clickhouse": {"type": "GIN"}}}},
+		{name: "the common type", index: schemamodel.Index{Type: "BTREE"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			current := indexedCatalog(&chschema.ObservedIndex{IndexType: "minmax", Granularity: 1})
+			diff, err := schemadiff.CompareWithDialect(t.Context(), indexedSource(test.index), current, "clickhouse", runtime)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err, qt.ErrorMatches, `(?s).*names a PostgreSQL or MySQL access method.*`)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}
+
+// A settings change on an index whose declared key names a column the table
+// does not declare plans nothing. The replacement would drop the index and
+// then fail to add it, leaving the table without it.
+func TestSkippingIndexSettingsRefuseAKeyOnAnUndeclaredColumn_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	source := indexedSource(schemamodel.Index{Overrides: map[string]map[string]string{"clickhouse": {"granularity": "4"}}})
+	source.Indexes[0].Fields = []string{"paylod"}
+	current := indexedCatalog(&chschema.ObservedIndex{IndexType: "minmax", Granularity: 1})
+	diff, err := schemadiff.CompareWithDialect(t.Context(), source, current, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), runtime, diff, "clickhouse")
+	c.Assert(err, qt.ErrorMatches, `(?s).*reads column "paylod", which table events does not declare.*`)
+	c.Assert(statements, qt.IsNil)
 }

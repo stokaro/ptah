@@ -1,7 +1,6 @@
 package chplan
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -22,16 +21,18 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/clickhouse/internal/chkey"
 	"ptah.run/dialect/clickhouse/internal/chsql"
+	"ptah.run/internal/schemaprep"
 )
 
 // IndexService plans changes to the type and granularity of surviving
 // data-skipping indexes and accounts for captured index settings through
 // parent operations. ClickHouse changes neither setting in place, so a change
-// replaces the index: DROP INDEX, then ADD INDEX with the captured key
-// expression and the desired settings. When the common plan already replaces
-// the same index, that replacement carries the desired settings and this
-// service contributes no second one. Its zero value supports concurrent use
-// without database access.
+// replaces the index: DROP INDEX, then ADD INDEX with the declared key
+// expression and the desired settings. A declared key that names a column the
+// table will not have is refused, because the old index is gone before the new
+// one is added. When the common plan already replaces the same index, that
+// replacement carries the desired settings and this service contributes no
+// second one. Its zero value supports concurrent use without database access.
 type IndexService struct{}
 
 // PlanFeatures returns complete receipts or a completed refusal with no usable
@@ -135,8 +136,11 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 	if err != nil {
 		return contribution, plan, err
 	}
-	expression, err := indexExpression(captured.desired.Name, declaredParts(captured.desired))
+	expression, err := indexExpression(captured.desired.Name, schemaprep.IndexKeyParts(captured.desired))
 	if err != nil {
+		return contribution, plan, err
+	}
+	if err := refuseUndeclaredKeyColumns(request, captured, expression); err != nil {
 		return contribution, plan, err
 	}
 	contribution.Owner = "ptah.run/clickhouse"
@@ -257,17 +261,26 @@ func indexExpression(name string, parts []string) (string, error) {
 	return chast.SkippingIndexExpression(parts), nil
 }
 
-// declaredParts are the key parts a declaration renders: each structured
-// part's expression or column, or the field list when it has no parts.
-func declaredParts(index schemamodel.Index) []string {
-	if len(index.Parts) == 0 {
-		return index.Fields
+// refuseUndeclaredKeyColumns refuses a declared key that names a column the
+// table will not have once the plan runs. The replacement drops the old index
+// outside a transaction before it adds the new one, so an ADD INDEX the server
+// refuses for a missing column would leave the table without the index. Only
+// names that can stand for nothing but a column are checked; see
+// chkey.PlainColumnReferences.
+func refuseUndeclaredKeyColumns(request featureplan.Request, captured capturedIndex, expression string) error {
+	builder := objectidentity.NewBuilder(request.Identifiers)
+	table := captured.table.Subject
+	declared := make(map[objectidentity.Key]bool, len(captured.table.Desired.Fields))
+	for _, field := range captured.table.Desired.Fields {
+		declared[builder.ColumnParts(table.Schema.Source, table.Name.Source, field.Name).Key()] = true
 	}
-	parts := make([]string, 0, len(index.Parts))
-	for _, part := range index.Parts {
-		parts = append(parts, cmp.Or(part.Expr, part.Name))
+	for _, column := range chkey.PlainColumnReferences(expression) {
+		if !declared[builder.ColumnParts(table.Schema.Source, table.Name.Source, column).Key()] {
+			return fmt.Errorf("%w: index %q reads column %q, which table %s does not declare; the settings replacement drops the index before it adds it, so it is refused",
+				schemaext.ErrInvalidValue, captured.desired.Name, column, table.Name.Source)
+		}
 	}
-	return parts
+	return nil
 }
 
 // indexColumnDependencies orders the replacement around common changes to the

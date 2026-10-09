@@ -67,7 +67,7 @@ func indexRequest(c *qt.C) featureplan.Request {
 }
 
 // A settings change replaces the index: the old one goes before the column it
-// reads changes, and the new one, with the captured expression and the desired
+// reads changes, and the new one, with the declared expression and the desired
 // settings, comes after.
 func TestIndexSettingsPlanReplacesTheIndexAroundColumnChanges(t *testing.T) {
 	c := qt.New(t)
@@ -272,6 +272,8 @@ func TestIndexSettingsPlanWritesTheDeclaredExpression(t *testing.T) {
 			c := qt.New(t)
 			request := indexRequest(c)
 			request.CommonSteps = nil
+			request.Tables[0].Desired.Fields = append(request.Tables[0].Desired.Fields,
+				schemamodel.Field{StructName: "Event", Name: "a", Type: "String"}, schemamodel.Field{StructName: "Event", Name: "b", Type: "String"})
 			request.Tables[0].Current.Indexes[0].Columns = test.captured
 			request.Tables[0].Desired.Indexes[0].Fields = test.fields
 			request.Tables[0].Desired.Indexes[0].Parts = test.parts
@@ -281,6 +283,38 @@ func TestIndexSettingsPlanWritesTheDeclaredExpression(t *testing.T) {
 			c.Assert(result.Contributions, qt.HasLen, 1)
 			add := result.Contributions[0].Steps[1].Payload.Payload.(*chast.AddSkippingIndex)
 			c.Assert(add.Expression, qt.Equals, test.want)
+		})
+	}
+}
+
+// A declared key that names a column the table does not declare is refused
+// before anything is planned. The replacement drops the index outside a
+// transaction, so the ADD INDEX the server would refuse for the missing column
+// would leave the table without the index.
+func TestIndexSettingsPlanRefusesAKeyOnAnUndeclaredColumn_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		fields []string
+		parts  []schemamodel.IndexPart
+		column string
+	}{
+		{name: "a misspelled field", fields: []string{"paylod"}, column: "paylod"},
+		{name: "a column only the server has", fields: []string{"a"}, column: "a"},
+		{name: "one column of a tuple", fields: []string{"id", "b"}, column: "b"},
+		{name: "a call argument", parts: []schemamodel.IndexPart{{Expr: "lower(paylod)"}}, column: "paylod"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := indexRequest(c)
+			request.CommonSteps = nil
+			request.Tables[0].Current.Indexes[0].Columns = []string{"a"}
+			request.Tables[0].Desired.Indexes[0].Fields = test.fields
+			request.Tables[0].Desired.Indexes[0].Parts = test.parts
+			result, err := (chplan.IndexService{}).PlanFeatures(t.Context(), request)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Contributions, qt.HasLen, 0)
+			c.Assert(result.Diagnostics, qt.HasLen, 1)
+			c.Assert(result.Diagnostics[0].Problem.Message, qt.Contains, `reads column "`+test.column+`", which table events does not declare`)
 		})
 	}
 }
