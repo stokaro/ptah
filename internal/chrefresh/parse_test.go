@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/chrefresh"
 )
 
@@ -201,41 +201,41 @@ func TestParseClause_RefusesWhatItCannotRead(t *testing.T) {
 func TestCanonical_NormalizesADeclarationTheWayTheServerWouldStoreIt(t *testing.T) {
 	tests := []struct {
 		name     string
-		declared *ast.MatViewRefreshSpec
+		declared *chschema.Schedule
 		schema   string
 		want     string
 	}{
 		{
 			name:     "interval is canonicalized",
-			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "60 MINUTE"},
+			declared: &chschema.Schedule{Mode: "EVERY", Interval: "60 MINUTE"},
 			want:     "EVERY 1 HOUR",
 		},
 		{
 			name:     "mode is upper-cased",
-			declared: &ast.MatViewRefreshSpec{Mode: "every", Interval: "1 HOUR"},
+			declared: &chschema.Schedule{Mode: "every", Interval: "1 HOUR"},
 			want:     "EVERY 1 HOUR",
 		},
 		{
 			name:     "offset is canonicalized too",
-			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 DAY", Offset: "120 MINUTE"},
+			declared: &chschema.Schedule{Mode: "EVERY", Interval: "1 DAY", Offset: "120 MINUTE"},
 			want:     "EVERY 1 DAY OFFSET 2 HOUR",
 		},
 		{
 			name:     "randomize is canonicalized too",
-			declared: &ast.MatViewRefreshSpec{Mode: "AFTER", Interval: "1 HOUR", Randomize: "600 SECOND"},
+			declared: &chschema.Schedule{Mode: "AFTER", Interval: "1 HOUR", Randomize: "600 SECOND"},
 			want:     "AFTER 1 HOUR RANDOMIZE FOR 10 MINUTE",
 		},
 		{
 			// The server stores a dependency schema-qualified, so a comparison
 			// against what it stored has to start there.
 			name:     "dependencies are qualified",
-			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"mv_every"}},
+			declared: &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"mv_every"}},
 			schema:   "ptah_test",
 			want:     "EVERY 1 HOUR DEPENDS ON ptah_test.mv_every",
 		},
 		{
 			name: "a dependency that already names a schema keeps it",
-			declared: &ast.MatViewRefreshSpec{
+			declared: &chschema.Schedule{
 				Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"other.mv"},
 			},
 			schema: "ptah_test",
@@ -243,7 +243,7 @@ func TestCanonical_NormalizesADeclarationTheWayTheServerWouldStoreIt(t *testing.
 		},
 		{
 			name: "every clause at once, in the order the server prints",
-			declared: &ast.MatViewRefreshSpec{
+			declared: &chschema.Schedule{
 				Mode: "EVERY", Interval: "1 DAY", Offset: "2 HOUR",
 				Randomize: "30 MINUTE", DependsOn: []string{"mv_every"}, Append: true,
 			},
@@ -270,7 +270,7 @@ func TestCanonical_RefusesOffsetOnAfter(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := chrefresh.Canonical(
-		&ast.MatViewRefreshSpec{Mode: "AFTER", Interval: "1 HOUR", Offset: "5 MINUTE"}, "")
+		&chschema.Schedule{Mode: "AFTER", Interval: "1 HOUR", Offset: "5 MINUTE"}, "")
 
 	c.Assert(err, qt.ErrorMatches, `refresh OFFSET belongs to EVERY and this schedule is AFTER`)
 }
@@ -301,46 +301,46 @@ func TestCanonical_RoundTripsThroughTheParser(t *testing.T) {
 func TestEqual(t *testing.T) {
 	tests := []struct {
 		name string
-		a    *ast.MatViewRefreshSpec
-		b    *ast.MatViewRefreshSpec
+		a    *chschema.Schedule
+		b    *chschema.Schedule
 		want bool
 	}{
 		{name: "both absent", want: true},
 		{
 			name: "one absent",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+			a:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"},
 			want: false,
 		},
 		{
 			name: "same",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+			a:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"},
+			b:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"},
 			want: true,
 		},
 		{
 			name: "different interval",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "2 HOUR"},
+			a:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"},
+			b:    &chschema.Schedule{Mode: "EVERY", Interval: "2 HOUR"},
 			want: false,
 		},
 		{
 			// EVERY and AFTER with the same interval are different schedules:
 			// one is wall-clock, the other counts from the previous run.
 			name: "different mode",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			b:    &ast.MatViewRefreshSpec{Mode: "AFTER", Interval: "1 HOUR"},
+			a:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"},
+			b:    &chschema.Schedule{Mode: "AFTER", Interval: "1 HOUR"},
 			want: false,
 		},
 		{
 			name: "different dependencies",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"a"}},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"b"}},
+			a:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"a"}},
+			b:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"b"}},
 			want: false,
 		},
 		{
 			name: "different append",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", Append: true},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+			a:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR", Append: true},
+			b:    &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"},
 			want: false,
 		},
 	}

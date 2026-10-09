@@ -421,13 +421,13 @@ func viewFromCatalog(reported catalog.View) schemamodel.View {
 //
 // Only the name needs a rule: schemamodel.MaterializedView has no Schema, so
 // the qualified spelling goes in Name -- which is what the name list held. The
-// refresh schedule is the same ast type on both sides, so it is carried rather
-// than rebuilt.
+// observed facets are not carried: a declaration holds desired settings, and
+// only an owner converts one into the other. A rollback that recreates the view
+// takes it from the converted pre-change schema instead.
 func matViewFromCatalog(reported catalog.MaterializedView) schemamodel.MaterializedView {
 	return schemamodel.MaterializedView{
 		Name:    reported.QualifiedName(),
 		Body:    reported.Body,
 		Comment: reported.Comment,
-		Refresh: reported.Refresh,
 	}
 }

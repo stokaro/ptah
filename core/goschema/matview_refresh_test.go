@@ -7,9 +7,23 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/chrefresh"
+	"ptah.run/dialect/clickhouse/chschema"
 )
+
+// declaredSchedule is the refresh clause a parsed view carries as the
+// ClickHouse owner's setting, or "" when it declares none.
+func declaredSchedule(c *qt.C, view schemamodel.MaterializedView) string {
+	c.Helper()
+	schedule, found, err := schemaext.FacetAs[*chschema.DesiredRefresh](view.Facets, chschema.RefreshKind)
+	c.Assert(err, qt.IsNil)
+	if !found {
+		return ""
+	}
+	c.Assert(view.Facets.TargetScope(chschema.RefreshKind), qt.DeepEquals, []string{"clickhouse"})
+	return schedule.Clause()
+}
 
 // parseMatViewRefreshSource parses one file declaring a materialized view with
 // the given refresh attribute.
@@ -56,7 +70,7 @@ func TestParseMatView_CanonicalizesTheDeclaredSchedule(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.MaterializedViews, qt.HasLen, 1)
-			c.Assert(chrefresh.Clause(database.MaterializedViews[0].Refresh), qt.Equals, test.want)
+			c.Assert(declaredSchedule(c, database.MaterializedViews[0]), qt.Equals, test.want)
 		})
 	}
 }
@@ -71,7 +85,7 @@ func TestParseMatView_NoRefreshAttributeLeavesNoSchedule(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.MaterializedViews, qt.HasLen, 1)
-	c.Assert(database.MaterializedViews[0].Refresh, qt.IsNil)
+	c.Assert(database.MaterializedViews[0].Facets.IsZero(), qt.IsTrue)
 }
 
 // TestParseMatView_RefusesAScheduleTheServerWouldRefuse answers a bad

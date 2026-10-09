@@ -42,7 +42,6 @@ var nodeCensus = []censusRow{
 	// Statements and their parts. A zero value describes each: the census reads
 	// no field off the node it accepts.
 	{node: &ast.AlterIndexNode{}},
-	{node: &ast.AlterMaterializedViewRefreshNode{}},
 	{node: &ast.AlterRoleNode{}},
 	{node: &ast.AlterSequenceNode{}},
 	{node: &ast.AlterSerialSequenceNode{}},

@@ -4,6 +4,7 @@ package generator
 // body rather than a set of attributes.
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/core/platform/identifier"
@@ -74,19 +75,31 @@ func reverseMaterializedViewDiffs(
 		reversed[i] = difftypes.MaterializedViewDiff{
 			ViewName: viewDiff.ViewName,
 			Changes:  reverseChangeMap(viewDiff.Changes),
-			// A ClickHouse refresh schedule is a Desired/Current pair for the
-			// reason the table's TTL is: the planner needs both sides to tell
-			// an ALTER from a rebuild. Dropping it meant a rollback restored
-			// the view without the schedule it had, so its rows would be right
-			// once and never again (stokaro/ptah#2418).
-			RefreshChange: reverseRefreshChange(viewDiff.RefreshChange),
 			// The recreate half renders from the operand, so reversing the
 			// change map without reversing the operand would rebuild the very
-			// definition the rollback is undoing (stokaro/ptah#2315).
+			// definition the rollback is undoing (stokaro/ptah#2315). The prior
+			// view carries the settings the pre-change database held, such as
+			// a refresh schedule, so a rollback that replaces the view
+			// restores them; its feature changes are reversed by their owners
+			// afterwards (stokaro/ptah#2418).
 			Desired: priorMaterializedView(prior, viewDiff.ViewName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorMaterializedViews are the removed views as the pre-change database held
+// them. A removal carries the view in the shape the database reported it,
+// without settings an owner would have to convert; the converted pre-change
+// schema has them. A view it does not hold keeps the carried declaration.
+func priorMaterializedViews(removed difftypes.MaterializedViewChanges, prior *schemamodel.Database, semantics identifier.Semantics) difftypes.MaterializedViewChanges {
+	restored := slices.Clone(removed)
+	for i, view := range restored {
+		if held := priorMaterializedView(prior, view.Name, semantics); held.Name != "" {
+			restored[i] = held
+		}
+	}
+	return restored
 }
 
 // priorMaterializedView is the materialized view the pre-change database held,

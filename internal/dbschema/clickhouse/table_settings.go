@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 
 	"ptah.run/catalog"
@@ -45,12 +46,26 @@ func observedIndexSettings(indexType string, granularity uint64) (schemaext.Face
 	return facets.WithTargetScope(chschema.IndexKind, platform.ClickHouse)
 }
 
+// observedRefresh records a refreshable view's schedule as the owner's
+// observation.
+func observedRefresh(schedule chschema.Schedule) (schemaext.Facets, error) {
+	value := &chschema.ObservedRefresh{Schedule: schedule}
+	if err := chschema.ValidateObservedRefresh(value); err != nil {
+		return schemaext.Facets{}, err
+	}
+	facets, err := schemaext.NewFacets(value)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return facets.WithTargetScope(chschema.RefreshKind, platform.ClickHouse)
+}
+
 // storageRegistry builds the model registry observed coverage names once.
 // Building one validates and hashes every codec definition, and coverage is
 // built on every read.
 var storageRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
 	var codecs []schemaext.OwnedCodec
-	for _, codec := range append(chschema.Codecs(), chschema.IndexCodecs()...) {
+	for _, codec := range slices.Concat(chschema.Codecs(), chschema.IndexCodecs(), chschema.RefreshCodecs()) {
 		codecs = append(codecs, schemaext.OwnedCodec{Owner: "ptah.run/clickhouse", Codec: codec})
 	}
 	return schemaext.NewRegistry(codecs...)
@@ -59,7 +74,9 @@ var storageRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
 // The table query excludes unsupported engines and materialized-view storage.
 // Only returned, retained tables establish complete settings observations.
 // Index knowledge applies to the whole database; readSkippingIndexes says why.
-func observedCoverage(tables []catalog.Table, index schemaext.Knowledge) (schemaext.Coverage, error) {
+// Refresh schedules are known for every materialized view the read returns,
+// except a refreshable one whose schedule could not be read.
+func observedCoverage(tables []catalog.Table, index schemaext.Knowledge, unreadable []catalog.MaterializedView) (schemaext.Coverage, error) {
 	registry, err := storageRegistry()
 	if err != nil {
 		return schemaext.Coverage{}, err
@@ -72,9 +89,16 @@ func observedCoverage(tables []catalog.Table, index schemaext.Knowledge) (schema
 			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
 		})
 	}
+	for _, view := range unreadable {
+		subjects = append(subjects, schemaext.SubjectCoverage{
+			Kind: chschema.RefreshKind, Subject: identities.SchemaScopedParts(objectidentity.KindMatView, view.Schema, view.Name),
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the refresh clause of the stored CREATE statement could not be read"},
+		})
+	}
 	knowledge := map[schemaext.Kind]schemaext.Knowledge{
-		chschema.TableKind: {State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
-		chschema.IndexKind: index,
+		chschema.TableKind:   {State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
+		chschema.IndexKind:   index,
+		chschema.RefreshKind: {State: schemaext.Complete},
 	}
 	var kinds []schemaext.KindCoverage
 	for _, model := range registry.Definitions() {

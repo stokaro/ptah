@@ -282,12 +282,6 @@ func mysqlRefusedKinds() []mysqlCensusRow {
 				"and this renderer does not write it",
 		},
 		{
-			kind: "AlterMaterializedViewRefreshNode",
-			node: ast.NewAlterMaterializedViewRefresh("mv1", &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"}),
-			want: "unsupported feature: mysql: ALTER MATERIALIZED VIEW REFRESH mv1: materialized views are not " +
-				"supported by MySQL or MariaDB; remove matview definitions for this target",
-		},
-		{
 			kind: "AlterRoleNode",
 			node: ast.NewAlterRole("app_role"),
 			want: `unsupported feature: mysql: role "app_role" declares an altered attribute, which a role does ` +

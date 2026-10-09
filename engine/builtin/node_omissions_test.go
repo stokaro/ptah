@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -192,44 +192,34 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedRoleComment(t
 	}
 }
 
-// TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedRefreshSchedule
+// TestGetOrderedCreateStatementsReportingOmissions_ARefreshScheduleBelongsToClickHouse
 // pins a materialized view's refresh schedule.
 //
-// ClickHouse writes REFRESH EVERY. PostgreSQL and Oracle create the view and
-// schedule nothing, so it is populated once and never again, which reaches the
-// reader as stale data rather than as a missing clause. The three targets that
-// refuse materialized views outright are absent: nothing was created for a
-// property to go missing from.
-func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedRefreshSchedule(t *testing.T) {
+// The schedule is the ClickHouse owner's setting, bound to that target, so on
+// PostgreSQL and Oracle it is not part of the view at all: the view is created
+// without a schedule and nothing is reported missing from it. ClickHouse
+// writes REFRESH EVERY, which the control below asks for in the output.
+func TestGetOrderedCreateStatementsReportingOmissions_ARefreshScheduleBelongsToClickHouse(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		want    []string
 	}{
-		{name: "clickhouse writes it", dialect: platform.ClickHouse, want: nil},
-		{
-			name:    "postgres drops it",
-			dialect: platform.Postgres,
-			want:    []string{"materialized view refresh schedule"},
-		},
-		{
-			name:    "oracle drops it",
-			dialect: platform.Oracle,
-			want:    []string{"materialized view refresh schedule"},
-		},
+		{name: "clickhouse writes it", dialect: platform.ClickHouse},
+		{name: "postgres creates the view without it", dialect: platform.Postgres},
+		{name: "oracle creates the view without it", dialect: platform.Oracle},
 	}
 
 	database := nodeSchema()
 	database.MaterializedViews = []schemamodel.MaterializedView{{
-		Name:    "docs_by_day",
-		Body:    "SELECT day FROM docs",
-		Refresh: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+		Name:   "docs_by_day",
+		Body:   "SELECT day FROM docs",
+		Facets: refreshFacets(chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"}),
 	}}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(lostNodeProperties(c, database, test.dialect), qt.DeepEquals, test.want)
+			c.Assert(lostNodeProperties(c, database, test.dialect), qt.IsNil)
 		})
 	}
 }
@@ -252,9 +242,9 @@ func TestGetOrderedCreateStatementsReportingOmissions_ATargetWritesTheNodeClause
 	withRole.Roles = []schemamodel.Role{{Name: "reader", Comment: "read-only access"}}
 	withView := nodeSchema()
 	withView.MaterializedViews = []schemamodel.MaterializedView{{
-		Name:    "docs_by_day",
-		Body:    "SELECT day FROM docs",
-		Refresh: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+		Name:   "docs_by_day",
+		Body:   "SELECT day FROM docs",
+		Facets: refreshFacets(chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"}),
 	}}
 
 	tests := []struct {

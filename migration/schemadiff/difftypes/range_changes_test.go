@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -535,9 +537,9 @@ func TestMaterializedViewChanges_TheWireShapeIsUnchanged(t *testing.T) {
 		{
 			name: "the body and the refresh schedule do not reach the wire",
 			changes: difftypes.MaterializedViewChanges{{
-				Name:    "reporting.user_counts",
-				Body:    "SELECT count() FROM users",
-				Refresh: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+				Name:   "reporting.user_counts",
+				Body:   "SELECT count() FROM users",
+				Facets: hourlyRefresh(),
 			}},
 			want: `["reporting.user_counts"]`,
 			why:  "a name list is what format_version 1 has always carried here",
@@ -556,8 +558,15 @@ func TestMaterializedViewChanges_TheWireShapeIsUnchanged(t *testing.T) {
 	}
 }
 
+// hourlyRefresh is a ClickHouse refresh schedule as source decoding attaches
+// it to a materialized view.
+func hourlyRefresh() schemaext.Facets {
+	schedule := &chschema.DesiredRefresh{Schedule: chschema.Schedule{Mode: chschema.RefreshEvery, Interval: "1 HOUR"}}
+	return must.Must(must.Must(schemaext.NewFacets(schedule)).WithTargetScope(chschema.RefreshKind, "clickhouse"))
+}
+
 // TestMaterializedViewChanges_TheRefreshScheduleSurvivesInMemory is the other
-// half, on the field this family carries that its plain twin does not.
+// half, on the settings this family carries that its plain twin does not.
 //
 // A ClickHouse refreshable view whose schedule did not reach the planner would
 // be created as an ordinary one: the rows would be right once and never again.
@@ -565,15 +574,16 @@ func TestMaterializedViewChanges_TheRefreshScheduleSurvivesInMemory(t *testing.T
 	c := qt.New(t)
 
 	changes := difftypes.MaterializedViewChanges{{
-		Name:    "reporting.user_counts",
-		Body:    "SELECT count() FROM users",
-		Refresh: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+		Name:   "reporting.user_counts",
+		Body:   "SELECT count() FROM users",
+		Facets: hourlyRefresh(),
 	}}
 
-	c.Assert(changes[0].Refresh, qt.IsNotNil,
-		qt.Commentf("a view created without its schedule refreshes once and never again"))
-	c.Assert(changes[0].Refresh.Mode, qt.Equals, "EVERY")
-	c.Assert(changes[0].Refresh.Interval, qt.Equals, "1 HOUR")
+	schedule, found, err := schemaext.FacetAs[*chschema.DesiredRefresh](changes[0].Facets, chschema.RefreshKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue, qt.Commentf("a view created without its schedule refreshes once and never again"))
+	c.Assert(schedule.Mode, qt.Equals, "EVERY")
+	c.Assert(schedule.Interval, qt.Equals, "1 HOUR")
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"reporting.user_counts"},
 		qt.Commentf("and the name list a consumer reads is unchanged"))
 }

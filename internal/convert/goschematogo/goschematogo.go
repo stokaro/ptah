@@ -87,6 +87,9 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 	if err := validateIndexIncludeColumns(db.Indexes); err != nil {
 		return nil, err
 	}
+	if err := validateMaterializedViewFacets(db.MaterializedViews); err != nil {
+		return nil, err
+	}
 	if err := refuseNarrowedDeleteActions(db.Constraints); err != nil {
 		return nil, err
 	}
@@ -505,10 +508,13 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		))
 	}
 	for _, view := range sortedMaterializedViews(ctx.db.MaterializedViews) {
+		// Render validated every schedule before writing began.
+		refresh, _ := refreshClause(view)
 		w.writeComment(annotation("ptah:schema:matview",
 			attr{name: "name", value: view.Name, set: true},
 			attr{name: "body", value: view.Body, set: true},
 			attr{name: "comment", value: view.Comment, set: view.Comment != ""},
+			attr{name: "refresh", value: refresh, set: refresh != ""},
 			dialectsAttr(view.Dialects),
 		))
 	}

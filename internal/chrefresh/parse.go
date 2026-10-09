@@ -3,7 +3,7 @@ package chrefresh
 import (
 	"strings"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/clickhouse/chschema"
 )
 
 // ParseClause reads a schedule out of the text between REFRESH and the column
@@ -18,7 +18,7 @@ import (
 // The clause order is fixed, measured:
 //
 //	EVERY <interval> [OFFSET <interval>] [RANDOMIZE FOR <interval>] [DEPENDS ON <view>...] [APPEND]
-func ParseClause(clause string) *ast.MatViewRefreshSpec {
+func ParseClause(clause string) *chschema.Schedule {
 	fields := strings.Fields(clause)
 	if len(fields) < 2 {
 		return nil
@@ -28,7 +28,7 @@ func ParseClause(clause string) *ast.MatViewRefreshSpec {
 		return nil
 	}
 
-	spec := &ast.MatViewRefreshSpec{Mode: mode}
+	spec := &chschema.Schedule{Mode: mode}
 	rest := fields[1:]
 
 	// APPEND is last, so it is taken off the end before the clauses in the
@@ -112,7 +112,7 @@ func splitDependencies(fields []string) []string {
 // materialized view. A caller must not read that as "a refreshable view with an
 // empty schedule": those are different objects, and only one of them can be
 // altered into the other.
-func ParseCreateQuery(createQuery string) *ast.MatViewRefreshSpec {
+func ParseCreateQuery(createQuery string) *chschema.Schedule {
 	const marker = " REFRESH "
 	_, rest, found := strings.Cut(createQuery, marker)
 	if !found {

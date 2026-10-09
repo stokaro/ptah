@@ -1,5 +1,6 @@
-// Package chconvert projects ClickHouse storage settings between desired and
-// observed representations. Target default resolution belongs to preparation.
+// Package chconvert projects ClickHouse storage settings and refresh schedules
+// between desired and observed representations. Target default resolution
+// belongs to preparation.
 package chconvert
 
 import (
@@ -11,8 +12,8 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 )
 
-// Service preserves observed table and skipping-index properties when reconstructing a
-// declaration. Projection to observed state requires fully explicit intent;
+// Service preserves observed table, skipping-index and refresh-schedule
+// properties when reconstructing a declaration. Projection to observed state requires fully explicit intent;
 // unresolved settings cannot become claims about an inspected database.
 type Service struct{}
 
@@ -56,6 +57,8 @@ func convertValue(from schemaext.Representation, value schemaext.Value) (schemae
 			return v.Observed()
 		case *chschema.DesiredIndex:
 			return v.Observed()
+		case *chschema.DesiredRefresh:
+			return v.Observed()
 		default:
 			return nil, fmt.Errorf("%w: expected desired ClickHouse storage settings, got %T", schemaext.ErrInvalidValue, value)
 		}
@@ -68,6 +71,11 @@ func convertValue(from schemaext.Representation, value schemaext.Value) (schemae
 		return v.Desired(), nil
 	case *chschema.ObservedIndex:
 		if err := chschema.ValidateObservedIndex(v); err != nil {
+			return nil, err
+		}
+		return v.Desired(), nil
+	case *chschema.ObservedRefresh:
+		if err := chschema.ValidateObservedRefresh(v); err != nil {
 			return nil, err
 		}
 		return v.Desired(), nil

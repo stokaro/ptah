@@ -2,10 +2,9 @@ package chrefresh
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/clickhouse/chschema"
 )
 
 // Mode names the two ways ClickHouse schedules a refresh.
@@ -24,7 +23,7 @@ const (
 // are qualified with schema, because those are the two values the server
 // rewrites: a comparison against what it stored has to start from the same
 // place or a synchronized view reads as drifted forever.
-func Canonical(spec *ast.MatViewRefreshSpec, schema string) (*ast.MatViewRefreshSpec, error) {
+func Canonical(spec *chschema.Schedule, schema string) (*chschema.Schedule, error) {
 	if spec == nil {
 		return nil, nil
 	}
@@ -37,7 +36,7 @@ func Canonical(spec *ast.MatViewRefreshSpec, schema string) (*ast.MatViewRefresh
 	if err != nil {
 		return nil, err
 	}
-	canonical := &ast.MatViewRefreshSpec{
+	canonical := &chschema.Schedule{
 		Mode:     mode,
 		Interval: interval,
 		Append:   spec.Append,
@@ -93,24 +92,11 @@ func qualifyDependencies(dependencies []string, schema string) []string {
 
 // Clause renders spec as the text that follows REFRESH in a CREATE statement,
 // in the order the server prints it.
-func Clause(spec *ast.MatViewRefreshSpec) string {
+func Clause(spec *chschema.Schedule) string {
 	if spec == nil {
 		return ""
 	}
-	parts := []string{spec.Mode, spec.Interval}
-	if spec.Offset != "" {
-		parts = append(parts, "OFFSET", spec.Offset)
-	}
-	if spec.Randomize != "" {
-		parts = append(parts, "RANDOMIZE FOR", spec.Randomize)
-	}
-	if len(spec.DependsOn) > 0 {
-		parts = append(parts, "DEPENDS ON", strings.Join(spec.DependsOn, ", "))
-	}
-	if spec.Append {
-		parts = append(parts, "APPEND")
-	}
-	return strings.Join(parts, " ")
+	return spec.Clause()
 }
 
 // Equal reports whether two schedules describe the same thing.
@@ -119,14 +105,9 @@ func Clause(spec *ast.MatViewRefreshSpec) string {
 // [Canonical] and the read one through the parser that produced it -- so this
 // compares values rather than folding again. Comparing a raw declaration here
 // would hide the case the canonicalizer exists for.
-func Equal(a, b *ast.MatViewRefreshSpec) bool {
+func Equal(a, b *chschema.Schedule) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	return a.Mode == b.Mode &&
-		a.Interval == b.Interval &&
-		a.Offset == b.Offset &&
-		a.Randomize == b.Randomize &&
-		a.Append == b.Append &&
-		slices.Equal(a.DependsOn, b.DependsOn)
+	return a.Equal(*b)
 }

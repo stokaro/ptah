@@ -36,6 +36,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: "ptah.run/ydb", codecs: ydbtopic.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.IndexCodecs()},
+		{owner: "ptah.run/clickhouse", codecs: chschema.RefreshCodecs()},
 		{owner: crdbschema.Owner, codecs: crdbschema.Codecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
 		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},

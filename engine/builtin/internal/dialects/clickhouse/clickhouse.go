@@ -37,7 +37,6 @@ import (
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chresolve"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
-	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/renderdiag"
@@ -1429,12 +1428,12 @@ const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
 // report byte-identical as_select in system.tables, so nothing Ptah reads back
 // could tell them apart or diff them.
 //
-// No refresh clause is written either. ClickHouse spells a scheduled refresh
-// as "REFRESH EVERY|AFTER ..." inside the CREATE statement, which makes the
-// schedule engine-native DDL that a reader could observe and a diff could
-// reconcile -- so it is a ClickHouse capability worth modeling on its own
-// terms, not a value of the shared refresh_strategy attribute
-// (stokaro/ptah#1625).
+// No refresh strategy is written. ClickHouse spells a scheduled refresh as
+// "REFRESH EVERY|AFTER ..." inside the CREATE statement, which makes the
+// schedule engine-native DDL a reader can observe and a diff can reconcile, so
+// it is the ClickHouse owner's setting of the view rather than a value of the
+// shared refresh_strategy attribute (stokaro/ptah#1625); the clause is written
+// from that setting.
 func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
@@ -1451,11 +1450,16 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 	// The REFRESH clause sits between the name and the storage clause, which
-	// is where the server prints it back (stokaro/ptah#1802). A view with no
-	// schedule renders exactly as it did before this existed.
-	refresh := chrefresh.Clause(node.Refresh)
-	if refresh != "" {
-		refresh = "REFRESH " + refresh + " "
+	// is where the server prints it back (stokaro/ptah#1802). The schedule is
+	// the ClickHouse owner's setting of the view; a view with none renders
+	// without the clause.
+	schedule, err := declaredRefresh(node.Facets)
+	if err != nil {
+		return fmt.Errorf("clickhouse: materialized view %q: %w", node.Name, err)
+	}
+	refresh := ""
+	if schedule != nil {
+		refresh = "REFRESH " + schedule.Clause() + " "
 	}
 	r.w.WriteLinef(
 		"CREATE MATERIALIZED VIEW %s %s%s AS",
@@ -1509,29 +1513,6 @@ func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode
 // SYSTEM REFRESH VIEW, neither of which this node describes.
 func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
-	return nil
-}
-
-// renderAlterMaterializedViewRefresh changes a refreshable materialized view's
-// schedule in place, which is the one way to change it without losing the rows
-// the view has accumulated (stokaro/ptah#1802).
-func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
-	if !r.capabilities().Has(capability.MaterializedViews) {
-		r.notSupported("ALTER TABLE ... MODIFY REFRESH", node.Name)
-		return nil
-	}
-	if node.Refresh == nil {
-		return fmt.Errorf(
-			"%w: clickhouse: ALTER TABLE %q MODIFY REFRESH requires a schedule",
-			ptaherr.ErrInvalidSchemaDiff,
-			node.Name,
-		)
-	}
-	r.w.WriteLinef(
-		"ALTER TABLE %s MODIFY REFRESH %s;",
-		escapeQualifiedIdentifier(node.Name),
-		chrefresh.Clause(node.Refresh),
-	)
 	return nil
 }
 

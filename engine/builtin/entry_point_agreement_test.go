@@ -169,7 +169,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"AlterGeneratedColumnExpressionOperation": &ast.AlterGeneratedColumnExpressionOperation{},
 		"AlterIndexNode":                          &ast.AlterIndexNode{},
 		"AlterIndexVisibilityOperation":           &ast.AlterIndexVisibilityOperation{},
-		"AlterMaterializedViewRefreshNode":        &ast.AlterMaterializedViewRefreshNode{},
 		"AlterRoleNode":                           &ast.AlterRoleNode{},
 		"AlterSequenceNode":                       &ast.AlterSequenceNode{},
 		"AlterSerialSequenceNode":                 &ast.AlterSerialSequenceNode{},

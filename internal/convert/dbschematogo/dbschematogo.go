@@ -628,7 +628,6 @@ func convertMaterializedViews(database *schemamodel.Database, dbViews []catalog.
 			Name:    dbView.QualifiedName(),
 			Body:    dbView.Body,
 			Comment: dbView.Comment,
-			Refresh: dbView.Refresh.Clone(),
 		}
 		database.MaterializedViews = append(database.MaterializedViews, materializedView)
 	}

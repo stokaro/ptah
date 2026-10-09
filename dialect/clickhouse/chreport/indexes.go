@@ -24,24 +24,33 @@ func IndexDefinitions() []schemaext.ReportDefinition {
 // representation. Invalid values, nil context, and cancellation return no
 // partial batch. Reporting preserves unresolved desired intent.
 func (IndexService) ReportValues(ctx context.Context, request schemaext.ReportingRequest) ([]schemaext.ValueReport, error) {
+	return countValues(ctx, request, "index", chschema.IndexKind, "clickhouse_index_settings", validateIndexValue)
+}
+
+// countValues returns one ordered count of metric per value validate accepts
+// in the requested representation. Invalid values, nil context, and
+// cancellation return no partial batch; feature names the values in errors.
+func countValues(ctx context.Context, request schemaext.ReportingRequest, feature string, kind schemaext.Kind, metric string,
+	validate func(schemaext.Value, schemaext.Representation) error,
+) ([]schemaext.ValueReport, error) {
 	if ctx == nil {
-		return nil, fmt.Errorf("%w: index reporting requires a context", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: %s reporting requires a context", schemaext.ErrInvalidValue, feature)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if request.Representation != schemaext.Desired && request.Representation != schemaext.Observed {
-		return nil, fmt.Errorf("%w: index reporting requires a schema representation", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: %s reporting requires a schema representation", schemaext.ErrInvalidValue, feature)
 	}
 	reports := make([]schemaext.ValueReport, 0, len(request.Values))
 	for _, value := range request.Values {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := validateIndexValue(value, request.Representation); err != nil {
+		if err := validate(value, request.Representation); err != nil {
 			return nil, err
 		}
-		reports = append(reports, schemaext.ValueReport{Kind: chschema.IndexKind, Counts: []schemaext.MetricCount{{Name: "clickhouse_index_settings", Value: 1}}})
+		reports = append(reports, schemaext.ValueReport{Kind: kind, Counts: []schemaext.MetricCount{{Name: metric, Value: 1}}})
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

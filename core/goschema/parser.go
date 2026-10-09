@@ -20,9 +20,9 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/annotationmeta"
-	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
@@ -1885,50 +1885,25 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	// this line (stokaro/ptah#1625). What IS read is the ClickHouse schedule,
 	// which is the opposite kind of thing: engine-native state the server owns
 	// (stokaro/ptah#1802).
-	refresh, err := parseMatViewRefresh(kv, ctx)
+	// The attribute carries the clause as ClickHouse spells it -- `every 1
+	// hour`, `after 30 minute offset 5 minute` -- rather than a set of
+	// sub-attributes, so an operator moving a schedule out of a CREATE
+	// statement moves the text. Its owner reads it into the ClickHouse
+	// setting, in the spelling the server would store.
+	refresh, err := chsource.RefreshFacets(kv["refresh"])
 	if err != nil {
-		return err
+		return matViewRefreshError(ctx, err)
 	}
 	s.materializedViews = append(s.materializedViews, schemamodel.MaterializedView{
+		Facets:     refresh,
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
 		Comment:    kv["comment"],
 		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
-		Refresh:    refresh,
 	})
 	return nil
-}
-
-// parseMatViewRefresh reads the ClickHouse refresh schedule a materialized view
-// declares, and returns nil for one declaring none.
-//
-// The attribute carries the clause as ClickHouse spells it -- `every 1 hour`,
-// `after 30 minute offset 5 minute` -- rather than a set of sub-attributes, so
-// an operator moving a schedule out of a CREATE statement moves the text. It is
-// canonicalized here, before it reaches the model, so every later layer sees the
-// spelling the server would have stored and a comparison against the catalog
-// starts from the same place.
-func parseMatViewRefresh(
-	kv map[string]string,
-	ctx annotationErrorContext,
-) (*ptahast.MatViewRefreshSpec, error) {
-	declared := strings.TrimSpace(kv["refresh"])
-	if declared == "" {
-		return nil, nil
-	}
-	spec := chrefresh.ParseClause(declared)
-	if spec == nil {
-		return nil, matViewRefreshError(ctx, fmt.Errorf(
-			"refresh %q is not a ClickHouse refresh clause; expected EVERY or AFTER "+
-				"followed by an interval", declared))
-	}
-	canonical, err := chrefresh.Canonical(spec, "")
-	if err != nil {
-		return nil, matViewRefreshError(ctx, err)
-	}
-	return canonical, nil
 }
 
 // matViewRefreshError reports a refresh declaration the parser refused, in the

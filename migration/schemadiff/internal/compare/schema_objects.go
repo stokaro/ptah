@@ -9,14 +9,12 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
-	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
@@ -1019,10 +1017,9 @@ func MaterializedViewDefinitions(genView schemamodel.MaterializedView, dbView ca
 // which on ClickHouse destroys the accumulated rows of a view nobody changed.
 //
 // RefreshStrategy is not catalog state. The error-returning comparison entry
-// point validates the desired strategy before calling this comparator. The
-// low-level, no-error comparator still records a mismatch as drift, so an
-// unsupported declaration cannot be reported as synchronized merely because a
-// reader defaults the field to manual.
+// point validates the desired strategy before calling this comparator. Settings
+// an engine attaches to a view, such as a ClickHouse refresh schedule, are its
+// owner's facets and are compared by that owner, not here.
 func MaterializedViewDefinitionsWithDialect(
 	genView schemamodel.MaterializedView,
 	dbView catalog.MaterializedView,
@@ -1048,53 +1045,8 @@ func materializedViewDefinitions(
 	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, bodies) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
-	if desired, current, changed := refreshChange(genView, dbView); changed {
-		viewDiff.Changes["refresh"] = fmt.Sprintf("%s -> %s", refreshText(current), refreshText(desired))
-		viewDiff.RefreshChange = &difftypes.MatViewRefreshChange{
-			Desired: desired.Clone(),
-			Current: current.Clone(),
-		}
-	}
 
 	return viewDiff
-}
-
-// refreshChange compares the declared ClickHouse refresh schedule with the one
-// read back, and returns the change to report or "" when they agree.
-//
-// The declaration is canonicalized first, and that is the whole reason
-// [ptah.run/internal/chrefresh] exists: the server rewrites what it
-// stores, so `EVERY 60 MINUTE` reads back as `EVERY 1 HOUR`. Comparing the two
-// as written would report a change on every run and plan a drop and a create
-// for it -- on an object whose drop takes every row it accumulated
-// (stokaro/ptah#1802).
-//
-// A declaration the canonicalizer refuses reports no change rather than a
-// wrong one. Refusing a declaration is the renderer's job and it does it with
-// the reason; a comparison that invented a difference here would plan work for
-// a schedule that is never going to be sent.
-func refreshChange(
-	genView schemamodel.MaterializedView,
-	dbView catalog.MaterializedView,
-) (desired, current *ast.MatViewRefreshSpec, changed bool) {
-	desired, err := chrefresh.Canonical(genView.Refresh, dbView.Schema)
-	if err != nil {
-		return nil, nil, false
-	}
-	if chrefresh.Equal(desired, dbView.Refresh) {
-		return nil, nil, false
-	}
-	return desired, dbView.Refresh, true
-}
-
-// refreshText names a schedule for a diff entry, and names its absence too: a
-// view gaining or losing one is a change, and "" on one side would read as a
-// missing value rather than as a plain view.
-func refreshText(spec *ast.MatViewRefreshSpec) string {
-	if spec == nil {
-		return "(none)"
-	}
-	return chrefresh.Clause(spec)
 }
 
 // schemaObjectBodiesEqual reports whether a declared view or materialized view
