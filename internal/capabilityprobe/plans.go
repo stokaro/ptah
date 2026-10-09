@@ -496,9 +496,8 @@ func postgresFamilyPlan(dialect string) plan {
 		//
 		// The statement is the reproducer stokaro/ptah#1027 was filed with. It
 		// names ttl_expiration_expression rather than ttl_expire_after because
-		// that is the parameter Ptah models: the server rewrites an interval
-		// on the way in, which is why internal/crdbttl refuses the other
-		// enabler instead of modeling it.
+		// the server rewrites an interval on the way in, so the expression is
+		// the enabler whose stored value reads back exactly as sent.
 		rowDeletionPolicyProbe(),
 		notNullNameProbe(),
 		storedRowTTL(nil,

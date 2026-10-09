@@ -126,8 +126,6 @@ func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.Alte
 		// index's.
 		return nil, r.keyed(capability.ConstraintComments, "constraint comment",
 			fmt.Sprintf("the comment on constraint %q of %s", op.Constraint, subject))
-	case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation:
-		return nil, r.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL of "+subject)
 	case *ast.SetRowDeletionPolicyOperation:
 		return r.setRowDeletionPolicy(prefix, subject, op)
 	case *ast.DropRowDeletionPolicyOperation:

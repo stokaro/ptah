@@ -382,31 +382,6 @@ func (op *AddIndexOperation) Accept(visitor Visitor) error { return visitor.Visi
 
 func (op *AddIndexOperation) alterOperation() {}
 
-// SetRowTTLOperation represents ALTER TABLE ... SET (<storage parameters>) for
-// CockroachDB row-level TTL.
-//
-// The parameters travel as rendered `name = value` text rather than as a spec,
-// because the ordering and the quoting are decisions
-// [ptah.run/internal/crdbttl] owns and the renderer must not make a
-// second time. An empty Options is not a valid operation and renders nothing.
-type SetRowTTLOperation struct {
-	// Options are the storage parameters to set, already rendered, in the
-	// order they are emitted.
-	Options []string
-}
-
-// Accept implements the Node interface for SetRowTTLOperation. The rendering
-// happens inside VisitAlterTable, as it does for the other table-level
-// operations.
-func (op *SetRowTTLOperation) Accept(visitor Visitor) error {
-	return visitor.VisitNode(
-
-		// alterOperation implements the marker method for type safety.
-		op)
-}
-
-func (op *SetRowTTLOperation) alterOperation() {}
-
 // SetRowDeletionPolicyOperation represents the statement that puts a row
 // deletion policy on a table.
 //
@@ -458,30 +433,6 @@ func (op *DropRowDeletionPolicyOperation) Accept(visitor Visitor) error {
 }
 
 func (op *DropRowDeletionPolicyOperation) alterOperation() {}
-
-// ResetRowTTLOperation represents ALTER TABLE ... RESET (<parameters>) for
-// CockroachDB row-level TTL.
-//
-// Removing a whole policy and removing one knob are the same statement with
-// different arguments: `RESET (ttl)` drops the entire configuration, and
-// `RESET (ttl_job_cron)` drops one parameter while the policy stays. Measured
-// on v26.2.5, `RESET (ttl)` against a table that never had a TTL succeeds and
-// changes nothing, so the removal is idempotent.
-type ResetRowTTLOperation struct {
-	// Parameters are the storage parameter names to reset, in the order they
-	// are emitted.
-	Parameters []string
-}
-
-// Accept implements the Node interface for ResetRowTTLOperation.
-func (op *ResetRowTTLOperation) Accept(visitor Visitor) error {
-	return visitor.VisitNode(
-
-		// alterOperation implements the marker method for type safety.
-		op)
-}
-
-func (op *ResetRowTTLOperation) alterOperation() {}
 
 // SetCommentOperation carries an object's comment to the state a declaration
 // asks for.

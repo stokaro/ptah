@@ -59,6 +59,9 @@ func New() (*engine.Runtime, error) {
 		if name == platform.Postgres {
 			provider.Targets[0].Constraints = pgproject.Constraints{}
 		}
+		if name == platform.CockroachDB {
+			registerCockroachDBServices(&provider, name)
+		}
 		if name == platform.ClickHouse {
 			registerClickHouseServices(&provider, name)
 		}

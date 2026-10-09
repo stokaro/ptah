@@ -76,6 +76,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/cockroachdb/crdbsource"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dialectscope"
@@ -884,7 +885,15 @@ func (d document) addTables(db *schemamodel.Database) error {
 	if err != nil {
 		return err
 	}
-	db.FeatureCoverage = featureCoverage
+	// A YAML table declares CockroachDB row-level TTL in its cockroachdb
+	// platform group, so a table without one requests no TTL.
+	ttlCoverage, err := crdbsource.Coverage()
+	if err != nil {
+		return err
+	}
+	if db.FeatureCoverage, err = featureCoverage.Combine(ttlCoverage); err != nil {
+		return err
+	}
 
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]

@@ -105,16 +105,10 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		"ColumnsModified":    true,
 		"ConstraintsAdded":   true,
 		"ConstraintsRemoved": true,
-		// CockroachDB row-level TTL is a storage parameter on an engine SQLite
-		// is not. The field can only be non-nil for a target carrying
-		// capability.RowLevelTTL, which no SQLite preset does, so a SQLite
-		// table cannot carry one and there is nothing to rebuild for
-		// (stokaro/ptah#1027).
-		"RowTTLChange": false,
 		// A row deletion policy is a Spanner and YDB table clause, and the
 		// field can only be non-nil for a target carrying
-		// capability.RowDeletionPolicy, which no SQLite preset does. Same
-		// reasoning as the field above, on different engines
+		// capability.RowDeletionPolicy, which no SQLite preset does, so a
+		// SQLite table cannot carry one and there is nothing to rebuild for
 		// (stokaro/ptah#2236).
 		"RowDeletionPolicyChange": false,
 		// Named feature changes require an owning planning handler. The

@@ -707,10 +707,7 @@ func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 // refuseTableSettings refuses the table-level changes a YDB plan makes neither
 // in place nor through a rebuild.
 func (p *Planner) refuseTableSettings(tableDiff difftypes.TableDiff, subject string) error {
-	switch {
-	case tableDiff.RowTTLChange != nil:
-		return p.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL of "+subject)
-	case len(tableDiff.ConstraintsAdded)+len(tableDiff.ConstraintsRemoved) > 0:
+	if len(tableDiff.ConstraintsAdded)+len(tableDiff.ConstraintsRemoved) > 0 {
 		return refuseFact(subject, "YDB has no constraint but the key, and the key never changes")
 	}
 	return nil

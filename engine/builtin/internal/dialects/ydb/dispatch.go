@@ -252,8 +252,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameTableOperation,
 		*ast.SetCommentOperation,
 		*ast.SetConstraintCommentOperation,
-		*ast.SetRowTTLOperation,
-		*ast.ResetRowTTLOperation,
 		*ast.SetRowDeletionPolicyOperation,
 		*ast.DropRowDeletionPolicyOperation,
 		*ast.AddEnumValueOperation,

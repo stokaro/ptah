@@ -287,13 +287,6 @@ type Table struct {
 	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
 	Unlogged     bool `json:"unlogged,omitempty"`
 	WithoutRowID bool `json:"without_rowid,omitempty"` // SQLite WITHOUT ROWID table option
-	// RowTTL is the CockroachDB row-level TTL this table carries, nil for a
-	// table with none and for every target without capability.RowLevelTTL.
-	//
-	// omitzero keeps every other dialect's serialization byte-identical, which
-	// matters because a description is compared, fingerprinted and replayed
-	// (stokaro/ptah#1027).
-	RowTTL *ast.RowTTLSpec `json:"row_ttl,omitzero"`
 	// RowDeletionPolicy is the row deletion policy this table carries, nil for
 	// a table with none (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`

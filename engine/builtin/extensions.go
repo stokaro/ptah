@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/clickhouse/chrender"
+	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/internal/ydbextensions"
 )
 
@@ -17,6 +18,9 @@ func extensionsFor(dialect string) (renderer.Extensions, error) {
 	}
 	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
 		return chrender.Registry()
+	}
+	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
+		return crdbrender.Registry()
 	}
 	return renderer.Extensions{}, nil
 }

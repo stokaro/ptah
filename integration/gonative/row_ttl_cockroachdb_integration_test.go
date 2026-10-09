@@ -5,15 +5,20 @@ package gonative_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
+	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -47,7 +52,7 @@ func TestCockroachDBRowLevelTTL_RoundTripsLive(t *testing.T) {
 
 	// CREATE. The table is created from the declaration itself, so the WITH
 	// clause under test is the one the renderer produced.
-	declared := rowTTLDeclaration(&ast.RowTTLSpec{
+	declared := rowTTLDeclaration(&crdbschema.Policy{
 		ExpirationExpression: "expires_at",
 		JobCron:              "@daily",
 		SelectBatchSize:      new(int64(500)),
@@ -55,7 +60,7 @@ func TestCockroachDBRowLevelTTL_RoundTripsLive(t *testing.T) {
 	applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
 
 	created := readRowTTL(c, t, dsn)
-	c.Assert(created, qt.DeepEquals, &ast.RowTTLSpec{
+	c.Assert(created, qt.DeepEquals, &crdbschema.Policy{
 		ExpirationExpression: "expires_at",
 		JobCron:              "@daily",
 		SelectBatchSize:      new(int64(500)),
@@ -69,13 +74,13 @@ func TestCockroachDBRowLevelTTL_RoundTripsLive(t *testing.T) {
 	// stores in its escape-string form -- the shape that made this worth
 	// asserting live rather than only in a decoder test. One knob is dropped at
 	// the same time, which `SET` alone would leave in place.
-	changed := rowTTLDeclaration(&ast.RowTTLSpec{
+	changed := rowTTLDeclaration(&crdbschema.Policy{
 		ExpirationExpression: "expires_at + INTERVAL '1 hour'",
 		JobCron:              "@hourly",
 	})
 	applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, changed))
 
-	c.Assert(readRowTTL(c, t, dsn), qt.DeepEquals, &ast.RowTTLSpec{
+	c.Assert(readRowTTL(c, t, dsn), qt.DeepEquals, &crdbschema.Policy{
 		ExpirationExpression: "expires_at + INTERVAL '1 hour'",
 		JobCron:              "@hourly",
 	})
@@ -144,26 +149,35 @@ func TestCockroachDBRowLevelTTL_IsReadBackVerbatim(t *testing.T) {
 			dropRowTTLTable(db)
 			defer dropRowTTLTable(db)
 
-			declared := rowTTLDeclaration(&ast.RowTTLSpec{ExpirationExpression: test.expression})
+			declared := rowTTLDeclaration(&crdbschema.Policy{ExpirationExpression: test.expression})
 			applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
 
 			c.Assert(readRowTTL(c, t, dsn), qt.DeepEquals,
-				&ast.RowTTLSpec{ExpirationExpression: test.expression})
+				&crdbschema.Policy{ExpirationExpression: test.expression})
 			c.Assert(planRowTTLAgainstLive(c, t, dsn, declared), qt.HasLen, 0)
 		})
 	}
 }
 
 // rowTTLDeclaration is the desired state these tests apply: one table with the
-// given policy, or none.
-func rowTTLDeclaration(spec *ast.RowTTLSpec) *schemamodel.Database {
-	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Sessions", Name: rowTTLTable, RowTTL: spec}},
-		Fields: []schemamodel.Field{
-			{StructName: "Sessions", Name: "id", Type: "INT8", Primary: true},
-			{StructName: "Sessions", Name: "expires_at", Type: "TIMESTAMPTZ", Nullable: true},
-		},
+// given policy, or none. It is declared through the Go annotation source, the
+// surface authors use, so the platform.cockroachdb properties, their decoding
+// by the CockroachDB owner and the source's coverage are all on the path: a
+// table without the properties requests no TTL.
+func rowTTLDeclaration(policy *crdbschema.Policy) *schemamodel.Database {
+	var properties strings.Builder
+	if policy != nil {
+		for _, parameter := range policy.Parameters() {
+			fmt.Fprintf(&properties, " platform.cockroachdb.%s=%s", parameter.Name, strconv.Quote(parameter.Value))
+		}
 	}
+	source := "package entities\n\n//ptah:schema:table name=\"" + rowTTLTable + "\"" + properties.String() + "\n" +
+		"type Sessions struct {\n" +
+		"\t//ptah:schema:field name=\"id\" type=\"INT8\" primary=\"true\"\n\tID int64\n" +
+		"\t//ptah:schema:field name=\"expires_at\" type=\"TIMESTAMPTZ\"\n\tExpiresAt *time.Time\n" +
+		"}\n"
+	database := must.Must(goschema.ParseSource("sessions.go", source))
+	return &database
 }
 
 // planRowTTLAgainstLive re-reads the database and returns the statements the
@@ -208,7 +222,7 @@ func applyRowTTLPlan(c *qt.C, db *sql.DB, statements []string) {
 }
 
 // readRowTTL returns the policy the live description reports for the table.
-func readRowTTL(c *qt.C, t *testing.T, dsn string) *ast.RowTTLSpec {
+func readRowTTL(c *qt.C, t *testing.T, dsn string) *crdbschema.Policy {
 	c.Helper()
 
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
@@ -225,11 +239,16 @@ func readRowTTL(c *qt.C, t *testing.T, dsn string) *ast.RowTTLSpec {
 // description that does not carry it, which a caller asserting on the policy
 // would then read as "no policy" -- so the table's presence is asserted
 // separately by rowTTLTableExists.
-func rowTTLOf(live *catalog.Database) *ast.RowTTLSpec {
+func rowTTLOf(live *catalog.Database) *crdbschema.Policy {
 	for _, table := range live.Tables {
-		if table.Name == rowTTLTable {
-			return table.RowTTL
+		if table.Name != rowTTLTable {
+			continue
 		}
+		observed, found, err := schemaext.FacetAs[*crdbschema.ObservedRowTTL](table.Facets, crdbschema.RowTTLKind)
+		if err != nil || !found {
+			return nil
+		}
+		return &observed.Policy
 	}
 	return nil
 }
@@ -279,7 +298,7 @@ func TestCockroachDBRowLevelTTL_ExpireAfterRoundTripsLive(t *testing.T) {
 			dropRowTTLTable(db)
 			defer dropRowTTLTable(db)
 
-			declared := rowTTLDeclaration(&ast.RowTTLSpec{ExpireAfter: test.declared})
+			declared := rowTTLDeclaration(&crdbschema.Policy{ExpireAfter: test.declared})
 			applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
 
 			// The stored spelling is the server's, not the declaration's, and
@@ -308,7 +327,7 @@ func TestCockroachDBRowLevelTTL_ExpireAfterHidesTheColumnItCreates(t *testing.T)
 	dropRowTTLTable(db)
 	defer dropRowTTLTable(db)
 
-	declared := rowTTLDeclaration(&ast.RowTTLSpec{ExpireAfter: "3 days"})
+	declared := rowTTLDeclaration(&crdbschema.Policy{ExpireAfter: "3 days"})
 	applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
 
 	// The column is really there: the assertion below is about the read, not
@@ -421,7 +440,7 @@ func TestCockroachDBRowLevelTTL_RowStatsPollIntervalRoundTripsLive(t *testing.T)
 			dropRowTTLTable(db)
 			defer dropRowTTLTable(db)
 
-			declared := rowTTLDeclaration(&ast.RowTTLSpec{
+			declared := rowTTLDeclaration(&crdbschema.Policy{
 				ExpireAfter:          "1 hour",
 				RowStatsPollInterval: test.declared,
 			})

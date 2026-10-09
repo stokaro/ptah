@@ -183,6 +183,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
 	schema.Tables = tables
+	if err := r.rowTTLCoverage(schema); err != nil {
+		return nil, err
+	}
 
 	// Read enums
 	enums, err := r.readEnums(ctx)
@@ -503,7 +506,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		}
 		table.Schema = r.outputSchema(table.Schema)
 		table.Columns = columnsByTable[table.Name]
-		if table.RowTTL, err = readRowTTL(rowTTLOptions); err != nil {
+		if table.Facets, err = r.rowTTLFacets(rowTTLOptions); err != nil {
 			return nil, fmt.Errorf("failed to read row-level TTL for table %s: %w", table.Name, err)
 		}
 		if table.RowDeletionPolicy, err = readRowDeletionPolicy(rowDeletionPolicy); err != nil {

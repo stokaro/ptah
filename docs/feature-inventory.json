@@ -856,6 +856,66 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-cockroachdb-crdbast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbast",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbcompare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbcompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbdiff",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbdiff",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbplan",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbrender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbreport",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbreverse",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbschema",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbschema",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-cockroachdb-crdbsource",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/cockroachdb/crdbsource",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-postgres-pgproject",
       "kind": "public-package",
       "surface": "ptah.run/dialect/postgres/pgproject",

@@ -153,22 +153,12 @@ type CreateTableNode struct {
 	// A table nothing declared is logged, which is the server's default, so
 	// false and "unset" mean the same and the field needs no pointer.
 	Unlogged bool
-	// RowTTL stores the CockroachDB row-level TTL storage parameters.
-	//
-	// It is a typed field rather than entries in Options because the parameters
-	// are compared as one policy and planned as a group -- adding one and
-	// removing another is a single ALTER -- and because "this table has no TTL"
-	// is a state Options cannot spell apart from "this renderer set no option"
-	// (stokaro/ptah#1027).
-	RowTTL *RowTTLSpec
 	// RowDeletionPolicy stores the table's row deletion policy, nil for a table
 	// declaring none.
 	//
-	// It is a second field beside RowTTL rather than a wider reading of it
-	// because the two are different clauses of different shapes on different
-	// engines, and one table never carries both: a row deletion policy is a
-	// clause on the table holding exactly one interval and one column, where a
-	// row-level TTL is a bag of storage parameters (stokaro/ptah#2236).
+	// It is a clause on the table holding exactly one interval and one column.
+	// CockroachDB's row-level TTL is a different thing, a set of storage
+	// parameters its owner carries in Facets (stokaro/ptah#2236).
 	RowDeletionPolicy *RowDeletionPolicySpec
 	// YDBColumnFamilies is YDB's, and every other renderer refuses it: the
 	// column families of a YDB row table, each with the columns it holds. Nil
@@ -500,55 +490,6 @@ func (s *YDBTablePartitioningSpec) Clone() *YDBTablePartitioningSpec {
 		}
 	}
 	return &out
-}
-
-// RowTTLSpec is a table's row-level TTL policy, as CockroachDB spells it in
-// table storage parameters.
-//
-// Fields are pointers wherever the parameter has a meaningful zero, so a
-// declared `ttl_pause = false` stays distinguishable from a parameter nobody
-// declared. [ptah.run/internal/crdbttl] owns why that distinction has to
-// survive this far down, and owns which parameters may appear here at all: the
-// two whose values the server rewrites on the way in are refused before a spec
-// is built, so every value reaching this struct is one that reads back as
-// written.
-type RowTTLSpec struct {
-	// ExpirationExpression is `ttl_expiration_expression`, the SQL expression
-	// whose value is when a row expires.
-	ExpirationExpression string `json:"expiration_expression,omitempty"`
-	// ExpireAfter is `ttl_expire_after`, the interval after a row is written
-	// at which it expires.
-	//
-	// It is the other enabler, and unlike every other field here its value is
-	// NOT compared as text: the server rewrites the interval it stores, so
-	// `72 hours` reads back as `72:00:00`. Comparison goes through
-	// [ptah.run/internal/crdbinterval], which reads both sides into the
-	// value they denote (stokaro/ptah#1605).
-	ExpireAfter string `json:"expire_after,omitempty"`
-	// RowStatsPollInterval is `ttl_row_stats_poll_interval`, how often the TTL
-	// job refreshes its row-count estimate.
-	//
-	// Like ExpireAfter its value is NOT compared as text: the server truncates
-	// the duration to whole seconds and stores it in Go's duration form, so
-	// `600s` reads back as `10m0s`. Comparison goes through
-	// [ptah.run/internal/crdbduration] (stokaro/ptah#1721).
-	RowStatsPollInterval string `json:"row_stats_poll_interval,omitempty"`
-	// JobCron is `ttl_job_cron`.
-	JobCron string `json:"job_cron,omitempty"`
-	// SelectBatchSize is `ttl_select_batch_size`.
-	SelectBatchSize *int64 `json:"select_batch_size,omitempty"`
-	// DeleteBatchSize is `ttl_delete_batch_size`.
-	DeleteBatchSize *int64 `json:"delete_batch_size,omitempty"`
-	// SelectRateLimit is `ttl_select_rate_limit`.
-	SelectRateLimit *int64 `json:"select_rate_limit,omitempty"`
-	// DeleteRateLimit is `ttl_delete_rate_limit`.
-	DeleteRateLimit *int64 `json:"delete_rate_limit,omitempty"`
-	// Pause is `ttl_pause`.
-	Pause *bool `json:"pause,omitempty"`
-	// LabelMetrics is `ttl_label_metrics`.
-	LabelMetrics *bool `json:"label_metrics,omitempty"`
-	// DisableChangefeedReplication is `ttl_disable_changefeed_replication`.
-	DisableChangefeedReplication *bool `json:"disable_changefeed_replication,omitempty"`
 }
 
 // SQLite virtual-table option keys for CreateTableNode.Options.
@@ -4429,50 +4370,3 @@ func (n *OpaqueRoutineNode) Accept(visitor Visitor) error { return visitor.Visit
 // nothing rather than a prefix -- and a walk here would take that decision away
 // from the only place that can make it.
 func (sl *StatementList) Accept(visitor Visitor) error { return visitor.VisitNode(sl) }
-
-// IsZero reports whether the spec declares no TTL at all.
-//
-// A nil spec and a spec with every field unset are the same answer, and both
-// mean "this table has no row-expiry policy". They are distinct from a spec
-// carrying only knobs, which is a declaration CockroachDB refuses and
-// [ptah.run/internal/crdbttl] refuses earlier.
-func (s *RowTTLSpec) IsZero() bool {
-	if s == nil {
-		return true
-	}
-	return s.ExpirationExpression == "" &&
-		s.ExpireAfter == "" &&
-		s.JobCron == "" &&
-		s.SelectBatchSize == nil &&
-		s.DeleteBatchSize == nil &&
-		s.SelectRateLimit == nil &&
-		s.DeleteRateLimit == nil &&
-		s.Pause == nil &&
-		s.LabelMetrics == nil &&
-		s.DisableChangefeedReplication == nil
-}
-
-// Clone returns an independent copy, so a spec handed to a comparator or a
-// planner cannot be mutated through the pointers it shares with the schema it
-// came from. Nil stays nil.
-func (s *RowTTLSpec) Clone() *RowTTLSpec {
-	if s == nil {
-		return nil
-	}
-	out := *s
-	out.SelectBatchSize = clonePtr(s.SelectBatchSize)
-	out.DeleteBatchSize = clonePtr(s.DeleteBatchSize)
-	out.SelectRateLimit = clonePtr(s.SelectRateLimit)
-	out.DeleteRateLimit = clonePtr(s.DeleteRateLimit)
-	out.Pause = clonePtr(s.Pause)
-	out.LabelMetrics = clonePtr(s.LabelMetrics)
-	out.DisableChangefeedReplication = clonePtr(s.DisableChangefeedReplication)
-	return &out
-}
-
-func clonePtr[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
-}

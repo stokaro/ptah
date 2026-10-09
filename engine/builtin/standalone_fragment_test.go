@@ -241,9 +241,9 @@ func fragmentFixture(c *qt.C, family fragmentFamily, kind string) ast.Node {
 //
 // A zero value would not do: several handlers return early or refuse on an
 // empty field before they reach the question the matrix asks. PostgreSQL
-// writes nothing for a SetRowTTLOperation without options, for example, and
-// would then report as rendered an operation it refuses for a missing
-// capability once it has one.
+// writes nothing for a SetRowDeletionPolicyOperation without a column, for
+// example, and would then report as rendered an operation it refuses for a
+// missing capability once it has one.
 func alterOperationFixtures() map[string]func() ast.Node {
 	changefeed := ydbschema.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}
 	return map[string]func() ast.Node{
@@ -295,9 +295,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		"ReplaceIndexOperation": func() ast.Node {
 			return &ast.ReplaceIndexOperation{Index: &ast.IndexNode{Name: "ix_c", Columns: []string{"c"}}}
 		},
-		"ResetRowTTLOperation": func() ast.Node {
-			return &ast.ResetRowTTLOperation{Parameters: []string{"ttl"}}
-		},
 		"SetCommentOperation": func() ast.Node {
 			return &ast.SetCommentOperation{Comment: "orders placed online"}
 		},
@@ -317,9 +314,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		},
 		"SetRowDeletionPolicyOperation": func() ast.Node {
 			return &ast.SetRowDeletionPolicyOperation{Column: "created_at", Interval: "1 day"}
-		},
-		"SetRowTTLOperation": func() ast.Node {
-			return &ast.SetRowTTLOperation{Options: []string{"ttl_expiration_expression = 'created_at + INTERVAL ''1 day'''"}}
 		},
 		"SetYDBTablePartitioningOperation": func() ast.Node {
 			return &ast.SetYDBTablePartitioningOperation{Partitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 2}}

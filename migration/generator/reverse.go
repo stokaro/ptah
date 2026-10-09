@@ -530,14 +530,6 @@ func reverseCommentChange(change *difftypes.CommentChange) *difftypes.CommentCha
 	return &difftypes.CommentChange{Current: change.Desired, Desired: change.Current}
 }
 
-// reverseRowTTLChange swaps the two sides of a row-level TTL transition.
-func reverseRowTTLChange(change *difftypes.RowTTLChange) *difftypes.RowTTLChange {
-	if change == nil {
-		return nil
-	}
-	return &difftypes.RowTTLChange{Desired: change.Current, Current: change.Desired}
-}
-
 // reverseRowDeletionPolicyChange swaps the two sides of a row deletion policy
 // transition.
 func reverseRowDeletionPolicyChange(

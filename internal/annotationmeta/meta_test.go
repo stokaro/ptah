@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/internal/annotationmeta"
-	"ptah.run/internal/crdbttl"
 )
 
 func sourceComments(file *ast.File) []*ast.Comment {
@@ -176,28 +176,21 @@ type User struct {
 	})
 }
 
-// TestTableDirectiveAllowsEveryManagedTTLParameter ties two lists that had
-// drifted apart.
+// TestTableDirectiveSpellsRowTTLAsCockroachDBProperties ties the table
+// directive to the parameters the CockroachDB owner decodes.
 //
-// crdbttl.ManagedParameters names the CockroachDB row-level TTL parameters Ptah
-// models, and the `ptah:schema:table` directive's attribute list decides which
-// of them an author may write in a Go annotation. Nothing held them together,
-// and stokaro/ptah#1721 added ttl_row_stats_poll_interval to the first without
-// the second: the parameter rendered, read back and compared everywhere except
-// the surface most authors use, where it answered
-// `unknown annotation attribute "ttl_row_stats_poll_interval"`.
-//
-// Asserting the direction that matters — every managed parameter is writable —
-// rather than set equality, because the directive also carries attributes that
-// have nothing to do with TTL.
-func TestTableDirectiveAllowsEveryManagedTTLParameter(t *testing.T) {
-	c := qt.New(t)
-
-	for _, parameter := range crdbttl.ManagedParameters() {
-		c.Assert(
-			annotationmeta.AllowsAttribute("ptah:schema:table", parameter),
-			qt.IsTrue,
-			qt.Commentf("crdbttl manages %q and the table directive refuses it", parameter),
-		)
+// Row-level TTL is a CockroachDB platform property: a parameter is written as
+// platform.cockroachdb.<parameter>, and the bare spelling is not an attribute
+// of the directive. stokaro/ptah#1721 once added a parameter to the managed
+// set without the directive, so the parameter answered `unknown annotation
+// attribute` on the surface most authors use; the owner's list is the one this
+// test iterates, so that cannot recur.
+func TestTableDirectiveSpellsRowTTLAsCockroachDBProperties(t *testing.T) {
+	for _, parameter := range crdbschema.ManagedParameters() {
+		t.Run(parameter, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(annotationmeta.AllowsAttribute("ptah:schema:table", "platform.cockroachdb."+parameter), qt.IsTrue)
+			c.Assert(annotationmeta.AllowsAttribute("ptah:schema:table", parameter), qt.IsFalse)
+		})
 	}
 }

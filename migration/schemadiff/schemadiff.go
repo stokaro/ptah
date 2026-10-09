@@ -18,7 +18,6 @@ import (
 	"ptah.run/core/schemaproperties"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/clickhouserbac"
-	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/schemaprep"
@@ -473,16 +472,6 @@ func mysqlInlineEnumType(values []string) string {
 	return "enum(" + strings.Join(quoted, ",") + ")"
 }
 
-// rowTTLTables projects a declaration's tables into the pairs
-// internal/crdbttl validates.
-func rowTTLTables(desired *schemamodel.Database) []crdbttl.TableTTL {
-	tables := make([]crdbttl.TableTTL, 0, len(desired.Tables))
-	for _, table := range desired.Tables {
-		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})
-	}
-	return tables
-}
-
 // validateDeclaredBeforeComparison applies every refusal a declaration must
 // meet before anything is compared, and returns nil when there is nothing to
 // validate.
@@ -536,16 +525,6 @@ func validateDeclaredBeforeComparison(
 	// The server would answer `relation ... already exists` halfway through
 	// the script; this says which object it is (stokaro/ptah#1026).
 	if err := timescale.ValidateLive(info.Dialect, desired, database); err != nil {
-		return err
-	}
-	// The row-level TTL refusals, at the same seam and for the same reason:
-	// a declaration this comparison accepts and the renderer refuses would
-	// be a plan that fails halfway. info.Capabilities is the live target's,
-	// so the dialect gate here answers for the server actually connected
-	// rather than for a preset (stokaro/ptah#1027).
-	if err := crdbttl.ValidateDeclared(
-		info.Dialect, info.Capabilities, crdbttl.DeclaredIn(rowTTLTables(desired)),
-	); err != nil {
 		return err
 	}
 	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(

@@ -836,19 +836,6 @@ func tableOverrideFixture() schemamodel.Database {
 	})
 }
 
-func tableRowTTLFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{
-		Name: "t",
-		RowTTL: &ast.RowTTLSpec{
-			ExpireAfter: "3 months", ExpirationExpression: "created_at", JobCron: "@daily",
-			SelectBatchSize: new(int64(500)), DeleteBatchSize: new(int64(100)), DeleteRateLimit: new(int64(100)),
-			SelectRateLimit: new(int64(100)), RowStatsPollInterval: "1m", Pause: new(true),
-			LabelMetrics: new(true), DisableChangefeedReplication: new(true),
-		},
-	}, schemamodel.Field{StructName: "T", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", Nullable: true})
-	return db
-}
-
 func tableRowDeletionFixture() schemamodel.Database {
 	return oneTable("T", schemamodel.Table{
 		Name:              "t",

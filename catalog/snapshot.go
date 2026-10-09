@@ -13,7 +13,6 @@ func (t Table) Clone() Table {
 	for i := range t.Columns {
 		t.Columns[i] = t.Columns[i].Clone()
 	}
-	t.RowTTL = t.RowTTL.Clone()
 	t.RowDeletionPolicy = t.RowDeletionPolicy.Clone()
 	t.YDBColumnFamilies = ast.CloneYDBColumnFamilies(t.YDBColumnFamilies)
 	t.YDBPartitioning = t.YDBPartitioning.Clone()

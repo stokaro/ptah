@@ -68,6 +68,16 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreverse` | Reverse TTL and index definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Conversion between complete table/index declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired storage settings for directional changes. |
+| `dialect/cockroachdb/crdbschema` | Desired and observed row-level TTL with versioned model codecs. |
+| `dialect/cockroachdb/crdbsource` | Row-level TTL as `platform.cockroachdb` table properties, and source coverage. |
+| `dialect/cockroachdb/crdbcompare` | Row-level TTL comparison that reads rewritten intervals as values. |
+| `dialect/cockroachdb/crdbdiff` | Captured prior and desired row-level TTL for directional changes. |
+| `dialect/cockroachdb/crdbast` | Typed row-level TTL operation with an explicit codec. |
+| `dialect/cockroachdb/crdbrender` | Owner-selected row-level TTL rendering for CREATE and ALTER. |
+| `dialect/cockroachdb/crdbplan` | Row-level TTL planning and dropped-table accounting. |
+| `dialect/cockroachdb/crdbreverse` | Reverse row-level TTL changes with recovery limits. |
+| `dialect/cockroachdb/crdbconvert` | Conversion between row-level TTL declarations and observations. |
+| `dialect/cockroachdb/crdbreport` | Captured row-level TTL counts and export omission labels. |
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |

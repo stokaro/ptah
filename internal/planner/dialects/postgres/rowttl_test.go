@@ -9,20 +9,40 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/cockroachdb/crdbdiff"
+	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// rowTTLChanges is the owner change the comparator attaches to a table whose
+// row-level TTL differs. A nil side is a known absence.
+func rowTTLChanges(table string, desired, current *crdbschema.Policy) []schemaext.ChangeRecord {
+	change := &crdbdiff.RowTTL{}
+	if desired != nil {
+		change.After = &crdbschema.DesiredRowTTL{Policy: *desired}
+	}
+	if current != nil {
+		change.Before = &crdbschema.ObservedRowTTL{Policy: *current}
+	}
+	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.CockroachDB)).Table(table)
+	return []schemaext.ChangeRecord{{Subject: subject, Value: change}}
+}
+
 // ttlDiff is a diff whose only content is one table's TTL transition, which is
 // what the comparator produces for a table that differs in nothing else.
-func ttlDiff(desired, current *ast.RowTTLSpec) *difftypes.SchemaDiff {
+func ttlDiff(desired, current *crdbschema.Policy) *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
-			TableName:    "sessions",
-			RowTTLChange: &difftypes.RowTTLChange{Desired: desired, Current: current},
+			TableName:      "sessions",
+			FeatureChanges: rowTTLChanges("sessions", desired, current),
 		}},
 	}
 }
@@ -37,20 +57,20 @@ func ttlDiff(desired, current *ast.RowTTLSpec) *difftypes.SchemaDiff {
 func TestPlanner_RowTTLTransitions(t *testing.T) {
 	tests := []struct {
 		name    string
-		desired *ast.RowTTLSpec
-		current *ast.RowTTLSpec
+		desired *crdbschema.Policy
+		current *crdbschema.Policy
 		want    []string
 	}{
 		{
 			name:    "adding a policy",
-			desired: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
+			desired: &crdbschema.Policy{ExpirationExpression: "expires_at"},
 			current: nil,
 			want:    []string{`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at');`},
 		},
 		{
 			name:    "changing the expression",
-			desired: &ast.RowTTLSpec{ExpirationExpression: "expires_at + INTERVAL '1 hour'"},
-			current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
+			desired: &crdbschema.Policy{ExpirationExpression: "expires_at + INTERVAL '1 hour'"},
+			current: &crdbschema.Policy{ExpirationExpression: "expires_at"},
 			want: []string{
 				`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 hour''');`,
 			},
@@ -61,8 +81,8 @@ func TestPlanner_RowTTLTransitions(t *testing.T) {
 			// declaration that stopped naming the batch size would keep it
 			// forever without this statement.
 			name:    "dropping a knob while the policy stays",
-			desired: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			current: &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
+			desired: &crdbschema.Policy{ExpirationExpression: "expires_at"},
+			current: &crdbschema.Policy{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 			want: []string{
 				`ALTER TABLE "sessions" RESET (ttl_select_batch_size);`,
 				`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at');`,
@@ -71,14 +91,14 @@ func TestPlanner_RowTTLTransitions(t *testing.T) {
 		{
 			name:    "removing the whole policy",
 			desired: nil,
-			current: &ast.RowTTLSpec{ExpirationExpression: "expires_at", JobCron: "@daily"},
+			current: &crdbschema.Policy{ExpirationExpression: "expires_at", JobCron: "@daily"},
 			want:    []string{`ALTER TABLE "sessions" RESET (ttl);`},
 		},
 		{
 			// One statement, not one per parameter: RESET takes several names.
 			name:    "dropping several knobs at once",
-			desired: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			current: &ast.RowTTLSpec{
+			desired: &crdbschema.Policy{ExpirationExpression: "expires_at"},
+			current: &crdbschema.Policy{
 				ExpirationExpression: "expires_at",
 				JobCron:              "@daily",
 				DeleteBatchSize:      new(int64(100)),
@@ -101,13 +121,13 @@ func TestPlanner_RowTTLTransitions(t *testing.T) {
 	}
 }
 
-// TestPlanner_RowTTLIsNotPlannedWithoutTheCapability pins the gate.
+// TestPlanner_RowTTLIsRefusedWithoutAnOwner pins the gate.
 //
-// A diff carrying a TTL change on a target without the capability means the
-// comparison saw a declared policy the renderer will refuse. Nothing is emitted
-// here so the refusal arrives from the renderer with its measured explanation,
-// rather than as an ALTER the server rejects halfway through a migration.
-func TestPlanner_RowTTLIsNotPlannedWithoutTheCapability(t *testing.T) {
+// A diff carrying a CockroachDB row-level TTL change on another target means
+// the comparison saw a policy no owner on that target plans. The plan refuses
+// it rather than emitting nothing, so the explanation arrives before any
+// statement does.
+func TestPlanner_RowTTLIsRefusedWithoutAnOwner(t *testing.T) {
 	tests := []struct {
 		dialect string
 		caps    capability.Capabilities
@@ -123,11 +143,11 @@ func TestPlanner_RowTTLIsNotPlannedWithoutTheCapability(t *testing.T) {
 			planner := postgres.NewForDialect(test.dialect, test.caps)
 			nodes, err := planner.GenerateMigrationAST(
 				context.Background(), must.Must(builtin.New()),
-				ttlDiff(&ast.RowTTLSpec{ExpirationExpression: "expires_at"}, nil),
+				ttlDiff(&crdbschema.Policy{ExpirationExpression: "expires_at"}, nil),
 			)
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(renderedStatements(c, nodes, test.caps, test.dialect), qt.HasLen, 0)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(nodes, qt.IsNil)
 		})
 	}
 }
@@ -207,10 +227,9 @@ func TestPlanner_TheTTLIsSetBeforeItsColumnIsDropped(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "expires_at"}},
-			RowTTLChange: &difftypes.RowTTLChange{
-				Desired: &ast.RowTTLSpec{ExpirationExpression: "deleted_at"},
-				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			},
+			FeatureChanges: rowTTLChanges("sessions",
+				&crdbschema.Policy{ExpirationExpression: "deleted_at"},
+				&crdbschema.Policy{ExpirationExpression: "expires_at"}),
 		}},
 	})
 
@@ -228,9 +247,7 @@ func TestPlanner_TheTTLIsResetBeforeItsColumnIsDropped(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "expires_at"}},
-			RowTTLChange: &difftypes.RowTTLChange{
-				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			},
+			FeatureChanges: rowTTLChanges("sessions", nil, &crdbschema.Policy{ExpirationExpression: "expires_at"}),
 		}},
 	})
 
