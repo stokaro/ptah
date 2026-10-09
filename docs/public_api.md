@@ -570,6 +570,15 @@ refuses unresolved settings. This projection records a prediction, not a new
 database observation. Invalid model values return `schemaext.InvalidModelError`,
 which identifies the kind and representation and wraps `ErrInvalidValue`.
 
+`chschema.IndexCodecs()` handles data-skipping facets under `IndexKind`.
+`DesiredIndex` retains an expression and separate type and granularity intent;
+`ObservedIndex` requires a nonempty type and positive granularity. Integer
+values retain their full precision through the codecs. `ObservedIndex.Desired`
+makes settings explicit, while `DesiredIndex.Observed` refuses unresolved
+settings. Null, duplicate or unknown fields, and invalid intent are refused.
+Registering these codecs establishes model understanding without granting
+target support or inspection completeness.
+
 The bundled runtime registers the table model, preparation, conversion, and
 comparison.
 Programmatically supplied desired facets render through the schema API and new

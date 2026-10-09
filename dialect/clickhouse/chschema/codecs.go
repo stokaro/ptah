@@ -69,12 +69,12 @@ func validateObservedPayload(payload schemaext.Payload) error {
 }
 
 func decodeDesired(data json.RawMessage) (schemaext.Payload, error) {
-	properties, err := wireObject(data, tablePropertyNames(), nil)
+	properties, err := wireObject(data, "table", tablePropertyNames(), nil)
 	if err != nil {
 		return nil, err
 	}
 	for name, value := range properties {
-		if _, err := wireObject(value, []string{"state", "value"}, []string{"state"}); err != nil {
+		if _, err := wireObject(value, "table", []string{"state", "value"}, []string{"state"}); err != nil {
 			return nil, fmt.Errorf("ClickHouse %s: %w", name, err)
 		}
 	}
@@ -90,7 +90,7 @@ func decodeDesired(data json.RawMessage) (schemaext.Payload, error) {
 
 func decodeObserved(data json.RawMessage) (schemaext.Payload, error) {
 	names := tablePropertyNames()
-	if _, err := wireObject(data, names, names); err != nil {
+	if _, err := wireObject(data, "table", names, names); err != nil {
 		return nil, err
 	}
 	v, err := schemaext.DecodeJSON[*ObservedTable](data)
@@ -113,25 +113,25 @@ func tablePropertyNames() []string {
 
 // JSON null is not an omitted declaration or an inspected absence. Inspect keys
 // as well as types: encoding/json otherwise accepts case-insensitive field names.
-func wireObject(data json.RawMessage, allowed, required []string) (map[string]json.RawMessage, error) {
+func wireObject(data json.RawMessage, model string, allowed, required []string) (map[string]json.RawMessage, error) {
 	fields, err := schemaext.DecodeJSON[map[string]json.RawMessage](data)
 	if err != nil {
 		return nil, err
 	}
 	if fields == nil {
-		return nil, fmt.Errorf("%w: expected a non-null ClickHouse table object", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: expected a non-null ClickHouse %s object", schemaext.ErrInvalidValue, model)
 	}
 	for name, value := range fields {
 		if !slices.Contains(allowed, name) {
-			return nil, fmt.Errorf("%w: unknown ClickHouse table property %q", schemaext.ErrInvalidValue, name)
+			return nil, fmt.Errorf("%w: unknown ClickHouse %s property %q", schemaext.ErrInvalidValue, model, name)
 		}
 		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return nil, fmt.Errorf("%w: ClickHouse table property %q cannot be null", schemaext.ErrInvalidValue, name)
+			return nil, fmt.Errorf("%w: ClickHouse %s property %q cannot be null", schemaext.ErrInvalidValue, model, name)
 		}
 	}
 	for _, name := range required {
 		if _, exists := fields[name]; !exists {
-			return nil, fmt.Errorf("%w: missing ClickHouse table property %q", schemaext.ErrInvalidValue, name)
+			return nil, fmt.Errorf("%w: missing ClickHouse %s property %q", schemaext.ErrInvalidValue, model, name)
 		}
 	}
 	return fields, nil

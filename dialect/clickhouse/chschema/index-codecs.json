@@ -1,0 +1,46 @@
+{
+  "$id": "ptah.run/clickhouse/skipping-index/v1",
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "^[^\u0000]*$"},
+    "typeSetting": {
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": {
+        "state": {"enum": ["", "explicit", "default"]},
+        "value": {"type": "string", "pattern": "^[^\u0000]*$"}
+      }
+    },
+    "granularitySetting": {
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": {
+        "state": {"enum": ["", "explicit", "default"]},
+        "value": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615}
+      }
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/clickhouse/skipping-index": {
+        "type": "object", "additionalProperties": false, "required": ["expression"],
+        "properties": {
+          "expression": {"$ref": "#/$defs/text"},
+          "index_type": {"$ref": "#/$defs/typeSetting"},
+          "granularity": {"$ref": "#/$defs/granularitySetting"}
+        },
+        "constraint": "Expression and explicit index types cannot be blank. Explicit granularity must be positive. Unspecified or default settings carry no value. Null is invalid."
+      }
+    },
+    "observed": {
+      "ptah.run/clickhouse/skipping-index": {
+        "type": "object", "additionalProperties": false,
+        "required": ["expression", "index_type", "granularity"],
+        "properties": {
+          "expression": {"$ref": "#/$defs/text"},
+          "index_type": {"$ref": "#/$defs/text"},
+          "granularity": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615}
+        },
+        "constraint": "Expression and index type cannot be blank. All fields must be present and non-null. Incomplete inspection belongs in coverage."
+      }
+    }
+  },
+  "canonicalization": "Preserve SQL expression text, literal contents, and integer values exactly. Strings must be valid UTF-8. Omitted and empty unspecified settings are equivalent; defaults and explicit values remain distinct. Resolve no defaults and infer no SQL equivalence."
+}
