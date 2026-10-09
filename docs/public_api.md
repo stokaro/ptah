@@ -725,6 +725,14 @@ durable plan serialization requires an explicit capture codec.
 cloneable owner payloads. The ALTER interface stays sealed. YDB changefeed
 operations live in `dialect/ydb/ydbast`: `AddChangefeed`, `DropChangefeed`, and
 `AlterChangefeedTopic` each travel inside an `ExtensionAlterOperation`.
+`ydbast.StreamingQuery` travels inside an `ExtensionStatement`, with separate
+directory and leaf names, creation guards, both ALTER operands, and explicit
+reset permission. `StreamingCodec` provides the versioned operation record;
+`ydbrender.StreamingHandler` validates captured capabilities and renders it.
+Clones preserve independent optional run settings. Safety uses the owner's
+checkpoint-loss effect, including guarded replacement and body changes.
+Streaming schema models and comparison remain separate extraction work (#4140).
+
 
 `dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
 are distinct values in `Database.FeatureObjects`, with their table recorded as

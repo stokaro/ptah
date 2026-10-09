@@ -18,6 +18,7 @@ func Codecs() []schemaext.Codec {
 	models := append(ydbschema.Codecs(), ydbcoordination.Codecs()...)
 	return append(append(models, ydbdiff.Codecs()...), []schemaext.Codec{
 		ydbast.CoordinationCodec(),
+		ydbast.StreamingCodec(),
 		operationCodec(&ydbast.AddChangefeed{}, decodeOperation[*ydbast.AddChangefeed]),
 		operationCodec(&ydbast.DropChangefeed{}, decodeOperation[*ydbast.DropChangefeed]),
 		operationCodec(&ydbast.AlterChangefeedTopic{}, decodeOperation[*ydbast.AlterChangefeedTopic]),

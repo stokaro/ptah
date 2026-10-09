@@ -70,7 +70,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
-| `dialect/ydb/ydbast` | Typed changefeed and coordination-node operations. |
+| `dialect/ydb/ydbast` | Typed changefeed, coordination-node, and streaming-query operations. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
 | `dialect/ydb/ydbcoordination` | Standalone node declarations, observations, settings, and codecs. |

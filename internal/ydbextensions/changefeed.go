@@ -21,6 +21,7 @@ import (
 func Handlers() []renderer.ExtensionHandler {
 	return []renderer.ExtensionHandler{
 		ydbrender.CoordinationHandler(),
+		ydbrender.StreamingHandler(),
 		renderer.TypedHandler(&ydbast.AddChangefeed{}, ast.AlterExtension, validateAdd, renderAdd),
 		renderer.TypedHandler(&ydbast.DropChangefeed{}, ast.AlterExtension, validateDrop, renderDrop),
 		renderer.TypedHandler(&ydbast.AlterChangefeedTopic{}, ast.AlterExtension, validateTopic, renderTopic),

@@ -56,6 +56,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/engine/builtin/internal/dialects/mariadb"
 	"ptah.run/engine/builtin/internal/dialects/mssql"
@@ -410,8 +411,6 @@ func prepareNode(
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		key, subject := replicationNodeSubject(typed)
 		return node, refuseReplicationFamily(dialect, caps, key, subject)
-	case *ydbstream.Node:
-		return node, ydbstream.Refuse(dialect, caps, "streaming query "+typed.Name)
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode, *ast.CreateExternalDataSourceNode,
 		*ast.DropExternalDataSourceNode, *ast.CreateExternalTableNode, *ast.DropExternalTableNode:
 		return node, refuseYDBObject(dialect, caps, node)
@@ -1174,7 +1173,7 @@ func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, da
 		if err := ydbstream.Refuse(dialect, caps, "streaming query "+query.QualifiedName()); err != nil {
 			return err
 		}
-		if err := ydbstream.Validate(query.Spec); err != nil {
+		if err := ydbrender.StreamingHandler().Validate(renderer.ExtensionContext{Target: dialect, Capabilities: caps}, modelast.FromStreamingQuery(query).Payload); err != nil {
 			return err
 		}
 	}
