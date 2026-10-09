@@ -139,18 +139,5 @@ const UnsupportedReason = "target capability secrets is unavailable, so Ptah lea
 // Coverage records a source's claim about the secret namespace. Enrollment is
 // limited to this model's own definition, whatever else a runtime registers.
 func Coverage(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
-	var owned []schemaext.OwnedCodec
-	for _, codec := range Codecs() {
-		owned = append(owned, schemaext.OwnedCodec{Owner: "ptah.run/ydb", Codec: codec})
-	}
-	registry, err := schemaext.NewRegistry(owned...)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	for _, definition := range registry.Definitions() {
-		if definition.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: definition, Knowledge: knowledge}}, subjects)
-		}
-	}
-	return schemaext.Coverage{}, fmt.Errorf("%w: secret coverage requires desired or observed state", schemaext.ErrInvalidValue)
+	return schemaext.OwnedCoverage("ptah.run/ydb", Codecs(), Kind, representation, knowledge, subjects)
 }
