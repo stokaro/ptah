@@ -897,7 +897,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	dst.ResourcePoolClassifiers = append(dst.ResourcePoolClassifiers, src.ResourcePoolClassifiers...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
-	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
 	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
 	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)

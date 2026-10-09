@@ -29,6 +29,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) *catalog.Database
 		return s.tableKept(keptTables, schema, table)
 	})
 
+	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
 		return s.tableKept(keptTables, index.Schema, index.TableName)
 	})
@@ -83,9 +84,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	out.Transfers = keep(db.Transfers, func(transfer catalog.Transfer) bool {
 		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
-	})
-	out.CoordinationNodes = keep(db.CoordinationNodes, func(node catalog.CoordinationNode) bool {
-		return s.selected(typeList("coordination_node"), node.Schema, node.Name)
 	})
 	// A YDB secret is selected on its own name, in the directory that holds
 	// it.

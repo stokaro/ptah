@@ -2131,7 +2131,7 @@ func scanDestructiveObjectDrop(w []string) bool {
 	case "ASYNC":
 		return len(w) > 2 && w[2] == "REPLICATION" && w[len(w)-1] == "CASCADE"
 	// A coordination node is YDB's too, dropped through Ptah's own statement
-	// (see internal/ydbcoordination). Measured on 26.2.1.14 and 25.1.4.7:
+	// (see dialect/ydb/ydbcoordination). Measured on 26.2.1.14 and 25.1.4.7:
 	// DropNode succeeds while a session holds a semaphore on the node, the
 	// holder's session and lease end about five seconds later, and a node
 	// created again under the same path holds none of the persistent

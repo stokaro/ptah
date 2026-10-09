@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbsource"
 )
 
 // pendingChangefeed is a changefeed annotation waiting for the table it
@@ -144,7 +145,7 @@ func (s *schemaParseState) attachChangefeeds() error {
 		}
 	}
 	var err error
-	s.featureCoverage, err = ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+	s.featureCoverage, err = ydbsource.Coverage(s.coordinationLimits...)
 	return err
 }
 

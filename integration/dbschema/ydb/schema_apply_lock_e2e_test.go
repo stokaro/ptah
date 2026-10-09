@@ -12,8 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
 )
@@ -71,8 +72,10 @@ func TestYDBBinary_SchemaApplyDryRunCreatesNoLockNode(t *testing.T) {
 			c.Assert(applyErr, qt.IsNil, qt.Commentf("schema apply:\n%s", applied))
 			c.Assert(afterApply, qt.Contains, dblock.YDBLockNode)
 			c.Assert(readErr, qt.IsNil)
-			c.Assert(live.NotDescribed.Describes(coverage.CoordinationNode, dblock.YDBLockNode), qt.IsTrue,
-				qt.Commentf("not described: %v", live.NotDescribed))
+			c.Assert(live.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", dblock.YDBLockNode)).State, qt.Equals, schemaext.Complete)
+			_, found, lookupErr := live.FeatureObjects.Get(ydbcoordination.Ref("", dblock.YDBLockNode))
+			c.Assert(lookupErr, qt.IsNil)
+			c.Assert(found, qt.IsFalse)
 		})
 	}
 }

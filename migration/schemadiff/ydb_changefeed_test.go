@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
@@ -42,7 +43,7 @@ func changefeedCatalog(changefeeds ...ydbschema.ChangefeedSpec) *catalog.Databas
 	}
 	return &catalog.Database{
 		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
-		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)),
+		FeatureCoverage: completeYDBFixtureCoverage(),
 		Tables: []catalog.Table{{Name: "events", Type: "TABLE", Columns: []catalog.Column{
 			{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 		}}},
@@ -175,4 +176,10 @@ func TestCompare_YDBChangefeedsADeclarationDoesNotDescribeAreTheDatabases(t *tes
 			c.Assert(desired.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
+}
+
+func completeYDBFixtureCoverage() schemaext.Coverage {
+	feeds := must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil))
+	nodes := must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return must.Must(feeds.Combine(nodes))
 }

@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -32,7 +33,7 @@ func acceptedSpellings(c *qt.C) []string {
 // refuses part of the fixture still contributes a value both spellings of that
 // engine must agree on.
 func convertedStatements(database schemamodel.Database, dialect string) []string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect))
+	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
 	rendered := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		sql, err := builtin.RenderSQL(dialect, node)
@@ -103,7 +104,7 @@ func TestCollectDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *te
 // were emitted, in which order. Rendering is deliberately not involved -- see
 // the test below for why.
 func nodeKinds(database schemamodel.Database, dialect string) []string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect))
+	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
 	kinds := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		kinds = append(kinds, fmt.Sprintf("%T", node))

@@ -8,7 +8,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
-// Codecs describes the current self-contained changefeed change representation.
+// Codecs describes the current self-contained YDB change representations.
 // Before and After retain distinct observed and desired model meanings.
 func Codecs() []schemaext.Codec {
 	return []schemaext.Codec{{Prototype: &Changefeed{}, Representation: schemaext.Change, Version: 1,
@@ -48,7 +48,7 @@ func Codecs() []schemaext.Codec {
 			}
 			return json.Marshal(cloned)
 		},
-	}}
+	}, CoordinationCodec()}
 }
 
 func changefeedValue(value schemaext.Payload) (*Changefeed, error) {

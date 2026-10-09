@@ -9,8 +9,8 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
 	"google.golang.org/protobuf/proto"
 
+	"ptah.run/dialect/ydb/ydbcoordination"
 	ydbschema "ptah.run/internal/dbschema/ydb"
-	"ptah.run/internal/ydbcoordination"
 )
 
 // fakeCoordination is a coordination service holding nodes by absolute path,

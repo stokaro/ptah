@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/featureops"
 )
 
 // Result retains lowered contributions and explicit common-step rewrites.
@@ -49,7 +50,7 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 	for i, feature := range result.Contributions {
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: feature.Owner, Dependencies: slices.Clone(feature.Dependencies)}
 		for _, step := range feature.Steps {
-			nodes, err := operationNodes(step.Payload, names)
+			nodes, err := featureops.Nodes(step.Payload, names)
 			if err != nil {
 				return Result{}, err
 			}
@@ -81,28 +82,4 @@ func validateNames(request featureplan.Request, names map[objectidentity.Key]str
 		}
 	}
 	return nil
-}
-
-func operationNodes(operation featureplan.Operation, names map[objectidentity.Key]string) ([]ast.Node, error) {
-	payload, err := ast.CloneExtensionPayload(operation.Payload)
-	if err != nil {
-		return nil, err
-	}
-	var nodes []ast.Node
-	for _, note := range operation.Notes {
-		nodes = append(nodes, ast.NewComment(note))
-	}
-	switch operation.Role {
-	case ast.StatementExtension:
-		nodes = append(nodes, &ast.ExtensionStatement{Payload: payload})
-	case ast.AlterExtension:
-		name, found := names[operation.Parent.Key()]
-		if !found {
-			return nil, fmt.Errorf("%w: feature operation has no table name", schemaext.ErrInvalidValue)
-		}
-		nodes = append(nodes, &ast.AlterTableNode{Name: name, Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: payload}}})
-	default:
-		return nil, fmt.Errorf("%w: unsupported feature operation role", schemaext.ErrInvalidValue)
-	}
-	return nodes, nil
 }

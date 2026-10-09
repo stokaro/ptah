@@ -5,15 +5,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
 func TestParseDeclaration_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.CoordinationNodeSpec
+		want   ydbcoordination.Spec
 	}{
 		{name: "no setting", values: map[string]string{"name": "locks"}},
 		{
@@ -23,7 +22,7 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 				"read_consistency_mode": "strict", "attach_consistency_mode": "relaxed",
 				"rate_limiter_counters_mode": "detailed",
 			},
-			want: ast.CoordinationNodeSpec{
+			want: ydbcoordination.Spec{
 				SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 30000,
 				ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 			},
@@ -31,12 +30,12 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 		{
 			name:   "a fraction of a second",
 			values: map[string]string{"self_check_period": "PT0.75S"},
-			want:   ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 750},
+			want:   ydbcoordination.Spec{SelfCheckPeriodMillis: 750},
 		},
 		{
 			name:   "a mode in capitals",
 			values: map[string]string{"read_consistency_mode": " STRICT "},
-			want:   ast.CoordinationNodeSpec{ReadConsistencyMode: "strict"},
+			want:   ydbcoordination.Spec{ReadConsistencyMode: "strict"},
 		},
 	}
 	for _, test := range tests {
@@ -77,7 +76,7 @@ func TestParseDeclaration_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbcoordination.ParseDeclaration(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.Equals, ast.CoordinationNodeSpec{})
+			c.Assert(got, qt.Equals, ydbcoordination.Spec{})
 		})
 	}
 }
@@ -107,7 +106,7 @@ func TestPeriodText_IsWhatParsePeriodReads(t *testing.T) {
 
 func TestAttributes_WritesTheSettingsTheSpecSets(t *testing.T) {
 	c := qt.New(t)
-	got := ydbcoordination.Attributes(ast.CoordinationNodeSpec{
+	got := ydbcoordination.Attributes(ydbcoordination.Spec{
 		SelfCheckPeriodMillis: 1500, ReadConsistencyMode: "strict", RateLimiterCountersMode: "detailed",
 	})
 	c.Assert(got, qt.DeepEquals, [][2]string{

@@ -1,6 +1,7 @@
 package atlashclrender_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -120,7 +121,7 @@ table "t" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	sql, err := builtin.RenderSQL(platform.SQLite, must.Must(modelast.CollectDatabase(*parsed, platform.SQLite)))
+	sql, err := builtin.RenderSQL(platform.SQLite, must.Must(modelast.CollectDatabase(*parsed, platform.SQLite, modelast.Lowering{Context: context.Background()})))
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "USER_DEFINED")
 	c.Assert(sql, qt.Not(qt.Contains), "sql(")

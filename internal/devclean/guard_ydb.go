@@ -25,7 +25,7 @@ import (
 //	CREATE TOPIC tp                         created in the realm
 //	CREATE SECRET s WITH (value = 'v')      created in the realm (26.2.1.14)
 //
-// Ptah's own coordination node statement (see internal/ydbcoordination) is
+// Ptah's own coordination node statement (see dialect/ydb/ydbcoordination) is
 // resolved by Ptah's connection rather than the server, against the same
 // prefix and with the same rule: a relative path lands in the realm, and the
 // connection refuses one that leaves it.

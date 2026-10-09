@@ -10,9 +10,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -34,7 +32,7 @@ func ydbTTLDeclaration(policy *ast.RowDeletionPolicySpec) *schemamodel.Database 
 // back as policy.
 func ydbTTLCatalog(policy *ast.RowDeletionPolicySpec) *catalog.Database {
 	return &catalog.Database{
-		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)),
+		FeatureCoverage: completeYDBFixtureCoverage(),
 		Tables: []catalog.Table{{Name: "events", Type: "TABLE", RowDeletionPolicy: policy, Columns: []catalog.Column{
 			{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			{Name: "ts", DataType: "Timestamp64", ColumnType: "Timestamp64", IsNullable: "YES", OrdinalPosition: 2},

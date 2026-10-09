@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-597 fields are reachable from the desired schema, and each one carries
+594 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 519 | reaches rendered SQL on at least one target |
+| `ddl` | 516 | reaches rendered SQL on at least one target |
 | `comparison` | 9 | read when two schemas are compared, and written into no statement |
 | `planning` | 12 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -71,11 +71,6 @@ None.
 | `ast.AsyncReplicationSpec.Connection` | `ddl` | — |
 | `ast.AsyncReplicationSpec.ConsistencyLevel` | `ddl` | — |
 | `ast.AsyncReplicationSpec.Items` | `ddl` | — |
-| `ast.CoordinationNodeSpec.AttachConsistencyMode` | `ddl` | — |
-| `ast.CoordinationNodeSpec.RateLimiterCountersMode` | `ddl` | — |
-| `ast.CoordinationNodeSpec.ReadConsistencyMode` | `ddl` | — |
-| `ast.CoordinationNodeSpec.SelfCheckPeriodMillis` | `ddl` | — |
-| `ast.CoordinationNodeSpec.SessionGracePeriodMillis` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ByLoad` | `ddl` | — |
 | `ast.IndexPartitioningSpec.BySize` | `ddl` | — |
 | `ast.IndexPartitioningSpec.MaxPartitions` | `ddl` | — |
@@ -232,15 +227,10 @@ None.
 | `schemamodel.ContinuousAggregate.Name` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.Schema` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.CoordinationNode.Name` | `ddl` | — |
-| `schemamodel.CoordinationNode.Schema` | `ddl` | — |
-| `schemamodel.CoordinationNode.Spec` | `ddl` | — |
-| `schemamodel.CoordinationNode.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Database.AsyncReplications` | `ddl` | — |
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.ContinuousAggregates` | `ddl` | — |
-| `schemamodel.Database.CoordinationNodes` | `ddl` | — |
 | `schemamodel.Database.DatabasePath` | `ddl` | — |
 | `schemamodel.Database.DefaultPrivileges` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |
@@ -644,6 +634,13 @@ None.
 | `schemamodel.View.Name` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.View.WithCheck` | `ddl` | — |
+| `ydbcoordination.Desired.Spec` | `ddl` | — |
+| `ydbcoordination.Desired.StructName` | `source` | the Go holder recorded by the source; node identity is independent of the holder |
+| `ydbcoordination.Spec.AttachConsistencyMode` | `ddl` | — |
+| `ydbcoordination.Spec.RateLimiterCountersMode` | `ddl` | — |
+| `ydbcoordination.Spec.ReadConsistencyMode` | `ddl` | — |
+| `ydbcoordination.Spec.SelfCheckPeriodMillis` | `ddl` | — |
+| `ydbcoordination.Spec.SessionGracePeriodMillis` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Consumers` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Disabled` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Format` | `ddl` | — |

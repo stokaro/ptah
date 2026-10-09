@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbview"
 )
@@ -32,7 +33,7 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	}
 	var comment string
 	if node.Comment != "" {
-		statement := ydbcomment.Statement{Object: ydbcomment.View, Path: objectPath(node.Name), Comment: node.Comment}
+		statement := ydbcomment.Statement{Object: ydbcomment.View, Path: ydbscheme.ObjectPath(node.Name), Comment: node.Comment}
 		text, err := r.commentStatement(statement, subject)
 		if err != nil {
 			return err

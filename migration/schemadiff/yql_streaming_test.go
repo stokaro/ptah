@@ -29,7 +29,7 @@ func TestCompare_YQLStreamingQueryOmissionAndReset(t *testing.T) {
 			c := qt.New(t)
 			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
 			c.Assert(err, qt.IsNil)
-			held := &catalog.Database{StreamingQueries: []catalog.StreamingQuery{{Name: "copy", Spec: ast.StreamingQuerySpec{Text: "SELECT 1;"}}}}
+			held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), StreamingQueries: []catalog.StreamingQuery{{Name: "copy", Spec: ast.StreamingQuerySpec{Text: "SELECT 1;"}}}}
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 			c.Assert(diff.StreamingQueriesChanged, qt.HasLen, test.changed)
 			c.Assert(diff.StreamingQueriesRemoved, qt.HasLen, test.removed)
@@ -46,7 +46,7 @@ func TestCompare_YQLStreamingQueryBodyChangeRequiresPermission(t *testing.T) {
 	c := qt.New(t)
 	desired, _, err := sqlschema.Read([]byte("CREATE STREAMING QUERY copy AS DO BEGIN SELECT 2; END DO;"), "ydb")
 	c.Assert(err, qt.IsNil)
-	held := &catalog.Database{StreamingQueries: []catalog.StreamingQuery{{Name: "copy", Spec: ast.StreamingQuerySpec{Text: "SELECT 1;"}}}}
+	held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), StreamingQueries: []catalog.StreamingQuery{{Name: "copy", Spec: ast.StreamingQuerySpec{Text: "SELECT 1;"}}}}
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),

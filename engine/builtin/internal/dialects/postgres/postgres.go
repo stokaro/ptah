@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
-	"ptah.run/engine/builtin/internal/dialects/internal/coordinationrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
 	"ptah.run/internal/defaultlit"
@@ -597,9 +596,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
 		*ast.DropResourcePoolClassifierNode:
 		return nodedispatch.RefuseResourcePool(r.dialect, n)
-	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
-		// A coordination node is YDB's own object.
-		return coordinationrefusal.Node(r.Dialect(), n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
 

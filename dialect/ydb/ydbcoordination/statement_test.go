@@ -5,8 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
 func TestStatementText_HappyPath(t *testing.T) {
@@ -23,7 +22,7 @@ func TestStatementText_HappyPath(t *testing.T) {
 		{
 			name: "a node in a directory with every setting",
 			statement: ydbcoordination.Statement{Verb: ydbcoordination.Create, Path: "app/locks",
-				Spec: ast.CoordinationNodeSpec{
+				Spec: ydbcoordination.Spec{
 					SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 15000,
 					ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 				}},
@@ -34,7 +33,7 @@ func TestStatementText_HappyPath(t *testing.T) {
 		{
 			name: "a change of one setting",
 			statement: ydbcoordination.Statement{Verb: ydbcoordination.Alter, Path: "locks",
-				Spec: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict"}},
+				Spec: ydbcoordination.Spec{ReadConsistencyMode: "strict"}},
 			want: "ALTER COORDINATION NODE `locks` SET (read_consistency_mode = 'strict')",
 		},
 		{
@@ -64,7 +63,7 @@ func TestStatementText_FailurePath(t *testing.T) {
 		{name: "a change of nothing", statement: ydbcoordination.Statement{Verb: ydbcoordination.Alter, Path: "locks"},
 			wantErr: `invalid coordination node statement: ALTER COORDINATION NODE locks names no setting to change`},
 		{name: "a drop with settings", statement: ydbcoordination.Statement{Verb: ydbcoordination.Drop, Path: "locks",
-			Spec: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict"}},
+			Spec: ydbcoordination.Spec{ReadConsistencyMode: "strict"}},
 			wantErr: `invalid coordination node statement: DROP COORDINATION NODE locks takes no setting`},
 	}
 	for _, test := range tests {
@@ -83,11 +82,11 @@ func TestStatementText_FailurePath(t *testing.T) {
 func TestRecognize_ReadsWhatTextWrites(t *testing.T) {
 	statements := []ydbcoordination.Statement{
 		{Verb: ydbcoordination.Create, Path: "locks"},
-		{Verb: ydbcoordination.Create, Path: "app/sub/locks", Spec: ast.CoordinationNodeSpec{
+		{Verb: ydbcoordination.Create, Path: "app/sub/locks", Spec: ydbcoordination.Spec{
 			SelfCheckPeriodMillis: 750, SessionGracePeriodMillis: 30000,
 			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 		}},
-		{Verb: ydbcoordination.Alter, Path: "a.b", Spec: ast.CoordinationNodeSpec{SessionGracePeriodMillis: 12000}},
+		{Verb: ydbcoordination.Alter, Path: "a.b", Spec: ydbcoordination.Spec{SessionGracePeriodMillis: 12000}},
 		{Verb: ydbcoordination.Drop, Path: "tick`back\\slash"},
 	}
 	for _, statement := range statements {
@@ -119,7 +118,7 @@ func TestRecognize_HappyPath(t *testing.T) {
 			text: `ALTER COORDINATION NODE ` + "`l`" + ` SET (Read_Consistency_Mode = "Strict"u, ` +
 				`SELF_CHECK_PERIOD = interval("PT2S"))`,
 			want: ydbcoordination.Query{Statement: ydbcoordination.Statement{Verb: ydbcoordination.Alter, Path: "l",
-				Spec: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict", SelfCheckPeriodMillis: 2000}}},
+				Spec: ydbcoordination.Spec{ReadConsistencyMode: "strict", SelfCheckPeriodMillis: 2000}}},
 		},
 		{
 			name: "the head a migration query carries",

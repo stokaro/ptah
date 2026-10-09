@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcomment"
@@ -48,20 +49,6 @@ func (r *Renderer) commentStatement(statement ydbcomment.Statement, subject stri
 	return text + ";", nil
 }
 
-// objectPath is the path a table's or a view's name in a node stands for, as
-// tablePath quotes it: a Ptah schema is the directory that holds it.
-func objectPath(name string) string {
-	ref, ok := tableref.Parse(name)
-	switch {
-	case !ok:
-		return name
-	case ref.Schema == "":
-		return ref.Name
-	default:
-		return strings.TrimRight(ref.Schema, "/") + "/" + ref.Name
-	}
-}
-
 // tableComments writes the comments a new table, its columns and its indexes
 // carry, in that order, after the statements that create them. indexes are
 // the indexes the CREATE TABLE writes, the unique ones its UNIQUE constraints
@@ -69,7 +56,7 @@ func objectPath(name string) string {
 // attributes on the table, so comments that take more are refused before any
 // statement is written.
 func (r *Renderer) tableComments(node *ast.CreateTableNode, indexes []*ast.IndexNode) ([]string, error) {
-	path := objectPath(node.Name)
+	path := ydbscheme.ObjectPath(node.Name)
 	subject := tableref.Phrase(node.Name)
 	comments := ydbcomment.Comments{Own: node.Comment}
 	var statements []string
@@ -116,7 +103,7 @@ func (r *Renderer) tableComments(node *ast.CreateTableNode, indexes []*ast.Index
 // setComment writes the statement a SetCommentOperation asks for: the table's
 // own comment, or a column's.
 func (r *Renderer) setComment(table string, op *ast.SetCommentOperation) ([]string, error) {
-	statement := ydbcomment.Statement{Object: ydbcomment.Table, Path: objectPath(table), Comment: op.Comment}
+	statement := ydbcomment.Statement{Object: ydbcomment.Table, Path: ydbscheme.ObjectPath(table), Comment: op.Comment}
 	subject := tableref.Phrase(table)
 	if op.Column != "" {
 		statement.Object = ydbcomment.Column
@@ -154,13 +141,13 @@ func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
 	var statement ydbcomment.Statement
 	switch node.Object {
 	case ast.CommentedView:
-		statement = ydbcomment.Statement{Object: ydbcomment.View, Path: objectPath(node.Name), Comment: node.Comment}
+		statement = ydbcomment.Statement{Object: ydbcomment.View, Path: ydbscheme.ObjectPath(node.Name), Comment: node.Comment}
 	case ast.CommentedIndex:
 		if strings.TrimSpace(node.Table) == "" {
 			return refuseFact("the comment on "+subject, "YDB keeps an index's comment on its table, and the statement names none")
 		}
 		subject = fmt.Sprintf("index %q of %s", node.Name, tableref.Phrase(node.Table))
-		statement = ydbcomment.Statement{Object: ydbcomment.Index, Path: objectPath(node.Table), Name: node.Name, Comment: node.Comment}
+		statement = ydbcomment.Statement{Object: ydbcomment.Index, Path: ydbscheme.ObjectPath(node.Table), Name: node.Name, Comment: node.Comment}
 	default:
 		key, known := objectCommentKeys[node.Object]
 		if !known {

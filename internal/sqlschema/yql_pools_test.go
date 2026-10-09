@@ -8,7 +8,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
@@ -28,7 +30,9 @@ func TestReadYQLCoordinationNode(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE COORDINATION NODE `app/locks.v1` WITH (self_check_period = Interval('PT0.5S'), attach_consistency_mode = 'strict');"), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.CoordinationNodes, qt.DeepEquals, []schemamodel.CoordinationNode{{Name: "locks.v1", Schema: "app", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 500, AttachConsistencyMode: "strict"}}})
+	objects, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{ydbcoordination.DesiredObject("app", "locks.v1", "", ydbcoordination.Spec{SelfCheckPeriodMillis: 500, AttachConsistencyMode: "strict"})})
 }
 
 func TestReadYQLResourceRefusals(t *testing.T) {
@@ -55,7 +59,7 @@ func TestReadYQLResourceRefusals(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
 			c.Assert(statements, qt.IsNil)
 			c.Assert(database.ResourcePools, qt.HasLen, 0)
-			c.Assert(database.CoordinationNodes, qt.HasLen, 0)
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
 }

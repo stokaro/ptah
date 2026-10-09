@@ -5,7 +5,6 @@ import (
 	"math"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -36,25 +35,25 @@ func Settings() []string {
 // node keeps milliseconds; a mode is one of the names above, in either case.
 // The result is checked by [Validate]. A refusal is a [*SettingError] naming
 // the setting it is about.
-func ParseDeclaration(values map[string]string) (ast.CoordinationNodeSpec, error) {
-	var spec ast.CoordinationNodeSpec
+func ParseDeclaration(values map[string]string) (Spec, error) {
+	var spec Spec
 	for _, setting := range Settings() {
 		value, present := values[setting]
 		if !present {
 			continue
 		}
 		if err := set(&spec, setting, value); err != nil {
-			return ast.CoordinationNodeSpec{}, err
+			return Spec{}, err
 		}
 	}
 	if err := Validate(spec); err != nil {
-		return ast.CoordinationNodeSpec{}, err
+		return Spec{}, err
 	}
 	return spec, nil
 }
 
 // set writes one setting's declared value into spec.
-func set(spec *ast.CoordinationNodeSpec, setting, value string) error {
+func set(spec *Spec, setting, value string) error {
 	if strings.TrimSpace(value) == "" {
 		// An empty value would read as no declaration at all.
 		return settingError(setting, "%s is empty: leave the setting out to keep the node's default", setting)
@@ -110,7 +109,7 @@ func PeriodText(millis uint32) string {
 // Attributes is spec as a declaration's attributes, in the order of
 // [Settings], with the settings it leaves unset left out. It is what a
 // description read from a database is written back as.
-func Attributes(spec ast.CoordinationNodeSpec) [][2]string {
+func Attributes(spec Spec) [][2]string {
 	var attributes [][2]string
 	if spec.SelfCheckPeriodMillis != 0 {
 		attributes = append(attributes, [2]string{SettingSelfCheckPeriod, PeriodText(spec.SelfCheckPeriodMillis)})

@@ -85,7 +85,7 @@ table "users" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	list, err := atlascompat.SchemaToAST(*db, "postgres")
+	list, err := atlascompat.SchemaToAST(t.Context(), must.Must(builtin.New()), *db, "postgres", capability.ForDialect("postgres"))
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("postgres", list.Statements...)
 

@@ -43,11 +43,9 @@ func (r *Runtime) validateComparisonReply(ctx context.Context, service int, requ
 	}
 	diagnostics := make(map[diagnosticKey]bool)
 	for _, diagnostic := range result.Undecided {
-		subjectKind := diagnostic.Subject.Kind
 		key := diagnosticKey{diagnostic.Kind, diagnostic.Subject.Key()}
 		if !slices.Contains(request.Kinds, diagnostic.Kind) ||
-			(subjectKind != objectidentity.KindTable && subjectKind != objectidentity.Kind(diagnostic.Kind)) ||
-			strings.TrimSpace(diagnostic.Reason) == "" || !comparisonDiagnosticSubject(request, diagnostic.Subject) ||
+			strings.TrimSpace(diagnostic.Reason) == "" || !comparisonDiagnosticSubject(request, diagnostic) ||
 			diagnostics[key] || seen[diagnostic.Subject.Key()] {
 			return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: invalid comparison diagnostic for %s", schemaext.ErrInvalidValue, diagnostic.Subject)
 		}
@@ -101,7 +99,20 @@ func comparisonCoverageSubject(request schemaext.ObjectComparisonRequest, record
 	return slices.ContainsFunc(request.Parents, func(parent schemaext.ParentState) bool { return parent.Subject.Key() == record.Subject.Key() })
 }
 
-func comparisonDiagnosticSubject(request schemaext.ObjectComparisonRequest, subject objectidentity.ID) bool {
+func comparisonDiagnosticSubject(request schemaext.ObjectComparisonRequest, diagnostic schemaext.UndecidedChange) bool {
+	subject := diagnostic.Subject
+	if subject == (objectidentity.ID{}) {
+		for _, state := range []schemaext.ObjectState{request.Desired, request.Current} {
+			knowledge := state.Coverage.Lookup(diagnostic.Kind, subject)
+			if knowledge.State == schemaext.Uninspected || knowledge.State == schemaext.Unrepresentable {
+				return true
+			}
+		}
+		return false
+	}
+	if subject.Kind != objectidentity.KindTable && subject.Kind != objectidentity.Kind(diagnostic.Kind) {
+		return false
+	}
 	return slices.ContainsFunc(request.Parents, func(parent schemaext.ParentState) bool { return parent.Subject.Key() == subject.Key() }) || comparisonSubject(request, subject)
 }
 

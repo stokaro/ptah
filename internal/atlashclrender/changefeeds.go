@@ -2,6 +2,11 @@ package atlashclrender
 
 import (
 	"fmt"
+
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/internal/ydbsource"
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out.
@@ -9,6 +14,9 @@ import (
 // cannot turn export loss into a successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
+		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) {
+			continue
+		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
 			Severity: SeverityWarning,
 			Path:     fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature),
@@ -58,4 +66,39 @@ func (r *renderer) reportExternalObjects() {
 			Message:  fmt.Sprintf("external table %s is not represented in HCL", table.QualifiedName()),
 		})
 	}
+}
+
+// coordinationNode holds the validated inputs for one HCL block.
+type coordinationNode struct {
+	ref  objectidentity.ID
+	spec ydbcoordination.Spec
+}
+
+// captureCoordinationNodes validates every supported standalone object before
+// rendering. A malformed known value cannot silently become an export warning.
+func (r *renderer) captureCoordinationNodes() error {
+	if err := ydbsource.ValidateCoordinationExport(r.db.FeatureCoverage); err != nil {
+		return err
+	}
+	objects, err := r.db.FeatureObjects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		if object.Ref.Kind != objectidentity.Kind(ydbcoordination.Kind) {
+			continue
+		}
+		node, ok := object.Value.(*ydbcoordination.Desired)
+		if !ok {
+			return fmt.Errorf("%w: HCL requires desired coordination values", schemaext.ErrInvalidValue)
+		}
+		if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
+			return err
+		}
+		if err := ydbcoordination.Validate(node.Spec); err != nil {
+			return err
+		}
+		r.coordinationNodes = append(r.coordinationNodes, coordinationNode{ref: object.Ref, spec: node.Spec})
+	}
+	return nil
 }

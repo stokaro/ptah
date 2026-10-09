@@ -36,7 +36,11 @@ func classifyExtension(payload ast.ExtensionPayload) (Severity, string) {
 	if !ok {
 		return Destructive, unknown
 	}
-	effect := source.Effect()
+	return classifyFeatureEffect(source.Effect())
+}
+
+func classifyFeatureEffect(effect schemaext.Effect) (Severity, string) {
+	unknown := "extension effects are unknown; manual review is required"
 	if strings.TrimSpace(effect.Reason) == "" {
 		return Destructive, unknown
 	}

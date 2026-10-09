@@ -15,10 +15,10 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydburl"
 )
 
@@ -139,6 +139,14 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	defer end()
 
 	featureCoverage, err := ydbschema.ChangefeedCoverage(schemaext.Observed, nil)
+	if err != nil {
+		return nil, err
+	}
+	coordinationCoverage, err := ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return nil, err
+	}
+	featureCoverage, err = featureCoverage.Combine(coordinationCoverage)
 	if err != nil {
 		return nil, err
 	}
@@ -374,20 +382,19 @@ func (r *Reader) coordinationNode(ctx context.Context, source Source, schema, na
 		return nil
 	}
 	if strings.HasPrefix(name, ".") {
-		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.CoordinationNode, schema, name))
-		return nil
+		return unreadCoordinationNode(db, schema, name, "server-owned coordination node")
 	}
 	absolute := r.absolute(schema, name)
 	described, err := source.DescribeCoordinationNode(ctx, absolute)
 	if err != nil {
 		return err
 	}
-	node, err := decodeCoordinationNode(schema, name, described)
+	node, err := decodeCoordinationNode(described)
 	if err != nil {
-		return fmt.Errorf("YDB coordination node %s: %w", absolute, err)
+		return unreadCoordinationNode(db, schema, name, fmt.Sprintf("YDB coordination node %s: %s", absolute, err))
 	}
-	db.CoordinationNodes = append(db.CoordinationNodes, node)
-	return nil
+	db.FeatureObjects, err = db.FeatureObjects.With(schemaext.Object{Ref: ydbcoordination.Ref(schema, name), Value: node})
+	return err
 }
 
 // entryTypeName names a scheme entry type, including one the pinned protocol
@@ -462,4 +469,19 @@ func (r *Reader) inScope(schema string) bool {
 // directory itself.
 func (r *Reader) absolute(schema, name string) string {
 	return path.Join(r.database, schema, name)
+}
+
+// unreadCoordinationNode preserves the subject even when its value cannot be
+// modeled. Complete enumeration must never turn this record into absence.
+func unreadCoordinationNode(db *catalog.Database, schema, name, reason string) error {
+	records := append(db.FeatureCoverage.SubjectRecords(), schemaext.SubjectCoverage{
+		Kind: ydbcoordination.Kind, Subject: ydbcoordination.Ref(schema, name),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: reason},
+	})
+	known, err := schemaext.NewCoverage(schemaext.Observed, db.FeatureCoverage.KindRecords(), records)
+	if err != nil {
+		return err
+	}
+	db.FeatureCoverage = known
+	return nil
 }

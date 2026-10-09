@@ -130,15 +130,14 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	}
 	// Remove refused YDB families in the order shared validation checks them,
 	// then run the census over the rest of the fixture.
-	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
-	refused += assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
+	refused := assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheStreamingQueries(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
-	renderCensus := surfaceCensus(c, dialect, must.Must(modelast.CollectDatabase(desired, dialect)).Statements)
+	renderCensus := surfaceCensus(c, dialect, must.Must(modelast.CollectDatabase(desired, dialect, modelast.Lowering{Context: context.Background()})).Statements)
 
 	planNodes, err := planner.GenerateSchemaDiffAST(
 		context.Background(), must.Must(builtin.New()),
@@ -231,28 +230,6 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
 	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
 	return true
-}
-
-// assertBothSurfacesRefuseTheCoordinationNode checks that a target without
-// the coordination_nodes key refuses the fixture's coordination node on both
-// surfaces, through the one validation they share, and takes the node out of
-// desired so the census can run over the rest. It returns how many routed
-// kinds it took out.
-func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desired *schemamodel.Database) int {
-	c.Helper()
-	if capability.ForDialect(dialect).Has(capability.CoordinationNodes) {
-		return 0
-	}
-	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-	renderErr := builtin.ValidateSchema(desired, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "requires target capability coordination_nodes")
-	c.Assert(renderErr.Error(), qt.Contains, "requires target capability coordination_nodes")
-	desired.CoordinationNodes = nil
-	return 1
 }
 
 // assertBothSurfacesRefuseTheTopic checks that a target without the topics key

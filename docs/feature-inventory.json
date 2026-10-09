@@ -880,6 +880,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-ydb-ydbcoordination",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbcoordination",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-ydb-ydbdiff",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbdiff",
@@ -889,6 +895,12 @@
       "id": "gopkg-dialect-ydb-ydbplan",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbrender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbrender",
       "claimed_by": null
     },
     {
@@ -907,6 +919,12 @@
       "id": "gopkg-dialect-ydb-ydbschema",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbschema",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbscheme",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbscheme",
       "claimed_by": null
     },
     {

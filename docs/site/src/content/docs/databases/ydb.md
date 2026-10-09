@@ -1460,6 +1460,12 @@ holds a lock on it. The safety report counts such a drop as destructive, and
 `ptah migrations up` stops before it by default. A schema that leaves the nodes
 to the application declares
 `//ptah:schema:notdescribed kind="coordination_node"`.
+Add `name="app/locks"` to leave only that node unmanaged.
+
+A read that encounters an unknown node setting records that node as
+unrepresentable. Comparison cannot treat it as absent or plan its removal.
+Go and HCL export refuse that incomplete description because a document that
+omits the limit could request deletion when read back.
 
 The node `ptah_locks` at the database root is Ptah's own lock. A declaration
 that names it is refused, and so is a statement that does.

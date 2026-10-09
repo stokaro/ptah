@@ -5,18 +5,19 @@ package ydb_test
 import (
 	"context"
 	"path"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 
-	"ptah.run/catalog"
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/dbtarget"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydburl"
 )
 
@@ -27,14 +28,12 @@ var coordinationSchemas = []string{coordinationSchema}
 
 // coordinationDeclaration is a table and two coordination nodes in the test
 // directory: limits with the settings given, and plain with none.
-func coordinationDeclaration(limits ast.CoordinationNodeSpec) *schemamodel.Database {
+func coordinationDeclaration(limits ydbcoordination.Spec) *schemamodel.Database {
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Job", Name: "jobs", Schema: coordinationSchema}},
-		Fields: []schemamodel.Field{{StructName: "Job", Name: "id", Type: "BIGINT", Primary: true}},
-		CoordinationNodes: []schemamodel.CoordinationNode{
-			{Schema: coordinationSchema, Name: "limits", Spec: limits},
-			{Schema: coordinationSchema, Name: "plain"},
-		},
+		FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		Tables:          []schemamodel.Table{{StructName: "Job", Name: "jobs", Schema: coordinationSchema}},
+		Fields:          []schemamodel.Field{{StructName: "Job", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject(coordinationSchema, "limits", "", limits), ydbcoordination.DesiredObject(coordinationSchema, "plain", "", ydbcoordination.Spec{}))),
 	}
 	schemamodel.Finalize(db)
 	return db
@@ -95,13 +94,13 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 			dropCoordinationDirectory(c, conn, coordinationSchema)
 			c.Cleanup(func() { dropCoordinationDirectory(c, conn, coordinationSchema) })
 
-			limits := ast.CoordinationNodeSpec{
+			limits := ydbcoordination.Spec{
 				SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 15000,
 				ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 			}
 			declared := coordinationDeclaration(limits)
 			first := planAgainst(c, conn, declared, coordinationSchemas)
-			c.Assert(first, qt.DeepEquals, []string{
+			c.Assert(first, qt.ContentEquals, []string{
 				"CREATE TABLE `ptah_ydb_coordination/jobs` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n)",
 				"CREATE COORDINATION NODE `ptah_ydb_coordination/limits` WITH (self_check_period = Interval('PT2.5S'), " +
 					"session_grace_period = Interval('PT15S'), read_consistency_mode = 'strict', " +
@@ -113,9 +112,9 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, declared, coordinationSchemas))
 			c.Assert(planAgainst(c, conn, declared, coordinationSchemas), qt.HasLen, 0)
 
-			c.Assert(readScoped(c, conn, coordinationSchemas).CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{
-				{Schema: coordinationSchema, Name: "limits", Spec: limits},
-				{Schema: coordinationSchema, Name: "plain"},
+			c.Assert(must.Must(readScoped(c, conn, coordinationSchemas).FeatureObjects.All()), qt.ContentEquals, []schemaext.Object{
+				ydbcoordination.ObservedObject(coordinationSchema, "limits", limits),
+				ydbcoordination.ObservedObject(coordinationSchema, "plain", ydbcoordination.Spec{}),
 			})
 			served, err := nodeConfig(c, driver, coordinationSchema+"/limits")
 			c.Assert(err, qt.IsNil)
@@ -127,7 +126,7 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 
 			// The plain node's settings at their defaults, written out.
 			atDefaults := coordinationDeclaration(limits)
-			atDefaults.CoordinationNodes[1].Spec = ydbcoordination.Defaults()
+			atDefaults.FeatureObjects = must.Must(atDefaults.FeatureObjects.Replace(ydbcoordination.DesiredObject(coordinationSchema, "plain", "", ydbcoordination.Defaults())))
 			c.Assert(planAgainst(c, conn, atDefaults, coordinationSchemas), qt.HasLen, 0)
 
 			changed := limits
@@ -148,7 +147,7 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 				RatelimiterCountersMode: coordination.RatelimiterCountersModeDetailed,
 			})
 
-			declared.CoordinationNodes = declared.CoordinationNodes[:1]
+			declared.FeatureObjects = declared.FeatureObjects.Without(ydbcoordination.Ref(coordinationSchema, "plain"))
 			drop := planAgainst(c, conn, declared, coordinationSchemas)
 			c.Assert(drop, qt.DeepEquals, []string{"DROP COORDINATION NODE `ptah_ydb_coordination/plain`"})
 			apply(c, conn, drop)
@@ -181,11 +180,10 @@ func TestYDBCoordinationNodes_TradeAPathWithATable(t *testing.T) {
 				"CREATE TABLE `ptah_ydb_coordination/to_table` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))")
 			nodeOverTable := conn.Writer().ExecuteSQL(c.Context(), "CREATE COORDINATION NODE `ptah_ydb_coordination/to_node`")
 			declared := &schemamodel.Database{
-				Tables: []schemamodel.Table{{StructName: "T", Name: "to_table", Schema: coordinationSchema}},
-				Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
-				CoordinationNodes: []schemamodel.CoordinationNode{
-					{Schema: coordinationSchema, Name: "to_node", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000}},
-				},
+				FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+				Tables:          []schemamodel.Table{{StructName: "T", Name: "to_table", Schema: coordinationSchema}},
+				Fields:          []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+				FeatureObjects:  must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject(coordinationSchema, "to_node", "", ydbcoordination.Spec{SelfCheckPeriodMillis: 2000}))),
 			}
 			schemamodel.Finalize(declared)
 
@@ -197,12 +195,16 @@ func TestYDBCoordinationNodes_TradeAPathWithATable(t *testing.T) {
 			c.Assert(tableOverNode, qt.ErrorMatches, `(?s).*SCHEME_ERROR.*(Path is not a table or topic|PathNotTable).*`)
 			c.Assert(nodeOverTable, qt.ErrorMatches,
 				`(?s).*unexpected path type .*EPathTypeTable.*expected types: EPathTypeKesus.*`)
-			c.Assert(plan, qt.DeepEquals, []string{
+			c.Assert(plan, qt.ContentEquals, []string{
 				"DROP COORDINATION NODE `ptah_ydb_coordination/to_table`",
 				"CREATE TABLE `ptah_ydb_coordination/to_table` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n)",
 				"DROP TABLE `ptah_ydb_coordination/to_node`",
 				"CREATE COORDINATION NODE `ptah_ydb_coordination/to_node` WITH (self_check_period = Interval('PT2S'))",
 			})
+			c.Assert(slices.Index(plan, "DROP COORDINATION NODE `ptah_ydb_coordination/to_table`") <
+				slices.Index(plan, "CREATE TABLE `ptah_ydb_coordination/to_table` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n)"), qt.IsTrue)
+			c.Assert(slices.Index(plan, "DROP TABLE `ptah_ydb_coordination/to_node`") <
+				slices.Index(plan, "CREATE COORDINATION NODE `ptah_ydb_coordination/to_node` WITH (self_check_period = Interval('PT2S'))"), qt.IsTrue)
 			c.Assert(planAgainst(c, conn, declared, coordinationSchemas), qt.HasLen, 0)
 			c.Assert(tableNames(readScoped(c, conn, coordinationSchemas)), qt.DeepEquals,
 				[]string{coordinationSchema + "|to_table"})
@@ -283,8 +285,8 @@ func TestYDBCoordinationNodes_ReaderLeavesTheLockNodeOut(t *testing.T) {
 
 			live := readScoped(c, conn, []string{"", coordinationSchema})
 
-			c.Assert(live.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{
-				{Schema: coordinationSchema, Name: "ptah_locks"},
+			c.Assert(must.Must(live.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
+				ydbcoordination.ObservedObject(coordinationSchema, "ptah_locks", ydbcoordination.Spec{}),
 			})
 		})
 	}
@@ -325,9 +327,9 @@ func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 			c.Assert(served, qt.DeepEquals, coordination.NodeConfig{AttachConsistencyMode: coordination.ConsistencyModeRelaxed})
 			inRealm, readErr := dbschema.ReadSchemaWithSchemasContext(c.Context(), realm, nil)
 			c.Assert(readErr, qt.IsNil)
-			c.Assert(inRealm.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{
-				{Schema: "app", Name: "locks", Spec: ast.CoordinationNodeSpec{AttachConsistencyMode: "relaxed"}},
-				{Name: "ptah_locks"},
+			c.Assert(must.Must(inRealm.FeatureObjects.All()), qt.ContentEquals, []schemaext.Object{
+				ydbcoordination.ObservedObject("app", "locks", ydbcoordination.Spec{AttachConsistencyMode: "relaxed"}),
+				ydbcoordination.ObservedObject("", "ptah_locks", ydbcoordination.Spec{}),
 			})
 
 			resetter, ok := realm.SchemaWriter().(interface {

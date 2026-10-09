@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcolumn"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"

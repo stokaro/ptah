@@ -41,7 +41,7 @@ const (
 	Destructive Impact = "destructive"
 )
 
-// Effect records an operation's known consequences. An empty or unrecognized
+// Effect records a change or operation's known consequences. An empty or unrecognized
 // Impact means the owner has not established the effect. Reason is a human
 // explanation, not a serialization identity or comparison key.
 type Effect struct {
@@ -49,7 +49,7 @@ type Effect struct {
 	Reason string
 }
 
-// EffectSource provides already-computed operation metadata. It must be pure
+// EffectSource provides already-computed change or operation metadata. It must be pure
 // and local: no database access, transport call, or target discovery. An adapter
 // for an external provider carries the metadata from its batched plan response.
 // Payloads without this contract have unknown safety effects.

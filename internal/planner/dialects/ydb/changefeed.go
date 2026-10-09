@@ -15,9 +15,12 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, rebuilds map[string]*tableRebuild, semantics identifier.Semantics) (featurehost.Result, error) {
+func (p *Planner) planFeatureChanges(
+	ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff,
+	rebuilds map[string]*tableRebuild, semantics identifier.Semantics, common []featureplan.CommonStep,
+) (featurehost.Result, error) {
 	names := make(map[objectidentity.Key]string)
-	request := featureplan.Request{Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: slices.Clone(diff.FeatureChanges)}
+	request := featureplan.Request{Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: slices.Clone(diff.FeatureChanges), CommonSteps: common}
 	for _, table := range diff.TablesModified {
 		if len(table.FeatureChanges) == 0 {
 			continue
@@ -49,14 +52,7 @@ func (p *Planner) planFeatureChanges(ctx context.Context, runtime featureplan.Ru
 		}
 		request.Tables = append(request.Tables, featureplan.Table{Action: featureplan.DropTable, Subject: subject, Current: removal.Current})
 	}
-	result, err := featurehost.Plan(ctx, runtime, request, names)
-	if err != nil {
-		return featurehost.Result{}, err
-	}
-	if err := capturePlannedRebuilds(rebuilds); err != nil {
-		return featurehost.Result{}, err
-	}
-	return result, nil
+	return featurehost.Plan(ctx, runtime, request, names)
 }
 
 // Capture and emission bindings share one subject: a facet names the table

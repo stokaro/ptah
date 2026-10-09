@@ -214,8 +214,6 @@ func compareReportingUndecidedAdditions(
 	compare.ResourcePools(desired, database, diff, cov)
 	compare.Replications(desired, database, diff, cov)
 
-	// Compare YDB coordination nodes
-	compare.CoordinationNodes(desired, database, diff, cov)
 	compare.Secrets(desired, database, diff, cov)
 	compare.ExternalObjects(desired, database, diff, cov)
 	compare.StreamingQueries(desired, database, diff, cov)

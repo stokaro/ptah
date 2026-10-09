@@ -62,3 +62,14 @@ func TestMixedKnowledgeLimitsCannotReadAsAgreement(t *testing.T) {
 	c.Assert(undecidednote.Summary(schemadiff.Diagnostics{Features: limits.Features}), qt.Equals, "1 comparison limit remains unresolved")
 	undecidednote.Report(nil, limits, "the database", "the declaration")
 }
+
+func TestStandaloneNamespaceLimitHasNoInventedObject(t *testing.T) {
+	c := qt.New(t)
+	limits := schemadiff.Diagnostics{Features: []schemaext.UndecidedChange{{Kind: "test/standalone", Reason: "namespace was not inspected"}}}
+	c.Assert(limits.Err(), qt.ErrorMatches, "schema comparison is incomplete: test/standalone namespace: namespace was not inspected")
+	c.Assert(undecidednote.Entries(limits, "database"), qt.DeepEquals, []undecidednote.Entry{{Kind: "test/standalone", Name: "namespace", Reason: "namespace was not inspected"}})
+	var output strings.Builder
+	undecidednote.Report(&output, limits, "database", "declaration")
+	c.Assert(output.String(), qt.Contains, "namespace was not inspected")
+	c.Assert(undecidednote.Summary(limits), qt.Equals, "1 comparison limit remains unresolved")
+}

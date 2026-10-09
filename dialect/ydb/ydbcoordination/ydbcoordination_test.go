@@ -5,27 +5,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
 func TestEffective_FillsWhatTheSpecLeavesUnset(t *testing.T) {
 	tests := []struct {
 		name string
-		spec ast.CoordinationNodeSpec
-		want ast.CoordinationNodeSpec
+		spec ydbcoordination.Spec
+		want ydbcoordination.Spec
 	}{
 		{
 			name: "nothing declared runs with the tablet's defaults",
-			want: ast.CoordinationNodeSpec{
+			want: ydbcoordination.Spec{
 				SelfCheckPeriodMillis: 1000, SessionGracePeriodMillis: 10000,
 				ReadConsistencyMode: "relaxed", AttachConsistencyMode: "strict", RateLimiterCountersMode: "aggregated",
 			},
 		},
 		{
 			name: "a declared setting is kept",
-			spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict"},
-			want: ast.CoordinationNodeSpec{
+			spec: ydbcoordination.Spec{SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict"},
+			want: ydbcoordination.Spec{
 				SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 10000,
 				ReadConsistencyMode: "strict", AttachConsistencyMode: "strict", RateLimiterCountersMode: "aggregated",
 			},
@@ -42,36 +41,36 @@ func TestEffective_FillsWhatTheSpecLeavesUnset(t *testing.T) {
 func TestChanges_NamesWhatTheNodeRunsWithDifferently(t *testing.T) {
 	tests := []struct {
 		name             string
-		desired, current ast.CoordinationNodeSpec
-		want             ast.CoordinationNodeSpec
+		desired, current ydbcoordination.Spec
+		want             ydbcoordination.Spec
 	}{
 		{name: "both unset"},
 		{
 			name:    "a setting at its default against one left unset",
-			desired: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 1000, AttachConsistencyMode: "strict"},
+			desired: ydbcoordination.Spec{SelfCheckPeriodMillis: 1000, AttachConsistencyMode: "strict"},
 		},
 		{
 			name:    "one left unset against a setting at its default",
-			current: ast.CoordinationNodeSpec{SessionGracePeriodMillis: 10000, RateLimiterCountersMode: "aggregated"},
+			current: ydbcoordination.Spec{SessionGracePeriodMillis: 10000, RateLimiterCountersMode: "aggregated"},
 		},
 		{
 			name:    "one changed setting",
-			desired: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 3000, ReadConsistencyMode: "strict"},
-			current: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict"},
-			want:    ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 3000},
+			desired: ydbcoordination.Spec{SelfCheckPeriodMillis: 3000, ReadConsistencyMode: "strict"},
+			current: ydbcoordination.Spec{SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict"},
+			want:    ydbcoordination.Spec{SelfCheckPeriodMillis: 3000},
 		},
 		{
 			name:    "a setting the declaration leaves out goes back to its default",
-			current: ast.CoordinationNodeSpec{SessionGracePeriodMillis: 20000, RateLimiterCountersMode: "detailed"},
-			want:    ast.CoordinationNodeSpec{SessionGracePeriodMillis: 10000, RateLimiterCountersMode: "aggregated"},
+			current: ydbcoordination.Spec{SessionGracePeriodMillis: 20000, RateLimiterCountersMode: "detailed"},
+			want:    ydbcoordination.Spec{SessionGracePeriodMillis: 10000, RateLimiterCountersMode: "aggregated"},
 		},
 		{
 			name: "every setting",
-			desired: ast.CoordinationNodeSpec{
+			desired: ydbcoordination.Spec{
 				SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
 				ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 			},
-			want: ast.CoordinationNodeSpec{
+			want: ydbcoordination.Spec{
 				SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
 				ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 			},
@@ -87,30 +86,30 @@ func TestChanges_NamesWhatTheNodeRunsWithDifferently(t *testing.T) {
 
 func TestMerge_ReplacesTheSettingsAChangeNames(t *testing.T) {
 	c := qt.New(t)
-	current := ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 15000,
+	current := ydbcoordination.Spec{SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 15000,
 		ReadConsistencyMode: "relaxed"}
-	changes := ast.CoordinationNodeSpec{SessionGracePeriodMillis: 20000, AttachConsistencyMode: "relaxed",
+	changes := ydbcoordination.Spec{SessionGracePeriodMillis: 20000, AttachConsistencyMode: "relaxed",
 		RateLimiterCountersMode: "detailed"}
 
 	got := ydbcoordination.Merge(current, changes)
 
-	c.Assert(got, qt.Equals, ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 20000,
+	c.Assert(got, qt.Equals, ydbcoordination.Spec{SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 20000,
 		ReadConsistencyMode: "relaxed", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed"})
 }
 
 func TestValidate_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
-		spec ast.CoordinationNodeSpec
+		spec ydbcoordination.Spec
 	}{
 		{name: "nothing declared"},
-		{name: "the shortest self-check period", spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 500}},
+		{name: "the shortest self-check period", spec: ydbcoordination.Spec{SelfCheckPeriodMillis: 500}},
 		{name: "the longest self-check period with a grace period above it",
-			spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 10000, SessionGracePeriodMillis: 11000}},
+			spec: ydbcoordination.Spec{SelfCheckPeriodMillis: 10000, SessionGracePeriodMillis: 11000}},
 		{name: "the shortest grace period after the default self-check",
-			spec: ast.CoordinationNodeSpec{SessionGracePeriodMillis: 2000}},
-		{name: "the longest grace period", spec: ast.CoordinationNodeSpec{SessionGracePeriodMillis: 30000}},
-		{name: "every mode", spec: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict",
+			spec: ydbcoordination.Spec{SessionGracePeriodMillis: 2000}},
+		{name: "the longest grace period", spec: ydbcoordination.Spec{SessionGracePeriodMillis: 30000}},
+		{name: "every mode", spec: ydbcoordination.Spec{ReadConsistencyMode: "strict",
 			AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed"}},
 	}
 	for _, test := range tests {
@@ -124,47 +123,47 @@ func TestValidate_HappyPath(t *testing.T) {
 func TestValidate_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
-		spec    ast.CoordinationNodeSpec
+		spec    ydbcoordination.Spec
 		wantErr string
 	}{
 		{
 			name:    "a self-check period the node raises",
-			spec:    ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 499},
+			spec:    ydbcoordination.Spec{SelfCheckPeriodMillis: 499},
 			wantErr: `self_check_period PT0.499S: YDB runs a node's self-check every PT0.5S to PT10S .*`,
 		},
 		{
 			name:    "a self-check period the node lowers",
-			spec:    ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 10001, SessionGracePeriodMillis: 30000},
+			spec:    ydbcoordination.Spec{SelfCheckPeriodMillis: 10001, SessionGracePeriodMillis: 30000},
 			wantErr: `self_check_period PT10.001S: .*`,
 		},
 		{
 			name:    "a self-check period that leaves the default grace period too short",
-			spec:    ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 10000},
+			spec:    ydbcoordination.Spec{SelfCheckPeriodMillis: 10000},
 			wantErr: `session_grace_period PT10S: YDB runs a node with a grace period from the self-check period plus PT1S \(PT11S here\) to PT30S .*`,
 		},
 		{
 			name:    "a grace period too close to the self-check period",
-			spec:    ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 2999},
+			spec:    ydbcoordination.Spec{SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 2999},
 			wantErr: `session_grace_period PT2.999S: .*\(PT3S here\).*`,
 		},
 		{
 			name:    "a grace period the node lowers",
-			spec:    ast.CoordinationNodeSpec{SessionGracePeriodMillis: 30001},
+			spec:    ydbcoordination.Spec{SessionGracePeriodMillis: 30001},
 			wantErr: `session_grace_period PT30.001S: .*`,
 		},
 		{
 			name:    "an unknown read mode",
-			spec:    ast.CoordinationNodeSpec{ReadConsistencyMode: "eventual"},
+			spec:    ydbcoordination.Spec{ReadConsistencyMode: "eventual"},
 			wantErr: `read_consistency_mode "eventual": the mode is "strict" or "relaxed"`,
 		},
 		{
 			name:    "an unknown attach mode",
-			spec:    ast.CoordinationNodeSpec{AttachConsistencyMode: "STRICT"},
+			spec:    ydbcoordination.Spec{AttachConsistencyMode: "STRICT"},
 			wantErr: `attach_consistency_mode "STRICT": the mode is "strict" or "relaxed"`,
 		},
 		{
 			name:    "an unknown counters mode",
-			spec:    ast.CoordinationNodeSpec{RateLimiterCountersMode: "none"},
+			spec:    ydbcoordination.Spec{RateLimiterCountersMode: "none"},
 			wantErr: `rate_limiter_counters_mode "none": the mode is "aggregated" or "detailed"`,
 		},
 	}

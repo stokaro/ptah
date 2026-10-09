@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/migration/planner"
@@ -51,10 +53,14 @@ func MeasurePlan(ctx context.Context, runtime engine.SchemaRuntime) ([]Observati
 func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
 	finalized := deepCopyDatabase(schema)
 	schemamodel.Finalize(&finalized)
+	current, err := emptyCatalogForCell(cell)
+	if err != nil {
+		return "", err
+	}
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
 		ctx, &finalized,
-		&catalog.Database{},
+		current,
 		catalog.ServerInfo{Dialect: cell.Dialect, Capabilities: cell.Preset()},
 		nil, runtime,
 	)
@@ -71,6 +77,23 @@ func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamod
 		return measuredRefusal(err)
 	}
 	return strings.Join(statements, "\n"), nil
+}
+
+func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
+	current := &catalog.Database{}
+	if cell.Dialect == platform.YDB {
+		// This fixture explicitly represents an empty database. Enroll the
+		// standalone namespace it knows is empty; an ordinary empty object
+		// collection would correctly leave that namespace uninspected.
+		// Keep enrollment explicit rather than deriving authority from runtime
+		// growth when another provider model is registered.
+		coverage, err := ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return nil, err
+		}
+		current.FeatureCoverage = coverage
+	}
+	return current, nil
 }
 
 // SurfaceDifference is one field the two surfaces do not agree about, and the

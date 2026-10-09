@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	ydbreader "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/ydbcolumn"
@@ -1212,7 +1213,9 @@ func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
 
 	db := readFrom(c, source)
 
-	c.Assert(db.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{{Schema: "app", Name: "ptah_locks"}})
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{ydbcoordination.ObservedObject("app", "ptah_locks", ydbcoordination.Spec{})})
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{})
 }
 
@@ -1231,10 +1234,13 @@ func TestReader_DescribesCoordinationNodes(t *testing.T) {
 				entry(".hidden", Ydb_Scheme.Entry_COORDINATION_NODE),
 				entry("app", Ydb_Scheme.Entry_DIRECTORY),
 				entry("other", Ydb_Scheme.Entry_DIRECTORY),
+				entry("z_table", Ydb_Scheme.Entry_TABLE),
 			},
 			"/local/app":   {entry("limits", Ydb_Scheme.Entry_COORDINATION_NODE)},
 			"/local/other": {entry("elsewhere", Ydb_Scheme.Entry_COORDINATION_NODE)},
 		},
+		// Reading a table must retain coverage from standalone objects.
+		tables: map[string]*Ydb_Table.DescribeTableResult{"/local/z_table": plainTable()},
 		nodes: map[string]*Ydb_Coordination.DescribeNodeResult{
 			"/local/defaults": {Config: &Ydb_Coordination.Config{}},
 			"/local/app/limits": {Config: &Ydb_Coordination.Config{
@@ -1252,22 +1258,24 @@ func TestReader_DescribesCoordinationNodes(t *testing.T) {
 	db, err := reader.ReadSchema()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{
-		{Schema: "app", Name: "limits", Spec: ast.CoordinationNodeSpec{
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.ContentEquals, []schemaext.Object{
+		ydbcoordination.ObservedObject("app", "limits", ydbcoordination.Spec{
 			SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 15000,
 			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
-		}},
-		{Name: "defaults"},
+		}),
+		ydbcoordination.ObservedObject("", "defaults", ydbcoordination.Spec{}),
 	})
-	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
-		coverage.Object{Kind: coverage.CoordinationNode, Name: `".hidden"`, Reason: coverage.Unsupported,
-			Provenance: coverage.Observed},
-	))
+	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{})
+	c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", ".hidden")), qt.DeepEquals,
+		schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "server-owned coordination node"})
+	c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "missing")).State, qt.Equals, schemaext.Complete)
 }
 
 // A node carrying a mode or a setting the pinned protocol buffers do not
-// model is refused by name, because read as absent it would be planned away.
-func TestReader_DescribesCoordinationNodes_FailurePath(t *testing.T) {
+// model stays unrepresentable, because read as absent it would be planned away.
+func TestReader_DescribesCoordinationNodes_UnknownState(t *testing.T) {
 	unknownSetting := &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{}}
 	unknownSetting.GetConfig().ProtoReflect().SetUnknown(protowire.AppendVarint(protowire.AppendTag(nil, 9,
 		protowire.VarintType), 1))
@@ -1310,8 +1318,10 @@ func TestReader_DescribesCoordinationNodes_FailurePath(t *testing.T) {
 
 			db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchema()
 
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(db, qt.IsNil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", "locks")), qt.DeepEquals,
+				schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: test.wantErr})
 		})
 	}
 }

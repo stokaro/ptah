@@ -208,14 +208,6 @@ func reverseSchemaDiffWithPrior(
 		TopicsAdded:    cloneTopics(diff.TopicsRemoved),
 		TopicsRemoved:  cloneTopics(diff.TopicsAdded),
 		TopicsModified: reverseTopicDiffs(diff.TopicsModified),
-		// A coordination node carries its whole configuration in the diff:
-		// the down direction drops what the up direction created, creates what
-		// it dropped with the configuration the removal carried, and puts a
-		// changed node's settings back.
-		CoordinationNodesAdded:    slices.Clone(diff.CoordinationNodesRemoved),
-		CoordinationNodesRemoved:  slices.Clone(diff.CoordinationNodesAdded),
-		CoordinationNodesModified: reverseCoordinationNodeChanges(diff.CoordinationNodesModified),
-
 		// An async replication and a transfer reverse like a synonym: the down
 		// direction drops what the up direction created, and creates what it
 		// dropped from the specification the removal carried. A change carries

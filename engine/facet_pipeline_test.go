@@ -10,6 +10,7 @@ import (
 	"ptah.run/atlascompat"
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -78,9 +79,6 @@ func facetSchemas() (*schemamodel.Database, *catalog.Database) {
 func TestTableFacetsReachSelectedASTRenderer(t *testing.T) {
 	c := qt.New(t)
 	desired, _ := facetSchemas()
-	list, err := atlascompat.SchemaToAST(*desired, "custom")
-	c.Assert(err, qt.IsNil)
-	c.Assert(list.Statements, qt.HasLen, 1)
 	calls := 0
 	runtime := mustRuntime(c, engine.Provider{ID: "example.org/table-rendering", Targets: []engine.Target{{
 		Name: "custom", Aliases: []string{"alternate"},
@@ -95,6 +93,9 @@ func TestTableFacetsReachSelectedASTRenderer(t *testing.T) {
 			return renderer.Result{Complete: true, Fragments: []string{"owned table settings;"}}, nil
 		}),
 	}}})
+	list, err := atlascompat.SchemaToAST(t.Context(), runtime, *desired, "custom", capability.Capabilities{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(list.Statements, qt.HasLen, 1)
 	result, err := runtime.Render(t.Context(), renderer.Request{Target: "alternate", Nodes: list.Statements})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.SQL(), qt.Equals, "owned table settings;")

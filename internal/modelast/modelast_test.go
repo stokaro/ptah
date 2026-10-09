@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -998,7 +999,7 @@ func TestCollectDatabase_TableLevelConstraints(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(modelast.CollectDatabase(db, "postgres"))
+	result := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result.Statements, qt.HasLen, 1)
 	table, ok := result.Statements[0].(*ast.CreateTableNode)
@@ -1044,7 +1045,7 @@ func TestCollectDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 		},
 	}
 
-	result := must.Must(modelast.CollectDatabase(db, "postgres"))
+	result := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result.Statements, qt.HasLen, 4)
 	accounts := result.Statements[0].(*ast.CreateTableNode)
@@ -1090,7 +1091,7 @@ func TestCollectDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(modelast.CollectDatabase(db, "postgres"))
+	result := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
 
 	extension := extensionStatementIndexByName(result, "citext")
 	table := tableStatementIndexByName(result, "users")
@@ -1130,7 +1131,7 @@ func TestCollectDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
 		},
 	}
 
-	result := must.Must(modelast.CollectDatabase(db, "postgres"))
+	result := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
 
 	function := functionStatementIndexByName(result, "normalize_code")
 	uniqueIndex := indexStatementIndexByName(result, "uq_parents_code")
@@ -1168,7 +1169,7 @@ func TestCollectDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *test
 		}},
 	}
 
-	statements := must.Must(modelast.CollectDatabase(database, "postgres"))
+	statements := must.Must(modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()}))
 	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
 	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
 	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
@@ -1202,7 +1203,7 @@ func TestCollectDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.
 		}},
 	}
 
-	statements := must.Must(modelast.CollectDatabase(database, "postgres"))
+	statements := must.Must(modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()}))
 	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
 	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
 	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
@@ -1247,7 +1248,7 @@ func TestCollectDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiv
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect)))
+			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect, modelast.Lowering{Context: context.Background()})))
 
 			c.Assert(names, qt.HasLen, 2)
 			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
@@ -1264,7 +1265,7 @@ func TestCollectDatabase_GeneratedForeignKeyNamesRespectPostgreSQLByteLimit(t *t
 		strings.Repeat("shared_column_prefix_", 4)+"beta",
 	)
 
-	names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres)))
+	names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()})))
 
 	c.Assert(names, qt.HasLen, 2)
 	c.Assert([]byte(names[0]), qt.HasLen, 63)
@@ -1281,7 +1282,7 @@ func TestCollectDatabase_GeneratedForeignKeyNamesPreservePostgreSQLUTF8(t *testi
 		strings.Repeat("列", 20),
 	)
 
-	names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres)))
+	names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()})))
 
 	c.Assert(names, qt.HasLen, 1)
 	c.Assert(utf8.ValidString(names[0]), qt.IsTrue)
@@ -1305,7 +1306,7 @@ func TestCollectDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect)))
+			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect, modelast.Lowering{Context: context.Background()})))
 
 			c.Assert(names, qt.HasLen, 1)
 			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 64)
@@ -1331,7 +1332,7 @@ func TestCollectDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerChara
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect)))
+			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect, modelast.Lowering{Context: context.Background()})))
 
 			c.Assert(names, qt.HasLen, 1)
 			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 128)
@@ -1373,7 +1374,7 @@ func TestCollectDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *test
 				},
 			}
 
-			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect)))
+			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect, modelast.Lowering{Context: context.Background()})))
 
 			c.Assert(names, qt.HasLen, 2)
 			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
@@ -1407,7 +1408,7 @@ func TestCollectDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *te
 				},
 			}
 
-			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect)))
+			names := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, test.dialect, modelast.Lowering{Context: context.Background()})))
 
 			c.Assert(names, qt.DeepEquals, []string{"fk_children_parent_id", "fk_children_parent_id"})
 		})
@@ -1456,8 +1457,8 @@ func TestCollectDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) 
 		strings.Repeat("deterministic_column_", 4)+"beta",
 	)
 
-	first := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres)))
-	second := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres)))
+	first := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()})))
+	second := foreignKeyConstraintNames(must.Must(modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()})))
 
 	c.Assert(first, qt.HasLen, 2)
 	c.Assert(second, qt.DeepEquals, first)
@@ -1491,7 +1492,7 @@ func TestCollectDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(modelast.CollectDatabase(db, "sqlite"))
+	result := must.Must(modelast.CollectDatabase(db, "sqlite", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	accounts := result.Statements[0].(*ast.CreateTableNode)
@@ -1521,7 +1522,7 @@ func TestCollectDatabase_Schemas(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(modelast.CollectDatabase(db, "postgres"))
+	result := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	schema, ok := result.Statements[0].(*ast.CreateSchemaNode)
@@ -1750,7 +1751,7 @@ func TestCollectDatabase_IndexIncludeColumns(t *testing.T) {
 		},
 	}
 
-	result := must.Must(modelast.CollectDatabase(db, "postgres"))
+	result := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
 	c.Assert(result.Statements, qt.HasLen, 2)
 	index, ok := result.Statements[1].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1898,7 +1899,7 @@ func TestCollectDatabase_CompleteSchema(t *testing.T) {
 		},
 	}
 
-	result := must.Must(modelast.CollectDatabase(database, ""))
+	result := must.Must(modelast.CollectDatabase(database, "", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Statements, qt.HasLen, 6) // 1 enum + 2 tables + 1 FK + 2 indexes
@@ -1939,7 +1940,7 @@ func TestCollectDatabase_EmptySchema(t *testing.T) {
 		Indexes: make([]schemamodel.Index, 0),
 	}
 
-	result := must.Must(modelast.CollectDatabase(database, ""))
+	result := must.Must(modelast.CollectDatabase(database, "", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Statements, qt.HasLen, 0)
@@ -1994,7 +1995,7 @@ func TestCollectDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testi
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := must.Must(modelast.CollectDatabase(database, test.dialect))
+			result := must.Must(modelast.CollectDatabase(database, test.dialect, modelast.Lowering{Context: context.Background()}))
 
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(countEnumStatements(result), qt.Equals, 0)
@@ -2028,7 +2029,7 @@ func TestCollectDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(modelast.CollectDatabase(database, platform.Postgres))
+	result := must.Must(modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(countEnumStatements(result), qt.Equals, 1)
@@ -2056,7 +2057,7 @@ func TestCollectDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(modelast.CollectDatabase(database, "mysql"))
+	result := must.Must(modelast.CollectDatabase(database, "mysql", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
@@ -2085,7 +2086,7 @@ func TestCollectDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(modelast.CollectDatabase(database, "sqlite"))
+	result := must.Must(modelast.CollectDatabase(database, "sqlite", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
@@ -2420,7 +2421,7 @@ func TestCollectDatabase_PlatformOverrides(t *testing.T) {
 	}
 
 	// Test MySQL platform
-	mysqlResult := must.Must(modelast.CollectDatabase(database, "mysql"))
+	mysqlResult := must.Must(modelast.CollectDatabase(database, "mysql", modelast.Lowering{Context: context.Background()}))
 	c.Assert(mysqlResult, qt.IsNotNil)
 	c.Assert(mysqlResult.Statements, qt.HasLen, 1)
 
@@ -2432,7 +2433,7 @@ func TestCollectDatabase_PlatformOverrides(t *testing.T) {
 	c.Assert(tableNode.Columns[0].Type, qt.Equals, "JSON") // Overridden type
 
 	// Test PostgreSQL platform (no overrides)
-	postgresResult := must.Must(modelast.CollectDatabase(database, "postgres"))
+	postgresResult := must.Must(modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()}))
 	c.Assert(postgresResult, qt.IsNotNil)
 	c.Assert(postgresResult.Statements, qt.HasLen, 1)
 
@@ -2560,7 +2561,7 @@ func TestCollectDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := must.Must(modelast.CollectDatabase(test.database, ""))
+			result := must.Must(modelast.CollectDatabase(test.database, "", modelast.Lowering{Context: context.Background()}))
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -2711,7 +2712,7 @@ func TestCollectDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := must.Must(modelast.CollectDatabase(test.database, ""))
+			result := must.Must(modelast.CollectDatabase(test.database, "", modelast.Lowering{Context: context.Background()}))
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -2752,7 +2753,7 @@ func TestCollectDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessed
 	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	c.Assert(countFields(fields, "User", "metadata"), qt.Equals, 1)
 
-	statements := must.Must(modelast.CollectDatabase(database, "postgres"))
+	statements := must.Must(modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()}))
 	table := tableStatementByName(statements, "users")
 	c.Assert(table, qt.IsNotNil)
 	c.Assert(countColumns(table, "metadata"), qt.Equals, 1)
@@ -2955,7 +2956,7 @@ func TestCollectDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := must.Must(modelast.CollectDatabase(test.database, ""))
+			result := must.Must(modelast.CollectDatabase(test.database, "", modelast.Lowering{Context: context.Background()}))
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -3108,7 +3109,7 @@ func TestCollectDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := must.Must(modelast.CollectDatabase(test.database, ""))
+			result := must.Must(modelast.CollectDatabase(test.database, "", modelast.Lowering{Context: context.Background()}))
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -3207,7 +3208,7 @@ func TestCollectDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 		},
 	}
 
-	result := must.Must(modelast.CollectDatabase(database, ""))
+	result := must.Must(modelast.CollectDatabase(database, "", modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Statements, qt.HasLen, 2)
@@ -3371,7 +3372,7 @@ func TestCollectDatabase_EmbeddedRelationFKActions(t *testing.T) {
 		},
 	}
 
-	statements := must.Must(modelast.CollectDatabase(db, "postgres"))
+	statements := must.Must(modelast.CollectDatabase(db, "postgres", modelast.Lowering{Context: context.Background()}))
 	c.Assert(statements, qt.IsNotNil)
 
 	postsTable := tableStatementByName(statements, "posts")

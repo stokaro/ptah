@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -62,6 +63,10 @@ func (e *IncompleteComparisonError) Error() string {
 	}
 	for _, diagnostic := range e.Diagnostics.Features {
 		ref := diagnostic.Subject
+		if ref == (objectidentity.ID{}) {
+			descriptions = append(descriptions, fmt.Sprintf("%s namespace: %s", diagnostic.Kind, diagnostic.Reason))
+			continue
+		}
 		descriptions = append(descriptions, fmt.Sprintf("%s (catalog %q, schema %q, parent %q, %s %q, signature %q): %s", diagnostic.Kind,
 			ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Kind, ref.Name.Source, ref.Signature, diagnostic.Reason))
 	}

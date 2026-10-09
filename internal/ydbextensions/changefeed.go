@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
@@ -19,6 +20,7 @@ import (
 // Handlers returns fresh registration descriptors for YDB extension payloads.
 func Handlers() []renderer.ExtensionHandler {
 	return []renderer.ExtensionHandler{
+		ydbrender.CoordinationHandler(),
 		renderer.TypedHandler(&ydbast.AddChangefeed{}, ast.AlterExtension, validateAdd, renderAdd),
 		renderer.TypedHandler(&ydbast.DropChangefeed{}, ast.AlterExtension, validateDrop, renderDrop),
 		renderer.TypedHandler(&ydbast.AlterChangefeedTopic{}, ast.AlterExtension, validateTopic, renderTopic),

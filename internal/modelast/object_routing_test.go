@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -49,7 +50,6 @@ var routedKinds = []routedKind{
 	{name: "resource pool classifier", want: 1, count: countNodes[*ast.CreateResourcePoolClassifierNode]},
 	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
-	{name: "coordination node", want: 1, count: countNodes[*ast.CreateCoordinationNodeNode]},
 	{name: "secret", want: 1, count: countNodes[*ast.CreateSecretNode]},
 	{name: "external data source", want: 1, count: countNodes[*ast.CreateExternalDataSourceNode]},
 	{name: "external table", want: 1, count: countNodes[*ast.CreateExternalTableNode]},
@@ -112,8 +112,8 @@ func routingFixture() schemamodel.Database {
 		Transfers: []schemamodel.Transfer{{StructName: "TF", Name: "transfer_probe", Spec: ast.TransferSpec{
 			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
 		}}},
-		CoordinationNodes: []schemamodel.CoordinationNode{{StructName: "CN", Name: "node_probe"}},
-		Secrets:           []schemamodel.Secret{{StructName: "SE", Name: "secret_probe", ValueEnv: "PTAH_SECRET_PROBE"}},
+
+		Secrets: []schemamodel.Secret{{StructName: "SE", Name: "secret_probe", ValueEnv: "PTAH_SECRET_PROBE"}},
 		ExternalDataSources: []schemamodel.ExternalDataSource{{StructName: "ES", Name: "source_probe",
 			SourceType: "ObjectStorage", Location: "https://storage.example.test/b/", AuthMethod: "NONE"}},
 		ExternalTables: []schemamodel.ExternalTable{{StructName: "ET", Name: "external_probe",
@@ -188,7 +188,7 @@ func TestCollectDatabase_EveryDialectGetsEveryDeclaredObject(t *testing.T) {
 func missingRoutedObjects(spellings []string) []string {
 	var missing []string
 	for _, spelling := range spellings {
-		statements := must.Must(modelast.CollectDatabase(routingFixture(), spelling)).Statements
+		statements := must.Must(modelast.CollectDatabase(routingFixture(), spelling, modelast.Lowering{Context: context.Background()})).Statements
 		for _, kind := range routedKinds {
 			got := kind.count(statements)
 			if got == kind.want {

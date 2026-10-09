@@ -26,12 +26,6 @@ import (
 	"fmt"
 	"path"
 	"strings"
-
-	"ptah.run/core/ast"
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
-	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemamodel"
 )
 
 // LockNode is the coordination node, at the database root, whose semaphores
@@ -74,8 +68,8 @@ const (
 // (ydb/core/kesus/tablet/tablet_impl.cpp, the same at the 25.1.4.7 and
 // 26.2.1.14 tags). DescribeNode does not report them: a node created without
 // a setting reads back with the field unset.
-func Defaults() ast.CoordinationNodeSpec {
-	return ast.CoordinationNodeSpec{
+func Defaults() Spec {
+	return Spec{
 		SelfCheckPeriodMillis:    1_000,
 		SessionGracePeriodMillis: 10_000,
 		ReadConsistencyMode:      ConsistencyRelaxed,
@@ -86,7 +80,7 @@ func Defaults() ast.CoordinationNodeSpec {
 
 // Effective is spec with every setting it leaves unset taken from [Defaults]:
 // the configuration the node runs with.
-func Effective(spec ast.CoordinationNodeSpec) ast.CoordinationNodeSpec {
+func Effective(spec Spec) Spec {
 	defaults := Defaults()
 	if spec.SelfCheckPeriodMillis == 0 {
 		spec.SelfCheckPeriodMillis = defaults.SelfCheckPeriodMillis
@@ -115,9 +109,9 @@ func Effective(spec ast.CoordinationNodeSpec) ast.CoordinationNodeSpec {
 // Naming only what changed is safe: measured on 25.1.4.7 and 26.2.1.14, an
 // AlterNode that sets one setting keeps every other one as it was, and an
 // empty one changes nothing.
-func Changes(desired, current ast.CoordinationNodeSpec) ast.CoordinationNodeSpec {
+func Changes(desired, current Spec) Spec {
 	want, have := Effective(desired), Effective(current)
-	var changes ast.CoordinationNodeSpec
+	var changes Spec
 	if want.SelfCheckPeriodMillis != have.SelfCheckPeriodMillis {
 		changes.SelfCheckPeriodMillis = want.SelfCheckPeriodMillis
 	}
@@ -138,7 +132,7 @@ func Changes(desired, current ast.CoordinationNodeSpec) ast.CoordinationNodeSpec
 
 // Merge is current with every setting changes names replaced: the
 // configuration a node holds after an ALTER that sends changes.
-func Merge(current, changes ast.CoordinationNodeSpec) ast.CoordinationNodeSpec {
+func Merge(current, changes Spec) Spec {
 	if changes.SelfCheckPeriodMillis != 0 {
 		current.SelfCheckPeriodMillis = changes.SelfCheckPeriodMillis
 	}
@@ -178,7 +172,7 @@ func settingError(setting, format string, args ...any) *SettingError {
 // to. The grace period is checked against the self-check period the node runs
 // with, so a self-check period of 10 s with no grace period declared is
 // refused: the default grace of 10 s would be raised to 11 s.
-func Validate(spec ast.CoordinationNodeSpec) error {
+func Validate(spec Spec) error {
 	for _, mode := range []struct{ setting, value string }{
 		{SettingReadConsistencyMode, spec.ReadConsistencyMode},
 		{SettingAttachConsistencyMode, spec.AttachConsistencyMode},
@@ -228,41 +222,6 @@ func RefuseName(schema, name string) error {
 	if path.Clean(strings.TrimPrefix(written, "/")) == LockNode {
 		return fmt.Errorf("coordination node %s at the database root holds Ptah's own locks, "+
 			"and Ptah never creates, changes or drops it for a schema; name the node differently", LockNode)
-	}
-	return nil
-}
-
-// ValidateDeclared refuses the coordination nodes a schema declares where
-// they cannot be created as written: every node on a target without
-// [capability.CoordinationNodes], with a [ptaherr.CapabilityError] naming the
-// key, and on a target with it a node [RefuseName] refuses or whose
-// configuration [Validate] refuses.
-//
-// The renderer and the comparison both run it before they emit or compare
-// anything, so `schema render` and a plan refuse the same declaration with
-// the same words, and neither leaves a node out in silence.
-func ValidateDeclared(dialect string, caps capability.Capabilities, nodes []schemamodel.CoordinationNode) error {
-	if len(nodes) == 0 {
-		return nil
-	}
-	if !caps.Has(capability.CoordinationNodes) {
-		normalized := platform.NormalizeDialect(dialect)
-		return &ptaherr.CapabilityError{
-			Dialect: normalized,
-			Feature: string(capability.CoordinationNodes),
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf("coordination node %s, which requires target capability %s, unavailable on this "+
-				"%s target: a coordination node is a YDB object", nodes[0].QualifiedName(),
-				capability.CoordinationNodes, normalized),
-		}
-	}
-	for _, node := range nodes {
-		if err := RefuseName(node.Schema, node.Name); err != nil {
-			return fmt.Errorf("%w: %w", ptaherr.ErrUnsupportedFeature, err)
-		}
-		if err := Validate(node.Spec); err != nil {
-			return fmt.Errorf("%w: coordination node %s: %w", ptaherr.ErrUnsupportedFeature, node.QualifiedName(), err)
-		}
 	}
 	return nil
 }

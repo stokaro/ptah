@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
@@ -21,6 +22,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		codecs []schemaext.Codec
 	}{
 		{owner: "ptah.run/ydb", codecs: ydbschema.Codecs()},
+		{owner: "ptah.run/ydb", codecs: ydbcoordination.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
 	} {
 		for _, codec := range provider.codecs {

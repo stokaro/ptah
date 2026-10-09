@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/dialectlexer"
@@ -53,7 +52,7 @@ type Statement struct {
 	Path string
 	// Spec is the configuration a CREATE gives the node, or the settings an
 	// ALTER changes. A DROP carries none.
-	Spec ast.CoordinationNodeSpec
+	Spec Spec
 }
 
 // ErrStatement is returned for text that is one of Ptah's coordination node
@@ -83,7 +82,7 @@ func (s Statement) Text() (string, error) {
 }
 
 // optionList writes the settings spec sets as `name = value` pairs.
-func optionList(spec ast.CoordinationNodeSpec) string {
+func optionList(spec Spec) string {
 	attributes := Attributes(spec)
 	options := make([]string, 0, len(attributes))
 	for _, attribute := range attributes {
@@ -337,10 +336,10 @@ func parseStatement(tokens []lexer.Token) (Statement, error) {
 }
 
 // parseOptions reads `(name = value, ...)` and nothing after it.
-func parseOptions(tokens []lexer.Token, subject string) (ast.CoordinationNodeSpec, error) {
-	var spec ast.CoordinationNodeSpec
-	refuse := func(format string, args ...any) (ast.CoordinationNodeSpec, error) {
-		return ast.CoordinationNodeSpec{}, fmt.Errorf("%w: %s: %s", ErrStatement, subject, fmt.Sprintf(format, args...))
+func parseOptions(tokens []lexer.Token, subject string) (Spec, error) {
+	var spec Spec
+	refuse := func(format string, args ...any) (Spec, error) {
+		return Spec{}, fmt.Errorf("%w: %s: %s", ErrStatement, subject, fmt.Sprintf(format, args...))
 	}
 	if len(tokens) == 0 || !tokens[0].MatchOperatorValue("(") {
 		return refuse("the settings are written in parentheses")
@@ -407,18 +406,18 @@ func optionValue(tokens []lexer.Token, at int, setting string) (string, int, err
 // validateSetting checks the one setting just read on its own: a mode's
 // value, and a period's bounds that do not depend on another setting. The
 // combination is checked where the node's other settings are known.
-func validateSetting(spec ast.CoordinationNodeSpec, setting string) error {
+func validateSetting(spec Spec, setting string) error {
 	switch setting {
 	case SettingSelfCheckPeriod:
-		return Validate(ast.CoordinationNodeSpec{SelfCheckPeriodMillis: spec.SelfCheckPeriodMillis,
+		return Validate(Spec{SelfCheckPeriodMillis: spec.SelfCheckPeriodMillis,
 			SessionGracePeriodMillis: MaxSessionGracePeriodMillis})
 	case SettingSessionGracePeriod:
 		if spec.SessionGracePeriodMillis > MaxSessionGracePeriodMillis {
-			return Validate(ast.CoordinationNodeSpec{SessionGracePeriodMillis: spec.SessionGracePeriodMillis})
+			return Validate(Spec{SessionGracePeriodMillis: spec.SessionGracePeriodMillis})
 		}
 		return nil
 	default:
-		return Validate(ast.CoordinationNodeSpec{
+		return Validate(Spec{
 			ReadConsistencyMode:     spec.ReadConsistencyMode,
 			AttachConsistencyMode:   spec.AttachConsistencyMode,
 			RateLimiterCountersMode: spec.RateLimiterCountersMode,

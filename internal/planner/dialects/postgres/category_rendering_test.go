@@ -188,18 +188,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "a changed transfer is YDB's for the same reason",
 		diff: &difftypes.SchemaDiff{TransfersModified: []difftypes.TransferDiff{{Name: "ingest", LambdaChanged: true}}},
 	},
-	"CoordinationNodesAdded": {
-		why:  "a coordination node is YDB's own object, and a schema that declares one reaches every planner; planning nothing would report the database synced while the node is missing",
-		diff: &difftypes.SchemaDiff{CoordinationNodesAdded: []schemamodel.CoordinationNode{{Name: "locks"}}},
-	},
-	"CoordinationNodesRemoved": {
-		why:  "a PostgreSQL read holds no coordination node, so a plan reaches a removal only through a diff built by hand, and the refusal names the capability rather than emitting nothing",
-		diff: &difftypes.SchemaDiff{CoordinationNodesRemoved: []schemamodel.CoordinationNode{{Name: "locks"}}},
-	},
-	"CoordinationNodesModified": {
-		why:  "a changed node configuration is YDB's too, for the same reason",
-		diff: &difftypes.SchemaDiff{CoordinationNodesModified: []difftypes.CoordinationNodeChange{{Name: "locks"}}},
-	},
 	"SecretsAdded": {
 		why:  "a secret is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a secret created that the database does not hold",
 		diff: &difftypes.SchemaDiff{SecretsAdded: difftypes.SecretChanges{{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"}}},

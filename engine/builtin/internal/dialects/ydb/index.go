@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbindex"
@@ -312,7 +313,7 @@ func (r *Renderer) addIndexStatements(index *ast.IndexNode) ([]string, error) {
 		statements = append(statements, partitioning)
 	}
 	if index.Comment != "" {
-		statement := ydbcomment.Statement{Object: ydbcomment.Index, Path: objectPath(index.Table), Name: index.Name, Comment: index.Comment}
+		statement := ydbcomment.Statement{Object: ydbcomment.Index, Path: ydbscheme.ObjectPath(index.Table), Name: index.Name, Comment: index.Comment}
 		comment, err := r.commentStatement(statement, fmt.Sprintf("%s of %s", subject, tableref.Phrase(index.Table)))
 		if err != nil {
 			return nil, err

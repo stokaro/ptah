@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 )
@@ -14,7 +15,9 @@ import (
 // Codecs returns the explicit current operation codecs. These describe the
 // model only; they grant no target capability and perform no server discovery.
 func Codecs() []schemaext.Codec {
-	return append(append(ydbschema.Codecs(), ydbdiff.Codecs()...), []schemaext.Codec{
+	models := append(ydbschema.Codecs(), ydbcoordination.Codecs()...)
+	return append(append(models, ydbdiff.Codecs()...), []schemaext.Codec{
+		ydbast.CoordinationCodec(),
 		operationCodec(&ydbast.AddChangefeed{}, decodeOperation[*ydbast.AddChangefeed]),
 		operationCodec(&ydbast.DropChangefeed{}, decodeOperation[*ydbast.DropChangefeed]),
 		operationCodec(&ydbast.AlterChangefeedTopic{}, decodeOperation[*ydbast.AlterChangefeedTopic]),

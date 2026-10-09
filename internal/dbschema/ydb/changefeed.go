@@ -294,7 +294,7 @@ func (r *Reader) observeChangefeeds(ctx context.Context, source Source, schema, 
 		}
 	}
 	subjects := append(database.FeatureCoverage.SubjectRecords(), unread...)
-	knowledge, err := ydbschema.ChangefeedCoverage(schemaext.Observed, subjects)
+	knowledge, err := schemaext.NewCoverage(schemaext.Observed, database.FeatureCoverage.KindRecords(), subjects)
 	if err != nil {
 		return err
 	}

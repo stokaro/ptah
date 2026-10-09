@@ -8,8 +8,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/schemafile"
 )
 
@@ -88,7 +91,9 @@ func TestYDBDesiredYQL_ViewsAndTopics(t *testing.T) {
 			}
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 			c.Assert(err, qt.IsNil)
-			c.Assert(live.CoordinationNodes, qt.HasLen, 1)
+			c.Assert(must.Must(live.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
+				ydbcoordination.ObservedObject("", "locks", ydbcoordination.Spec{}),
+			})
 			c.Assert(live.Views, qt.HasLen, 0)
 			c.Assert(live.Topics, qt.HasLen, 0)
 		})

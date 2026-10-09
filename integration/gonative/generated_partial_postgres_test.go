@@ -38,7 +38,7 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 	defer func() { _, _ = db.Exec("DROP SCHEMA IF EXISTS " + schemaName + " CASCADE") }()
 
 	target := generatedPartialIndexSchema(schemaName, "lower(email)")
-	createAST := must.Must(modelast.CollectDatabase(*target, platform.Postgres))
+	createAST := must.Must(modelast.CollectDatabase(*target, platform.Postgres, modelast.Lowering{Context: context.Background()}))
 	createSQL, err := builtin.RenderSQL(platform.Postgres, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(createSQL, qt.Contains, "GENERATED ALWAYS AS (lower(email)) STORED")

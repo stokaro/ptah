@@ -70,14 +70,17 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
-| `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
+| `dialect/ydb/ydbast` | Typed changefeed and coordination-node operations. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
+| `dialect/ydb/ydbcoordination` | Standalone node declarations, observations, settings, and codecs. |
 | `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
+| `dialect/ydb/ydbrender` | Coordination-node statement rendering. |
 | `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |
-| `dialect/ydb/ydbreverse` | Changefeed reversal and recovery limits. |
-| `dialect/ydb/ydbplan` | Captured-state validation and graph contributions for changefeed changes. |
+| `dialect/ydb/ydbreverse` | Feature reversal and recovery limits. |
+| `dialect/ydb/ydbplan` | Feature declaration and migration planning. |
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
+| `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
@@ -102,14 +105,12 @@ Import paths use the module prefix:
 import "ptah.run/engine/builtin"
 ```
 
-`engine.New` assembles only the providers the caller supplies. Registration
-rejects duplicate target ownership and aliases. `Runtime.Render` sends each
-batch to one owner, propagates errors and cancellation, and returns no partial
-SQL on failure. Each result has one `Fragments` entry per input node. Empty
-entries account for nodes that emit nothing; other entries may contain several
-statements. `Result.SQL()` joins them without adding separators.
-`renderer.Render` validates this contract when calling a service directly.
-`builtin.New` explicitly selects the bundled rendering providers.
+`engine.New` registers caller-supplied providers; duplicate targets and aliases
+are refused. `builtin.New` selects the bundled providers. Runtime services
+propagate errors and cancellation without partial output. Rendering returns one
+`Fragments` entry per input node: empty for no output, or holding one or more
+statements. `Result.SQL()` joins fragments without adding separators.
+`renderer.Render` validates this contract for direct service calls.
 
 Completed validation diagnostics become `schemavalidation.RefusalError` through
 `Result.Err`. The error retains a snapshot of the report and exposes its schema
@@ -125,6 +126,13 @@ and cancellation also discard diagnostics. Call `Result.Err(request)` before
 lowering operations. Its `featureplan.RefusalError` preserves the report and error
 identities. Process adapters transfer diagnostic data instead of Go errors.
 
+`Provider.Declarations` selects owners for `Runtime.PlanDeclarations`, which
+plans standalone creation from desired and operation codecs. Each object and
+operation is accounted for; refusals retain diagnostics indexed to input objects.
+Contributions join the common creation graph. `atlascompat.SchemaToAST` requires
+context, declaration runtime, schema, target, and capabilities. It shares these
+checks with whole-schema rendering and returns no partial AST list.
+
 `Request.CommonSteps` supplies isolated accepted operations; `Result.Rewrites`
 claims their replacements. `plangraph.ScheduleRewritten` validates claims,
 preserves logical writes, redirects dependencies, and rejects conflicts and cycles.
@@ -133,12 +141,10 @@ no transaction. `AlterTable` requests assessment of unchanged attached state.
 Process adapters define explicit common-operand wire models instead of
 serializing Go AST structs.
 
-`Provider.Conversions` registers a batched conversion service for explicit target
-and feature-kind pairs. `Runtime.ConvertFeatures` validates each ordered batch,
-propagates cancellation and service errors, and returns no partial result.
-Both desired and observed codecs must belong to the registering provider.
-`Registry.ConvertCoverage` retains unknown source state during conversion;
-installing another codec does not make the source authoritative for that kind.
+`Provider.Conversions` assigns target/kind pairs to `Runtime.ConvertFeatures`.
+The provider must own both representation codecs. Conversion preserves batch
+order. `Registry.ConvertCoverage` retains unknown state; installing a codec
+does not establish source knowledge.
 
 `Provider.Comparisons` assigns named object and change kinds to a comparison
 service. `Runtime.CompareObjects` requires an explicit completion receipt and returns typed changes, effective desired
@@ -176,17 +182,13 @@ comparison handler even without concrete values. An uninspected namespace alone
 makes no claim about target applicability; the runtime preserves that knowledge.
 A known empty namespace alone does not require target support for its model.
 
-`Provider.Reporting` registers omission labels and count metrics for a model
-representation. `Runtime.ReportFeatures` validates the complete batch, calls
-each selected service once, and preserves value order. Metadata is frozen when
-the runtime is built. Missing handlers, malformed replies, service failures,
-and cancellation return no partial report.
-
-Reporting is independent of target support. It can describe feature values
-from Go declarations without choosing a database. The optional target supplies
-source context only. Metrics count captured values, so zero does not establish
-inspected absence. Statistics and DBML or JSON omission reports use these model
-services. Counts from YDB's owner include disabled changefeeds and their consumers.
+`Provider.Reporting` registers model omission labels and metrics, frozen at
+runtime construction. `Runtime.ReportFeatures` validates each batch, calls each
+service once, and preserves order. Missing handlers and malformed replies fail.
+Reporting needs no target; an optional target supplies source context only.
+Metrics count captured values, including disabled YDB changefeeds and consumers.
+Zero does not establish inspected absence. Statistics and DBML/JSON omission
+reports use these services.
 
 Every `schemadiff` entry point takes a context and a selected runtime. Catalog
 comparison uses `schemapreparation.Runtime`; `CompareSchemas` uses

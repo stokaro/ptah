@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
@@ -111,6 +112,9 @@ func Entries(undecided schemadiff.Diagnostics, currentDescription string) []Entr
 		ref := diagnostic.Subject
 		name := fmt.Sprintf("(catalog %q, schema %q, parent %q, %s %q, signature %q)",
 			ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Kind, ref.Name.Source, ref.Signature)
+		if ref == (objectidentity.ID{}) {
+			name = "namespace"
+		}
 		entries = append(entries, Entry{Kind: string(diagnostic.Kind), Name: name, Reason: diagnostic.Reason})
 	}
 	slices.SortFunc(entries, func(a, b Entry) int {

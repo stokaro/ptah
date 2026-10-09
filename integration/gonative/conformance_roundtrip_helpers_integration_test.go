@@ -3,6 +3,7 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 
@@ -17,7 +18,7 @@ import (
 )
 
 func renderConformanceSQL(c *qt.C, target *schemamodel.Database, dialect string) string {
-	createAST := must.Must(modelast.CollectDatabase(*target, dialect))
+	createAST := must.Must(modelast.CollectDatabase(*target, dialect, modelast.Lowering{Context: context.Background()}))
 	createSQL, err := builtin.RenderSQL(dialect, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	return strings.TrimSpace(createSQL)

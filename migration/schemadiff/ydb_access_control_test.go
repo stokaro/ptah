@@ -9,9 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -42,7 +40,7 @@ func ydbAccessDeclaration() *schemamodel.Database {
 // and each permission under its name.
 func ydbAccessCatalog() *catalog.Database {
 	return &catalog.Database{
-		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)),
+		FeatureCoverage: completeYDBFixtureCoverage(),
 		Tables: []catalog.Table{{Schema: "shop", Name: "orders", Type: "TABLE", Columns: []catalog.Column{
 			{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 		}}},

@@ -25,6 +25,7 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
 	"ptah.run/dialect/ydb/ydbconvert"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbplan"
 	"ptah.run/dialect/ydb/ydbreport"
@@ -57,13 +58,11 @@ func New() (*engine.Runtime, error) {
 		provider := engine.Provider{
 			ID: "ptah.run/" + name,
 			Targets: []engine.Target{{
-				Name:            name,
-				Aliases:         aliases[name],
-				Rendering:       renderingService{},
-				SchemaRendering: schemaRenderingService{},
-				Validation:      validationService{},
-				Preparation:     schemapreparation.Identity{},
-				Creations:       schemaprojection.IdentityCreations{},
+				Name:        name,
+				Aliases:     aliases[name],
+				Rendering:   renderingService{},
+				Preparation: schemapreparation.Identity{},
+				Creations:   schemaprojection.IdentityCreations{},
 			}},
 		}
 		if name == platform.Postgres {
@@ -87,17 +86,50 @@ func New() (*engine.Runtime, error) {
 			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, Service: ydbconvert.Service{}}}
 			provider.Comparisons = []engine.ObjectComparison{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, ChangeKinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbcompare.Service{}}}
 			provider.Reversals = []engine.Reversal{{Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbreverse.Service{}}}
+			provider.Conversions = append(provider.Conversions, engine.Conversion{Target: name, Kinds: []schemaext.Kind{ydbcoordination.Kind}, Service: ydbconvert.CoordinationService{}})
+			provider.Comparisons = append(provider.Comparisons, engine.ObjectComparison{Target: name, Kinds: []schemaext.Kind{ydbcoordination.Kind},
+				ChangeKinds: []schemaext.Kind{ydbdiff.CoordinationNodeKind}, Service: ydbcompare.CoordinationService{}})
+			provider.Reversals = append(provider.Reversals, engine.Reversal{Target: name, Kinds: []schemaext.Kind{ydbdiff.CoordinationNodeKind}, Service: ydbreverse.CoordinationService{}})
 			provider.Planning = []engine.Planning{{
 				Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind},
 				ParentKinds:    []schemaext.Kind{ydbschema.ChangefeedKind},
 				OperationKinds: []schemaext.Kind{(&ydbast.AddChangefeed{}).Kind(), (&ydbast.DropChangefeed{}).Kind(), (&ydbast.AlterChangefeedTopic{}).Kind()},
 				Service:        ydbplan.Service{},
 			}}
+			provider.Planning = append(provider.Planning, engine.Planning{Target: name, Kinds: []schemaext.Kind{ydbdiff.CoordinationNodeKind},
+				OperationKinds: []schemaext.Kind{ydbast.CoordinationNodeKind}, Service: ydbplan.CoordinationService{}})
+			provider.Declarations = []engine.DeclarationPlanning{{Target: name, Kinds: []schemaext.Kind{ydbcoordination.Kind},
+				OperationKinds: []schemaext.Kind{ydbast.CoordinationNodeKind}, Service: ydbplan.CoordinationService{}}}
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
+				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})
 			}
 		}
 		providers = append(providers, provider)
+	}
+	return assembleSchemaServices(providers)
+}
+
+// Whole-schema services depend on a frozen declaration dispatcher. Derive it
+// from the same descriptors before constructing the outer runtime, so neither
+// runtime needs a mutable self-reference or a second list of feature owners.
+func assembleSchemaServices(providers []engine.Provider) (*engine.Runtime, error) {
+	declarations := make([]engine.Provider, len(providers))
+	for i, provider := range providers {
+		declarations[i] = engine.Provider{ID: provider.ID, Codecs: provider.Codecs, Declarations: provider.Declarations}
+		for _, target := range provider.Targets {
+			declarations[i].Targets = append(declarations[i].Targets, engine.Target{Name: target.Name, Aliases: target.Aliases})
+		}
+	}
+	runtime, err := engine.New(declarations...)
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		for j := range providers[i].Targets {
+			providers[i].Targets[j].SchemaRendering = schemaRenderingService{declarations: runtime}
+			providers[i].Targets[j].Validation = validationService{declarations: runtime}
+		}
 	}
 	return engine.New(providers...)
 }

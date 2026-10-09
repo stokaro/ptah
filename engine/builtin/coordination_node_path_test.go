@@ -4,19 +4,24 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
 // nodeAt declares the coordination node app.locks beside what more declares.
 func nodeAt(more schemamodel.Database) *schemamodel.Database {
-	more.CoordinationNodes = []schemamodel.CoordinationNode{{Schema: "app", Name: "locks"}}
+	more.FeatureObjects = must.Must(schemaext.NewObjects(
+		ydbcoordination.DesiredObject("app", "locks", "", ydbcoordination.Spec{})))
+
 	schemamodel.Finalize(&more)
 	return &more
 }
@@ -52,7 +57,10 @@ func nodeBesideTopic(schema, name string) *schemamodel.Database {
 // depend on which of the two the database holds already, since the
 // declaration alone cannot be applied.
 func TestValidateSchema_YDBRefusesACoordinationNodeOnAnotherObjectsPath(t *testing.T) {
-	heldNode := &catalog.Database{CoordinationNodes: []catalog.CoordinationNode{{Schema: "app", Name: "locks"}}}
+	heldNode := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		ydbcoordination.ObservedObject("app", "locks", ydbcoordination.Spec{})),
+	),
+	}
 	tests := []struct {
 		name     string
 		kind     string
@@ -88,8 +96,7 @@ func TestValidateSchema_YDBRefusesACoordinationNodeOnAnotherObjectsPath(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			want := "coordination node app.locks has the path of a declared " + test.kind +
-				", and YDB keeps one object at a path \\(`unexpected path type`\\)"
+			want := `coordination create conflicts with create at scheme path ptah.run/ydb/scheme-path app.locks`
 
 			statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(
 				test.declared, platform.YDB, capability.YDB262(),
@@ -99,10 +106,10 @@ func TestValidateSchema_YDBRefusesACoordinationNodeOnAnotherObjectsPath(t *testi
 			diff, planErr := schemadiff.CompareWithDatabaseInfo(t.Context(), test.declared, test.current,
 				catalog.ServerInfo{Dialect: platform.YDB, Capabilities: capability.YDB262()}, nil, runtime)
 
-			c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(renderErr, qt.ErrorMatches, want)
 			c.Assert(statements, qt.IsNil)
-			c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(planErr, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(planErr, qt.ErrorMatches, want)
 			c.Assert(diff, qt.IsNil)
 		})

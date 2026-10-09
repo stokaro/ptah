@@ -23,10 +23,10 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/tableref"
 )
 
 // DialectName is the dialect this renderer writes.
@@ -93,11 +93,7 @@ func quote(name string) string {
 // are already quoted keeps the dots inside them, because a YDB table name may
 // contain one.
 func tablePath(name string) string {
-	ref, ok := tableref.Parse(name)
-	if !ok {
-		return quote(name)
-	}
-	return sqlident.Qualified(DialectName, ref.Schema, ref.Name)
+	return quote(ydbscheme.ObjectPath(name))
 }
 
 // refuseKey refuses a declaration the target lacks the capability for.

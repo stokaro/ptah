@@ -4,6 +4,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbstream"
 )
@@ -29,9 +31,14 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
-	case *ast.CreateCoordinationNodeNode:
-		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
-		database.CoordinationNodes = append(database.CoordinationNodes, schemamodel.CoordinationNode{Name: name, Schema: schema, Spec: node.Spec})
+	case *ast.ExtensionStatement:
+		value, ok := node.Payload.(*ydbast.CoordinationNode)
+		if !ok || value == nil || value.Change.Before != nil || value.Change.After == nil {
+			return false, nil
+		}
+		var err error
+		database.FeatureObjects, err = database.FeatureObjects.With(ydbcoordination.DesiredObject(value.Schema, value.Name, value.Change.After.StructName, value.Change.After.Spec))
+		return true, err
 	case *ast.CreateResourcePoolNode:
 		database.ResourcePools = append(database.ResourcePools, schemamodel.ResourcePool{Name: node.Name, Spec: node.Spec.Clone()})
 	case *ast.CreateResourcePoolClassifierNode:

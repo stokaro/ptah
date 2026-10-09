@@ -43,7 +43,9 @@ type ObjectComparisonRequest struct {
 type UndecidedChange struct {
 	// Kind identifies the model whose state is unknown, including when Subject
 	// names its common parent namespace rather than an individual feature object.
-	Kind    Kind              `json:"kind"`
+	Kind Kind `json:"kind"`
+	// Subject is zero when the diagnostic concerns the entire model namespace.
+	// This does not invent an object or an owning table for standalone models.
 	Subject objectidentity.ID `json:"subject"`
 	Reason  string            `json:"reason"`
 }

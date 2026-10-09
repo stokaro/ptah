@@ -91,9 +91,6 @@ type Database struct {
 	AsyncReplications []AsyncReplication `json:"async_replications,omitempty"`
 	// Transfers are the YDB transfers this description covers.
 	Transfers []Transfer `json:"transfers,omitempty"`
-	// CoordinationNodes are the YDB coordination nodes this read described.
-	// omitempty keeps the serialization of every other dialect as it is.
-	CoordinationNodes []CoordinationNode `json:"coordination_nodes,omitempty"`
 	// Secrets are the YDB secrets this description covers, by path alone:
 	// the server never returns a secret's value, and the reader asks for
 	// nothing else. omitempty keeps the serialization of every dialect that
@@ -1797,22 +1794,6 @@ func (p ExtendedProperty) QualifiedOwner() string {
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.
 func (s Synonym) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
-}
-
-// CoordinationNode is one YDB coordination node a read described.
-//
-// Spec is the configuration as YDB stores it, which is what was sent when the
-// node was created or last changed: a setting nobody set reads back unset,
-// and the node runs with the server's default for it.
-type CoordinationNode struct {
-	Schema string                   `json:"schema"` // Directory holding the node, relative to the database root
-	Name   string                   `json:"name"`   // Node name
-	Spec   ast.CoordinationNodeSpec `json:"spec"`
-}
-
-// QualifiedName returns the node's name qualified by its directory.
-func (n CoordinationNode) QualifiedName() string {
-	return QualifyTableName(n.Schema, n.Name)
 }
 
 // DeclaredTarget is the synonym's target in the spelling a declaration uses:

@@ -7,10 +7,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
@@ -186,12 +186,12 @@ func TestRender_NullableKeyColumnOfAnotherDialect(t *testing.T) {
 func TestRender_YDBCoordinationNodesRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	read := ydbTable()
-	read.CoordinationNodes = []catalog.CoordinationNode{
-		{Name: "locks"},
-		{Schema: "shop", Name: "limits", Spec: ast.CoordinationNodeSpec{
+	read.FeatureObjects = must.Must(schemaext.NewObjects(
+		ydbcoordination.ObservedObject("", "locks", ydbcoordination.Spec{}),
+		ydbcoordination.ObservedObject("shop", "limits", ydbcoordination.Spec{
 			SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict", RateLimiterCountersMode: "detailed",
-		}},
-	}
+		}),
+	))
 
 	source := introspect(c, read, platform.YDB)
 
@@ -200,10 +200,12 @@ func TestRender_YDBCoordinationNodesRoundTrip(t *testing.T) {
 		`self_check_period="PT2.5S" read_consistency_mode="strict" rate_limiter_counters_mode="detailed"`+"\n")
 	parsed, err := goschema.ParseSource("models.go", source)
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.CoordinationNodes, qt.DeepEquals, []schemamodel.CoordinationNode{
-		{StructName: "PtahSchemaObjects", Name: "locks"},
-		{StructName: "PtahSchemaObjects", Schema: "shop", Name: "limits", Spec: ast.CoordinationNodeSpec{
+	objects, err := parsed.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbcoordination.DesiredObject("", "locks", "PtahSchemaObjects", ydbcoordination.Spec{}),
+		ydbcoordination.DesiredObject("shop", "limits", "PtahSchemaObjects", ydbcoordination.Spec{
 			SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict", RateLimiterCountersMode: "detailed",
-		}},
+		}),
 	})
 }

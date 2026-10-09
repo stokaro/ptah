@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
@@ -24,7 +25,6 @@ func TestCollect_YDBFamilies(t *testing.T) {
 			{Columns: make([]schemamodel.ExternalColumn, 3)},
 			{},
 		},
-		CoordinationNodes:       make([]schemamodel.CoordinationNode, 4),
 		ResourcePools:           make([]schemamodel.ResourcePool, 5),
 		ResourcePoolClassifiers: make([]schemamodel.ResourcePoolClassifier, 6),
 		AsyncReplications:       make([]schemamodel.AsyncReplication, 7),
@@ -35,6 +35,10 @@ func TestCollect_YDBFamilies(t *testing.T) {
 	}
 	var err error
 	db.FeatureObjects, err = schemaext.NewObjects(
+		ydbcoordination.DesiredObject("", "a", "", ydbcoordination.Spec{}),
+		ydbcoordination.DesiredObject("", "b", "", ydbcoordination.Spec{}),
+		ydbcoordination.DesiredObject("", "c", "", ydbcoordination.Spec{}),
+		ydbcoordination.DesiredObject("", "d", "", ydbcoordination.Spec{}),
 		ydbschema.DesiredObject("", "orders", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}}}),
 		ydbschema.DesiredObject("", "orders", ydbschema.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}),
 		ydbschema.DesiredObject("", "users", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}}),

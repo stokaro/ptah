@@ -67,7 +67,7 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	}
 
 	// Render the CREATE TABLE statement and apply it.
-	stmts := must.Must(modelast.CollectDatabase(*target, "postgres"))
+	stmts := must.Must(modelast.CollectDatabase(*target, "postgres", modelast.Lowering{Context: context.Background()}))
 	sqlText, err := builtin.RenderSQL("postgres", stmts.Statements...)
 	c.Assert(err, qt.IsNil)
 	sqlForAssert := legacyRenderedSQL(sqlText)
@@ -133,7 +133,7 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 			},
 		},
 	}
-	stmts := must.Must(modelast.CollectDatabase(*withCheck, "postgres"))
+	stmts := must.Must(modelast.CollectDatabase(*withCheck, "postgres", modelast.Lowering{Context: context.Background()}))
 	createSQL, err := builtin.RenderSQL("postgres", stmts.Statements...)
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec(createSQL)
