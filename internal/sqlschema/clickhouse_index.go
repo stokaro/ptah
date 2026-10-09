@@ -10,9 +10,6 @@ import (
 // type and granularity are the ClickHouse owner's declaration, bound to that
 // target, rather than the common index type.
 func appendSkippingIndex(database *schemamodel.Database, target alterTarget, index *chast.AddSkippingIndex, sourcePlatform string) error {
-	if err := index.Validate(); err != nil {
-		return err
-	}
 	facets, err := index.DeclaredFacets()
 	if err != nil {
 		return err

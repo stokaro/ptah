@@ -68,9 +68,11 @@ func (v *AddSkippingIndex) Validate() error {
 
 // DeclaredFacets returns the operation's settings as the skipping-index
 // declaration a common index carries, bound to the clickhouse target. A
-// nonempty type is explicit. Zero granularity leaves the setting unmanaged, so
-// an existing index keeps its own and a new one takes the creation default.
-// An invalid operation returns its validation error and no facets.
+// nonempty type is explicit. Zero granularity is a SQL statement that left
+// GRANULARITY out, which ClickHouse defines as one granule, so it requests the
+// default rather than leaving the setting unmanaged; Ptah's own source formats
+// keep an omitted setting unmanaged instead. An invalid operation returns its
+// validation error and no facets.
 func (v *AddSkippingIndex) DeclaredFacets() (schemaext.Facets, error) {
 	if err := v.Validate(); err != nil {
 		return schemaext.Facets{}, err
@@ -79,6 +81,7 @@ func (v *AddSkippingIndex) DeclaredFacets() (schemaext.Facets, error) {
 	if v.IndexType != "" {
 		value.IndexType = chschema.Setting{State: chschema.Explicit, Value: v.IndexType}
 	}
+	value.Granularity = chschema.GranularitySetting{State: chschema.Default}
 	if v.Granularity != 0 {
 		value.Granularity = chschema.GranularitySetting{State: chschema.Explicit, Value: v.Granularity}
 	}
