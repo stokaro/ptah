@@ -103,7 +103,7 @@ func TestDeclare_FailurePath(t *testing.T) {
 		{name: "an unclean directory", schema: "ext//aws", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
 			wantErr: `invalid schema: "ext//aws" is not a directory path relative to the database root`, attribute: ydbsecret.AttributeSchema},
 		{name: "an absolute directory", schema: "/local/ext", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
-			wantErr: `invalid schema: "/local/ext" starts with a slash; name the directory relative to the database root, without the database's own path`,
+			wantErr:   `invalid schema: "/local/ext" starts with a slash; name the directory relative to the database root, without the database's own path`,
 			attribute: ydbsecret.AttributeSchema},
 		{name: "a trailing slash", schema: "ext/", leaf: "pw", valueEnv: "PTAH_SECRET_PW",
 			wantErr: `invalid schema: "ext/" is not a directory path relative to the database root`, attribute: ydbsecret.AttributeSchema},

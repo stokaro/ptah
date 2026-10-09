@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"ptah.run/config"
-
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
