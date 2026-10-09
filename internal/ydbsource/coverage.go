@@ -3,6 +3,7 @@
 package ydbsource
 
 import (
+	"fmt"
 	"strings"
 
 	"ptah.run/core/coverage"
@@ -137,6 +138,11 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
+	for _, name := range limits.Secrets {
+		if _, err := ydbsecret.ParsePath(name); name != "" && err != nil {
+			return schemaext.Coverage{}, fmt.Errorf("%w: secret limit: %w", schemaext.ErrInvalidValue, err)
+		}
+	}
 	secrets, err := namespaceCoverage(limits.Secrets, ydbsecret.Kind, secretIdentity, ydbsecret.ValidateIdentity, ydbsecret.Coverage)
 	if err != nil {
 		return schemaext.Coverage{}, err
@@ -204,8 +210,13 @@ func namespaceCoverage(limits []string, kind schemaext.Kind,
 // directories and a dot stays in its segment, as in every other spelling of a
 // secret (see [ydbsecret.ParsePath]). `pg.pw` is one secret at the root, never
 // pw in a directory pg.
+//
+// An invalid path, an absolute one included, yields an identity the
+// validation refuses; [Coverage] reports it with [ydbsecret.ParsePath]'s
+// reason first.
 func secretIdentity(name string) objectidentity.ID {
-	return ydbsecret.Ref(ydbsecret.SplitPath(name))
+	ref, _ := ydbsecret.ParsePath(name)
+	return ref
 }
 
 // Scheme paths and database-wide workload names have different grammars. A

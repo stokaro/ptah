@@ -78,7 +78,6 @@ func TestGoSecretLimitsReadThePath(t *testing.T) {
 	}{
 		{name: "a dotted root name", limit: "pg.pw", unmanaged: ydbsecret.Ref("", "pg.pw"), described: ydbsecret.Ref("pg", "pw")},
 		{name: "a directory", limit: "pg/pw", unmanaged: ydbsecret.Ref("pg", "pw"), described: ydbsecret.Ref("", "pg.pw")},
-		{name: "a leading slash", limit: "/pg.pw", unmanaged: ydbsecret.Ref("", "pg.pw"), described: ydbsecret.Ref("pg", "pw")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -89,6 +88,18 @@ func TestGoSecretLimitsReadThePath(t *testing.T) {
 			c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, test.described).State, qt.Equals, schemaext.Complete)
 		})
 	}
+}
+
+// TestGoSecretLimits_RefuseAnAbsolutePath refuses a limit written from the
+// server root. A source names no database, so `/local/ext/pw` cannot be read
+// as the secret ext/pw; read with the slash stripped it would leave a secret
+// local/ext/pw unmanaged and let the plan drop ext/pw.
+func TestGoSecretLimits_RefuseAnAbsolutePath(t *testing.T) {
+	c := qt.New(t)
+	db, err := goschema.ParseSource("limits.go", "package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\"/local/ext/pw\"\ntype Unmanaged struct{}\n")
+	c.Assert(err, qt.ErrorMatches, `.*"/local/ext/pw" is not a secret path \(dir/name\): .*write the secret's path relative to the database root.*`)
+	c.Assert(err, qt.ErrorIs, ydbsecret.ErrAbsolutePath)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 }
 
 // TestYQLSecretLimitsReadThePath reads a YQL header's secret limit as the

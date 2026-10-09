@@ -3,6 +3,7 @@ package ydbsecret
 import (
 	"errors"
 	"fmt"
+	pathpkg "path"
 	"strings"
 
 	"ptah.run/core/objectidentity"
@@ -46,30 +47,54 @@ func RotationRequests(paths []string) ([]schemaext.ChangeRequest, error) {
 	return requests, nil
 }
 
+// ErrAbsolutePath is what [ParsePath] wraps for a path that starts with a
+// slash: such a path names the database it lies in, which nothing that spells
+// a secret this way knows, so it is refused rather than read some other way.
+var ErrAbsolutePath = errors.New("the path starts with a slash; write the secret's path relative to the database root, " +
+	"without the database's own path")
+
+// ErrOutsideDatabase is what [ResolvePath] wraps for an absolute path outside
+// the database it is read against.
+var ErrOutsideDatabase = errors.New("the path lies outside the database")
+
 // ParsePath reads the path of a secret relative to the database root, as YDB
 // writes it and as every Ptah spelling of a secret names it: a slash separates
 // directories, the segment after the last slash is the name, and a dot is part
 // of the segment that holds it. `ext/pg` is the secret pg in the directory ext,
-// and `pg.pw` is the secret pg.pw at the root. Leading and trailing slashes and
-// surrounding space are ignored. A path with an empty, `.` or `..` segment is
-// refused.
+// and `pg.pw` is the secret pg.pw at the root. Surrounding space is ignored. A
+// path that starts with a slash is refused with [ErrAbsolutePath], and one
+// with an empty, `.` or `..` segment, a trailing slash included, is refused.
+// [ResolvePath] reads an absolute path where the database root is known.
 func ParsePath(path string) (objectidentity.ID, error) {
-	ref := Ref(SplitPath(path))
+	trimmed := strings.TrimSpace(path)
+	if strings.HasPrefix(trimmed, "/") {
+		return objectidentity.ID{}, fmt.Errorf("%q is not a secret path (dir/name): %w: %w", path, schemaext.ErrInvalidValue, ErrAbsolutePath)
+	}
+	schema, name := "", trimmed
+	if index := strings.LastIndex(trimmed, "/"); index >= 0 {
+		schema, name = trimmed[:index], trimmed[index+1:]
+	}
+	ref := Ref(schema, name)
 	if err := ValidateIdentity(ref); err != nil {
 		return objectidentity.ID{}, fmt.Errorf("%q is not a secret path (dir/name): %w", path, err)
 	}
 	return ref, nil
 }
 
-// SplitPath reads a secret path relative to the database root as its
-// directory and its name, without validating either: the segments before the
-// last slash are the directory, and the last is the name. Leading and trailing
-// slashes and surrounding space are ignored. [ParsePath] also validates.
-func SplitPath(path string) (schema, name string) {
-	path = strings.Trim(strings.TrimSpace(path), "/")
-	index := strings.LastIndex(path, "/")
-	if index < 0 {
-		return "", path
+// ResolvePath reads path as [ParsePath] does, except that a path starting
+// with a slash is read against root, the absolute path of the database, such
+// as /local: `/local/ext/pg` is the secret ext/pg there. An absolute path
+// outside root is refused with [ErrOutsideDatabase]; with an empty root, every
+// absolute path is refused with [ErrAbsolutePath].
+func ResolvePath(root, path string) (objectidentity.ID, error) {
+	trimmed := strings.TrimSpace(path)
+	if !strings.HasPrefix(trimmed, "/") || strings.Trim(root, "/") == "" {
+		return ParsePath(path)
 	}
-	return path[:index], path[index+1:]
+	database := "/" + strings.Trim(root, "/")
+	relative, under := strings.CutPrefix(pathpkg.Clean(trimmed), database+"/")
+	if !under {
+		return objectidentity.ID{}, fmt.Errorf("%q is outside the database %s: %w: %w", path, database, schemaext.ErrInvalidValue, ErrOutsideDatabase)
+	}
+	return ParsePath(relative)
 }

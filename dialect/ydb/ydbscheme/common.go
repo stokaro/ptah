@@ -1,9 +1,9 @@
 package ydbscheme
 
 import (
+	"errors"
 	"fmt"
 	"maps"
-	"path"
 	"slices"
 	"strings"
 
@@ -88,45 +88,26 @@ func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 	var effects []plangraph.Effect
 	seen := make(map[objectidentity.Key]bool)
 	for _, written := range paths {
-		relative, known, err := secretPathUnder(root, written)
-		if err != nil {
-			return nil, err
-		}
-		if !known {
+		if strings.TrimSpace(written) == "" {
 			continue
 		}
-		ref := ydbsecret.Ref(ydbsecret.SplitPath(relative))
-		if ydbsecret.ValidateIdentity(ref) != nil || seen[ref.Key()] {
+		ref, err := ydbsecret.ResolvePath(root, written)
+		if errors.Is(err, ydbsecret.ErrOutsideDatabase) {
+			return nil, (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+				Code: schemavalidation.InvalidSchema, Kind: "secret", Object: written,
+				Message: fmt.Sprintf("secret path %q is outside the database %s, so no statement of it can read the secret",
+					written, "/"+strings.Trim(root, "/")),
+			}}}).Err(platform.YDB)
+		}
+		// A path written absolute where the root is not known, or one that
+		// cannot name a secret, reads nothing Ptah manages.
+		if err != nil || seen[ref.Key()] {
 			continue
 		}
 		seen[ref.Key()] = true
 		effects = append(effects, plangraph.Effect{Subject: ref, Action: plangraph.Read})
 	}
 	return effects, nil
-}
-
-// secretPathUnder returns the secret path written relative to the database
-// root. It reports false for an empty path and for an absolute one when the
-// root is not known, and refuses an absolute path outside root.
-func secretPathUnder(root, written string) (string, bool, error) {
-	written = strings.TrimSpace(written)
-	switch {
-	case written == "":
-		return "", false, nil
-	case !strings.HasPrefix(written, "/"):
-		return written, true, nil
-	case strings.Trim(root, "/") == "":
-		return "", false, nil
-	}
-	database := "/" + strings.Trim(root, "/")
-	relative, under := strings.CutPrefix(path.Clean(written), database+"/")
-	if !under {
-		return "", false, (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
-			Code: schemavalidation.InvalidSchema, Kind: "secret", Object: written,
-			Message: fmt.Sprintf("secret path %q is outside the database %s, so no statement of it can read the secret", written, database),
-		}}}).Err(platform.YDB)
-	}
-	return relative, true, nil
 }
 
 func connectionSecretPaths(connection ast.ReplicationConnectionSpec) []string {

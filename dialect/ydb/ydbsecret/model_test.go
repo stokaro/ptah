@@ -114,7 +114,7 @@ func TestParsePath_HappyPath(t *testing.T) {
 		{name: "a dotted root name", path: "pg.pw", leaf: "pg.pw"},
 		{name: "a directory", path: "ext/pg", schema: "ext", leaf: "pg"},
 		{name: "dotted segments", path: "a/b.c/d.e", schema: "a/b.c", leaf: "d.e"},
-		{name: "surrounding slashes and space", path: " /ext/pg/ ", schema: "ext", leaf: "pg"},
+		{name: "surrounding space", path: " ext/pg ", schema: "ext", leaf: "pg"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -127,9 +127,9 @@ func TestParsePath_HappyPath(t *testing.T) {
 }
 
 // TestParsePath_FailurePath refuses a path with no name or with an empty,
-// current or parent segment.
+// current or parent segment, a trailing slash included.
 func TestParsePath_FailurePath(t *testing.T) {
-	for _, path := range []string{"", "/", "..", "ext/..", "./pw", "ext//pg", "ext/../pg"} {
+	for _, path := range []string{"", "..", "ext/..", "./pw", "ext//pg", "ext/../pg", "ext/pg/"} {
 		t.Run(path, func(t *testing.T) {
 			c := qt.New(t)
 			ref, err := ydbsecret.ParsePath(path)
@@ -140,11 +140,68 @@ func TestParsePath_FailurePath(t *testing.T) {
 	}
 }
 
+// TestParsePath_RefusesAnAbsolutePath refuses a path written from the server
+// root: nothing that reads it this way knows the database it lies in, and
+// stripping the slash would name another secret.
+func TestParsePath_RefusesAnAbsolutePath(t *testing.T) {
+	for _, path := range []string{"/", "/ext/pg", " /local/ext/pg"} {
+		t.Run(path, func(t *testing.T) {
+			c := qt.New(t)
+			ref, err := ydbsecret.ParsePath(path)
+			c.Assert(err, qt.ErrorIs, ydbsecret.ErrAbsolutePath)
+			c.Assert(err, qt.ErrorMatches, `".*" is not a secret path \(dir/name\): .*write the secret's path relative to the database root.*`)
+			c.Assert(ref, qt.DeepEquals, objectidentity.ID{})
+		})
+	}
+}
+
+// TestResolvePath_HappyPath reads an absolute path against the database root
+// it lies under, and a relative one as ParsePath does.
+func TestResolvePath_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, root, path string
+		schema, leaf     string
+	}{
+		{name: "absolute under the root", root: "/local", path: "/local/ext/pg", schema: "ext", leaf: "pg"},
+		{name: "absolute through a current segment", root: "/local/", path: "/local/./pg.pw", leaf: "pg.pw"},
+		{name: "relative", root: "/local", path: "ext/pg", schema: "ext", leaf: "pg"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref, err := ydbsecret.ResolvePath(test.root, test.path)
+			c.Assert(err, qt.IsNil)
+			c.Assert(ref, qt.DeepEquals, ydbsecret.Ref(test.schema, test.leaf))
+		})
+	}
+}
+
+// TestResolvePath_FailurePath refuses an absolute path outside the root, and
+// any absolute path where the root is not known.
+func TestResolvePath_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, root, path string
+		wantIs           error
+	}{
+		{name: "another database", root: "/local", path: "/other/pg", wantIs: ydbsecret.ErrOutsideDatabase},
+		{name: "out through a parent segment", root: "/local", path: "/local/../other/pg", wantIs: ydbsecret.ErrOutsideDatabase},
+		{name: "no root", path: "/local/ext/pg", wantIs: ydbsecret.ErrAbsolutePath},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref, err := ydbsecret.ResolvePath(test.root, test.path)
+			c.Assert(err, qt.ErrorIs, test.wantIs)
+			c.Assert(ref, qt.DeepEquals, objectidentity.ID{})
+		})
+	}
+}
+
 // TestRotationRequests_HappyPath asks once per secret, in the order given,
 // with the rotate action.
 func TestRotationRequests_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	requests, err := ydbsecret.RotationRequests([]string{" /ext/pg/ ", "pg.pw", "ext/pg"})
+	requests, err := ydbsecret.RotationRequests([]string{" ext/pg ", "pg.pw", "ext/pg"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.DeepEquals, []schemaext.ChangeRequest{
 		{Subject: ydbsecret.Ref("ext", "pg"), Action: ydbsecret.RotateAction},

@@ -20,14 +20,11 @@ func (p *parser) secret() *ast.ExtensionStatement {
 			p.err = fmt.Errorf("YQL schema at position %d: invalid CREATE SECRET declaration; use a database-relative path and WITH (value = $PTAH_SECRET_<name>); literal values and other options are not supported", p.peek().Start)
 		}
 	}()
-	path := decodedName(p.path())
-	schema, name := "", path
-	if slash := strings.LastIndex(path, "/"); slash >= 0 {
-		schema, name = path[:slash], path[slash+1:]
-	}
-	if err := ydbsecret.ValidateIdentity(ydbsecret.Ref(schema, name)); err != nil {
+	ref, err := ydbsecret.ParsePath(decodedName(p.path()))
+	if err != nil {
 		p.failf("%v", err)
 	}
+	schema, name := ref.Schema.Source, ref.Name.Source
 	p.wantWord("WITH")
 	p.want("(")
 	p.wantWord("value")

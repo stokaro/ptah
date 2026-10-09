@@ -137,7 +137,7 @@ func TestCompare_YDBSecretRotatedOnlyWhenAsked(t *testing.T) {
 		{name: "none", want: []schemaext.ChangeRecord{created("", "new_one", "PTAH_SECRET_NEW")}},
 		{name: "by path", requested: []string{"ext/s3"},
 			want: []schemaext.ChangeRecord{created("", "new_one", "PTAH_SECRET_NEW"), rotated("ext", "s3", "PTAH_SECRET_S3")}},
-		{name: "twice, and at the root", requested: []string{"pg_password", "/ext/s3", "pg_password"},
+		{name: "twice, and at the root", requested: []string{"pg_password", "ext/s3", "pg_password"},
 			want: []schemaext.ChangeRecord{created("", "new_one", "PTAH_SECRET_NEW"), rotated("", "pg_password", "PTAH_SECRET_PG_PASSWORD"), rotated("ext", "s3", "PTAH_SECRET_S3")}},
 		{name: "a secret the plan creates", requested: []string{"new_one"},
 			want: []schemaext.ChangeRecord{created("", "new_one", "PTAH_SECRET_NEW")}},

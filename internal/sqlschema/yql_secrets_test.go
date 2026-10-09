@@ -53,6 +53,7 @@ func TestReadYQLSecretRefusalsRedactDeclaration(t *testing.T) {
 		"CREATE SECRET 'SENTINEL' WITH (value = $PTAH_SECRET_OK);",
 		"CREATE SECRET `/local/SENTINEL` WITH (value = $PTAH_SECRET_OK);",
 		"CREATE SECRET `dir/` WITH (value = $PTAH_SECRET_OK);",
+		"CREATE SECRET `ext/pw/` WITH (value = $PTAH_SECRET_OK);",
 		"CREATE SECRET s;",
 	} {
 		t.Run(source, func(t *testing.T) {
