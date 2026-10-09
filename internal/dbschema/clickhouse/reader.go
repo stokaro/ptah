@@ -560,16 +560,14 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 		if err != nil {
 			return nil, schemaext.Knowledge{}, fmt.Errorf("index %s on %s: %w", name, table, err)
 		}
-		// Columns[0] holds the key expression for the common diff layer,
-		// which compares Columns; Expression keeps it whole for the reports
-		// that read an expression index.
+		// Columns[0] holds the whole key expression, which is what the common
+		// diff layer compares and what reports print for an expression index.
 		indexes = append(indexes, catalog.Index{
 			Facets:     settings,
 			Name:       name,
 			TableName:  table,
 			Columns:    []string{expr},
 			Definition: fmt.Sprintf("INDEX %s %s TYPE %s GRANULARITY %d", name, expr, idxType, granularity),
-			Expression: expr,
 		})
 	}
 	if err := rows.Err(); err != nil {

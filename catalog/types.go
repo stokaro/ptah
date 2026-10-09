@@ -866,13 +866,6 @@ type Index struct {
 	// methods index. Readers with no catalog to ask leave it unset.
 	RequiresExtensions []string `json:"requires_extensions,omitempty"`
 
-	// Expression is the full ClickHouse skipping-index expression
-	// (column reference, function call, tuple, etc.). The reader also writes
-	// the expression into Columns[0] for back-compat with the existing diff
-	// layer; Expression is the canonical field for richer diffing once
-	// that's wired up. Empty on non-ClickHouse readers.
-	Expression string `json:"expression,omitempty"`
-
 	// PartitionAttached reports that this index is a partition's copy of an
 	// index on its partitioned parent, attached to that parent index rather
 	// than standing on its own.

@@ -686,9 +686,6 @@ func atlasSchemaInspectColumnType(column catalog.Column) string {
 
 func atlasSchemaInspectIndex(index catalog.Index) atlasSchemaInspectJSONIndex {
 	parts := atlasSchemaInspectIndexParts(index)
-	if index.Expression != "" && len(parts) == 0 {
-		parts = append(parts, atlasSchemaInspectJSONIndexPart{Expr: index.Expression})
-	}
 	return atlasSchemaInspectJSONIndex{
 		Name:   index.Name,
 		Unique: index.IsUnique,
