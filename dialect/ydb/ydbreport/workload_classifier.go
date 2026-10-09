@@ -13,7 +13,7 @@ type ClassifierService struct{}
 // ClassifierDefinitions declares the workload object's inventory metric.
 func ClassifierDefinitions() []schemaext.ReportDefinition {
 	return []schemaext.ReportDefinition{{Kind: ydbworkload.ClassifierKind, DisplayName: "resource pool classifiers",
-		Metrics: []schemaext.MetricDefinition{{Name: "resource_pool_classifiers", Help: "Database-wide resource pool classifiers"}}}}
+		Metrics: []schemaext.MetricDefinition{{Name: "resource_pool_classifiers", Help: "Resource pool classifiers"}}}}
 }
 
 // ReportValues validates the selected representation and counts each object once.

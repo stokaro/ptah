@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
+	"ptah.run/internal/ydbsource"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so
@@ -566,7 +567,7 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 // Common families use [coverage.Set]. Standalone YDB limits use their owners'
 // feature coverage so they cannot recreate a shared dialect model.
 //
-// `kind` is required and names a common coverage kind or coordination_node or streaming_query;
+// `kind` is required and names a common coverage kind or an owned YDB family;
 // an unknown one is refused rather than ignored, because ignoring it turns the
 // absence it was protecting into a removal. `name` is optional: without it the
 // whole family is declined, which is what a bare directive means in the
@@ -584,12 +585,7 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	if strings.EqualFold(strings.TrimSpace(kv["kind"]), "coordination_node") {
-		s.coordinationLimits = append(s.coordinationLimits, kv["name"])
-		return nil
-	}
-	if strings.EqualFold(strings.TrimSpace(kv["kind"]), "streaming_query") {
-		s.streamingLimits = append(s.streamingLimits, kv["name"])
+	if s.featureLimits.Add(kv["kind"], kv["name"]) {
 		return nil
 	}
 	kind, err := coverage.ParseKind(kv["kind"])
@@ -754,54 +750,51 @@ func splitCSVAttribute(value string) []string {
 }
 
 type schemaParseState struct {
-	featureObjects          schemaext.Objects
-	featureCoverage         schemaext.Coverage
-	coordinationLimits      []string
-	streamingLimits         []string
-	filename                string
-	fset                    *token.FileSet
-	tableNameToStructName   map[string]string
-	globalEnumsMap          map[string]schemamodel.Enum
-	embeddedFields          []schemamodel.EmbeddedField
-	schemaFields            []schemamodel.Field
-	schemaIndexes           []schemamodel.Index
-	schemaConstraints       []schemamodel.Constraint
-	tableDirectives         []schemamodel.Table
-	extensions              []schemamodel.Extension
-	functions               []schemamodel.Function
-	sequences               []schemamodel.Sequence
-	domains                 []schemamodel.Domain
-	compositeTypes          []schemamodel.CompositeType
-	ranges                  []schemamodel.Range
-	views                   []schemamodel.View
-	synonyms                []schemamodel.Synonym
-	secrets                 []schemamodel.Secret
-	externalDataSources     []schemamodel.ExternalDataSource
-	externalTables          []schemamodel.ExternalTable
-	extendedProperties      []schemamodel.ExtendedProperty
-	materializedViews       []schemamodel.MaterializedView
-	triggers                []schemamodel.Trigger
-	rlsPolicies             []schemamodel.RLSPolicy
-	rlsEnabledTables        []schemamodel.RLSEnabledTable
-	hypertables             []schemamodel.Hypertable
-	continuousAggregates    []schemamodel.ContinuousAggregate
-	roles                   []schemamodel.Role
-	grants                  []schemamodel.Grant
-	revokedGrants           []schemamodel.Grant
-	defaultPrivileges       []schemamodel.DefaultPrivilege
-	managedData             []schemamodel.ManagedData
-	schemas                 []schemamodel.Schema
-	notDescribed            []coverage.Object
-	changefeeds             []pendingChangefeed
-	columnFamilies          []pendingColumnFamily
-	consumers               []pendingConsumer
-	topics                  []schemamodel.Topic
-	topicConsumers          []pendingTopicConsumer
-	resourcePools           []schemamodel.ResourcePool
-	resourcePoolClassifiers []schemamodel.ResourcePoolClassifier
-	asyncReplications       []schemamodel.AsyncReplication
-	replicationItems        []pendingReplicationItem
-	transfers               []schemamodel.Transfer
+	featureLimits         ydbsource.Limits
+	featureObjects        schemaext.Objects
+	featureCoverage       schemaext.Coverage
+	filename              string
+	fset                  *token.FileSet
+	tableNameToStructName map[string]string
+	globalEnumsMap        map[string]schemamodel.Enum
+	embeddedFields        []schemamodel.EmbeddedField
+	schemaFields          []schemamodel.Field
+	schemaIndexes         []schemamodel.Index
+	schemaConstraints     []schemamodel.Constraint
+	tableDirectives       []schemamodel.Table
+	extensions            []schemamodel.Extension
+	functions             []schemamodel.Function
+	sequences             []schemamodel.Sequence
+	domains               []schemamodel.Domain
+	compositeTypes        []schemamodel.CompositeType
+	ranges                []schemamodel.Range
+	views                 []schemamodel.View
+	synonyms              []schemamodel.Synonym
+	secrets               []schemamodel.Secret
+	externalDataSources   []schemamodel.ExternalDataSource
+	externalTables        []schemamodel.ExternalTable
+	extendedProperties    []schemamodel.ExtendedProperty
+	materializedViews     []schemamodel.MaterializedView
+	triggers              []schemamodel.Trigger
+	rlsPolicies           []schemamodel.RLSPolicy
+	rlsEnabledTables      []schemamodel.RLSEnabledTable
+	hypertables           []schemamodel.Hypertable
+	continuousAggregates  []schemamodel.ContinuousAggregate
+	roles                 []schemamodel.Role
+	grants                []schemamodel.Grant
+	revokedGrants         []schemamodel.Grant
+	defaultPrivileges     []schemamodel.DefaultPrivilege
+	managedData           []schemamodel.ManagedData
+	schemas               []schemamodel.Schema
+	notDescribed          []coverage.Object
+	changefeeds           []pendingChangefeed
+	columnFamilies        []pendingColumnFamily
+	consumers             []pendingConsumer
+	topics                []schemamodel.Topic
+	topicConsumers        []pendingTopicConsumer
+	asyncReplications     []schemamodel.AsyncReplication
+	replicationItems      []pendingReplicationItem
+	transfers             []schemamodel.Transfer
 }
 
 type structDeclaration struct {
@@ -1107,45 +1100,43 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	})
 
 	result := schemamodel.Database{
-		FeatureObjects:          state.featureObjects,
-		FeatureCoverage:         state.featureCoverage,
-		Schemas:                 state.schemas,
-		Tables:                  state.tableDirectives,
-		Fields:                  state.schemaFields,
-		Indexes:                 state.schemaIndexes,
-		Constraints:             state.schemaConstraints,
-		Enums:                   enums,
-		EmbeddedFields:          state.embeddedFields,
-		Extensions:              state.extensions,
-		Functions:               state.functions,
-		Sequences:               state.sequences,
-		Domains:                 state.domains,
-		CompositeTypes:          state.compositeTypes,
-		Ranges:                  state.ranges,
-		Views:                   state.views,
-		Synonyms:                state.synonyms,
-		Topics:                  state.topics,
-		ResourcePools:           state.resourcePools,
-		ResourcePoolClassifiers: state.resourcePoolClassifiers,
-		AsyncReplications:       state.asyncReplications,
-		Transfers:               state.transfers,
-		Secrets:                 state.secrets,
-		ExternalDataSources:     state.externalDataSources,
-		ExternalTables:          state.externalTables,
-		ExtendedProperties:      state.extendedProperties,
-		MaterializedViews:       state.materializedViews,
-		Triggers:                state.triggers,
-		RLSPolicies:             state.rlsPolicies,
-		RLSEnabledTables:        state.rlsEnabledTables,
-		Hypertables:             state.hypertables,
-		ContinuousAggregates:    state.continuousAggregates,
-		Roles:                   state.roles,
-		Grants:                  state.grants,
-		RevokedGrants:           state.revokedGrants,
-		DefaultPrivileges:       state.defaultPrivileges,
-		ManagedData:             state.managedData,
-		NotDescribed:            coverage.Set{}.With(state.notDescribed...),
-		Dependencies:            make(map[string][]string),
+		FeatureObjects:       state.featureObjects,
+		FeatureCoverage:      state.featureCoverage,
+		Schemas:              state.schemas,
+		Tables:               state.tableDirectives,
+		Fields:               state.schemaFields,
+		Indexes:              state.schemaIndexes,
+		Constraints:          state.schemaConstraints,
+		Enums:                enums,
+		EmbeddedFields:       state.embeddedFields,
+		Extensions:           state.extensions,
+		Functions:            state.functions,
+		Sequences:            state.sequences,
+		Domains:              state.domains,
+		CompositeTypes:       state.compositeTypes,
+		Ranges:               state.ranges,
+		Views:                state.views,
+		Synonyms:             state.synonyms,
+		Topics:               state.topics,
+		AsyncReplications:    state.asyncReplications,
+		Transfers:            state.transfers,
+		Secrets:              state.secrets,
+		ExternalDataSources:  state.externalDataSources,
+		ExternalTables:       state.externalTables,
+		ExtendedProperties:   state.extendedProperties,
+		MaterializedViews:    state.materializedViews,
+		Triggers:             state.triggers,
+		RLSPolicies:          state.rlsPolicies,
+		RLSEnabledTables:     state.rlsEnabledTables,
+		Hypertables:          state.hypertables,
+		ContinuousAggregates: state.continuousAggregates,
+		Roles:                state.roles,
+		Grants:               state.grants,
+		RevokedGrants:        state.revokedGrants,
+		DefaultPrivileges:    state.defaultPrivileges,
+		ManagedData:          state.managedData,
+		NotDescribed:         coverage.Set{}.With(state.notDescribed...),
+		Dependencies:         make(map[string][]string),
 	}
 	schemamodel.NormalizeTableScopedNames(&result)
 	schemamodel.BuildDependencyGraph(&result)

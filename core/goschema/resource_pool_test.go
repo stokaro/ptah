@@ -3,13 +3,13 @@ package goschema_test
 import (
 	"testing"
 
-	"ptah.run/dialect/ydb/ydbworkload"
-
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // TestParseSource_ResourcePool_HappyPath reads a YDB resource pool and a
@@ -34,19 +34,17 @@ type Defaults struct{}
 	db, err := goschema.ParseSource("pools.go", source)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.ResourcePools, qt.DeepEquals, []schemamodel.ResourcePool{
-		{StructName: "Reporting", Name: "reporting", Spec: ydbworkload.PoolSpec{
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.ContentEquals, []schemaext.Object{
+		ydbworkload.DesiredPoolObject("reporting", "Reporting", ydbworkload.PoolSpec{
 			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)), DatabaseLoadCPUThreshold: new(80.5),
-		}},
-		{StructName: "Defaults", Name: "default", Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}},
-	})
-	c.Assert(db.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{
-		{StructName: "Reporting", Name: "reporters", Spec: ydbworkload.ClassifierSpec{
+		}),
+		ydbworkload.DesiredPoolObject("default", "Defaults", ydbworkload.PoolSpec{ResourceWeight: new(30.0)}),
+		ydbworkload.DesiredClassifierObject("reporters", "Reporting", ydbworkload.ClassifierSpec{
 			ResourcePool: "reporting", MemberName: "analysts", Rank: 100,
-		}},
-		{StructName: "Defaults", Name: "everyone", Spec: ydbworkload.ClassifierSpec{
-			ResourcePool: "default", Rank: 1000,
-		}},
+		}),
+		ydbworkload.DesiredClassifierObject("everyone", "Defaults", ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 1000}),
 	})
 }
 

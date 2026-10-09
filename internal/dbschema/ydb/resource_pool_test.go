@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"testing"
 
-	"ptah.run/dialect/ydb/ydbworkload"
-
 	qt "github.com/frankban/quicktest"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
-	"ptah.run/catalog"
-	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbworkload"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -26,12 +25,11 @@ func poolSource() fakeSource {
 		tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": plainTable()},
 		pools: ydbschema.ResourcePools{
 			Database: "/local",
-			Pools: []catalog.ResourcePool{
-				{Name: "default"},
-				{Name: "batch", Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}},
+			Objects: []schemaext.Object{
+				ydbworkload.ObservedPoolObject("default", ydbworkload.PoolSpec{}),
+				ydbworkload.ObservedPoolObject("batch", ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}),
+				ydbworkload.ObservedClassifierObject("etl_users", ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}),
 			},
-			Classifiers: []catalog.ResourcePoolClassifier{{Name: "etl_users",
-				Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}},
 		},
 	}
 }
@@ -50,61 +48,66 @@ func TestReadSchema_ResourcePools_HappyPath(t *testing.T) {
 			db, err := reader.ReadSchemaContext(context.Background())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.ResourcePools, qt.DeepEquals, poolSource().pools.Pools)
-			c.Assert(db.ResourcePoolClassifiers, qt.DeepEquals, poolSource().pools.Classifiers)
-			c.Assert(db.NotDescribed.Describes(coverage.ResourcePool), qt.IsTrue)
+			objects, err := db.FeatureObjects.All()
+			c.Assert(err, qt.IsNil)
+			c.Assert(objects, qt.ContentEquals, poolSource().pools.Objects)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("missing")).State, qt.Equals, schemaext.Complete)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("missing")).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }
 
-// What a read records rather than describes: on a line whose flag is off,
-// each pool and classifier by name, so a plan meets none it would refuse; on
-// a dev realm, both kinds whole, since its pools are its database's; and on a
-// database that refuses .sys to the account, both kinds as refused.
+// Unavailable enumeration never means absence, including an empty view on a
+// disabled cluster. Positive observations remain available independently of
+// whether the target currently permits workload DDL.
 func TestReadSchema_ResourcePools_Recorded(t *testing.T) {
-	observed := func(kind coverage.Kind, name string) coverage.Object {
-		return coverage.Object{Kind: kind, Name: name, Reason: coverage.Unsupported, Provenance: coverage.Observed}
-	}
 	refused := poolSource()
 	refused.poolsErr = fmt.Errorf("%w: ABORTED: AccessDenied", ydbschema.ErrResourcePoolsRefused)
-	tests := []struct {
+	empty := poolSource()
+	empty.pools.Objects = nil
+	for _, test := range []struct {
 		name   string
 		source fakeSource
 		root   string
 		caps   capability.Capabilities
-		want   coverage.Set
+		want   []schemaext.Object
 	}{
-		{
-			name: "a line whose flag is off", source: poolSource(), root: "/local", caps: capability.YDB251(),
-			want: coverage.Set{}.With(observed(coverage.ResourcePool, "default"), observed(coverage.ResourcePool, "batch"),
-				observed(coverage.ResourcePoolClassifier, "etl_users")),
-		},
-		{
-			name: "a dev realm", source: realmSource(), root: "/local/ptah_dev/r1",
-			caps: capability.YDB262().With(capability.ResourcePools, true),
-			want: coverage.Set{}.With(
-				coverage.Object{Kind: coverage.ResourcePool, Reason: coverage.OutsideScope, Provenance: coverage.Observed},
-				coverage.Object{Kind: coverage.ResourcePoolClassifier, Reason: coverage.OutsideScope,
-					Provenance: coverage.Observed}),
-		},
-		{
-			name: "an account that may not read .sys", source: refused, root: "/local",
-			caps: capability.YDB262().With(capability.ResourcePools, true),
-			want: coverage.Set{}.With(coverage.Refused(coverage.ResourcePool),
-				coverage.Refused(coverage.ResourcePoolClassifier)),
-		},
-	}
-	for _, test := range tests {
+		{name: "disabled with positive observations", source: poolSource(), root: "/local", caps: capability.YDB251(), want: poolSource().pools.Objects},
+		{name: "disabled with empty views", source: empty, root: "/local", caps: capability.YDB251(), want: make([]schemaext.Object, 0)},
+		{name: "a dev realm", source: realmSource(), root: "/local/ptah_dev/r1", caps: capability.YDB262().With(capability.ResourcePools, true), want: make([]schemaext.Object, 0)},
+		{name: "an account that may not read .sys", source: refused, root: "/local", caps: capability.YDB262().With(capability.ResourcePools, true), want: make([]schemaext.Object, 0)},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := ydbschema.NewReaderFromSource(test.source, test.root, test.caps).
-				ReadSchemaContext(context.Background())
-
+			db, err := ydbschema.NewReaderFromSource(test.source, test.root, test.caps).ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.ResourcePools, qt.HasLen, 0)
-			c.Assert(db.ResourcePoolClassifiers, qt.HasLen, 0)
-			c.Assert(db.NotDescribed, qt.DeepEquals, test.want)
+			objects, err := db.FeatureObjects.All()
+			c.Assert(err, qt.IsNil)
+			c.Assert(objects, qt.ContentEquals, test.want)
+			for _, ref := range []objectidentity.ID{ydbworkload.PoolRef("missing"), ydbworkload.ClassifierRef("missing")} {
+				knowledge := db.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref)
+				c.Assert(knowledge.State, qt.Equals, schemaext.Uninspected)
+				c.Assert(knowledge.Reason, qt.Not(qt.Equals), "")
+			}
+			for _, object := range objects {
+				c.Assert(db.FeatureCoverage.Lookup(object.Value.Kind(), object.Ref).State, qt.Equals, schemaext.Complete)
+			}
 		})
+	}
+}
+
+func TestReadSchema_ResourcePools_UnsupportedSettingsStayUnknown(t *testing.T) {
+	c := qt.New(t)
+	source := poolSource()
+	source.pools.Objects = append(source.pools.Objects,
+		ydbworkload.ObservedPoolObject("broken", ydbworkload.PoolSpec{ResourceWeight: new(-2.0)}),
+		ydbworkload.ObservedClassifierObject("broken", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: -1}),
+	)
+	db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262().With(capability.ResourcePools, true)).ReadSchemaContext(t.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 3)
+	for _, ref := range []objectidentity.ID{ydbworkload.PoolRef("broken"), ydbworkload.ClassifierRef("broken")} {
+		c.Assert(db.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State, qt.Equals, schemaext.Unrepresentable)
 	}
 }
 

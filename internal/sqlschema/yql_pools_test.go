@@ -4,14 +4,12 @@ import (
 	"strings"
 	"testing"
 
-	"ptah.run/dialect/ydb/ydbworkload"
-
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
@@ -20,11 +18,13 @@ func TestReadYQLResourcePools(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT = 4, QUEUE_SIZE = 8, QUERY_MEMORY_LIMIT_PERCENT_PER_NODE = '12.5'); CREATE RESOURCE POOL idle WITH (CONCURRENT_QUERY_LIMIT = '-1'); CREATE RESOURCE POOL CLASSIFIER to_batch WITH (RESOURCE_POOL = 'batch', RANK = 20, MEMBER_NAME = 'worker');"), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.ResourcePools, qt.DeepEquals, []schemamodel.ResourcePool{
-		{Name: "batch", Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(4)), QueueSize: new(int32(8)), QueryMemoryLimitPercentPerNode: new(12.5)}},
-		{Name: "idle"},
+	objects, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.ContentEquals, []schemaext.Object{
+		ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(4)), QueueSize: new(int32(8)), QueryMemoryLimitPercentPerNode: new(12.5)}),
+		ydbworkload.DesiredPoolObject("idle", "", ydbworkload.PoolSpec{}),
+		ydbworkload.DesiredClassifierObject("to_batch", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 20, MemberName: "worker"}),
 	})
-	c.Assert(database.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{{Name: "to_batch", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 20, MemberName: "worker"}}})
 }
 
 func TestReadYQLCoordinationNode(t *testing.T) {
@@ -59,7 +59,6 @@ func TestReadYQLResourceRefusals(t *testing.T) {
 			database, statements, err := sqlschema.Read([]byte(text), "ydb")
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
 			c.Assert(statements, qt.IsNil)
-			c.Assert(database.ResourcePools, qt.HasLen, 0)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
@@ -70,12 +69,16 @@ func TestReadYQLResourcePoolsRoundTrip(t *testing.T) {
 	source := "ALTER RESOURCE POOL default SET (RESOURCE_WEIGHT = 30); CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT = 4, QUEUE_SIZE = 8); CREATE RESOURCE POOL idle WITH (CONCURRENT_QUERY_LIMIT = '-1'); CREATE RESOURCE POOL CLASSIFIER worker WITH (RESOURCE_POOL = 'batch', RANK = 20, MEMBER_NAME = 'worker');"
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
+	want, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
 	for _, caps := range []capability.Capabilities{capability.YDB251(), capability.YDB262()} {
 		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ResourcePools, true))
 		c.Assert(renderErr, qt.IsNil)
 		again, _, readErr := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
 		c.Assert(readErr, qt.IsNil)
-		c.Assert(again.ResourcePools, qt.DeepEquals, database.ResourcePools)
-		c.Assert(again.ResourcePoolClassifiers, qt.DeepEquals, database.ResourcePoolClassifiers)
+		c.Assert(again.FeatureObjects.Len(), qt.Equals, 4)
+		objects, err := again.FeatureObjects.All()
+		c.Assert(err, qt.IsNil)
+		c.Assert(objects, qt.DeepEquals, want)
 	}
 }

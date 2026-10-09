@@ -71,15 +71,20 @@ func (d document) addResourcePools(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("resource pool %q: %w", key, err)
 		}
-		db.ResourcePools = append(db.ResourcePools, schemamodel.ResourcePool{Name: name, Spec: spec})
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbworkload.DesiredPoolObject(name, "", spec))
+		if err != nil {
+			return err
+		}
 	}
 	for _, key := range sortedKeys(d.ResourcePoolClassifiers) {
 		name, spec, err := ydbworkload.ParseClassifier(d.ResourcePoolClassifiers[key].values(key))
 		if err != nil {
 			return fmt.Errorf("resource pool classifier %q: %w", key, err)
 		}
-		db.ResourcePoolClassifiers = append(db.ResourcePoolClassifiers,
-			schemamodel.ResourcePoolClassifier{Name: name, Spec: spec})
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbworkload.DesiredClassifierObject(name, "", spec))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

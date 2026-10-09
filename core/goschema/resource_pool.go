@@ -7,7 +7,6 @@ import (
 
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
 
@@ -28,12 +27,8 @@ func (s *schemaParseState) parseResourcePoolComment(comment *ast.Comment, struct
 	if err != nil {
 		return resourcePoolAttributeError(ctx, "ptah:schema:resourcepool", err)
 	}
-	s.resourcePools = append(s.resourcePools, schemamodel.ResourcePool{
-		StructName: structName,
-		Name:       name,
-		Spec:       spec,
-	})
-	return nil
+	s.featureObjects, err = s.featureObjects.With(ydbworkload.DesiredPoolObject(name, structName, spec))
+	return err
 }
 
 // parseResourcePoolClassifierComment reads a YDB resource pool classifier
@@ -53,12 +48,8 @@ func (s *schemaParseState) parseResourcePoolClassifierComment(comment *ast.Comme
 	if err != nil {
 		return resourcePoolAttributeError(ctx, "ptah:schema:resourcepool:classifier", err)
 	}
-	s.resourcePoolClassifiers = append(s.resourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
-		StructName: structName,
-		Name:       name,
-		Spec:       spec,
-	})
-	return nil
+	s.featureObjects, err = s.featureObjects.With(ydbworkload.DesiredClassifierObject(name, structName, spec))
+	return err
 }
 
 // resourcePoolAttributeError reports a value a pool or classifier declaration

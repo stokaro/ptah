@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/tableref"
 )
 
@@ -57,7 +58,9 @@ func appendPoolDeclaration(database *schemamodel.Database, payload ast.Extension
 		if value.Operation != ydbast.PoolCreate {
 			return false, nil
 		}
-		database.ResourcePools = append(database.ResourcePools, schemamodel.ResourcePool{Name: value.Name, Spec: value.Spec.Clone()})
+		var err error
+		database.FeatureObjects, err = database.FeatureObjects.With(ydbworkload.DesiredPoolObject(value.Name, "", *value.Spec))
+		return true, err
 	case *ydbast.ResourcePoolClassifier:
 		if err := value.Validate(); err != nil {
 			return true, err
@@ -65,9 +68,10 @@ func appendPoolDeclaration(database *schemamodel.Database, payload ast.Extension
 		if value.Operation != ydbast.PoolCreate {
 			return false, nil
 		}
-		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: value.Name, Spec: *value.Spec})
+		var err error
+		database.FeatureObjects, err = database.FeatureObjects.With(ydbworkload.DesiredClassifierObject(value.Name, "", *value.Spec))
+		return true, err
 	default:
 		return false, nil
 	}
-	return true, nil
 }

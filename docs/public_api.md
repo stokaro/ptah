@@ -66,6 +66,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbschema`
 - `ptah.run/dialect/ydb/ydbscheme`
 - `ptah.run/dialect/ydb/ydbstreaming`
+- `ptah.run/dialect/ydb/ydbsyntax`
+- `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/migration/datadiff`
@@ -744,9 +746,34 @@ neither. Invalid operations fail before any SQL is returned.
 
 Pool and classifier payloads expose structured subjects and workload effects.
 Safety reports retain their names and classify routing or limit changes as
-warnings. Removing the server-owned `default` pool is refused. Settings remain
-in `core/ast.ResourcePoolSpec` and `ResourcePoolClassifierSpec`; concrete
-operation nodes belong to `ydbast`.
+warnings. Removing the server-owned `default` pool is refused.
+`dialect/ydb/ydbworkload` owns `PoolSpec`, `ClassifierSpec`, and distinct desired
+and observed values. Go, YAML, and YQL sources carry these values in
+`Database.FeatureObjects`, with exact database-scoped names. Dots in a pool or
+classifier name are literal. They never introduce a scheme directory.
+
+The workload services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
+`ydbreport` handle these objects through the selected runtime. Changes retain
+complete before and after settings. `ydbplan.WorkloadStreamingService` plans
+pools, classifiers, and streaming queries together: a classifier rank swap
+releases occupied ranks before assigning them, and running queries stop before
+workload mutations and resume afterward. These operations cannot run inside a
+SQL transaction.
+
+`ydbast.DefaultPoolSettings` is a set-only declaration of the existing default
+pool. It preserves omitted settings without inventing an observation. An empty
+declaration emits no SQL. A migration that changes default-pool settings still
+requires an inspected before state.
+
+Pool and classifier inspection records namespace and subject coverage
+separately. A refused read, a directory outside the database-wide scope, or an
+empty system view without enabled resource-pool support cannot establish
+absence. Valid returned objects remain captured independently of target
+capabilities. Unsupported settings leave the affected subject unrepresentable.
+Go export refuses incomplete workload coverage instead of discarding it.
+
+`dialect/ydb/ydbsyntax` provides YQL identifier and string-literal quoting to
+owner packages without importing host implementation helpers.
 
 `dialect/ydb/ydbstreaming` owns the query `Spec` and its desired and observed
 representations in `Database.FeatureObjects`. `Desired.AllowStateReset` carries

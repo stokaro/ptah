@@ -145,7 +145,7 @@ func (s *schemaParseState) attachChangefeeds() error {
 		}
 	}
 	var err error
-	s.featureCoverage, err = ydbsource.Coverage(ydbsource.Limits{Coordination: s.coordinationLimits, Streaming: s.streamingLimits})
+	s.featureCoverage, err = ydbsource.Coverage(s.featureLimits)
 	return err
 }
 

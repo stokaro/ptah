@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/ydbsource"
 )
 
@@ -26,6 +27,9 @@ func (ctx *renderContext) captureFeatureObjects() error {
 		return err
 	}
 	if err := ydbsource.ValidateStreamingExport(ctx.db.FeatureCoverage); err != nil {
+		return err
+	}
+	if err := ydbsource.ValidateWorkloadExport(ctx.db.FeatureCoverage); err != nil {
 		return err
 	}
 	for _, facets := range ctx.db.FacetSlots() {
@@ -51,6 +55,23 @@ func (ctx *renderContext) captureFeatureObjects() error {
 }
 
 func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents map[objectidentity.Key]struct{}) error {
+	if pool, ok := object.Value.(*ydbworkload.DesiredPool); ok {
+		if err := ydbworkload.ValidatePoolRef(object.Ref, pool.Spec); err != nil {
+			return err
+		}
+		ctx.workloadAnnotations = append(ctx.workloadAnnotations, resourcePoolAnnotation(object.Ref.Name.Source, pool.Spec))
+		return nil
+	}
+	if classifier, ok := object.Value.(*ydbworkload.DesiredClassifier); ok {
+		if err := ydbworkload.ValidateIdentity(object.Ref, ydbworkload.ClassifierKind); err != nil {
+			return err
+		}
+		if err := ydbworkload.ValidateClassifier(classifier.Spec); err != nil {
+			return err
+		}
+		ctx.workloadAnnotations = append(ctx.workloadAnnotations, resourcePoolClassifierAnnotation(object.Ref.Name.Source, classifier.Spec))
+		return nil
+	}
 	if query, ok := object.Value.(*ydbstreaming.Desired); ok {
 		if err := ydbstreaming.ValidateIdentity(object.Ref); err != nil {
 			return err

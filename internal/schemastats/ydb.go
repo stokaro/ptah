@@ -15,8 +15,6 @@ func ydbMetrics(db *schemamodel.Database) []Metric {
 	return []Metric{
 		{Name: "topics", Help: "Standalone topics", Value: len(db.Topics)},
 		{Name: "topic_consumers", Help: "Consumers of standalone topics", Value: topicConsumers},
-		{Name: "resource_pools", Help: "Resource pools", Value: len(db.ResourcePools)},
-		{Name: "resource_pool_classifiers", Help: "Resource pool classifiers", Value: len(db.ResourcePoolClassifiers)},
 		{Name: "async_replications", Help: "Async replications", Value: len(db.AsyncReplications)},
 		{Name: "transfers", Help: "Transfers", Value: len(db.Transfers)},
 		{Name: "secrets", Help: "Secret objects, without their values", Value: len(db.Secrets)},

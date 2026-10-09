@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // ValidateCoordinationExport refuses captured limits a declaration format
@@ -20,6 +21,15 @@ func ValidateCoordinationExport(coverage schemaext.Coverage) error {
 // as a complete streaming-query declaration.
 func ValidateStreamingExport(coverage schemaext.Coverage) error {
 	return validateExportCoverage(coverage, ydbstreaming.Kind, "streaming query")
+}
+
+// ValidateWorkloadExport refuses incomplete pool or classifier observations
+// before a Go export could turn their missing declarations into known absence.
+func ValidateWorkloadExport(coverage schemaext.Coverage) error {
+	if err := validateExportCoverage(coverage, ydbworkload.PoolKind, "resource pool"); err != nil {
+		return err
+	}
+	return validateExportCoverage(coverage, ydbworkload.ClassifierKind, "resource pool classifier")
 }
 
 func validateExportCoverage(coverage schemaext.Coverage, kind schemaext.Kind, label string) error {

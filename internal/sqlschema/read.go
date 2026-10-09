@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"ptah.run/core/ast"
+	schemacoverage "ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/parser"
@@ -53,7 +54,15 @@ func ReadOnto(
 		return schemamodel.Database{}, nil, err
 	}
 	if platform.NormalizeDialect(dialect) == platform.YDB {
-		database.FeatureCoverage, err = ydbsource.Coverage(ydbsource.Limits{})
+		header, err := schemacoverage.DecodeHeader(string(data))
+		if err != nil {
+			return schemamodel.Database{}, nil, err
+		}
+		var limits ydbsource.Limits
+		for _, object := range header.Objects {
+			limits.Add(string(object.Kind), object.Name)
+		}
+		database.FeatureCoverage, err = ydbsource.Coverage(limits)
 		if err != nil {
 			return schemamodel.Database{}, nil, err
 		}

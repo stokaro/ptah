@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 )
@@ -39,11 +40,39 @@ func ValidateObjects(target string, caps capability.Capabilities, objects schema
 			if err := validateStreamingObject(target, caps, object, value); err != nil {
 				return err
 			}
+		case *ydbworkload.DesiredPool:
+			if err := validatePoolObject(target, caps, object, value); err != nil {
+				return err
+			}
+		case *ydbworkload.DesiredClassifier:
+			if err := validateClassifierObject(target, caps, object, value); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("%w: YDB does not render feature object %s with payload %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
 		}
 	}
 	return nil
+}
+
+func validatePoolObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbworkload.DesiredPool) error {
+	if err := ydbworkload.ValidatePoolRef(object.Ref, value.Spec); err != nil {
+		return fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
+	}
+	context := renderer.ExtensionContext{Target: target, Capabilities: caps}
+	if object.Ref.Name.Source == ydbworkload.DefaultPool {
+		return ydbrender.DefaultPoolSettingsHandler().Validate(context, &ydbast.DefaultPoolSettings{Spec: value.Spec})
+	}
+	return ydbrender.ResourcePoolHandler().Validate(context,
+		&ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: object.Ref.Name.Source, Spec: &value.Spec})
+}
+
+func validateClassifierObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbworkload.DesiredClassifier) error {
+	if err := ydbworkload.ValidateIdentity(object.Ref, ydbworkload.ClassifierKind); err != nil {
+		return fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
+	}
+	return ydbrender.ResourcePoolClassifierHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps},
+		&ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: object.Ref.Name.Source, Spec: &value.Spec})
 }
 
 func validateChangefeedObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbschema.DesiredChangefeed) error {

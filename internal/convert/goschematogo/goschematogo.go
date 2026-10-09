@@ -245,6 +245,7 @@ func validatePackageName(name string) error {
 type renderContext struct {
 	coordinationAnnotations []string
 	streamingAnnotations    []string
+	workloadAnnotations     []string
 	changefeedsByTable      map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                      *schemamodel.Database
 	opts                    Options
@@ -405,8 +406,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 // hasYDBObjects reports declarations of the YDB-specific global families.
 func (ctx *renderContext) hasYDBObjects() bool {
 	return len(ctx.db.Topics) > 0 ||
-		len(ctx.db.ResourcePools) > 0 ||
-		len(ctx.db.ResourcePoolClassifiers) > 0 ||
+		len(ctx.workloadAnnotations) > 0 ||
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
 		len(ctx.coordinationAnnotations) > 0 ||
@@ -1275,13 +1275,8 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 	)
 }
 
-// resourcePoolAnnotations writes each YDB resource pool, then each
-// classifier, as its annotation, in name order. A pool names only the
-// settings it holds, since a setting left out has no limit.
-func resourcePoolAnnotations(
-	pools []schemamodel.ResourcePool,
-	classifiers []schemamodel.ResourcePoolClassifier,
-) []string {
+// resourcePoolAnnotation preserves unset settings and explicit zero limits.
+func resourcePoolAnnotation(name string, spec ydbworkload.PoolSpec) string {
 	integer := func(name string, value *int32) attr {
 		if value == nil {
 			return attr{name: name}
@@ -1294,35 +1289,26 @@ func resourcePoolAnnotations(
 		}
 		return attr{name: name, value: strconv.FormatFloat(*value, 'f', -1, 64), set: true}
 	}
-	sortedPools := slices.SortedFunc(slices.Values(pools), func(a, b schemamodel.ResourcePool) int {
-		return strings.Compare(a.Name, b.Name)
-	})
-	comments := make([]string, 0, len(pools)+len(classifiers))
-	for _, pool := range sortedPools {
-		spec := pool.Spec
-		comments = append(comments, annotation("ptah:schema:resourcepool",
-			attr{name: ydbworkload.AttributeName, value: pool.Name, set: true},
-			integer(ydbworkload.AttributeConcurrentQueryLimit, spec.ConcurrentQueryLimit),
-			integer(ydbworkload.AttributeQueueSize, spec.QueueSize),
-			fraction(ydbworkload.AttributeDatabaseLoadCPUThreshold, spec.DatabaseLoadCPUThreshold),
-			fraction(ydbworkload.AttributeQueryMemoryLimitPercentPerNode, spec.QueryMemoryLimitPercentPerNode),
-			fraction(ydbworkload.AttributeQueryCPULimitPercentPerNode, spec.QueryCPULimitPercentPerNode),
-			fraction(ydbworkload.AttributeTotalCPULimitPercentPerNode, spec.TotalCPULimitPercentPerNode),
-			fraction(ydbworkload.AttributeResourceWeight, spec.ResourceWeight),
-		))
-	}
-	sortedClassifiers := slices.SortedFunc(slices.Values(classifiers),
-		func(a, b schemamodel.ResourcePoolClassifier) int { return strings.Compare(a.Name, b.Name) })
-	for _, classifier := range sortedClassifiers {
-		comments = append(comments, annotation("ptah:schema:resourcepool:classifier",
-			attr{name: ydbworkload.AttributeName, value: classifier.Name, set: true},
-			attr{name: ydbworkload.AttributeResourcePool, value: classifier.Spec.ResourcePool, set: true},
-			attr{name: ydbworkload.AttributeMemberName, value: classifier.Spec.MemberName,
-				set: classifier.Spec.MemberName != ""},
-			attr{name: ydbworkload.AttributeRank, value: strconv.FormatInt(classifier.Spec.Rank, 10), set: true},
-		))
-	}
-	return comments
+	return annotation("ptah:schema:resourcepool",
+		attr{name: ydbworkload.AttributeName, value: name, set: true},
+		integer(ydbworkload.AttributeConcurrentQueryLimit, spec.ConcurrentQueryLimit),
+		integer(ydbworkload.AttributeQueueSize, spec.QueueSize),
+		fraction(ydbworkload.AttributeDatabaseLoadCPUThreshold, spec.DatabaseLoadCPUThreshold),
+		fraction(ydbworkload.AttributeQueryMemoryLimitPercentPerNode, spec.QueryMemoryLimitPercentPerNode),
+		fraction(ydbworkload.AttributeQueryCPULimitPercentPerNode, spec.QueryCPULimitPercentPerNode),
+		fraction(ydbworkload.AttributeTotalCPULimitPercentPerNode, spec.TotalCPULimitPercentPerNode),
+		fraction(ydbworkload.AttributeResourceWeight, spec.ResourceWeight),
+	)
+}
+
+func resourcePoolClassifierAnnotation(name string, spec ydbworkload.ClassifierSpec) string {
+	return annotation("ptah:schema:resourcepool:classifier",
+		attr{name: ydbworkload.AttributeName, value: name, set: true},
+		attr{name: ydbworkload.AttributeResourcePool, value: spec.ResourcePool, set: true},
+		attr{name: ydbworkload.AttributeMemberName, value: spec.MemberName,
+			set: spec.MemberName != ""},
+		attr{name: ydbworkload.AttributeRank, value: strconv.FormatInt(spec.Rank, 10), set: true},
+	)
 }
 
 // coordinationNodeAnnotation declares a YDB coordination node with the
@@ -1716,7 +1702,7 @@ func sortedImportPaths(values map[string]struct{}) []string {
 
 // writeResourcePools writes the database resource pools and their classifiers in name order.
 func (ctx *renderContext) writeResourcePools(w *sourceWriter) {
-	for _, comment := range resourcePoolAnnotations(ctx.db.ResourcePools, ctx.db.ResourcePoolClassifiers) {
+	for _, comment := range ctx.workloadAnnotations {
 		w.writeComment(comment)
 	}
 }

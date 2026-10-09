@@ -3,8 +3,6 @@ package builtin_test
 import (
 	"testing"
 
-	"ptah.run/dialect/ydb/ydbworkload"
-
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
@@ -13,12 +11,13 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
 func TestWorkloadOperationsUseRegisteredCodecsAndOwnerRendering(t *testing.T) {
-	for _, fixture := range []extensionFixture{poolFixture(), classifierFixture()} {
+	for _, fixture := range []extensionFixture{poolFixture(), classifierFixture(), defaultPoolFixture()} {
 		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
 			c := qt.New(t)
 			runtime, err := builtin.New()

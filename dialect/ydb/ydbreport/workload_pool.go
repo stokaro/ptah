@@ -13,7 +13,7 @@ type PoolService struct{}
 // PoolDefinitions declares the workload object's inventory metric.
 func PoolDefinitions() []schemaext.ReportDefinition {
 	return []schemaext.ReportDefinition{{Kind: ydbworkload.PoolKind, DisplayName: "resource pools",
-		Metrics: []schemaext.MetricDefinition{{Name: "resource_pools", Help: "Database-wide resource pools"}}}}
+		Metrics: []schemaext.MetricDefinition{{Name: "resource_pools", Help: "Resource pools"}}}}
 }
 
 // ReportValues validates the selected representation and counts each object once.

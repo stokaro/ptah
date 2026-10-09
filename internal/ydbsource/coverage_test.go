@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/goschematogo"
@@ -49,6 +50,8 @@ func TestEmptySourcesRecordSupportedFeatureNamespaces(t *testing.T) {
 			c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "absent")).State, qt.Equals, schemaext.Complete)
 			c.Assert(db.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef("app", "t", "absent")).State, qt.Equals, test.changefeeds)
 			c.Assert(db.FeatureCoverage.Lookup(ydbstreaming.Kind, ydbstreaming.Ref("app", "absent")).State, qt.Equals, test.changefeeds)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("absent")).State, qt.Equals, test.changefeeds)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("absent")).State, qt.Equals, test.changefeeds)
 		})
 	}
 }
