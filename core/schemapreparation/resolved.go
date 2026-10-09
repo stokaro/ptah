@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"ptah.run/core/internal/capturefacets"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -13,15 +14,9 @@ func acceptResolvedFacets(source Table, records []schemaext.FacetRecord, semanti
 	if len(source.ResolvedFacets) != 0 {
 		return fmt.Errorf("%w: preparation input already carries resolved facets", ErrInvalid)
 	}
-	declared := map[objectidentity.Key]schemaext.FacetRecord{
-		source.Subject.Key(): {Subject: source.Subject, Values: source.Desired.Table.Facets},
-	}
-	for _, index := range source.Desired.Indexes {
-		subject := objectidentity.NewBuilder(semantics).IndexParts(source.Subject.Schema.Source, source.Subject.Name.Source, index.Name)
-		if _, duplicate := declared[subject.Key()]; duplicate {
-			return fmt.Errorf("%w: duplicate declared facet owner %s", ErrInvalid, subject)
-		}
-		declared[subject.Key()] = schemaext.FacetRecord{Subject: subject, Values: index.Facets}
+	declared, err := capturefacets.Declared(source.Desired, source.Subject, semantics)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	seen := make(map[objectidentity.Key]bool)
 	for _, record := range records {

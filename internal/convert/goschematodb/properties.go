@@ -58,32 +58,14 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err != nil {
 		return nil, nil, err
 	}
-	for i, table := range projection.Tables {
-		values, err := table.Facets.Values()
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, value := range values {
-			facets := database.Tables[i].Facets
-			_, present, lookupErr := facets.Get(value.Kind())
-			if lookupErr != nil {
-				return nil, nil, lookupErr
-			}
-			if present {
-				facets, err = facets.Replace(value)
-			} else {
-				facets, err = facets.With(value)
-				if err == nil {
-					facets, err = facets.WithTargetScope(value.Kind(), selected.Name())
-				}
-			}
-			database.Tables[i].Facets = facets
-			if err != nil {
-				return nil, nil, err
-			}
-		}
+	slots, err := creationFacetSlots(database, semantics)
+	if err != nil {
+		return nil, nil, err
 	}
-	database.FeatureCoverage, err = projectedTableCoverage(database, request, runtime.Codecs())
+	if err := applyCreationFacets(slots, projection.Tables, selected.Name()); err != nil {
+		return nil, nil, err
+	}
+	database.FeatureCoverage, err = projectedFacetCoverage(database.FeatureCoverage, slots, runtime.Codecs())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -95,9 +77,9 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 
 // An unenrolled declaration gains knowledge only for successfully projected
 // values. Explicit source limitations are retained even when a value is present.
-func projectedTableCoverage(db *schemamodel.Database, request schemaprojection.TableCreationRequest, registry schemaext.Registry) (schemaext.Coverage, error) {
-	kinds := db.FeatureCoverage.KindRecords()
-	subjects := db.FeatureCoverage.SubjectRecords()
+func projectedFacetCoverage(source schemaext.Coverage, slots []creationFacetSlot, registry schemaext.Registry) (schemaext.Coverage, error) {
+	kinds := source.KindRecords()
+	subjects := source.SubjectRecords()
 	enrolled := make(map[schemaext.Kind]bool)
 	added := make(map[schemaext.Kind]bool)
 	definitions := make(map[schemaext.Kind]schemaext.CodecIdentity)
@@ -109,24 +91,24 @@ func projectedTableCoverage(db *schemamodel.Database, request schemaprojection.T
 			definitions[definition.Kind] = definition
 		}
 	}
-	for i, table := range db.Tables {
-		for _, kind := range table.Facets.Kinds() {
+	for _, slot := range slots {
+		for _, kind := range slot.values.Kinds() {
 			if enrolled[kind] {
 				continue
 			}
 			model, found := definitions[kind]
 			if !found {
-				return schemaext.Coverage{}, fmt.Errorf("%w: projected table facet %q", schemaext.ErrUnknownCodec, kind)
+				return schemaext.Coverage{}, fmt.Errorf("%w: projected facet %q", schemaext.ErrUnknownCodec, kind)
 			}
 			if !added[kind] {
-				kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only projected declarations describe table settings"}})
+				kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only projected declarations describe these settings"}})
 				added[kind] = true
 			}
-			subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: request.Tables[i].Subject, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+			subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: slot.subject, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
 		}
 	}
 	if len(kinds) == 0 {
-		return db.FeatureCoverage, nil
+		return source, nil
 	}
 	return schemaext.NewCoverage(schemaext.Desired, kinds, subjects)
 }

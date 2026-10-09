@@ -17,8 +17,12 @@ func captureFeatureStates(desired *schemamodel.Database, current *catalog.Databa
 	observed = schemaext.FeatureState{Objects: current.FeatureObjects, Coverage: current.FeatureCoverage}
 	// Other attachment points require their own identity capture before they can
 	// participate. Refuse them here so no attached value silently disappears.
+	declaredSlots, err := declaredFacetSlots(desired, target, semantics)
+	if err != nil {
+		return schemaext.FeatureState{}, schemaext.FeatureState{}, err
+	}
 	captured := make(map[*schemaext.Facets]bool)
-	for _, slot := range declaredFacetSlots(desired, target, semantics) {
+	for _, slot := range declaredSlots {
 		captured[slot.values] = true
 		if !slot.values.IsZero() {
 			declared.Facets = append(declared.Facets, schemaext.FacetRecord{Subject: slot.subject, Values: *slot.values})
@@ -45,8 +49,12 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 	effective.FeatureObjects, effective.FeatureCoverage = state.Objects, state.Coverage
 	effective.Tables = slices.Clone(desired.Tables)
 	effective.Indexes = slices.Clone(desired.Indexes)
+	declared, err := declaredFacetSlots(&effective, target, semantics)
+	if err != nil {
+		return nil, err
+	}
 	positions := make(map[objectidentity.Key]*schemaext.Facets)
-	for _, slot := range declaredFacetSlots(&effective, target, semantics) {
+	for _, slot := range declared {
 		if _, duplicate := positions[slot.subject.Key()]; duplicate {
 			return nil, fmt.Errorf("%w: duplicate facet owner %s", ptaherr.ErrInvalidSchemaDiff, slot.subject)
 		}

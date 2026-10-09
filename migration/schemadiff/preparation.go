@@ -82,8 +82,12 @@ func applyResolvedFacets(desired *schemamodel.Database, prepared map[objectident
 	resolved := *desired
 	resolved.Tables = slices.Clone(desired.Tables)
 	resolved.Indexes = slices.Clone(desired.Indexes)
+	declared, err := declaredFacetSlots(&resolved, target, semantics)
+	if err != nil {
+		return nil, err
+	}
 	slots := make(map[objectidentity.Key]*schemaext.Facets)
-	for _, slot := range declaredFacetSlots(&resolved, target, semantics) {
+	for _, slot := range declared {
 		slots[slot.subject.Key()] = slot.values
 	}
 	for _, table := range prepared {

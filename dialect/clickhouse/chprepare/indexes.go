@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/dialect/clickhouse/chresolve"
 	"ptah.run/dialect/clickhouse/chschema"
@@ -16,22 +17,19 @@ func prepareIndexes(table *schemapreparation.Table, semantics identifier.Semanti
 	builder := objectidentity.NewBuilder(semantics)
 	current := make(map[objectidentity.Key]catalog.Index, len(table.Current.Indexes))
 	for _, index := range table.Current.Indexes {
-		subject := builder.Index(index.QualifiedTableName(), index.Name)
+		subject := builder.IndexParts(index.Schema, index.TableName, index.Name)
 		if _, duplicate := current[subject.Key()]; duplicate {
 			return fmt.Errorf("%w: duplicate observed index %s", schemapreparation.ErrInvalid, subject)
 		}
 		current[subject.Key()] = index
 	}
 	for _, index := range table.Desired.Indexes {
-		value, found, err := schemaext.FacetAs[*chschema.DesiredIndex](index.Facets, chschema.IndexKind)
+		value, err := declaredIndexSettings(index)
 		if err != nil {
 			return err
 		}
-		if !found {
+		if value == nil {
 			continue
-		}
-		if index.Type != "" || index.Granularity != 0 {
-			return fmt.Errorf("%w: ClickHouse index %q settings must be decoded before preparation", schemaext.ErrInvalidValue, index.Name)
 		}
 		subject := builder.IndexParts(table.Subject.Schema.Source, table.Subject.Name.Source, index.Name)
 		request, err := indexResolution(table, subject, current)
@@ -50,6 +48,20 @@ func prepareIndexes(table *schemapreparation.Table, semantics identifier.Semanti
 		table.ResolvedFacets = append(table.ResolvedFacets, schemaext.FacetRecord{Subject: subject, Values: facets})
 	}
 	return nil
+}
+
+// Preparation and CREATE prediction consume the same decoded representation.
+// Accepting common settings beside a native value would give each stage a
+// different possible authority for the index's type and granularity.
+func declaredIndexSettings(index schemamodel.Index) (*chschema.DesiredIndex, error) {
+	value, found, err := schemaext.FacetAs[*chschema.DesiredIndex](index.Facets, chschema.IndexKind)
+	if err != nil || !found {
+		return nil, err
+	}
+	if index.Type != "" || index.Granularity != 0 {
+		return nil, fmt.Errorf("%w: ClickHouse index %q settings must be decoded before preparation", schemaext.ErrInvalidValue, index.Name)
+	}
+	return value, nil
 }
 
 func indexResolution(table *schemapreparation.Table, subject objectidentity.ID, current map[objectidentity.Key]catalog.Index) (chresolve.IndexRequest, error) {

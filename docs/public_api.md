@@ -660,10 +660,11 @@ type and granularity `1`. These rules do not describe server configuration.
 Existing indexes retain usable observations for omitted settings. Key expressions
 remain in the common index, and unknown required settings return `ErrUnknownCurrent`.
 
-`chconvert.Service` projects complete observed settings into explicit declarations
-and fully resolved declarations into predicted observations. It preserves empty
-properties and separate sorting and primary keys. Unresolved settings, invalid
-inputs, and cancellation return no partial batch. The migration generator uses
+`chconvert.Service` projects complete table and index observations into explicit
+declarations and fully resolved declarations into predicted observations. It
+preserves empty table properties, separate sorting and primary keys, and unsigned
+64-bit index granularity. Unresolved settings, invalid inputs, and cancellation
+return no partial batch, including mixed table and index batches. The migration generator uses
 this conversion to capture the table that a reverse DROP removes; the prediction
 does not replace a catalog read.
 
@@ -723,16 +724,17 @@ before comparison. Incomplete or invalid replies and cancellation return no resu
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for offline
 source projection. It receives decoded table captures and returns a complete
-ordered batch of computed facets and column key membership. Computed facets use
-the desired representation for subsequent owner conversion; they may describe
-creation defaults absent from the source. They cannot restore an excluded kind
-or change a source binding. The runtime validates identities, keys, model
-ownership, and codecs. Missing services, partial replies, errors, and cancellation
+ordered batch of computed facets and column key membership. `TableCreation.Facets`
+contains `schemaext.FacetRecord` values keyed by the captured table or index.
+Computed facets use the desired representation for subsequent owner conversion;
+they may describe creation defaults absent from the source. Duplicate or invented
+owners, changed identity spelling, excluded kinds, and new bindings are refused.
+The runtime validates keys, model ownership, and codecs. Missing services, partial replies, errors, and cancellation
 return no prediction. `IdentityCreations` explicitly selects no additional effects.
 
 Document projection preserves explicit source knowledge limits. New computed
 kinds are bound to the selected target and gain coverage only for their captured
-tables. The source declaration stays unchanged. `CompareSchemas` requires
+owners; sibling objects remain uninspected. The source declaration stays unchanged. `CompareSchemas` requires
 `schemadiff.DocumentRuntime`; it predicts the current document before comparison.
 Column-only changes use representation conversion without applying table
 creation defaults.
@@ -743,6 +745,8 @@ retaining observed values. Typed index settings use `chresolve.Index`. Captured
 index settings remain usable when sibling enumeration is incomplete; an explicit
 limit on that index takes precedence. Native index settings must be decoded into
 facets before preparation, without competing common type or granularity values.
+CREATE prediction resolves typed index facets independently of table-facet
+exclusions. Key expressions stay in common index fields and parts.
 
 The shared comparator consumes prepared column flags
 without reading ClickHouse clauses. Tables sharing a Go struct retain separate

@@ -45,7 +45,7 @@ func creationRequest() schemaprojection.TableCreationRequest {
 func predictCreation(_ context.Context, request schemaprojection.TableCreationRequest) (schemaprojection.TableCreationResult, error) {
 	return schemaprojection.TableCreationResult{Complete: true, Tables: []schemaprojection.TableCreation{{
 		Subject:           request.Tables[0].Subject,
-		Facets:            must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst, Number: 2})),
+		Facets:            []schemaext.FacetRecord{{Subject: request.Tables[0].Subject, Values: must.Must(schemaext.NewFacets(&conversionValue{ID: conversionFirst, Number: 2}))}},
 		ColumnPrimaryKeys: []string{"id"}, ColumnPrimaryKeysPrepared: true,
 	}}}, nil
 }
@@ -68,7 +68,7 @@ func TestCreationProjectionSeparatesDefaultsFromSource(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(received.Target, qt.Equals, "custom")
 	c.Assert(result.Tables[0].ColumnPrimaryKeys, qt.DeepEquals, []string{"id"})
-	value, found, err := schemaext.FacetAs[*conversionValue](result.Tables[0].Facets, conversionFirst)
+	value, found, err := schemaext.FacetAs[*conversionValue](result.Tables[0].Facets[0].Values, conversionFirst)
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
 	c.Assert(value.Number, qt.Equals, 2)
@@ -91,7 +91,7 @@ func TestCreationProjectionRejectsMalformedReplies(t *testing.T) {
 		{"duplicate key column", func(r *schemaprojection.TableCreationResult) { r.Tables[0].ColumnPrimaryKeys = []string{"id", "id"} }},
 		{"missing key receipt", func(r *schemaprojection.TableCreationResult) { r.Tables[0].ColumnPrimaryKeysPrepared = false }},
 		{"provider binding", func(r *schemaprojection.TableCreationResult) {
-			r.Tables[0].Facets = must.Must(r.Tables[0].Facets.WithTargetScope(conversionFirst, "custom"))
+			r.Tables[0].Facets[0].Values = must.Must(r.Tables[0].Facets[0].Values.WithTargetScope(conversionFirst, "custom"))
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

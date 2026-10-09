@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 
+	"ptah.run/core/internal/capturefacets"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -42,7 +43,8 @@ func (r TableCreationRequest) Clone() TableCreationRequest {
 }
 
 // TableCreation contains computed effects, separate from authored intent. Facets
-// use the Desired representation for subsequent owner conversion to Observed.
+// identifies the captured table or index owning each computed value set, using
+// the Desired representation for subsequent owner conversion to Observed.
 // They may supply undeclared defaults, but cannot restore an excluded kind.
 // Values carry no target bindings; the host retains existing bindings and binds
 // new kinds to the selected target. Missing kinds retain their source values.
@@ -50,7 +52,7 @@ func (r TableCreationRequest) Clone() TableCreationRequest {
 // an empty prepared list means the table has no primary-key columns.
 type TableCreation struct {
 	Subject                   objectidentity.ID
-	Facets                    schemaext.Facets
+	Facets                    []schemaext.FacetRecord
 	ColumnPrimaryKeys         []string
 	ColumnPrimaryKeysPrepared bool
 }
@@ -66,6 +68,7 @@ type TableCreationResult struct {
 func (r TableCreationResult) Clone() TableCreationResult {
 	r.Tables = slices.Clone(r.Tables)
 	for i := range r.Tables {
+		r.Tables[i].Facets = slices.Clone(r.Tables[i].Facets)
 		r.Tables[i].ColumnPrimaryKeys = slices.Clone(r.Tables[i].ColumnPrimaryKeys)
 	}
 	return r
@@ -109,22 +112,19 @@ func AcceptTableCreations(request TableCreationRequest, result TableCreationResu
 		return TableCreationResult{}, fmt.Errorf("%w: creation projection did not complete the batch", ErrInvalid)
 	}
 	for i, table := range request.Tables {
-		if err := validateTableCreation(table, result.Tables[i]); err != nil {
+		if err := validateTableCreation(table, result.Tables[i], request.Identifiers); err != nil {
 			return TableCreationResult{}, err
 		}
 	}
 	return result.Clone(), nil
 }
 
-func validateTableCreation(input TableCreationInput, output TableCreation) error {
+func validateTableCreation(input TableCreationInput, output TableCreation, semantics identifier.Semantics) error {
 	if !reflect.DeepEqual(input.Subject, output.Subject) {
 		return fmt.Errorf("%w: creation projection changed table identity", ErrInvalid)
 	}
-	for _, kind := range output.Facets.DeclaredKinds() {
-		if !slices.Contains(output.Facets.Kinds(), kind) || len(output.Facets.TargetScope(kind)) != 0 ||
-			(slices.Contains(input.Declaration.Table.Facets.DeclaredKinds(), kind) && !slices.Contains(input.Declaration.Table.Facets.Kinds(), kind)) {
-			return fmt.Errorf("%w: creation projection changed a facet exclusion or binding", ErrInvalid)
-		}
+	if err := validateCreationFacets(input, output.Facets, semantics); err != nil {
+		return err
 	}
 	if len(output.ColumnPrimaryKeys) != 0 && !output.ColumnPrimaryKeysPrepared {
 		return fmt.Errorf("%w: projected column keys have no completion receipt", ErrInvalid)
@@ -139,6 +139,28 @@ func validateTableCreation(input TableCreationInput, output TableCreation) error
 			return fmt.Errorf("%w: creation projection names an unknown or duplicate key column", ErrInvalid)
 		}
 		seen[name] = true
+	}
+	return nil
+}
+
+func validateCreationFacets(input TableCreationInput, records []schemaext.FacetRecord, semantics identifier.Semantics) error {
+	declared, err := capturefacets.Declared(input.Declaration, input.Subject, semantics)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	seen := make(map[objectidentity.Key]bool)
+	for _, record := range records {
+		original, found := declared[record.Subject.Key()]
+		if !found || original.Subject != record.Subject || seen[record.Subject.Key()] || record.Values.IsZero() {
+			return fmt.Errorf("%w: unknown, duplicate, or empty computed facet owner %s", ErrInvalid, record.Subject)
+		}
+		seen[record.Subject.Key()] = true
+		for _, kind := range record.Values.DeclaredKinds() {
+			if !slices.Contains(record.Values.Kinds(), kind) || len(record.Values.TargetScope(kind)) != 0 ||
+				(slices.Contains(original.Values.DeclaredKinds(), kind) && !slices.Contains(original.Values.Kinds(), kind)) {
+				return fmt.Errorf("%w: creation projection changed a facet exclusion or binding", ErrInvalid)
+			}
+		}
 	}
 	return nil
 }

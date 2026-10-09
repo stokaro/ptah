@@ -213,3 +213,32 @@ func TestPreparedIndexFacetsReachComparisonAndCapturesWithoutSourceChanges(t *te
 	c.Assert(diff.TablePreparation.Prepared[0].Desired.Indexes[0].Facets, qt.DeepEquals, source)
 	c.Assert(diff.TablesModified[0].Current.Indexes[0].Facets, qt.DeepEquals, current.Indexes[0].Facets)
 }
+
+func TestPreparedIndexFacetsKeepStructuralOwnerAcrossComparison(t *testing.T) {
+	c := qt.New(t)
+	provider := mixedFacetProvider(facetComparisonFunc(func(_ context.Context, r schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		return schemaext.FacetComparisonResult{Complete: true, Desired: r.Desired}, nil
+	}))
+	provider.Targets[0].Preparation = preparationFunc(func(_ context.Context, r schemapreparation.Request) (schemapreparation.Result, error) {
+		table := &r.Tables[0]
+		index := objectidentity.NewBuilder(r.Identifiers).IndexParts(table.Subject.Schema.Source, table.Subject.Name.Source, table.Desired.Indexes[0].Name)
+		table.ResolvedFacets = []schemaext.FacetRecord{{Subject: index, Values: must.Must(schemaext.NewFacets(&conversionValue{ID: conversionSecond, Number: 33}))}}
+		return schemapreparation.Result{Complete: true, Tables: r.Tables}, nil
+	})
+	desired, current := indexFacetSchemas()
+	desired.Tables[0].Schema = "tenant.archive"
+	desired.Tables[0].Name = "orders.2026"
+	desired.Tables[0].Comment = "capture the prepared index"
+	current.Tables[0].Schema = "tenant.archive"
+	current.Tables[0].Name = "orders.2026"
+	current.Indexes[0].Schema = "tenant.archive"
+	current.Indexes[0].TableName = "orders.2026"
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "alternate", mustRuntime(c, provider))
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].Desired.Indexes, qt.HasLen, 1)
+	value, found, err := schemaext.FacetAs[*conversionValue](diff.TablesModified[0].Desired.Indexes[0].Facets, conversionSecond)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(value.Number, qt.Equals, 33)
+}

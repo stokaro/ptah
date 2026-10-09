@@ -661,7 +661,7 @@ func (service) ProjectTableCreations(ctx context.Context, request schemaprojecti
 		if err != nil {
 			return schemaprojection.TableCreationResult{}, err
 		}
-		result.Tables = append(result.Tables, schemaprojection.TableCreation{Subject: table.Subject, Facets: values})
+		result.Tables = append(result.Tables, schemaprojection.TableCreation{Subject: table.Subject, Facets: []schemaext.FacetRecord{{Subject: table.Subject, Values: values}}})
 	}
 	return result, nil
 }
@@ -679,7 +679,7 @@ func verifyCreationProjection(runtime *engine.Runtime) error {
 	if !result.Complete || len(result.Tables) != 1 {
 		return fmt.Errorf("creation prediction did not complete")
 	}
-	value, found, err := schemaext.FacetAs[*widget](result.Tables[0].Facets, (&widget{}).Kind())
+	value, found, err := schemaext.FacetAs[*widget](result.Tables[0].Facets[0].Values, (&widget{}).Kind())
 	if err != nil {
 		return err
 	}

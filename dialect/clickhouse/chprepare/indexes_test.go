@@ -146,3 +146,22 @@ func TestIndexPreparationRefusesCompetingSourceSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestIndexPreparationUsesStructuralObservedOwner(t *testing.T) {
+	c := qt.New(t)
+	request := indexRequest()
+	table := &request.Tables[0]
+	table.Desired.Table.Schema = "tenant.archive"
+	table.Desired.Table.Name = "events.2026"
+	table.Subject = objectidentity.NewBuilder(request.Identifiers).TableParts("tenant.archive", "events.2026")
+	table.Current.Table.Schema = "tenant.archive"
+	table.Current.Table.Name = "events.2026"
+	table.Current.Indexes[0].Schema = "tenant.archive"
+	table.Current.Indexes[0].TableName = "events.2026"
+	result, err := (chprepare.Service{}).PrepareTables(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	value, found, err := schemaext.FacetAs[*chschema.DesiredIndex](result.Tables[0].ResolvedFacets[0].Values, chschema.IndexKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(value, qt.DeepEquals, (&chschema.ObservedIndex{IndexType: "set(100)", Granularity: 64}).Desired())
+}

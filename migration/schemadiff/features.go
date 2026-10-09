@@ -69,8 +69,12 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 }
 
 func featureParents(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) ([]schemaext.ParentState, error) {
+	declared, err := declaredFacetSlots(desired, target, semantics)
+	if err != nil {
+		return nil, err
+	}
 	parents := make(map[objectidentity.Key]schemaext.ParentState)
-	for _, slot := range declaredFacetSlots(desired, target, semantics) {
+	for _, slot := range declared {
 		ref := slot.subject
 		if ref.Name.Source == "" || ref.Name.Normalized == "" {
 			return nil, &RefusalError{cause: fmt.Errorf("%w: desired %s requires a name", ptaherr.ErrInvalidSchemaDiff, ref.Kind)}

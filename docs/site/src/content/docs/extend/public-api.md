@@ -59,7 +59,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chresolve` | Storage-setting resolution with retained intent and property origins. |
-| `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
+| `dialect/clickhouse/chschema` | Desired and observed storage settings with versioned model codecs. |
 | `dialect/clickhouse/chsource` | Table property encoding and decoding that preserves setting intent. |
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
@@ -68,7 +68,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chrender` | Owner-selected TTL rendering. |
 | `dialect/clickhouse/chplan` | TTL planning and common-column dependencies. |
 | `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
-| `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
+| `dialect/clickhouse/chconvert` | Conversion between complete table/index declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
@@ -211,12 +211,13 @@ no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
 captures as comparison provenance, including through reversal.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
-files used as current state. The service predicts CREATE defaults and column key
-membership from decoded declarations. Computed facets stay separate from source
-intent; they may describe defaults the author did not declare. The host validates
-ordered completeness, identities, column names, model ownership, and codecs.
-It retains source bindings, exclusions, and explicit knowledge limits. New kinds
-are bound to the selected target. Predictions prove no inspection or execution.
+files used as current state. It predicts CREATE defaults and column keys.
+`TableCreation.Facets` contains records keyed by captured table or index identity,
+separate from source intent. Duplicate or invented owners, changed spelling, and
+new bindings are refused. The host validates completeness, column names, ownership,
+and codecs. Source bindings, exclusions, and knowledge limits stay intact. New
+kinds are target-bound with coverage only for predicted owners, not their siblings.
+Predictions prove no inspection or execution.
 Providers with no additional effects register `IdentityCreations` explicitly;
 a missing service is unavailable.
 
@@ -258,9 +259,10 @@ and property origins. Existing objects require observations for omitted settings
 On creation, a default primary key inherits the sorting key; skipping indexes
 use Ptah's `minmax` type and granularity `1`. Missing evidence returns no partial result.
 
-`chconvert.Service` converts complete observations to explicit declarations and
-resolved declarations to predictions. It preserves empty settings and separate
-key roles. Predictions support reverse planning and prove no database inspection.
+`chconvert.Service` converts complete table/index observations to explicit
+declarations and resolved declarations to predictions. It preserves empty table
+settings, key roles, and unsigned 64-bit index granularity. Invalid values or
+unresolved settings discard the whole batch.
 
 `Provider.Properties` declares source property ownership by target, format, and
 feature kind. The runtime validates complete batches before dispatch and rejects
