@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -35,6 +36,11 @@ func TestRender_ReportsTheSecretsItCannotRecord(t *testing.T) {
 				Path: `features["ptah.run/ydb/secret"][""]["ext"][""]["pg.pw"][""]`,
 				Message: "feature object ptah.run/ydb/secret ext.pg.pw of kind ptah.run/ydb/secret is not described " +
 					"(target capability secrets is unavailable, so Ptah leaves the secret unmanaged), and HCL cannot record that"}}},
+		{name: "a declared secret the source also limits", declared: []schemaext.Object{ydbsecret.DesiredObject("ext", "pg.pw", "", "PTAH_SECRET_PW")},
+			limits: unmanaged,
+			want: []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning,
+				Path:    `features["ptah.run/ydb/secret"][""]["ext"][""]["pg.pw"][""]`,
+				Message: "feature object ptah.run/ydb/secret ext.pg.pw of kind ptah.run/ydb/secret is not represented in HCL"}}},
 		{name: "no secret"},
 	}
 	for _, test := range tests {
@@ -51,4 +57,19 @@ func TestRender_ReportsTheSecretsItCannotRecord(t *testing.T) {
 			c.Assert(result.Diagnostics, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestRender_LeavesOtherKindsLimitsAlone writes a document from a read that
+// records a streaming query it could not read, and reports nothing for it: the
+// warning about a limit HCL cannot record is the secret owner's.
+func TestRender_LeavesOtherKindsLimitsAlone(t *testing.T) {
+	c := qt.New(t)
+	limits := []schemaext.SubjectCoverage{{Kind: ydbstreaming.Kind, Subject: ydbstreaming.Ref("", "copy"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the read could not decode it"}}}
+	db := &schemamodel.Database{FeatureCoverage: must.Must(ydbstreaming.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, limits))}
+
+	result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
 }

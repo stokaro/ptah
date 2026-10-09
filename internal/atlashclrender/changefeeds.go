@@ -6,12 +6,13 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/ydbsource"
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out,
-// and every object the source records as not described, which HCL cannot say
-// outside coordination nodes. It reads identities without interpreting
+// and every secret the source records as not described without holding it,
+// which HCL has no directive for. It reads identities without interpreting
 // payloads, so an unrecognized provider cannot turn export loss into a
 // successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
@@ -27,7 +28,10 @@ func (r *renderer) reportFeatureObjects() {
 	}
 	for _, record := range r.db.FeatureCoverage.SubjectRecords() {
 		state := record.Knowledge.State
-		if record.Kind == ydbcoordination.Kind || (state != schemaext.Uninspected && state != schemaext.Unrepresentable) {
+		if record.Kind != ydbsecret.Kind || (state != schemaext.Uninspected && state != schemaext.Unrepresentable) {
+			continue
+		}
+		if _, held, err := r.db.FeatureObjects.Get(record.Subject); held || err != nil {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
