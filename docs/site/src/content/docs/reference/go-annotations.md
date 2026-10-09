@@ -610,8 +610,10 @@ and classifier names are literal characters.
 
 Go export adds whole-family annotations when those namespaces were not
 inspected. These annotations keep the generated source from claiming that
-unread objects are absent. Each generated file carries these annotations, so
-reading one table file on its own preserves the limits too.
+unread objects are absent. Repeated export preserves authored family and object
+limits. Each generated file carries the limits, so reading one table file on
+its own preserves them too. Export refuses detailed inspection errors and
+model definitions that the annotations cannot reproduce.
 
 A kind this build does not know is refused
 rather than ignored: a directive nothing understands reads as no directive at

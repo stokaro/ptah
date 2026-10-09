@@ -1,9 +1,14 @@
 package sqlschema
 
 import (
+	"fmt"
+	"strings"
+
 	"ptah.run/core/ast"
 	schemacoverage "ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/ydbsource"
@@ -42,6 +47,13 @@ func Read(data []byte, dialect string) (schemamodel.Database, *ast.StatementList
 func ReadOnto(
 	data []byte, dialect string, document *Document,
 ) (schemamodel.Database, *ast.StatementList, error) {
+	// SQL sources have their own declaration vocabulary. Ignoring a captured
+	// HCL account would replace its explicit claims with that vocabulary.
+	for body := range schemacoverage.HeaderComments(string(data)) {
+		if strings.HasPrefix(body, schemaext.CoverageHeaderMarker) {
+			return schemamodel.Database{}, nil, fmt.Errorf("%w: SQL schema sources cannot decode a feature coverage header; read the HCL source instead", ptaherr.ErrUnsupportedFeature)
+		}
+	}
 	statements, err := parser.NewParser(string(data), parser.WithDialect(dialect)).Parse()
 	if err != nil {
 		return schemamodel.Database{}, nil, err

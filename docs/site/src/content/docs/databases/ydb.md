@@ -1466,7 +1466,7 @@ In a [dev realm](#dev-shadow-and-scratch-databases) a relative path names a node
 under the realm, as it names a table there.
 
 A change names only the settings that differ, and YDB keeps every setting a
-change leaves out. A node the declaration does not name is dropped with its
+change leaves out. A node omitted by a complete namespace declaration is dropped with its
 semaphores and rate limiter resources, and YDB drops it even while a session
 holds a lock on it. The safety report counts such a drop as destructive, and
 `DS107` in `ptah migrations lint` reports it, as it reports a dropped topic, so
@@ -1476,15 +1476,24 @@ to the application declares
 Add `name="app/locks"` to leave only that node unmanaged.
 
 HCL uses a leading `// ptah:not-described coordination_node` comment for the
-whole namespace, or appends `"app/locks"` for one node. HCL export writes the
-namespace comment when the input has no coordination coverage. Reading that
-output cannot authorize removal of nodes the input never described. Splitting
-HCL or YQL output repeats its coverage header in every file.
+whole namespace, or appends `"app/locks"` to manage the namespace except that
+node. Ordinary HCL without a coverage directive leaves omitted nodes unmanaged.
+Declaring a node still requests its creation or update.
+
+HCL export carries captured namespace claims in a versioned
+`// ptah:feature-coverage` header, including the exact model definition. Keep
+this generated header when editing an inspected schema: it distinguishes
+intentional removal from objects the source never described. Incompatible
+models and conflicting coverage directives are refused. Splitting HCL or YQL
+output repeats its coverage header in every file.
+Repeated Go and HCL export preserves authored namespace and node limits,
+including literal dots in paths and names.
 
 A read that encounters an unknown node setting records that node as
 unrepresentable. Comparison cannot treat it as absent or plan its removal.
-Go and HCL export refuse that incomplete description because a document that
-omits the limit could request deletion when read back.
+Go export refuses that incomplete description. HCL carries the exact limit and
+its reason in the generated coverage header, so reading it cannot establish
+absence or authorize a destructive change.
 
 The node `ptah_locks` at the database root is Ptah's own lock. A declaration
 that names it is refused, and so is a statement that does.

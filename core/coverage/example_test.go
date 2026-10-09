@@ -7,6 +7,15 @@ import (
 	"ptah.run/core/coverage"
 )
 
+func ExampleHeaderComments() {
+	for body := range coverage.HeaderComments("// schema metadata\n\n# source note\ntable {}\n// outside header") {
+		fmt.Println(body)
+	}
+	// Output:
+	// schema metadata
+	// source note
+}
+
 // ExampleObject_Directive transports an owner-defined limit without adding it
 // to common coverage. The owner must validate the kind before encoding it.
 func ExampleObject_Directive() {

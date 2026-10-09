@@ -100,15 +100,28 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 // even though the splitter does not interpret their schema semantics.
 func splitCoverageDirectives(input string) ([]string, error) {
 	var directives []string
+	var limits ydbsource.Limits
 	common, err := coverage.DecodeHeader(input, func(object coverage.Object) (bool, error) {
 		if !ydbsource.RecognizesLimit(object.Kind) {
 			return false, nil
 		}
 		directives = append(directives, object.Directive())
+		limits.Add(string(object.Kind), object.Name)
 		return true, nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	known, explicit, err := ydbsource.ReadHCLCoverage(input, limits)
+	if err != nil {
+		return nil, err
+	}
+	if explicit {
+		owned, err := ydbsource.HCLCoordinationDirectives(known)
+		if err != nil {
+			return nil, err
+		}
+		directives = append(directives, owned...)
 	}
 	directives = append(directives, common.Directives()...)
 	slices.Sort(directives)

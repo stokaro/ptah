@@ -1,6 +1,7 @@
 package atlashclrender_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -90,5 +91,25 @@ func TestRenderedHCLPreservesCoordinationEnrollment(t *testing.T) {
 				c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch")).State, qt.Equals, schemaext.Uninspected)
 			})
 		}
+	}
+}
+
+func TestHCLRefusesIncompatibleAndDuplicateCapturedModels(t *testing.T) {
+	known := must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	source := must.Must(atlashclrender.RenderForDialect(&schemamodel.Database{FeatureCoverage: known}, "ydb"))
+	for _, test := range []struct {
+		name string
+		text string
+		want error
+	}{
+		{"version", strings.Replace(string(source.Data), `"version":1`, `"version":2`, 1), schemaext.ErrIncompatibleCodec},
+		{"second account", "// ptah:not-described coordination_node\n" + string(source.Data), schemaext.ErrDuplicate},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			parsed, err := atlashcl.Parse([]byte(test.text), "source.hcl")
+			c.Assert(err, qt.ErrorIs, test.want)
+			c.Assert(parsed, qt.IsNil)
+		})
 	}
 }

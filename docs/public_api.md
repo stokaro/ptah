@@ -785,11 +785,15 @@ separately. A refused read, a directory outside the database-wide scope, or an
 empty system view without enabled resource-pool support cannot establish
 absence. Valid returned objects remain captured independently of target
 capabilities. Unsupported settings leave the affected subject unrepresentable.
+
 Go export writes explicit unmanaged-namespace annotations when workload
-coverage is missing. It refuses recorded inspection limits it cannot preserve.
-Neither case can become a complete namespace when the generated Go is parsed.
+coverage is missing and preserves source-authored namespace and object limits
+through repeated export. It refuses recorded inspection limits it cannot preserve.
+The generated Go keeps unmanaged scopes unmanaged when parsed.
 Explicit absence and default coverage assertions also require a lossless
 spelling; Go export refuses them instead of replacing them with omission.
+Coverage must name the exact desired model definition the source supports.
+Matching a kind's name alone does not establish that the model is understood.
 
 `dialect/ydb/ydbsyntax` provides YQL identifier and string-literal quoting to
 owner packages without importing host implementation helpers.
@@ -937,6 +941,14 @@ override common kinds. Unclaimed kinds and callback errors refuse the document.
 `Object.Directive` encodes an owner-validated record without adding it to the
 common set. Split exports carry recognized owner records, including their
 reason, provenance, and exact name, in every output file.
+
+`Registry.EncodeCoverageHeader` and `DecodeCoverageHeader` transport a versioned
+feature account in a leading `ptah:feature-coverage` comment. They validate exact
+model identities without adding registered models to the account. No header
+means no claims. `coverage.HeaderComments` supplies the shared boundary before
+the first content line. HCL uses this account for coordination nodes; ordinary
+Atlas HCL does not establish their absence. Split HCL preserves the account in
+every member.
 
 Every schema comparison takes a context and an explicitly selected runtime.
 Catalog comparisons accept `schemapreparation.Runtime`. Document comparisons

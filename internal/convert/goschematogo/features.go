@@ -23,18 +23,14 @@ func changefeedTableRef(table schemamodel.Table) objectidentity.ID {
 // table, an unknown kind, or a facet without an annotation must not disappear
 // from a successful export.
 func (ctx *renderContext) captureFeatureObjects() error {
-	if err := ydbsource.ValidateCoordinationExport(ctx.db.FeatureCoverage); err != nil {
+	limits, err := ydbsource.ExportLimits(ctx.db.FeatureCoverage)
+	if err != nil {
 		return err
 	}
-	if err := ydbsource.ValidateStreamingExport(ctx.db.FeatureCoverage); err != nil {
-		return err
-	}
-	if err := ydbsource.ValidateWorkloadExport(ctx.db.FeatureCoverage); err != nil {
-		return err
-	}
-	for _, token := range ydbsource.UnenrolledNamespaces(ctx.db.FeatureCoverage) {
+	for _, limit := range limits {
 		ctx.featureLimitAnnotations = append(ctx.featureLimitAnnotations,
-			annotation("ptah:schema:notdescribed", attr{name: "kind", value: token, set: true}))
+			annotation("ptah:schema:notdescribed", attr{name: "kind", value: string(limit.Kind), set: true},
+				attr{name: "name", value: limit.Name, set: limit.Name != ""}))
 	}
 	for _, facets := range ctx.db.FacetSlots() {
 		if !facets.IsZero() {

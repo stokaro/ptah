@@ -23,7 +23,7 @@ func TestRenderSchemaInspect_EmptySQLReturnsNoBytesAndKeepsOtherFormats(t *testi
 		{
 			name:   "HCL control",
 			format: `{{ hcl . }}`,
-			want:   atlashclrender.GeneratedCodeMarker + "\n// ptah:not-described coordination_node\n\nschema \"main\" {\n}\n\n",
+			want:   atlashclrender.GeneratedCodeMarker + "\n\nschema \"main\" {\n}\n\n",
 		},
 		{
 			name:   "JSON control",

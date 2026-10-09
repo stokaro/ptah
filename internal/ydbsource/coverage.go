@@ -3,7 +3,6 @@
 package ydbsource
 
 import (
-	"slices"
 	"strings"
 
 	"ptah.run/core/coverage"
@@ -31,17 +30,20 @@ func unmanagedNamespaceReason(label string) string {
 	return "the source leaves " + label + " unmanaged"
 }
 
+type sourceFamily struct {
+	kind  schemaext.Kind
+	token string
+	label string
+}
+
 // sourceKinds is shared by limit decoding and export. A new spelling must be
 // recognized in both directions or exporting unknown coverage would grant
 // authority that the input never held.
-var sourceKinds = []struct {
-	kind  schemaext.Kind
-	token string
-}{
-	{ydbcoordination.Kind, "coordination_node"},
-	{ydbstreaming.Kind, "streaming_query"},
-	{ydbworkload.PoolKind, "resource_pool"},
-	{ydbworkload.ClassifierKind, "resource_pool_classifier"},
+var sourceKinds = []sourceFamily{
+	{ydbcoordination.Kind, "coordination_node", "coordination nodes"},
+	{ydbstreaming.Kind, "streaming_query", "streaming queries"},
+	{ydbworkload.PoolKind, "resource_pool", "resource pools"},
+	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers"},
 }
 
 func sourceKind(token string) schemaext.Kind {
@@ -53,33 +55,13 @@ func sourceKind(token string) schemaext.Kind {
 	return ""
 }
 
-func sourceToken(kind schemaext.Kind) string {
+func sourceLabel(kind schemaext.Kind) string {
 	for _, family := range sourceKinds {
 		if family.kind == kind {
-			return family.token
+			return family.label
 		}
 	}
 	return ""
-}
-
-// UnenrolledNamespaces returns source kind tokens whose knowledge was never
-// captured, in deterministic declaration order. A Go export must explicitly
-// leave them unmanaged; otherwise reading it grants complete source coverage.
-// Explicitly enrolled limits are handled by the export validators. With no
-// kinds supplied it checks all supported namespaces; otherwise only the named
-// kinds are checked, so HCL cannot acquire the Go source's vocabulary.
-func UnenrolledNamespaces(known schemaext.Coverage, kinds ...schemaext.Kind) []string {
-	var tokens []string
-	records := known.KindRecords()
-	for _, family := range sourceKinds {
-		if len(kinds) > 0 && !slices.Contains(kinds, family.kind) {
-			continue
-		}
-		if !slices.ContainsFunc(records, func(record schemaext.KindCoverage) bool { return record.Model.Kind == family.kind }) {
-			tokens = append(tokens, family.token)
-		}
-	}
-	return tokens
 }
 
 // RecognizesLimit reports whether this adapter owns a source limit's spelling.
@@ -121,9 +103,14 @@ func (l *Limits) ConsumeHCLDirective(object coverage.Object) (bool, error) {
 	return l.ConsumeDirective(object)
 }
 
-// HCLCoverage enrolls coordination nodes, the standalone namespace HCL owns.
+// HCLCoverage records an explicit source limit on coordination nodes. An HCL
+// document without an owned directive makes no namespace claim: ordinary Atlas
+// files must not authorize removal of objects the format did not name.
 func HCLCoverage(limits Limits) (schemaext.Coverage, error) {
-	return namespaceCoverage(limits.Coordination, ydbcoordination.Kind, "coordination nodes", schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
+	if len(limits.Coordination) == 0 {
+		return schemaext.NewCoverage(schemaext.Desired, nil, nil)
+	}
+	return namespaceCoverage(limits.Coordination, ydbcoordination.Kind, schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
 }
 
 // Coverage enrolls only namespaces these source formats can declare. HCL
@@ -134,11 +121,11 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	nodes, err := HCLCoverage(limits)
+	nodes, err := namespaceCoverage(limits.Coordination, ydbcoordination.Kind, schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	queries, err := namespaceCoverage(limits.Streaming, ydbstreaming.Kind, "streaming queries", schemeIdentity(ydbstreaming.Ref), ydbstreaming.ValidateIdentity, ydbstreaming.Coverage)
+	queries, err := namespaceCoverage(limits.Streaming, ydbstreaming.Kind, schemeIdentity(ydbstreaming.Ref), ydbstreaming.ValidateIdentity, ydbstreaming.Coverage)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
@@ -153,13 +140,12 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	for _, family := range []struct {
 		limits   []string
 		kind     schemaext.Kind
-		label    string
 		identity func(string) objectidentity.ID
 	}{
-		{limits.Pools, ydbworkload.PoolKind, "resource pools", ydbworkload.PoolRef},
-		{limits.Classifiers, ydbworkload.ClassifierKind, "resource pool classifiers", ydbworkload.ClassifierRef},
+		{limits.Pools, ydbworkload.PoolKind, ydbworkload.PoolRef},
+		{limits.Classifiers, ydbworkload.ClassifierKind, ydbworkload.ClassifierRef},
 	} {
-		known, err := namespaceCoverage(family.limits, family.kind, family.label, family.identity,
+		known, err := namespaceCoverage(family.limits, family.kind, family.identity,
 			func(ref objectidentity.ID) error { return ydbworkload.ValidateIdentity(ref, family.kind) },
 			func(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
 				return ydbworkload.Coverage(family.kind, representation, knowledge, subjects)
@@ -175,7 +161,7 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	return combined, nil
 }
 
-func namespaceCoverage(limits []string, kind schemaext.Kind, label string,
+func namespaceCoverage(limits []string, kind schemaext.Kind,
 	identity func(string) objectidentity.ID, validate func(objectidentity.ID) error,
 	enroll func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error),
 ) (schemaext.Coverage, error) {
@@ -185,7 +171,7 @@ func namespaceCoverage(limits []string, kind schemaext.Kind, label string,
 	seen := make(map[objectidentity.Key]bool)
 	for _, name := range limits {
 		if name == "" {
-			namespace = schemaext.Knowledge{State: schemaext.Uninspected, Reason: unmanagedNamespaceReason(label)}
+			namespace = schemaext.Knowledge{State: schemaext.Uninspected, Reason: unmanagedNamespaceReason(sourceLabel(kind))}
 			continue
 		}
 		ref := identity(name)

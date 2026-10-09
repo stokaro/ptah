@@ -57,7 +57,6 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 				"// ptah:not-described extension reason=suppressed provenance=defaulted",
 				"// ptah:not-described policy reason=suppressed provenance=defaulted",
 				"// ptah:not-described sequence reason=suppressed provenance=defaulted",
-				"// ptah:not-described coordination_node",
 			})
 		})
 	}
@@ -91,7 +90,7 @@ func TestNativeRenderDeclaresNoCommonLimits(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.NotDescribed.IsZero(), qt.IsTrue)
-			c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{"// ptah:not-described coordination_node"})
+			c.Assert(coverageHeaderLines(string(result.Data)), qt.HasLen, 0)
 		})
 	}
 }
@@ -107,7 +106,7 @@ func TestCompatibilityRenderDeclaresNoCommonLimitsOnSQLite(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.NotDescribed.IsZero(), qt.IsTrue)
-	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{"// ptah:not-described coordination_node"})
+	c.Assert(coverageHeaderLines(string(result.Data)), qt.HasLen, 0)
 }
 
 // TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser is the

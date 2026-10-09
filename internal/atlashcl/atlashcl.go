@@ -212,7 +212,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
 	}
 	p.db.NotDescribed = notDescribed
-	p.db.FeatureCoverage, err = ydbsource.HCLCoverage(limits)
+	p.db.FeatureCoverage, _, err = ydbsource.ReadHCLCoverage(string(data), limits)
 	if err != nil {
 		return nil, err
 	}

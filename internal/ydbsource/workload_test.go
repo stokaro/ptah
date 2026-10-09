@@ -1,6 +1,7 @@
 package ydbsource_test
 
 import (
+	"fmt"
 	"testing"
 	"testing/fstest"
 
@@ -151,8 +152,38 @@ func TestGoExportPreservesUnenrolledNamespaces(t *testing.T) {
 				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing")} {
 					c.Assert(parsed.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State, qt.Equals, schemaext.Uninspected)
 				}
+				again, err := goschematogo.Render(t.Context(), parsed, goschematogo.Options{SingleFile: layout.single, Dialect: "ydb"})
+				c.Assert(err, qt.IsNil)
+				c.Assert(again, qt.DeepEquals, files)
 			})
 		}
+	}
+}
+
+func TestGoExportPreservesAuthoredSubjectLimitsInEveryFile(t *testing.T) {
+	for _, single := range []bool{true, false} {
+		t.Run(fmt.Sprintf("single=%t", single), func(t *testing.T) {
+			c := qt.New(t)
+			db, err := goschema.ParseSource("source.go", `package entities
+//ptah:schema:notdescribed kind="coordination_node" name="/locks.v1"
+//ptah:schema:notdescribed kind="streaming_query" name="app.v1/copy"
+//ptah:schema:notdescribed kind="resource_pool" name="Batch.jobs"
+//ptah:schema:notdescribed kind="resource_pool_classifier" name="route.jobs"
+type Limits struct{}
+`)
+			c.Assert(err, qt.IsNil)
+			db.Enums = []schemamodel.Enum{{Name: "mood", Values: []string{"ok"}}}
+			db.Tables = []schemamodel.Table{{Name: "records", StructName: "Records"}}
+			db.Fields = []schemamodel.Field{{StructName: "Records", Name: "id", FieldName: "ID", Type: "Int64"}}
+			files, err := goschematogo.Render(t.Context(), &db, goschematogo.Options{SingleFile: single, Dialect: "ydb"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(len(files) > 0, qt.IsTrue)
+			for _, file := range files {
+				parsed, err := goschema.ParseSource(file.Name, file.Data)
+				c.Assert(err, qt.IsNil)
+				c.Assert(parsed.FeatureCoverage.Equal(db.FeatureCoverage), qt.IsTrue, qt.Commentf("file %s", file.Name))
+			}
+		})
 	}
 }
 

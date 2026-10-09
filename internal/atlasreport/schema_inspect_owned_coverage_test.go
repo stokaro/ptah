@@ -5,12 +5,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/ydbsource"
@@ -65,6 +68,29 @@ coordination_node "app" "other" {}
 				c.Assert(db.NotDescribed.IsZero(), qt.IsTrue)
 				c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "locks")).State, qt.Equals, schemaext.Uninspected)
 				c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "other")).State, qt.Equals, schemaext.Complete)
+			}
+		})
+	}
+}
+
+func TestSplitPreservesExplicitHCLModelsInEveryFile(t *testing.T) {
+	known := must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	for _, mode := range []string{"object", "schema", "type"} {
+		t.Run(mode, func(t *testing.T) {
+			c := qt.New(t)
+			source, err := atlashclrender.RenderForDialect(&schemamodel.Database{
+				FeatureCoverage: known, Schemas: []schemamodel.Schema{{Name: "app"}},
+				Tables: []schemamodel.Table{{Name: "events", Schema: "app", StructName: "Events"}},
+				Fields: []schemamodel.Field{{StructName: "Events", Name: "id", Type: "Int64"}},
+			}, "ydb")
+			c.Assert(err, qt.IsNil)
+			output, err := atlasreport.RenderSchemaInspect(fmt.Sprintf(`{{ %q | split %q | write "out" }}`, source.Data, mode), sampleSchemaInspectReport(c))
+			c.Assert(err, qt.IsNil)
+			c.Assert(len(output.Files) > 0, qt.IsTrue)
+			for _, file := range output.Files {
+				parsed, err := atlashcl.Parse([]byte(file.Data), file.Path)
+				c.Assert(err, qt.IsNil)
+				c.Assert(parsed.FeatureCoverage.Equal(known), qt.IsTrue)
 			}
 		})
 	}

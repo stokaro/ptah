@@ -76,7 +76,6 @@ func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
 			c.Assert(memberPaths(members), qt.DeepEquals, test.wantFiles)
 			for path, data := range members {
 				c.Assert(leadingCommentLines(data), qt.DeepEquals, []string{
-					"// ptah:not-described coordination_node",
 					"// ptah:not-described extension reason=suppressed provenance=defaulted",
 					"// ptah:not-described policy reason=suppressed provenance=defaulted",
 					"// ptah:not-described sequence reason=suppressed provenance=defaulted",
@@ -152,7 +151,10 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	for path, data := range txtarMembers(output.Text) {
-		c.Assert(leadingCommentLines(data), qt.DeepEquals, []string{"// ptah:not-described coordination_node"}, qt.Commentf("member %s", path))
+		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
+		parsed, err := atlashcl.Parse([]byte(data), path)
+		c.Assert(err, qt.IsNil)
+		c.Assert(parsed.FeatureCoverage.IsZero(), qt.IsTrue)
 	}
 }
 

@@ -619,15 +619,7 @@ type HeaderExtension func(Object) (bool, error)
 // error returns an empty Set and an error, never a partially decoded result.
 func DecodeHeader(document string, extension HeaderExtension) (Set, error) {
 	var set Set
-	for line := range strings.SplitSeq(document, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		body, isComment := commentBody(trimmed)
-		if !isComment {
-			break
-		}
+	for body := range HeaderComments(document) {
 		object, ok, err := parseDirective(body)
 		if err != nil {
 			return Set{}, err

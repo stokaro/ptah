@@ -12,6 +12,27 @@ type retention struct {
 	Days uint32 `json:"days"`
 }
 
+// ExampleRegistry_DecodeCoverageHeader shows that a source without a feature
+// account establishes no namespace authority and needs no generated directive.
+func ExampleRegistry_DecodeCoverageHeader() {
+	var registry schemaext.Registry
+	known, found, err := registry.DecodeCoverageHeader(context.Background(), schemaext.Desired, `schema "main" {}`)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(found, known.IsZero())
+	header, err := registry.EncodeCoverageHeader(context.Background(), schemaext.Desired, known)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("%q\n", header)
+	// Output:
+	// false true
+	// ""
+}
+
 func (*retention) Kind() schemaext.Kind     { return "example.org/retention" }
 func (v *retention) Clone() schemaext.Value { return &retention{Days: v.Days} }
 func (v *retention) Equal(other schemaext.Value) bool {

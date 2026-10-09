@@ -35,7 +35,7 @@ func TestCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T) {
 			output, err := atlasreport.RenderSchemaInspect(format, emptySQLiteInspectReport(c, true))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(output.Text, qt.Equals, "// ptah:not-described coordination_node\n\nschema \"main\" {\n}\n")
+			c.Assert(output.Text, qt.Equals, "schema \"main\" {\n}\n")
 		})
 	}
 }
@@ -125,7 +125,7 @@ func TestCompatibilityHCLFraming_IsIndependentOfBlockPolicy(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hcl, qt.Contains, `extension "pgcrypto"`)
-	c.Assert(leadingCommentLines(hcl), qt.DeepEquals, []string{"// ptah:not-described coordination_node"})
+	c.Assert(leadingCommentLines(hcl), qt.HasLen, 0)
 	c.Assert(hcl, qt.Not(qt.Contains), atlashclrender.GeneratedCodeMarker)
 	c.Assert(strings.HasSuffix(hcl, "\n"), qt.IsTrue)
 	c.Assert(strings.HasSuffix(hcl, "\n\n"), qt.IsFalse)
@@ -153,7 +153,7 @@ func TestCompatibilityHCLFraming_NativeDocumentIsByteIdentical(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hcl, qt.Equals,
-		atlashclrender.GeneratedCodeMarker+"\n// ptah:not-described coordination_node\n\nschema \"main\" {\n}\n\n")
+		atlashclrender.GeneratedCodeMarker+"\n\nschema \"main\" {\n}\n\n")
 }
 
 func emptySQLiteInspectReport(c *qt.C, compatibilityHCLFraming bool) *atlasreport.SchemaInspectReport {
