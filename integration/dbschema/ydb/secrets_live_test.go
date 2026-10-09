@@ -356,20 +356,22 @@ func planFailure(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	return err
 }
 
-// absoluteSecretSource declares the secret ptah_ydb_external/abs_pw, unless
-// secret is false, and a PostgreSQL source at location whose password the
-// secret at path holds.
-func absoluteSecretSource(secret bool, location, path string) *schemamodel.Database {
-	declared := &schemamodel.Database{
+// absoluteSecret is the secret the absolute-path test declares.
+func absoluteSecret() schemaext.Object {
+	return ydbsecret.DesiredObject(externalSchema, "abs_pw", "", externalSecretEnv)
+}
+
+// absoluteSecretSource declares secrets, from a source that describes every
+// secret, and a PostgreSQL source at location whose password the secret at
+// path holds.
+func absoluteSecretSource(location, path string, secrets ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(secrets...)),
 		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "warehouse", Schema: externalSchema, SourceType: "PostgreSQL",
 			Location: location, AuthMethod: "BASIC",
 			Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": path}}},
 	}
-	if secret {
-		declared.FeatureObjects = must.Must(schemaext.NewObjects(ydbsecret.DesiredObject(externalSchema, "abs_pw", "", externalSecretEnv)))
-	}
-	return declared
 }
 
 // TestYDBSecrets_ReadThroughAnAbsolutePath declares a data source that names
@@ -388,7 +390,7 @@ func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
 		dropSecrets(c, conn, externalSchemas)
 	})
 	root := readScoped(c, conn, externalSchemas).DatabasePath
-	declared := absoluteSecretSource(true, "pg.invalid:5432", root+"/"+externalSchema+"/abs_pw")
+	declared := absoluteSecretSource("pg.invalid:5432", root+"/"+externalSchema+"/abs_pw", absoluteSecret())
 
 	first := planAgainst(c, conn, declared, externalSchemas)
 	apply(c, conn, first)
@@ -396,9 +398,9 @@ func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
 	c.Assert(first, qt.HasLen, 2)
 	c.Assert(first[0], qt.Equals, "CREATE SECRET `ptah_ydb_external/abs_pw` WITH (value = $PTAH_SECRET_LIVE_EXTERNAL_PG)")
 	c.Assert(planAgainst(c, conn, declared, externalSchemas), qt.HasLen, 0)
-	c.Assert(planFailure(c, conn, absoluteSecretSource(false, "pg2.invalid:5432", root+"/"+externalSchema+"/abs_pw"), externalSchemas),
+	c.Assert(planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", root+"/"+externalSchema+"/abs_pw"), externalSchemas),
 		qt.ErrorMatches, ".*secret ptah_ydb_external/abs_pw is dropped while a statement of this plan reads it by its path.*")
-	c.Assert(planFailure(c, conn, absoluteSecretSource(true, "pg2.invalid:5432", "/elsewhere/abs_pw"), externalSchemas),
+	c.Assert(planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", "/elsewhere/abs_pw", absoluteSecret()), externalSchemas),
 		qt.ErrorMatches, `.*secret path "/elsewhere/abs_pw" is outside the database `+root+`.*`)
 }
 

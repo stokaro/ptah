@@ -81,7 +81,7 @@ func TestCommonEffects_RefusesASecretOutsideTheDatabase(t *testing.T) {
 		{name: "another database", node: &ast.CreateExternalDataSourceNode{Name: "ext.pg", Options: map[string]string{"PASSWORD_SECRET_PATH": "/other/pw"}}, // #nosec G101 -- a secret path, not a credential
 			wantErr: `.*secret path "/other/pw" is outside the database /local, so no statement of it can read the secret.*`},
 		{name: "a parent segment", node: &ast.AlterTransferNode{Name: "app.move", Spec: ast.TransferSpec{
-			Connection: ast.ReplicationConnectionSpec{PasswordSecretPath: "/local/../other/pw"}}},
+			Connection: ast.ReplicationConnectionSpec{PasswordSecretPath: "/local/../other/pw"}}}, // #nosec G101 -- a secret path, not a credential
 			wantErr: `.*secret path "/local/../other/pw" is outside the database /local.*`},
 		{name: "the database itself", node: &ast.CreateAsyncReplicationNode{Name: "app.copy", Spec: ast.AsyncReplicationSpec{
 			Connection: ast.ReplicationConnectionSpec{TokenSecretPath: "/local"}}},
