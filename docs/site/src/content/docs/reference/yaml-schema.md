@@ -353,8 +353,9 @@ A YDB secret sits under `secrets`, keyed by name, with the attributes of
 `//ptah:schema:secret`: `name` when the key is not the name, `schema` for its
 directory, and `value_env` for the environment variable that holds the value,
 whose name starts with `PTAH_SECRET_`. A document never holds the value: a
-`value` key is refused, and the error names the key and not what it held. Every
-other dialect refuses a secret. See [secrets](../../databases/ydb/#secrets).
+`value` key is refused, and the error names the key and not what it held. A
+dot is part of the name, and a slash in it is refused. Every other dialect
+refuses a secret. See [secrets](../../databases/ydb/#secrets).
 
 ```yaml
 secrets:

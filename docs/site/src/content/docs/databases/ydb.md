@@ -1641,6 +1641,12 @@ declaration leaves out. Dropping a secret is destructive, since nothing can
 read its value back. YDB records no dependency on a secret: it drops one an
 external data source still names, and the source fails at its next read.
 
+Every spelling of a secret is its path relative to the database root, as YDB
+writes it: a slash separates directories and a dot is part of a name. `pg.pw`
+is the secret `pg.pw` at the root, never `pw` in a directory `pg`. A
+declaration, a `notdescribed` limit, `--rotate-secret` and every message read
+and write a secret that way.
+
 A changed value is planned only when asked for. `--rotate-secret <dir/name>`
 on `schema apply`, `schema plan`, `schema diff`, `schema compare`, `migrations
 plan` and `migrations generate` names a declared secret the database holds,
@@ -1650,14 +1656,16 @@ and the plan gives it the value its variable holds when the plan runs:
 ALTER SECRET `ext/pg_password` WITH (value = $PTAH_SECRET_PG_PASSWORD);
 ```
 
-The flag is repeatable and reads no environment variable. A name the
-declaration does not hold is refused. A secret the database does not hold is
-created rather than rotated, and one whose presence the read did not establish
-is reported rather than rotated. A rollback drops a secret the change created,
-and creates a dropped one again with the value of the variable its path names,
-`PTAH_SECRET_EXT_PG_PASSWORD` for `ext/pg_password`. It does not restore a
-rotated value, which Ptah never read. The rollback migration notes each value
-it cannot restore.
+The flag is repeatable and reads no environment variable. The request belongs
+to that one comparison: no schema file holds it, so a rotation cannot stay on
+and reach every later plan. A name the declaration does not hold is refused. A
+secret the database does not hold is created rather than rotated, and one whose
+presence the read did not establish is reported rather than rotated. A
+rollback drops a secret the change created, and creates a dropped one again
+with the value of the variable its path names, `PTAH_SECRET_EXT_PG_PASSWORD`
+for `ext/pg_password`. It does not restore a rotated value, which Ptah never
+read, so the rollback of a rotation runs no statement. The rollback migration
+notes each value it cannot restore.
 
 A declaration names each secret once: two declarations of one path are refused,
 even when they name the same variable.
@@ -1673,13 +1681,18 @@ disabled. Please contact your system administrator to enable it`). 25.1 and
 list such a secret, and the database administrator reads its value, and every
 value it ever held, in clear from `.metadata/secrets`. Ptah models it on no
 line, never reads `.metadata`, and lint rule `YD140` reports a migration that
-writes a secret's value, in either form. On a line without the `secrets` key,
-the reader records each secret it lists as unread, so no plan reads its
-silence as absence.
+writes a secret's value, in either form.
+
+A plan refuses a line without the `secrets` key, naming the secret, only when
+it would create, rotate or drop one. On such a line the reader records each secret it lists as unmanaged: no
+plan keeps or drops it, a comparison reports it only when the desired schema
+declares it or describes every secret, and Go export writes a `notdescribed`
+limit for it.
 
 HCL, DBML and SQL documents of other dialects cannot name a secret. They make
-no claim about secrets, so their silence does not plan a drop, and `schema
-inspect` warns about each secret it leaves out of an HCL document.
+no claim about secrets, so their silence plans no drop and an unread secret
+gets no note, and `schema inspect` warns about each secret it leaves out of an
+HCL document, including one the read left unmanaged.
 
 ## External data sources and external tables
 
@@ -1719,7 +1732,9 @@ CREATE EXTERNAL DATA SOURCE `ext/warehouse` WITH (
 A credential is never an option's value. An option ending in `_SECRET_PATH`
 names a [secret](#secrets) by its path, which YDB 25.4 and later take; the
 server looks the secret up when it creates the data source, so a plan creates
-the secrets first. An option ending in `_SECRET_NAME` names a deprecated secret
+the secrets first. The path may be relative to the database root or absolute
+within the database, as YDB stores it; a plan refuses one outside the
+database. An option ending in `_SECRET_NAME` names a deprecated secret
 object, whose value the database administrator reads in clear, and lint rule
 `YD141` reports it. An external table takes no default, key or column family:
 the declaration refuses all three, since YDB drops a `DEFAULT` without a word
@@ -1815,10 +1830,13 @@ statement needs one that has not run yet:
 Secrets are planned by their owner, around these steps rather than in one of
 them. A secret depends on nothing but its path, so the plan drops, creates and
 rotates secrets before step 1, except that a secret created at a path a
-dropped table frees follows that drop. Every external data source, async
-replication and transfer that names a secret by its path comes after the
-secret's creation or rotation, and a plan that drops a secret one of its own
-statements still names is refused. So is a plan in which a secret and another
+dropped table frees, or beneath a directory one frees, follows that drop: every
+directory above a secret must hold nothing else. A dropped secret precedes a
+statement that creates an object at its path or at a directory above it. Every
+external data source, async replication and transfer that names a secret by its
+path, relative or absolute, comes after the secret's creation or rotation, and
+a plan that drops a secret one of its own statements still names is
+refused. So is a plan in which a secret and another
 standalone object, such as a coordination node, trade one path: neither owner
 orders its statement against the other's, so apply the drop on its own first.
 

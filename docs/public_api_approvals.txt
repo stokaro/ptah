@@ -456,9 +456,10 @@ v0.13.0 ptah.run/core/ast
 # FeatureObjects. Database.Secrets, catalog Secret and Description.Secrets, the
 # secret AST nodes, the secret coverage kind, SecretChanges, the three secret
 # diff buckets, DeclaredSecrets, SchemaDiff.RotateSecrets and
-# ErrRotateUndeclaredSecret are removed. A rotation is requested on the desired
-# schema with ydbsecret.RequestRotation before comparison. Duplicate secret
-# declarations are rejected rather than deduplicated.
+# ErrRotateUndeclaredSecret are removed. A rotation is a comparison request
+# (config.CompareOptions.FeatureRequests, ydbsecret.RotationRequests), never
+# part of a declaration. Duplicate secret declarations are rejected rather
+# than deduplicated.
 # Consumers use the owner model, change, and operation codecs directly.
 # Index.Granularity is removed. A ClickHouse skipping index declares its type
 # and granularity as platform properties that the selected owner decodes into
