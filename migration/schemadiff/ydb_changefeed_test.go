@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -181,5 +182,6 @@ func TestCompare_YDBChangefeedsADeclarationDoesNotDescribeAreTheDatabases(t *tes
 func completeYDBFixtureCoverage() schemaext.Coverage {
 	feeds := must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil))
 	nodes := must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return must.Must(feeds.Combine(nodes))
+	queries := must.Must(ydbstreaming.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return must.Must(must.Must(feeds.Combine(nodes)).Combine(queries))
 }

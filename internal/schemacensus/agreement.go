@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/migration/planner"
@@ -83,7 +84,7 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 	current := &catalog.Database{}
 	if cell.Dialect == platform.YDB {
 		// This fixture explicitly represents an empty database. Enroll the
-		// standalone namespace it knows is empty; an ordinary empty object
+		// standalone namespaces it knows are empty; an ordinary empty object
 		// collection would correctly leave that namespace uninspected.
 		// Keep enrollment explicit rather than deriving authority from runtime
 		// growth when another provider model is registered.
@@ -91,7 +92,14 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 		if err != nil {
 			return nil, err
 		}
-		current.FeatureCoverage = coverage
+		queries, err := ydbstreaming.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return nil, err
+		}
+		current.FeatureCoverage, err = coverage.Combine(queries)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return current, nil
 }

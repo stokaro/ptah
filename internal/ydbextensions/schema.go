@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 )
@@ -32,6 +33,10 @@ func ValidateObjects(target string, caps capability.Capabilities, objects schema
 			}
 		case *ydbcoordination.Desired:
 			if err := validateCoordinationObject(target, caps, object, value); err != nil {
+				return err
+			}
+		case *ydbstreaming.Desired:
+			if err := validateStreamingObject(target, caps, object, value); err != nil {
 				return err
 			}
 		default:
@@ -92,4 +97,13 @@ func ValidateCreationObjects(target string, caps capability.Capabilities, object
 		}
 	}
 	return nil
+}
+
+func validateStreamingObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbstreaming.Desired) error {
+	if err := ydbstreaming.ValidateIdentity(object.Ref); err != nil {
+		return fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
+	}
+	operation := &ydbast.StreamingQuery{Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
+		Operation: ydbast.StreamingCreate, Spec: value.Spec, Creation: ydbast.StreamingCreation{OrReplace: value.AllowStateReset}}
+	return ydbrender.StreamingHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
 }

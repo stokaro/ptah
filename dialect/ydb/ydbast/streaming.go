@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbstream"
 )
 
 // StreamingQueryKind identifies an operation on a continuous YDB query.
@@ -38,13 +38,13 @@ type StreamingCreation struct {
 // require Previous; AllowStateReset is explicit permission, never observed state.
 // A zero value is invalid. Creation guards belong only to StreamingCreate.
 type StreamingQuery struct {
-	Operation       StreamingOperation     `json:"operation"`
-	Schema          string                 `json:"schema"`
-	Name            string                 `json:"name"`
-	Creation        StreamingCreation      `json:"creation"`
-	Spec            ast.StreamingQuerySpec `json:"spec"`
-	Previous        ast.StreamingQuerySpec `json:"previous"`
-	AllowStateReset bool                   `json:"allow_state_reset"`
+	Operation       StreamingOperation `json:"operation"`
+	Schema          string             `json:"schema"`
+	Name            string             `json:"name"`
+	Creation        StreamingCreation  `json:"creation"`
+	Spec            ydbstreaming.Spec  `json:"spec"`
+	Previous        ydbstreaming.Spec  `json:"previous"`
+	AllowStateReset bool               `json:"allow_state_reset"`
 }
 
 // Kind returns the stable operation identity.
@@ -81,7 +81,7 @@ func (v *StreamingQuery) Validate() error {
 	if v.Operation != StreamingCreate && v.Creation != (StreamingCreation{}) {
 		return fmt.Errorf("%w: streaming creation guards require create", schemaext.ErrInvalidValue)
 	}
-	if v.Operation != StreamingAlter && (v.AllowStateReset || v.Previous != (ast.StreamingQuerySpec{})) {
+	if v.Operation != StreamingAlter && (v.AllowStateReset || v.Previous != (ydbstreaming.Spec{})) {
 		return fmt.Errorf("%w: streaming previous state and reset permission require alter", schemaext.ErrInvalidValue)
 	}
 	switch v.Operation {
@@ -94,12 +94,12 @@ func (v *StreamingQuery) Validate() error {
 		if err := validateStreamingSpec(v.Previous); err != nil {
 			return err
 		}
-		if err := ydbstream.ValidateAlter(v.QualifiedName(), v.Spec, v.Previous, ydbstream.AlterOptions{AllowStateReset: v.AllowStateReset}); err != nil {
+		if err := ydbstreaming.ValidateAlter(v.QualifiedName(), v.Spec, v.Previous, ydbstreaming.AlterOptions{AllowStateReset: v.AllowStateReset}); err != nil {
 			return fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
 		}
 		return nil
 	case StreamingDrop:
-		if v.Spec != (ast.StreamingQuerySpec{}) {
+		if v.Spec != (ydbstreaming.Spec{}) {
 			return fmt.Errorf("%w: streaming drop cannot carry desired settings", schemaext.ErrInvalidValue)
 		}
 		return nil
@@ -108,8 +108,8 @@ func (v *StreamingQuery) Validate() error {
 	}
 }
 
-func validateStreamingSpec(spec ast.StreamingQuerySpec) error {
-	if err := ydbstream.Validate(spec); err != nil {
+func validateStreamingSpec(spec ydbstreaming.Spec) error {
+	if err := ydbstreaming.Validate(spec); err != nil {
 		return fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
 	}
 	return nil
@@ -122,12 +122,12 @@ func (v *StreamingQuery) Effect() schemaext.Effect {
 	if v.Validate() != nil {
 		return schemaext.Effect{}
 	}
-	replaces := (ydbstream.CreateOptions{OrReplace: v.Creation.OrReplace, IfNotExists: v.Creation.IfNotExists}).ReplacesExisting()
-	if v.Operation == StreamingDrop || replaces || (v.Operation == StreamingAlter && !ydbstream.SameBody(v.Spec.Text, v.Previous.Text)) {
-		return schemaext.Effect{Impact: schemaext.Destructive, Reason: ydbstream.CheckpointLoss}
+	replaces := (ydbstreaming.CreateOptions{OrReplace: v.Creation.OrReplace, IfNotExists: v.Creation.IfNotExists}).ReplacesExisting()
+	if v.Operation == StreamingDrop || replaces || (v.Operation == StreamingAlter && !ydbstreaming.SameBody(v.Spec.Text, v.Previous.Text)) {
+		return schemaext.Effect{Impact: schemaext.Destructive, Reason: ydbstreaming.CheckpointLoss}
 	}
 	if v.Operation == StreamingAlter {
-		return schemaext.Effect{Impact: schemaext.Behavioral, Reason: ydbstream.ExecutionChange}
+		return schemaext.Effect{Impact: schemaext.Behavioral, Reason: ydbstreaming.ExecutionChange}
 	}
 	return schemaext.Effect{Impact: schemaext.Additive, Reason: "creates a streaming query without replacing existing checkpoint state"}
 }

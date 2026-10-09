@@ -35,7 +35,6 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	// Selected owners must account for every feature change before the common
 	// graph can be scheduled. Unknown kinds fail at that dispatch boundary.
 	rest.FeatureChanges = nil
-	rest.StreamingQueriesAdded, rest.StreamingQueriesRemoved, rest.StreamingQueriesChanged = nil, nil, nil
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
 	rest.IndexesRenamed, rest.IndexPartitioningChanged, rest.IndexCommentsChanged = nil, nil, nil

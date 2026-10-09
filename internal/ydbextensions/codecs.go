@@ -10,12 +10,14 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 // Codecs returns the explicit current operation codecs. These describe the
 // model only; they grant no target capability and perform no server discovery.
 func Codecs() []schemaext.Codec {
 	models := append(ydbschema.Codecs(), ydbcoordination.Codecs()...)
+	models = append(models, ydbstreaming.Codecs()...)
 	return append(append(models, ydbdiff.Codecs()...), []schemaext.Codec{
 		ydbast.CoordinationCodec(),
 		ydbast.StreamingCodec(),

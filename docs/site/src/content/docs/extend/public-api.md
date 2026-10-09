@@ -75,12 +75,13 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
 | `dialect/ydb/ydbcoordination` | Standalone node declarations, observations, settings, and codecs. |
 | `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
-| `dialect/ydb/ydbrender` | Coordination-node statement rendering. |
+| `dialect/ydb/ydbrender` | Coordination-node and streaming-query statement rendering. |
 | `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |
 | `dialect/ydb/ydbreverse` | Feature reversal and recovery limits. |
 | `dialect/ydb/ydbplan` | Feature declaration and migration planning. |
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
 | `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
+| `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |

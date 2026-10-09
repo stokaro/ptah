@@ -199,9 +199,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 				s.ExternalDataSources = append(s.ExternalDataSources, catalog.ExternalDataSource{Name: "s3_bucket"})
 			},
 		},
-		{field: "StreamingQueries", present: "stream_events", absent: "nosuch_stream", seed: func(s *catalog.Database) {
-			s.StreamingQueries = append(s.StreamingQueries, catalog.StreamingQuery{Name: "stream_events"})
-		}},
 		{
 			field: "ExternalTables", present: "events_files", absent: "nosuch_external",
 			seed: func(s *catalog.Database) {

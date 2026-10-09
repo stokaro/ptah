@@ -244,6 +244,7 @@ func validatePackageName(name string) error {
 
 type renderContext struct {
 	coordinationAnnotations []string
+	streamingAnnotations    []string
 	changefeedsByTable      map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                      *schemamodel.Database
 	opts                    Options
@@ -409,7 +410,7 @@ func (ctx *renderContext) hasYDBObjects() bool {
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
 		len(ctx.coordinationAnnotations) > 0 ||
-		len(ctx.db.StreamingQueries) > 0
+		len(ctx.streamingAnnotations) > 0
 }
 
 // hasExternalObjects reports declarations for external access and its credentials.

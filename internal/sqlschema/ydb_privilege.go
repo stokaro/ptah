@@ -165,9 +165,6 @@ func declaredYDBDirectory(database *schemamodel.Database, name string) bool {
 	for _, object := range database.ExternalTables {
 		directories = append(directories, object.Schema)
 	}
-	for _, object := range database.StreamingQueries {
-		directories = append(directories, object.Schema)
-	}
 	return slices.ContainsFunc(directories, func(directory string) bool {
 		return directory == name || strings.HasPrefix(directory, name+"/")
 	})

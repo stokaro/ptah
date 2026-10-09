@@ -21,6 +21,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine/builtin"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/engine/builtin/internal/dialects/mssql"
@@ -66,7 +67,7 @@ func coordinationFixture() extensionFixture {
 
 func streamingFixture() extensionFixture {
 	return extensionFixture{payload: &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Schema: "jobs.daily", Name: "copy.events",
-		Spec: ast.StreamingQuerySpec{Text: "SELECT 1;", Run: new(false)}},
+		Spec: ydbstreaming.Spec{Text: "SELECT 1;", Run: new(false)}},
 		wantSQL: "CREATE STREAMING QUERY `jobs.daily/copy.events` WITH (RUN = FALSE, RESOURCE_POOL = `default`) AS DO BEGIN\nSELECT 1;\nEND DO;\n"}
 }
 

@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/convert/goschematogo"
-	"ptah.run/internal/ydbstream"
 )
 
 // A schema containing only a streaming query still needs a Go holder, and
@@ -31,9 +31,14 @@ func TestRender_StreamingQuery_RoundTrip(t *testing.T) {
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.StreamingQueries, qt.HasLen, 1)
-	c.Assert(ydbstream.Equal(parsed.StreamingQueries[0].Spec, db.StreamingQueries[0].Spec), qt.IsTrue)
-	c.Assert(parsed.StreamingQueries[0].Schema, qt.Equals, "jobs")
-	c.Assert(parsed.StreamingQueries[0].Name, qt.Equals, "copy")
-	c.Assert(parsed.StreamingQueries[0].AllowStateReset, qt.IsTrue)
+	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 1)
+	original, found, err := db.FeatureObjects.Get(ydbstreaming.Ref("jobs", "copy"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	observed, found, err := parsed.FeatureObjects.Get(original.Ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	query := observed.Value.(*ydbstreaming.Desired)
+	c.Assert(ydbstreaming.Equal(query.Spec, original.Value.(*ydbstreaming.Desired).Spec), qt.IsTrue)
+	c.Assert(query.AllowStateReset, qt.IsTrue)
 }

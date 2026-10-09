@@ -23,10 +23,10 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
-	"ptah.run/internal/ydbstream"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -1187,8 +1187,8 @@ const (
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.
 func destructivePrefixReason(words []string) (string, bool) {
-	if ydbstream.LosesCheckpoint(words) {
-		return ydbstream.CheckpointLoss, true
+	if ydbstreaming.LosesCheckpoint(words) {
+		return ydbstreaming.CheckpointLoss, true
 	}
 	for _, prefix := range destructivePrefixes {
 		if hasWordPrefix(words, prefix.words...) {
@@ -1275,7 +1275,7 @@ func assessResourcePoolNode(node ast.Node, assessment StatementAssessment) State
 func runtimeObjectChangeReason(words []string) (string, bool) {
 	switch {
 	case hasWordPrefix(words, "ALTER", "STREAMING", "QUERY"):
-		return ydbstream.ExecutionChange, true
+		return ydbstreaming.ExecutionChange, true
 	case hasWordPrefix(words, "DROP", "EXTERNAL", "DATA", "SOURCE"):
 		return dropExternalDataSourceReason, true
 	case hasWordPrefix(words, "DROP", "EXTERNAL", "TABLE"):

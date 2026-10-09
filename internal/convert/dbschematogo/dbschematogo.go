@@ -80,7 +80,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertReplications(database, dbSchema.AsyncReplications, dbSchema.Transfers)
 	convertSecrets(database, dbSchema.Secrets)
 	convertExternalObjects(database, dbSchema)
-	convertStreamingQueries(database, dbSchema.StreamingQueries)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath

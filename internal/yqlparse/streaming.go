@@ -5,9 +5,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbstream"
 )
 
 func (p *parser) streamingQuery(replace bool) *ast.ExtensionStatement {
@@ -56,7 +56,7 @@ func (p *parser) streamingQuery(replace bool) *ast.ExtensionStatement {
 	}
 	p.wantWord("AS")
 	node.Spec.Text = p.streamingBody()
-	if err := ydbstream.Validate(node.Spec); err != nil {
+	if err := ydbstreaming.Validate(node.Spec); err != nil {
 		p.failf("%v", err)
 	}
 	return &ast.ExtensionStatement{Payload: node}

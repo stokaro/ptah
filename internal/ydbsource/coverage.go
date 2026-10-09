@@ -10,33 +10,50 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
-// Coverage captures the namespaces these formats can declare, including an
-// empty document. HCL enrolls coordination nodes separately because it cannot
-// declare changefeeds. Runtime registration never expands source knowledge.
-// Each optional coordination limit names a path the author leaves unmanaged;
-// an empty name leaves the whole namespace unmanaged.
-func Coverage(coordinationLimits ...string) (schemaext.Coverage, error) {
+// Limits records source declarations that leave standalone objects unmanaged.
+// An empty name leaves its entire namespace unmanaged.
+type Limits struct {
+	Coordination []string
+	Streaming    []string
+}
+
+// Coverage enrolls only namespaces these source formats can declare. HCL
+// enrolls coordination separately; it cannot declare changefeeds or streaming
+// queries. Runtime registration never expands a source's vocabulary.
+func Coverage(limits Limits) (schemaext.Coverage, error) {
 	feeds, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	nodes, err := coordinationCoverage(coordinationLimits)
+	nodes, err := namespaceCoverage(limits.Coordination, ydbcoordination.Kind, "coordination nodes", ydbcoordination.Ref, ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	return feeds.Combine(nodes)
+	queries, err := namespaceCoverage(limits.Streaming, ydbstreaming.Kind, "streaming queries", ydbstreaming.Ref, ydbstreaming.ValidateIdentity, ydbstreaming.Coverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	combined, err := feeds.Combine(nodes)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	return combined.Combine(queries)
 }
 
-func coordinationCoverage(limits []string) (schemaext.Coverage, error) {
+func namespaceCoverage(limits []string, kind schemaext.Kind, label string,
+	identity func(string, string) objectidentity.ID, validate func(objectidentity.ID) error,
+	enroll func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error),
+) (schemaext.Coverage, error) {
 	namespace := schemaext.Knowledge{State: schemaext.Complete}
-	limit := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source declares this coordination node unmanaged"}
+	limit := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves this object unmanaged"}
 	var subjects []schemaext.SubjectCoverage
 	seen := make(map[objectidentity.Key]bool)
 	for _, name := range limits {
 		if name == "" {
-			namespace = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source declares coordination nodes unmanaged"}
+			namespace = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source leaves " + label + " unmanaged"}
 			continue
 		}
 		// A source path is already decoded. Dots within its directory or leaf
@@ -49,14 +66,14 @@ func coordinationCoverage(limits []string) (schemaext.Coverage, error) {
 		if slash := strings.LastIndex(physical, "/"); slash >= 0 {
 			schema, leaf = physical[:slash], physical[slash+1:]
 		}
-		ref := ydbcoordination.Ref(schema, leaf)
-		if err := ydbcoordination.ValidateIdentity(ref); err != nil {
+		ref := identity(schema, leaf)
+		if err := validate(ref); err != nil {
 			return schemaext.Coverage{}, err
 		}
 		if !seen[ref.Key()] {
-			subjects = append(subjects, schemaext.SubjectCoverage{Kind: ydbcoordination.Kind, Subject: ref, Knowledge: limit})
+			subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: ref, Knowledge: limit})
 			seen[ref.Key()] = true
 		}
 	}
-	return ydbcoordination.Coverage(schemaext.Desired, namespace, subjects)
+	return enroll(schemaext.Desired, namespace, subjects)
 }

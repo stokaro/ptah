@@ -880,7 +880,7 @@ func (d document) addEnums(db *schemamodel.Database) {
 }
 
 func (d document) addTables(db *schemamodel.Database) error {
-	featureCoverage, err := ydbsource.Coverage()
+	featureCoverage, err := ydbsource.Coverage(ydbsource.Limits{})
 	if err != nil {
 		return err
 	}

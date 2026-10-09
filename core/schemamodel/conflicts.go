@@ -308,7 +308,6 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.secrets,
 		validator.externalDataSources,
 		validator.externalTables,
-		validator.streamingQueries,
 		validator.triggers,
 		validator.rlsPolicies,
 		validator.rlsEnabledTables,
@@ -1138,13 +1137,4 @@ func schemaPhrase(schema string) string {
 		return "in every schema"
 	}
 	return "in schema " + schema
-}
-
-func (v compositeDefinitionValidator) streamingQueries() error {
-	return validateNamedDefinitions(v.database.StreamingQueries, StreamingQuery.QualifiedName,
-		func(query StreamingQuery) StreamingQuery { query.StructName = ""; return query },
-		func(_ StreamingQuery, key string) error {
-			return fmt.Errorf("conflicting streaming query %q definitions", key)
-		},
-	)
 }

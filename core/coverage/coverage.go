@@ -247,9 +247,6 @@ const (
 	// user's or a group's queries to a resource pool. It is recorded as
 	// [ResourcePool] is.
 	ResourcePoolClassifier Kind = "resource_pool_classifier"
-	// StreamingQuery is a YDB streaming query, which runs continuously over
-	// the messages of a topic. Ptah does not model one.
-	StreamingQuery Kind = "streaming_query"
 	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
 	// named by the table's path and the changefeed's name.
 	Changefeed Kind = "changefeed"
@@ -288,7 +285,7 @@ const (
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
-	ResourcePool, ResourcePoolClassifier, Role, Schema, Secret, Sequence, StreamingQuery, Synonym, TableOption,
+	ResourcePool, ResourcePoolClassifier, Role, Schema, Secret, Sequence, Synonym, TableOption,
 	Topic, Transfer, TTL, View, VirtualTable,
 }
 

@@ -7,9 +7,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
@@ -18,8 +19,9 @@ import (
 func TestStreamingQueries_ReverseBodyChangeRequiresTheSamePermission(t *testing.T) {
 	c := qt.New(t)
 	caps := capability.YDB262().With(capability.StreamingQueries, true)
-	current := &catalog.Database{StreamingQueries: []catalog.StreamingQuery{{Name: "q", Spec: ast.StreamingQuerySpec{Text: "INSERT INTO dst SELECT * FROM src;", Run: new(false)}}}}
-	desired := &schemamodel.Database{StreamingQueries: []schemamodel.StreamingQuery{{Name: "q", Spec: ast.StreamingQuerySpec{Text: "INSERT INTO dst SELECT * FROM src WHERE TRUE;", Run: new(false)}}}}
+	current := &catalog.Database{FeatureCoverage: must.Must(ydbstreaming.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)), FeatureObjects: must.Must(schemaext.NewObjects(ydbstreaming.ObservedObject("", "q", ydbstreaming.Spec{Text: "INSERT INTO dst SELECT * FROM src;", Run: new(false)})))}
+	after := ydbstreaming.DesiredObject("", "q", "", ydbstreaming.Spec{Text: "INSERT INTO dst SELECT * FROM src WHERE TRUE;", Run: new(false)}, false)
+	desired := &schemamodel.Database{FeatureCoverage: must.Must(ydbstreaming.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)), FeatureObjects: must.Must(schemaext.NewObjects(after))}
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(),
 		desired, current, catalog.ServerInfo{Dialect: "ydb", Capabilities: caps}, nil, must.Must(builtin.New()),
 	)
@@ -27,7 +29,8 @@ func TestStreamingQueries_ReverseBodyChangeRequiresTheSamePermission(t *testing.
 	_, err = generator.PlanBidirectionalSchemaDiff(t.Context(),
 		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff, DesiredSchema: desired, CurrentSchema: current, Dialect: "ydb", Capabilities: caps})
 	c.Assert(err, qt.ErrorMatches, `(?s).*allow_state_reset=true.*`)
-	desired.StreamingQueries[0].AllowStateReset = true
+	after.Value.(*ydbstreaming.Desired).AllowStateReset = true
+	desired.FeatureObjects = must.Must(desired.FeatureObjects.Replace(after))
 	diff, err = schemadiff.CompareWithDatabaseInfo(t.Context(),
 		desired, current, catalog.ServerInfo{Dialect: "ydb", Capabilities: caps}, nil, must.Must(builtin.New()),
 	)

@@ -12,7 +12,7 @@ import (
 // projectDatabase applies the schema universe and include selectors to the
 // introspected database schema, mirroring projectGenerated so both comparison
 // sides see one projection.
-func (s *scopeSelection) projectDatabase(db *catalog.Database) *catalog.Database {
+func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Database, error) {
 	out := cloneDatabase(db)
 	keptTables := make(map[tableIdentity]struct{})
 	out.Tables = keep(db.Tables, func(table catalog.Table) bool {
@@ -30,6 +30,11 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) *catalog.Database
 	})
 
 	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
+	pools, err := streamingPools(out.FeatureObjects)
+	if err != nil {
+		return nil, err
+	}
 	out.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
 		return s.tableKept(keptTables, index.Schema, index.TableName)
 	})
@@ -44,11 +49,11 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) *catalog.Database
 		return s.tableKept(keptTables, schema, table)
 	})
 
-	s.projectDatabaseTopLevel(db, out, keptTables)
+	s.projectDatabaseTopLevel(db, out, keptTables, pools)
 	s.projectDatabaseSupport(db, out)
 	s.projectDatabaseExtensions(db, out)
 	out.Schemas = s.keepDatabaseSchemas(db, out)
-	return out
+	return out, nil
 }
 
 // projectDatabaseTopLevel selects independently includable top-level database
@@ -57,7 +62,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) *catalog.Database
 // matched.
 func (s *scopeSelection) projectDatabaseTopLevel(
 	db, out *catalog.Database,
-	keptTables map[tableIdentity]struct{},
+	keptTables map[tableIdentity]struct{}, pools map[string]bool,
 ) {
 	out.Views = keep(db.Views, func(view catalog.View) bool {
 		return s.selected(typeList("view"), view.Schema, view.Name)
@@ -92,9 +97,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	out.ExternalDataSources = keep(db.ExternalDataSources, func(source catalog.ExternalDataSource) bool {
 		return s.selected(typeList("external_data_source"), source.Schema, source.Name)
-	})
-	out.StreamingQueries = keep(db.StreamingQueries, func(query catalog.StreamingQuery) bool {
-		return s.selected(typeList("streaming_query"), query.Schema, query.Name)
 	})
 	out.ExternalTables = keep(db.ExternalTables, func(table catalog.ExternalTable) bool {
 		return s.selected(typeList("external_table"), table.Schema, table.Name)
@@ -158,7 +160,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	out.ResourcePools = keep(db.ResourcePools, func(pool catalog.ResourcePool) bool {
 		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
-			slices.ContainsFunc(out.StreamingQueries, func(query catalog.StreamingQuery) bool { return query.Spec.ResourcePool == pool.Name }) ||
+			pools[pool.Name] ||
 			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier catalog.ResourcePoolClassifier) bool {
 				return classifier.Spec.ResourcePool == pool.Name
 			})

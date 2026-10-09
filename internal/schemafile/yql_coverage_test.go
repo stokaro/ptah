@@ -29,7 +29,7 @@ func TestYQLSupportedFamilyCoverageSurvivesFileLoading(t *testing.T) {
 			c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id));"), 0o600), qt.IsNil)
 			database, err := load.read(path, schemafile.Options{Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
-			for _, kind := range []coverage.Kind{coverage.Replication, coverage.Transfer, coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Role, coverage.Grant, coverage.StreamingQuery, coverage.Changefeed, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.ColumnTable, coverage.View, coverage.Topic} {
+			for _, kind := range []coverage.Kind{coverage.Replication, coverage.Transfer, coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Role, coverage.Grant, coverage.Changefeed, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.ColumnTable, coverage.View, coverage.Topic} {
 				c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 			}
 		})

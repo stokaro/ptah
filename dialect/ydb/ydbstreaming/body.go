@@ -1,4 +1,4 @@
-package ydbstream
+package ydbstreaming
 
 import (
 	"ptah.run/core/platform"

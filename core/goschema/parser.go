@@ -563,10 +563,10 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 // A Go schema is not a serialized document, so it carries no leading comment
 // header for the `ptah:not-described` directive that an HCL or SQL description
 // uses. This is the same statement in the grammar Go annotations already have.
-// Common families use [coverage.Set]. Coordination limits use the owner's
+// Common families use [coverage.Set]. Standalone YDB limits use their owners'
 // feature coverage so they cannot recreate a shared dialect model.
 //
-// `kind` is required and names a common coverage kind or coordination_node;
+// `kind` is required and names a common coverage kind or coordination_node or streaming_query;
 // an unknown one is refused rather than ignored, because ignoring it turns the
 // absence it was protecting into a removal. `name` is optional: without it the
 // whole family is declined, which is what a bare directive means in the
@@ -586,6 +586,10 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 	}
 	if strings.EqualFold(strings.TrimSpace(kv["kind"]), "coordination_node") {
 		s.coordinationLimits = append(s.coordinationLimits, kv["name"])
+		return nil
+	}
+	if strings.EqualFold(strings.TrimSpace(kv["kind"]), "streaming_query") {
+		s.streamingLimits = append(s.streamingLimits, kv["name"])
 		return nil
 	}
 	kind, err := coverage.ParseKind(kv["kind"])
@@ -753,6 +757,7 @@ type schemaParseState struct {
 	featureObjects          schemaext.Objects
 	featureCoverage         schemaext.Coverage
 	coordinationLimits      []string
+	streamingLimits         []string
 	filename                string
 	fset                    *token.FileSet
 	tableNameToStructName   map[string]string
@@ -771,7 +776,6 @@ type schemaParseState struct {
 	views                   []schemamodel.View
 	synonyms                []schemamodel.Synonym
 	secrets                 []schemamodel.Secret
-	streamingQueries        []schemamodel.StreamingQuery
 	externalDataSources     []schemamodel.ExternalDataSource
 	externalTables          []schemamodel.ExternalTable
 	extendedProperties      []schemamodel.ExtendedProperty
@@ -1126,7 +1130,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		AsyncReplications:       state.asyncReplications,
 		Transfers:               state.transfers,
 		Secrets:                 state.secrets,
-		StreamingQueries:        state.streamingQueries,
 		ExternalDataSources:     state.externalDataSources,
 		ExternalTables:          state.externalTables,
 		ExtendedProperties:      state.extendedProperties,

@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"path"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
-	"ptah.run/internal/ydbstream"
+	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 // The stopped query validates its declaration without consuming messages or
@@ -19,8 +18,8 @@ func ydbStreamingQueries() experiment {
 		setup:   []string{"CREATE TOPIC stream_in", "CREATE TOPIC stream_out"},
 		creates: []string{"stream_key"},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
-			spec := ast.StreamingQuerySpec{Run: new(false), Text: fmt.Sprintf("INSERT INTO `%s` SELECT * FROM `%s`;", path.Join(s.namespace, "stream_out"), path.Join(s.namespace, "stream_in"))}
-			statement := ydbstream.Create(path.Join(s.namespace, "stream_key"), spec, ydbstream.CreateOptions{})
+			spec := ydbstreaming.Spec{Run: new(false), Text: fmt.Sprintf("INSERT INTO `%s` SELECT * FROM `%s`;", path.Join(s.namespace, "stream_out"), path.Join(s.namespace, "stream_in"))}
+			statement := ydbstreaming.Create(path.Join(s.namespace, "stream_key"), spec, ydbstreaming.CreateOptions{})
 			created := s.execAtRoot(ctx, statement)
 			if !created.Accepted {
 				return verdicts{capability.StreamingQueries: decided(false)}, []Attempt{created}
@@ -32,12 +31,12 @@ func ydbStreamingQueries() experiment {
 				return verdicts{capability.StreamingQueries: cannotDecide("streaming query readback failed: %v", err)}, []Attempt{created, read}
 			}
 			read.Accepted = true
-			found := false
-			for _, query := range db.StreamingQueries {
-				if query.Name == "stream_key" && ydbstream.Equal(query.Spec, spec) {
-					found = true
-				}
+			object, found, err := db.FeatureObjects.Get(ydbstreaming.Ref(s.namespace, "stream_key"))
+			if err != nil {
+				return verdicts{capability.StreamingQueries: cannotDecide("streaming query capture failed: %v", err)}, []Attempt{created, read}
 			}
+			query, typed := object.Value.(*ydbstreaming.Observed)
+			found = found && typed && ydbstreaming.Equal(query.Spec, spec)
 			return verdicts{capability.StreamingQueries: readBack{accepted: true, statement: statement, what: "the stopped query with its declared text and default pool", found: found}.observation()}, []Attempt{created, read}
 		},
 	}

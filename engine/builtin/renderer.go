@@ -56,7 +56,6 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
-	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/engine/builtin/internal/dialects/mariadb"
 	"ptah.run/engine/builtin/internal/dialects/mssql"
@@ -87,7 +86,6 @@ import (
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbreplication"
-	"ptah.run/internal/ydbstream"
 )
 
 // SupportedDialects returns a list of all supported database dialects.
@@ -1168,14 +1166,6 @@ func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, da
 	}
 	if err := validateDeclaredSecrets(dialect, caps, database); err != nil {
 		return err
-	}
-	for _, query := range database.StreamingQueries {
-		if err := ydbstream.Refuse(dialect, caps, "streaming query "+query.QualifiedName()); err != nil {
-			return err
-		}
-		if err := ydbrender.StreamingHandler().Validate(renderer.ExtensionContext{Target: dialect, Capabilities: caps}, modelast.FromStreamingQuery(query).Payload); err != nil {
-			return err
-		}
 	}
 	return validateDeclaredExternalObjects(dialect, caps, database)
 }

@@ -4,35 +4,97 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/atlasfilter"
 )
 
 func TestScope_StreamingQueriesAndTheirPools(t *testing.T) {
-	c := qt.New(t)
-	declared := &schemamodel.Database{StreamingQueries: []schemamodel.StreamingQuery{
-		{Name: "copy", Spec: ast.StreamingQuerySpec{ResourcePool: "batch"}}, {Name: "other"},
-	}, ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}, {Name: "idle"}}}
-	held := &catalog.Database{StreamingQueries: []catalog.StreamingQuery{
-		{Name: "copy", Spec: ast.StreamingQuerySpec{ResourcePool: "batch"}}, {Name: "other"},
-	}, ResourcePools: []catalog.ResourcePool{{Name: "batch"}, {Name: "idle"}}}
-	scope := atlasfilter.Scope{Include: []string{"copy[type=streaming_query]"}}
-	generated, _, err := atlasfilter.ScopeGeneratedSelectionReport(declared, scope)
-	c.Assert(err, qt.IsNil)
-	live, err := atlasfilter.ScopeDatabase(held, scope)
-	c.Assert(err, qt.IsNil)
-	c.Assert(generated.StreamingQueries, qt.DeepEquals, declared.StreamingQueries[:1])
-	c.Assert(live.StreamingQueries, qt.DeepEquals, held.StreamingQueries[:1])
-	c.Assert(generated.ResourcePools, qt.DeepEquals, declared.ResourcePools[:1])
-	c.Assert(live.ResourcePools, qt.DeepEquals, held.ResourcePools[:1])
-	scope = atlasfilter.Scope{Exclude: []string{"copy[type=streaming_query]"}}
-	generated, _, err = atlasfilter.ScopeGeneratedSelectionReport(declared, scope)
-	c.Assert(err, qt.IsNil)
-	live, err = atlasfilter.ScopeDatabase(held, scope)
-	c.Assert(err, qt.IsNil)
-	c.Assert(generated.StreamingQueries, qt.DeepEquals, declared.StreamingQueries[1:])
-	c.Assert(live.StreamingQueries, qt.DeepEquals, held.StreamingQueries[1:])
+	for _, test := range []struct {
+		name     string
+		scope    atlasfilter.Scope
+		selected string
+		pools    []string
+	}{
+		{name: "include explicit pool", scope: atlasfilter.Scope{Include: []string{"copy[type=streaming_query]"}}, selected: "copy", pools: []string{"batch"}},
+		{name: "include default pool", scope: atlasfilter.Scope{Include: []string{"other[type=streaming_query]"}}, selected: "other", pools: []string{"default"}},
+		{name: "exclude query", scope: atlasfilter.Scope{Exclude: []string{"copy[type=streaming_query]"}}, selected: "other", pools: []string{"batch", "default", "idle"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+				ydbstreaming.DesiredObject("", "copy", "Copy", ydbstreaming.Spec{Text: "SELECT 1;", ResourcePool: "batch"}, true),
+				ydbstreaming.DesiredObject("", "other", "Other", ydbstreaming.Spec{Text: "SELECT 2;"}, false),
+			)), ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}, {Name: "default"}, {Name: "idle"}}}
+			held := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+				ydbstreaming.ObservedObject("", "copy", ydbstreaming.Spec{Text: "SELECT 1;", ResourcePool: "batch"}),
+				ydbstreaming.ObservedObject("", "other", ydbstreaming.Spec{Text: "SELECT 2;"}),
+			)), ResourcePools: []catalog.ResourcePool{{Name: "batch"}, {Name: "default"}, {Name: "idle"}}}
+			generated, _, err := atlasfilter.ScopeGeneratedSelectionReport(declared, test.scope)
+			c.Assert(err, qt.IsNil)
+			live, err := atlasfilter.ScopeDatabase(held, test.scope)
+			c.Assert(err, qt.IsNil)
+			desired, found, err := declared.FeatureObjects.Get(ydbstreaming.Ref("", test.selected))
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			observed, found, err := held.FeatureObjects.Get(ydbstreaming.Ref("", test.selected))
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(must.Must(generated.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{desired})
+			c.Assert(must.Must(live.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{observed})
+			c.Assert(streamingPoolNames(generated.ResourcePools, live.ResourcePools), qt.DeepEquals, [2][]string{test.pools, test.pools})
+			c.Assert(declared.FeatureObjects.Len(), qt.Equals, 2)
+			c.Assert(held.FeatureObjects.Len(), qt.Equals, 2)
+		})
+	}
+}
+
+func streamingPoolNames(desired []schemamodel.ResourcePool, observed []catalog.ResourcePool) [2][]string {
+	var names [2][]string
+	for _, pool := range desired {
+		names[0] = append(names[0], pool.Name)
+	}
+	for _, pool := range observed {
+		names[1] = append(names[1], pool.Name)
+	}
+	return names
+}
+
+func TestScopeStreamingLimitsFollowObjectSelection(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		scope atlasfilter.Scope
+	}{
+		{name: "include", scope: atlasfilter.Scope{Include: []string{"app.*[type=streaming_query]"}}},
+		{name: "exclude", scope: atlasfilter.Scope{Exclude: []string{"other.*[type=streaming_query]"}}},
+		{name: "schema", scope: atlasfilter.Scope{Schemas: []string{"app"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := streamingScopeCoverage(c, schemaext.Desired)
+			observed := streamingScopeCoverage(c, schemaext.Observed)
+			generated, err := atlasfilter.ScopeGenerated(&schemamodel.Database{FeatureCoverage: desired}, test.scope)
+			c.Assert(err, qt.IsNil)
+			live, err := atlasfilter.ScopeDatabase(&catalog.Database{FeatureCoverage: observed}, test.scope)
+			c.Assert(err, qt.IsNil)
+			c.Assert(generated.FeatureCoverage.SubjectRecords(), qt.DeepEquals, desired.SubjectRecords()[:1])
+			c.Assert(live.FeatureCoverage.SubjectRecords(), qt.DeepEquals, observed.SubjectRecords()[:1])
+			c.Assert(generated.FeatureCoverage.KindRecords(), qt.DeepEquals, desired.KindRecords())
+			c.Assert(live.FeatureCoverage.KindRecords(), qt.DeepEquals, observed.KindRecords())
+			c.Assert(desired.SubjectRecords(), qt.HasLen, 2)
+			c.Assert(observed.SubjectRecords(), qt.HasLen, 2)
+		})
+	}
+}
+
+func streamingScopeCoverage(c *qt.C, representation schemaext.Representation) schemaext.Coverage {
+	c.Helper()
+	return must.Must(ydbstreaming.Coverage(representation, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{
+		{Kind: ydbstreaming.Kind, Subject: ydbstreaming.Ref("app", "limited"), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "permission denied"}},
+		{Kind: ydbstreaming.Kind, Subject: ydbstreaming.Ref("other", "limited"), Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not inspected"}},
+	}))
 }

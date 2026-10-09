@@ -216,7 +216,6 @@ func compareReportingUndecidedAdditions(
 
 	compare.Secrets(desired, database, diff, cov)
 	compare.ExternalObjects(desired, database, diff, cov)
-	compare.StreamingQueries(desired, database, diff, cov)
 
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
 	compare.Hypertables(desired, database, diff, cov)

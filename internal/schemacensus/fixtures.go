@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/capabilityprobe"
 )
 
@@ -1931,8 +1932,9 @@ func primaryKeyConstraintOptionsFixture() schemamodel.Database {
 
 func streamingQueryFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.StreamingQueries = []schemamodel.StreamingQuery{{Name: "copy", Schema: "streams", StructName: "Streaming", AllowStateReset: true,
-		Spec: ast.StreamingQuerySpec{Text: "INSERT INTO output SELECT * FROM input;", Run: new(false), ResourcePool: "reporting"}}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbstreaming.DesiredObject("streams", "copy", "Streaming",
+		ydbstreaming.Spec{Text: "INSERT INTO output SELECT * FROM input;", Run: new(false), ResourcePool: "reporting"}, true)))
+	db.FeatureCoverage = must.Must(ydbstreaming.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
 

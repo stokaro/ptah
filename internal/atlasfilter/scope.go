@@ -452,7 +452,7 @@ func scopeReport[T any](
 	db *T,
 	scope Scope,
 	exclude func(*T, Scope) (*T, ExcludeReport, error),
-	project func(*scopeSelection, *T) *T,
+	project func(*scopeSelection, *T) (*T, error),
 	validate func(*T, *T, *scopeSelection) error,
 ) (*T, ScopeReports, error) {
 	if !scope.Positive() {
@@ -471,7 +471,11 @@ func scopeReport[T any](
 		return nil, ScopeReports{}, err
 	}
 	selection := newScopeSelection(scope, selectors)
-	final, _, err := exclude(project(selection, db), scope)
+	projected, err := project(selection, db)
+	if err != nil {
+		return nil, ScopeReports{}, err
+	}
+	final, _, err := exclude(projected, scope)
 	if err != nil {
 		return nil, ScopeReports{}, err
 	}
