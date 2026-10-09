@@ -139,6 +139,9 @@ func isAutoPromotedBoolean(attr string, skip map[string]bool) bool {
 		strings.HasPrefix(attr, "has_")
 }
 
+// ParsePlatformSpecific returns a table or field directive's platform
+// overrides: the MySQL-family `engine` and `comment` shortcuts, then every
+// `platform.<dialect>.<key>` attribute, which takes precedence.
 func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
 	for _, dialect := range []string{"mysql", "mariadb"} {
@@ -153,6 +156,25 @@ func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 		}
 	}
 
+	addPlatformAttributes(out, kv)
+	return out
+}
+
+// ParsePlatformProperties returns only the `platform.<dialect>.<key>`
+// attributes of a directive, grouped by dialect, and nil when it has none. A
+// directive whose common attributes carry no platform meaning uses it, so an
+// index's `comment` stays the index comment rather than becoming a MySQL
+// property no owner claims.
+func ParsePlatformProperties(kv map[string]string) map[string]map[string]string {
+	out := make(map[string]map[string]string)
+	addPlatformAttributes(out, kv)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func addPlatformAttributes(out map[string]map[string]string, kv map[string]string) {
 	for k, v := range kv {
 		if !annotationmeta.IsPlatformAttribute(k) {
 			continue
@@ -165,5 +187,4 @@ func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 		}
 		out[dialect][key] = v
 	}
-	return out
 }
