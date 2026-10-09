@@ -128,7 +128,7 @@ func declareDefaultPool(request featureplan.DeclarationRequest, result featurepl
 	problem := schemavalidation.Diagnostic{Kind: string(ydbworkload.PoolKind), Object: object.Ref.String()}
 	switch {
 	case !request.Capabilities.Has(capability.ResourcePools):
-		problem.Code, problem.Feature, problem.Message = schemavalidation.UnsupportedFeature, string(capability.ResourcePools), "this target does not support resource pools"
+		problem.Code, problem.Feature, problem.Message = schemavalidation.UnsupportedFeature, string(capability.ResourcePools), "this target does not support resource pools; "+ydbworkload.FlagHint
 	default:
 		if err := payload.Validate(); err != nil {
 			problem.Code, problem.Message = schemavalidation.InvalidSchema, err.Error()

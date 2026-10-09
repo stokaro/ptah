@@ -211,7 +211,6 @@ func compareReportingUndecidedAdditions(
 	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
 	compare.Synonyms(desired, database, diff, cov)
 	compare.Topics(desired, database, diff, cov)
-	compare.ResourcePools(desired, database, diff, cov)
 	compare.Replications(desired, database, diff, cov)
 
 	compare.Secrets(desired, database, diff, cov)

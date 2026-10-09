@@ -442,6 +442,9 @@ v0.13.0 ptah.run/core/ast
 # namespace and subject knowledge. Common StreamingQuery models, collection
 # fields, diff buckets, and coverage kind are removed. Reset permission remains
 # desired-only and is retained for an accepted change's reverse plan.
+# Resource pools and classifiers use ydbdiff before/after changes carried by
+# FeatureChanges. The common ResourcePoolChanges, ResourcePoolClassifierChanges,
+# ResourcePoolDiff, ResourcePoolClassifierDiff, and six diff buckets are removed.
 # Consumers use the owner model, change, and operation codecs directly.
 # This changes behavior; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.

@@ -64,7 +64,7 @@ func (WorkloadService) PlanFeatures(ctx context.Context, request featureplan.Req
 	if len(request.Changes) > 0 && !request.Capabilities.Has(capability.ResourcePools) {
 		diagnostics = append(diagnostics, featureplan.Diagnostic{Problem: schemavalidation.Diagnostic{
 			Code: schemavalidation.UnsupportedFeature, Kind: string(request.Changes[0].Value.Kind()), Feature: string(capability.ResourcePools),
-			Message: "this target does not support resource pools and classifiers",
+			Message: "this target does not support resource pools and classifiers; " + ydbworkload.FlagHint,
 		}})
 	}
 	if len(diagnostics) != 0 {

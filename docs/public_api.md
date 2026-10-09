@@ -754,7 +754,13 @@ classifier name are literal. They never introduce a scheme directory.
 
 The workload services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
 `ydbreport` handle these objects through the selected runtime. Changes retain
-complete before and after settings. `ydbplan.WorkloadStreamingService` plans
+complete before and after settings in `ydbdiff.ResourcePool` and
+`ydbdiff.ResourcePoolClassifier`, carried by `SchemaDiff.FeatureChanges`.
+Safety reports classify these records through their owner-provided effects.
+Reversal restores captured settings and reports that past query execution
+cannot be undone.
+
+`ydbplan.WorkloadStreamingService` plans
 pools, classifiers, and streaming queries together: a classifier rank swap
 releases occupied ranks before assigning them, and running queries stop before
 workload mutations and resume afterward. These operations cannot run inside a

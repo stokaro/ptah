@@ -46,9 +46,6 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.GrantsAdded, rest.GrantsRemoved, rest.GrantOptionsAdded, rest.GrantOptionsRevoked = nil, nil, nil, nil
 	rest.DefaultPrivilegesAdded, rest.DefaultPrivilegesRemoved = nil, nil
 	rest.DefaultPrivilegeOptionsAdded, rest.DefaultPrivilegeOptionsRevoked = nil, nil
-	rest.ResourcePoolsAdded, rest.ResourcePoolsRemoved, rest.ResourcePoolsModified = nil, nil, nil
-	rest.ResourcePoolClassifiersAdded, rest.ResourcePoolClassifiersRemoved = nil, nil
-	rest.ResourcePoolClassifiersModified = nil
 	rest.AsyncReplicationsAdded, rest.AsyncReplicationsRemoved, rest.AsyncReplicationsModified = nil, nil, nil
 	rest.TransfersAdded, rest.TransfersRemoved, rest.TransfersModified = nil, nil, nil
 	rest.SecretsAdded, rest.SecretsRemoved, rest.SecretsRotated = nil, nil, nil

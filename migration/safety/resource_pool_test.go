@@ -3,12 +3,13 @@ package safety_test
 import (
 	"testing"
 
-	"ptah.run/dialect/ydb/ydbworkload"
-
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -69,13 +70,13 @@ func TestClassify_ResourcePool(t *testing.T) {
 func TestClassifySchemaDiff_ResourcePools(t *testing.T) {
 	c := qt.New(t)
 
-	added := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{
-		ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch"}},
-	})
-	routed := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{
-		ResourcePoolsAdded:           difftypes.ResourcePoolChanges{{Name: "batch"}},
-		ResourcePoolClassifiersAdded: difftypes.ResourcePoolClassifierChanges{{Name: "etl"}},
-	})
+	pool := schemaext.ChangeRecord{Subject: ydbworkload.PoolRef("batch"), Value: &ydbdiff.ResourcePool{After: &ydbworkload.DesiredPool{}}}
+	classifier := schemaext.ChangeRecord{Subject: ydbworkload.ClassifierRef("etl"), Value: &ydbdiff.ResourcePoolClassifier{After: &ydbworkload.DesiredClassifier{Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch"}}}}
+	added := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{pool}})
+	routed := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{pool, classifier}})
+	c.Assert(added, qt.HasLen, 1)
+	c.Assert(added[0].Category, qt.Equals, "feature_changes:"+string(ydbdiff.ResourcePoolKind))
+	c.Assert(routed, qt.HasLen, 2)
 
 	c.Assert(safety.Highest(added), qt.Equals, safety.Safe)
 	c.Assert(safety.Highest(routed), qt.Equals, safety.Warning)

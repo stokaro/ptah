@@ -3,159 +3,115 @@ package schemadiff_test
 import (
 	"testing"
 
-	"ptah.run/dialect/ydb/ydbworkload"
-
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/config"
-	"ptah.run/core/coverage"
-	"ptah.run/core/platform"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// readPool is a pool as the reader describes one created with a limit of ten
-// queries: every other setting unset, which .sys/resource_pools reports as -1
-// and the reader as nil.
-func readPool(name string) catalog.ResourcePool {
-	return catalog.ResourcePool{Name: name, Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}}
+func workloadCoverage(representation schemaext.Representation, knowledge schemaext.Knowledge) schemaext.Coverage {
+	pools := must.Must(ydbworkload.Coverage(ydbworkload.PoolKind, representation, knowledge, nil))
+	classifiers := must.Must(ydbworkload.Coverage(ydbworkload.ClassifierKind, representation, knowledge, nil))
+	return must.Must(pools.Combine(classifiers))
 }
 
-// A declaration and a read of the same pool or classifier compare equal, and a
-// difference is reported once per object, with both sides. A pool or a
-// classifier only the database holds is never a removal: both belong to the
-// whole database, which other applications may share.
+// Database-wide objects omitted by an application remain in the effective
+// desired snapshot. Changed objects retain both operands for planning and rollback.
 func TestCompare_ResourcePools(t *testing.T) {
+	before := ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}
+	after := ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(20))}
 	everyone := ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1000}
-	tests := []struct {
-		name                string
-		desired             *schemamodel.Database
-		current             *catalog.Database
-		added               []string
-		modified            []difftypes.ResourcePoolDiff
-		classifiersAdded    []string
-		classifiersModified []difftypes.ResourcePoolClassifierDiff
+	redirected := ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 5}
+	for _, test := range []struct {
+		name             string
+		desired, current []schemaext.Object
+		changes          []schemaext.ChangeRecord
 	}{
 		{
-			name: "the same pool and classifier",
-			desired: &schemamodel.Database{
-				ResourcePools: []schemamodel.ResourcePool{{Name: "batch",
-					Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
-				ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all", Spec: everyone}},
-			},
-			current: &catalog.Database{
-				ResourcePools:           []catalog.ResourcePool{readPool("batch")},
-				ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{{Name: "all", Spec: everyone}},
+			name:    "the same pool and classifier",
+			desired: []schemaext.Object{ydbworkload.DesiredPoolObject("batch", "", before), ydbworkload.DesiredClassifierObject("all", "", everyone)},
+			current: []schemaext.Object{ydbworkload.ObservedPoolObject("batch", before), ydbworkload.ObservedClassifierObject("all", everyone)},
+		},
+		{
+			name:    "objects only the declaration has",
+			desired: []schemaext.Object{ydbworkload.DesiredPoolObject("batch", "", before), ydbworkload.DesiredClassifierObject("all", "", everyone)},
+			changes: []schemaext.ChangeRecord{
+				{Subject: ydbworkload.PoolRef("batch"), Value: &ydbdiff.ResourcePool{After: &ydbworkload.DesiredPool{Spec: before}}},
+				{Subject: ydbworkload.ClassifierRef("all"), Value: &ydbdiff.ResourcePoolClassifier{After: &ydbworkload.DesiredClassifier{Spec: everyone}}},
 			},
 		},
 		{
-			name: "objects only the declaration has",
-			desired: &schemamodel.Database{
-				ResourcePools:           []schemamodel.ResourcePool{{Name: "batch"}},
-				ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all", Spec: everyone}},
-			},
-			current:          &catalog.Database{},
-			added:            []string{"batch"},
-			classifiersAdded: []string{"all"},
+			name:    "current-only objects are preserved",
+			current: []schemaext.Object{ydbworkload.ObservedPoolObject("batch", before), ydbworkload.ObservedPoolObject("default", ydbworkload.PoolSpec{}), ydbworkload.ObservedClassifierObject("all", everyone)},
 		},
 		{
-			name:    "objects only the database has, which no comparison drops",
-			desired: &schemamodel.Database{},
-			current: &catalog.Database{
-				ResourcePools:           []catalog.ResourcePool{readPool("batch"), {Name: "default"}},
-				ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{{Name: "all", Spec: everyone}},
+			name:    "changed limit and routing",
+			desired: []schemaext.Object{ydbworkload.DesiredPoolObject("batch", "", after), ydbworkload.DesiredClassifierObject("all", "", redirected)},
+			current: []schemaext.Object{ydbworkload.ObservedPoolObject("batch", before), ydbworkload.ObservedClassifierObject("all", everyone)},
+			changes: []schemaext.ChangeRecord{
+				{Subject: ydbworkload.PoolRef("batch"), Value: &ydbdiff.ResourcePool{Before: &ydbworkload.ObservedPool{Spec: before}, After: &ydbworkload.DesiredPool{Spec: after}}},
+				{Subject: ydbworkload.ClassifierRef("all"), Value: &ydbdiff.ResourcePoolClassifier{Before: &ydbworkload.ObservedClassifier{Spec: everyone}, After: &ydbworkload.DesiredClassifier{Spec: redirected}}},
 			},
 		},
 		{
-			name: "another limit, and another pool and rank for the classifier",
-			desired: &schemamodel.Database{
-				ResourcePools: []schemamodel.ResourcePool{{Name: "batch",
-					Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(20))}}},
-				ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all",
-					Spec: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 5}}},
-			},
-			current: &catalog.Database{
-				ResourcePools:           []catalog.ResourcePool{readPool("batch")},
-				ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{{Name: "all", Spec: everyone}},
-			},
-			modified: []difftypes.ResourcePoolDiff{{Name: "batch",
-				Desired: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(20))},
-				Current: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
-			classifiersModified: []difftypes.ResourcePoolClassifierDiff{{Name: "all", RankChanged: true,
-				Desired: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 5}, Current: everyone}},
+			name:    "default settings change in place",
+			desired: []schemaext.Object{ydbworkload.DesiredPoolObject("default", "", ydbworkload.PoolSpec{ResourceWeight: new(30.0)})},
+			current: []schemaext.Object{ydbworkload.ObservedPoolObject("default", ydbworkload.PoolSpec{})},
+			changes: []schemaext.ChangeRecord{{Subject: ydbworkload.PoolRef("default"), Value: &ydbdiff.ResourcePool{Before: &ydbworkload.ObservedPool{}, After: &ydbworkload.DesiredPool{Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}}}}},
 		},
-		{
-			name: "a declared default, changed in place",
-			desired: &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{Name: "default",
-				Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}}}},
-			current: &catalog.Database{ResourcePools: []catalog.ResourcePool{{Name: "default"}}},
-			modified: []difftypes.ResourcePoolDiff{{Name: "default",
-				Desired: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}}},
-		},
-	}
-	for _, test := range tests {
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.current, platform.YDB, must.Must(builtin.New())))
-
-			c.Assert(names(diff.ResourcePoolsAdded), qt.DeepEquals, test.added)
-			c.Assert(diff.ResourcePoolsRemoved, qt.HasLen, 0)
-			c.Assert(diff.ResourcePoolsModified, qt.DeepEquals, test.modified)
-			c.Assert(classifierNames(diff.ResourcePoolClassifiersAdded), qt.DeepEquals, test.classifiersAdded)
-			c.Assert(diff.ResourcePoolClassifiersRemoved, qt.HasLen, 0)
-			c.Assert(diff.ResourcePoolClassifiersModified, qt.DeepEquals, test.classifiersModified)
-			c.Assert(diff.HasChanges(), qt.Equals,
-				len(test.added)+len(test.modified)+len(test.classifiersAdded)+len(test.classifiersModified) > 0)
+			desired := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(test.desired...)), FeatureCoverage: workloadCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete})}
+			current := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(test.current...)), FeatureCoverage: workloadCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete})}
+			captured := desired.FeatureObjects
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current,
+				catalog.ServerInfo{Dialect: "ydb", Capabilities: capability.YDB262().With(capability.ResourcePools, true)}, nil, must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.FeatureChanges, qt.DeepEquals, test.changes)
+			c.Assert(diff.HasChanges(), qt.Equals, len(test.changes) > 0)
+			c.Assert(desired.FeatureObjects, qt.DeepEquals, captured)
 		})
 	}
 }
 
-// A read that left the pools out -- a dev realm's, whose pools are its
-// database's -- does not decide that a declared one is missing: the addition
-// is withheld and reported, since CREATE RESOURCE POOL over a pool that is
-// there fails.
+// Unknown or incomplete namespace inspection cannot establish absence. The
+// comparison refuses and reports both unknown namespaces and named subjects.
 func TestCompare_ResourcePools_Coverage(t *testing.T) {
-	c := qt.New(t)
-	outside := coverage.Set{}.With(
-		coverage.Object{Kind: coverage.ResourcePool, Reason: coverage.OutsideScope},
-		coverage.Object{Kind: coverage.ResourcePoolClassifier, Reason: coverage.OutsideScope},
-	)
-
-	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(
-		t.Context(), &schemamodel.Database{
-			ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}},
-			ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all",
-				Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}}},
-		},
-		&catalog.Database{NotDescribed: outside},
-		&config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()),
-	)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(diff.ResourcePoolsAdded, qt.HasLen, 0)
-	c.Assert(diff.ResourcePoolClassifiersAdded, qt.HasLen, 0)
-	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{
-		{Kind: coverage.ResourcePool, Name: "batch", Reason: coverage.OutsideScope},
-		{Kind: coverage.ResourcePoolClassifier, Name: "all", Reason: coverage.OutsideScope},
-	})
-}
-
-func names(pools difftypes.ResourcePoolChanges) []string {
-	var out []string
-	for _, pool := range pools {
-		out = append(out, pool.Name)
+	for _, test := range []struct {
+		name     string
+		coverage schemaext.Coverage
+	}{
+		{name: "missing enrollment"},
+		{name: "outside realm", coverage: workloadCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "outside dev realm"})},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{FeatureCoverage: workloadCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}), FeatureObjects: must.Must(schemaext.NewObjects(
+				ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}),
+				ydbworkload.DesiredClassifierObject("all", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}),
+			))}
+			current := &catalog.Database{FeatureCoverage: test.coverage}
+			refused, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current,
+				catalog.ServerInfo{Dialect: "ydb", Capabilities: capability.YDB262().With(capability.ResourcePools, true)}, nil, must.Must(builtin.New()))
+			c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
+			c.Assert(refused, qt.IsNil)
+			var incomplete *schemadiff.IncompleteComparisonError
+			c.Assert(err, qt.ErrorAs, &incomplete)
+			c.Assert(incomplete.Diagnostics.Common, qt.HasLen, 0)
+			var subjects []objectidentity.ID
+			for _, diagnostic := range incomplete.Diagnostics.Features {
+				subjects = append(subjects, diagnostic.Subject)
+			}
+			c.Assert(subjects, qt.DeepEquals, []objectidentity.ID{{}, ydbworkload.PoolRef("batch"), {}, ydbworkload.ClassifierRef("all")})
+		})
 	}
-	return out
-}
-
-func classifierNames(classifiers difftypes.ResourcePoolClassifierChanges) []string {
-	var out []string
-	for _, classifier := range classifiers {
-		out = append(out, classifier.Name)
-	}
-	return out
 }
