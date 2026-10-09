@@ -928,6 +928,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-ydb-ydbstreaming",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbstreaming",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-docs",
       "kind": "public-package",
       "surface": "ptah.run/docs",
