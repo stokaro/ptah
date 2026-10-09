@@ -324,7 +324,6 @@ properties; a selected provider validates their values.
 | `comment` | No | Index comment. |
 | `condition` | No | Partial index condition. |
 | `fields` | No | Comma-separated Go field or column names. |
-| `granularity` | No | ClickHouse data-skipping index granularity. |
 | `key_block_size` | No | MySQL-family index block-size hint. Zero uses the engine default. See [MySQL and MariaDB](../../databases/mysql/) for retention and range limits. |
 | `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB, or the Spanner PostgreSQL dialect, and `COVER` columns on YDB. Order is preserved, and a changed list rebuilds the index. |
 | `invisible` | No | Hides the index from the optimizer: `INVISIBLE` on MySQL, `IGNORED` on MariaDB, `NOT VISIBLE` on CockroachDB. `true`/`false`; bare form allowed. A target whose capability set does not carry `invisible_indexes` refuses it at render time rather than building a visible index. |
@@ -376,6 +375,17 @@ declares them. See [vector indexes](../../databases/ydb/#vector-indexes).
 | `vector_dimension` | 1 to 16384 |
 | `levels` | 1 to 16 |
 | `clusters` | 2 to 2048 |
+
+A ClickHouse data-skipping index takes its settings as ClickHouse platform
+properties. On ClickHouse the `type` attribute names the skipping-index type as
+well; declaring the type both ways is refused. A property with a `.state`
+suffix and the value `default` asks for the creation default, `minmax` or one
+granule. See [data-skipping indexes](../../databases/clickhouse/#data-skipping-indexes).
+
+| Property | Value |
+| --- | --- |
+| `platform.clickhouse.type` | the type with its parameters, such as `set(100)` |
+| `platform.clickhouse.granularity` | granules per index block, a positive integer |
 
 CockroachDB's catalog names its access methods `prefix` and `inverted`, and it
 refuses both as input. `ptah db read` reports them as `btree` and `gin`, the

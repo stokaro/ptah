@@ -101,26 +101,6 @@ ClickHouse engines and render as written. ClickHouse's engine set grows with
 every release, so nothing here decides whether a name *is* a ClickHouse engine:
 an engine Ptah has never heard of renders unchanged.
 
-A secondary index declaring a PostgreSQL or MySQL access method is refused the
-same way, and for the same reason: an index's type reaches the renderer through
-the field those families fill, so `USING GIN` in a SQL source arrives here
-looking like a data-skipping type. Rendering it produces an `ALTER TABLE` the
-server rejects with `Code: 80 ... Unknown Index type`, and the index is not
-added. Ptah names the type and points at the fix — declare a ClickHouse
-data-skipping type such as `minmax`, or drop the type to take the `minmax`
-default. As with the engine, the refusal reads the closed PostgreSQL and MySQL
-sets rather than deciding what a ClickHouse type is, so a type from a future
-release renders unchanged.
-
-Skipping indexes default to `minmax` and `GRANULARITY 1`. Index granularity
-counts table granules per index block; it is separate from the table's
-`index_granularity` setting, which controls rows per granule. An explicit index
-granularity is preserved. Database inspection retains index type parameters,
-including `set(100)` and `bloom_filter(0.01)`. `ADD INDEX` adds metadata for subsequent writes;
-existing data needs a separate `MATERIALIZE INDEX` operation. See the
-[ClickHouse skipping-index reference](https://clickhouse.com/docs/reference/statements/alter/skipping-index).
-A ClickHouse `ADD INDEX` operation sent to another target is refused.
-
 Before adopting the round trip, know that both of these come from the server's
 answer rather than from the declaration's text:
 
@@ -131,6 +111,55 @@ answer rather than from the declaration's text:
 - **A clause keyword is a legal column name, and the two are told apart by
   position.** A table sorted by a column named `settings` or `ttl` is read as
   what it is; the clause is only recognized where a clause can start.
+
+## Data-skipping indexes
+
+A data-skipping index declares its type and granularity as ClickHouse settings
+of the index. In Go annotations they are `platform.clickhouse.type` and
+`platform.clickhouse.granularity`; YAML and HCL use the index's `platform` group
+for `clickhouse`. On ClickHouse the common `type` attribute names the
+skipping-index type too, and declaring the type both ways is refused. The type
+keeps its parameters, such as `set(100)` or `bloom_filter(0.01)`.
+
+```go
+//ptah:schema:index name="idx_e_payload" fields="payload" type="bloom_filter(0.01)" platform.clickhouse.granularity="64"
+```
+
+A new index that declares neither setting is a `minmax` index with
+`GRANULARITY 1`. Index granularity counts table granules per index block; it is
+separate from the table's `index_granularity` setting, which controls rows per
+granule. A setting left out of the declaration of an existing index keeps the
+value the server reports. A `.state` suffix with the value `default`, such as
+`platform.clickhouse.granularity.state="default"`, asks for the creation
+default instead.
+
+ClickHouse changes neither setting in place. A changed type or granularity is
+planned as `ALTER TABLE ... DROP INDEX`, then `ADD INDEX` with the index's
+current expression and the declared settings. The pair runs around a change to
+a column the expression reads, and a plan that also removes such a column is
+refused. When the plan already rebuilds the index for another reason, that
+rebuild carries the new settings and no second pair is planned. `ADD INDEX`
+indexes data written afterwards; existing parts have no index data until a
+separate `MATERIALIZE INDEX` runs. The reverse migration restores the previous
+settings the same way and reports that it cannot restore materialized index
+data.
+
+Database inspection reads the type with its parameters and the granularity from
+`system.data_skipping_indices`. HCL and Go output write both as ClickHouse
+platform properties. A ClickHouse `ADD INDEX` or `DROP INDEX` operation sent to
+another target is refused. See the
+[ClickHouse skipping-index reference](https://clickhouse.com/docs/reference/statements/alter/skipping-index).
+
+A secondary index declaring a PostgreSQL or MySQL access method is refused the
+same way as a MySQL engine, and for the same reason: an index's type reaches
+ClickHouse through the field those families fill, so `USING GIN` in a SQL source
+arrives here looking like a data-skipping type. Rendering it produces an
+`ALTER TABLE` the server rejects with `Code: 80 ... Unknown Index type`, and the
+index is not added. Ptah names the type and points at the fix: declare a
+ClickHouse data-skipping type such as `minmax`, or drop the type to take the
+`minmax` default. As with the engine, the refusal reads the closed PostgreSQL
+and MySQL sets rather than deciding what a ClickHouse type is, so a type from a
+future release renders unchanged.
 
 ## Column changes
 

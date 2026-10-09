@@ -100,7 +100,7 @@ for the message and the flag it names.
 | `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, `platform`, `api_name`, `openapi_name`, `graphql_name`, and `proto_name` extensions. |
 | `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum`, `platform`, `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and `api_expose` extensions. |
 | `primary_key` | `columns`; PostgreSQL also supports `include`, and MySQL and MariaDB support `type = HASH`. |
-| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, PostgreSQL include/storage options, and Ptah `platform` blocks for provider-owned source properties. |
+| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, PostgreSQL include/storage options, and Ptah `platform` blocks for provider-owned source properties, such as a ClickHouse data-skipping index's `type` and `granularity`. |
 | `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. `using` is refused on a `UNIQUE`, `CHECK` or `FOREIGN KEY` constraint. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry, plus optional `on_delete`, `on_update`, `deferrable` and `initially`. |

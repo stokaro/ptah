@@ -1472,7 +1472,7 @@
     "ptah": "yes",
     "atlas_oss": "na",
     "atlas_pro": "na",
-    "note": "platform/override per dialect, EXCLUDE constraint block, column enum, table checks/custom, index ops, ClickHouse granularity, seed data block.",
+    "note": "platform/override per dialect, including ClickHouse index settings, EXCLUDE constraint block, column enum, table checks/custom, index ops, seed data block.",
     "evidence": "docs/site/src/content/docs/reference/hcl-schema.md:87-136; mysql render of a platform override emits TYPE=BIGINT UNSIGNED; the data block populates db.ManagedData. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Seed Data as Code (/guides/seed-data-as-code) is absent from Starter and Pro-gated, so Atlas Pro covers the seed-data job at job level; whether it uses an HCL data-block mechanism is not stated. Not applicable: the capability is defined as Ptah's own HCL extensions, so there is no Atlas counterpart to classify."
   },
   {
