@@ -333,8 +333,11 @@ func MeasureEmissions(ctx context.Context, service renderer.SchemaService) (Corp
 		byFixture[fixture.Name] = 0
 	}
 	for _, fixture := range Fixtures() {
+		// Rendering never changes its schema, so one finalized copy serves
+		// every cell; see renderSurface.
+		finalized := finalizedCopy(fixture.Schema)
 		for _, cell := range fixture.Cells(capabilityprobe.Cells) {
-			statements, err := RenderStatements(ctx, service, fixture.Schema, cell)
+			statements, err := renderFinalized(ctx, service, &finalized, cell)
 			if err != nil {
 				if !completedSchemaRefusal(err) {
 					return CorpusEmissions{}, err

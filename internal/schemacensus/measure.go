@@ -50,9 +50,7 @@ func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation
 	if err := schemaext.RequireRuntime(ctx, service); err != nil {
 		return nil, err
 	}
-	measured, err := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-		return renderOne(ctx, service, schema, cell)
-	})
+	measured, err := measure(renderSurface(ctx, service))
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +60,34 @@ func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation
 	return measured, nil
 }
 
+// surface is one way to answer for a schema: it prepares the schema once, and
+// the function it returns answers for one declared release line at a time.
+// Preparation that does not depend on the cell is done once rather than once
+// per cell, which is most of a fixture's cost on a matrix of many cells.
+type surface func(schemamodel.Database) func(capabilityprobe.Cell) (string, error)
+
+// renderSurface answers with the shipping render. The schema is copied and
+// finalized once and rendered on every cell: rendering reads a schema and
+// never changes it, which is the [renderer.SchemaService] contract.
+func renderSurface(ctx context.Context, service renderer.SchemaService) surface {
+	return func(schema schemamodel.Database) func(capabilityprobe.Cell) (string, error) {
+		finalized := finalizedCopy(schema)
+		return func(cell capabilityprobe.Cell) (string, error) {
+			statements, err := renderFinalized(ctx, service, &finalized, cell)
+			if err != nil {
+				return measuredRefusal(err)
+			}
+			return strings.Join(statements, "\n"), nil
+		}
+	}
+}
+
 // measure is the shared body of [Measure] and [MeasurePlan].
 //
 // The two surfaces are measured by one function on purpose: an agreement test
 // comparing two loops that had drifted apart would report the drift as a
 // disagreement between the surfaces.
-func measure(surface func(schemamodel.Database, capabilityprobe.Cell) (string, error)) ([]Observation, error) {
+func measure(surface surface) ([]Observation, error) {
 	fixtures := Fixtures()
 	cells := measuredCells()
 
@@ -139,13 +159,14 @@ func measuredCells() []capabilityprobe.Cell {
 // line, keyed by cell name. A refusal is kept as its own text so an ablation
 // that changes WHICH refusal answers still counts as a change.
 func everyCell(
-	surface func(schemamodel.Database, capabilityprobe.Cell) (string, error),
+	surface surface,
 	schema schemamodel.Database,
 	cells []capabilityprobe.Cell,
 ) (map[string]string, error) {
 	answers := make(map[string]string, len(cells))
+	answerFor := surface(schema)
 	for _, cell := range cells {
-		answer, err := surface(schema, cell)
+		answer, err := answerFor(cell)
 		if err != nil {
 			return nil, fmt.Errorf("cell %s: %w", CellName(cell), err)
 		}
@@ -154,17 +175,8 @@ func everyCell(
 	return answers, nil
 }
 
-// renderOne is the shipping render path for one cell.
-func renderOne(ctx context.Context, service renderer.SchemaService, schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-	statements, err := RenderStatements(ctx, service, schema, cell)
-	if err != nil {
-		return measuredRefusal(err)
-	}
-	return strings.Join(statements, "\n"), nil
-}
-
-// RenderStatements is the same render, answering with the statements rather
-// than with their text.
+// RenderStatements is the shipping render for one cell, answering with the
+// statements rather than with their text.
 //
 // Exported because the emission guard reasons about statements and the
 // observability census reasons about bytes, and they have to be the same
@@ -175,10 +187,26 @@ func RenderStatements(
 	service renderer.SchemaService,
 	schema schemamodel.Database, cell capabilityprobe.Cell,
 ) ([]string, error) {
+	finalized := finalizedCopy(schema)
+	return renderFinalized(ctx, service, &finalized, cell)
+}
+
+// finalizedCopy is the schema a render reads: a copy, so the fixture is left
+// alone, finalized the way a loaded schema is.
+func finalizedCopy(schema schemamodel.Database) schemamodel.Database {
 	finalized := deepCopyDatabase(schema)
 	schemamodel.Finalize(&finalized)
+	return finalized
+}
+
+// renderFinalized renders a finalized schema on one cell without changing it.
+func renderFinalized(
+	ctx context.Context,
+	service renderer.SchemaService,
+	finalized *schemamodel.Database, cell capabilityprobe.Cell,
+) ([]string, error) {
 	rendered, err := renderer.RenderSchema(ctx, service, renderer.SchemaRequest{
-		Target: cell.Dialect, Schema: &finalized, Capabilities: cell.Preset(), Identifiers: identifiers.ForDialect(cell.Dialect),
+		Target: cell.Dialect, Schema: finalized, Capabilities: cell.Preset(), Identifiers: identifiers.ForDialect(cell.Dialect),
 	})
 	return rendered.Statements, err
 }

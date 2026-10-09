@@ -40,9 +40,7 @@ func MeasurePlan(ctx context.Context, runtime engine.SchemaRuntime) ([]Observati
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
-	result, err := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-		return planOne(ctx, runtime, schema, cell)
-	})
+	result, err := measure(planSurface(ctx, runtime))
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +48,16 @@ func MeasurePlan(ctx context.Context, runtime engine.SchemaRuntime) ([]Observati
 		return nil, err
 	}
 	return result, nil
+}
+
+// planSurface answers with the shipping plan path. Each cell gets its own copy
+// of the schema, because comparison is not promised to leave its input alone.
+func planSurface(ctx context.Context, runtime engine.SchemaRuntime) surface {
+	return func(schema schemamodel.Database) func(capabilityprobe.Cell) (string, error) {
+		return func(cell capabilityprobe.Cell) (string, error) {
+			return planOne(ctx, runtime, schema, cell)
+		}
+	}
 }
 
 // planOne is the shipping plan path for one cell: compare against nothing, plan,

@@ -14,7 +14,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/capabilityprobe"
 )
@@ -36,14 +35,10 @@ func TestSurfaces_RenderTheSameBytesTwice(t *testing.T) {
 	runtime := must.Must(builtin.New())
 	surfaces := []struct {
 		name    string
-		surface func(schemamodel.Database, capabilityprobe.Cell) (string, error)
+		surface surface
 	}{
-		{name: "render", surface: func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-			return renderOne(t.Context(), runtime, schema, cell)
-		}},
-		{name: "plan", surface: func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-			return planOne(t.Context(), runtime, schema, cell)
-		}},
+		{name: "render", surface: renderSurface(t.Context(), runtime)},
+		{name: "plan", surface: planSurface(t.Context(), runtime)},
 	}
 
 	for _, surface := range surfaces {
