@@ -106,8 +106,8 @@ func TestSecretPlan_LowersEachChange(t *testing.T) {
 }
 
 // TestSecretPlan_PlacesEachStatement orders a secret against the host's
-// statements: first, unless a drop frees its path, and before everything that
-// reads it by path.
+// statements: first, unless a drop frees its path or a directory above it,
+// and before everything that reads it by path.
 func TestSecretPlan_PlacesEachStatement(t *testing.T) {
 	slot := ydbscheme.Path("ext", "pw")
 	reads := []plangraph.Effect{{Subject: ydbsecret.Ref("ext", "pw"), Action: plangraph.Read}}
@@ -124,6 +124,10 @@ func TestSecretPlan_PlacesEachStatement(t *testing.T) {
 		{name: "a creation follows the drop that frees its path",
 			change:  &ydbdiff.Secret{After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW"}},
 			effects: [][]plangraph.Effect{nil, {{Subject: slot, Action: plangraph.Drop}}, nil, reads},
+			want:    []string{"a", "b", "create ext/pw", "c", "d"}},
+		{name: "a creation follows the drop of its directory",
+			change:  &ydbdiff.Secret{After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW"}},
+			effects: [][]plangraph.Effect{nil, {{Subject: ydbscheme.Path("", "ext"), Action: plangraph.Drop}}, nil, reads},
 			want:    []string{"a", "b", "create ext/pw", "c", "d"}},
 		{name: "a drop runs before a creation at its path",
 			change:  &ydbdiff.Secret{Before: &ydbsecret.Observed{}},
@@ -146,6 +150,26 @@ func TestSecretPlan_PlacesEachStatement(t *testing.T) {
 			c.Assert(scheduledNames(c, chain, result), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestSecretPlan_DropPrecedesACreationAboveIt orders a dropped secret before
+// every common statement that creates an object at a directory above it,
+// which would otherwise still hold the secret.
+func TestSecretPlan_DropPrecedesACreationAboveIt(t *testing.T) {
+	c := qt.New(t)
+	chain := commonChain(nil, nil, []plangraph.Effect{{Subject: ydbscheme.Path("", "app"), Action: plangraph.Create}},
+		[]plangraph.Effect{{Subject: ydbscheme.Path("app", "ext"), Action: plangraph.Create}})
+	request := featureplan.Request{Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.YDB262(),
+		CommonSteps: chain.steps, Changes: []schemaext.ChangeRecord{{Subject: ydbsecret.Ref("app/ext", "pw"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}}}}
+
+	result, err := secretPlanningRuntime(c).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.IsNil)
+	drop := result.Changes[0].Steps[0]
+	c.Assert(result.Contributions[0].Dependencies, qt.Contains, plangraph.Dependency{Before: drop, After: chain.steps[2].ID})
+	c.Assert(result.Contributions[0].Dependencies, qt.Contains, plangraph.Dependency{Before: drop, After: chain.steps[3].ID})
+	c.Assert(scheduledNames(c, chain, result), qt.DeepEquals, []string{"drop app/ext/pw", "a", "b", "c", "d"})
 }
 
 // TestSecretPlan_RefusesTheWholeBatch returns no statement when one change is

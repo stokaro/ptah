@@ -70,6 +70,35 @@ func TestGenerateMigrationAST_Secrets_HappyPath(t *testing.T) {
 		";\n")
 }
 
+// TestGenerateMigrationAST_SecretFollowsTheDropOfADirectoryAboveIt creates a
+// secret beneath a path the plan frees: YDB needs every directory above a
+// secret free of any other object, so CREATE SECRET follows the drop of a
+// table at its directory, or at a directory above that.
+func TestGenerateMigrationAST_SecretFollowsTheDropOfADirectoryAboveIt(t *testing.T) {
+	tests := []struct {
+		name         string
+		table        string
+		schema, leaf string
+		want         string
+	}{
+		{name: "the directory", table: "ext", schema: "ext", leaf: "pw",
+			want: "DROP TABLE `ext`;\nCREATE SECRET `ext/pw` WITH (value = $PTAH_SECRET_PW);\n"},
+		{name: "a directory above it", table: "app", schema: "app/ext", leaf: "pw",
+			want: "DROP TABLE `app`;\nCREATE SECRET `app/ext/pw` WITH (value = $PTAH_SECRET_PW);\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{
+				TablesRemoved:  difftypes.TableRemovals{{Name: test.table, Current: observedFeeds(t, "", test.table)}},
+				FeatureChanges: []schemaext.ChangeRecord{secretCreated(test.schema, test.leaf, "PTAH_SECRET_PW")},
+			}
+
+			c.Assert(render(c, capability.YDB262(), diff), qt.Equals, test.want)
+		})
+	}
+}
+
 // A replication must find its credential when it starts. Both families can
 // enter one plan, so testing each family's statements alone misses the order.
 func TestGenerateMigrationAST_SecretsPrecedeReplications(t *testing.T) {

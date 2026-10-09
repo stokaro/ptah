@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
@@ -22,12 +23,15 @@ import (
 
 // SecretService plans statements on YDB secrets. A secret depends on nothing
 // but its path, so each statement runs before the common statements, except
-// the ones that free its path: a secret created where the plan drops a table
-// follows that drop. Anything that reads a secret by path -- an external data
-// source, an async replication or a transfer -- follows its creation or
-// rotation. YDB records no dependency of those objects on a secret (DROP
-// SECRET succeeds while a data source names it, measured on 26.2.1.14), so a
-// drop that a statement of the same plan still reads is refused.
+// the ones that free its path: a secret created where the plan drops a table,
+// or beneath a path where it drops one, follows that drop, since every
+// directory above a secret must be free of any other object. A dropped secret
+// likewise goes before a common statement that creates something at its path
+// or at a directory above it. Anything that reads a secret by path -- an
+// external data source, an async replication or a transfer -- follows its
+// creation or rotation. YDB records no dependency of those objects on a secret
+// (DROP SECRET succeeds while a data source names it, measured on 26.2.1.14),
+// so a drop that a statement of the same plan still reads is refused.
 type SecretService struct{}
 
 type secretChange struct {
@@ -59,6 +63,7 @@ func (SecretService) PlanFeatures(ctx context.Context, request featureplan.Reque
 		return featureplan.Result{Complete: true, Diagnostics: diagnostics}, nil
 	}
 	slices.SortFunc(changes, func(a, b secretChange) int { return schemaext.CompareRefs(a.ref, b.ref) })
+	common := indexCommonSteps(request.CommonSteps)
 	contribution := plangraph.Contribution[featureplan.Operation]{Owner: "ptah.run/ydb"}
 	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(request.Changes))}
 	for index, change := range changes {
@@ -67,12 +72,12 @@ func (SecretService) PlanFeatures(ctx context.Context, request featureplan.Reque
 		}
 		action := secretAction(change.operation)
 		id := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("secret/%06d/%s", index, action)}
-		edges, err := secretDependencies(id, change, action, request.CommonSteps)
+		slot := ydbscheme.Path(change.ref.Schema.Source, change.ref.Name.Source)
+		edges, err := secretDependencies(id, change.ref, slot, action, common)
 		if err != nil {
 			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{secretDiagnostic(change.input, change.ref, err)}}, nil
 		}
 		contribution.Dependencies = append(contribution.Dependencies, edges...)
-		slot := ydbscheme.Path(change.ref.Schema.Source, change.ref.Name.Source)
 		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
 			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: change.operation},
 			Effects:     []plangraph.Effect{{Subject: change.ref, Action: action}, {Subject: slot, Action: action}},
@@ -90,42 +95,88 @@ func (SecretService) PlanFeatures(ctx context.Context, request featureplan.Reque
 	return result, nil
 }
 
-// secretDependencies orders one operation against the common statements:
-// after the drop that frees its path, before the next common statement, and
-// before every statement that reads the secret. A drop that a statement still
-// reads is an error, since the reader would name a secret that is gone.
-func secretDependencies(id plangraph.StepID, change secretChange, action plangraph.Action, common []featureplan.CommonStep) ([]plangraph.Dependency, error) {
-	slot := ydbscheme.Path(change.ref.Schema.Source, change.ref.Name.Source)
-	edges, err := schemePathDependencies("secret", id, slot, action, common)
+// commonSteps indexes the host's statements once per batch: their position in
+// the host's order, and each statement that touches a subject, in that order.
+type commonSteps struct {
+	steps     []featureplan.CommonStep
+	positions map[plangraph.StepID]int
+	uses      map[objectidentity.Key][]commonUse
+}
+
+type commonUse struct {
+	position int
+	action   plangraph.Action
+}
+
+func indexCommonSteps(steps []featureplan.CommonStep) commonSteps {
+	index := commonSteps{steps: steps, positions: make(map[plangraph.StepID]int, len(steps)), uses: make(map[objectidentity.Key][]commonUse)}
+	for position, step := range steps {
+		index.positions[step.ID] = position
+		for _, effect := range step.Effects {
+			key := effect.Subject.Key()
+			index.uses[key] = append(index.uses[key], commonUse{position: position, action: effect.Action})
+		}
+	}
+	return index
+}
+
+// secretDependencies orders one operation on the secret ref, at the scheme
+// path slot, against the common statements: a creation after the drops that
+// free its path or a directory above it, a drop before the creations there,
+// each before the next common statement, and before every statement that
+// reads the secret. A drop that a statement still reads is an error, since the
+// reader would name a secret that is gone.
+func secretDependencies(id plangraph.StepID, ref, slot objectidentity.ID, action plangraph.Action, common commonSteps) ([]plangraph.Dependency, error) {
+	edges, err := schemePathDependencies("secret", id, slot, action, common.steps)
 	if err != nil {
 		return nil, err
 	}
-	positions := make(map[plangraph.StepID]int, len(common))
-	for position, step := range common {
-		positions[step.ID] = position
+	for _, directory := range secretDirectories(ref) {
+		for _, use := range common.uses[directory.Key()] {
+			step := common.steps[use.position].ID
+			switch {
+			case action == plangraph.Create && use.action == plangraph.Drop:
+				edges = append(edges, plangraph.Dependency{Before: step, After: id})
+			case action == plangraph.Drop && use.action == plangraph.Create:
+				edges = append(edges, plangraph.Dependency{Before: id, After: step})
+			}
+		}
 	}
 	next := 0
 	for _, edge := range edges {
-		if position, found := positions[edge.Before]; found && edge.After == id {
+		if position, found := common.positions[edge.Before]; found && edge.After == id {
 			next = max(next, position+1)
 		}
 	}
-	if next < len(common) {
-		edges = append(edges, plangraph.Dependency{Before: id, After: common[next].ID})
+	if next < len(common.steps) {
+		edges = append(edges, plangraph.Dependency{Before: id, After: common.steps[next].ID})
 	}
-	for _, step := range common {
-		if !slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool {
-			return effect.Action == plangraph.Read && effect.Subject.Key() == change.ref.Key()
-		}) {
+	for _, use := range common.uses[ref.Key()] {
+		if use.action != plangraph.Read {
 			continue
 		}
 		if action == plangraph.Drop {
 			return nil, fmt.Errorf("secret %s is dropped while a statement of this plan reads it by its path",
-				ydbsecret.Display(change.ref.Schema.Source, change.ref.Name.Source))
+				ydbsecret.Display(ref.Schema.Source, ref.Name.Source))
 		}
-		edges = append(edges, plangraph.Dependency{Before: id, After: step.ID})
+		edges = append(edges, plangraph.Dependency{Before: id, After: common.steps[use.position].ID})
 	}
 	return edges, nil
+}
+
+// secretDirectories returns the scheme path of each directory above the secret
+// ref, nearest first: `a/b` and `a` for the secret `a/b/pw`.
+func secretDirectories(ref objectidentity.ID) []objectidentity.ID {
+	var directories []objectidentity.ID
+	for directory := ref.Schema.Source; directory != ""; {
+		parent, name := "", directory
+		if slash := strings.LastIndex(directory, "/"); slash >= 0 {
+			parent, name = directory[:slash], directory[slash+1:]
+		}
+		directories = append(directories, ydbscheme.Path(parent, name))
+		directory = parent
+	}
+	return directories
 }
 
 func secretOperations(ctx context.Context, request featureplan.Request) ([]secretChange, error) {
