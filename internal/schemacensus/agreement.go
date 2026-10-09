@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/migration/planner"
@@ -99,6 +100,16 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 		current.FeatureCoverage, err = coverage.Combine(queries)
 		if err != nil {
 			return nil, err
+		}
+		for _, kind := range []schemaext.Kind{ydbworkload.PoolKind, ydbworkload.ClassifierKind} {
+			workload, err := ydbworkload.Coverage(kind, schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+			if err != nil {
+				return nil, err
+			}
+			current.FeatureCoverage, err = current.FeatureCoverage.Combine(workload)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return current, nil

@@ -12,7 +12,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
@@ -389,14 +391,12 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 // topic, secret, async replication, transfer and external objects are such families: Atlas HCL has none
 // of them, and Ptah does not invent a block the pinned binary would refuse.
 var hclUnwritableFields = map[string]coverage.Kind{
-	"Topics":                  coverage.Topic,
-	"AsyncReplications":       coverage.Replication,
-	"Transfers":               coverage.Transfer,
-	"ResourcePools":           coverage.ResourcePool,
-	"ResourcePoolClassifiers": coverage.ResourcePoolClassifier,
-	"Secrets":                 coverage.Secret,
-	"ExternalDataSources":     coverage.ExternalDataSource,
-	"ExternalTables":          coverage.ExternalTable,
+	"Topics":              coverage.Topic,
+	"AsyncReplications":   coverage.Replication,
+	"Transfers":           coverage.Transfer,
+	"Secrets":             coverage.Secret,
+	"ExternalDataSources": coverage.ExternalDataSource,
+	"ExternalTables":      coverage.ExternalTable,
 }
 
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
@@ -409,10 +409,10 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
 	db.Topics = append(db.Topics, schemamodel.Topic{Name: "events", Schema: "public"})
-	db.ResourcePools = append(db.ResourcePools, schemamodel.ResourcePool{Name: "batch"})
-	db.ResourcePoolClassifiers = append(db.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
-		Name: "batch_users", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1},
-	})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(
+		ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}),
+		ydbworkload.DesiredClassifierObject("batch_users", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}),
+	))
 	db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{Name: "mirror", Schema: "public"})
 	db.Transfers = append(db.Transfers, schemamodel.Transfer{Name: "ingest", Schema: "public"})
 	db.Secrets = append(db.Secrets, schemamodel.Secret{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"})
@@ -429,12 +429,11 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 
+	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.Topics, qt.HasLen, 0)
-	c.Assert(parsed.ResourcePools, qt.HasLen, 0)
-	c.Assert(parsed.ResourcePoolClassifiers, qt.HasLen, 0)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
-	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePools"]), qt.IsFalse)
-	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePoolClassifiers"]), qt.IsFalse)
 	c.Assert(parsed.AsyncReplications, qt.HasLen, 0)
 	c.Assert(parsed.Transfers, qt.HasLen, 0)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["AsyncReplications"]), qt.IsFalse)

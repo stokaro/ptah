@@ -11,7 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/schemafile"
 )
@@ -49,10 +52,16 @@ func TestYDBDesiredYQL_CoordinationAndPools(t *testing.T) {
 			}
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, schemas)
 			c.Assert(err, qt.IsNil)
-			c.Assert(live.FeatureObjects.Len(), qt.Equals, 0)
-			pools, classifiers := poolsOf(live, names)
-			c.Assert(pools[0].Name, qt.Equals, names.batch)
-			c.Assert(classifiers, qt.HasLen, 1)
+			nodes := live.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+				return ref.Kind == objectidentity.Kind(ydbcoordination.Kind)
+			})
+			c.Assert(nodes.Len(), qt.Equals, 0)
+			pools, classifiers := poolsOf(c, live, names)
+			c.Assert(pools, qt.HasLen, 2)
+			c.Assert(pools[0], qt.DeepEquals, ydbworkload.ObservedPoolObject(names.batch, ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(8))}))
+			c.Assert(classifiers, qt.DeepEquals, []schemaext.Object{
+				ydbworkload.ObservedClassifierObject(names.toBatch, ydbworkload.ClassifierSpec{ResourcePool: names.batch, MemberName: names.member, Rank: names.rank}),
+			})
 		})
 	}
 }

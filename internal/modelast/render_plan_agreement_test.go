@@ -130,8 +130,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	}
 	// Remove refused YDB families in the order shared validation checks them,
 	// then run the census over the rest of the fixture.
-	refused := assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
-	refused += assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
+	refused := assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
@@ -282,28 +281,6 @@ func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *s
 	c.Assert(planErr.Error(), qt.Contains, "requires target capability transfers")
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability transfers")
 	desired.Transfers = nil
-	return 2
-}
-
-// assertBothSurfacesRefuseTheResourcePools checks that a target without the
-// resource_pools key refuses the fixture's pool on both surfaces, through the
-// one validation they share, and takes the pool and its classifier out of
-// desired so the census can run over the rest. It returns how many routed
-// kinds it took out.
-func assertBothSurfacesRefuseTheResourcePools(c *qt.C, dialect string, desired *schemamodel.Database) int {
-	c.Helper()
-	if capability.ForDialect(dialect).Has(capability.ResourcePools) {
-		return 0
-	}
-	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-	renderErr := builtin.ValidateSchema(desired, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "requires target capability resource_pools")
-	c.Assert(renderErr.Error(), qt.Contains, "requires target capability resource_pools")
-	desired.ResourcePools, desired.ResourcePoolClassifiers = nil, nil
 	return 2
 }
 

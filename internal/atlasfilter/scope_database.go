@@ -31,7 +31,8 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 
 	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
-	pools, err := streamingPools(out.FeatureObjects)
+	var err error
+	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 		return s.tableKept(keptTables, schema, table)
 	})
 
-	s.projectDatabaseTopLevel(db, out, keptTables, pools)
+	s.projectDatabaseTopLevel(db, out, keptTables)
 	s.projectDatabaseSupport(db, out)
 	s.projectDatabaseExtensions(db, out)
 	out.Schemas = s.keepDatabaseSchemas(db, out)
@@ -62,7 +63,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 // matched.
 func (s *scopeSelection) projectDatabaseTopLevel(
 	db, out *catalog.Database,
-	keptTables map[tableIdentity]struct{}, pools map[string]bool,
+	keptTables map[tableIdentity]struct{},
 ) {
 	out.Views = keep(db.Views, func(view catalog.View) bool {
 		return s.selected(typeList("view"), view.Schema, view.Name)
@@ -151,20 +152,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 		func(privilege catalog.DefaultPrivilege) bool {
 			return s.defaultPrivilegeSelected(privilege.Schema)
 		})
-	// A YDB classifier is selected on its own name, and a pool on its own or
-	// because a kept classifier sends queries to it: a description keeping
-	// the classifier and dropping its pool would name a pool it says is
-	// absent.
-	out.ResourcePoolClassifiers = keep(db.ResourcePoolClassifiers, func(classifier catalog.ResourcePoolClassifier) bool {
-		return s.selectedNames(typeList("resource_pool_classifier"), classifier.Name)
-	})
-	out.ResourcePools = keep(db.ResourcePools, func(pool catalog.ResourcePool) bool {
-		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
-			pools[pool.Name] ||
-			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier catalog.ResourcePoolClassifier) bool {
-				return classifier.Spec.ResourcePool == pool.Name
-			})
-	})
 	out.Roles = keep(db.Roles, func(role catalog.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true

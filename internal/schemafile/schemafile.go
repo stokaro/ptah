@@ -893,8 +893,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.Topics = append(dst.Topics, src.Topics...)
-	dst.ResourcePools = append(dst.ResourcePools, src.ResourcePools...)
-	dst.ResourcePoolClassifiers = append(dst.ResourcePoolClassifiers, src.ResourcePoolClassifiers...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
 	dst.Secrets = append(dst.Secrets, src.Secrets...)

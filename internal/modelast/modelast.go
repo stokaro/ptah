@@ -22,8 +22,6 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/schemaprep"
@@ -1521,41 +1519,6 @@ func appendTopicStatements(visit func(ast.Node) error, topics []schemamodel.Topi
 	return nil
 }
 
-// FromResourcePool converts a schemamodel.ResourcePool to an
-// ast.ExtensionStatement carrying the pool's settings.
-func FromResourcePool(pool schemamodel.ResourcePool) *ast.ExtensionStatement {
-	return &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: pool.Name, Spec: new(pool.Spec.Clone())}}
-}
-
-// FromResourcePoolClassifier converts a schemamodel.ResourcePoolClassifier to
-// an ast.ExtensionStatement.
-func FromResourcePoolClassifier(classifier schemamodel.ResourcePoolClassifier) *ast.ExtensionStatement {
-	return &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: classifier.Name, Spec: new(classifier.Spec)}}
-}
-
-// appendResourcePoolStatements adds a node for each declared resource pool,
-// then one for each classifier, which names a pool. The pool `default` is
-// the database's own, so a declaration of it is a change of its settings
-// rather than a creation. Its set-only operation preserves unspecified limits
-// without inventing a captured before state.
-func appendResourcePoolStatements(visit func(ast.Node) error, database schemamodel.Database) error {
-	for _, pool := range database.ResourcePools {
-		node := ast.Node(FromResourcePool(pool))
-		if pool.Name == ydbworkload.DefaultPool {
-			node = &ast.ExtensionStatement{Payload: &ydbast.DefaultPoolSettings{Spec: pool.Spec.Clone()}}
-		}
-		if err := visit(node); err != nil {
-			return err
-		}
-	}
-	for _, classifier := range database.ResourcePoolClassifiers {
-		if err := visit(FromResourcePoolClassifier(classifier)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // FromAsyncReplication converts a schemamodel.AsyncReplication to an
 // ast.CreateAsyncReplicationNode carrying its connection and items.
 func FromAsyncReplication(replication schemamodel.AsyncReplication) *ast.CreateAsyncReplicationNode {
@@ -2344,13 +2307,6 @@ func appendTableIndependentObjectStatements(visit func(ast.Node) error, database
 	// 9b4. A YDB topic depends on no other object, and comes after the
 	// tables so a reader of the script finds the tables first.
 	if err := appendTopicStatements(visit, database.Topics); err != nil {
-		return err
-	}
-
-	// 9b5. YDB resource pools and their classifiers depend on no table. A
-	// classifier names a pool and a user or group, which YDB does not check,
-	// and comes after both: the roles were written before the tables.
-	if err := appendResourcePoolStatements(visit, database); err != nil {
 		return err
 	}
 

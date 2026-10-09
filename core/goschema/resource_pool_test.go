@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
@@ -97,27 +98,37 @@ func TestParseSource_ResourcePool_FailurePath(t *testing.T) {
 	}
 }
 
-// Two files declaring one pool differently are refused when they are merged,
-// as two declarations of one table are; the same pool twice is one pool.
+// Merging sources refuses duplicate workload identities, including identical
+// settings with different Go holder names. Each object has one declaration.
 func TestMerge_ResourcePools_Conflict(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		first, second schemaext.Object
+	}{
+		{name: "same pool settings", first: ydbworkload.DesiredPoolObject("batch", "A", ydbworkload.PoolSpec{}), second: ydbworkload.DesiredPoolObject("batch", "B", ydbworkload.PoolSpec{})},
+		{name: "different pool settings", first: ydbworkload.DesiredPoolObject("batch", "A", ydbworkload.PoolSpec{}), second: ydbworkload.DesiredPoolObject("batch", "C", ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(1))})},
+		{name: "different classifier settings", first: ydbworkload.DesiredClassifierObject("c", "A", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}), second: ydbworkload.DesiredClassifierObject("c", "B", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 2})},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			first := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(test.first))}
+			second := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(test.second))}
+			merged, err := schemamodel.Merge(first, second)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+			c.Assert(merged, qt.IsNil)
+			c.Assert(must.Must(first.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{test.first})
+			c.Assert(must.Must(second.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{test.second})
+		})
+	}
+}
+
+func TestMerge_ResourcePools_SeparateObjects(t *testing.T) {
 	c := qt.New(t)
-	first := &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{StructName: "A", Name: "batch"}}}
-	same := &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{StructName: "B", Name: "batch"}}}
-	other := &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{StructName: "C", Name: "batch",
-		Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(1))}}}}
-	classifier := &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{
-		StructName: "A", Name: "c", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}}}}
-	otherClassifier := &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{
-		StructName: "B", Name: "c", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 2}}}}
-
-	merged, mergeErr := schemamodel.Merge(first, same)
-	conflict, conflictErr := schemamodel.Merge(first, other)
-	classifierConflict, classifierErr := schemamodel.Merge(classifier, otherClassifier)
-
-	c.Assert(mergeErr, qt.IsNil)
-	c.Assert(merged.ResourcePools, qt.HasLen, 1)
-	c.Assert(conflictErr, qt.ErrorMatches, `conflicting resource pool "batch" definitions`)
-	c.Assert(conflict, qt.IsNil)
-	c.Assert(classifierErr, qt.ErrorMatches, `conflicting resource pool classifier "c" definitions`)
-	c.Assert(classifierConflict, qt.IsNil)
+	pool := ydbworkload.DesiredPoolObject("batch", "Pool", ydbworkload.PoolSpec{})
+	classifier := ydbworkload.DesiredClassifierObject("route", "Route", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1})
+	first := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(pool))}
+	second := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(classifier))}
+	merged, err := schemamodel.Merge(first, second)
+	c.Assert(err, qt.IsNil)
+	c.Assert(must.Must(merged.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{pool, classifier})
 }

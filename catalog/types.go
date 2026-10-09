@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/dialect/ydb/ydbworkload"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
@@ -79,14 +77,6 @@ type Database struct {
 	// belongs to its table. omitempty keeps the serialization of every
 	// dialect that has no topics byte-identical.
 	Topics []Topic `json:"topics,omitempty"`
-	// ResourcePools are the YDB resource pools of the database, the pool
-	// `default` YDB creates among them, and ResourcePoolClassifiers the
-	// classifiers that send queries to them. Both belong to the whole
-	// database, so a read of a directory standing in for one, a dev realm,
-	// leaves them out. omitempty keeps the serialization of every dialect
-	// that has none byte-identical.
-	ResourcePools           []ResourcePool           `json:"resource_pools,omitempty"`
-	ResourcePoolClassifiers []ResourcePoolClassifier `json:"resource_pool_classifiers,omitempty"`
 	// AsyncReplications are the YDB async replications this description
 	// covers, each with its connection, items and state. omitempty keeps the
 	// serialization of every dialect that has none byte-identical.
@@ -1451,20 +1441,6 @@ type View struct {
 // QualifiedName returns schema.view when Schema is set, or Name otherwise.
 func (v View) QualifiedName() string {
 	return QualifyTableName(v.Schema, v.Name)
-}
-
-// ResourcePool is a YDB resource pool read from the database: its name and
-// every setting the server holds, a setting it keeps unset left nil.
-type ResourcePool struct {
-	Name string               `json:"name"`
-	Spec ydbworkload.PoolSpec `json:"spec"`
-}
-
-// ResourcePoolClassifier is a YDB resource pool classifier read from the
-// database.
-type ResourcePoolClassifier struct {
-	Name string                     `json:"name"`
-	Spec ydbworkload.ClassifierSpec `json:"spec"`
 }
 
 // Synonym represents a SQL Server synonym read from the database.

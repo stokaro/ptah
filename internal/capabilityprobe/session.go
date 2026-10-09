@@ -10,10 +10,9 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/dialect/ydb/ydbsyntax"
-
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbready"

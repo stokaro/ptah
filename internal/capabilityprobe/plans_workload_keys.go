@@ -4,11 +4,10 @@ import (
 	"context"
 	"hash/fnv"
 	"maps"
-	"slices"
 
-	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
@@ -93,10 +92,10 @@ func ydbResourcePools() experiment {
 					collapse(err.Error()))}, append(attempts, read)
 			}
 			read.Accepted = true
-			found := slices.ContainsFunc(db.ResourcePools, func(held catalog.ResourcePool) bool {
-				return held.Name == s.namespace+"_rpk" && ydbworkload.PoolsEqual(held.Spec, pool)
-			}) && slices.Contains(db.ResourcePoolClassifiers,
-				catalog.ResourcePoolClassifier{Name: s.namespace + "_rpc", Spec: classifier})
+			found, err := observedWorkloadMatches(db.FeatureObjects, s.namespace+"_rpk", pool, s.namespace+"_rpc", classifier)
+			if err != nil {
+				return verdicts{capability.ResourcePools: cannotDecide("the read-back could not capture workload objects (%s)", collapse(err.Error()))}, append(attempts, read)
+			}
 			return verdicts{capability.ResourcePools: readBack{
 				accepted: createdClassifier.Accepted, statement: classifierStatement,
 				what: "the resource pool with its two settings and the classifier that names it", found: found,
@@ -111,4 +110,23 @@ func probeRank(namespace string) int64 {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(namespace))
 	return 4_000_000_000_000 + int64(hash.Sum32())
+}
+
+// observedWorkloadMatches checks the actual captured values. A missing or
+// malformed observation cannot qualify a successful statement alone.
+func observedWorkloadMatches(objects schemaext.Objects, poolName string, pool ydbworkload.PoolSpec, classifierName string, classifier ydbworkload.ClassifierSpec) (bool, error) {
+	poolObject, hasPool, err := objects.Get(ydbworkload.PoolRef(poolName))
+	if err != nil {
+		return false, err
+	}
+	classifierObject, hasClassifier, err := objects.Get(ydbworkload.ClassifierRef(classifierName))
+	if err != nil {
+		return false, err
+	}
+	if !hasPool || !hasClassifier {
+		return false, nil
+	}
+	heldPool, poolOK := poolObject.Value.(*ydbworkload.ObservedPool)
+	heldClassifier, classifierOK := classifierObject.Value.(*ydbworkload.ObservedClassifier)
+	return poolOK && classifierOK && ydbworkload.PoolsEqual(heldPool.Spec, pool) && heldClassifier.Spec == classifier, nil
 }

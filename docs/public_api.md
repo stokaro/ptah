@@ -751,6 +751,15 @@ warnings. Removing the server-owned `default` pool is refused.
 and observed values. Go, YAML, and YQL sources carry these values in
 `Database.FeatureObjects`, with exact database-scoped names. Dots in a pool or
 classifier name are literal. They never introduce a scheme directory.
+The common desired and observed models hold no separate pool or classifier
+collections. Merging declarations with the same feature identity returns
+`schemaext.ErrDuplicate`, including identical settings from different holders.
+
+Include selectors retain captured destination pools of selected classifiers
+and streaming queries. Explicit exclusions still remove those pools. Filtering
+preserves namespace knowledge and limits subject records to the retained scope.
+HCL cannot declare workload objects: export reports omitted objects, and reading
+the document leaves these namespaces uninspected.
 
 The workload services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
 `ydbreport` handle these objects through the selected runtime. Changes retain

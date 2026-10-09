@@ -7,9 +7,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -29,11 +31,17 @@ func TestScope_StreamingQueriesAndTheirPools(t *testing.T) {
 			declared := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 				ydbstreaming.DesiredObject("", "copy", "Copy", ydbstreaming.Spec{Text: "SELECT 1;", ResourcePool: "batch"}, true),
 				ydbstreaming.DesiredObject("", "other", "Other", ydbstreaming.Spec{Text: "SELECT 2;"}, false),
-			)), ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}, {Name: "default"}, {Name: "idle"}}}
+				ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}),
+				ydbworkload.DesiredPoolObject("default", "", ydbworkload.PoolSpec{}),
+				ydbworkload.DesiredPoolObject("idle", "", ydbworkload.PoolSpec{}),
+			))}
 			held := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 				ydbstreaming.ObservedObject("", "copy", ydbstreaming.Spec{Text: "SELECT 1;", ResourcePool: "batch"}),
 				ydbstreaming.ObservedObject("", "other", ydbstreaming.Spec{Text: "SELECT 2;"}),
-			)), ResourcePools: []catalog.ResourcePool{{Name: "batch"}, {Name: "default"}, {Name: "idle"}}}
+				ydbworkload.ObservedPoolObject("batch", ydbworkload.PoolSpec{}),
+				ydbworkload.ObservedPoolObject("default", ydbworkload.PoolSpec{}),
+				ydbworkload.ObservedPoolObject("idle", ydbworkload.PoolSpec{}),
+			))}
 			generated, _, err := atlasfilter.ScopeGeneratedSelectionReport(declared, test.scope)
 			c.Assert(err, qt.IsNil)
 			live, err := atlasfilter.ScopeDatabase(held, test.scope)
@@ -44,22 +52,22 @@ func TestScope_StreamingQueriesAndTheirPools(t *testing.T) {
 			observed, found, err := held.FeatureObjects.Get(ydbstreaming.Ref("", test.selected))
 			c.Assert(err, qt.IsNil)
 			c.Assert(found, qt.IsTrue)
-			c.Assert(must.Must(generated.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{desired})
-			c.Assert(must.Must(live.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{observed})
-			c.Assert(streamingPoolNames(generated.ResourcePools, live.ResourcePools), qt.DeepEquals, [2][]string{test.pools, test.pools})
-			c.Assert(declared.FeatureObjects.Len(), qt.Equals, 2)
-			c.Assert(held.FeatureObjects.Len(), qt.Equals, 2)
+			c.Assert(must.Must(generated.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbstreaming.Kind) }).All()), qt.DeepEquals, []schemaext.Object{desired})
+			c.Assert(must.Must(live.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbstreaming.Kind) }).All()), qt.DeepEquals, []schemaext.Object{observed})
+			c.Assert(streamingPoolNames(generated.FeatureObjects, live.FeatureObjects), qt.DeepEquals, [2][]string{test.pools, test.pools})
+			c.Assert(declared.FeatureObjects.Len(), qt.Equals, 5)
+			c.Assert(held.FeatureObjects.Len(), qt.Equals, 5)
 		})
 	}
 }
 
-func streamingPoolNames(desired []schemamodel.ResourcePool, observed []catalog.ResourcePool) [2][]string {
+func streamingPoolNames(desired, observed schemaext.Objects) [2][]string {
 	var names [2][]string
-	for _, pool := range desired {
-		names[0] = append(names[0], pool.Name)
-	}
-	for _, pool := range observed {
-		names[1] = append(names[1], pool.Name)
+	for i, objects := range []schemaext.Objects{desired, observed} {
+		pools := objects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbworkload.PoolKind) })
+		for _, ref := range pools.Refs() {
+			names[i] = append(names[i], ref.Name.Source)
+		}
 	}
 	return names
 }

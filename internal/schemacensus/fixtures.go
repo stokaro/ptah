@@ -2,7 +2,6 @@ package schemacensus
 
 import (
 	"github.com/go-extras/go-kit/must"
-	"ptah.run/dialect/ydb/ydbworkload"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
@@ -13,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/capabilityprobe"
 )
 
@@ -1465,19 +1465,18 @@ func topicFixture() schemamodel.Database {
 // and a classifier that sends a member's queries to it.
 func resourcePoolFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.ResourcePools = []schemamodel.ResourcePool{{
-		StructName: "RP", Name: "reporting",
-		Spec: ydbworkload.PoolSpec{
+	db.FeatureObjects = must.Must(schemaext.NewObjects(
+		ydbworkload.DesiredPoolObject("reporting", "RP", ydbworkload.PoolSpec{
 			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)),
 			DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(25.0),
 			QueryCPULimitPercentPerNode: new(30.0), TotalCPULimitPercentPerNode: new(70.0),
 			ResourceWeight: new(5.0),
-		},
-	}}
-	db.ResourcePoolClassifiers = []schemamodel.ResourcePoolClassifier{{
-		StructName: "RP", Name: "reporting_group",
-		Spec: ydbworkload.ClassifierSpec{ResourcePool: "reporting", MemberName: "reporters", Rank: 100},
-	}}
+		}),
+		ydbworkload.DesiredClassifierObject("reporting_group", "RP", ydbworkload.ClassifierSpec{ResourcePool: "reporting", MemberName: "reporters", Rank: 100}),
+	))
+	pools := must.Must(ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	classifiers := must.Must(ydbworkload.Coverage(ydbworkload.ClassifierKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	db.FeatureCoverage = must.Must(pools.Combine(classifiers))
 	return db
 }
 

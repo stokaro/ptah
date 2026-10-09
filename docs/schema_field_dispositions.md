@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-591 fields are reachable from the desired schema, and each one carries
+587 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 514 | reaches rendered SQL on at least one target |
+| `ddl` | 510 | reaches rendered SQL on at least one target |
 | `comparison` | 9 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -89,16 +89,6 @@ None.
 | `ast.ReplicationConnectionSpec.TokenSecretName` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.TokenSecretPath` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.User` | `ddl` | — |
-| `ast.ResourcePoolClassifierSpec.MemberName` | `ddl` | — |
-| `ast.ResourcePoolClassifierSpec.Rank` | `ddl` | — |
-| `ast.ResourcePoolClassifierSpec.ResourcePool` | `ddl` | — |
-| `ast.ResourcePoolSpec.ConcurrentQueryLimit` | `ddl` | — |
-| `ast.ResourcePoolSpec.DatabaseLoadCPUThreshold` | `ddl` | — |
-| `ast.ResourcePoolSpec.QueryCPULimitPercentPerNode` | `ddl` | — |
-| `ast.ResourcePoolSpec.QueryMemoryLimitPercentPerNode` | `ddl` | — |
-| `ast.ResourcePoolSpec.QueueSize` | `ddl` | — |
-| `ast.ResourcePoolSpec.ResourceWeight` | `ddl` | — |
-| `ast.ResourcePoolSpec.TotalCPULimitPercentPerNode` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Column` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Interval` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Unit` | `ddl` | — |
@@ -254,8 +244,6 @@ None.
 | `schemamodel.Database.RLSEnabledTables` | `ddl` | — |
 | `schemamodel.Database.RLSPolicies` | `ddl` | — |
 | `schemamodel.Database.Ranges` | `ddl` | — |
-| `schemamodel.Database.ResourcePoolClassifiers` | `ddl` | — |
-| `schemamodel.Database.ResourcePools` | `ddl` | — |
 | `schemamodel.Database.RevokedGrants` | `ddl` | — |
 | `schemamodel.Database.Roles` | `ddl` | — |
 | `schemamodel.Database.Schemas` | `ddl` | — |
@@ -502,12 +490,6 @@ None.
 | `schemamodel.Range.Subtype` | `ddl` | — |
 | `schemamodel.Range.SubtypeDiff` | `ddl` | — |
 | `schemamodel.Range.SubtypeOpClass` | `ddl` | — |
-| `schemamodel.ResourcePool.Name` | `ddl` | — |
-| `schemamodel.ResourcePool.Spec` | `ddl` | — |
-| `schemamodel.ResourcePool.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.ResourcePoolClassifier.Name` | `ddl` | — |
-| `schemamodel.ResourcePoolClassifier.Spec` | `ddl` | — |
-| `schemamodel.ResourcePoolClassifier.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Role.Comment` | `ddl` | — |
 | `schemamodel.Role.CreateDB` | `ddl` | — |
 | `schemamodel.Role.CreateRole` | `ddl` | — |
@@ -656,4 +638,18 @@ None.
 | `ydbstreaming.Spec.ResourcePool` | `ddl` | — |
 | `ydbstreaming.Spec.Run` | `ddl` | — |
 | `ydbstreaming.Spec.Text` | `ddl` | — |
+| `ydbworkload.ClassifierSpec.MemberName` | `ddl` | — |
+| `ydbworkload.ClassifierSpec.Rank` | `ddl` | — |
+| `ydbworkload.ClassifierSpec.ResourcePool` | `ddl` | — |
+| `ydbworkload.DesiredClassifier.Spec` | `ddl` | — |
+| `ydbworkload.DesiredClassifier.StructName` | `source` | the annotation holder, independent of classifier identity |
+| `ydbworkload.DesiredPool.Spec` | `ddl` | — |
+| `ydbworkload.DesiredPool.StructName` | `source` | the annotation holder, independent of pool identity |
+| `ydbworkload.PoolSpec.ConcurrentQueryLimit` | `ddl` | — |
+| `ydbworkload.PoolSpec.DatabaseLoadCPUThreshold` | `ddl` | — |
+| `ydbworkload.PoolSpec.QueryCPULimitPercentPerNode` | `ddl` | — |
+| `ydbworkload.PoolSpec.QueryMemoryLimitPercentPerNode` | `ddl` | — |
+| `ydbworkload.PoolSpec.QueueSize` | `ddl` | — |
+| `ydbworkload.PoolSpec.ResourceWeight` | `ddl` | — |
+| `ydbworkload.PoolSpec.TotalCPULimitPercentPerNode` | `ddl` | — |
 <!-- END GENERATED FIELD DISPOSITIONS -->

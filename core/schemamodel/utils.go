@@ -1293,11 +1293,6 @@ func deduplicateComposite(r *Database) {
 	r.Topics = deduplicateNamedDefinitions(r.Topics, func(topic Topic) string {
 		return topic.QualifiedName()
 	})
-	r.ResourcePools = deduplicateNamedDefinitions(r.ResourcePools, func(pool ResourcePool) string {
-		return pool.Name
-	})
-	r.ResourcePoolClassifiers = deduplicateNamedDefinitions(r.ResourcePoolClassifiers,
-		func(classifier ResourcePoolClassifier) string { return classifier.Name })
 	r.AsyncReplications = deduplicateNamedDefinitions(r.AsyncReplications, func(replication AsyncReplication) string {
 		return replication.QualifiedName()
 	})
