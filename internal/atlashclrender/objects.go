@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
-	"ptah.run/internal/ydbcoordination"
 )
 
 func (r *renderer) renderExtensions() {
@@ -1382,16 +1382,12 @@ func (r *renderer) renderSynonyms() {
 // cannot name a node cannot ask for it to be kept. A setting the declaration
 // leaves unset is left out, and the reader takes it as YDB's default.
 func (r *renderer) renderCoordinationNodes() {
-	nodes := append([]schemamodel.CoordinationNode(nil), r.db.CoordinationNodes...)
-	slices.SortFunc(nodes, func(a, b schemamodel.CoordinationNode) int {
-		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
-	})
-	for _, node := range nodes {
-		r.linef(`coordination_node %s {`, quote(node.Name))
-		if schema := r.schemaFor(node.Schema); schema != "" {
+	for _, node := range r.coordinationNodes {
+		r.linef(`coordination_node %s {`, quote(node.ref.Name.Source))
+		if schema := r.schemaFor(node.ref.Schema.Source); schema != "" {
 			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
-		for _, setting := range ydbcoordination.Attributes(node.Spec) {
+		for _, setting := range ydbcoordination.Attributes(node.spec) {
 			r.stringAttr(1, setting[0], setting[1])
 		}
 		r.line("}")

@@ -241,7 +241,6 @@ var convertedFamilies = map[string]string{
 	"ResourcePoolClassifiers": "ResourcePoolClassifiers",
 	"AsyncReplications":       "AsyncReplications",
 	"Transfers":               "Transfers",
-	"CoordinationNodes":       "CoordinationNodes",
 	"Secrets":                 "Secrets",
 	"ExternalDataSources":     "ExternalDataSources",
 	"ExternalTables":          "ExternalTables",

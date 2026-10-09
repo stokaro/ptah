@@ -78,7 +78,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertTopics(database, dbSchema.Topics)
 	convertResourcePools(database, dbSchema.ResourcePools, dbSchema.ResourcePoolClassifiers)
 	convertReplications(database, dbSchema.AsyncReplications, dbSchema.Transfers)
-	convertCoordinationNodes(database, dbSchema.CoordinationNodes)
 	convertSecrets(database, dbSchema.Secrets)
 	convertExternalObjects(database, dbSchema)
 	convertStreamingQueries(database, dbSchema.StreamingQueries)
@@ -655,19 +654,6 @@ func convertReplications(database *schemamodel.Database, replications []catalog.
 			Name:   transfer.Name,
 			Schema: transfer.Schema,
 			Spec:   transfer.Spec,
-		})
-	}
-}
-
-// convertCoordinationNodes carries the YDB coordination nodes a read found
-// into the IR, with the configuration as YDB stores it: a setting nobody set
-// stays unset, so the description declares only what the node was given.
-func convertCoordinationNodes(database *schemamodel.Database, nodes []catalog.CoordinationNode) {
-	for _, node := range nodes {
-		database.CoordinationNodes = append(database.CoordinationNodes, schemamodel.CoordinationNode{
-			Schema: node.Schema,
-			Name:   node.Name,
-			Spec:   node.Spec,
 		})
 	}
 }

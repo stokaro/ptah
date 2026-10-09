@@ -1694,7 +1694,7 @@ func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
 		return err
 	}
-	return schemaprecondition.RefuseCoordinationNodes(p.targetDialect(), diff)
+	return nil
 }
 
 // GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.

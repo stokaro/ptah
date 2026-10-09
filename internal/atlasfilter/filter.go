@@ -105,6 +105,7 @@ func excludeDatabase(
 	filtered.FeatureObjects, filtered.FeatureCoverage = featureselect.Tables(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
 	})
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
 	filtered.Sequences = state.filterSequences(filtered.Sequences)
@@ -120,7 +121,6 @@ func excludeDatabase(
 	filtered.Topics = state.filterTopics(filtered.Topics)
 	filtered.AsyncReplications = state.filterAsyncReplications(filtered.AsyncReplications)
 	filtered.Transfers = state.filterTransfers(filtered.Transfers)
-	filtered.CoordinationNodes = state.filterCoordinationNodes(filtered.CoordinationNodes)
 	filtered.Secrets = state.filterSecrets(filtered.Secrets)
 	filtered.ExternalDataSources = state.filterExternalDataSources(filtered.ExternalDataSources)
 	filtered.ExternalTables = state.filterExternalTables(filtered.ExternalTables)
@@ -222,6 +222,8 @@ func excludeGenerated(
 	filtered.FeatureObjects, filtered.FeatureCoverage = featureselect.Tables(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
 	})
+
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
 	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
@@ -234,7 +236,6 @@ func excludeGenerated(
 	filtered.Functions = state.filterGeneratedFunctions(filtered.Functions)
 	filtered.Views = state.filterGeneratedViews(filtered.Views)
 	filtered.MaterializedViews = state.filterGeneratedMaterializedViews(filtered.MaterializedViews)
-	filtered.CoordinationNodes = state.filterGeneratedCoordinationNodes(filtered.CoordinationNodes)
 	filtered.StreamingQueries = state.filterGeneratedStreamingQueries(filtered.StreamingQueries)
 	filtered.Triggers = state.filterGeneratedTriggers(tableByStruct, filtered.Triggers)
 	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
@@ -1171,27 +1172,6 @@ func (s *exclusionState) filterTransfers(transfers []catalog.Transfer) []catalog
 	return result
 }
 
-// filterCoordinationNodes drops the YDB coordination nodes an exclusion
-// selector names, and the ones whose directory is excluded.
-func (s *exclusionState) filterCoordinationNodes(nodes []catalog.CoordinationNode) []catalog.CoordinationNode {
-	return keep(nodes, func(node catalog.CoordinationNode) bool {
-		return !s.matches("coordination_node", s.nameCandidates(node.Schema, node.Name)...) &&
-			!s.schemaExcluded(node.Schema)
-	})
-}
-
-// filterGeneratedCoordinationNodes is [exclusionState.filterCoordinationNodes]
-// for the desired side, so a node a selector excludes leaves both sides and is
-// neither created nor dropped.
-func (s *exclusionState) filterGeneratedCoordinationNodes(
-	nodes []schemamodel.CoordinationNode,
-) []schemamodel.CoordinationNode {
-	return keep(nodes, func(node schemamodel.CoordinationNode) bool {
-		return !s.matches("coordination_node", s.nameCandidates(node.Schema, node.Name)...) &&
-			!s.schemaExcluded(node.Schema)
-	})
-}
-
 // filterSecrets drops YDB secrets an exclusion selector names, and secrets
 // whose directory is excluded. A secret is selected on its own name.
 func (s *exclusionState) filterSecrets(secrets []catalog.Secret) []catalog.Secret {
@@ -2010,7 +1990,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		ResourcePoolClassifiers: slices.Clone(schema.ResourcePoolClassifiers),
 		AsyncReplications:       slices.Clone(schema.AsyncReplications),
 		Transfers:               slices.Clone(schema.Transfers),
-		CoordinationNodes:       slices.Clone(schema.CoordinationNodes),
 		Secrets:                 slices.Clone(schema.Secrets),
 		ExternalDataSources:     slices.Clone(schema.ExternalDataSources),
 		ExternalTables:          slices.Clone(schema.ExternalTables),
@@ -2076,7 +2055,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.ResourcePoolClassifiers = slices.Clone(schema.ResourcePoolClassifiers)
 	filtered.AsyncReplications = slices.Clone(schema.AsyncReplications)
 	filtered.Transfers = slices.Clone(schema.Transfers)
-	filtered.CoordinationNodes = slices.Clone(schema.CoordinationNodes)
 	filtered.Secrets = slices.Clone(schema.Secrets)
 	filtered.ExternalDataSources = slices.Clone(schema.ExternalDataSources)
 	filtered.ExternalTables = slices.Clone(schema.ExternalTables)

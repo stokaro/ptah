@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/crdbttl"
@@ -29,7 +30,6 @@ import (
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcolumn"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 )
@@ -562,11 +562,11 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 //
 // A Go schema is not a serialized document, so it carries no leading comment
 // header for the `ptah:not-described` directive that an HCL or SQL description
-// uses. This is the same statement in the grammar Go annotations already have,
-// and it lands in the same [coverage.Set] the comparator reads, so the two
-// spellings produce one plan (stokaro/ptah#3377).
+// uses. This is the same statement in the grammar Go annotations already have.
+// Common families use [coverage.Set]. Coordination limits use the owner's
+// feature coverage so they cannot recreate a shared dialect model.
 //
-// `kind` is required and comes from the closed list [coverage.ParseKind] holds;
+// `kind` is required and names a common coverage kind or coordination_node;
 // an unknown one is refused rather than ignored, because ignoring it turns the
 // absence it was protecting into a removal. `name` is optional: without it the
 // whole family is declined, which is what a bare directive means in the
@@ -583,6 +583,10 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 	}
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(kv["kind"]), "coordination_node") {
+		s.coordinationLimits = append(s.coordinationLimits, kv["name"])
+		return nil
 	}
 	kind, err := coverage.ParseKind(kv["kind"])
 	if err != nil {
@@ -748,6 +752,7 @@ func splitCSVAttribute(value string) []string {
 type schemaParseState struct {
 	featureObjects          schemaext.Objects
 	featureCoverage         schemaext.Coverage
+	coordinationLimits      []string
 	filename                string
 	fset                    *token.FileSet
 	tableNameToStructName   map[string]string
@@ -765,7 +770,6 @@ type schemaParseState struct {
 	ranges                  []schemamodel.Range
 	views                   []schemamodel.View
 	synonyms                []schemamodel.Synonym
-	coordinationNodes       []schemamodel.CoordinationNode
 	secrets                 []schemamodel.Secret
 	streamingQueries        []schemamodel.StreamingQuery
 	externalDataSources     []schemamodel.ExternalDataSource
@@ -1121,7 +1125,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		ResourcePoolClassifiers: state.resourcePoolClassifiers,
 		AsyncReplications:       state.asyncReplications,
 		Transfers:               state.transfers,
-		CoordinationNodes:       state.coordinationNodes,
 		Secrets:                 state.secrets,
 		StreamingQueries:        state.streamingQueries,
 		ExternalDataSources:     state.externalDataSources,
@@ -1898,7 +1901,7 @@ func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName 
 //
 // There is no dialect scope here, for the reason a synonym has none: a
 // coordination node is a YDB object and nothing else. The settings are read
-// and checked by internal/ydbcoordination, which the YAML reader asks too, so
+// and checked by dialect/ydb/ydbcoordination, which the YAML reader asks too, so
 // a value one source accepts is one the other accepts. Ptah's own lock node
 // and a name with a segment that starts with a dot are refused where they are
 // written.
@@ -1921,13 +1924,8 @@ func (s *schemaParseState) parseCoordinationNodeComment(comment *ast.Comment, st
 	if err != nil {
 		return err
 	}
-	s.coordinationNodes = append(s.coordinationNodes, schemamodel.CoordinationNode{
-		StructName: structName,
-		Schema:     kv["schema"],
-		Name:       kv["name"],
-		Spec:       spec,
-	})
-	return nil
+	s.featureObjects, err = s.featureObjects.With(ydbcoordination.DesiredObject(kv["schema"], kv["name"], structName, spec))
+	return err
 }
 
 // coordinationNodeError is the parse error for a coordination node

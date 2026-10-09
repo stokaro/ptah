@@ -8,10 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/goannotationsource"
+	"ptah.run/internal/ydbsource"
 )
 
 // ParseDir walks one Go entity root on the host filesystem and returns the
@@ -132,7 +131,7 @@ func bindManagedDataSourceRoot(result *schemamodel.Database, root string) {
 // multiple roots can accumulate into one result before a single finalize pass.
 func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string) error {
 	if result.FeatureCoverage.Representation() == "" {
-		known, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+		known, err := ydbsource.Coverage()
 		if err != nil {
 			return err
 		}

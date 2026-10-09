@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/capabilityprobe"
 )
@@ -166,7 +167,7 @@ func Fixtures() []Fixture {
 		{Name: "async-replication", Schema: asyncReplicationFixture()},
 		{Name: "async-replication-token", Schema: asyncReplicationTokenFixture()},
 		{Name: "transfer", Schema: transferFixture()},
-		{Name: "coordination-node", Schema: coordinationNodeFixture()},
+		{Name: "owned-coordination-node", Schema: ownedCoordinationNodeFixture()},
 		{Name: "secret", Schema: secretFixture()},
 		{Name: "streaming-query", Schema: streamingQueryFixture(), Flags: []capability.Capability{capability.StreamingQueries}},
 		{Name: "external-objects", Schema: externalObjectsFixture(),
@@ -1544,14 +1545,15 @@ func transferFixture() schemamodel.Database {
 	return db
 }
 
-func coordinationNodeFixture() schemamodel.Database {
+func ownedCoordinationNodeFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.CoordinationNodes = []schemamodel.CoordinationNode{{
-		StructName: "CN", Schema: "app", Name: "locks", Spec: ast.CoordinationNodeSpec{
+	db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: ydbcoordination.Ref("app", "locks"),
+		Value: &ydbcoordination.Desired{Spec: ydbcoordination.Spec{
 			SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
 			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
-		},
-	}}
+		}},
+	}))
+	db.FeatureCoverage = must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
 

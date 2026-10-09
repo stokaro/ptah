@@ -6,11 +6,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/convert/dbschematogo"
@@ -22,8 +24,9 @@ func TestSchemaInspectJSON_ReportsOmittedYDBFamilies(t *testing.T) {
 			c := qt.New(t)
 			var diagnostics bytes.Buffer
 			db := &schemamodel.Database{
-				AsyncReplications:       []schemamodel.AsyncReplication{{Name: "mirror"}},
-				CoordinationNodes:       []schemamodel.CoordinationNode{{Name: "locks"}},
+				AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
+				FeatureObjects:    must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}))),
+
 				ExternalDataSources:     []schemamodel.ExternalDataSource{{Name: "bucket"}},
 				ExternalTables:          []schemamodel.ExternalTable{{Name: "files"}},
 				ResourcePools:           []schemamodel.ResourcePool{{Name: "batch"}},

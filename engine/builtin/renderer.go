@@ -47,6 +47,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -65,6 +66,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 	"ptah.run/internal/accessscope"
+	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/foreignkeyscope"
@@ -80,7 +82,6 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/usertypescope"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
@@ -409,8 +410,6 @@ func prepareNode(
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		key, subject := replicationNodeSubject(typed)
 		return node, refuseReplicationFamily(dialect, caps, key, subject)
-	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
-		return node, refuseCoordinationNode(dialect, caps, node)
 	case *ydbstream.Node:
 		return node, ydbstream.Refuse(dialect, caps, "streaming query "+typed.Name)
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode, *ast.CreateExternalDataSourceNode,
@@ -1494,10 +1493,9 @@ func validateDeclaredTopics(dialect string, caps capability.Capabilities, databa
 // The kinds of declared object YDB keeps at a path of its scheme tree, as a
 // refusal names them.
 const (
-	pathTable            = "table"
-	pathView             = "view"
-	pathTopic            = "topic"
-	pathCoordinationNode = "coordination node"
+	pathTable = "table"
+	pathView  = "view"
+	pathTopic = "topic"
 )
 
 // declaredPaths maps the qualified name of every declared table, view, topic
@@ -1521,9 +1519,6 @@ func declaredPaths(database *schemamodel.Database) map[string][]string {
 	}
 	for _, topic := range database.Topics {
 		add(topic.QualifiedName(), pathTopic)
-	}
-	for _, node := range database.CoordinationNodes {
-		add(node.QualifiedName(), pathCoordinationNode)
 	}
 	return paths
 }
@@ -1565,32 +1560,6 @@ func validateDeclaredSchemePaths(dialect string, caps capability.Capabilities, d
 		}
 	}
 	return nil
-}
-
-// refuseCoordinationNode refuses node, a coordination node statement, on a
-// target without [capability.CoordinationNodes]: a coordination node is YDB's
-// own object, and another engine has nothing to create.
-func refuseCoordinationNode(dialect string, caps capability.Capabilities, node ast.Node) error {
-	if caps.Has(capability.CoordinationNodes) {
-		return nil
-	}
-	var name string
-	switch typed := node.(type) {
-	case *ast.CreateCoordinationNodeNode:
-		name = typed.Name
-	case *ast.AlterCoordinationNodeNode:
-		name = typed.Name
-	case *ast.DropCoordinationNodeNode:
-		name = typed.Name
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.CoordinationNodes),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("coordination node %s, which requires target capability %s, unavailable on this %s target",
-			name, capability.CoordinationNodes, normalized),
-	}
 }
 
 // refuseInvisibleIndexNode refuses index when the optimizer is not to use it
@@ -2193,7 +2162,7 @@ func ValidateSchemaWithCapabilities(
 	return result.Err(renderTarget(dialect))
 }
 
-func validateSchemaWithCapabilities(ctx context.Context, r *schemamodel.Database, dialect string, caps capability.Capabilities) error {
+func validateSchemaWithCapabilities(ctx context.Context, runtime featureplan.DeclarationRuntime, r *schemamodel.Database, dialect string, caps capability.Capabilities) error {
 	if _, err := NewRendererWithCapabilities(dialect, caps); err != nil {
 		return err
 	}
@@ -2208,10 +2177,10 @@ func validateSchemaWithCapabilities(ctx context.Context, r *schemamodel.Database
 	if err != nil {
 		return err
 	}
-	if err := validateDeclaredPrimaryKeys(dialect, caps, prepared); err != nil {
+	if err := validateDeclaredPrimaryKeys(ctx, runtime, dialect, caps, prepared); err != nil {
 		return err
 	}
-	return validateTablesWithInlineIndexes(ctx, dialect, caps, prepared)
+	return validateTablesWithInlineIndexes(ctx, runtime, dialect, caps, prepared)
 }
 
 // validateTablesWithInlineIndexes renders every table on a target that writes a
@@ -2227,7 +2196,7 @@ func validateSchemaWithCapabilities(ctx context.Context, r *schemamodel.Database
 // Which target that is, is asked of the dialect's default preset rather than
 // of caps, because that is the set the walk below asks when it puts the indexes
 // into the table: the tables validated here are the ones the walk builds.
-func validateTablesWithInlineIndexes(ctx context.Context, dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+func validateTablesWithInlineIndexes(ctx context.Context, runtime featureplan.DeclarationRuntime, dialect string, caps capability.Capabilities, database schemamodel.Database) error {
 	if !schemaprep.DeclaresIndexesInCreateTable(capability.ForDialect(dialect)) {
 		return nil
 	}
@@ -2243,7 +2212,7 @@ func validateTablesWithInlineIndexes(ctx context.Context, dialect string, caps c
 			Target: renderTarget(dialect), Capabilities: caps, Nodes: []ast.Node{table},
 		})
 		return err
-	})
+	}, builtinlowering.ForTarget(ctx, runtime, dialect, caps))
 }
 
 // validateDeclaredPrimaryKeys refuses a table without a key on a target that
@@ -2255,7 +2224,7 @@ func validateTablesWithInlineIndexes(ctx context.Context, dialect string, caps c
 // key on the table, or from a PRIMARY KEY constraint, and a second reading of
 // that from the model would be a second answer that can drift from the first;
 // this one cannot, because it is the same function over the same nodes.
-func validateDeclaredPrimaryKeys(dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+func validateDeclaredPrimaryKeys(ctx context.Context, runtime featureplan.DeclarationRuntime, dialect string, caps capability.Capabilities, database schemamodel.Database) error {
 	if !caps.Has(capability.PrimaryKeyRequired) {
 		return nil
 	}
@@ -2265,7 +2234,7 @@ func validateDeclaredPrimaryKeys(dialect string, caps capability.Capabilities, d
 			return nil
 		}
 		return requirePrimaryKey(dialect, caps, table)
-	})
+	}, builtinlowering.ForTarget(ctx, runtime, dialect, caps))
 }
 
 // GetOrderedCreateStatementsWithCapabilities renders ordered create statements
@@ -2282,6 +2251,7 @@ func GetOrderedCreateStatementsWithCapabilities(
 
 func orderedCreateStatements(
 	ctx context.Context,
+	runtime featureplan.DeclarationRuntime,
 	r *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
@@ -2322,7 +2292,7 @@ func orderedCreateStatements(
 		}
 		statements = append(statements, sql)
 		return nil
-	})
+	}, builtinlowering.ForTarget(ctx, runtime, dialect, caps))
 	if err != nil {
 		return nil, err
 	}
@@ -2455,11 +2425,6 @@ func validateDatabaseDeclarations(
 	// own columns naming a type the server has no definition of
 	// (stokaro/ptah#1717).
 	if err := usertypescope.ValidateDeclared(dialect, caps, database); err != nil {
-		return err
-	}
-	// A coordination node is YDB's own object; anywhere else it is refused
-	// here, before anything is rendered, with the words a plan uses.
-	if err := ydbcoordination.ValidateDeclared(dialect, caps, database.CoordinationNodes); err != nil {
 		return err
 	}
 	if err := validateDeclaredSchemePaths(dialect, caps, database); err != nil {

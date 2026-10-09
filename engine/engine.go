@@ -50,6 +50,8 @@ type Provider struct {
 	Reversals []Reversal
 	// Planning lowers accepted feature changes into owner-contributed operations.
 	Planning []Planning
+	// Declarations lowers authored standalone objects into creation operations.
+	Declarations []DeclarationPlanning
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -81,23 +83,25 @@ type Target struct {
 // when its services satisfy their contracts. The zero value has no providers;
 // it refuses every target and never falls back to a built-in implementation.
 type Runtime struct {
-	targets            map[string]target
-	codecs             schemaext.Registry
-	conversions        map[conversionKey]int
-	conversionServices []schemaext.ConversionService
-	properties         map[propertyKey]int
-	propertyServices   []PropertySource
-	comparisons        map[conversionKey]int
-	comparisonServices []ObjectComparison
-	facetComparisons   map[conversionKey]int
-	facetServices      []FacetComparison
-	reports            map[reportingKey]int
-	reportingServices  []Reporting
-	reversals          map[conversionKey]int
-	reversalServices   []schemaext.ReversalService
-	planning           map[conversionKey]int
-	parentPlanning     map[conversionKey]int
-	planningServices   []ownedPlanning
+	targets             map[string]target
+	codecs              schemaext.Registry
+	conversions         map[conversionKey]int
+	conversionServices  []schemaext.ConversionService
+	properties          map[propertyKey]int
+	propertyServices    []PropertySource
+	comparisons         map[conversionKey]int
+	comparisonServices  []ObjectComparison
+	facetComparisons    map[conversionKey]int
+	facetServices       []FacetComparison
+	reports             map[reportingKey]int
+	reportingServices   []Reporting
+	reversals           map[conversionKey]int
+	reversalServices    []schemaext.ReversalService
+	planning            map[conversionKey]int
+	parentPlanning      map[conversionKey]int
+	planningServices    []ownedPlanning
+	declarations        map[conversionKey]int
+	declarationServices []ownedDeclarationPlanning
 }
 
 type target struct {
@@ -121,6 +125,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		facetComparisons: make(map[conversionKey]int),
 		reports:          make(map[reportingKey]int), reversals: make(map[conversionKey]int), planning: make(map[conversionKey]int),
 		parentPlanning: make(map[conversionKey]int),
+		declarations:   make(map[conversionKey]int),
 		properties:     make(map[propertyKey]int),
 	}
 	owners := make(map[string]struct{}, len(providers))
@@ -156,6 +161,11 @@ func New(providers ...Provider) (*Runtime, error) {
 }
 
 func (r *Runtime) registerServices(provider Provider) error {
+	for _, declaration := range provider.Declarations {
+		if err := r.registerDeclarationPlanning(provider.ID, declaration); err != nil {
+			return err
+		}
+	}
 	for _, source := range provider.Properties {
 		if err := r.registerPropertySource(provider.ID, source); err != nil {
 			return err

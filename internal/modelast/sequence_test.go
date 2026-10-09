@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -59,7 +60,7 @@ func TestCollectDatabase_SequenceOrdering(t *testing.T) {
 		},
 	}
 
-	statements := must.Must(modelast.CollectDatabase(database, platform.Postgres))
+	statements := must.Must(modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()}))
 
 	createNode := createSequenceStatementByName(statements, "order_seq")
 	createIdx := createSequenceStatementIndexByName(statements, "order_seq")
@@ -102,7 +103,7 @@ func TestCollectDatabase_SequenceReachesTheMySQLRendererToBeRefused(t *testing.T
 		Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 	}
 
-	statements := must.Must(modelast.CollectDatabase(database, platform.MySQL))
+	statements := must.Must(modelast.CollectDatabase(database, platform.MySQL, modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
 		qt.Commentf("the declared sequence must reach the renderer"))
@@ -140,7 +141,7 @@ func TestCollectDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 				Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 			}
 
-			statements := must.Must(modelast.CollectDatabase(database, spelling))
+			statements := must.Must(modelast.CollectDatabase(database, spelling, modelast.Lowering{Context: context.Background()}))
 
 			c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
 				qt.Commentf("the declared sequence must reach the %s renderer", spelling))

@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -78,7 +79,7 @@ func TestCollectDatabase_SQLServerIncludesViewsAndTriggers(t *testing.T) {
 		}},
 	}
 
-	statements := must.Must(modelast.CollectDatabase(database, platform.SQLServer))
+	statements := must.Must(modelast.CollectDatabase(database, platform.SQLServer, modelast.Lowering{Context: context.Background()}))
 	sql, err := builtin.RenderSQL(platform.SQLServer, statements)
 
 	c.Assert(err, qt.IsNil)

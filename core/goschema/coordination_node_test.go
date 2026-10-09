@@ -5,10 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
 // coordinationNodeSource is an entity declaring a coordination node with
@@ -28,28 +29,31 @@ func TestParseSource_CoordinationNode_HappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
 		attributes string
-		want       schemamodel.CoordinationNode
+		want       schemaext.Object
 	}{
 		{name: "a node with the defaults", attributes: `name="locks"`,
-			want: schemamodel.CoordinationNode{StructName: "Locks", Name: "locks"}},
+			want: ydbcoordination.DesiredObject("", "locks", "Locks", ydbcoordination.Spec{})},
 		{
 			name: "every setting",
 			attributes: `name="limits" schema="app" self_check_period="PT2S" session_grace_period="PT15S" ` +
 				`read_consistency_mode="STRICT" attach_consistency_mode="relaxed" rate_limiter_counters_mode="detailed"`,
-			want: schemamodel.CoordinationNode{StructName: "Locks", Schema: "app", Name: "limits", Spec: ast.CoordinationNodeSpec{
+			want: ydbcoordination.DesiredObject("app", "limits", "Locks", ydbcoordination.Spec{
 				SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
 				ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
-			}},
+			}),
 		},
 		{name: "Ptah's lock node name in a directory", attributes: `name="ptah_locks" schema="app"`,
-			want: schemamodel.CoordinationNode{StructName: "Locks", Schema: "app", Name: "ptah_locks"}},
+			want: ydbcoordination.DesiredObject("app", "ptah_locks", "Locks", ydbcoordination.Spec{})},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db, err := goschema.ParseSource("locks.go", coordinationNodeSource(test.attributes))
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.CoordinationNodes, qt.DeepEquals, []schemamodel.CoordinationNode{test.want})
+			objects, err := db.FeatureObjects.All()
+			c.Assert(err, qt.IsNil)
+			c.Assert(objects, qt.DeepEquals, []schemaext.Object{test.want})
+			c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, test.want.Ref).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }

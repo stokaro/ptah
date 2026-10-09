@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/atlashcl"
 )
 
@@ -29,9 +29,11 @@ coordination_node "locks" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.CoordinationNodes, qt.DeepEquals, []schemamodel.CoordinationNode{
-		{Schema: "app", Name: "limits", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000, ReadConsistencyMode: "strict"}},
-		{Name: "locks"},
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.ContentEquals, []schemaext.Object{
+		ydbcoordination.DesiredObject("app", "limits", "", ydbcoordination.Spec{SelfCheckPeriodMillis: 2000, ReadConsistencyMode: "strict"}),
+		ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}),
 	})
 }
 

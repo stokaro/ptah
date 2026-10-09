@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -284,7 +285,7 @@ func TestQualifyDeclaredUserTypesDoesNotMutateItsInput(t *testing.T) {
 func TestCollectDatabaseQualifiesDeclaredUserTypes(t *testing.T) {
 	c := qt.New(t)
 
-	statements := must.Must(modelast.CollectDatabase(*userTypeDocument("mood[]"), platform.Postgres))
+	statements := must.Must(modelast.CollectDatabase(*userTypeDocument("mood[]"), platform.Postgres, modelast.Lowering{Context: context.Background()}))
 
 	c.Assert(statements, qt.IsNotNil)
 

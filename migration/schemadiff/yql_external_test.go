@@ -27,6 +27,7 @@ func TestCompare_YQLExternalObjectsDeclaredAndOmitted(t *testing.T) {
 			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
 			c.Assert(err, qt.IsNil)
 			held := &catalog.Database{
+				FeatureCoverage:     completeYDBFixtureCoverage(),
 				ExternalDataSources: []catalog.ExternalDataSource{{Name: "bucket", SourceType: "ObjectStorage", Location: "https://storage.invalid/", AuthMethod: "NONE"}},
 				ExternalTables:      []catalog.ExternalTable{{Name: "events", DataSource: "bucket", Location: "/", Columns: []catalog.ExternalColumn{{Name: "id", Type: "Int64"}}}},
 			}

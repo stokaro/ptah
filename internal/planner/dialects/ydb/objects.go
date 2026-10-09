@@ -32,6 +32,9 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 		}
 	}
 	rest := *diff
+	// Selected owners must account for every feature change before the common
+	// graph can be scheduled. Unknown kinds fail at that dispatch boundary.
+	rest.FeatureChanges = nil
 	rest.StreamingQueriesAdded, rest.StreamingQueriesRemoved, rest.StreamingQueriesChanged = nil, nil, nil
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
@@ -49,7 +52,6 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.ResourcePoolClassifiersModified = nil
 	rest.AsyncReplicationsAdded, rest.AsyncReplicationsRemoved, rest.AsyncReplicationsModified = nil, nil, nil
 	rest.TransfersAdded, rest.TransfersRemoved, rest.TransfersModified = nil, nil, nil
-	rest.CoordinationNodesAdded, rest.CoordinationNodesRemoved, rest.CoordinationNodesModified = nil, nil, nil
 	rest.SecretsAdded, rest.SecretsRemoved, rest.SecretsRotated = nil, nil, nil
 	rest.ExternalDataSourcesAdded, rest.ExternalDataSourcesRemoved, rest.ExternalDataSourcesChanged = nil, nil, nil
 	rest.ExternalTablesAdded, rest.ExternalTablesRemoved, rest.ExternalTablesChanged = nil, nil, nil
@@ -139,5 +141,5 @@ func (p *Planner) refuseDeclaredObjectChanges(diff *difftypes.SchemaDiff) error 
 	if err := p.refuseObjects(diff); err != nil {
 		return err
 	}
-	return p.refuseCoordinationNodes(diff)
+	return nil
 }

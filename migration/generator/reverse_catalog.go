@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planner/objectlookup"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -145,26 +144,6 @@ func priorSequence(
 		return *sequence
 	}
 	return schemamodel.Sequence{}
-}
-
-// reverseCoordinationNodeChanges puts each changed node's settings back: the
-// down direction changes the settings the up direction changed, to the values
-// the node ran with before, from the configuration the up direction left.
-func reverseCoordinationNodeChanges(changes []difftypes.CoordinationNodeChange) []difftypes.CoordinationNodeChange {
-	if changes == nil {
-		return nil
-	}
-	reversed := make([]difftypes.CoordinationNodeChange, 0, len(changes))
-	for _, change := range changes {
-		after := ydbcoordination.Merge(change.Previous, change.Changes)
-		reversed = append(reversed, difftypes.CoordinationNodeChange{
-			Schema:   change.Schema,
-			Name:     change.Name,
-			Changes:  ydbcoordination.Changes(change.Previous, after),
-			Previous: after,
-		})
-	}
-	return reversed
 }
 
 // priorSynonym is the synonym the pre-change database held.

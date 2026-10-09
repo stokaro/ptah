@@ -140,7 +140,7 @@ func objectKindFixture() schemamodel.Database {
 // renderedSchema is what `ptah schema render --dialect <d>` produces: the
 // offline converter's AST for the whole desired schema, rendered.
 func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect))
+	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
 	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
 	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
 	return sql
@@ -165,7 +165,7 @@ func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) strin
 // spelling-parity test below compares engines to themselves, never to each
 // other, so a refusal is a legitimate answer as long as it is the same answer.
 func renderedOrRefusal(database schemamodel.Database, dialect string) string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect))
+	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
 	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }

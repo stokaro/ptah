@@ -3,10 +3,9 @@ package sqlschema
 import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/ydbsource"
 )
 
 // Read loads a SQL desired schema into the canonical model.
@@ -54,7 +53,7 @@ func ReadOnto(
 		return schemamodel.Database{}, nil, err
 	}
 	if platform.NormalizeDialect(dialect) == platform.YDB {
-		database.FeatureCoverage, err = ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+		database.FeatureCoverage, err = ydbsource.Coverage()
 		if err != nil {
 			return schemamodel.Database{}, nil, err
 		}

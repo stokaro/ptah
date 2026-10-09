@@ -90,6 +90,7 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	}
 
 	var findings []Finding
+	appendFeatureFindings(&findings, diff.FeatureChanges)
 	// A dropped database takes every object in it; a changed character set or
 	// collation changes what a table created later in the database defaults to.
 	add(&findings, "schemas_added", len(diff.SchemasAdded), Safe)
@@ -124,9 +125,6 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	forced, unforced := rlsForceDirections(diff.RLSForceChanged)
 	add(&findings, "rls_force_added", forced, Safe)
 	add(&findings, "rls_force_removed", unforced, Destructive)
-	add(&findings, "coordination_nodes_added", len(diff.CoordinationNodesAdded), Safe)
-	add(&findings, "coordination_nodes_removed", len(diff.CoordinationNodesRemoved), Destructive)
-	add(&findings, "coordination_nodes_modified", len(diff.CoordinationNodesModified), Warning)
 	add(&findings, "roles_added", len(diff.RolesAdded), Safe)
 	add(&findings, "roles_removed", len(diff.RolesRemoved), Destructive)
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
@@ -173,6 +171,7 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "external_tables_changed", len(diff.ExternalTablesChanged), Warning)
 
 	for _, table := range diff.TablesModified {
+		appendFeatureFindings(&findings, table.FeatureChanges)
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
 		add(&findings, "columns_removed", len(table.ColumnsRemoved), Destructive)
 		add(&findings, "columns_modified", len(table.ColumnsModified), Warning)
@@ -655,8 +654,6 @@ func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
 		return n.Name, "DROP ROLE removes an existing database principal", true
 	case *ast.DropPolicyNode:
 		return n.Name, "DROP POLICY removes an access-control protection", true
-	case *ast.DropCoordinationNodeNode:
-		return n.Name, dropCoordinationNodeReason, true
 	case *ast.DropTopicNode:
 		return n.Name, dropTopicReason, true
 	default:

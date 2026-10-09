@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -41,7 +42,7 @@ func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
 	err := modelast.WalkDatabase(database, platform.Postgres, func(node ast.Node) error {
 		visited = append(visited, node)
 		return nil
-	})
+	}, modelast.Lowering{Context: context.Background()})
 	c.Assert(err, qt.IsNil)
 
 	types := make([]string, 0, len(visited))
@@ -60,7 +61,7 @@ func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
 		"*ast.CreateViewNode",
 		"*ast.IndexNode",
 	})
-	c.Assert(visited, qt.DeepEquals, must.Must(modelast.CollectDatabase(database, platform.Postgres)).Statements)
+	c.Assert(visited, qt.DeepEquals, must.Must(modelast.CollectDatabase(database, platform.Postgres, modelast.Lowering{Context: context.Background()})).Statements)
 }
 
 func TestWalkDatabase_StopsAtVisitorError(t *testing.T) {
@@ -71,7 +72,7 @@ func TestWalkDatabase_StopsAtVisitorError(t *testing.T) {
 	wantErr := errors.New("stop after two nodes")
 	visited := 0
 
-	err := modelast.WalkDatabase(database, platform.Postgres, stopAfterVisits(&visited, 2, wantErr))
+	err := modelast.WalkDatabase(database, platform.Postgres, stopAfterVisits(&visited, 2, wantErr), modelast.Lowering{Context: context.Background()})
 
 	c.Assert(err, qt.ErrorIs, wantErr)
 	c.Assert(visited, qt.Equals, 2)
@@ -89,6 +90,6 @@ func stopAfterVisits(visited *int, stopAt int, stopErr error) func(ast.Node) err
 
 func TestWalkDatabase_RefusesNilVisitor(t *testing.T) {
 	c := qt.New(t)
-	err := modelast.WalkDatabase(schemamodel.Database{}, platform.Postgres, nil)
+	err := modelast.WalkDatabase(schemamodel.Database{}, platform.Postgres, nil, modelast.Lowering{Context: context.Background()})
 	c.Assert(err, qt.ErrorMatches, "walk database schema: nil visitor")
 }

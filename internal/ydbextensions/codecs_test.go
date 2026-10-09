@@ -3,6 +3,7 @@ package ydbextensions_test
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -70,14 +71,19 @@ func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 	}
 	definition.Values[schemaext.Operation] = definition.Operations
 	definition.Values[schemaext.Change] = definition.Changes
-	c.Assert(codecs, qt.HasLen, 6)
+	c.Assert(codecs, qt.HasLen, 10)
 	for _, codec := range codecs {
 		var fields, described []string
 		modelType := reflect.TypeOf(codec.Prototype).Elem()
 		for field := range modelType.Fields() {
 			fields = append(fields, strings.Split(field.Tag.Get("json"), ",")[0])
 		}
-		for field := range definition.Values[codec.Representation][string(codec.Prototype.Kind())].Properties {
+		var standalone shape
+		c.Assert(json.Unmarshal(codec.Definition, &standalone), qt.IsNil)
+		properties := make(map[string]json.RawMessage)
+		maps.Copy(properties, definition.Values[codec.Representation][string(codec.Prototype.Kind())].Properties)
+		maps.Copy(properties, standalone.Properties)
+		for field := range properties {
 			described = append(described, field)
 		}
 		slices.Sort(fields)

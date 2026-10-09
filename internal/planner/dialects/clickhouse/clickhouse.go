@@ -123,9 +123,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseReplications(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseCoordinationNodes(platform.ClickHouse, diff); err != nil {
-		return nil, err
-	}
 	var result []ast.Node
 
 	// The identity check alone. Nothing is resolved: an addition carries its

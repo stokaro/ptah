@@ -26,7 +26,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 		{"async replications", len(db.AsyncReplications)},
 		{"composite types", len(db.CompositeTypes)},
 		{"continuous aggregates", len(db.ContinuousAggregates)},
-		{"coordination nodes", len(db.CoordinationNodes)},
 		{"domains", len(db.Domains)},
 		{"external data sources", len(db.ExternalDataSources)},
 		{"external tables", len(db.ExternalTables)},

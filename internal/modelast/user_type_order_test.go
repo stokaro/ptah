@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -42,7 +43,7 @@ func userTypeOrderDatabase() schemamodel.Database {
 func TestCollectDatabase_CreatesUserTypesBeforeTheTypesThatNameThem(t *testing.T) {
 	c := qt.New(t)
 
-	statements := must.Must(modelast.CollectDatabase(userTypeOrderDatabase(), "postgres"))
+	statements := must.Must(modelast.CollectDatabase(userTypeOrderDatabase(), "postgres", modelast.Lowering{Context: context.Background()}))
 	sql, err := builtin.RenderSQL("postgres", statements.Statements...)
 	c.Assert(err, qt.IsNil)
 

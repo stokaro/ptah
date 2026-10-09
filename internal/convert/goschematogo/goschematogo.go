@@ -20,13 +20,13 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
@@ -243,17 +243,18 @@ func validatePackageName(name string) error {
 }
 
 type renderContext struct {
-	changefeedsByTable map[objectidentity.Key][]ydbschema.ChangefeedSpec
-	db                 *schemamodel.Database
-	opts               Options
-	enumsByName        map[string]schemamodel.Enum
-	fieldsByTable      map[string][]schemamodel.Field
-	indexesByTable     map[string][]schemamodel.Index
-	constraintsByTable map[string][]schemamodel.Constraint
-	rlsByTable         map[string][]schemamodel.RLSPolicy
-	rlsEnabledByTable  map[string][]schemamodel.RLSEnabledTable
-	triggersByTable    map[string][]schemamodel.Trigger
-	imports            map[string]struct{}
+	coordinationAnnotations []string
+	changefeedsByTable      map[objectidentity.Key][]ydbschema.ChangefeedSpec
+	db                      *schemamodel.Database
+	opts                    Options
+	enumsByName             map[string]schemamodel.Enum
+	fieldsByTable           map[string][]schemamodel.Field
+	indexesByTable          map[string][]schemamodel.Index
+	constraintsByTable      map[string][]schemamodel.Constraint
+	rlsByTable              map[string][]schemamodel.RLSPolicy
+	rlsEnabledByTable       map[string][]schemamodel.RLSEnabledTable
+	triggersByTable         map[string][]schemamodel.Trigger
+	imports                 map[string]struct{}
 }
 
 func newRenderContext(db *schemamodel.Database, opts Options) *renderContext {
@@ -407,7 +408,7 @@ func (ctx *renderContext) hasYDBObjects() bool {
 		len(ctx.db.ResourcePoolClassifiers) > 0 ||
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
-		len(ctx.db.CoordinationNodes) > 0 ||
+		len(ctx.coordinationAnnotations) > 0 ||
 		len(ctx.db.StreamingQueries) > 0
 }
 
@@ -551,8 +552,8 @@ func (ctx *renderContext) writeSecrets(w *sourceWriter) {
 // coordination nodes, broken out of [renderContext.writeGlobalObjects] to
 // keep that function's branching under the complexity limit.
 func (ctx *renderContext) writeCoordinationNodes(w *sourceWriter) {
-	for _, node := range sortedCoordinationNodes(ctx.db.CoordinationNodes) {
-		w.writeComment(coordinationNodeAnnotation(node))
+	for _, annotation := range ctx.coordinationAnnotations {
+		w.writeComment(annotation)
 	}
 }
 
@@ -1325,12 +1326,12 @@ func resourcePoolAnnotations(
 
 // coordinationNodeAnnotation declares a YDB coordination node with the
 // settings it was given; a setting left unset takes YDB's default.
-func coordinationNodeAnnotation(node schemamodel.CoordinationNode) string {
+func coordinationNodeAnnotation(schema, name string, spec ydbcoordination.Spec) string {
 	attrs := []attr{
-		{name: "name", value: node.Name, set: true},
-		{name: "schema", value: node.Schema, set: node.Schema != ""},
+		{name: "name", value: name, set: true},
+		{name: "schema", value: schema, set: schema != ""},
 	}
-	for _, setting := range ydbcoordination.Attributes(node.Spec) {
+	for _, setting := range ydbcoordination.Attributes(spec) {
 		attrs = append(attrs, attr{name: setting[0], value: setting[1], set: true})
 	}
 	return annotation("ptah:schema:coordinationnode", attrs...)
@@ -1629,12 +1630,6 @@ func sortedSecrets(values []schemamodel.Secret) []schemamodel.Secret {
 func sortedViews(values []schemamodel.View) []schemamodel.View {
 	result := append([]schemamodel.View(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
-	return result
-}
-
-func sortedCoordinationNodes(values []schemamodel.CoordinationNode) []schemamodel.CoordinationNode {
-	result := append([]schemamodel.CoordinationNode(nil), values...)
-	sort.Slice(result, func(i, j int) bool { return result[i].QualifiedName() < result[j].QualifiedName() })
 	return result
 }
 

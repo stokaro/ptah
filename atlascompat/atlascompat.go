@@ -11,10 +11,12 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/modelast"
@@ -105,9 +107,15 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 // Table facets preserve their values and source target bindings on CREATE TABLE.
 // The selected renderer decides support; other facet placements are refused.
 //
+// The caller supplies context, a selected declaration runtime, and target
+// capabilities. Standalone objects are planned by their owners and scheduled
+// with common creation operations before any statements are returned.
 // Canonical platform names are declared in core/platform.
-func SchemaToAST(database schemamodel.Database, targetPlatform string) (*ast.StatementList, error) {
-	return modelast.CollectDatabase(database, targetPlatform)
+func SchemaToAST(ctx context.Context, runtime featureplan.DeclarationRuntime, database schemamodel.Database, targetPlatform string, caps capability.Capabilities) (*ast.StatementList, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	return modelast.CollectDatabase(database, targetPlatform, builtinlowering.ForTarget(ctx, runtime, targetPlatform, caps))
 }
 
 // DBSchemaToGoSchema converts an introspected database schema into Ptah's Go

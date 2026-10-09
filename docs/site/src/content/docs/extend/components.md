@@ -237,7 +237,11 @@ if err != nil {
 	return err
 }
 
-list, err := atlascompat.SchemaToAST(*db, "postgres")
+runtime, err := builtin.New()
+if err != nil {
+	return err
+}
+list, err := atlascompat.SchemaToAST(ctx, runtime, *db, "postgres", capability.ForDialect("postgres"))
 if err != nil {
 	return err
 }
@@ -368,6 +372,17 @@ in one batch and keeps each statement associated with its source operation.
 An extension's unknown effects still require manual review when it produces
 several SQL statements. Migration generation uses the same selected renderer
 for assessment, forward SQL, and rollback SQL.
+
+`migration/safety.ClassifySchemaDiff` also accounts for owned changes before
+planning. It reads the change owner's `schemaext.EffectSource` metadata and
+reports each kind under `feature_changes:<kind>`. Missing or invalid metadata
+requires the strongest review. Removing a coordination node is destructive
+because it also removes application semaphores and rate limiter resources.
+
+YDB inspection records unknown coordination settings as incomplete subject
+coverage. Go and HCL export refuse those limits before writing output, because
+these formats cannot carry the captured inspection limit. Exporting an empty
+node list would otherwise turn unknown configuration into declared absence.
 
 Offline target-aware comparison requires `schemadiff.TargetRuntime`, including
 its selected validation service. Live comparison requires

@@ -23,30 +23,11 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 		return featureplan.Result{}, fmt.Errorf("%w: planning changed the result count", schemaext.ErrInvalidValue)
 	}
 	owner := r.planningServices[service]
-	result := featureplan.Result{Complete: true, Contributions: make([]plangraph.Contribution[featureplan.Operation], len(reply.Contributions)), Changes: slices.Clone(reply.Changes), Parents: slices.Clone(reply.Parents)}
-	steps := make(map[plangraph.StepID]bool)
-	for i, contribution := range reply.Contributions {
-		if contribution.Owner != owner.owner {
-			return featureplan.Result{}, fmt.Errorf("%w: planning changed its contribution owner", schemaext.ErrInvalidValue)
-		}
-		cloned := contribution
-		cloned.Steps = slices.Clone(contribution.Steps)
-		cloned.Dependencies = slices.Clone(contribution.Dependencies)
-		for j, step := range cloned.Steps {
-			if step.ID.Owner != owner.owner || !reversalText(step.ID.Name) || steps[step.ID] {
-				return featureplan.Result{}, fmt.Errorf("%w: duplicate or invalid planning step", schemaext.ErrInvalidValue)
-			}
-			steps[step.ID] = true
-			operation, err := r.snapshotPlannedOperation(ctx, owner, request.Tables, step.Payload)
-			if err != nil {
-				return featureplan.Result{}, err
-			}
-			step.Payload = operation
-			step.Effects = slices.Clone(step.Effects)
-			cloned.Steps[j] = step
-		}
-		result.Contributions[i] = cloned
+	contributions, steps, err := r.snapshotPlanningContributions(ctx, owner.owner, owner.OperationKinds, request.Tables, reply.Contributions)
+	if err != nil {
+		return featureplan.Result{}, err
 	}
+	result := featureplan.Result{Complete: true, Contributions: contributions, Changes: slices.Clone(reply.Changes), Parents: slices.Clone(reply.Parents)}
 	covered := make(map[plangraph.StepID]bool)
 	if err := validatePlannedChanges(request.Changes, result.Changes, steps, covered); err != nil {
 		return featureplan.Result{}, err
@@ -57,7 +38,6 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 	if len(covered) != len(steps) {
 		return featureplan.Result{}, fmt.Errorf("%w: planning emitted an unaccounted step", schemaext.ErrInvalidValue)
 	}
-	var err error
 	result.Rewrites, err = snapshotPlanningRewrites(request, reply.Rewrites, steps)
 	if err != nil {
 		return featureplan.Result{}, err
@@ -66,6 +46,40 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 		return featureplan.Result{}, err
 	}
 	return result, nil
+}
+
+func (r *Runtime) snapshotPlanningContributions(
+	ctx context.Context,
+	owner string,
+	kinds []schemaext.Kind,
+	tables []featureplan.Table,
+	contributions []plangraph.Contribution[featureplan.Operation],
+) ([]plangraph.Contribution[featureplan.Operation], map[plangraph.StepID]bool, error) {
+	result := make([]plangraph.Contribution[featureplan.Operation], len(contributions))
+	steps := make(map[plangraph.StepID]bool)
+	for i, contribution := range contributions {
+		if contribution.Owner != owner {
+			return nil, nil, fmt.Errorf("%w: planning changed its contribution owner", schemaext.ErrInvalidValue)
+		}
+		cloned := contribution
+		cloned.Steps = slices.Clone(contribution.Steps)
+		cloned.Dependencies = slices.Clone(contribution.Dependencies)
+		for j, step := range cloned.Steps {
+			if step.ID.Owner != owner || !reversalText(step.ID.Name) || steps[step.ID] {
+				return nil, nil, fmt.Errorf("%w: duplicate or invalid planning step", schemaext.ErrInvalidValue)
+			}
+			steps[step.ID] = true
+			operation, err := r.snapshotPlannedOperation(ctx, kinds, tables, step.Payload)
+			if err != nil {
+				return nil, nil, err
+			}
+			step.Payload = operation
+			step.Effects = slices.Clone(step.Effects)
+			cloned.Steps[j] = step
+		}
+		result[i] = cloned
+	}
+	return result, steps, ctx.Err()
 }
 
 func validatePlanningDiagnostics(request featureplan.Request, diagnostics []featureplan.Diagnostic) (featureplan.Result, error) {
@@ -100,7 +114,7 @@ func validatePlannedChanges(inputs []schemaext.ChangeRecord, changes []featurepl
 	return nil
 }
 
-func (r *Runtime) snapshotPlannedOperation(ctx context.Context, owner ownedPlanning, tables []featureplan.Table, operation featureplan.Operation) (featureplan.Operation, error) {
+func (r *Runtime) snapshotPlannedOperation(ctx context.Context, kinds []schemaext.Kind, tables []featureplan.Table, operation featureplan.Operation) (featureplan.Operation, error) {
 	for _, note := range operation.Notes {
 		if !reversalText(note) {
 			return featureplan.Operation{}, fmt.Errorf("%w: planning operation has an invalid note", schemaext.ErrInvalidValue)
@@ -109,7 +123,7 @@ func (r *Runtime) snapshotPlannedOperation(ctx context.Context, owner ownedPlann
 	if err := schemaext.ValidatePayload(operation.Payload); err != nil {
 		return featureplan.Operation{}, err
 	}
-	if !slices.Contains(owner.OperationKinds, operation.Payload.Kind()) {
+	if !slices.Contains(kinds, operation.Payload.Kind()) {
 		return featureplan.Operation{}, fmt.Errorf("%w: unregistered planning operation %q", schemaext.ErrInvalidValue, operation.Payload.Kind())
 	}
 	switch operation.Role {

@@ -188,12 +188,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			field: "CoordinationNodes", present: "locks", absent: "nosuch_node",
-			seed: func(s *catalog.Database) {
-				s.CoordinationNodes = append(s.CoordinationNodes, catalog.CoordinationNode{Name: "locks"})
-			},
-		},
-		{
 			field: "Secrets", present: "pg_password", absent: "nosuch_secret",
 			seed: func(s *catalog.Database) {
 				s.Secrets = append(s.Secrets, catalog.Secret{Name: "pg_password"})

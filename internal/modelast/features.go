@@ -26,9 +26,6 @@ func validateFeatureLowering(database schemamodel.Database, dialect string) erro
 		return err
 	}
 	for _, ref := range database.FeatureObjects.Refs() {
-		if ref.Parent.Empty() {
-			return fmt.Errorf("%w: no schema-to-AST lowering for standalone feature object %s", ptaherr.ErrUnsupportedFeature, ref)
-		}
 		if database.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State == schemaext.Absent {
 			return fmt.Errorf("%w: declared feature object %s is marked absent", schemaext.ErrInvalidValue, ref)
 		}

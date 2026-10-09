@@ -1592,23 +1592,6 @@ func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.
 	return nil
 }
 
-// FromCoordinationNode converts a schemamodel.CoordinationNode into the node
-// that creates it, named the way a table is: by its directory and its name.
-func FromCoordinationNode(node schemamodel.CoordinationNode) *ast.CreateCoordinationNodeNode {
-	return &ast.CreateCoordinationNodeNode{Name: node.QualifiedName(), Spec: node.Spec}
-}
-
-// appendCoordinationNodeStatements adds one coordination node creation per
-// declaration.
-func appendCoordinationNodeStatements(visit func(ast.Node) error, nodes []schemamodel.CoordinationNode) error {
-	for _, node := range nodes {
-		if err := visit(FromCoordinationNode(node)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // FromSecret converts a schemamodel.Secret to an ast.CreateSecretNode, which
 // names the environment variable the value comes from and never the value.
 func FromSecret(secret schemamodel.Secret) *ast.CreateSecretNode {
@@ -2204,6 +2187,7 @@ func WalkDatabase(
 	database schemamodel.Database,
 	targetPlatform string,
 	visit func(ast.Node) error,
+	lowering Lowering,
 ) error {
 	if visit == nil {
 		return fmt.Errorf("walk database schema: nil visitor")
@@ -2211,6 +2195,24 @@ func WalkDatabase(
 	if err := validateFeatureLowering(database, targetPlatform); err != nil {
 		return err
 	}
+	if lowering.Context == nil {
+		return fmt.Errorf("walk database schema: context is required")
+	}
+	if err := lowering.Context.Err(); err != nil {
+		return err
+	}
+	if err := walkDeclarations(database, targetPlatform, lowering, func(node ast.Node) error {
+		if err := lowering.Context.Err(); err != nil {
+			return err
+		}
+		return visit(node)
+	}); err != nil {
+		return err
+	}
+	return lowering.Context.Err()
+}
+
+func walkCommonDatabase(database schemamodel.Database, targetPlatform string, visit func(ast.Node) error) error {
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
 	// wrong default refuses rather than merges.
@@ -2317,12 +2319,6 @@ func appendTableIndependentObjectStatements(visit func(ast.Node) error, database
 	// table and reads a topic, a changefeed's among them, so it follows the
 	// tables and the changefeeds their CREATE TABLE carries.
 	if err := appendReplicationStatements(visit, database); err != nil {
-		return err
-	}
-
-	// 9b2. A coordination node depends on nothing in the schema and nothing
-	// depends on it, so it takes its place after the objects that do.
-	if err := appendCoordinationNodeStatements(visit, database.CoordinationNodes); err != nil {
 		return err
 	}
 
@@ -2445,14 +2441,14 @@ func appendPreTableStatements(
 // ast.StatementList. It returns a nil list on any validation or lowering error.
 // Renderers can consume WalkDatabase directly when they discard all output on
 // failure; consumers needing an atomic result should use this collector.
-func CollectDatabase(database schemamodel.Database, targetPlatform string) (*ast.StatementList, error) {
+func CollectDatabase(database schemamodel.Database, targetPlatform string, lowering Lowering) (*ast.StatementList, error) {
 	statements := &ast.StatementList{
 		Statements: make([]ast.Node, 0),
 	}
 	err := WalkDatabase(database, targetPlatform, func(node ast.Node) error {
 		statements.Statements = append(statements.Statements, node)
 		return nil
-	})
+	}, lowering)
 	if err != nil {
 		return nil, err
 	}

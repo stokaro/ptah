@@ -7,7 +7,9 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/internal/ydbsource"
 )
 
 func changefeedTableRef(table schemamodel.Table) objectidentity.ID {
@@ -18,6 +20,9 @@ func changefeedTableRef(table schemamodel.Table) objectidentity.ID {
 // table, an unknown kind, or a facet without an annotation must not disappear
 // from a successful export.
 func (ctx *renderContext) captureFeatureObjects() error {
+	if err := ydbsource.ValidateCoordinationExport(ctx.db.FeatureCoverage); err != nil {
+		return err
+	}
 	for _, facets := range ctx.db.FacetSlots() {
 		if !facets.IsZero() {
 			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, facets.DeclaredKinds()[0])
@@ -33,6 +38,16 @@ func (ctx *renderContext) captureFeatureObjects() error {
 	}
 	ctx.changefeedsByTable = make(map[objectidentity.Key][]ydbschema.ChangefeedSpec)
 	for _, object := range objects {
+		if node, ok := object.Value.(*ydbcoordination.Desired); ok {
+			if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
+				return err
+			}
+			if err := ydbcoordination.Validate(node.Spec); err != nil {
+				return err
+			}
+			ctx.coordinationAnnotations = append(ctx.coordinationAnnotations, coordinationNodeAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, node.Spec))
+			continue
+		}
 		feed, ok := object.Value.(*ydbschema.DesiredChangefeed)
 		if !ok {
 			return fmt.Errorf("%w: Go annotations cannot represent feature object %s with value %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)

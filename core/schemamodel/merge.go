@@ -24,7 +24,6 @@ func NewDatabase() *Database {
 		ResourcePoolClassifiers: make([]ResourcePoolClassifier, 0),
 		AsyncReplications:       make([]AsyncReplication, 0),
 		Transfers:               make([]Transfer, 0),
-		CoordinationNodes:       make([]CoordinationNode, 0),
 		Secrets:                 make([]Secret, 0),
 		ExternalDataSources:     make([]ExternalDataSource, 0),
 		ExternalTables:          make([]ExternalTable, 0),
@@ -97,7 +96,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.ResourcePoolClassifiers = append(dst.ResourcePoolClassifiers, src.ResourcePoolClassifiers...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
-	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
 	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
 	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)

@@ -13,11 +13,11 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 	"ptah.run/internal/viewcolumns"
-	"ptah.run/internal/ydbcoordination"
 )
 
 func (p *parser) parseExtension(block *hclsyntax.Block) error {
@@ -1958,12 +1958,12 @@ func (p *parser) rejectUnsupportedSynonymAttrs(block *hclsyntax.Block) error {
 }
 
 // parseCoordinationNode parses a top-level coordination_node block into a
-// schemamodel.CoordinationNode.
+// an owned YDB declaration.
 //
 // It is a Ptah extension, as the synonym block is: Atlas has no YDB driver,
 // so no document of its could name a node. The settings are string
 // attributes spelled as the annotation spells them, and are read and checked
-// by internal/ydbcoordination, so a value the annotation refuses is refused
+// by dialect/ydb/ydbcoordination, so a value the annotation refuses is refused
 // here too.
 func (p *parser) parseCoordinationNode(block *hclsyntax.Block) error {
 	schema, name, err := p.objectSchemaAndName(block, "coordination_node")
@@ -1998,11 +1998,10 @@ func (p *parser) parseCoordinationNode(block *hclsyntax.Block) error {
 	if err != nil {
 		return p.blockError(block, "coordination_node %q: %v", name, err)
 	}
-	p.db.CoordinationNodes = append(p.db.CoordinationNodes, schemamodel.CoordinationNode{
-		Schema: schema,
-		Name:   name,
-		Spec:   spec,
-	})
+	p.db.FeatureObjects, err = p.db.FeatureObjects.With(ydbcoordination.DesiredObject(schema, name, "", spec))
+	if err != nil {
+		return p.blockError(block, "coordination_node %q: %v", name, err)
+	}
 	return nil
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 
 	"ptah.run/dbschema"
-	"ptah.run/internal/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
 // Drop-all removes row and column tables, views, topics and coordination nodes,
@@ -54,7 +54,7 @@ func TestYDBWriter_DropAllTablesRemovesModeledObjects(t *testing.T) {
 			c.Assert(live.Tables, qt.HasLen, 0)
 			c.Assert(live.Views, qt.HasLen, 0)
 			c.Assert(live.Topics, qt.HasLen, 0)
-			c.Assert(live.CoordinationNodes, qt.HasLen, 0)
+			c.Assert(live.FeatureObjects.Len(), qt.Equals, 0)
 			c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), "ptah_ydb_dropall")
 			_, lockErr := nodeConfig(c, driver, ydbcoordination.LockNode)
 			c.Assert(lockErr, qt.IsNil)

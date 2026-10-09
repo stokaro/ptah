@@ -209,15 +209,6 @@ func roundTripRows() []roundTripRow {
 			count: func(d *schemamodel.Database) int { return len(d.Synonyms) },
 		},
 		{
-			field: "CoordinationNodes",
-			seed: func(d *schemamodel.Database) {
-				d.CoordinationNodes = append(d.CoordinationNodes, schemamodel.CoordinationNode{
-					Name: "locks", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000},
-				})
-			},
-			count: func(d *schemamodel.Database) int { return len(d.CoordinationNodes) },
-		},
-		{
 			field: "ExtendedProperties",
 			seed: func(d *schemamodel.Database) {
 				d.ExtendedProperties = append(d.ExtendedProperties, schemamodel.ExtendedProperty{
@@ -252,7 +243,7 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))
-	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
 	c.Assert(diff.DomainsRemoved.Names(), qt.HasLen, 1)
@@ -437,7 +428,7 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
-	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 
 	c.Assert(parsed.Topics, qt.HasLen, 0)
 	c.Assert(parsed.ResourcePools, qt.HasLen, 0)
@@ -486,7 +477,7 @@ func TestRoundTrip_ExternalObjectsAreRecordedNotDropped(t *testing.T) {
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
-	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 	yaml := loadYAMLDocument(c)
 
 	c.Assert(parsed.ExternalDataSources, qt.HasLen, 0)

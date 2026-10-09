@@ -280,3 +280,55 @@ func TestObjectComparison_ProviderGrowthDoesNotEnrollKinds(t *testing.T) {
 	c.Assert(calls, qt.Equals, 0)
 	c.Assert(result.Desired.Coverage.IsZero(), qt.IsTrue)
 }
+
+func TestObjectComparisonAcceptsUninspectedNamespaceDiagnostic(t *testing.T) {
+	c := qt.New(t)
+	diagnostic := schemaext.UndecidedChange{Kind: conversionFirst, Reason: "namespace was not inspected"}
+	runtime := mustRuntime(c, comparisonProvider(comparisonFunc(func(_ context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
+		return schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired, Undecided: []schemaext.UndecidedChange{diagnostic}}, nil
+	})))
+	result, err := runtime.CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{Target: "custom", Kinds: []schemaext.Kind{conversionFirst}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Undecided, qt.DeepEquals, []schemaext.UndecidedChange{diagnostic})
+}
+
+func TestObjectComparisonNamespaceDiagnosticNeedsUnknownEvidence(t *testing.T) {
+	cases := []struct {
+		name       string
+		knowledge  schemaext.KnowledgeState
+		diagnostic schemaext.UndecidedChange
+	}{
+		{name: "known empty namespace", knowledge: schemaext.Complete, diagnostic: schemaext.UndecidedChange{Kind: conversionFirst, Reason: "invented uncertainty"}},
+		{name: "unrelated namespace", knowledge: schemaext.Uninspected, diagnostic: schemaext.UndecidedChange{Kind: "other/unrelated", Reason: "unknown"}},
+		{name: "partial identity is no namespace", knowledge: schemaext.Uninspected, diagnostic: schemaext.UndecidedChange{Kind: conversionFirst, Reason: "unknown", Subject: objectidentity.ID{Kind: objectidentity.Kind(conversionFirst)}}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := mustRuntime(c, comparisonProvider(comparisonFunc(func(_ context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
+				return schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired, Undecided: []schemaext.UndecidedChange{test.diagnostic}}, nil
+			})))
+			request := schemaext.ObjectComparisonRequest{Target: "custom", Kinds: []schemaext.Kind{conversionFirst},
+				Desired: namespaceState(c, runtime.Codecs(), schemaext.Desired, test.knowledge),
+				Current: namespaceState(c, runtime.Codecs(), schemaext.Observed, test.knowledge),
+			}
+			result, err := runtime.CompareObjects(t.Context(), request)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(result, qt.DeepEquals, schemaext.ObjectComparisonResult{})
+		})
+	}
+}
+
+func namespaceState(c *qt.C, registry schemaext.Registry, representation schemaext.Representation, state schemaext.KnowledgeState) schemaext.ObjectState {
+	c.Helper()
+	var definitions []schemaext.KindCoverage
+	for _, definition := range registry.Definitions() {
+		if definition.Kind == conversionFirst && definition.Representation == representation {
+			definitions = append(definitions, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.Knowledge{State: state, Reason: "source claim"}})
+		}
+	}
+	c.Assert(definitions, qt.HasLen, 1)
+	coverage, err := schemaext.NewCoverage(representation, definitions, nil)
+	c.Assert(err, qt.IsNil)
+	return schemaext.ObjectState{Coverage: coverage}
+}

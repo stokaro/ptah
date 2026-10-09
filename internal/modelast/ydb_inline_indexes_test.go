@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -38,7 +39,7 @@ func walkTypes(c *qt.C, database schemamodel.Database, target string) (types, in
 		visited = append(visited, node)
 		types = append(types, fmt.Sprintf("%T", node))
 		return nil
-	})
+	}, modelast.Lowering{Context: context.Background()})
 	c.Assert(err, qt.IsNil)
 	table, ok := visited[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)

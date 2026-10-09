@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
 // TestParse_CoordinationNodes_HappyPath reads YDB coordination nodes from the
@@ -30,12 +30,14 @@ coordination_nodes:
 `))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.CoordinationNodes, qt.DeepEquals, []schemamodel.CoordinationNode{
-		{Schema: "app", Name: "rate_limits", Spec: ast.CoordinationNodeSpec{
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.ContentEquals, []schemaext.Object{
+		ydbcoordination.DesiredObject("app", "rate_limits", "", ydbcoordination.Spec{
 			SelfCheckPeriodMillis: 500, SessionGracePeriodMillis: 30000,
 			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
-		}},
-		{Name: "locks"},
+		}),
+		ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}),
 	})
 }
 

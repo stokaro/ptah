@@ -13,6 +13,7 @@ import (
 	"ptah.run/atlascompat"
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrationfile"
@@ -80,7 +81,7 @@ func TestParseSQL(t *testing.T) {
 
 func TestSchemaToAST(t *testing.T) {
 	c := qt.New(t)
-	list, err := atlascompat.SchemaToAST(schemamodel.Database{
+	list, err := atlascompat.SchemaToAST(t.Context(), must.Must(builtin.New()), schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Fields: []schemamodel.Field{{
 			StructName: "User",
@@ -89,7 +90,7 @@ func TestSchemaToAST(t *testing.T) {
 			Type:       "INTEGER",
 			Primary:    true,
 		}},
-	}, "sqlite")
+	}, "sqlite", capability.ForDialect("sqlite"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(list.Statements, qt.HasLen, 1)
@@ -99,9 +100,9 @@ func TestSchemaToAST(t *testing.T) {
 
 func TestSchemaToAST_PropagatesIdentityRefusal(t *testing.T) {
 	c := qt.New(t)
-	list, err := atlascompat.SchemaToAST(schemamodel.Database{Tables: []schemamodel.Table{
+	list, err := atlascompat.SchemaToAST(t.Context(), must.Must(builtin.New()), schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "Bare", Name: "items"}, {StructName: "Qualified", Schema: "public", Name: "items"},
-	}}, "postgres")
+	}}, "postgres", capability.ForDialect("postgres"))
 	c.Assert(err, qt.ErrorMatches, `table "items" is declared twice.*`)
 	c.Assert(list, qt.IsNil)
 }

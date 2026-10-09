@@ -426,11 +426,19 @@ v0.13.0 ptah.run/core/ast
 # replace the old model functions directly, without forwarding wrappers.
 # ScopeToTarget and OmissionsForTarget require a resolved TargetSelection and
 # return errors. Unknown targets cannot bypass filtering or erase declarations.
-# SchemaToAST now propagates identity and feature-lowering errors with no
-# partial statement list, rather than discarding the walker's refusal.
+# SchemaToAST takes explicit context, declaration runtime, and capabilities.
+# It accounts for standalone objects through their selected owners and the
+# common creation graph. Identity, lowering, and scheduling errors return no
+# partial statement list; there is no old-signature wrapper or fallback.
+# Coordination nodes use dialect/ydb/ydbcoordination desired and observed
+# values in FeatureObjects, with explicit namespace and subject coverage.
+# The common CoordinationNode structs, Database.CoordinationNodes fields,
+# coordination diff buckets, coverage kind, and concrete AST nodes are removed.
+# Consumers use the owner model, change, and operation codecs directly.
 # This changes behavior; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.
 v0.13.0 ptah.run/core/schemamodel
+v0.13.0 ptah.run/core/coverage
 # ClickHouse storage fields now use the owner's typed observed facet; the
 # catalog no longer publishes a separate writable representation.
 v0.13.0 ptah.run/catalog

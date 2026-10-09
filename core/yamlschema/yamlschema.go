@@ -75,8 +75,8 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
@@ -85,10 +85,10 @@ import (
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcolumn"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
+	"ptah.run/internal/ydbsource"
 )
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the
@@ -880,7 +880,7 @@ func (d document) addEnums(db *schemamodel.Database) {
 }
 
 func (d document) addTables(db *schemamodel.Database) error {
-	featureCoverage, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+	featureCoverage, err := ydbsource.Coverage()
 	if err != nil {
 		return err
 	}
@@ -1328,12 +1328,10 @@ func (d document) addCoordinationNodes(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("coordination node %q: %w", key, err)
 		}
-		db.CoordinationNodes = append(db.CoordinationNodes, schemamodel.CoordinationNode{
-			StructName: string(spec.StructName),
-			Schema:     string(spec.Schema),
-			Name:       name,
-			Spec:       settings,
-		})
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbcoordination.DesiredObject(string(spec.Schema), name, string(spec.StructName), settings))
+		if err != nil {
+			return fmt.Errorf("coordination node %q: %w", key, err)
+		}
 	}
 	return nil
 }

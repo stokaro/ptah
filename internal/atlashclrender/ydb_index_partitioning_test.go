@@ -10,7 +10,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -31,9 +33,10 @@ func TestYDBIndexPartitioning_HCLRoundTrip(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			original := &schemamodel.Database{
-				Tables:  []schemamodel.Table{{StructName: "Item", Name: "items", PrimaryKey: []string{"id"}}},
-				Fields:  []schemamodel.Field{{StructName: "Item", Name: "id", Type: "Int64", Primary: true}, {StructName: "Item", Name: "kind", Type: "Utf8", Nullable: true}},
-				Indexes: []schemamodel.Index{{StructName: "Item", TableName: "items", Name: "by_kind", Type: "GLOBAL SYNC", Fields: []string{"kind"}, Partitioning: test.spec}},
+				FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+				Tables:          []schemamodel.Table{{StructName: "Item", Name: "items", PrimaryKey: []string{"id"}}},
+				Fields:          []schemamodel.Field{{StructName: "Item", Name: "id", Type: "Int64", Primary: true}, {StructName: "Item", Name: "kind", Type: "Utf8", Nullable: true}},
+				Indexes:         []schemamodel.Index{{StructName: "Item", TableName: "items", Name: "by_kind", Type: "GLOBAL SYNC", Fields: []string{"kind"}, Partitioning: test.spec}},
 			}
 			rendered, err := atlashclrender.RenderInspectedForAtlasCLI(original, "ydb", "")
 			c.Assert(err, qt.IsNil)

@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -62,7 +63,7 @@ func TestCollectDatabase_PreservesFeatureChildrenOnEveryTarget(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			database := loweringFeatureFixture(dialect)
-			list, err := modelast.CollectDatabase(database, dialect)
+			list, err := modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(list.Statements, qt.HasLen, 1)
 			table, ok := list.Statements[0].(*ast.CreateTableNode)
@@ -84,7 +85,7 @@ func TestCollectDatabase_PreservesTableFacetsOnEveryTarget(t *testing.T) {
 			database := loweringFeatureFixture(dialect)
 			facets := must.Must(schemaext.NewFacets(&loweringValue{Name: "table settings"}))
 			database.Tables[0].Facets = must.Must(facets.WithTargetScope(loweringKind, "external"))
-			list, err := modelast.CollectDatabase(database, dialect)
+			list, err := modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(list.Statements, qt.HasLen, 1)
 			table, ok := list.Statements[0].(*ast.CreateTableNode)
@@ -109,7 +110,7 @@ func TestCollectDatabase_PreservesExcludedTableFacetBindings(t *testing.T) {
 	facets := must.Must(schemaext.NewFacets(&loweringValue{Name: "external settings"}))
 	facets = must.Must(facets.WithTargetScope(loweringKind, "external"))
 	database.Tables[0].Facets = must.Must(facets.ForTarget(must.Must(schemaext.NewTargetSelection("postgres"))))
-	list, err := modelast.CollectDatabase(database, "postgres")
+	list, err := modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(list.Statements, qt.HasLen, 1)
 	table, ok := list.Statements[0].(*ast.CreateTableNode)
@@ -126,10 +127,10 @@ func TestCollectDatabase_CoverageDoesNotCreateOrRemoveDeclarations(t *testing.T)
 		t.Run(fmt.Sprintf("state=%q", knowledge.State), func(t *testing.T) {
 			c := qt.New(t)
 			database := loweringFeatureFixture("postgres")
-			want, err := modelast.CollectDatabase(database, "postgres")
+			want, err := modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.IsNil)
 			database.FeatureCoverage = loweringCoverage(schemaext.Desired, knowledge, nil)
-			got, err := modelast.CollectDatabase(database, "postgres")
+			got, err := modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, want)
 			c.Assert(got.Statements, qt.HasLen, 1)
@@ -193,10 +194,10 @@ func TestCollectDatabase_RefusesUnloweredFacetsBeforeVisiting(t *testing.T) {
 			}
 			chosen.Set(reflect.ValueOf(must.Must(schemaext.NewFacets(&loweringValue{Name: "retained"}))))
 			visited := 0
-			err := modelast.WalkDatabase(database, "postgres", func(ast.Node) error { visited++; return nil })
+			err := modelast.WalkDatabase(database, "postgres", func(ast.Node) error { visited++; return nil }, modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(visited, qt.Equals, 0)
-			list, err := modelast.CollectDatabase(database, "postgres")
+			list, err := modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(list, qt.IsNil)
 		})
@@ -209,7 +210,7 @@ func TestCollectDatabase_RefusesExcludedFacetsWithoutAnASTPlacement(t *testing.T
 	facets = must.Must(facets.WithTargetScope(loweringKind, "external"))
 	excluded := must.Must(facets.ForTarget(must.Must(schemaext.NewTargetSelection("postgres"))))
 	visited := 0
-	err := modelast.WalkDatabase(schemamodel.Database{Facets: excluded}, "postgres", func(ast.Node) error { visited++; return nil })
+	err := modelast.WalkDatabase(schemamodel.Database{Facets: excluded}, "postgres", func(ast.Node) error { visited++; return nil }, modelast.Lowering{Context: context.Background()})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*no schema-to-AST lowering for feature facet "example.org/lowering-probe".*`)
 	c.Assert(visited, qt.Equals, 0)
@@ -224,7 +225,7 @@ func TestCollectDatabase_RefusesTableFacetClaimedAbsent(t *testing.T) {
 		Kind: loweringKind, Subject: subject, Knowledge: schemaext.Knowledge{State: schemaext.Absent},
 	}})
 	visited := 0
-	err := modelast.WalkDatabase(database, "postgres", func(ast.Node) error { visited++; return nil })
+	err := modelast.WalkDatabase(database, "postgres", func(ast.Node) error { visited++; return nil }, modelast.Lowering{Context: context.Background()})
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*declared feature facet.*is marked absent.*`)
 	c.Assert(visited, qt.Equals, 0)
@@ -249,7 +250,7 @@ func TestCollectDatabase_RefusesUnsupportedFeatureState(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			list, err := modelast.CollectDatabase(test.database, "postgres")
+			list, err := modelast.CollectDatabase(test.database, "postgres", modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.ErrorIs, test.want)
 			c.Assert(list, qt.IsNil)
 		})
@@ -271,7 +272,7 @@ func TestCollectDatabase_RefusesUnresolvedFeatureKnowledge(t *testing.T) {
 			c := qt.New(t)
 			source := database
 			source.FeatureCoverage = test.coverage
-			list, err := modelast.CollectDatabase(source, "postgres")
+			list, err := modelast.CollectDatabase(source, "postgres", modelast.Lowering{Context: context.Background()})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(list, qt.IsNil)
 		})
@@ -284,7 +285,7 @@ func TestCollectDatabase_RefusesPresentObjectClaimedAbsent(t *testing.T) {
 	database.FeatureCoverage = loweringCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
 		Kind: loweringKind, Subject: database.FeatureObjects.Refs()[0], Knowledge: schemaext.Knowledge{State: schemaext.Absent},
 	}})
-	list, err := modelast.CollectDatabase(database, "postgres")
+	list, err := modelast.CollectDatabase(database, "postgres", modelast.Lowering{Context: context.Background()})
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(list, qt.IsNil)
 }

@@ -4,21 +4,28 @@ import (
 	"context"
 	"errors"
 
+	"ptah.run/core/featureplan"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/internal/modelast"
 )
 
-type validationService struct{}
+type validationService struct {
+	declarations featureplan.DeclarationRuntime
+}
 
-func (validationService) ValidateSchema(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
+func (s validationService) ValidateSchema(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
 	if err := ctx.Err(); err != nil {
 		return schemavalidation.Result{}, err
 	}
 	result := schemavalidation.Result{Complete: true}
-	if err := validateSchemaWithCapabilities(ctx, request.Schema, request.Target, request.Capabilities); err != nil {
+	if err := validateSchemaWithCapabilities(ctx, s.declarations, request.Schema, request.Target, request.Capabilities); err != nil {
 		if ctx.Err() != nil {
 			return schemavalidation.Result{}, ctx.Err()
+		}
+		if _, failed := errors.AsType[*modelast.DeclarationServiceError](err); failed {
+			return schemavalidation.Result{}, err
 		}
 		result.Diagnostics = []schemavalidation.Diagnostic{schemaDiagnostic(err)}
 		return result, nil
@@ -26,10 +33,13 @@ func (validationService) ValidateSchema(ctx context.Context, request schemavalid
 	if !request.NoSkipped {
 		return result, nil
 	}
-	rendered, err := renderer.RenderSchema(ctx, schemaRenderingService{}, renderer.SchemaRequest{
+	rendered, err := renderer.RenderSchema(ctx, schemaRenderingService(s), renderer.SchemaRequest{
 		Target: request.Target, Schema: request.Schema, Capabilities: request.Capabilities, Identifiers: request.Identifiers,
 	})
 	if err != nil {
+		if _, failed := errors.AsType[*modelast.DeclarationServiceError](err); failed {
+			return schemavalidation.Result{}, err
+		}
 		result.Diagnostics = []schemavalidation.Diagnostic{schemaDiagnostic(err)}
 		return result, nil
 	}

@@ -28,6 +28,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel
 		return s.tableKept(keptTables, schema, table)
 	})
 
+	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
 		_, ok := keptByStruct[field.StructName]
 		return ok
@@ -96,9 +97,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	})
 	out.Transfers = keep(db.Transfers, func(transfer schemamodel.Transfer) bool {
 		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
-	})
-	out.CoordinationNodes = keep(db.CoordinationNodes, func(node schemamodel.CoordinationNode) bool {
-		return s.selectedQualifiedName(typeList("coordination_node"), node.QualifiedName())
 	})
 	out.Secrets = keep(db.Secrets, func(secret schemamodel.Secret) bool {
 		return s.selected(typeList("secret"), secret.Schema, secret.Name)

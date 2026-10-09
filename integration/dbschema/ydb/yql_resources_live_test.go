@@ -49,7 +49,7 @@ func TestYDBDesiredYQL_CoordinationAndPools(t *testing.T) {
 			}
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, schemas)
 			c.Assert(err, qt.IsNil)
-			c.Assert(live.CoordinationNodes, qt.HasLen, 0)
+			c.Assert(live.FeatureObjects.Len(), qt.Equals, 0)
 			pools, classifiers := poolsOf(live, names)
 			c.Assert(pools[0].Name, qt.Equals, names.batch)
 			c.Assert(classifiers, qt.HasLen, 1)

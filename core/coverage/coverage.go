@@ -202,9 +202,6 @@ const (
 	// ColumnTable is a YDB column-oriented table (STORE = COLUMN), or the
 	// column store that holds such tables.
 	ColumnTable Kind = "column_table"
-	// CoordinationNode is a YDB coordination node, which holds semaphores for
-	// distributed locks.
-	CoordinationNode Kind = "coordination_node"
 	// Replication is a YDB asynchronous replication. The reader describes
 	// one on a server with the async replication capability whose
 	// replication service answers, and records it otherwise.
@@ -289,7 +286,7 @@ const (
 // [ContinuousAggregate] and [ReplicaTable] are not in it; each constant says
 // what that costs a serialized [Set].
 var kinds = []Kind{
-	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, CoordinationNode, DefaultPrivilege, Domain,
+	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
 	ResourcePool, ResourcePoolClassifier, Role, Schema, Secret, Sequence, StreamingQuery, Synonym, TableOption,
 	Topic, Transfer, TTL, View, VirtualTable,

@@ -44,6 +44,14 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
+	declared.Coverage, err = namedFeatureSchemaLimits(declared, observed, desired.NotDescribed)
+	if err != nil {
+		return schemaext.ComparisonResult{}, err
+	}
+	observed.Coverage, err = namedFeatureSchemaLimits(observed, declared, current.NotDescribed)
+	if err != nil {
+		return schemaext.ComparisonResult{}, err
+	}
 	if target == "" {
 		if declared.Objects.Len() != 0 || observed.Objects.Len() != 0 || len(declared.Facets) != 0 || len(observed.Facets) != 0 || !declared.Coverage.IsZero() || !observed.Coverage.IsZero() {
 			return schemaext.ComparisonResult{}, fmt.Errorf("%w: feature comparison requires an explicit target", ptaherr.ErrUnsupportedDialect)

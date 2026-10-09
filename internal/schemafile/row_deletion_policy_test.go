@@ -11,7 +11,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
@@ -42,6 +44,7 @@ func TestAnHCLDocumentKeepsTheTableTTL(t *testing.T) {
 	desired, err := schemafile.LoadPath(path, schemafile.Options{})
 	c.Assert(err, qt.IsNil)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{
+		FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		Tables: []catalog.Table{{Name: "events", Type: "TABLE", RowDeletionPolicy: policy, Columns: []catalog.Column{
 			{Name: "id", DataType: "Uint64", ColumnType: "Uint64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			{Name: "ts", DataType: "Timestamp", ColumnType: "Timestamp", IsNullable: "YES", OrdinalPosition: 2},

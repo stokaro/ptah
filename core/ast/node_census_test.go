@@ -19,13 +19,13 @@ import (
 // otherwise read as success. Growth is expected and lands in nodeCensus below;
 // a drop is a decision, and lowering this number is how that decision is
 // recorded.
-const nodeKindFloor = 86
+const nodeKindFloor = 83
 
 // censusRow is one node kind the census accepts.
 //
 // Only the instance is carried. What the visitor should see is derived from the
 // node's own type, because every kind hands the visitor itself -- and a table
-// restating that per row would be 86 copies of one rule, able to disagree with
+// restating that per row would be repeated copies of one rule, able to disagree with
 // it.
 type censusRow struct {
 	// node is the instance the census accepts. It is the zero value except
@@ -41,7 +41,6 @@ type censusRow struct {
 var nodeCensus = []censusRow{
 	// Statements and their parts. A zero value describes each: the census reads
 	// no field off the node it accepts.
-	{node: &ast.AlterCoordinationNodeNode{}},
 	{node: &ast.AlterIndexNode{}},
 	{node: &ast.AlterMaterializedViewRefreshNode{}},
 	{node: &ast.AlterResourcePoolClassifierNode{}},
@@ -59,7 +58,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.CommentNode{}},
 	{node: &ast.ConstraintNode{}},
 	{node: &ast.CreateContinuousAggregateNode{}},
-	{node: &ast.CreateCoordinationNodeNode{}},
 	{node: &ast.CreateDatabaseNode{}},
 	{node: &ast.CreateExternalDataSourceNode{}},
 	{node: &ast.CreateExternalTableNode{}},
@@ -87,7 +85,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.CreateViewNode{}},
 	{node: &ast.DefaultPrivilegeNode{}},
 	{node: &ast.DropContinuousAggregateNode{}},
-	{node: &ast.DropCoordinationNodeNode{}},
 	{node: &ast.DropExtensionNode{}},
 	{node: &ast.DropExternalDataSourceNode{}},
 	{node: &ast.DropExternalTableNode{}},

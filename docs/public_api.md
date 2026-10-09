@@ -57,11 +57,14 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
 - `ptah.run/dialect/ydb/ydbconvert`
+- `ptah.run/dialect/ydb/ydbcoordination`
 - `ptah.run/dialect/ydb/ydbdiff`
 - `ptah.run/dialect/ydb/ydbplan`
+- `ptah.run/dialect/ydb/ydbrender`
 - `ptah.run/dialect/ydb/ydbreport`
 - `ptah.run/dialect/ydb/ydbreverse`
 - `ptah.run/dialect/ydb/ydbschema`
+- `ptah.run/dialect/ydb/ydbscheme`
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/migration/datadiff`
@@ -85,12 +88,15 @@ conformance tooling. It intentionally wraps parser, HCL schema,
 conversion, and migration sum internals without making those implementation
 packages importable directly.
 
-`atlascompat.SchemaToAST` returns a statement list and an error. Invalid
+`atlascompat.SchemaToAST` takes caller context, a selected declaration runtime,
+the desired schema, target, and capabilities. It returns a statement list and an error. Invalid
 identities and feature state without an AST lowering path return a nil list.
 Table facets and named feature children remain attached to their table. Facet
 values and target bindings reach the selected renderer unchanged; lowering
-does not establish that the renderer supports them. Other facet placements and
-standalone feature objects are refused before any statements are returned.
+does not establish that the renderer supports them. Other facet placements are
+refused. Standalone objects use the selected declaration owners and join the
+common creation graph. Missing owners, incomplete receipts, graph conflicts,
+and cancellation return no statement list.
 Coverage records describe source knowledge and never authorize destructive SQL.
 A concrete table facet with an explicit absent claim is refused before visiting
 any statement.
@@ -188,6 +194,23 @@ receipts, account for every emitted operation. Operations retain typed payloads,
 single-line notes, and parent identities. A service reply must join the complete
 host graph before its operations can be used; dependencies may refer to other
 owners' steps.
+
+`core/featureplan.DeclarationService` plans authored standalone objects for
+schema creation. `Provider.Declarations` assigns desired model kinds and allowed
+operation kinds to an owner. This service requires no observed or change codec:
+an authored CREATE request does not claim that a live object was inspected and
+found absent. Declared tables and common-step metadata provide dependency context.
+Each service receives one isolated batch, and each `DeclarationPlan` preserves
+the input identity and accounts for the operations that create it. The runtime
+refuses duplicate objects, table-bound input objects, unregistered kinds, missing
+receipts, and unaccounted operations before returning a successful reply.
+
+`DeclarationResult.Diagnostics` records completed refusals with optional object
+indexes. Any refusal discards every operation and receipt; provider failures
+discard the whole result. `DeclarationResult.Err(request)` preserves local schema
+and capability error identities. Successful contributions still need scheduling
+with the complete host graph. These local request types are not a wire protocol;
+a process adapter maps common definitions to explicit protocol records.
 
 `dialect/ydb/ydbplan.Service` validates changefeed operands against desired and
 observed table captures. It plans stream replacement and backing-topic changes

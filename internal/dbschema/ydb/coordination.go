@@ -11,9 +11,7 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	"ptah.run/catalog"
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbcoordination"
 )
 
 // ErrNoCoordinationNode is the error [Coordination.DescribeNode] wraps when no
@@ -101,11 +99,11 @@ var (
 // unset; the comparison fills in the defaults. A setting or a mode the pinned
 // protocol buffers do not model is refused, because read as absent it would
 // be planned away on every run.
-func decodeCoordinationNode(schema, name string, described *Ydb_Coordination.DescribeNodeResult) (catalog.CoordinationNode, error) {
+func decodeCoordinationNode(described *Ydb_Coordination.DescribeNodeResult) (*ydbcoordination.Observed, error) {
 	config := described.GetConfig()
 	for _, message := range []protoreflect.ProtoMessage{described, config} {
 		if unknown := unknownFields(message); len(unknown) > 0 {
-			return catalog.CoordinationNode{}, fmt.Errorf("its description carries field %s, which this build of "+
+			return nil, fmt.Errorf("its description carries field %s, which this build of "+
 				"Ptah does not read", joinNumbers(unknown))
 		}
 	}
@@ -114,19 +112,17 @@ func decodeCoordinationNode(schema, name string, described *Ydb_Coordination.Des
 	counters, countersKnown := counterModes[config.GetRateLimiterCountersMode()]
 	switch {
 	case !readKnown:
-		return catalog.CoordinationNode{}, fmt.Errorf("its read_consistency_mode is %d, which Ptah does not know",
+		return nil, fmt.Errorf("its read_consistency_mode is %d, which Ptah does not know",
 			config.GetReadConsistencyMode())
 	case !attachKnown:
-		return catalog.CoordinationNode{}, fmt.Errorf("its attach_consistency_mode is %d, which Ptah does not know",
+		return nil, fmt.Errorf("its attach_consistency_mode is %d, which Ptah does not know",
 			config.GetAttachConsistencyMode())
 	case !countersKnown:
-		return catalog.CoordinationNode{}, fmt.Errorf("its rate_limiter_counters_mode is %d, which Ptah does not know",
+		return nil, fmt.Errorf("its rate_limiter_counters_mode is %d, which Ptah does not know",
 			config.GetRateLimiterCountersMode())
 	}
-	return catalog.CoordinationNode{
-		Schema: schema,
-		Name:   name,
-		Spec: ast.CoordinationNodeSpec{
+	return &ydbcoordination.Observed{
+		Spec: ydbcoordination.Spec{
 			SelfCheckPeriodMillis:    config.GetSelfCheckPeriodMillis(),
 			SessionGracePeriodMillis: config.GetSessionGracePeriodMillis(),
 			ReadConsistencyMode:      read,
@@ -140,7 +136,7 @@ func decodeCoordinationNode(schema, name string, described *Ydb_Coordination.Des
 // the coordination service takes; a setting spec leaves unset is sent unset,
 // which the service reads as "keep" on a change and as "the default" on a
 // creation.
-func encodeCoordinationConfig(spec ast.CoordinationNodeSpec) *Ydb_Coordination.Config {
+func encodeCoordinationConfig(spec ydbcoordination.Spec) *Ydb_Coordination.Config {
 	config := &Ydb_Coordination.Config{
 		SelfCheckPeriodMillis:    spec.SelfCheckPeriodMillis,
 		SessionGracePeriodMillis: spec.SessionGracePeriodMillis,
@@ -224,7 +220,7 @@ func RunCoordinationStatement(
 }
 
 // createCoordinationNode creates the node at absolute, which must not exist.
-func createCoordinationNode(ctx context.Context, service Coordination, absolute string, spec ast.CoordinationNodeSpec) error {
+func createCoordinationNode(ctx context.Context, service Coordination, absolute string, spec ydbcoordination.Spec) error {
 	_, err := service.DescribeNode(ctx, absolute)
 	switch {
 	case err == nil:
@@ -240,12 +236,12 @@ func createCoordinationNode(ctx context.Context, service Coordination, absolute 
 
 // alterCoordinationNode changes the settings changes names on the node at
 // absolute.
-func alterCoordinationNode(ctx context.Context, service Coordination, absolute string, changes ast.CoordinationNodeSpec) error {
+func alterCoordinationNode(ctx context.Context, service Coordination, absolute string, changes ydbcoordination.Spec) error {
 	described, err := service.DescribeNode(ctx, absolute)
 	if err != nil {
 		return fmt.Errorf("change YDB coordination node %s: %w", absolute, err)
 	}
-	current, err := decodeCoordinationNode(path.Dir(absolute), path.Base(absolute), described)
+	current, err := decodeCoordinationNode(described)
 	if err != nil {
 		return fmt.Errorf("change YDB coordination node %s: %w", absolute, err)
 	}

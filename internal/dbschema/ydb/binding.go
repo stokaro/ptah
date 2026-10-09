@@ -16,8 +16,8 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/ydbcomment"
-	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbsecret"
 )
 

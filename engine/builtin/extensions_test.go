@@ -17,6 +17,8 @@ import (
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
@@ -57,8 +59,12 @@ func clickhouseIndexFixture() extensionFixture {
 	return extensionFixture{payload: &chast.AddSkippingIndex{Name: "idx_c", Expression: "c"}, wantSQL: "ALTER TABLE `items` ADD INDEX `idx_c` c TYPE minmax GRANULARITY 1;\n"}
 }
 
+func coordinationFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.CoordinationNode{Schema: "app", Name: "locks", Change: ydbdiff.CoordinationNode{After: &ydbcoordination.Desired{}}}, wantSQL: "CREATE COORDINATION NODE `app/locks`;\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture())
 }
 
 // The source inventory is independent of both owner registration and fixtures.
@@ -99,7 +105,8 @@ func TestExtensionPayloads_AllEntryPoints(t *testing.T) {
 				c := qt.New(t)
 				fragment := &ast.ExtensionAlterOperation{Payload: fixture.payload}
 				parent := &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{fragment}}
-				for _, node := range []ast.Node{fragment, parent} {
+				nodes := []ast.Node{fragment, parent, &ast.ExtensionStatement{Payload: fixture.payload}}
+				for _, node := range nodes {
 					visited := visitAnswer(c, dialect, node)
 					c.Assert(renderAnswer(c, dialect, node), qt.DeepEquals, visited)
 					c.Assert(renderSQLAnswer(dialect, node), qt.DeepEquals, visited)

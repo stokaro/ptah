@@ -1,6 +1,7 @@
 package modelast_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -294,7 +295,7 @@ func TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 
 			database := shadowingDocument(test.columnType, declareShadowingEnum)
 
-			statements := must.Must(modelast.CollectDatabase(*database, platform.Postgres))
+			statements := must.Must(modelast.CollectDatabase(*database, platform.Postgres, modelast.Lowering{Context: context.Background()}))
 
 			c.Assert(statements, qt.IsNotNil)
 

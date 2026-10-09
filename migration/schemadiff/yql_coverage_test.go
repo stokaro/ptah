@@ -19,6 +19,7 @@ func TestCompare_YQLOmittedReplicationRequestsRemoval(t *testing.T) {
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{
+		FeatureCoverage:   completeYDBFixtureCoverage(),
 		AsyncReplications: []catalog.AsyncReplication{{Name: "copy"}},
 	}
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
@@ -38,7 +39,7 @@ func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 	c := qt.New(t)
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
-	held := &catalog.Database{Topics: []catalog.Topic{readTopic("events")}, Views: []catalog.View{{Name: "summary"}}}
+	held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), Topics: []catalog.Topic{readTopic("events")}, Views: []catalog.View{{Name: "summary"}}}
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 1)
@@ -57,7 +58,7 @@ func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {
 			c := qt.New(t)
 			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
 			c.Assert(err, qt.IsNil)
-			held := &catalog.Database{Secrets: []catalog.Secret{{Name: "credential"}}}
+			held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), Secrets: []catalog.Secret{{Name: "credential"}}}
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 			c.Assert(diff.SecretsRemoved.Names(), qt.DeepEquals, test.removed)
 			c.Assert(diff.SecretsAdded, qt.HasLen, 0)

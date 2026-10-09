@@ -5,7 +5,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
-	"ptah.run/engine/builtin/internal/dialects/internal/coordinationrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
 )
@@ -168,9 +167,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
 		*ast.DropResourcePoolClassifierNode:
 		return nodedispatch.RefuseResourcePool(DialectName, n)
-	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
-		// A coordination node is YDB's own object.
-		return coordinationrefusal.Node(r.Dialect(), n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
 	case *ast.CreateHypertableNode:

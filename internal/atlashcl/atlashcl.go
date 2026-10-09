@@ -17,7 +17,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/tableref"
@@ -210,6 +212,10 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
 	}
 	p.db.NotDescribed = notDescribed
+	p.db.FeatureCoverage, err = ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return nil, err
+	}
 	return p.db, nil
 }
 

@@ -188,8 +188,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
-	changefeeds, err := p.planFeatureChanges(ctx, runtime, diff, rebuilds, semantics)
-	if err != nil {
+	if err := capturePlannedRebuilds(rebuilds); err != nil {
 		return nil, err
 	}
 	scoped := withoutKeysOfRebuiltTables(withoutKeysOfDroppedTables(diff, removedTables, semantics), rebuilds, semantics)
@@ -255,8 +254,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, removedTablesBeforeSources(diff, external)...)
 	result = append(result, external.drops...)
 	result = append(result, dropTopics(diff)...)
-	nodeChanges, nodeDrops := coordinationNodes(diff)
-	result = append(result, nodeDrops...)
 	result = append(result, dropSecrets(diff)...)
 	earlyTables, lateTables := splitColumnTTLCreations(p.createTables(diff, inlineIndexes, sequences.created, semantics))
 	result = append(result, earlyTables...)
@@ -275,7 +272,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = nil
 	result = append(result, removedTablesAfterSources(diff, external)...)
 	result = append(result, changeTopics(diff)...)
-	result = append(result, nodeChanges...)
 	result = append(result, changeSecrets(diff)...)
 	result = append(result, external.creations...)
 	result = append(result, lateTables...)
@@ -287,7 +283,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, pools.nodes...)
 	result = append(result, streamAfter...)
 	result = append(result, access.last...)
-	return scheduleChangefeeds(ctx, beforeChangefeeds, result, changefeeds)
+	return p.scheduleFeatureChanges(ctx, runtime, diff, rebuilds, semantics, beforeChangefeeds, result)
 }
 
 // refuseUnplannableObjectChanges refuses every index addition, in-place index

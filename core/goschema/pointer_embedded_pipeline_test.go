@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -162,7 +163,7 @@ type BlogPost struct {
 	c.Assert(blogPostEmbedded, qt.Equals, 6)
 
 	// Generate schema
-	statements := must.Must(modelast.CollectDatabase(*database, "postgresql"))
+	statements := must.Must(modelast.CollectDatabase(*database, "postgresql", modelast.Lowering{Context: context.Background()}))
 
 	// Find the BlogPost CREATE TABLE and FK ALTER TABLE statements
 	var blogPostSQL, blogPostFKSQL string
