@@ -207,7 +207,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	// survive being read by tools that are not Ptah -- the pinned Atlas
 	// community binary v1.3.0 reads a document carrying it at exit 0 -- and
 	// because a block would need a name that binary refuses.
-	notDescribed, err := coverage.DecodeHeader(string(data))
+	notDescribed, err := coverage.DecodeHeader(string(data), nil)
 	if err != nil {
 		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
 	}

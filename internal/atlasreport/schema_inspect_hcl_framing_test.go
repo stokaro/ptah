@@ -94,7 +94,7 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(hcl, "// ptah:not-described extension reason=suppressed provenance=defaulted\n"), qt.IsTrue)
 	c.Assert(hcl, qt.Not(qt.Contains), atlashclrender.GeneratedCodeMarker)
-	covered, err := coverage.DecodeHeader(hcl)
+	covered, err := coverage.DecodeHeader(hcl, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(covered, qt.DeepEquals, suppressedBlocks(
 		coverage.Extension,

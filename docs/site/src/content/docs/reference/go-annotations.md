@@ -604,7 +604,16 @@ the database should not have the object. An extension a bootstrap step installs
 is the usual case — declaring it instead hands Ptah the object, and that
 includes removing it.
 
-`kind` comes from a closed list, and one this build does not know is refused
+The source parser recognizes common kinds and the YDB kinds `coordination_node`,
+`streaming_query`, `resource_pool`, and `resource_pool_classifier`. Dots in pool
+and classifier names are literal characters.
+
+Go export adds whole-family annotations when those namespaces were not
+inspected. These annotations keep the generated source from claiming that
+unread objects are absent. Each generated file carries these annotations, so
+reading one table file on its own preserves the limits too.
+
+A kind this build does not know is refused
 rather than ignored: a directive nothing understands reads as no directive at
 all, and the absence it was protecting becomes a removal.
 

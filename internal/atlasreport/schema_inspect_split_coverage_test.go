@@ -95,7 +95,7 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 
 	whole, err := atlasreport.RenderSchemaInspect(`{{ hcl . }}`, coverageSplitReport(c))
 	c.Assert(err, qt.IsNil)
-	wantSet, err := coverage.DecodeHeader(whole.Text)
+	wantSet, err := coverage.DecodeHeader(whole.Text, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(wantSet, qt.DeepEquals, suppressedBlocks(
 		coverage.Extension, coverage.Policy, coverage.Sequence,
@@ -107,7 +107,7 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 	for path, data := range txtarMembers(split.Text) {
 		t.Run(path, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := coverage.DecodeHeader(data)
+			got, err := coverage.DecodeHeader(data, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, wantSet)
 		})
@@ -132,7 +132,7 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 		t.Run(file.Path, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(file.Dir, qt.Equals, "out")
-			got, err := coverage.DecodeHeader(file.Data)
+			got, err := coverage.DecodeHeader(file.Data, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, suppressedBlocks(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
@@ -172,7 +172,7 @@ func TestSplitCarriesTheRecordWithSQLCommentSyntax(t *testing.T) {
 	members := txtarMembers(output.Text)
 	c.Assert(memberPaths(members), qt.DeepEquals, []string{"tables.sql"})
 	for path, data := range members {
-		got, err := coverage.DecodeHeader(data)
+		got, err := coverage.DecodeHeader(data, nil)
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Sequence), qt.Commentf("member %s", path))
 	}

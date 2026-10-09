@@ -82,7 +82,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 					document, readErr := os.ReadFile(member)
 					c.Assert(readErr, qt.IsNil)
 
-					declared, decodeErr := coverage.DecodeHeader(string(document))
+					declared, decodeErr := coverage.DecodeHeader(string(document), nil)
 					c.Assert(decodeErr, qt.IsNil)
 					c.Assert(declared, qt.DeepEquals, wantRecord)
 

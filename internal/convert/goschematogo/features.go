@@ -32,6 +32,10 @@ func (ctx *renderContext) captureFeatureObjects() error {
 	if err := ydbsource.ValidateWorkloadExport(ctx.db.FeatureCoverage); err != nil {
 		return err
 	}
+	for _, token := range ydbsource.UnenrolledNamespaces(ctx.db.FeatureCoverage) {
+		ctx.featureLimitAnnotations = append(ctx.featureLimitAnnotations,
+			annotation("ptah:schema:notdescribed", attr{name: "kind", value: token, set: true}))
+	}
 	for _, facets := range ctx.db.FacetSlots() {
 		if !facets.IsZero() {
 			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, facets.DeclaredKinds()[0])

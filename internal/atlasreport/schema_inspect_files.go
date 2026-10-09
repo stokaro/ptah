@@ -69,7 +69,7 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 	// from a parsed block, and a leading comment belongs to no block. Read it
 	// from the input before the split so each member can carry it
 	// (stokaro/ptah#1276).
-	notDescribed, err := coverage.DecodeHeader(input)
+	notDescribed, err := coverage.DecodeHeader(input, nil)
 	if err != nil {
 		return schemaInspectArchive{}, fmt.Errorf("split schema output: %w", err)
 	}

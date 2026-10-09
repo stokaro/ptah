@@ -53,15 +53,18 @@ func ReadOnto(
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		header, err := schemacoverage.DecodeHeader(string(data))
-		if err != nil {
-			return schemamodel.Database{}, nil, err
-		}
-		var limits ydbsource.Limits
-		for _, object := range header.Objects {
-			limits.Add(string(object.Kind), object.Name)
-		}
+	var limits ydbsource.Limits
+	var extension schemacoverage.HeaderExtension
+	yql := platform.NormalizeDialect(dialect) == platform.YDB
+	if yql {
+		extension = limits.ConsumeDirective
+	}
+	header, err := schemacoverage.DecodeHeader(string(data), extension)
+	if err != nil {
+		return schemamodel.Database{}, nil, err
+	}
+	database.NotDescribed = database.NotDescribed.Merge(header)
+	if yql {
 		database.FeatureCoverage, err = ydbsource.Coverage(limits)
 		if err != nil {
 			return schemamodel.Database{}, nil, err

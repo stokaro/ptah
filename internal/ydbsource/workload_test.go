@@ -2,6 +2,7 @@ package ydbsource_test
 
 import (
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
@@ -12,6 +13,8 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/sqlschema"
@@ -55,6 +58,7 @@ CREATE RESOURCE POOL other WITH (CONCURRENT_QUERY_LIMIT = 0);
 `), "ydb")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 1)
+	c.Assert(db.NotDescribed.IsZero(), qt.IsTrue)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch.jobs")).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("other")).State, qt.Equals, schemaext.Complete)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("other")).State, qt.Equals, schemaext.Uninspected)
@@ -80,6 +84,68 @@ func TestGoExportRefusesWorkloadInspectionLoss(t *testing.T) {
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(files, qt.IsNil)
 			})
+		}
+	}
+}
+
+// Export cannot grant a source authority over a namespace it did not inspect.
+// A complete neighboring namespace is a control against marking every family
+// unknown, while the per-table layout checks the declaration holder is emitted.
+func TestGoExportPreservesUnenrolledNamespaces(t *testing.T) {
+	for _, layout := range []struct {
+		name   string
+		single bool
+	}{{"single file", true}, {"per table", false}} {
+		for _, test := range []struct {
+			name     string
+			coverage schemaext.Coverage
+			pools    schemaext.KnowledgeState
+			tables   []schemamodel.Table
+			fields   []schemamodel.Field
+		}{
+			{name: "no enrollment", pools: schemaext.Uninspected},
+			{name: "only pools enrolled", coverage: must.Must(ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Desired,
+				schemaext.Knowledge{State: schemaext.Complete}, nil)), pools: schemaext.Complete},
+			{name: "table alongside coverage", pools: schemaext.Uninspected,
+				tables: []schemamodel.Table{{Name: "records", StructName: "Records"}},
+				fields: []schemamodel.Field{{StructName: "Records", Name: "id", FieldName: "ID", Type: "Int64"}}},
+		} {
+			t.Run(layout.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: test.coverage, Tables: test.tables, Fields: test.fields},
+					goschematogo.Options{SingleFile: layout.single, Dialect: "ydb"})
+				c.Assert(err, qt.IsNil)
+				source := fstest.MapFS{}
+				for _, file := range files {
+					source[file.Name] = &fstest.MapFile{Data: file.Data}
+				}
+				parsed, err := goschema.ParseFS(source, ".")
+				c.Assert(err, qt.IsNil)
+				c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
+				c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("missing")).State, qt.Equals, test.pools)
+				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing")} {
+					c.Assert(parsed.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State, qt.Equals, schemaext.Uninspected)
+				}
+			})
+		}
+	}
+}
+
+func TestGoExportPartialFilesKeepUnknownNamespaces(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{
+		Enums:  []schemamodel.Enum{{Name: "mood", Values: []string{"ok"}}},
+		Tables: []schemamodel.Table{{Name: "records", StructName: "Records"}},
+		Fields: []schemamodel.Field{{StructName: "Records", Name: "id", FieldName: "ID", Type: "Int64"}},
+	}
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{PerTable: true, Dialect: "ydb"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 3)
+	for _, file := range files {
+		parsed, err := goschema.ParseSource(file.Name, file.Data)
+		c.Assert(err, qt.IsNil)
+		for _, kind := range []schemaext.Kind{ydbcoordination.Kind, ydbstreaming.Kind, ydbworkload.PoolKind, ydbworkload.ClassifierKind} {
+			c.Assert(parsed.FeatureCoverage.Lookup(kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected, qt.Commentf("%s in %s", kind, file.Name))
 		}
 	}
 }

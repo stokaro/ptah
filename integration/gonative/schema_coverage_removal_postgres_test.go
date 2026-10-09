@@ -54,7 +54,7 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 
 	t.Run("the document declares the three kinds it does not describe", func(t *testing.T) {
 		c := qt.New(t)
-		declared, decodeErr := coverage.DecodeHeader(inspected)
+		declared, decodeErr := coverage.DecodeHeader(inspected, nil)
 		c.Assert(decodeErr, qt.IsNil)
 		c.Assert(declared, qt.DeepEquals, suppressedBlocks(
 			coverage.Extension, coverage.Policy, coverage.Sequence,

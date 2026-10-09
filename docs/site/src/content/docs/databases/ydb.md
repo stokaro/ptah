@@ -1009,7 +1009,10 @@ cannot hold one, so a plan against a realm withholds a declared pool and
 reports it; `ptah db drop-all` and a dev database reset leave pools and
 classifiers in place. The read takes them from `.sys/resource_pools` and
 `.sys/resource_pool_classifiers`. HCL and DBML have no spelling for
-either, and a document in one of them records both as not described.
+either, and a document in one of them leaves both namespaces uninspected.
+If a scheme listing names a pool whose settings the system views did not
+return, Ptah records that pool as unreadable. It cannot infer absence or invent
+settings from the listing alone.
 
 ### Streaming queries
 

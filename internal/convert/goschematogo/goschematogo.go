@@ -243,6 +243,7 @@ func validatePackageName(name string) error {
 }
 
 type renderContext struct {
+	featureLimitAnnotations []string
 	coordinationAnnotations []string
 	streamingAnnotations    []string
 	workloadAnnotations     []string
@@ -313,6 +314,7 @@ func (ctx *renderContext) renderPerTableFiles() ([]File, error) {
 	files := make([]File, 0, len(ctx.db.Tables)+2)
 	if len(ctx.db.Enums) > 0 {
 		data, err := ctx.renderFile(func(w *sourceWriter) {
+			ctx.writeFeatureLimits(w)
 			ctx.writeEnums(w)
 		})
 		if err != nil {
@@ -341,6 +343,7 @@ func (ctx *renderContext) renderPerTableFiles() ([]File, error) {
 	}
 	for _, table := range sortedTables(ctx.db.Tables) {
 		data, err := ctx.renderFile(func(w *sourceWriter) {
+			ctx.writeFeatureLimits(w)
 			ctx.writeTable(w, table)
 		})
 		if err != nil {
@@ -405,7 +408,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 
 // hasYDBObjects reports declarations of the YDB-specific global families.
 func (ctx *renderContext) hasYDBObjects() bool {
-	return len(ctx.db.Topics) > 0 ||
+	return len(ctx.featureLimitAnnotations) > 0 || len(ctx.db.Topics) > 0 ||
 		len(ctx.workloadAnnotations) > 0 ||
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
@@ -444,7 +447,16 @@ func (ctx *renderContext) writeEnums(w *sourceWriter) {
 	}
 }
 
+// Every generated file carries the limits that apply to it. Reading one table
+// file alone must not acquire authority from a missing sibling's annotations.
+func (ctx *renderContext) writeFeatureLimits(w *sourceWriter) {
+	for _, limit := range ctx.featureLimitAnnotations {
+		w.writeComment(limit)
+	}
+}
+
 func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
+	ctx.writeFeatureLimits(w)
 	for _, schema := range sortedSchemas(ctx.db.Schemas) {
 		w.writeComment(annotation("ptah:schema:schema",
 			attr{name: "name", value: schema.Name, set: true},

@@ -785,7 +785,9 @@ separately. A refused read, a directory outside the database-wide scope, or an
 empty system view without enabled resource-pool support cannot establish
 absence. Valid returned objects remain captured independently of target
 capabilities. Unsupported settings leave the affected subject unrepresentable.
-Go export refuses incomplete workload coverage instead of discarding it.
+Go export writes explicit unmanaged-namespace annotations when workload
+coverage is missing. It refuses recorded inspection limits it cannot preserve.
+Neither case can become a complete namespace when the generated Go is parsed.
 
 `dialect/ydb/ydbsyntax` provides YQL identifier and string-literal quoting to
 owner packages without importing host implementation helpers.
@@ -919,11 +921,17 @@ schema IR; dropping it can move an extension into the wrong namespace.
 describe. `schemamodel.Database.NotDescribed` and
 `catalog.Database.NotDescribed` hold one, and schema comparison consults both:
 the desired state's record gates removals and the introspected state's record
-gates additions. Its zero value claims everything, so an embedder that never
-sets one gets exactly the comparison it got before the field existed. Set it
+gates additions. Its zero value applies no limits to common kinds. Set it
 when a reader was asked about less than the whole database, or a projection
 left something out on purpose; leaving it zero there is how an object nobody
 looked at becomes a `DROP`.
+
+Feature models use `schemaext.Coverage`, whose zero value is unknown.
+Resource pools and classifiers have no common coverage kind.
+`coverage.DecodeHeader` takes an explicit `HeaderExtension` callback, or nil
+for common kinds only. The callback receives validated directives outside the
+common vocabulary and records them in the owning feature's coverage. It cannot
+override common kinds. Unclaimed kinds and callback errors refuse the document.
 
 Every schema comparison takes a context and an explicitly selected runtime.
 Catalog comparisons accept `schemapreparation.Runtime`. Document comparisons

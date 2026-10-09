@@ -394,7 +394,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	// refusal every time the parser gains another object family.
 	if !slices.Contains(yamlOnlyExtensions, extension) && !yql {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Topic, coverage.ResourcePool, coverage.ResourcePoolClassifier,
+			coverage.Topic,
 			coverage.Replication, coverage.Transfer, coverage.Secret,
 			coverage.ExternalDataSource, coverage.ExternalTable)...)
 	}
@@ -810,18 +810,6 @@ func loadSQLFileWithStatements(
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
 	}
-	// The same directive grammar the HCL loader reads, spelled with SQL's
-	// comment marker. No Ptah surface writes one into SQL today -- only the HCL
-	// rendering omits blocks -- but the contract is the document's, not one
-	// format's, and a hand-written SQL desired state must be able to say the
-	// same thing (stokaro/ptah#1276).
-	notDescribed, err := coverage.DecodeHeader(string(data))
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse SQL schema file %s: %w", path, err)
-	}
-	// A header supplements limits inferred by the dialect reader. Replacing
-	// them makes an unsupported YQL family look authoritatively absent.
-	db.NotDescribed = db.NotDescribed.Merge(notDescribed)
 	return &db, statements, nil
 }
 

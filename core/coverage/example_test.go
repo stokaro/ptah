@@ -26,7 +26,7 @@ func Example() {
 	document.WriteString("\nCREATE TABLE users (id BIGINT PRIMARY KEY);\n")
 	fmt.Print(document.String())
 
-	decoded, err := coverage.DecodeHeader(document.String())
+	decoded, err := coverage.DecodeHeader(document.String(), nil)
 	if err != nil {
 		fmt.Println("decode:", err)
 		return
@@ -99,7 +99,7 @@ CREATE TABLE users (id BIGINT PRIMARY KEY);
 
 -- ptah:not-described sequence
 `
-	set, err := coverage.DecodeHeader(document)
+	set, err := coverage.DecodeHeader(document, nil)
 	if err != nil {
 		fmt.Println("refused:", err)
 		return

@@ -57,6 +57,35 @@ func TestReadSchema_ResourcePools_HappyPath(t *testing.T) {
 	}
 }
 
+// Listing a pool cannot establish its settings. A successful system-view row
+// is the control: the later listing must preserve that complete observation.
+func TestReadSchemaRetainsPoolsMissingFromSystemViews(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		objects   []schemaext.Object
+		readErr   error
+		want      schemaext.KnowledgeState
+		namespace schemaext.KnowledgeState
+	}{
+		{name: "described pool", objects: poolSource().pools.Objects, want: schemaext.Complete, namespace: schemaext.Complete},
+		{name: "listed but missing row", want: schemaext.Unrepresentable, namespace: schemaext.Complete},
+		{name: "refused system view", readErr: ydbschema.ErrResourcePoolsRefused, want: schemaext.Unrepresentable, namespace: schemaext.Uninspected},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := poolSource()
+			source.directories["/local"] = append(source.directories["/local"], entry("batch", Ydb_Scheme.Entry_RESOURCE_POOL))
+			source.pools.Objects, source.poolsErr = test.objects, test.readErr
+			reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262().With(capability.ResourcePools, true))
+			reader.SetSchemas([]string{"app"})
+			db, err := reader.ReadSchemaContext(t.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch")).State, qt.Equals, test.want)
+			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("absent")).State, qt.Equals, test.namespace)
+		})
+	}
+}
+
 // Unavailable enumeration never means absence, including an empty view on a
 // disabled cluster. Positive observations remain available independently of
 // whether the target currently permits workload DDL.

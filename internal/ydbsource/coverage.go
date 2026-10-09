@@ -3,8 +3,10 @@
 package ydbsource
 
 import (
+	"slices"
 	"strings"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -23,23 +25,66 @@ type Limits struct {
 	Classifiers  []string
 }
 
+// sourceKinds is shared by limit decoding and export. A new spelling must be
+// recognized in both directions or exporting unknown coverage would grant
+// authority that the input never held.
+var sourceKinds = []struct {
+	kind  schemaext.Kind
+	token string
+}{
+	{ydbcoordination.Kind, "coordination_node"},
+	{ydbstreaming.Kind, "streaming_query"},
+	{ydbworkload.PoolKind, "resource_pool"},
+	{ydbworkload.ClassifierKind, "resource_pool_classifier"},
+}
+
+func sourceKind(token string) schemaext.Kind {
+	for _, family := range sourceKinds {
+		if family.token == strings.ToLower(strings.TrimSpace(token)) {
+			return family.kind
+		}
+	}
+	return ""
+}
+
+// UnenrolledNamespaces returns source kind tokens whose knowledge was never
+// captured, in deterministic declaration order. A Go export must explicitly
+// leave them unmanaged; otherwise reading it grants complete source coverage.
+// Explicitly enrolled limits are handled by the export validators.
+func UnenrolledNamespaces(known schemaext.Coverage) []string {
+	var tokens []string
+	records := known.KindRecords()
+	for _, family := range sourceKinds {
+		if !slices.ContainsFunc(records, func(record schemaext.KindCoverage) bool { return record.Model.Kind == family.kind }) {
+			tokens = append(tokens, family.token)
+		}
+	}
+	return tokens
+}
+
 // Add records a source-level unmanaged-object directive if this adapter owns
 // its spelling. Go annotations and SQL headers share this recognition so one
 // format cannot accidentally turn the other's workload limit into absence.
 func (l *Limits) Add(kind, name string) bool {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "coordination_node":
+	switch sourceKind(kind) {
+	case ydbcoordination.Kind:
 		l.Coordination = append(l.Coordination, name)
-	case "streaming_query":
+	case ydbstreaming.Kind:
 		l.Streaming = append(l.Streaming, name)
-	case "resource_pool":
+	case ydbworkload.PoolKind:
 		l.Pools = append(l.Pools, name)
-	case "resource_pool_classifier":
+	case ydbworkload.ClassifierKind:
 		l.Classifiers = append(l.Classifiers, name)
 	default:
 		return false
 	}
 	return true
+}
+
+// ConsumeDirective records a supported source-header limit for the owner
+// coverage. The common header decoder validates its syntax and attributes.
+func (l *Limits) ConsumeDirective(object coverage.Object) (bool, error) {
+	return l.Add(string(object.Kind), object.Name), nil
 }
 
 // Coverage enrolls only namespaces these source formats can declare. HCL
@@ -75,7 +120,7 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 		{limits.Pools, ydbworkload.PoolKind, "resource pools", ydbworkload.PoolRef},
 		{limits.Classifiers, ydbworkload.ClassifierKind, "resource pool classifiers", ydbworkload.ClassifierRef},
 	} {
-		coverage, err := namespaceCoverage(family.limits, family.kind, family.label, family.identity,
+		known, err := namespaceCoverage(family.limits, family.kind, family.label, family.identity,
 			func(ref objectidentity.ID) error { return ydbworkload.ValidateIdentity(ref, family.kind) },
 			func(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
 				return ydbworkload.Coverage(family.kind, representation, knowledge, subjects)
@@ -83,7 +128,7 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}
-		combined, err = combined.Combine(coverage)
+		combined, err = combined.Combine(known)
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}

@@ -37,7 +37,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
 			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.ExternalDataSource, coverage.ExternalTable,
-				coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Secret, coverage.Topic,
+				coverage.Replication, coverage.Secret, coverage.Topic,
 				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 		{
@@ -52,7 +52,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
 				coverage.ContinuousAggregate, coverage.ExtendedProperty, coverage.ExternalDataSource, coverage.ExternalTable,
-				coverage.Hypertable, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Secret, coverage.Synonym, coverage.Topic, coverage.Transfer),
+				coverage.Hypertable, coverage.Replication, coverage.Secret, coverage.Synonym, coverage.Topic, coverage.Transfer),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -86,7 +86,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.Composite, coverage.ContinuousAggregate,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Hypertable,
-				coverage.Policy, coverage.Range, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Role, coverage.Secret, coverage.Sequence,
+				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Secret, coverage.Sequence,
 				coverage.Synonym, coverage.Topic, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 	}

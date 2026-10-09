@@ -25,6 +25,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbworkload"
 	ydbreader "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/ydbcolumn"
 )
@@ -499,7 +500,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.ExternalTable, "ext"),
 		observed(coverage.Topic, "legacy_queue"),
 		observed(coverage.ColumnTable, "olap"),
-		observed(coverage.ResourcePool, "pool"),
 		observed(coverage.Replication, "repl"),
 		observed(coverage.Sequence, "seq"),
 		observed(coverage.ExternalDataSource, "src"),
@@ -507,6 +507,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.Transfer, "xfer"),
 	))
 	c.Assert(db.FeatureCoverage.Lookup(ydbstreaming.Kind, ydbstreaming.Ref("", "stream")).State, qt.Equals, schemaext.Unrepresentable)
+	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("pool")).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
 	c.Assert(db.Secrets, qt.DeepEquals, []catalog.Secret{{Name: "key"}})
@@ -1144,7 +1145,7 @@ func TestReader_FailurePath_SourceFails(t *testing.T) {
 
 	db, err := ydbreader.NewReaderFromSource(errorSource{}, "/local", capability.YDB262()).ReadSchema()
 
-	c.Assert(err, qt.ErrorMatches, "connection refused")
+	c.Assert(err, qt.ErrorMatches, "read the YDB resource pools: connection refused")
 	c.Assert(db, qt.IsNil)
 }
 

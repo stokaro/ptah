@@ -2,6 +2,7 @@ package capabilityprobe
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"maps"
 
@@ -123,10 +124,13 @@ func observedWorkloadMatches(objects schemaext.Objects, poolName string, pool yd
 	if err != nil {
 		return false, err
 	}
+	heldPool, poolOK := poolObject.Value.(*ydbworkload.ObservedPool)
+	heldClassifier, classifierOK := classifierObject.Value.(*ydbworkload.ObservedClassifier)
+	if (hasPool && !poolOK) || (hasClassifier && !classifierOK) {
+		return false, fmt.Errorf("%w: workload read-back requires observed pool and classifier values", schemaext.ErrInvalidValue)
+	}
 	if !hasPool || !hasClassifier {
 		return false, nil
 	}
-	heldPool, poolOK := poolObject.Value.(*ydbworkload.ObservedPool)
-	heldClassifier, classifierOK := classifierObject.Value.(*ydbworkload.ObservedClassifier)
-	return poolOK && classifierOK && ydbworkload.PoolsEqual(heldPool.Spec, pool) && heldClassifier.Spec == classifier, nil
+	return ydbworkload.PoolsEqual(heldPool.Spec, pool) && heldClassifier.Spec == classifier, nil
 }

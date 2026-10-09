@@ -448,6 +448,8 @@ v0.13.0 ptah.run/core/ast
 # Common desired/observed ResourcePool and ResourcePoolClassifier models and
 # Database collections are removed. Workload values use immutable FeatureObjects;
 # duplicate identities are rejected rather than merged or silently deduplicated.
+# Common workload coverage kinds are removed. DecodeHeader takes an explicit
+# HeaderExtension callback; owned source directives populate feature coverage.
 # Consumers use the owner model, change, and operation codecs directly.
 # This changes behavior; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.

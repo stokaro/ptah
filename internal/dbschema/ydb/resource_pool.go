@@ -193,3 +193,29 @@ func recordWorkloadCoverage(db *catalog.Database, namespace schemaext.Knowledge,
 	}
 	return nil
 }
+
+// A scheme listing establishes existence but carries no workload settings.
+// Preserve that limit unless the system view already described this subject,
+// including a more precise refusal about settings it cannot represent.
+func (r *Reader) listedResourcePool(db *catalog.Database, name string) error {
+	if r.realm {
+		return nil
+	}
+	ref := ydbworkload.PoolRef(name)
+	if err := ydbworkload.ValidateIdentity(ref, ydbworkload.PoolKind); err != nil {
+		return err
+	}
+	if _, found := db.FeatureCoverage.SubjectKnowledge(ydbworkload.PoolKind, ref); found {
+		return nil
+	}
+	subjects := append(db.FeatureCoverage.SubjectRecords(), schemaext.SubjectCoverage{
+		Kind: ydbworkload.PoolKind, Subject: ref,
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the scheme listing names a resource pool whose settings were not captured"},
+	})
+	known, err := schemaext.NewCoverage(schemaext.Observed, db.FeatureCoverage.KindRecords(), subjects)
+	if err != nil {
+		return err
+	}
+	db.FeatureCoverage = known
+	return nil
+}
