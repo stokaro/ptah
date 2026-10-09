@@ -18,6 +18,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -221,7 +222,9 @@ func TestYDBReplication_RoundTrip(t *testing.T) {
 
 func assertReplicationBinding(c *qt.C, live *catalog.Database) {
 	c.Helper()
-	objects, err := live.FeatureObjects.All()
+	objects, err := live.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(ydbschema.ChangefeedKind)
+	}).All()
 	c.Assert(err, qt.IsNil)
 	c.Assert(objects, qt.HasLen, 1)
 	observed := objects[0].Value.(*ydbschema.ObservedChangefeed)

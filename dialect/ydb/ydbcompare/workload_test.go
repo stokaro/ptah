@@ -87,12 +87,12 @@ func TestPoolComparisonPreservesLimitsAndEvidence(t *testing.T) {
 		{name: "create explicit zero", desired: zero, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Complete, changes: 1},
 		{name: "zero changes unlimited", desired: zero, current: unlimited, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Complete, changes: 1},
 		{name: "matching zero", desired: zero, current: zero.Observed(), desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Complete},
-		{name: "unknown namespace withholds create", desired: zero, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected, undecided: 2},
+		{name: "unknown namespace withholds create", desired: zero, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected, undecided: 1},
 		{name: "unknown subject withholds alter", desired: zero, current: unlimited, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Complete, currentLimits: limited(schemaext.Unrepresentable), undecided: 1},
-		{name: "known object in incomplete namespace", desired: zero, current: unlimited, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected, changes: 1, undecided: 1},
+		{name: "known object in incomplete namespace", desired: zero, current: unlimited, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected, changes: 1},
 		{name: "incomplete declaration withholds alter", desired: zero, current: unlimited, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Complete, desiredLimits: limited(schemaext.Unrepresentable), undecided: 1},
-		{name: "known absence permits create", desired: zero, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected, currentLimits: limited(schemaext.Absent), changes: 1, undecided: 1},
-		{name: "empty uninspected namespace", desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected, undecided: 1},
+		{name: "known absence permits create", desired: zero, desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected, currentLimits: limited(schemaext.Absent), changes: 1},
+		{name: "empty uninspected namespace", desiredKnowledge: schemaext.Complete, currentKnowledge: schemaext.Uninspected},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -227,4 +227,59 @@ func TestWorkloadComparisonRefusesInvalidRequestsWithoutPartialOutput(t *testing
 	result, err := (ydbcompare.PoolService{}).CompareObjects(ctx, schemaext.ObjectComparisonRequest{})
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(result, qt.DeepEquals, schemaext.ObjectComparisonResult{})
+}
+
+// Seeing a global object is not a request to alter it. Disabled DDL and partial
+// enumeration must preserve unrelated application work and the unknown state.
+func TestWorkloadComparisonRetainsUnmanagedObjectsWithoutDDLSupport(t *testing.T) {
+	for _, family := range []struct {
+		kind    schemaext.Kind
+		ref     objectidentity.ID
+		current schemaext.Value
+		adopted schemaext.Value
+	}{
+		{ydbworkload.PoolKind, ydbworkload.PoolRef("workload"), &ydbworkload.ObservedPool{}, &ydbworkload.DesiredPool{}},
+		{ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("workload"), &ydbworkload.ObservedClassifier{Spec: ydbworkload.ClassifierSpec{ResourcePool: "default"}}, &ydbworkload.DesiredClassifier{Spec: ydbworkload.ClassifierSpec{ResourcePool: "default"}}},
+	} {
+		for _, knowledge := range []schemaext.KnowledgeState{schemaext.Complete, schemaext.Uninspected} {
+			t.Run(string(family.kind)+"/"+string(knowledge), func(t *testing.T) {
+				c := qt.New(t)
+				request := schemaext.ObjectComparisonRequest{
+					Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Kinds: []schemaext.Kind{family.kind},
+					Desired: workloadState(family.kind, schemaext.Desired, schemaext.Complete, nil),
+					Current: workloadState(family.kind, schemaext.Observed, knowledge, family.current),
+				}
+				result, err := workloadRuntime().CompareObjects(t.Context(), request)
+				c.Assert(err, qt.IsNil)
+				c.Assert(result.Changes, qt.HasLen, 0)
+				c.Assert(result.Undecided, qt.HasLen, 0)
+				c.Assert(must.Must(result.Desired.Objects.All()), qt.DeepEquals, []schemaext.Object{{Ref: family.ref, Value: family.adopted}})
+				c.Assert(result.Desired.Coverage.Lookup(family.kind, family.ref).State, qt.Equals, schemaext.Complete)
+				c.Assert(result.Desired.Coverage.Lookup(family.kind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
+				c.Assert(request.Current.Coverage.Lookup(family.kind, objectidentity.ID{}).State, qt.Equals, knowledge)
+				request.Desired = result.Desired
+				repeated, err := workloadRuntime().CompareObjects(t.Context(), request)
+				c.Assert(err, qt.IsNil)
+				c.Assert(repeated.Changes, qt.HasLen, 0)
+				c.Assert(repeated.Undecided, qt.HasLen, 0)
+			})
+		}
+	}
+}
+
+func TestWorkloadComparisonKeepsUnmanagedSubjectLimits(t *testing.T) {
+	c := qt.New(t)
+	ref := ydbworkload.PoolRef("workload")
+	limit := schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "settings unavailable"}
+	result, err := workloadRuntime().CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+		Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Kinds: []schemaext.Kind{ydbworkload.PoolKind},
+		Desired: workloadState(ydbworkload.PoolKind, schemaext.Desired, schemaext.Uninspected, nil),
+		Current: workloadState(ydbworkload.PoolKind, schemaext.Observed, schemaext.Uninspected, &ydbworkload.ObservedPool{},
+			schemaext.SubjectCoverage{Kind: ydbworkload.PoolKind, Subject: ref, Knowledge: limit}),
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Desired.Objects.Len(), qt.Equals, 0)
+	c.Assert(result.Desired.Coverage.Lookup(ydbworkload.PoolKind, ref), qt.DeepEquals, limit)
 }

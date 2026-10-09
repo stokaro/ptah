@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
+	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -21,6 +22,42 @@ func workloadCoverage(representation schemaext.Representation, knowledge schemae
 	pools := must.Must(ydbworkload.Coverage(ydbworkload.PoolKind, representation, knowledge, nil))
 	classifiers := must.Must(ydbworkload.Coverage(ydbworkload.ClassifierKind, representation, knowledge, nil))
 	return must.Must(pools.Combine(classifiers))
+}
+
+// Application tables do not acquire ownership of database-wide pools. Neither
+// an observed default pool nor unavailable enumeration authorizes workload DDL.
+func TestCompareTablesPreservesUnmanagedWorkloadState(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		objects []schemaext.Object
+	}{
+		{name: "unknown namespace"},
+		{name: "observed default", objects: []schemaext.Object{ydbworkload.ObservedPoolObject("default", ydbworkload.PoolSpec{})}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			info := catalog.ServerInfo{Dialect: "ydb", Capabilities: capability.YDB262().With(capability.ResourcePools, false)}
+			desired := &schemamodel.Database{
+				Tables:          []schemamodel.Table{{Name: "jobs", StructName: "Job"}},
+				Fields:          []schemamodel.Field{{Name: "id", Type: "BIGINT", Primary: true, StructName: "Job"}},
+				FeatureCoverage: workloadCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}),
+			}
+			schemamodel.Finalize(desired)
+			current := &catalog.Database{
+				FeatureObjects:  must.Must(schemaext.NewObjects(test.objects...)),
+				FeatureCoverage: workloadCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "workload DDL is disabled"}),
+			}
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current, info, nil, runtime)
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.FeatureChanges, qt.HasLen, 0)
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "ydb", planner.Options{Capabilities: info.Capabilities})
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.HasLen, 1)
+			c.Assert(statements[0], qt.Contains, "CREATE TABLE `jobs`")
+			c.Assert(desired.FeatureObjects.Len(), qt.Equals, 0)
+		})
+	}
 }
 
 // Database-wide objects omitted by an application remain in the effective
@@ -84,7 +121,7 @@ func TestCompare_ResourcePools(t *testing.T) {
 }
 
 // Unknown or incomplete namespace inspection cannot establish absence. The
-// comparison refuses and reports both unknown namespaces and named subjects.
+// comparison refuses and reports each declared subject lacking evidence.
 func TestCompare_ResourcePools_Coverage(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -111,7 +148,7 @@ func TestCompare_ResourcePools_Coverage(t *testing.T) {
 			for _, diagnostic := range incomplete.Diagnostics.Features {
 				subjects = append(subjects, diagnostic.Subject)
 			}
-			c.Assert(subjects, qt.DeepEquals, []objectidentity.ID{{}, ydbworkload.PoolRef("batch"), {}, ydbworkload.ClassifierRef("all")})
+			c.Assert(subjects, qt.DeepEquals, []objectidentity.ID{ydbworkload.PoolRef("batch"), ydbworkload.ClassifierRef("all")})
 		})
 	}
 }

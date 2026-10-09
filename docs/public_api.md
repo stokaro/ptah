@@ -786,6 +786,13 @@ empty system view without enabled resource-pool support cannot establish
 absence. Valid returned objects remain captured independently of target
 capabilities. Unsupported settings leave the affected subject unrepresentable.
 
+Workload comparison requires `resource_pools` capability for changes, not for
+retaining observed objects. Incomplete namespace enumeration does not block an
+unrelated table migration because source omission never removes workload objects.
+A declared workload object still requires evidence of its current settings or
+absence. Explicit subject limitations remain undecided; comparison preserves
+source coverage without claiming new inspection.
+
 Go export writes explicit unmanaged-namespace annotations when workload
 coverage is missing and preserves source-authored namespace and object limits
 through repeated export. It refuses recorded inspection limits it cannot preserve.

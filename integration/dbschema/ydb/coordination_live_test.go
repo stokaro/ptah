@@ -13,6 +13,7 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -114,7 +115,7 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, declared, coordinationSchemas))
 			c.Assert(planAgainst(c, conn, declared, coordinationSchemas), qt.HasLen, 0)
 
-			c.Assert(must.Must(readScoped(c, conn, coordinationSchemas).FeatureObjects.All()), qt.ContentEquals, []schemaext.Object{
+			c.Assert(must.Must(readScoped(c, conn, coordinationSchemas).FeatureObjects.Select(isCoordinationNode).All()), qt.ContentEquals, []schemaext.Object{
 				ydbcoordination.ObservedObject(coordinationSchema, "limits", limits),
 				ydbcoordination.ObservedObject(coordinationSchema, "plain", ydbcoordination.Spec{}),
 			})
@@ -326,7 +327,7 @@ func TestYDBCoordinationNodes_ReaderLeavesTheLockNodeOut(t *testing.T) {
 
 			live := readScoped(c, conn, []string{"", coordinationSchema})
 
-			c.Assert(must.Must(live.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
+			c.Assert(must.Must(live.FeatureObjects.Select(isCoordinationNode).All()), qt.DeepEquals, []schemaext.Object{
 				ydbcoordination.ObservedObject(coordinationSchema, "ptah_locks", ydbcoordination.Spec{}),
 			})
 		})
@@ -384,4 +385,8 @@ func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, noNode)
 		})
 	}
+}
+
+func isCoordinationNode(ref objectidentity.ID) bool {
+	return ref.Kind == objectidentity.Kind(ydbcoordination.Kind)
 }

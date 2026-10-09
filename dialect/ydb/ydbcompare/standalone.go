@@ -19,6 +19,27 @@ func completeStandaloneComparison[T any](ctx context.Context, request schemaext.
 	nodes map[objectidentity.Key]T, coverage schemaext.Coverage, kind schemaext.Kind, namespace string,
 	ref func(T) objectidentity.ID, compare func(schemaext.ObjectComparisonRequest, T, *schemaext.ObjectComparisonResult) error,
 ) (schemaext.ObjectComparisonResult, error) {
+	result, err := compareStandaloneNodes(ctx, request, nodes, coverage, ref, compare)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
+	if knowledge := request.Current.Coverage.Lookup(kind, objectidentity.ID{}); unknown(knowledge) {
+		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: kind,
+			Reason: namespace + " namespace was not fully inspected: " + knowledge.Reason})
+	}
+	if err := ctx.Err(); err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
+	return result, nil
+}
+
+// Owners whose omission policy preserves every unnamed object need only the
+// named operands. Namespace-wide deletion policies also require the receipt
+// checked by completeStandaloneComparison.
+func compareStandaloneNodes[T any](ctx context.Context, request schemaext.ObjectComparisonRequest,
+	nodes map[objectidentity.Key]T, coverage schemaext.Coverage,
+	ref func(T) objectidentity.ID, compare func(schemaext.ObjectComparisonRequest, T, *schemaext.ObjectComparisonResult) error,
+) (schemaext.ObjectComparisonResult, error) {
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: coverage}}
 	ordered := slices.Collect(maps.Values(nodes))
 	slices.SortFunc(ordered, func(a, b T) int { return schemaext.CompareRefs(ref(a), ref(b)) })
@@ -29,10 +50,6 @@ func completeStandaloneComparison[T any](ctx context.Context, request schemaext.
 		if err := compare(request, node, &result); err != nil {
 			return schemaext.ObjectComparisonResult{}, err
 		}
-	}
-	if knowledge := request.Current.Coverage.Lookup(kind, objectidentity.ID{}); unknown(knowledge) {
-		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: kind,
-			Reason: namespace + " namespace was not fully inspected: " + knowledge.Reason})
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
@@ -82,6 +99,20 @@ func standaloneInputs[T any](ctx context.Context, request schemaext.ObjectCompar
 	kind schemaext.Kind, key capability.Capability, family, label string,
 	collect func(context.Context, schemaext.ObjectState, schemaext.Representation, map[objectidentity.Key]T) error,
 ) (map[objectidentity.Key]T, error) {
+	nodes, err := captureStandaloneInputs(ctx, request, kind, family, collect)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) > 0 && !request.Capabilities.Has(key) {
+		return nil, fmt.Errorf("%w: %s require %s", ptaherr.ErrUnsupportedFeature, label, key)
+	}
+	return nodes, nil
+}
+
+func captureStandaloneInputs[T any](ctx context.Context, request schemaext.ObjectComparisonRequest,
+	kind schemaext.Kind, family string,
+	collect func(context.Context, schemaext.ObjectState, schemaext.Representation, map[objectidentity.Key]T) error,
+) (map[objectidentity.Key]T, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
 	}
@@ -102,9 +133,6 @@ func standaloneInputs[T any](ctx context.Context, request schemaext.ObjectCompar
 		if err := collect(ctx, source.state, source.direction, nodes); err != nil {
 			return nil, err
 		}
-	}
-	if len(nodes) > 0 && !request.Capabilities.Has(key) {
-		return nil, fmt.Errorf("%w: %s require %s", ptaherr.ErrUnsupportedFeature, label, key)
 	}
 	return nodes, nil
 }

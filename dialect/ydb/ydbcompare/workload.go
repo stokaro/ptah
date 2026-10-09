@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbworkload"
@@ -88,7 +89,7 @@ func validatePoolSnapshot(ref objectidentity.ID, value schemaext.Value) error {
 }
 
 func compareWorkload(ctx context.Context, request schemaext.ObjectComparisonRequest, family workloadFamily) (schemaext.ObjectComparisonResult, error) {
-	nodes, err := standaloneInputs(ctx, request, family.kind, capability.ResourcePools, family.label, family.label,
+	nodes, err := captureStandaloneInputs(ctx, request, family.kind, family.label,
 		func(ctx context.Context, state schemaext.ObjectState, representation schemaext.Representation, nodes map[objectidentity.Key]workloadNode) error {
 			return captureWorkload(ctx, state, representation, nodes, family)
 		})
@@ -99,7 +100,7 @@ func compareWorkload(ctx context.Context, request schemaext.ObjectComparisonRequ
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	return completeStandaloneComparison(ctx, request, nodes, coverage, family.kind, family.label,
+	return compareStandaloneNodes(ctx, request, nodes, coverage,
 		func(node workloadNode) objectidentity.ID { return node.ref },
 		func(request schemaext.ObjectComparisonRequest, node workloadNode, result *schemaext.ObjectComparisonResult) error {
 			return compareWorkloadNode(request, node, result, family)
@@ -107,33 +108,56 @@ func compareWorkload(ctx context.Context, request schemaext.ObjectComparisonRequ
 }
 
 func compareWorkloadNode(request schemaext.ObjectComparisonRequest, node workloadNode, result *schemaext.ObjectComparisonResult, family workloadFamily) error {
+	// Omission never changes a database-wide workload object. Preserve usable
+	// observations without requiring DDL support or inventing missing settings.
+	// A named source limitation or absence is explicit intent and still needs
+	// a diagnostic, even when no source value could be captured.
+	if node.desired == nil {
+		return retainWorkloadNode(request, node, result, family)
+	}
 	var reason string
 	switch {
-	case node.desired == nil && node.current != nil && request.Desired.Coverage.Lookup(family.kind, node.ref).State == schemaext.Absent:
-		reason = "removing a database-wide workload object requires an explicit operation, not source omission"
-	case node.desired != nil && standaloneLimited(request.Desired.Coverage, family.kind, node.ref):
+	case standaloneLimited(request.Desired.Coverage, family.kind, node.ref):
 		reason = "the source cannot describe the complete workload object"
 	case standaloneLimited(request.Current.Coverage, family.kind, node.ref):
 		reason = "the current workload object's settings were not fully inspected"
 	case node.current == nil && unknown(request.Current.Coverage.Lookup(family.kind, node.ref)):
 		reason = "the current workload object or its absence was not established"
-	case node.desired != nil && node.current == nil && family.kind == ydbworkload.PoolKind && node.ref.Name.Source == ydbworkload.DefaultPool:
+	case node.current == nil && family.kind == ydbworkload.PoolKind && node.ref.Name.Source == ydbworkload.DefaultPool:
 		reason = "the database's default pool must be inspected before changing its settings"
 	}
 	if reason != "" {
 		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: family.kind, Subject: node.ref, Reason: reason})
 		return nil
 	}
-	if node.desired == nil {
-		if node.current != nil {
-			var err error
-			result.Desired.Objects, err = result.Desired.Objects.With(schemaext.Object{Ref: node.ref, Value: family.declare(node.current)})
-			return err
+	if node.current == nil || !family.equal(node.desired, node.current) {
+		if !request.Capabilities.Has(capability.ResourcePools) {
+			return fmt.Errorf("%w: changing %s requires %s", ptaherr.ErrUnsupportedFeature, family.label, capability.ResourcePools)
 		}
+		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: node.ref, Value: family.change(node)})
+	}
+	return nil
+}
+
+func retainWorkloadNode(request schemaext.ObjectComparisonRequest, node workloadNode, result *schemaext.ObjectComparisonResult, family workloadFamily) error {
+	knowledge := request.Desired.Coverage.Lookup(family.kind, node.ref)
+	var reason string
+	switch {
+	case knowledge.State == schemaext.Absent:
+		reason = "removing a database-wide workload object requires an explicit operation, not source omission"
+	case standaloneLimited(request.Desired.Coverage, family.kind, node.ref):
+		reason = "the source cannot describe the complete workload object"
+	case standaloneLimited(request.Current.Coverage, family.kind, node.ref):
+		reason = "the current workload object's settings were not fully inspected"
+	}
+	if reason != "" {
+		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: family.kind, Subject: node.ref, Reason: reason})
 		return nil
 	}
-	if node.current == nil || !family.equal(node.desired, node.current) {
-		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: node.ref, Value: family.change(node)})
+	if node.current != nil {
+		var err error
+		result.Desired.Objects, err = result.Desired.Objects.With(schemaext.Object{Ref: node.ref, Value: family.declare(node.current)})
+		return err
 	}
 	return nil
 }

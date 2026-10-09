@@ -8,10 +8,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // Drop-all removes row and column tables, views, topics and coordination nodes,
@@ -47,6 +50,11 @@ func TestYDBWriter_DropAllTablesRemovesModeledObjects(t *testing.T) {
 				c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
 			}
 
+			before, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
+			c.Assert(err, qt.IsNil)
+			workload := before.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+				return ref.Kind == objectidentity.Kind(ydbworkload.PoolKind) || ref.Kind == objectidentity.Kind(ydbworkload.ClassifierKind)
+			})
 			c.Assert(conn.SchemaWriter().DropAllTables(c.Context()), qt.IsNil)
 
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
@@ -54,7 +62,7 @@ func TestYDBWriter_DropAllTablesRemovesModeledObjects(t *testing.T) {
 			c.Assert(live.Tables, qt.HasLen, 0)
 			c.Assert(live.Views, qt.HasLen, 0)
 			c.Assert(live.Topics, qt.HasLen, 0)
-			c.Assert(live.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(must.Must(live.FeatureObjects.All()), qt.DeepEquals, must.Must(workload.All()))
 			c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), "ptah_ydb_dropall")
 			_, lockErr := nodeConfig(c, driver, ydbcoordination.LockNode)
 			c.Assert(lockErr, qt.IsNil)

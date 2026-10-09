@@ -969,7 +969,7 @@ YDB keeps both behind its `EnableResourcePools` feature flag, which is off by
 default on every line, so every YDB preset says `resource_pools` is false.
 Turn the flag on and name the cluster's monitoring endpoint in the URL, and
 Ptah reads the flag when it connects (see [Feature flags](#feature-flags)).
-Without that, a declared pool or classifier is refused before anything runs,
+Without that, creating or changing a pool or classifier is refused before anything runs,
 and the refusal names the flag. `ptah schema render` cannot know a cluster's
 flags, so it refuses one too; `ptah schema apply` and a plan against a
 connection that read the flag write it.
@@ -1010,6 +1010,12 @@ reports it; `ptah db drop-all` and a dev database reset leave pools and
 classifiers in place. The read takes them from `.sys/resource_pools` and
 `.sys/resource_pool_classifiers`. HCL and DBML have no spelling for
 either, and a document in one of them leaves both namespaces uninspected.
+
+An uninspected workload namespace does not block migrations that only change
+tables. An observed pool such as `default` remains untouched without requiring
+workload DDL support. A declared pool or classifier still needs inspected settings
+or known absence before Ptah can plan its change.
+
 If a scheme listing names a pool whose settings the system views did not
 return, Ptah records that pool as unreadable. It cannot infer absence or invent
 settings from the listing alone.
@@ -1984,14 +1990,15 @@ and permissions.
 With the streaming-query capability enabled, the reader also preserves each
 query's body, run setting, and resource pool. See [Streaming queries](#streaming-queries).
 
-On a cluster with `EnableResourcePools` on, it also reads resource pools and their classifiers; see
+The reader preserves returned resource pools and classifiers even when workload
+DDL is disabled. Complete enumeration requires `EnableResourcePools`; see
 [Resource pools and classifiers](#resource-pools-and-classifiers) and
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
 column stores that group tables, streaming queries on a cluster whose flags
-Ptah did not read, resource pools on a cluster whose
-flags Ptah did not read, sequences other than a `Serial` column's, the settings
+Ptah did not read, resource pools whose settings the system views did not return,
+sequences other than a `Serial` column's, the settings
 of a table such as a TTL run interval and storage settings, a column family
 kept in memory with `keep_in_memory`, a changefeed holding a setting Ptah does
 not read, such as attributes, an AWS region, trace identifiers or a shared
