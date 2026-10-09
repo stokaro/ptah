@@ -47,7 +47,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
 | `core/schemapreparation` | Selected column-key and facet resolution with independent source and prepared captures. |
-| `core/schemaext` | Typed immutable feature values, positive source coverage, versioned codecs, and conservative operation effects. |
+| `core/schemaext` | Typed feature values, source coverage, explicit codecs, dependency captures, and conservative effects. |
 | `core/schemaprojection` | Target-owned CREATE defaults, constraint effects, and table-state predictions. |
 | `core/schemavalidation` | Whole-schema validation services with structured diagnostics and explicit completion. |
 | `engine` | Explicit provider registration, model codecs, and batched service dispatch. |

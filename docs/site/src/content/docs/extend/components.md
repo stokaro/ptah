@@ -366,7 +366,21 @@ Completed refusals carry structured diagnostics without operations. The host
 converts them to `featureplan.RefusalError` before lowering the plan. Provider
 failures and cancellation return no diagnostics or operations.
 
-Pass that context and runtime to `safety.AssessRendered` or
+For a feature that refers to several objects, register
+`engine.Provider.Relations` and call `runtime.CaptureRelations` with complete
+captured values and source coverage. Owners return dependency references in one
+batch, without reading a database. The resulting
+`RelationSnapshot.CaptureRelated(ctx, subjects)` keeps each multi-table value
+intact and includes other values connected through its dependencies. Unknown
+namespaces or unresolved references return `schemaext.ErrIncompleteRelations`.
+
+The result is context for owner assessment. It does not authorize changing its
+prerequisites or expanding the user's selected scope. Built-in comparison and
+filtering do not invoke this service automatically; that integration is part of
+[#4140](https://github.com/stokaro/ptah/issues/4140). Independent providers can
+use the public batch and capture contracts without importing built-in engines.
+
+Pass the same `context.Context` and selected runtime to `safety.AssessRendered` or
 `AssessRenderedWithCapabilities` as well. Safety renders the assessment units
 in one batch and keeps each statement associated with its source operation.
 An extension's unknown effects still require manual review when it produces
