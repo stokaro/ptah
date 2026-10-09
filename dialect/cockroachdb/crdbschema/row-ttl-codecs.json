@@ -1,0 +1,38 @@
+{
+  "$id": "ptah.run/cockroachdb/row-ttl/v1",
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ttl_expiration_expression": {"type": "string", "minLength": 1, "pattern": "^[^\u0000]*$"},
+        "ttl_expire_after": {"type": "string", "minLength": 1, "pattern": "^[^\u0000]*$"},
+        "ttl_row_stats_poll_interval": {"type": "string", "minLength": 1, "pattern": "^[^\u0000]*$"},
+        "ttl_job_cron": {"type": "string", "minLength": 1, "pattern": "^[^\u0000]*$"},
+        "ttl_select_batch_size": {"type": "integer"},
+        "ttl_delete_batch_size": {"type": "integer"},
+        "ttl_select_rate_limit": {"type": "integer"},
+        "ttl_delete_rate_limit": {"type": "integer"},
+        "ttl_pause": {"const": true},
+        "ttl_label_metrics": {"const": true},
+        "ttl_disable_changefeed_replication": {"const": true}
+      },
+      "meaning": "Each property is a CockroachDB table storage parameter under its own name. An omitted property leaves the engine's default. A flag is written only when true. The derived ttl marker is never present."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/cockroachdb/row-ttl": {
+        "$ref": "#/$defs/policy",
+        "constraint": "One of ttl_expiration_expression and ttl_expire_after is required. Counts are at least 1. ttl_expire_after is an interval and ttl_row_stats_poll_interval a duration of at least one second, each in a form the owner reads. Text is not blank. The value requests exactly these parameters; its absence under complete source coverage requests no TTL."
+      }
+    },
+    "observed": {
+      "ptah.run/cockroachdb/row-ttl": {
+        "$ref": "#/$defs/policy",
+        "constraint": "One of ttl_expiration_expression and ttl_expire_after is present. Values keep the spelling the server stores. Absence on a table under complete read coverage is an observed absence; incomplete inspection belongs in coverage."
+      }
+    }
+  },
+  "canonicalization": "Strings must be valid UTF-8 and are kept verbatim, including whitespace and case. Property order carries no meaning. Do not read intervals or durations as values; comparison owns that."
+}
