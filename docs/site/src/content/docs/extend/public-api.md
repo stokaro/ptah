@@ -64,6 +64,10 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
+| `dialect/clickhouse/chast` | Typed TTL operations and explicit codecs. |
+| `dialect/clickhouse/chrender` | Owner-selected TTL rendering. |
+| `dialect/clickhouse/chplan` | TTL planning and common-column dependencies. |
+| `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
@@ -158,8 +162,8 @@ Replies must set `Complete`. The migration comparator captures table facets and
 applies effective desired settings before capturing common table changes. Other
 attachment points currently refuse because they lack comparison identity capture.
 Adding a provider does not add coverage claims to an existing source.
-Comparison binds table coverage claims to the connection's identifier semantics
-before selecting parent state. The default database applies to unqualified table
+Comparison and reverse CREATE projection bind table coverage claims to the
+connection's identifier semantics before selecting parent state. The default database applies to unqualified table
 claims; explicit schemas and knowledge limits remain intact. Conflicting claims
 for the resulting identity are refused.
 
@@ -217,35 +221,38 @@ fingerprints. A document records its provider, kind, representation, version,
 and model-definition hash. Unknown or incompatible definitions are errors;
 registering a codec alone does not grant a target support for that feature.
 
-`chschema.DesiredTable` distinguishes an omitted setting, a request for its
-default, and an explicit value. Explicit empty settings remain distinct from
-default requests. `ObservedTable` requires every setting, including empty
-optional values, and keeps sorting and primary keys separate. Register
-`chschema.Codecs()` with a provider to preserve these distinctions in envelopes.
-The bundled renderer and new-table migration planner consume programmatically
-supplied desired table facets, including reverse DROP plans. Mixing a typed facet
-with storage overrides is refused, including empty overrides. The reader captures
-typed settings; source properties reach their selected owner before rendering or
-comparison.
+`chschema.DesiredTable` distinguishes omitted settings, defaults, and explicit
+values, including empty values. `ObservedTable` requires complete settings and
+keeps sorting and primary keys separate. `chschema.Codecs()` preserves these
+distinctions. The bundled runtime consumes typed table facets through creation,
+comparison, planning, and reverse DROP plans. Mixing facets with storage
+overrides is refused, including empty overrides.
 
 Register `chcompare.Service` in a selected provider's `FacetComparisons` to
 compare resolved table settings. `chdiff.Table` and its codec retain complete
 before and after operands. Missing evidence needed for declared settings produces
 an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
-limits remain visible. The bundled runtime registers these services; migration
-planning refuses changes to existing table settings.
+limits remain visible. The bundled runtime registers these services.
 
-`chresolve.Table` keeps the original declaration beside fully explicit settings
-and records each property's source. On creation, omitted settings use creation
-rules. A default primary key inherits the sorting key; an explicit empty key
-stays empty. On an existing table, omitted settings require a usable observation.
-Missing evidence returns an error without a partial result.
+`chplan.Service` plans MergeTree TTL changes and assesses common column
+operations against captured storage. It orders required column additions before
+the TTL change and dependent removals after it. Unknown observations and
+modifications to columns used by retained storage rules are refused.
+`chast.AlterTTL` has explicit codecs and `chrender` handlers; it requires
+execution outside a transaction. Other storage-setting changes remain refused.
 
-`chconvert.Service` projects complete observations into explicit declarations and
-fully resolved declarations into predicted observations. Empty settings and
-separate key roles survive the conversion. The migration generator uses this
-projection when capturing what a reverse DROP removes. A prediction does not
-establish that a database was inspected.
+`chreverse.Service` restores the captured TTL definition and reports data that
+the reverse cannot recover. Its forward-state projection feeds reverse planning
+without establishing new inspection evidence.
+
+`chresolve.Table` retains the declaration, resolved settings, and each property's
+origin. Omitted creation settings use defaults; a default primary key inherits
+the sorting key. Existing tables require observations for omitted settings.
+Missing evidence returns no partial result.
+
+`chconvert.Service` converts complete observations to explicit declarations and
+resolved declarations to predictions. It preserves empty settings and separate
+key roles. Predictions support reverse planning and prove no database inspection.
 
 `Provider.Properties` declares source property ownership by target, format, and
 feature kind. The runtime validates complete batches before dispatch and rejects
@@ -269,11 +276,8 @@ comparison resolves the current document's creation rules before projecting it
 into catalog form. This prediction preserves explicit knowledge limits and proves
 no inspection or execution.
 
-The ClickHouse reader carries storage settings in `chschema.ObservedTable` facets.
-It preserves sorting and primary keys independently, including empty values.
-Coverage describes only tables retained in the read. `chreport.Service` supplies
-counts and omission labels for captured settings. Table-setting ALTER planning
-remains part of [#4140](https://github.com/stokaro/ptah/issues/4140).
+The ClickHouse reader supplies observed facets with coverage limited to retained
+tables. `chreport.Service` supplies their counts and omission labels.
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.

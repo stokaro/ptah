@@ -784,6 +784,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-clickhouse-chast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chast",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-clickhouse-chcompare",
       "kind": "public-package",
       "surface": "ptah.run/dialect/clickhouse/chcompare",
@@ -802,9 +808,21 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-clickhouse-chplan",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chplan",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-clickhouse-chprepare",
       "kind": "public-package",
       "surface": "ptah.run/dialect/clickhouse/chprepare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-clickhouse-chrender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chrender",
       "claimed_by": null
     },
     {
@@ -817,6 +835,12 @@
       "id": "gopkg-dialect-clickhouse-chresolve",
       "kind": "public-package",
       "surface": "ptah.run/dialect/clickhouse/chresolve",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-clickhouse-chreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chreverse",
       "claimed_by": null
     },
     {

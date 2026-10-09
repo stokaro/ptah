@@ -21,10 +21,8 @@
 // model -- the two surfaces have to give the same answer. Those comments are
 // stripped before execution, so nothing unrunnable reaches the server.
 //
-// The renderer is therefore both the second line of defense and the single
-// place that decides what ClickHouse can express: the planner stays free to
-// emit dialect-neutral nodes without needing to know every detail of
-// ClickHouse's syntax.
+// Common column operations join storage operations from the selected feature
+// service in one dependency graph before any AST nodes are returned.
 package clickhouse
 
 import (
@@ -36,14 +34,11 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
-	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -151,12 +146,14 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := refusePrimaryKeyChanges(diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseFeatureChanges(platform.ClickHouse, diff); err != nil {
-		return nil, err
-	}
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff)
-	result = p.modifyExistingTables(result, diff)
+	before := result
+	columns, err := p.modifyExistingTables(nil, diff)
+	if err != nil {
+		return nil, err
+	}
+	result = nil
 	result, err = planObjectsAfterTables(result, diff, p.capabilities())
 	if err != nil {
 		return nil, err
@@ -172,7 +169,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 
 	result = p.removeTables(result, diff)
 
-	return result, nil
+	return p.scheduleStorage(ctx, runtime, diff, before, columns, result)
 }
 
 // addNewTables emits CREATE TABLE for every declared table the diff creates.
@@ -188,9 +185,8 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, platform.ClickHouse).InDependencyOrder()
 	for _, creation := range creations {
-		// FromTable applies platform.clickhouse.* overrides into the AST
-		// node's Options map (uppercased), which the renderer then reads
-		// to build the ENGINE clause.
+		// The captured creation carries prepared storage facets alongside the
+		// common columns; the selected renderer owns their SQL spelling.
 		tableNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse, creation.Constraints)
 		result = append(result, tableNode)
 	}
@@ -198,15 +194,8 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	return result
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	for _, td := range diff.TablesModified {
-		structName := lookupStructName(diff.DeclaredTables, td.TableName, semantics)
-		if structName == "" {
-			result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find struct for table %s; skipping modifications", td.TableName)))
-			continue
-		}
-
 		// The column travels WITH the change, on both paths: an addition carries
 		// the column it adds and a modification carries the column it renders
 		// (stokaro/ptah#2315). There is no lookup left to fail.
@@ -220,8 +209,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 
 		for _, colDiff := range td.ColumnsModified {
 			if colDiff.Desired.Name == "" {
-				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: the diff carries no column definition for %s.%s; skipping MODIFY COLUMN", td.TableName, colDiff.ColumnName)))
-				continue
+				return nil, fmt.Errorf("%w: the diff carries no column definition for %s.%s", ptaherr.ErrInvalidSchemaDiff, td.TableName, colDiff.ColumnName)
 			}
 			col := modelast.FromField(colDiff.Desired, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			// The previous default is what lets the renderer remove one: a
@@ -250,7 +238,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 			})
 		}
 	}
-	return result
+	return result, nil
 }
 
 // refusePrimaryKeyChanges refuses a plan that moves a column into or out of an
@@ -346,18 +334,6 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		result = append(result, ast.NewDropTable(name).SetIfExists().SetComment("WARNING: dropping table will delete all data"))
 	}
 	return result
-}
-
-func lookupStructName(
-	declared []schemamodel.Table,
-	tableName string,
-	semantics identifier.Semantics,
-) string {
-	table := objectlookup.Qualified(declared, tableName, semantics)
-	if table == nil {
-		return ""
-	}
-	return table.StructName
 }
 
 func previousColumnType(change string) string {

@@ -5,6 +5,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
+	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/internal/ydbextensions"
 )
 
@@ -13,6 +14,9 @@ import (
 func extensionsFor(dialect string) (renderer.Extensions, error) {
 	if platform.NormalizeDialect(dialect) == platform.YDB {
 		return ydbextensions.Registry()
+	}
+	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
+		return chrender.Registry()
 	}
 	return renderer.Extensions{}, nil
 }

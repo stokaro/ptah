@@ -72,6 +72,9 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 		schemamodel.Field{StructName: "Existing", Name: "id", Type: "BIGINT", Primary: true, Nullable: false},
 		schemamodel.Field{StructName: "Existing", Name: "new_col", Type: "INTEGER", Nullable: false},
 	)
+	captured := capturedColumnFixture(schemamodel.Table{Name: "existing", StructName: "Existing"})
+	diff.TablesModified[0].Desired, diff.TablesModified[0].Current = captured.Desired, captured.Current
+	diff.TablesRemoved[0].Current = capturedColumnFixture(schemamodel.Table{Name: "legacy"}).Current
 
 	p := clickhouse.New()
 	nodes, err := p.GenerateMigrationAST(

@@ -8,9 +8,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
@@ -32,6 +35,8 @@ func TestEveryPlannerButYDBRefusesChangefeedChanges(t *testing.T) {
 
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName: "users",
+		Current:   schemacapture.TableObservation{Table: catalog.Table{Name: "users"}},
+		Desired:   schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "users"}},
 		FeatureChanges: []schemaext.ChangeRecord{{
 			Subject: ydbschema.ChangefeedRef("", "users", "updates"),
 			Value:   &ydbdiff.Changefeed{After: &ydbschema.DesiredChangefeed{Spec: ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}}},

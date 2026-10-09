@@ -129,7 +129,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseDropsViewBeforeSourceTable(t 
 		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{
 			ViewsRemoved:  difftypes.ViewChanges{{Name: "analytics.active_users"}},
-			TablesRemoved: difftypes.TableRemovals{{Name: "analytics.users"}},
+			TablesRemoved: difftypes.TableRemovals{{Name: "analytics.users", Current: clickhouseTableCapture("analytics", "users")}},
 		},
 
 		platform.ClickHouse,

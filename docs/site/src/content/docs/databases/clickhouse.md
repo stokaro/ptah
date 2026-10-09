@@ -72,6 +72,19 @@ the same columns. The engine is taken with its parameters — a
 is the one that changes what the data does rather than how fast it is read: a
 table replayed without it keeps rows it was configured to delete.
 
+Ptah plans changes to a MergeTree table's TTL with `MODIFY TTL`; an explicitly
+empty TTL uses `REMOVE TTL`. Omitting TTL from the desired settings retains the
+inspected rule. The plan requires a complete storage observation. When a rule
+moves to a new column, the plan adds that column, changes TTL, then removes the
+old column. A column still used by the resulting TTL or another storage clause
+cannot be removed or modified by this plan.
+
+The reverse migration restores the captured rule. It cannot restore rows or
+values already expired or aggregated, or undo TTL data movement. TTL operations
+run outside a transaction. Changes to the engine, sorting or primary key,
+partitioning, sampling, or table settings require a separate supported storage
+plan and are refused.
+
 A MySQL-family storage engine is refused rather than rendered. A table's engine
 reaches the renderer through the same key both families fill, so `engine =
 "InnoDB"` on a struct, and `ENGINE=InnoDB` in a SQL source, arrive

@@ -43,9 +43,9 @@ func PrimaryKeyColumns(table schemamodel.Table, columns []string) (map[string]bo
 // ReferencedColumns identifies declared columns used by a key expression.
 // An empty clause has no columns; it does not imply an inherited key.
 func ReferencedColumns(clause string, columns []string) map[string]bool {
-	known := make(map[string]bool, len(columns))
+	known := make(map[string]string, len(columns))
 	for _, column := range columns {
-		known[column] = true
+		known[unquote(column)] = column
 	}
 	used := make(map[string]bool)
 	tokens := significantTokens(clause)
@@ -56,7 +56,7 @@ func ReferencedColumns(clause string, columns []string) map[string]bool {
 		if i+1 < len(tokens) && tokens[i+1].MatchOperatorValue("(") {
 			continue
 		}
-		if name := unquote(token.Value); known[name] {
+		if name, found := known[unquote(token.Value)]; found {
 			used[name] = true
 		}
 	}

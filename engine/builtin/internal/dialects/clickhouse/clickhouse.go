@@ -963,6 +963,10 @@ func (r *Renderer) writeEngineSpec(spec tableEngineSpec) {
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	for _, op := range node.Operations {
 		switch op := op.(type) {
+		case *ast.ExtensionAlterOperation:
+			if err := r.renderOwnedExtension(node, ast.AlterExtension, op.Payload); err != nil {
+				return err
+			}
 		case *ast.AddColumnOperation:
 			colLine, err := r.renderColumn(op.Column)
 			if err != nil {
