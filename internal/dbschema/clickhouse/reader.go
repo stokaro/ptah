@@ -95,7 +95,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read tables: %w", err)
 	}
-	indexes, indexRead, err := r.readSkippingIndexes(ctx, dbName)
+	indexes, indexKnowledge, err := r.readSkippingIndexes(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read indexes: %w", err)
 	}
@@ -116,7 +116,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		Views:    views,
 		MatViews: matViews,
 	}, revisiontable.NativeNames())
-	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexRead)
+	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexKnowledge)
 	if err != nil {
 		return nil, err
 	}
@@ -505,68 +505,49 @@ func (r *Reader) skippingIndexTablePresent(ctx context.Context) (bool, error) {
 	return n > 0, nil
 }
 
-// indexCoverage is what one read established about skipping-index settings:
-// knowledge for the whole database, and the indexes whose settings it could
-// read but not represent.
-type indexCoverage struct {
-	knowledge schemaext.Knowledge
-	limited   []catalog.Index
-}
-
-// limitedIndexReason explains an index read without its type's parameters.
-const limitedIndexReason = "the server has no system.data_skipping_indices.type_full column, " +
-	"so an index type is read without its parameters"
-
 // readSkippingIndexes reports every data-skipping index of the database and
 // what the read established about their settings. The type and granularity are
 // the ClickHouse owner's observation, attached as a facet.
 // system.data_skipping_indices lists every skipping index with its settings,
 // so a server that has it establishes them for the whole database, including
 // the absence of any index it does not list. Without it nothing is known.
-func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]catalog.Index, indexCoverage, error) {
+func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]catalog.Index, schemaext.Knowledge, error) {
 	// system.data_skipping_indices was added in 21.x; on very old servers it
 	// is absent. Feature-detect by probing system.tables before querying so
 	// real failures aren't swallowed by an error-substring sniff.
 	present, err := r.skippingIndexTablePresent(ctx)
 	if err != nil {
-		return nil, indexCoverage{}, fmt.Errorf("clickhouse: detect system.data_skipping_indices: %w", err)
+		return nil, schemaext.Knowledge{}, fmt.Errorf("clickhouse: detect system.data_skipping_indices: %w", err)
 	}
 	if !present {
-		return nil, indexCoverage{knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the server has no system.data_skipping_indices table"}}, nil
-	}
-	// type_full preserves parameters such as the set size or Bloom-filter
-	// probability; type contains only the index type's name. A server
-	// without the column still lists every index, so the read keeps the
-	// indexes and reports their settings as unrepresentable rather than
-	// failing or inventing parameters.
-	full, err := r.skippingIndexFullTypePresent(ctx)
-	if err != nil {
-		return nil, indexCoverage{}, fmt.Errorf("clickhouse: detect system.data_skipping_indices.type_full: %w", err)
-	}
-	typeColumn := "type"
-	if full {
-		typeColumn = "type_full"
+		return nil, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the server has no system.data_skipping_indices table"}, nil
 	}
 
 	// system.data_skipping_indices exposes `granularity` as UInt64, and the
 	// owner's model keeps the whole range.
+	// type_full preserves parameters such as the set size or Bloom-filter
+	// probability; type contains only the index type's name, so an index read
+	// from it could not be rebuilt or compared. The read requires the column
+	// rather than degrading: every release line Ptah tests, 24.10 through 26.9,
+	// has it, and a read without it would have to report each index's settings
+	// as unknown.
 	// The same inner-table subtraction the table read applies: an index on a
 	// materialized view's storage belongs to a table this reader does not
 	// report, and an index whose TableName names nothing in the schema is a
 	// change the comparator cannot resolve.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT table, name, expr, `+typeColumn+`, granularity
+		SELECT table, name, expr, type_full, granularity
 		FROM system.data_skipping_indices
 		WHERE database = ?
 		  AND table NOT IN (`+materializedViewInnerTablesSubquery+`)
 		ORDER BY table, name
 	`, dbName, dbName)
 	if err != nil {
-		return nil, indexCoverage{}, err
+		return nil, schemaext.Knowledge{}, fmt.Errorf("read system.data_skipping_indices with its type_full column, "+
+			"which every release line Ptah tests (24.10 through 26.9) has; a server without it is not supported: %w", err)
 	}
 	defer rows.Close()
 
-	read := indexCoverage{knowledge: schemaext.Knowledge{State: schemaext.Complete}}
 	var indexes []catalog.Index
 	for rows.Next() {
 		var (
@@ -574,43 +555,28 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 			granularity                uint64
 		)
 		if err := rows.Scan(&table, &name, &expr, &idxType, &granularity); err != nil {
-			return nil, indexCoverage{}, err
+			return nil, schemaext.Knowledge{}, err
+		}
+		settings, err := observedIndexSettings(idxType, granularity)
+		if err != nil {
+			return nil, schemaext.Knowledge{}, fmt.Errorf("index %s on %s: %w", name, table, err)
 		}
 		// Columns[0] holds the key expression for the common diff layer,
 		// which compares Columns; Expression keeps it whole for the reports
 		// that read an expression index.
-		index := catalog.Index{
+		indexes = append(indexes, catalog.Index{
+			Facets:     settings,
 			Name:       name,
 			TableName:  table,
 			Columns:    []string{expr},
 			Definition: fmt.Sprintf("INDEX %s %s TYPE %s GRANULARITY %d", name, expr, idxType, granularity),
 			Expression: expr,
-		}
-		if !full {
-			read.limited = append(read.limited, index)
-			indexes = append(indexes, index)
-			continue
-		}
-		index.Facets, err = observedIndexSettings(idxType, granularity)
-		if err != nil {
-			return nil, indexCoverage{}, fmt.Errorf("index %s on %s: %w", name, table, err)
-		}
-		indexes = append(indexes, index)
+		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, indexCoverage{}, err
+		return nil, schemaext.Knowledge{}, err
 	}
-	return indexes, read, nil
-}
-
-// skippingIndexFullTypePresent reports whether system.data_skipping_indices
-// has the type_full column.
-func (r *Reader) skippingIndexFullTypePresent(ctx context.Context) (bool, error) {
-	var present uint8
-	if err := r.db.QueryRowContext(ctx, `SELECT hasColumnInTable('system', 'data_skipping_indices', 'type_full')`).Scan(&present); err != nil {
-		return false, err
-	}
-	return present != 0, nil
+	return indexes, schemaext.Knowledge{State: schemaext.Complete}, nil
 }
 
 // readRefreshableViews returns the names of the materialized views the server

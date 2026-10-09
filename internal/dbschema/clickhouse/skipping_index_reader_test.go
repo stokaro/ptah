@@ -2,6 +2,7 @@ package clickhouse_test
 
 import (
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -39,21 +40,17 @@ func parameterizedIndexQuery(indexType string, granularity uint64) dbtest.QueryH
 	}
 }
 
-// withoutFullTypeQuery answers like a server whose data_skipping_indices has
-// no type_full column, as a column read of it would fail.
+// errNoFullType is the answer of a server whose data_skipping_indices has no
+// type_full column.
+var errNoFullType = errors.New("missing columns: 'type_full'")
+
+// withoutFullTypeQuery answers like a server without the type_full column.
 func withoutFullTypeQuery(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 	switch {
 	case strings.Contains(query, "engine LIKE '%MergeTree'"):
 		return settingsReaderQuery("MergeTree ORDER BY id")(query, args)
-	case strings.Contains(query, "hasColumnInTable('system', 'data_skipping_indices', 'type_full')"):
-		return dbtest.QueryResult{Columns: []string{"present"}, Rows: [][]driver.Value{{uint8(0)}}}, nil
 	case strings.Contains(query, "FROM system.data_skipping_indices") && strings.Contains(query, "type_full"):
-		return dbtest.QueryResult{}, fmt.Errorf("Missing columns: 'type_full'")
-	case strings.Contains(query, "FROM system.data_skipping_indices"):
-		return dbtest.QueryResult{
-			Columns: []string{"table", "name", "expr", "type", "granularity"},
-			Rows:    [][]driver.Value{{"events", "idx_value", "value", "set", uint64(4)}},
-		}, nil
+		return dbtest.QueryResult{}, errNoFullType
 	default:
 		return clickHouseIndexPresentReaderQuery(query, args)
 	}
@@ -138,21 +135,15 @@ func TestSkippingIndexReaderRefusesAnIncompleteRow(t *testing.T) {
 	}
 }
 
-// A server whose system.data_skipping_indices has no type_full column still
-// lists every index. The read keeps them, from the bare type column, and
-// reports their settings as unrepresentable instead of failing the whole read
-// or inventing a type without its parameters.
-func TestSkippingIndexReaderWithoutTheFullTypeColumnLimitsEachIndex(t *testing.T) {
+// TestSkippingIndexReaderWithoutTheFullTypeColumn_FailurePath refuses a server
+// whose catalog has no type_full column, and says which column and which
+// release lines. The bare type column drops parameters such as set(100), so a
+// read from it could neither rebuild an index nor compare its settings.
+func TestSkippingIndexReaderWithoutTheFullTypeColumn_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, withoutFullTypeQuery)
 	schema, err := clickhouse.NewClickHouseReader(db.SQL, "analytics").ReadSchemaContext(t.Context())
-	c.Assert(err, qt.IsNil)
-	c.Assert(schema.Indexes, qt.HasLen, 1)
-	c.Assert(schema.Indexes[0].Columns, qt.DeepEquals, []string{"value"})
-	c.Assert(schema.Indexes[0].Facets.IsZero(), qt.IsTrue)
-	identities := objectidentity.NewBuilder(identifier.ForDialect("clickhouse"))
-	knowledge := schema.FeatureCoverage.Lookup(chschema.IndexKind, identities.IndexParts("", "events", "idx_value"))
-	c.Assert(knowledge.State, qt.Equals, schemaext.Unrepresentable)
-	c.Assert(knowledge.Reason, qt.Contains, "type_full")
-	c.Assert(schema.FeatureCoverage.Lookup(chschema.IndexKind, identities.IndexParts("", "events", "not_listed")).State, qt.Equals, schemaext.Complete)
+	c.Assert(err, qt.ErrorIs, errNoFullType)
+	c.Assert(err, qt.ErrorMatches, `(?s).*type_full column, which every release line Ptah tests \(24\.10 through 26\.9\) has.*`)
+	c.Assert(schema, qt.IsNil)
 }
