@@ -234,16 +234,16 @@ before and after operands. Missing evidence needed for declared settings produce
 an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
 limits remain visible. The bundled runtime registers these services.
 
-`chplan.Service` plans MergeTree TTL changes, adding required columns before
-the rule change and removing retired columns afterward. Unknown observations
-and changes to columns used by retained storage are refused.
+`chplan.Service` orders MergeTree TTL changes after required column additions
+and before dependent removals. It refuses unknown observations and changes to
+columns used by retained storage.
 `chast.AlterTTL` uses explicit codecs and `chrender` handlers outside transactions.
-Wrap it in `ast.ExtensionAlterOperation` under an `ast.AlterTableNode`. Empty TTL
-removes the rule; whitespace-only rules are invalid. Other storage changes and
-non-owning targets are refused without partial SQL.
+Wrap it in `ast.ExtensionAlterOperation` under `ast.AlterTableNode`. Empty TTL
+removes the rule. Whitespace-only rules, other storage changes, and non-owning
+targets are refused without partial SQL.
 
-`chast.AddSkippingIndex` uses this envelope with defaults `minmax` and
-`GRANULARITY 1`. Other targets refuse it.
+`chast.AddSkippingIndex` uses this envelope, defaults to `minmax` and
+`GRANULARITY 1`, and requires its owner renderer.
 
 `chreverse.Service` restores the captured TTL definition and reports data loss.
 Its state projection feeds reverse planning without claiming new inspection.
