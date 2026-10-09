@@ -30,15 +30,19 @@ import (
 // every PostgreSQL, CockroachDB, YugabyteDB and Spanner cell, through both
 // surfaces.
 func TestSurfaces_RenderTheSameBytesTwice(t *testing.T) {
+	// A selected runtime serves a whole schema session. Rebuilding its codec
+	// registry for every cell measures registration thousands of times and
+	// exhausts the package timeout before the failure-boundary tests run.
+	runtime := must.Must(builtin.New())
 	surfaces := []struct {
 		name    string
 		surface func(schemamodel.Database, capabilityprobe.Cell) (string, error)
 	}{
 		{name: "render", surface: func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-			return renderOne(t.Context(), must.Must(builtin.New()), schema, cell)
+			return renderOne(t.Context(), runtime, schema, cell)
 		}},
 		{name: "plan", surface: func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-			return planOne(t.Context(), must.Must(builtin.New()), schema, cell)
+			return planOne(t.Context(), runtime, schema, cell)
 		}},
 	}
 
