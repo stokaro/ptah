@@ -6314,8 +6314,8 @@ func (p *Parser) parseAddSkippingIndex() (ast.AlterOperation, error) {
 // is arbitrary, and a type carries its own parameters -- `set(100)`,
 // `bloom_filter(0.01)`, `tokenbf_v1(256, 2, 0)` -- so neither survives being
 // rebuilt from tokens. GRANULARITY is optional and, when present, a positive
-// unsigned 64-bit number; a missing one is left to the owner, which keeps an
-// existing index's granularity and creates a new one with ClickHouse's default.
+// unsigned 64-bit number; a missing one is zero here, which the operation reads
+// as ClickHouse defines it: one granule, for a new index and an existing one.
 func (p *Parser) parseSkippingIndex() (*chast.AddSkippingIndex, error) {
 	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
 		return nil, err

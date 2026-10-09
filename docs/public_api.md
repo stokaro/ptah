@@ -111,9 +111,10 @@ Invalid identities and feature state without an AST lowering path return a nil
 list. Table facets and named feature children remain attached to their table,
 and index facets to their index node. Facet values and target bindings reach
 the selected renderer unchanged; lowering does not establish that the renderer
-supports them. Other facet placements are refused. Standalone objects use the selected declaration owners and join the
-common creation graph. Missing owners, incomplete receipts, graph conflicts,
-and cancellation return no statement list.
+supports them. Other facet placements are refused. Standalone objects use the
+selected declaration owners and join the common creation graph. Missing owners,
+incomplete receipts, graph conflicts, and cancellation return no statement
+list.
 Coverage records describe source knowledge and never authorize destructive SQL.
 A concrete table facet with an explicit absent claim is refused before visiting
 any statement.
@@ -598,7 +599,9 @@ the common index parts.
 values retain their full precision through the codecs. `ObservedIndex.Desired`
 makes settings explicit, while `DesiredIndex.Observed` refuses unresolved
 settings. Null, duplicate or unknown fields, and invalid intent are refused.
-Registering these codecs establishes model understanding without granting
+`ValidateDesiredIndex` also refuses an explicit type that names a PostgreSQL or
+MySQL access method, such as `GIN` or `BTREE`, as an invalid model value,
+because no ClickHouse server accepts one. Registering these codecs establishes model understanding without granting
 target support or inspection completeness.
 
 The bundled runtime registers the table and skipping-index models with their
@@ -631,10 +634,12 @@ Engine, key, partitioning, sampling, and table-setting changes remain refused.
 unsigned 64-bit index granularity. Its explicit codec and `chrender` handler
 work without the bundled runtime. Use the same ALTER envelope and parent as TTL
 operations. An empty type selects `minmax`; zero granularity selects `1`.
+`Validate` holds a type to `chschema.ValidateDesiredIndex`.
 `DeclaredFacets` returns the operation's settings as a `chschema.DesiredIndex`
-facet bound to the clickhouse target. Zero granularity is a SQL statement that
-left `GRANULARITY` out, which ClickHouse defines as one granule, so it requests
-the default. `SkippingIndexExpression` joins key parts the way ADD INDEX takes
+facet bound to the clickhouse target, stating what the operation renders: an
+empty type and zero granularity request the defaults, minmax and one granule,
+so a SQL statement that left `GRANULARITY` out means one granule, as ClickHouse
+defines it. `SkippingIndexExpression` joins key parts the way ADD INDEX takes
 them: several parts, or one part that is a top-level comma list as the catalog
 reports a tuple key, become one tuple.
 
@@ -737,12 +742,16 @@ followed by `chast.AddSkippingIndex` with the declared key expression and the
 desired settings, outside a transaction. Both operands must agree with the
 captured index on both table sides. The removal is ordered before common
 changes to columns the captured expression reads, and the addition after
-changes to columns the declared expression reads; removing a column the
-declared expression reads is refused. When the host's common steps drop and create the same index, the service contributes no
-steps and accounts for the change through that replacement. Parent receipts
-cover every table action: a surviving table keeps its settings unless a change
-or a common replacement covers the difference, a dropped table loses them, and
-a rebuild is refused.
+changes to columns the declared expression reads. When the host's common steps
+drop and create the same index, the service contributes no steps and accounts
+for the change through that replacement.
+
+Because the removal comes first, the service refuses a declared key that names a
+column the desired table does not declare, checking each bare key part and bare
+call argument, and a plan that removes a column the declared expression reads.
+Parent receipts cover every table action: a surviving table keeps its settings
+unless a change or a common replacement covers the difference, a dropped table
+loses them, and a rebuild is refused.
 
 `chreverse.IndexService` restores the captured definition and reports that
 replacement cannot restore materialized index data. Reverse planning projects
@@ -760,10 +769,10 @@ nothing else reads index properties. `Decode` applies the table and then the
 index rules. Export writes owned settings to scoped properties.
 
 These operations refuse duplicate alias keys and mixed typed and property
-declarations, even when a property's value is empty. They copy the selected owners and leave other
-schema data shared and read-only; a schema holding nothing to decode or export
-is returned as it is, so callers treat every result as read-only.
-They establish no inspection coverage and do not resolve omitted settings.
+declarations, even when a property's value is empty. They copy the selected
+owners, also when there is nothing to decode or export, and leave other schema
+data shared and read-only. Errors and cancellation return no schema. They
+establish no inspection coverage and do not resolve omitted settings.
 
 `dialect/cockroachdb/crdbschema` owns CockroachDB row-level TTL as a table
 facet under `RowTTLKind`. `DesiredRowTTL` and `ObservedRowTTL` each hold a
@@ -824,9 +833,10 @@ complete only for tables retained in that read. Each skipping index carries a
 `chschema.ObservedIndex` with the full type and unsigned granularity from
 `system.data_skipping_indices`; the key expression stays in the common
 columns. Index coverage is complete for the database when that catalog table
-exists and unknown otherwise. On a server without the `type_full` column, each
-index is read without a facet and its settings are reported unrepresentable.
-`chreport.Service` supplies the storage-settings count and omission label for formats that cannot retain facets.
+exists and unknown otherwise. A server whose catalog table has no `type_full`
+column fails the read with an error that names the column.
+`chreport.Service` supplies the storage-settings count and omission label for
+formats that cannot retain facets.
 Planning changes to storage settings other than TTL remains part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
