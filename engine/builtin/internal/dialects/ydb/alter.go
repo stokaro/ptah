@@ -116,8 +116,6 @@ func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.Alte
 		return r.addIndex(table, op.Index)
 	case *ast.ReplaceIndexOperation:
 		return nil, refuseFact(subject, "YDB replaces an index with a DROP INDEX and an ADD INDEX, each its own statement")
-	case *ast.AddSkippingIndexOperation:
-		return nil, refuseFact(subject, "a data-skipping index is ClickHouse's")
 	case *ast.RenameTableOperation:
 		return []string{prefix + "RENAME TO " + tablePath(op.NewName) + ";"}, nil
 	case *ast.SetCommentOperation:

@@ -241,5 +241,5 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 	c.Assert(sql, qt.Contains,
 		"ALTER TABLE `analytics`.`events``; DROP TABLE audit; --` DROP INDEX `idx``; DROP TABLE users; --`;")
 	c.Assert(sql, qt.Contains,
-		"ALTER TABLE `analytics`.`events``; DROP TABLE audit; --` ADD INDEX `idx``; DROP TABLE users; --` payload TYPE minmax GRANULARITY 8192;")
+		"ALTER TABLE `analytics`.`events``; DROP TABLE audit; --` ADD INDEX `idx``; DROP TABLE users; --` payload TYPE minmax GRANULARITY 1;")
 }

@@ -143,7 +143,6 @@ var nodeCensus = []censusRow{
 	// statement that carries it, and a renderer reached with one standing alone
 	// refuses it rather than emitting a fragment.
 	{node: &ast.AddIndexOperation{}},
-	{node: &ast.AddSkippingIndexOperation{}},
 	{node: &ast.AlterGeneratedColumnExpressionOperation{}},
 	{node: &ast.AlterColumnOperation{}},
 	{node: &ast.DropColumnOperation{}},

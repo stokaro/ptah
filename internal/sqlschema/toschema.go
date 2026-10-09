@@ -30,6 +30,7 @@ import (
 	"ptah.run/core/ast"
 	sqlplatform "ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/privilegefold"
@@ -1120,8 +1121,11 @@ func applyAlterOperation(
 ) error {
 	switch typed := op.(type) {
 	case *ast.ExtensionAlterOperation:
-		if added, ok := typed.Payload.(*ydbast.AddChangefeed); ok {
+		switch added := typed.Payload.(type) {
+		case *ydbast.AddChangefeed:
 			return appendChangefeed(target, added.Changefeed)
+		case *chast.AddSkippingIndex:
+			return appendSkippingIndex(database, target, added, sourcePlatform)
 		}
 		return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(op))
 	case *ast.AddColumnOperation:
@@ -1138,22 +1142,6 @@ func applyAlterOperation(
 		return applyAddConstraint(database, target, typed)
 	case *ast.AddIndexOperation:
 		return applyAddIndex(database, target, typed, sourcePlatform)
-	case *ast.AddSkippingIndexOperation:
-		// ClickHouse's data-skipping index arrives as an ALTER because that
-		// is how the ClickHouse renderer writes one (stokaro/ptah#1574).
-		_, tableName := normalizeSQLTableIdentifier(sourcePlatform, target.written)
-		database.Indexes = append(database.Indexes, schemamodel.Index{
-			Name:       normalizeSQLIdentifier(sourcePlatform, typed.Name),
-			StructName: tableName,
-			// The expression is one element, not a column list: it can be
-			// a function call or a tuple, and splitting it on commas would
-			// turn `(a, b)` into two indexes on columns that may not exist.
-			Fields:      []string{typed.Expression},
-			Type:        typed.IndexType,
-			Granularity: typed.Granularity,
-			TableName:   target.qualified,
-		})
-		return nil
 	case *ast.AlterColumnOperation:
 		return applyAlterColumn(target, typed)
 	case *ast.ModifyColumnOperation:

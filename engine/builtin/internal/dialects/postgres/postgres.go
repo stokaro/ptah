@@ -639,7 +639,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.ValidateConstraintOperation,
 		*ast.AddEnumValueOperation,
 		*ast.AddIndexOperation,
-		*ast.AddSkippingIndexOperation,
 		*ast.AlterGeneratedColumnExpressionOperation,
 		*ast.AlterColumnOperation,
 		*ast.CompositeAttributeOperation,
@@ -1371,8 +1370,6 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			// budget, the way the two TTL arms below already do; writeRename
 			// re-selects between them.
 			r.writeRename(node, operation)
-		case *ast.AddSkippingIndexOperation:
-			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
 		case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation,
 			*ast.SetRowDeletionPolicyOperation, *ast.DropRowDeletionPolicyOperation:
 			// Every row-expiry operation shares one branch so this switch keeps

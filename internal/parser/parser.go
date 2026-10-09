@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -6279,13 +6280,9 @@ func oneOperation(operation ast.AlterOperation, err error) ([]ast.AlterOperation
 // the other one -- semantically the same index, and stable from the first
 // render onwards.
 func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
-	operation, err := p.parseAddSkippingIndex()
+	index, err := p.parseSkippingIndex()
 	if err != nil {
 		return err
-	}
-	index, ok := operation.(*ast.AddSkippingIndexOperation)
-	if !ok {
-		return fmt.Errorf("internal: skipping index parsed as %T", operation)
 	}
 	table.AddIndex(&ast.IndexNode{
 		Name:        index.Name,
@@ -6297,7 +6294,15 @@ func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
 	return nil
 }
 
-// parseAddSkippingIndex reads
+func (p *Parser) parseAddSkippingIndex() (ast.AlterOperation, error) {
+	index, err := p.parseSkippingIndex()
+	if err != nil {
+		return nil, err
+	}
+	return &ast.ExtensionAlterOperation{Payload: index}, nil
+}
+
+// parseSkippingIndex reads
 // `INDEX <name> <expression> TYPE <type> [GRANULARITY <n>]`.
 //
 // The expression and the type are both captured as source text: an expression
@@ -6305,7 +6310,7 @@ func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
 // `bloom_filter(0.01)`, `tokenbf_v1(256, 2, 0)` -- so neither survives being
 // rebuilt from tokens. GRANULARITY is optional; the renderer supplies
 // ClickHouse's documented default for a missing one.
-func (p *Parser) parseAddSkippingIndex() (ast.AlterOperation, error) {
+func (p *Parser) parseSkippingIndex() (*chast.AddSkippingIndex, error) {
 	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
 		return nil, err
 	}
@@ -6334,7 +6339,7 @@ func (p *Parser) parseAddSkippingIndex() (ast.AlterOperation, error) {
 		return nil, fmt.Errorf("expected an index type after TYPE at position %d", typeStart)
 	}
 
-	operation := &ast.AddSkippingIndexOperation{
+	operation := &chast.AddSkippingIndex{
 		Name:       name,
 		Expression: expression,
 		IndexType:  indexType,

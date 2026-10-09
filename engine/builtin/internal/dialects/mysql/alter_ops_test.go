@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/engine/builtin/internal/dialects/mysql"
 )
 
@@ -185,16 +187,13 @@ func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "DEFAULT 'false'")
 }
 
-func TestMySQL_AlterTable_ClickHouseSkippingIndexEmitsComment(t *testing.T) {
+func TestMySQL_AlterTable_ClickHouseSkippingIndexRefused(t *testing.T) {
 	c := qt.New(t)
-	alter := &ast.AlterTableNode{
-		Name: "events",
-		Operations: []ast.AlterOperation{
-			&ast.AddSkippingIndexOperation{Name: "idx_e_src", Expression: "source"},
-		},
-	}
-	out := renderMySQL(t, alter)
-
-	c.Assert(out, qt.Contains, "-- MYSQL: data-skipping indexes are ClickHouse-specific; ignored.")
-	c.Assert(out, qt.Not(qt.Contains), "ADD INDEX")
+	alter := &ast.AlterTableNode{Name: "events", Operations: []ast.AlterOperation{
+		&ast.ExtensionAlterOperation{Payload: &chast.AddSkippingIndex{Name: "idx_e_src", Expression: "source"}},
+	}}
+	r := mysql.New()
+	out, err := r.Render(alter)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(out, qt.Equals, "")
 }

@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 )
 
@@ -404,7 +405,7 @@ func TestVisitIndex_DefaultsToMinmaxSkippingIndex(t *testing.T) {
 	c := qt.New(t)
 	idx := ast.NewIndex("idx_e_src", "events", "source")
 	out := render(t, idx)
-	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 8192;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 1;")
 }
 
 func TestVisitIndex_MultiColumnExpression(t *testing.T) {
@@ -656,7 +657,7 @@ func TestVisitIndex_UniqueEmitsDowngradeComment(t *testing.T) {
 	idx.Unique = true
 	out := render(t, idx)
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: UNIQUE index \"uq_e_src\" downgraded to a minmax skipping index")
-	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `uq_e_src` source TYPE minmax GRANULARITY 8192;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `uq_e_src` source TYPE minmax GRANULARITY 1;")
 }
 
 func TestAlterTable_RenameColumn(t *testing.T) {
@@ -719,12 +720,12 @@ func TestCreateTableSelectTailRequiresValidEngine(t *testing.T) {
 func TestAlterTable_AddSkippingIndex(t *testing.T) {
 	cases := []struct {
 		name string
-		op   *ast.AddSkippingIndexOperation
+		op   *chast.AddSkippingIndex
 		want string
 	}{
 		{
 			name: "explicit type and granularity",
-			op: &ast.AddSkippingIndexOperation{
+			op: &chast.AddSkippingIndex{
 				Name:        "idx_e_src",
 				Expression:  "source",
 				IndexType:   "bloom_filter(0.01)",
@@ -733,17 +734,17 @@ func TestAlterTable_AddSkippingIndex(t *testing.T) {
 			want: "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE bloom_filter(0.01) GRANULARITY 64;",
 		},
 		{
-			name: "default granularity falls back to 8192",
-			op: &ast.AddSkippingIndexOperation{
+			name: "default granularity falls back to 1",
+			op: &chast.AddSkippingIndex{
 				Name:       "idx_e_src",
 				Expression: "source",
 				IndexType:  "minmax",
 			},
-			want: "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 8192;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 1;",
 		},
 		{
 			name: "default type falls back to minmax",
-			op: &ast.AddSkippingIndexOperation{
+			op: &chast.AddSkippingIndex{
 				Name:        "idx_e_src",
 				Expression:  "source",
 				Granularity: 16,
@@ -757,7 +758,7 @@ func TestAlterTable_AddSkippingIndex(t *testing.T) {
 			c := qt.New(t)
 			alter := &ast.AlterTableNode{
 				Name:       "events",
-				Operations: []ast.AlterOperation{tc.op},
+				Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: tc.op}},
 			}
 			out := render(t, alter)
 			c.Assert(out, qt.Contains, tc.want)
@@ -770,7 +771,7 @@ func TestAlterTable_AddSkippingIndex_MissingExpressionErrors(t *testing.T) {
 	alter := &ast.AlterTableNode{
 		Name: "events",
 		Operations: []ast.AlterOperation{
-			&ast.AddSkippingIndexOperation{Name: "idx_bad", IndexType: "minmax"},
+			&ast.ExtensionAlterOperation{Payload: &chast.AddSkippingIndex{Name: "idx_bad", IndexType: "minmax"}},
 		},
 	}
 	err := renderErr(alter)
@@ -802,7 +803,7 @@ func TestVisitIndex_AnnotationDrivenTypeAndGranularity(t *testing.T) {
 			name: "set with explicit max size and default granularity",
 			typ:  "set(100)",
 			gran: 0,
-			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE set(100) GRANULARITY 8192;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE set(100) GRANULARITY 1;",
 		},
 	}
 

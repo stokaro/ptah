@@ -259,9 +259,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		"AddIndexOperation": func() ast.Node {
 			return &ast.AddIndexOperation{Index: &ast.IndexNode{Name: "ix_c", Columns: []string{"c"}}}
 		},
-		"AddSkippingIndexOperation": func() ast.Node {
-			return &ast.AddSkippingIndexOperation{Name: "ix_c", Expression: "c", IndexType: "minmax", Granularity: 1}
-		},
 		"AlterColumnOperation": func() ast.Node {
 			return &ast.AlterColumnOperation{ColumnName: "c", Action: ast.AlterColumnDropDefault}
 		},

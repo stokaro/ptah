@@ -402,6 +402,8 @@ v0.13.0 ptah.run/core/renderer
 # #4140 puts changefeed operations in dialect/ydb/ydbast and TTL operations in
 # dialect/clickhouse/chast. ModifyTTLOperation is removed; callers supply the
 # complete before/after storage operands required by chast.AlterTTL.
+# AddSkippingIndexOperation also moves to chast.AddSkippingIndex. Other targets
+# refuse that operation, and zero index granularity uses the server default 1.
 # Callers wrap the owner payload in ExtensionAlterOperation. The common ALTER
 # interface remains sealed. This changes the Go API; pre-v1, so no compatibility
 # is owed. No aliases or legacy reader remain. The implementation follows the

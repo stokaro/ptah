@@ -1233,7 +1233,7 @@ type IndexNode struct {
 	// ClickHouse-specific features
 	// Granularity is the GRANULARITY value for data-skipping indexes. Zero
 	// instructs the ClickHouse renderer to fall back to its documented
-	// default (8192). Ignored by non-ClickHouse renderers.
+	// default (1). Ignored by non-ClickHouse renderers.
 	Granularity int
 
 	// ForeignKeyIndex marks the index a MySQL `FOREIGN KEY name (columns)`

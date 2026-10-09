@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
@@ -109,7 +110,9 @@ func TestParserReadsAnAddedSkippingIndex(t *testing.T) {
 			c := qt.New(t)
 
 			alter := parseOneAlter(c, tt.statement)
-			operation, ok := alter.Operations[0].(*ast.AddSkippingIndexOperation)
+			envelope, ok := alter.Operations[0].(*ast.ExtensionAlterOperation)
+			c.Assert(ok, qt.IsTrue)
+			operation, ok := envelope.Payload.(*chast.AddSkippingIndex)
 			c.Assert(ok, qt.IsTrue)
 
 			c.Assert(operation.Expression, qt.Equals, tt.wantExpression)
@@ -254,7 +257,7 @@ func TestAnInlineSkippingIndexSurvivesARoundTrip(t *testing.T) {
 	// The renderer writes every skipping index as an ALTER, so the inline form
 	// comes back in the other spelling -- the same index, and stable from the
 	// first render onwards. The granularity is the discriminator: dropped
-	// anywhere along the way, the renderer substitutes 8192 and the assertion
+	// anywhere along the way, the renderer substitutes 1 and the assertion
 	// reads a plausible number that nobody asked for.
 	first := renderClickHouseSchema(c,
 		"CREATE TABLE t (a Int32 NOT NULL, b Int32 NOT NULL, INDEX idx_b b TYPE set(100) GRANULARITY 4)"+
