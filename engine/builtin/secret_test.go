@@ -84,11 +84,12 @@ func TestRender_Secret_FailurePath(t *testing.T) {
 		{name: "ydb 25.1", dialect: platform.YDB, caps: capability.YDB251(), database: secretSchema("ext", "pw"),
 			wantErr: `secret ext/pw, which requires target capability secrets, unavailable on this ydb target`, wantIs: ptaherr.ErrUnsupportedFeature},
 		{name: "a table's path", dialect: platform.YDB, caps: capability.YDB262(), database: secretSchema("app", "notes"),
-			wantErr: `.*secret create conflicts with create at scheme path.*`, wantIs: ptaherr.ErrInvalidSchemaDiff},
+			wantErr: `secret create conflicts with create at scheme path ptah\.run/ydb/scheme-path app\.notes`, wantIs: ptaherr.ErrInvalidSchemaDiff},
 	}
 	for _, other := range secretlessTargets {
 		tests = append(tests, target{name: other.dialect, dialect: other.dialect, caps: other.caps.With(capability.Secrets, true),
-			database: secretSchema("ext", "pw"), wantErr: `.*`, wantIs: ptaherr.ErrUnsupportedFeature})
+			database: secretSchema("ext", "pw"),
+			wantErr:  `unsupported feature: feature objects are not registered for target "` + other.dialect + `"`, wantIs: ptaherr.ErrUnsupportedFeature})
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -115,6 +116,8 @@ func TestRender_SecretOperation_NonOwningRenderersRefuse(t *testing.T) {
 				{Operation: ydbast.SecretDrop, Schema: "ext", Name: "pw"},
 			} {
 				sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps.With(capability.Secrets, true), &ast.ExtensionStatement{Payload: operation})
+				c.Assert(err, qt.ErrorMatches, `target "`+test.dialect+`" does not support extension "ptah\.run/ydb/secret-operation" in role "statement"`,
+					qt.Commentf("%s", operation.Operation))
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature, qt.Commentf("%s", operation.Operation))
 				c.Assert(sql, qt.Equals, "")
 			}
