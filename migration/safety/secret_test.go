@@ -73,7 +73,7 @@ func TestClassifySchemaDiff_Secrets(t *testing.T) {
 		want   safety.Severity
 	}{
 		{name: "dropped", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}, want: safety.Destructive},
-		{name: "rotated", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{Rotate: true}}, want: safety.Warning},
+		{name: "rotated", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{}}, want: safety.Warning},
 		{name: "created", change: &ydbdiff.Secret{After: &ydbsecret.Desired{}}, want: safety.Safe},
 	}
 	for _, test := range tests {

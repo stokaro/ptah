@@ -15,13 +15,14 @@ import (
 
 // registerSecretServices selects the YDB secret owner for target. Secrets plan
 // in a batch of their own: a secret orders itself against the common
-// statements that read it by path, and against the drop that frees its path,
-// and no other owner's operation reads one.
+// statements that read it by path, and against the drops that free its path,
+// and no other owner's operation reads one. The comparison accepts rotation
+// requests, the one change no comparison can find for a secret.
 func registerSecretServices(provider *engine.Provider, target string) {
 	provider.Conversions = append(provider.Conversions,
 		engine.Conversion{Target: target, Kinds: []schemaext.Kind{ydbsecret.Kind}, Service: ydbconvert.SecretService{}})
 	provider.Comparisons = append(provider.Comparisons, engine.ObjectComparison{Target: target, Kinds: []schemaext.Kind{ydbsecret.Kind},
-		ChangeKinds: []schemaext.Kind{ydbdiff.SecretKind}, Service: ydbcompare.SecretService{}})
+		ChangeKinds: []schemaext.Kind{ydbdiff.SecretKind}, Actions: []string{ydbsecret.RotateAction}, Service: ydbcompare.SecretService{}})
 	provider.Reversals = append(provider.Reversals,
 		engine.Reversal{Target: target, Kinds: []schemaext.Kind{ydbdiff.SecretKind}, Service: ydbreverse.SecretService{}})
 	provider.Planning = append(provider.Planning, engine.Planning{Target: target, Kinds: []schemaext.Kind{ydbdiff.SecretKind},

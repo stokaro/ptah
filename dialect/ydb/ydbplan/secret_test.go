@@ -71,16 +71,15 @@ func scheduledNames(c *qt.C, chain hostChain, result featureplan.Result) []strin
 
 // TestSecretPlan_LowersEachChange writes one statement per created, rotated
 // or dropped secret, with the declared variable or the default one for the
-// secret's path, and an explicit no-op for a change that keeps the secret.
+// secret's path.
 func TestSecretPlan_LowersEachChange(t *testing.T) {
 	c := qt.New(t)
 	request := featureplan.Request{Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.YDB262(),
 		Changes: []schemaext.ChangeRecord{
 			{Subject: ydbsecret.Ref("ext", "created"), Value: &ydbdiff.Secret{After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_CREATED"}}},
 			{Subject: ydbsecret.Ref("", "restored.pw"), Value: &ydbdiff.Secret{After: &ydbsecret.Desired{}}},
-			{Subject: ydbsecret.Ref("ext", "rotated"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_ROTATED", Rotate: true}}},
+			{Subject: ydbsecret.Ref("ext", "rotated"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_ROTATED"}}},
 			{Subject: ydbsecret.Ref("ext", "dropped"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}},
-			{Subject: ydbsecret.Ref("ext", "kept"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{}}},
 		}}
 
 	result, err := secretPlanningRuntime(c).PlanFeatures(t.Context(), request)
@@ -104,8 +103,6 @@ func TestSecretPlan_LowersEachChange(t *testing.T) {
 		{Operation: ydbast.SecretDrop, Schema: "ext", Name: "dropped"},
 		{Operation: ydbast.SecretRotate, Schema: "ext", Name: "rotated", ValueEnv: "PTAH_SECRET_ROTATED"},
 	})
-	c.Assert(result.Changes[4], qt.DeepEquals, featureplan.ChangePlan{Subject: ydbsecret.Ref("ext", "kept"), Kind: ydbdiff.SecretKind,
-		Strategy: "keep the secret and the value it holds"})
 }
 
 // TestSecretPlan_PlacesEachStatement orders a secret against the host's
@@ -133,7 +130,7 @@ func TestSecretPlan_PlacesEachStatement(t *testing.T) {
 			effects: [][]plangraph.Effect{nil, {{Subject: slot, Action: plangraph.Create}}},
 			want:    []string{"drop ext/pw", "a", "b"}},
 		{name: "a rotation runs before its reader",
-			change:  &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW", Rotate: true}},
+			change:  &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW"}},
 			effects: [][]plangraph.Effect{nil, reads},
 			want:    []string{"rotate ext/pw", "a", "b"}},
 	}
@@ -193,14 +190,13 @@ func TestSecretPlan_RefusesTheWholeBatch(t *testing.T) {
 }
 
 // TestSecretDeclarations_CreateEachDeclaredSecret derives one CREATE SECRET
-// per declared secret, before the statements that read it, and creates a
-// declaration that asks for a rotation all the same.
+// per declared secret, before the statements that read it.
 func TestSecretDeclarations_CreateEachDeclaredSecret(t *testing.T) {
 	c := qt.New(t)
 	chain := commonChain(nil, []plangraph.Effect{{Subject: ydbsecret.Ref("ext", "pw"), Action: plangraph.Read}})
 	request := featureplan.DeclarationRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.YDB262(),
 		CommonSteps: chain.steps, Objects: []schemaext.Object{
-			{Ref: ydbsecret.Ref("ext", "pw"), Value: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW", Rotate: true}},
+			{Ref: ydbsecret.Ref("ext", "pw"), Value: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW"}},
 		}}
 
 	result, err := secretPlanningRuntime(c).PlanDeclarations(t.Context(), request)

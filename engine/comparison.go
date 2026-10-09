@@ -15,10 +15,15 @@ import (
 // ObjectComparison assigns named schema kinds and their change representations
 // to a contextual service. One call contains all assigned kinds present in the
 // request, including enrolled empty namespaces. The provider owns every codec.
+//
+// Actions lists the [schemaext.ChangeRequest] actions the service accepts for
+// its kinds. A request whose action the owner of its kind does not list is
+// refused before any service runs. A service with no actions accepts none.
 type ObjectComparison struct {
 	Target      string
 	Kinds       []schemaext.Kind
 	ChangeKinds []schemaext.Kind
+	Actions     []string
 	Service     schemaext.ObjectComparisonService
 }
 
@@ -49,8 +54,16 @@ func (r *Runtime) registerComparison(owner string, declaration ObjectComparison)
 		}
 		seen[kind] = true
 	}
+	actions := make(map[string]bool, len(declaration.Actions))
+	for _, action := range declaration.Actions {
+		if actions[action] || !reversalText(action) {
+			return fmt.Errorf("%w: invalid or duplicate change request action %q for %q", ErrInvalidRegistration, action, owner)
+		}
+		actions[action] = true
+	}
 	declaration.Kinds = slices.Clone(declaration.Kinds)
 	declaration.ChangeKinds = slices.Clone(declaration.ChangeKinds)
+	declaration.Actions = slices.Clone(declaration.Actions)
 	r.comparisonServices = append(r.comparisonServices, declaration)
 	return nil
 }
@@ -95,6 +108,7 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		batch.Kinds = kinds
 		batch.Desired = selectObjectState(request.Desired, kinds)
 		batch.Current = selectObjectState(request.Current, kinds)
+		batch.Requests = selectRequests(request.Requests, kinds)
 		// The host's validation copy never aliases service-owned slices or maps.
 		sent, err := r.snapshotComparison(ctx, batch)
 		if err != nil {
@@ -152,6 +166,10 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 		seen[ref.Key()] = true
 	}
 	slices.SortFunc(request.Parents, func(a, b schemaext.ParentState) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
+	request.Requests, err = snapshotRequests(request.Requests)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, err
+	}
 	if err := comparisonInputSubjects(request); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
@@ -197,6 +215,10 @@ func (r *Runtime) comparisonBatches(request schemaext.ObjectComparisonRequest) (
 		}
 		comparisonCoverageRequirements(state.Coverage, kinds, required)
 	}
+	for _, change := range request.Requests {
+		kind := schemaext.Kind(change.Subject.Kind)
+		kinds[kind], required[kind] = true, true
+	}
 	batches := make([][]schemaext.Kind, len(r.comparisonServices))
 	var inactive []schemaext.Kind
 	for _, kind := range slices.Sorted(maps.Keys(kinds)) {
@@ -210,7 +232,49 @@ func (r *Runtime) comparisonBatches(request schemaext.ObjectComparisonRequest) (
 		}
 		batches[service] = append(batches[service], kind)
 	}
+	for _, change := range request.Requests {
+		service := r.comparisons[conversionKey{target: request.Target, kind: schemaext.Kind(change.Subject.Kind)}]
+		if !slices.Contains(r.comparisonServices[service].Actions, change.Action) {
+			return nil, nil, fmt.Errorf("%w: the owner of %q accepts no %q request, for %s", ptaherr.ErrUnsupportedFeature, change.Subject.Kind, change.Action, change.Subject)
+		}
+	}
 	return batches, inactive, nil
+}
+
+// snapshotRequests copies the change requests in subject and action order. A
+// request needs a named subject of a valid kind and an action, and asking for
+// one action on one subject twice is refused rather than merged.
+func snapshotRequests(requests []schemaext.ChangeRequest) ([]schemaext.ChangeRequest, error) {
+	if len(requests) == 0 {
+		return nil, nil
+	}
+	type requestKey struct {
+		subject objectidentity.Key
+		action  string
+	}
+	seen := make(map[requestKey]bool, len(requests))
+	for _, change := range requests {
+		key := requestKey{change.Subject.Key(), change.Action}
+		if !schemaext.Kind(change.Subject.Kind).Valid() || change.Subject.Name.Source == "" || !reversalText(change.Action) || seen[key] {
+			return nil, fmt.Errorf("%w: invalid or duplicate change request %q for %s", schemaext.ErrInvalidValue, change.Action, change.Subject)
+		}
+		seen[key] = true
+	}
+	requests = slices.Clone(requests)
+	slices.SortFunc(requests, func(a, b schemaext.ChangeRequest) int {
+		return cmp.Or(schemaext.CompareRefs(a.Subject, b.Subject), cmp.Compare(a.Action, b.Action))
+	})
+	return requests, nil
+}
+
+func selectRequests(requests []schemaext.ChangeRequest, kinds []schemaext.Kind) []schemaext.ChangeRequest {
+	var selected []schemaext.ChangeRequest
+	for _, change := range requests {
+		if slices.Contains(kinds, schemaext.Kind(change.Subject.Kind)) {
+			selected = append(selected, change)
+		}
+	}
+	return selected
 }
 
 func selectObjectState(state schemaext.ObjectState, kinds []schemaext.Kind) schemaext.ObjectState {

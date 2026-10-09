@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
@@ -118,13 +119,14 @@ func TestCompare_YDBSecretNotCreatedWhereTheReadDidNotLook(t *testing.T) {
 }
 
 // TestCompare_YDBSecretRotatedOnlyWhenAsked plans ALTER SECRET for a declared
-// secret the database holds only when the declaration asks for a rotation,
+// secret the database holds only when the comparison is asked for a rotation,
 // once however often it is named; a secret the plan creates is created rather
-// than rotated, since its creation takes the value.
+// than rotated, since its creation takes the value. The request is not part of
+// the desired schema.
 func TestCompare_YDBSecretRotatedOnlyWhenAsked(t *testing.T) {
 	rotated := func(schema, name, valueEnv string) schemaext.ChangeRecord {
 		return schemaext.ChangeRecord{Subject: ydbsecret.Ref(schema, name),
-			Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: valueEnv, Rotate: true}}}
+			Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: valueEnv}}}
 	}
 	tests := []struct {
 		name      string
@@ -144,12 +146,45 @@ func TestCompare_YDBSecretRotatedOnlyWhenAsked(t *testing.T) {
 			c := qt.New(t)
 			desired := declaredSecrets()
 			desired.FeatureObjects = must.Must(desired.FeatureObjects.With(ydbsecret.DesiredObject("", "new_one", "", "PTAH_SECRET_NEW")))
-			desired = must.Must(ydbsecret.RequestRotation(desired, test.requested))
 			held := heldSecrets(ydbsecret.ObservedObject("", "pg_password"), ydbsecret.ObservedObject("ext", "s3"))
+			opts := &config.CompareOptions{Dialect: platform.YDB, FeatureRequests: must.Must(ydbsecret.RotationRequests(test.requested))}
 
-			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, held, platform.YDB, must.Must(builtin.New())))
+			diff, _, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, held, opts, must.Must(builtin.New()))
 
+			c.Assert(err, qt.IsNil)
 			c.Assert(diff.FeatureChanges, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestCompare_YDBSecretRotationFailurePath refuses a rotation the comparison
+// cannot honor rather than plan without it: a path the desired schema does not
+// declare, where a dot is not a directory, and any request on a comparison
+// that names no target, even one with no feature state to compare.
+func TestCompare_YDBSecretRotationFailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		desired *schemamodel.Database
+		current *catalog.Database
+		wantErr string
+		wantIs  error
+	}{
+		{name: "an undeclared secret", dialect: platform.YDB, desired: declaredSecrets(), current: heldSecrets(ydbsecret.ObservedObject("ext", "s3")),
+			wantErr: `rotate secret "ext.s3": the desired schema declares no such secret`, wantIs: ydbsecret.ErrRotateUndeclared},
+		{name: "no target", desired: &schemamodel.Database{}, current: &catalog.Database{},
+			wantErr: ".*feature comparison requires an explicit target", wantIs: ptaherr.ErrUnsupportedDialect},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			opts := &config.CompareOptions{Dialect: test.dialect, FeatureRequests: must.Must(ydbsecret.RotationRequests([]string{"ext.s3"}))}
+
+			diff, _, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), test.desired, test.current, opts, must.Must(builtin.New()))
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorIs, test.wantIs)
+			c.Assert(diff, qt.IsNil)
 		})
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 )
 
 // CompareOptions contains configuration options for schema comparison operations.
@@ -349,6 +350,15 @@ type CompareOptions struct {
 	// A nil map means nobody could ask a server. The comparison then folds the
 	// two spellings with its own normalizer, as before.
 	RoutineArguments map[string]RoutineArguments
+
+	// FeatureRequests asks feature owners for changes the comparison cannot
+	// find by itself, such as a new value for a YDB secret, which the server
+	// never returns (see [ptah.run/dialect/ydb/ydbsecret.RotationRequests]).
+	// Each request belongs to this comparison alone: neither schema state
+	// carries it. It goes to the owner of its subject's kind, which may refuse
+	// it, and a request no owner accepts is refused, as is any request on a
+	// comparison without a target dialect.
+	FeatureRequests []schemaext.ChangeRequest
 }
 
 // TriggerCondition is one trigger's WHEN condition in the target server's own

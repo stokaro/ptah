@@ -7,7 +7,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -43,19 +42,4 @@ func TestRenderSecretsRoundTripThroughParser(t *testing.T) {
 		ydbsecret.DesiredObject("", "pg_password", "PtahSchemaObjects", "PTAH_SECRET_PG"),
 		ydbsecret.DesiredObject("ext/aws", "s3.key", "PtahSchemaObjects", "PTAH_SECRET_EXT_AWS_S3_KEY"),
 	})
-}
-
-// TestRenderSecrets_RefusesARotationRequest refuses a declaration carrying a
-// rotation request rather than writing it without one: the request belongs to
-// one invocation and has no annotation.
-func TestRenderSecrets_RefusesARotationRequest(t *testing.T) {
-	c := qt.New(t)
-	desired := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
-		schemaext.Object{Ref: ydbsecret.Ref("ext", "pw"), Value: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW", Rotate: true}}))}
-
-	files, err := goschematogo.Render(c.Context(), desired, goschematogo.Options{PackageName: "models", SingleFile: true})
-
-	c.Assert(err, qt.ErrorMatches, ".*Go annotations cannot preserve the rotation request on secret ext/pw")
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(files, qt.IsNil)
 }

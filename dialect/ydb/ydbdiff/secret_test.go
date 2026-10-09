@@ -13,9 +13,9 @@ import (
 	"ptah.run/engine"
 )
 
-// TestSecretChange_RoundTrip keeps both operands, the variable and the
-// rotation request through the registered change codec, and the decoded
-// change is independent of the original.
+// TestSecretChange_RoundTrip keeps both operands and the variable through the
+// registered change codec, and the decoded change is independent of the
+// original. A change with both operands is a rotation.
 func TestSecretChange_RoundTrip(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -23,8 +23,7 @@ func TestSecretChange_RoundTrip(t *testing.T) {
 	}{
 		{name: "create", change: &ydbdiff.Secret{After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW"}}},
 		{name: "drop", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}},
-		{name: "rotate", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW", Rotate: true}}},
-		{name: "keep", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{}}},
+		{name: "rotate", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -40,12 +39,12 @@ func TestSecretChange_RoundTrip(t *testing.T) {
 }
 
 // TestSecretChange_FailurePath refuses a change without explicit operands, a
-// rotation of a secret the database does not hold, and an operand that could
-// carry a value.
+// rotation flag, which no operand carries, and an operand that could carry a
+// value.
 func TestSecretChange_FailurePath(t *testing.T) {
 	for _, input := range []string{
 		`null`, `{}`, `{"before":null,"after":null}`, `{"after":{}}`,
-		`{"before":null,"after":{"value_env":"PTAH_SECRET_PW","rotate":true}}`,
+		`{"before":{},"after":{"value_env":"PTAH_SECRET_PW","rotate":true}}`,
 		`{"before":{"value":"s3cr3t"},"after":null}`,
 		`{"before":null,"after":{"value_env":"PTAH_SECRET_PW","value":"s3cr3t"}}`,
 		`{"before":null,"after":{"value_env":"HOME"}}`,
@@ -71,8 +70,7 @@ func TestSecretChange_Effect(t *testing.T) {
 	}{
 		{name: "create", change: &ydbdiff.Secret{After: &ydbsecret.Desired{}}, want: schemaext.Additive},
 		{name: "drop", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}, want: schemaext.Destructive},
-		{name: "rotate", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{Rotate: true}}, want: schemaext.Behavioral},
-		{name: "keep", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{}}, want: schemaext.Additive},
+		{name: "rotate", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{}}, want: schemaext.Behavioral},
 		{name: "invalid", change: &ydbdiff.Secret{}},
 	}
 	for _, test := range tests {

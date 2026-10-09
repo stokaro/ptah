@@ -27,7 +27,9 @@ type ParentState struct {
 
 // ObjectComparisonRequest contains one target's complete batch for the kinds
 // assigned to a comparison service. Parents includes common table lifecycles,
-// including tables whose child namespace is empty. Inputs are snapshots.
+// including tables whose child namespace is empty. Requests holds the
+// [ChangeRequest] values whose subjects have one of those kinds, ordered by
+// subject and then action. Inputs are snapshots.
 type ObjectComparisonRequest struct {
 	Target       string
 	Identifiers  identifier.Semantics
@@ -36,6 +38,7 @@ type ObjectComparisonRequest struct {
 	Desired      ObjectState
 	Current      ObjectState
 	Parents      []ParentState
+	Requests     []ChangeRequest
 }
 
 // UndecidedChange is a requested state the available evidence cannot safely

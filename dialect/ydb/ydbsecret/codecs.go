@@ -20,7 +20,6 @@ func Codecs() []schemaext.Codec {
 type wireDesired struct {
 	ValueEnv   string `json:"value_env,omitempty"`
 	StructName string `json:"struct_name,omitempty"`
-	Rotate     bool   `json:"rotate,omitempty"`
 }
 
 func desiredCodec() schemaext.Codec {
@@ -34,7 +33,7 @@ func desiredCodec() schemaext.Codec {
 	return schemaext.Codec{
 		Prototype: &Desired{}, Representation: schemaext.Desired, Version: 1,
 		Definition: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{` +
-			`"value_env":{"type":"string","minLength":1},"struct_name":{"type":"string"},"rotate":{"type":"boolean"}}}`),
+			`"value_env":{"type":"string","minLength":1},"struct_name":{"type":"string"}}}`),
 		Encode: encode, Canonical: encode,
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
 			value, err := desiredPayload(payload)
@@ -44,7 +43,7 @@ func desiredCodec() schemaext.Codec {
 			return value.Clone(), nil
 		},
 		Decode: func(data json.RawMessage) (schemaext.Payload, error) {
-			if err := wireFields(data, "value_env", "struct_name", "rotate"); err != nil {
+			if err := wireFields(data, "value_env", "struct_name"); err != nil {
 				return nil, err
 			}
 			wire, err := schemaext.DecodeJSON[wireDesired](data)

@@ -7,20 +7,20 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine"
 )
 
 // TestModelTransport_KeepsTheVariableAndNoValue round-trips a declaration
-// through the registered codecs: the variable, the holder and a rotation
-// request survive, the decoded value is independent of the original, and an
-// observation carries nothing at all.
+// through the registered codecs: the variable and the holder survive, the
+// decoded value is independent of the original, and an observation carries
+// nothing at all.
 func TestModelTransport_KeepsTheVariableAndNoValue(t *testing.T) {
 	c := qt.New(t)
 	runtime := must.Must(engine.New(engine.Provider{ID: "ptah.run/ydb", Codecs: ydbsecret.Codecs()}))
-	original := &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG", StructName: "Credentials", Rotate: true}
+	original := &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG", StructName: "Credentials"}
 	objects := must.Must(schemaext.NewObjects(schemaext.Object{Ref: ydbsecret.Ref("ext", "pg.password"), Value: original}))
 
 	data, err := runtime.Codecs().EncodeObjects(t.Context(), schemaext.Desired, objects)
@@ -43,19 +43,20 @@ func TestModelTransport_KeepsTheVariableAndNoValue(t *testing.T) {
 
 // TestConversion_NamesTheDefaultVariable turns an observation into a
 // declaration that keeps the secret: it names no variable, which selects the
-// default one for the secret's path, and never asks for a rotation.
+// default one for the secret's path.
 func TestConversion_NamesTheDefaultVariable(t *testing.T) {
 	c := qt.New(t)
 	declared := (&ydbsecret.Observed{}).Desired()
 	c.Assert(declared, qt.DeepEquals, &ydbsecret.Desired{})
 	c.Assert(declared.Variable(ydbsecret.Ref("app/ext", "pg.pass-1")), qt.Equals, "PTAH_SECRET_APP_EXT_PG_PASS_1")
 	c.Assert((&ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG"}).Variable(ydbsecret.Ref("", "pw")), qt.Equals, "PTAH_SECRET_PG")
-	c.Assert((&ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG", Rotate: true}).Observed(), qt.DeepEquals, &ydbsecret.Observed{})
+	c.Assert((&ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG"}).Observed(), qt.DeepEquals, &ydbsecret.Observed{})
 }
 
 // TestModelCodecs_RefuseAWireThatCouldCarryAValue refuses an unknown field --
 // a value among them -- a null, and a variable a value may not come from, in
-// either representation.
+// either representation. A rotation is a request of one comparison, so no
+// representation carries one.
 func TestModelCodecs_RefuseAWireThatCouldCarryAValue(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -66,6 +67,7 @@ func TestModelCodecs_RefuseAWireThatCouldCarryAValue(t *testing.T) {
 		{name: "desired null variable", representation: 0, input: `{"value_env":null}`},
 		{name: "desired variable outside the prefix", representation: 0, input: `{"value_env":"HOME"}`},
 		{name: "desired null", representation: 0, input: `null`},
+		{name: "desired rotation", representation: 0, input: `{"value_env":"PTAH_SECRET_PW","rotate":true}`},
 		{name: "observed value", representation: 1, input: `{"value":"s3cr3t"}`},
 		{name: "observed variable", representation: 1, input: `{"value_env":"PTAH_SECRET_PW"}`},
 		{name: "observed rotation", representation: 1, input: `{"rotate":true}`},
@@ -101,61 +103,63 @@ func TestValidateIdentity_FailurePath(t *testing.T) {
 	}
 }
 
-func declaredSecrets(c *qt.C, objects ...schemaext.Object) *schemamodel.Database {
-	c.Helper()
-	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...))}
-}
-
-// TestRequestRotation_HappyPath marks each named declared secret, and only
-// those, and leaves the input untouched. A root name keeps its dot, and asking
-// twice rotates once.
-func TestRequestRotation_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	desired := declaredSecrets(c,
-		ydbsecret.DesiredObject("ext", "pg", "", "PTAH_SECRET_PG"),
-		ydbsecret.DesiredObject("", "s3.key", "", "PTAH_SECRET_S3"),
-		ydbsecret.DesiredObject("", "kept", "", "PTAH_SECRET_KEPT"))
-
-	rotated, err := ydbsecret.RequestRotation(desired, []string{" /ext/pg/ ", "s3.key", "ext/pg"})
-	c.Assert(err, qt.IsNil)
-
-	for _, want := range []struct {
-		schema, name string
-		rotate       bool
-	}{{"ext", "pg", true}, {"", "s3.key", true}, {"", "kept", false}} {
-		object, found, err := rotated.FeatureObjects.Get(ydbsecret.Ref(want.schema, want.name))
-		c.Assert(err, qt.IsNil)
-		c.Assert(found, qt.IsTrue)
-		c.Assert(object.Value.(*ydbsecret.Desired).Rotate, qt.Equals, want.rotate, qt.Commentf("%s/%s", want.schema, want.name))
-		original, _, err := desired.FeatureObjects.Get(ydbsecret.Ref(want.schema, want.name))
-		c.Assert(err, qt.IsNil)
-		c.Assert(original.Value.(*ydbsecret.Desired).Rotate, qt.IsFalse)
-	}
-	unchanged, err := ydbsecret.RequestRotation(desired, nil)
-	c.Assert(err, qt.IsNil)
-	c.Assert(unchanged, qt.Equals, desired)
-}
-
-// TestRequestRotation_FailurePath refuses a path the declaration does not
-// hold, so a typo cannot read as a rotation done. A dotted root name is not a
-// directory and a name.
-func TestRequestRotation_FailurePath(t *testing.T) {
+// TestParsePath_HappyPath reads every secret spelling as a path: a slash
+// separates directories and a dot stays in its segment.
+func TestParsePath_HappyPath(t *testing.T) {
 	tests := []struct {
-		name    string
-		path    string
-		wantErr string
+		name         string
+		path         string
+		schema, leaf string
 	}{
-		{name: "an undeclared secret", path: "ext/missing", wantErr: `rotate secret "ext/missing": the desired schema declares no such secret`},
-		{name: "a dot is not a directory", path: "ext.pg", wantErr: `rotate secret "ext.pg": the desired schema declares no such secret`},
+		{name: "a dotted root name", path: "pg.pw", leaf: "pg.pw"},
+		{name: "a directory", path: "ext/pg", schema: "ext", leaf: "pg"},
+		{name: "dotted segments", path: "a/b.c/d.e", schema: "a/b.c", leaf: "d.e"},
+		{name: "surrounding slashes and space", path: " /ext/pg/ ", schema: "ext", leaf: "pg"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired := declaredSecrets(c, ydbsecret.DesiredObject("ext", "pg", "", "PTAH_SECRET_PG"))
-			rotated, err := ydbsecret.RequestRotation(desired, []string{test.path})
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(err, qt.ErrorIs, ydbsecret.ErrRotateUndeclared)
-			c.Assert(rotated, qt.IsNil)
+			ref, err := ydbsecret.ParsePath(test.path)
+			c.Assert(err, qt.IsNil)
+			c.Assert(ref, qt.DeepEquals, ydbsecret.Ref(test.schema, test.leaf))
 		})
 	}
+}
+
+// TestParsePath_FailurePath refuses a path with no name or with an empty,
+// current or parent segment.
+func TestParsePath_FailurePath(t *testing.T) {
+	for _, path := range []string{"", "/", "..", "ext/..", "./pw", "ext//pg", "ext/../pg"} {
+		t.Run(path, func(t *testing.T) {
+			c := qt.New(t)
+			ref, err := ydbsecret.ParsePath(path)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err, qt.ErrorMatches, `".*" is not a secret path \(dir/name\): .*`)
+			c.Assert(ref, qt.DeepEquals, objectidentity.ID{})
+		})
+	}
+}
+
+// TestRotationRequests_HappyPath asks once per secret, in the order given,
+// with the rotate action.
+func TestRotationRequests_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	requests, err := ydbsecret.RotationRequests([]string{" /ext/pg/ ", "pg.pw", "ext/pg"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(requests, qt.DeepEquals, []schemaext.ChangeRequest{
+		{Subject: ydbsecret.Ref("ext", "pg"), Action: ydbsecret.RotateAction},
+		{Subject: ydbsecret.Ref("", "pg.pw"), Action: ydbsecret.RotateAction},
+	})
+	none, err := ydbsecret.RotationRequests(nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(none, qt.IsNil)
+}
+
+// TestRotationRequests_FailurePath refuses a path that names no secret before
+// any comparison runs.
+func TestRotationRequests_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	requests, err := ydbsecret.RotationRequests([]string{"ext/pg", "ext//pg"})
+	c.Assert(err, qt.ErrorMatches, `rotate secret: "ext//pg" is not a secret path \(dir/name\): .*`)
+	c.Assert(requests, qt.IsNil)
 }

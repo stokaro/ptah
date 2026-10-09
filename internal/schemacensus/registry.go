@@ -64,7 +64,6 @@ var registry = []Entry{
 	{Field: "ydbstreaming.Spec.ResourcePool", Disposition: DDL},
 	{Field: "ydbsecret.Desired.ValueEnv", Disposition: DDL},
 	{Field: "ydbsecret.Desired.StructName", Disposition: SourceOrigin, Reason: "the annotation holder, independent of the secret's path"},
-	{Field: "ydbsecret.Desired.Rotate", Disposition: Planning, Reason: "asks a plan for ALTER SECRET on a secret the database holds; a render creates every secret from nothing and writes CREATE SECRET either way"},
 	{Field: "ydbcoordination.Desired.Spec", Disposition: DDL},
 	{Field: "ydbcoordination.Desired.StructName", Disposition: SourceOrigin, Reason: "the Go holder recorded by the source; node identity is independent of the holder"},
 	{Field: "ydbcoordination.Spec.AttachConsistencyMode", Disposition: DDL},

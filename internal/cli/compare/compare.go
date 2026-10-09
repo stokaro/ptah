@@ -209,12 +209,11 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	compareOpts = dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, compareOpts)
-	rotated, err := secretrotation.Apply(cmd, result)
-	if err != nil {
+	if err := secretrotation.Apply(cmd, compareOpts); err != nil {
 		return err
 	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		cmd.Context(), conn, rotated, dbSchema, compareOpts, runtime,
+		cmd.Context(), conn, result, dbSchema, compareOpts, runtime,
 	)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)

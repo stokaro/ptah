@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -48,16 +49,21 @@ type DiffPolicy struct {
 	// their declared variable holds now. A comparison cannot find a changed
 	// value, which the server never returns, so this is the only way one is
 	// planned. The native commands set it from --rotate-secret; see
-	// [ydbsecret.RequestRotation].
+	// [ydbsecret.RotationRequests].
 	RotateSecrets []string
 }
 
-// withSecretRotation returns desired with each secret policy names asking
-// for the value its variable holds now, and refuses a name the declaration
-// does not hold. The request is part of the comparison's input: the secret's
-// owner decides whether it is a rotation, a creation, or undecided.
-func withSecretRotation(desired *schemamodel.Database, policy DiffPolicy) (*schemamodel.Database, error) {
-	return ydbsecret.RequestRotation(desired, policy.RotateSecrets)
+// withSecretRotation adds to opts a rotation request for each secret policy
+// names. The requests are part of the comparison's input: the secret's owner
+// decides whether each is a rotation, a creation, or undecided, and refuses a
+// name the declaration does not hold.
+func withSecretRotation(opts *config.CompareOptions, policy DiffPolicy) error {
+	rotations, err := ydbsecret.RotationRequests(policy.RotateSecrets)
+	if err != nil {
+		return err
+	}
+	opts.FeatureRequests = append(slices.Clone(opts.FeatureRequests), rotations...)
+	return nil
 }
 
 // declaredConcurrentIndexRefs is the index additions the desired description

@@ -11,11 +11,9 @@ import (
 )
 
 // PlanDeclarations derives one CREATE SECRET per declared secret, with the
-// value its variable holds when the statement runs. A declaration that asks
-// for a rotation is created all the same: a schema rendered from scratch has
-// no earlier value to replace. The operations share the owner's graph rules
-// with migrations, so a secret precedes the data sources that read it and a
-// declared table at its path is refused.
+// value its variable holds when the statement runs. The operations share the
+// owner's graph rules with migrations, so a secret precedes the data sources
+// that read it and a declared table at its path is refused.
 func (s SecretService) PlanDeclarations(ctx context.Context, request featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
 	planning := featureplan.Request{Target: request.Target, Identifiers: request.Identifiers,
 		Capabilities: request.Capabilities, CommonSteps: request.CommonSteps,
@@ -25,9 +23,7 @@ func (s SecretService) PlanDeclarations(ctx context.Context, request featureplan
 		if !ok || value == nil {
 			return featureplan.DeclarationResult{}, fmt.Errorf("%w: expected a desired secret", schemaext.ErrInvalidValue)
 		}
-		after := *value
-		after.Rotate = false
-		planning.Changes[i] = schemaext.ChangeRecord{Subject: object.Ref, Value: &ydbdiff.Secret{After: &after}}
+		planning.Changes[i] = schemaext.ChangeRecord{Subject: object.Ref, Value: &ydbdiff.Secret{After: new(*value)}}
 	}
 	reply, err := s.PlanFeatures(ctx, planning)
 	if err != nil {

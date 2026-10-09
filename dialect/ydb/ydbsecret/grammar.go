@@ -42,7 +42,12 @@
 //
 // The server never returns a value, so a desired and an observed secret
 // compare by path alone. A changed value cannot be observed; a plan writes
-// ALTER SECRET only for a secret the caller names through [RequestRotation].
+// ALTER SECRET only for a secret a comparison request names (see
+// [RotationRequests]).
+//
+// Every spelling of a secret is its path relative to the database root, and
+// [ParsePath] reads it: a slash separates directories and a dot is part of a
+// name, so `pg.pw` is one secret at the root and `ext/pg` is pg in ext.
 package ydbsecret
 
 import (

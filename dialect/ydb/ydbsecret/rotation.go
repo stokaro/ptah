@@ -5,68 +5,66 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemamodel"
 )
 
-// ErrRotateUndeclared is the error [RequestRotation] wraps when a request
-// names a secret the declaration does not hold.
+// RotateAction is the [schemaext.ChangeRequest] action that gives a secret the
+// database holds the value its declared variable holds when the plan runs,
+// through ALTER SECRET.
+const RotateAction = "rotate"
+
+// ErrRotateUndeclared is the error a comparison wraps when a rotation request
+// names a secret the desired schema does not declare.
 var ErrRotateUndeclared = errors.New("the desired schema declares no such secret")
 
-// RequestRotation returns a copy of desired in which each named secret asks
-// for a new value: the plan gives it the value its declared variable holds
-// when the plan runs, through ALTER SECRET. A secret's value is never read
-// back, so a comparison cannot see a changed one; this is the only way a
-// rotation is planned. The rotation is part of one comparison's input and no
-// source format can write it.
+// RotationRequests returns the comparison requests that give each secret at
+// paths a new value. A secret's value is never read back, so a comparison
+// cannot see a changed one; a rotation request is the only way one is planned.
+// It belongs to one comparison, and no source format can write it.
 //
-// A path names the secret relative to the database root, as YDB writes it:
-// `dir/name`, or `name` for a secret at the root, whose name may hold a dot.
-// A path the declaration does not hold is refused with [ErrRotateUndeclared],
-// so a typo cannot read as a rotation done. Asking twice for one secret
-// rotates it once. A secret the database does not hold is created instead,
-// since CREATE SECRET already takes the value, and one whose presence is not
-// established is reported rather than rotated.
-//
-// desired is not modified. A nil desired or an empty request returns desired.
-func RequestRotation(desired *schemamodel.Database, paths []string) (*schemamodel.Database, error) {
-	if desired == nil || len(paths) == 0 {
-		return desired, nil
+// Each path is read by [ParsePath]. Asking twice for one secret rotates it
+// once. The comparison refuses a path the desired schema does not declare with
+// [ErrRotateUndeclared], so a typo cannot read as a rotation done. A declared
+// secret the database does not hold is created instead, since CREATE SECRET
+// already takes the value, and one whose presence is not established is
+// reported rather than rotated.
+func RotationRequests(paths []string) ([]schemaext.ChangeRequest, error) {
+	var requests []schemaext.ChangeRequest
+	seen := make(map[objectidentity.Key]bool, len(paths))
+	for _, requested := range paths {
+		ref, err := ParsePath(requested)
+		if err != nil {
+			return nil, fmt.Errorf("rotate secret: %w", err)
+		}
+		if seen[ref.Key()] {
+			continue
+		}
+		seen[ref.Key()] = true
+		requests = append(requests, schemaext.ChangeRequest{Subject: ref, Action: RotateAction})
 	}
-	objects, err := rotate(desired.FeatureObjects, paths)
-	if err != nil {
-		return nil, err
-	}
-	rotated := *desired
-	rotated.FeatureObjects = objects
-	return &rotated, nil
+	return requests, nil
 }
 
-func rotate(objects schemaext.Objects, paths []string) (schemaext.Objects, error) {
-	for _, requested := range paths {
-		schema, name := SplitPath(requested)
-		object, found, err := objects.Get(Ref(schema, name))
-		if err != nil {
-			return schemaext.Objects{}, err
-		}
-		declared, ok := object.Value.(*Desired)
-		if !found || !ok {
-			return schemaext.Objects{}, fmt.Errorf("rotate secret %q: %w", requested, ErrRotateUndeclared)
-		}
-		rotated := *declared
-		rotated.Rotate = true
-		objects, err = objects.Replace(schemaext.Object{Ref: object.Ref, Value: &rotated})
-		if err != nil {
-			return schemaext.Objects{}, err
-		}
+// ParsePath reads the path of a secret relative to the database root, as YDB
+// writes it and as every Ptah spelling of a secret names it: a slash separates
+// directories, the segment after the last slash is the name, and a dot is part
+// of the segment that holds it. `ext/pg` is the secret pg in the directory ext,
+// and `pg.pw` is the secret pg.pw at the root. Leading and trailing slashes and
+// surrounding space are ignored. A path with an empty, `.` or `..` segment is
+// refused.
+func ParsePath(path string) (objectidentity.ID, error) {
+	ref := Ref(SplitPath(path))
+	if err := ValidateIdentity(ref); err != nil {
+		return objectidentity.ID{}, fmt.Errorf("%q is not a secret path (dir/name): %w", path, err)
 	}
-	return objects, nil
+	return ref, nil
 }
 
 // SplitPath reads a secret path relative to the database root as its
-// directory and its name: the segments before the last slash are the
-// directory, and the last is the name, which a slash never splits. Leading
-// and trailing slashes and surrounding space are ignored.
+// directory and its name, without validating either: the segments before the
+// last slash are the directory, and the last is the name. Leading and trailing
+// slashes and surrounding space are ignored. [ParsePath] also validates.
 func SplitPath(path string) (schema, name string) {
 	path = strings.Trim(strings.TrimSpace(path), "/")
 	index := strings.LastIndex(path, "/")

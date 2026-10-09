@@ -13,14 +13,13 @@ import (
 
 // TestSecretConversion_CarriesNoVariableIntoAnObservation converts a
 // declaration into the empty observation a read lists, and an observation
-// into a declaration that keeps the secret with the default variable and asks
-// for no rotation.
+// into a declaration that keeps the secret with the default variable.
 func TestSecretConversion_CarriesNoVariableIntoAnObservation(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := engine.New(engine.Provider{ID: "ptah.run/ydb", Targets: []engine.Target{{Name: "ydb"}}, Codecs: ydbsecret.Codecs(),
 		Conversions: []engine.Conversion{{Target: "ydb", Kinds: []schemaext.Kind{ydbsecret.Kind}, Service: ydbconvert.SecretService{}}}})
 	c.Assert(err, qt.IsNil)
-	declared := &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW", StructName: "Credentials", Rotate: true}
+	declared := &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW", StructName: "Credentials"}
 
 	observed, err := runtime.ConvertFeatures(t.Context(), schemaext.ConversionRequest{Target: "ydb", From: schemaext.Desired, To: schemaext.Observed,
 		Values: []schemaext.Value{declared}})

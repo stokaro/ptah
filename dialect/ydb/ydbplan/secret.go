@@ -36,9 +36,8 @@ type secretChange struct {
 	operation *ydbast.Secret
 }
 
-// PlanFeatures returns one operation per created, rotated or dropped secret,
-// and an explicit no-op for a change that keeps one. A refused change returns
-// no operation from the batch.
+// PlanFeatures returns one operation per created, rotated or dropped secret.
+// A refused change returns no operation from the batch.
 func (SecretService) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
 	if ctx == nil {
 		return featureplan.Result{}, fmt.Errorf("%w: planning requires a context", schemaext.ErrInvalidValue)
@@ -66,11 +65,6 @@ func (SecretService) PlanFeatures(ctx context.Context, request featureplan.Reque
 		if err := ctx.Err(); err != nil {
 			return featureplan.Result{}, err
 		}
-		plan := featureplan.ChangePlan{Subject: change.ref, Kind: ydbdiff.SecretKind, Strategy: "keep the secret and the value it holds"}
-		if change.operation == nil {
-			result.Changes[change.input] = plan
-			continue
-		}
 		action := secretAction(change.operation)
 		id := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("secret/%06d/%s", index, action)}
 		edges, err := secretDependencies(id, change, action, request.CommonSteps)
@@ -84,8 +78,8 @@ func (SecretService) PlanFeatures(ctx context.Context, request featureplan.Reque
 			Effects:     []plangraph.Effect{{Subject: change.ref, Action: action}, {Subject: slot, Action: action}},
 			Transaction: plangraph.TransactionForbidden, Impact: change.operation.Effect(),
 		})
-		plan.Strategy, plan.Steps = secretStrategy(change.operation), []plangraph.StepID{id}
-		result.Changes[change.input] = plan
+		result.Changes[change.input] = featureplan.ChangePlan{Subject: change.ref, Kind: ydbdiff.SecretKind,
+			Strategy: secretStrategy(change.operation), Steps: []plangraph.StepID{id}}
 	}
 	if len(contribution.Steps) > 0 {
 		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
@@ -161,8 +155,7 @@ func secretOperations(ctx context.Context, request featureplan.Request) ([]secre
 	return changes, nil
 }
 
-// lowerSecret returns the statement a change needs, or nil when it keeps the
-// secret as it is.
+// lowerSecret returns the statement a change needs.
 func lowerSecret(ref objectidentity.ID, change *ydbdiff.Secret) *ydbast.Secret {
 	operation := &ydbast.Secret{Schema: ref.Schema.Source, Name: ref.Name.Source}
 	switch {
@@ -170,10 +163,8 @@ func lowerSecret(ref objectidentity.ID, change *ydbdiff.Secret) *ydbast.Secret {
 		operation.Operation, operation.ValueEnv = ydbast.SecretCreate, change.After.Variable(ref)
 	case change.After == nil:
 		operation.Operation = ydbast.SecretDrop
-	case change.Rotates():
-		operation.Operation, operation.ValueEnv = ydbast.SecretRotate, change.After.Variable(ref)
 	default:
-		return nil
+		operation.Operation, operation.ValueEnv = ydbast.SecretRotate, change.After.Variable(ref)
 	}
 	return operation
 }
@@ -184,9 +175,6 @@ func lowerSecret(ref objectidentity.ID, change *ydbdiff.Secret) *ydbast.Secret {
 func secretRefusals(request featureplan.Request, changes []secretChange) []featureplan.Diagnostic {
 	var diagnostics []featureplan.Diagnostic
 	for _, change := range changes {
-		if change.operation == nil {
-			continue
-		}
 		subject := "secret " + change.operation.Path()
 		if refusal := ydbsecret.Refuse(request.Target, request.Capabilities, subject); refusal != nil {
 			return []featureplan.Diagnostic{{Change: new(change.input), Problem: schemavalidation.Diagnostic{

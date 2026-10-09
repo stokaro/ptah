@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -199,9 +200,8 @@ func TestYDBSecrets_FailurePath_RefusedOnALineWithout(t *testing.T) {
 func planRotating(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, path string) []string {
 	c.Helper()
 	info := conn.Info()
-	rotated, err := ydbsecret.RequestRotation(declared, []string{path})
-	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), rotated, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+	opts := &config.CompareOptions{FeatureRequests: must.Must(ydbsecret.RotationRequests([]string{path}))}
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, opts, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),

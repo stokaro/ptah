@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -166,8 +167,9 @@ type DiffPolicy struct {
 	AllowTableRebuild bool
 	// RotateSecrets names the YDB secrets, by path, the up migration gives the
 	// value their declared variable holds when it runs. The down migration
-	// does not restore the earlier value, which was never read. See
-	// [ydbsecret.RequestRotation].
+	// does not restore the earlier value, which was never read. Each path is
+	// sent to the comparison as a rotation request; see
+	// [ydbsecret.RotationRequests].
 	RotateSecrets []string
 }
 
@@ -396,12 +398,14 @@ func compareForPlan(
 	dbSchema *catalog.Database,
 	opts GenerateMigrationOptions,
 ) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
-	rotated, err := ydbsecret.RequestRotation(desired, opts.DiffPolicy.RotateSecrets)
+	rotations, err := ydbsecret.RotationRequests(opts.DiffPolicy.RotateSecrets)
 	if err != nil {
 		return nil, schemadiff.Diagnostics{}, err
 	}
+	compareOpts := compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy)
+	compareOpts.FeatureRequests = append(slices.Clone(compareOpts.FeatureRequests), rotations...)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		ctx, conn, rotated, dbSchema, compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy), opts.Runtime,
+		ctx, conn, desired, dbSchema, compareOpts, opts.Runtime,
 	)
 	if err != nil {
 		return nil, schemadiff.Diagnostics{}, fmt.Errorf("error comparing generated and database schemas: %w", err)

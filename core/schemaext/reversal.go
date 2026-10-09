@@ -29,6 +29,13 @@ type ReversalRequest struct {
 // Change preserves the input's subject and change kind. Its operands describe
 // the reverse direction, including any state predicted after forward execution.
 // Such predictions never constitute inspection evidence.
+//
+// A nil Change.Value says the reverse direction has no statement to run: the
+// forward change replaced state that nothing can read back or recreate, such
+// as a value the server never returns. It still preserves the subject, and it
+// requires at least one limitation saying what the rollback leaves as the
+// forward change left it, so an inverse is never silently empty. Callers
+// publish no reverse change for it and report its limitations.
 type Reversal struct {
 	Change ChangeRecord
 	// ForwardState describes the modeled state left by the accepted forward
@@ -72,7 +79,9 @@ type ProjectedValue struct {
 // ReversalService reconstructs an ordered batch without mutating its inputs.
 // It returns exactly one result per input. A complex inverse stays in its
 // owner's typed change payload. Unsupported reversal returns an error rather
-// than an empty successful change; failure or cancellation discards all results.
+// than an empty successful change; a reverse with no statement is a nil change
+// value with its limitations (see [Reversal]). Failure or cancellation
+// discards all results.
 type ReversalService interface {
 	ReverseChanges(context.Context, ReversalRequest) ([]Reversal, error)
 }

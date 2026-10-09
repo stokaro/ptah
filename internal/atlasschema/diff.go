@@ -438,11 +438,10 @@ func diffResolvedStates(
 
 	// Both documents and live reads may carry knowledge limits. Preserve them
 	// beside the established changes; silence cannot establish agreement.
-	rotated, err := withSecretRotation(to, opts.Policy)
-	if err != nil {
+	if err := withSecretRotation(compareOpts, opts.Policy); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	compared, undecided, err := compareDiffSides(ctx, conn, rotated, fromSide.database, compareOpts, opts.Runtime)
+	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts, opts.Runtime)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}

@@ -32,7 +32,7 @@ func secretDropped(schema, name string) schemaext.ChangeRecord {
 
 func secretRotated(schema, name, valueEnv string) schemaext.ChangeRecord {
 	return schemaext.ChangeRecord{Subject: ydbsecret.Ref(schema, name),
-		Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: valueEnv, Rotate: true}}}
+		Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: valueEnv}}}
 }
 
 // TestGenerateMigrationAST_Secrets_HappyPath pins where the secret owner puts

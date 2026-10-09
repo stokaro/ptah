@@ -138,7 +138,7 @@ func compareReportingUndecidedAdditions(
 	}
 	desired, diff.TablePreparation = prepared.desired, prepared.capture
 
-	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, runtime)
+	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, opts.FeatureRequests, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}

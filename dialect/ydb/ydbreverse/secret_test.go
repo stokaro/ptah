@@ -17,15 +17,16 @@ func secretReverseRequest(changes ...schemaext.ChangeRecord) schemaext.ReversalR
 	return schemaext.ReversalRequest{Target: "ydb", Identifiers: identifier.ForDialect("ydb"), Capabilities: capability.YDB262(), Changes: changes}
 }
 
-// TestSecretReversal_HappyPath drops what the change created, creates again
-// what it dropped with the default variable for its path, and keeps a
-// rotated value, reporting each value the rollback cannot restore.
+// TestSecretReversal_HappyPath drops what the change created and creates again
+// what it dropped with the default variable for its path. A rotation has no
+// reverse statement: the reversal carries no change and keeps the rotated
+// value. Each value the rollback cannot restore is reported.
 func TestSecretReversal_HappyPath(t *testing.T) {
 	ref := ydbsecret.Ref("ext", "pg.pw")
 	tests := []struct {
 		name        string
 		change      *ydbdiff.Secret
-		want        *ydbdiff.Secret
+		want        schemaext.ChangeValue
 		forward     schemaext.Value
 		limitations []string
 	}{
@@ -34,9 +35,8 @@ func TestSecretReversal_HappyPath(t *testing.T) {
 		{name: "a drop is created again", change: &ydbdiff.Secret{Before: &ydbsecret.Observed{}},
 			want:        &ydbdiff.Secret{After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_EXT_PG_PW"}},
 			limitations: []string{"the dropped value of secret ext/pg.pw was never read; the rollback takes the value PTAH_SECRET_EXT_PG_PW holds when it runs"}},
-		{name: "a rotation keeps the new value",
-			change:      &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG", Rotate: true}},
-			want:        &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG"}},
+		{name: "a rotation keeps the new value and runs nothing",
+			change:      &ydbdiff.Secret{Before: &ydbsecret.Observed{}, After: &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PG"}},
 			forward:     &ydbsecret.Observed{},
 			limitations: []string{"the value secret ext/pg.pw held before the rotation was never read; the rollback keeps the rotated value"}},
 	}

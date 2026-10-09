@@ -39,7 +39,9 @@ func comparisonIdentifiers(desired *schemamodel.Database, current *catalog.Datab
 }
 
 func compareFeatures(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, target string,
-	semantics identifier.Semantics, caps capability.Capabilities, parents []schemaext.ParentState, runtime schemaext.ComparisonRuntime) (schemaext.ComparisonResult, error) {
+	semantics identifier.Semantics, caps capability.Capabilities, parents []schemaext.ParentState, requests []schemaext.ChangeRequest,
+	runtime schemaext.ComparisonRuntime,
+) (schemaext.ComparisonResult, error) {
 	declared, observed, err := captureFeatureStates(desired, current, target, semantics)
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
@@ -53,12 +55,13 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 		return schemaext.ComparisonResult{}, err
 	}
 	if target == "" {
-		if declared.Objects.Len() != 0 || observed.Objects.Len() != 0 || len(declared.Facets) != 0 || len(observed.Facets) != 0 || !declared.Coverage.IsZero() || !observed.Coverage.IsZero() {
+		if declared.Objects.Len() != 0 || observed.Objects.Len() != 0 || len(declared.Facets) != 0 || len(observed.Facets) != 0 ||
+			!declared.Coverage.IsZero() || !observed.Coverage.IsZero() || len(requests) != 0 {
 			return schemaext.ComparisonResult{}, fmt.Errorf("%w: feature comparison requires an explicit target", ptaherr.ErrUnsupportedDialect)
 		}
 		return schemaext.ComparisonResult{Complete: true, Desired: declared}, nil
 	}
-	result, err := runtime.CompareFeatures(ctx, schemaext.ComparisonRequest{Target: target, Identifiers: semantics, Capabilities: caps, Desired: declared, Current: observed, Owners: parents})
+	result, err := runtime.CompareFeatures(ctx, schemaext.ComparisonRequest{Target: target, Identifiers: semantics, Capabilities: caps, Desired: declared, Current: observed, Owners: parents, Requests: requests})
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}

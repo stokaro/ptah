@@ -23,14 +23,12 @@ const Kind schemaext.Kind = "ptah.run/ydb/secret"
 // no author declared, such as one converted from a database read or one a
 // rollback creates again. A source declaration always names its variable.
 //
-// Rotate asks the plan to give a secret the database holds the value its
-// variable holds now, through ALTER SECRET. Only [RequestRotation] sets it, for
-// one invocation; no source format can write it, so a rotation cannot stay on
-// in a schema file and reach every later plan.
+// A declaration never asks for a new value. A rotation is a request of one
+// comparison (see [RotationRequests]), so it cannot stay on in a schema file
+// and reach every later plan.
 type Desired struct {
 	ValueEnv   string `json:"value_env,omitempty"`
 	StructName string `json:"struct_name,omitempty"`
-	Rotate     bool   `json:"rotate,omitempty"`
 }
 
 // Observed is a secret a database read listed. The server returns the path
@@ -84,8 +82,7 @@ func (v *Observed) Equal(other schemaext.Value) bool {
 }
 
 // Desired converts an observation into a declaration that keeps the secret.
-// The read names no variable, so the declaration selects the default one, and
-// it never asks for a rotation.
+// The read names no variable, so the declaration selects the default one.
 func (v *Observed) Desired() *Desired {
 	if v == nil {
 		return nil
