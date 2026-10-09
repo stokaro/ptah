@@ -274,9 +274,12 @@ const (
 )
 
 // dropRootSecrets drops the root secrets the limit test makes, and no other.
+// It runs in a cleanup too, where the test's context has ended.
 func dropRootSecrets(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
-	for _, path := range liveSecrets(c, readScoped(c, conn, []string{""})) {
+	root, err := dbschema.ReadSchemaWithSchemasContext(context.Background(), conn, []string{""})
+	c.Assert(err, qt.IsNil)
+	for _, path := range liveSecrets(c, root) {
 		if path != secretsLimitKept && path != secretsLimitDropped {
 			continue
 		}
@@ -406,8 +409,8 @@ func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
 
 // TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns compares the secret a
 // database holds against a target without the secrets key, as a 25.3 server
-// with EnableSchemaSecrets on lists one: a declaration that keeps it and a
-// source with no claim on it plan no secret statement, so neither is refused.
+// with EnableSchemaSecrets on lists one: a source with no claim on secrets
+// keeps it and plans no secret statement, so the comparison is not refused.
 // On 25.1 a source that describes every secret and declares none plans
 // nothing either.
 func TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns(t *testing.T) {
@@ -420,11 +423,10 @@ func TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns(t *testing.T) {
 	info := conn.Info()
 	info.Capabilities = capability.YDB253()
 
-	for _, declared := range []*schemamodel.Database{secretsDeclaration("pg_password"), {}} {
-		diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
-		c.Assert(err, qt.IsNil)
-		c.Assert(diff.FeatureChanges, qt.HasLen, 0)
-	}
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), &schemamodel.Database{}, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.FeatureChanges, qt.HasLen, 0)
 
 	old := openYDB(c, lineNamed(c, "25.1"))
 	described := &schemamodel.Database{FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))}
@@ -432,9 +434,11 @@ func TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns(t *testing.T) {
 }
 
 // TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement compares the
-// same database against a target without the secrets key for a declaration
-// that leaves the secret out: dropping it is a statement the target cannot
-// run, so the comparison refuses it by name.
+// same database against a target without the secrets key: a source that
+// describes every secret and leaves this one out asks for a drop the target
+// cannot run, and a source that declares it declares an object the target
+// cannot create, as any declaration such a target cannot write is refused.
+// Both are refused by the secret's path.
 func TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement(t *testing.T) {
 	t.Setenv(secretPasswordEnv, secretPasswordValue)
 	c := qt.New(t)
@@ -446,9 +450,10 @@ func TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement(t *testing.T) 
 	info.Capabilities = capability.YDB253()
 	described := &schemamodel.Database{FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), described, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
-
-	c.Assert(err, qt.ErrorMatches, "secret ptah_ydb_secrets/pg_password, which requires target capability secrets, unavailable on this ydb target")
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(diff, qt.IsNil)
+	for _, declared := range []*schemamodel.Database{described, secretsDeclaration("pg_password")} {
+		diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+		c.Assert(err, qt.ErrorMatches, ".*secret ptah_ydb_secrets/pg_password, which requires target capability secrets, unavailable on this ydb target")
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(diff, qt.IsNil)
+	}
 }

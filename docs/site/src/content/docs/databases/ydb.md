@@ -1683,11 +1683,13 @@ value it ever held, in clear from `.metadata/secrets`. Ptah models it on no
 line, never reads `.metadata`, and lint rule `YD140` reports a migration that
 writes a secret's value, in either form.
 
-A plan refuses a line without the `secrets` key, naming the secret, only when
-it would create, rotate or drop one. On such a line the reader records each
-secret it lists as unmanaged: no plan keeps or drops it, a comparison reports
-it only when the desired schema declares it or describes every secret, and Go
-export writes a `notdescribed` limit for it.
+On a line without the `secrets` key, a declared secret is refused, as any
+declaration the line cannot create is, and a comparison refuses a secret it
+would create, rotate or drop, naming it. A secret it leaves alone is not
+refused: a source with no claim on secrets keeps it. On such a line the reader
+records each secret it lists as unmanaged: no plan keeps or drops it, a
+comparison reports it only when the desired schema declares it or describes
+every secret, and Go export writes a `notdescribed` limit for it.
 
 HCL, DBML and SQL documents of other dialects cannot name a secret. They make
 no claim about secrets, so their silence plans no drop and an unread secret
