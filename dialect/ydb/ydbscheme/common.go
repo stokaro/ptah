@@ -1,7 +1,9 @@
 package ydbscheme
 
 import (
+	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 
@@ -19,7 +21,13 @@ import (
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
 // batch, not the Go AST node or a per-node remote call.
-func CommonEffects(builder objectidentity.Builder, node ast.Node) ([]plangraph.Effect, error) {
+//
+// root is the absolute path of the database the statement runs in, such as
+// /local, or empty when it is not known. A secret path the statement writes
+// absolute is read relative to root, and one outside root is refused, since
+// no statement of the database can read it. With an empty root an absolute
+// secret path reads nothing.
+func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) ([]plangraph.Effect, error) {
 	if name, action := principalUse(node); action != "" {
 		ref := builder.Role(name)
 		if ref.Name.Source == "" || ref.Name.Normalized == "" {
@@ -44,17 +52,22 @@ func CommonEffects(builder objectidentity.Builder, node ast.Node) ([]plangraph.E
 	if use.table {
 		effects = append(effects, plangraph.Effect{Subject: ref, Action: use.action})
 	}
-	return append(effects, secretReads(node)...), nil
+	reads, err := secretReads(root, node)
+	if err != nil {
+		return nil, err
+	}
+	return append(effects, reads...), nil
 }
 
 // secretReads names each YDB secret a statement reads by its path when it
 // runs: the _SECRET_PATH options of an external data source and the
 // credentials of an async replication or a transfer. YDB looks the secret up
 // when the object is created or its connection changes (`secret ... not
-// found`), so a secret's owner orders its creation before these reads. A path
-// that is absolute, or that cannot name a secret, is left out: it may lie
-// outside the database root the plan addresses.
-func secretReads(node ast.Node) []plangraph.Effect {
+// found`), so a secret's owner orders its creation before these reads. YDB
+// stores the path absolute, so an absolute path under root names the same
+// secret as the relative one. A path outside root is refused; a path that
+// cannot name a secret is left out.
+func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 	var paths []string
 	switch n := node.(type) {
 	case *ast.CreateExternalDataSourceNode:
@@ -74,18 +87,46 @@ func secretReads(node ast.Node) []plangraph.Effect {
 	}
 	var effects []plangraph.Effect
 	seen := make(map[objectidentity.Key]bool)
-	for _, path := range paths {
-		if path == "" || strings.HasPrefix(strings.TrimSpace(path), "/") {
+	for _, written := range paths {
+		relative, known, err := secretPathUnder(root, written)
+		if err != nil {
+			return nil, err
+		}
+		if !known {
 			continue
 		}
-		ref := ydbsecret.Ref(ydbsecret.SplitPath(path))
+		ref := ydbsecret.Ref(ydbsecret.SplitPath(relative))
 		if ydbsecret.ValidateIdentity(ref) != nil || seen[ref.Key()] {
 			continue
 		}
 		seen[ref.Key()] = true
 		effects = append(effects, plangraph.Effect{Subject: ref, Action: plangraph.Read})
 	}
-	return effects
+	return effects, nil
+}
+
+// secretPathUnder returns the secret path written relative to the database
+// root. It reports false for an empty path and for an absolute one when the
+// root is not known, and refuses an absolute path outside root.
+func secretPathUnder(root, written string) (string, bool, error) {
+	written = strings.TrimSpace(written)
+	switch {
+	case written == "":
+		return "", false, nil
+	case !strings.HasPrefix(written, "/"):
+		return written, true, nil
+	case strings.Trim(root, "/") == "":
+		return "", false, nil
+	}
+	database := "/" + strings.Trim(root, "/")
+	relative, under := strings.CutPrefix(path.Clean(written), database+"/")
+	if !under {
+		return "", false, (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+			Code: schemavalidation.InvalidSchema, Kind: "secret", Object: written,
+			Message: fmt.Sprintf("secret path %q is outside the database %s, so no statement of it can read the secret", written, database),
+		}}}).Err(platform.YDB)
+	}
+	return relative, true, nil
 }
 
 func connectionSecretPaths(connection ast.ReplicationConnectionSpec) []string {

@@ -20,7 +20,7 @@ func (p *Planner) scheduleFeatureChanges(
 	ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff,
 	rebuilds map[string]*tableRebuild, semantics identifier.Semantics, before, after []ast.Node,
 ) ([]ast.Node, error) {
-	graph, err := commonGraph(semantics, before, after)
+	graph, err := commonGraph(semantics, diff.CurrentDatabasePath, before, after)
 	if err != nil {
 		return nil, err
 	}
@@ -36,13 +36,16 @@ type commonPlan struct {
 	steps          []featureplan.CommonStep
 	beforeFeatures plangraph.StepID
 	afterFeatures  plangraph.StepID
+	root           string
 }
 
 // commonGraph gives each accepted statement an identity before owner planning.
 // The existing common phases retain their order. Only recognized scheme
 // operations supply footprints; other operations retain unknown metadata.
-func commonGraph(semantics identifier.Semantics, before, after []ast.Node) (commonPlan, error) {
-	graph := commonPlan{contribution: plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/ydb"}}
+// root is the database the plan runs in, which an absolute secret path is read
+// against; see [ydbscheme.CommonEffects].
+func commonGraph(semantics identifier.Semantics, root string, before, after []ast.Node) (commonPlan, error) {
+	graph := commonPlan{contribution: plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/ydb"}, root: root}
 	builder := objectidentity.NewBuilder(semantics)
 	if err := graph.appendNodes(builder, "before", before); err != nil {
 		return commonPlan{}, err
@@ -59,7 +62,7 @@ func commonGraph(semantics identifier.Semantics, before, after []ast.Node) (comm
 
 func (g *commonPlan) appendNodes(builder objectidentity.Builder, phase string, nodes []ast.Node) error {
 	for i, node := range nodes {
-		effects, err := ydbscheme.CommonEffects(builder, node)
+		effects, err := ydbscheme.CommonEffects(builder, g.root, node)
 		if err != nil {
 			return err
 		}
