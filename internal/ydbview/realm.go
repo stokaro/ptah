@@ -3,14 +3,14 @@ package ydbview
 import (
 	"strings"
 
-	"ptah.run/internal/ydbtype"
+	"ptah.run/dialect/ydb/ydbsyntax"
 )
 
 // RealmPrefix is the pragma a connection adds to every query in a dev realm.
 // The connection and view reader share this spelling because YDB stores it
 // in a view's query text, where the reader must recognize its own prefix.
 func RealmPrefix(root string) string {
-	return "PRAGMA TablePathPrefix(" + ydbtype.StringLiteral(root) + ");\n"
+	return "PRAGMA TablePathPrefix(" + ydbsyntax.StringLiteral(root) + ");\n"
 }
 
 // RealmQueryText removes the connection's leading realm pragma from a stored

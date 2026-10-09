@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbsyntax"
+
 	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbtype"
 	"ptah.run/internal/yqlservice"
 )
 
@@ -67,7 +68,7 @@ func (s Statement) Text() (string, error) {
 	}
 	value := "NULL"
 	if s.Comment != "" {
-		value = ydbtype.StringLiteral(s.Comment)
+		value = ydbsyntax.StringLiteral(s.Comment)
 	}
 	return "COMMENT ON " + keyword + " " + target + " IS " + value, nil
 }

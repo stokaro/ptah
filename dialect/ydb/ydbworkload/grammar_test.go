@@ -1,25 +1,24 @@
-package ydbpool_test
+package ydbworkload_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 func TestParsePool_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.ResourcePoolSpec
+		want   ydbworkload.PoolSpec
 	}{
 		{
 			name:   "a pool with no setting has no limit",
 			values: map[string]string{"name": "batch"},
-			want:   ast.ResourcePoolSpec{},
+			want:   ydbworkload.PoolSpec{},
 		},
 		{
 			name: "every setting, a fraction among them",
@@ -29,7 +28,7 @@ func TestParsePool_HappyPath(t *testing.T) {
 				"query_cpu_limit_percent_per_node": "30", "total_cpu_limit_percent_per_node": "70",
 				"resource_weight": "0",
 			},
-			want: ast.ResourcePoolSpec{
+			want: ydbworkload.PoolSpec{
 				ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)),
 				DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(25.0),
 				QueryCPULimitPercentPerNode: new(30.0), TotalCPULimitPercentPerNode: new(70.0),
@@ -39,18 +38,18 @@ func TestParsePool_HappyPath(t *testing.T) {
 		{
 			name:   "a limit of zero is a limit, not an unset one",
 			values: map[string]string{"name": "frozen", "concurrent_query_limit": "0"},
-			want:   ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(0))},
+			want:   ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(0))},
 		},
 		{
 			name:   "a queue beside a load threshold rather than a query limit",
 			values: map[string]string{"name": "q", "queue_size": "5", "database_load_cpu_threshold": "90"},
-			want:   ast.ResourcePoolSpec{QueueSize: new(int32(5)), DatabaseLoadCPUThreshold: new(90.0)},
+			want:   ydbworkload.PoolSpec{QueueSize: new(int32(5)), DatabaseLoadCPUThreshold: new(90.0)},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			name, spec, err := ydbpool.ParsePool(test.values)
+			name, spec, err := ydbworkload.ParsePool(test.values)
 			c.Assert(err, qt.IsNil)
 			c.Assert(name, qt.Equals, test.values["name"])
 			c.Assert(spec, qt.DeepEquals, test.want)
@@ -135,13 +134,13 @@ func TestParsePool_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			name, spec, err := ydbpool.ParsePool(test.values)
+			name, spec, err := ydbworkload.ParsePool(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			var declared *ydbpool.DeclarationError
+			var declared *ydbworkload.DeclarationError
 			c.Assert(err, qt.ErrorAs, &declared)
 			c.Assert(declared.Attribute, qt.Equals, test.wantAttribute)
 			c.Assert(name, qt.Equals, "")
-			c.Assert(spec, qt.DeepEquals, ast.ResourcePoolSpec{})
+			c.Assert(spec, qt.DeepEquals, ydbworkload.PoolSpec{})
 		})
 	}
 }
@@ -150,23 +149,23 @@ func TestParseClassifier_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.ResourcePoolClassifierSpec
+		want   ydbworkload.ClassifierSpec
 	}{
 		{
 			name:   "a member and a rank",
 			values: map[string]string{"name": "c", "resource_pool": "batch", "member_name": "etl", "rank": "100"},
-			want:   ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 100},
+			want:   ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 100},
 		},
 		{
 			name:   "every query, at rank zero, to the pool default",
 			values: map[string]string{"name": "c", "resource_pool": "default", "rank": "0"},
-			want:   ast.ResourcePoolClassifierSpec{ResourcePool: "default"},
+			want:   ydbworkload.ClassifierSpec{ResourcePool: "default"},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			name, spec, err := ydbpool.ParseClassifier(test.values)
+			name, spec, err := ydbworkload.ParseClassifier(test.values)
 			c.Assert(err, qt.IsNil)
 			c.Assert(name, qt.Equals, "c")
 			c.Assert(spec, qt.DeepEquals, test.want)
@@ -209,13 +208,13 @@ func TestParseClassifier_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			name, spec, err := ydbpool.ParseClassifier(test.values)
+			name, spec, err := ydbworkload.ParseClassifier(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			var declared *ydbpool.DeclarationError
+			var declared *ydbworkload.DeclarationError
 			c.Assert(err, qt.ErrorAs, &declared)
 			c.Assert(declared.Attribute, qt.Equals, test.wantAttribute)
 			c.Assert(name, qt.Equals, "")
-			c.Assert(spec, qt.DeepEquals, ast.ResourcePoolClassifierSpec{})
+			c.Assert(spec, qt.DeepEquals, ydbworkload.ClassifierSpec{})
 		})
 	}
 }
@@ -227,75 +226,75 @@ func withPools() capability.Capabilities {
 
 func TestCheckPool_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ydbpool.CheckPool("batch", ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(1))}, withPools()),
+	c.Assert(ydbworkload.CheckPool("batch", ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(1))}, withPools()),
 		qt.IsNil)
-	c.Assert(ydbpool.CheckPool("default", ast.ResourcePoolSpec{
+	c.Assert(ydbworkload.CheckPool("default", ydbworkload.PoolSpec{
 		QueryMemoryLimitPercentPerNode: new(50.0), QueryCPULimitPercentPerNode: new(50.0),
 		TotalCPULimitPercentPerNode: new(50.0), ResourceWeight: new(30.0),
 	}, withPools()), qt.IsNil)
-	c.Assert(ydbpool.CheckPoolDrop("batch", withPools()), qt.IsNil)
-	c.Assert(ydbpool.CheckClassifier("c", ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}, withPools()),
+	c.Assert(ydbworkload.CheckPoolDrop("batch", withPools()), qt.IsNil)
+	c.Assert(ydbworkload.CheckClassifier("c", ydbworkload.ClassifierSpec{ResourcePool: "batch"}, withPools()),
 		qt.IsNil)
 }
 
 func TestCheckPool_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
-		refusal *ydbpool.Refusal
-		want    ydbpool.Refusal
+		refusal *ydbworkload.Refusal
+		want    ydbworkload.Refusal
 	}{
 		{
 			name:    "a line whose flag is off",
-			refusal: ydbpool.CheckPool("batch", ast.ResourcePoolSpec{}, capability.YDB262()),
-			want: ydbpool.Refusal{
-				Subject: `resource pool "batch"`, Key: capability.ResourcePools, Reason: ydbpool.FlagHint,
+			refusal: ydbworkload.CheckPool("batch", ydbworkload.PoolSpec{}, capability.YDB262()),
+			want: ydbworkload.Refusal{
+				Subject: `resource pool "batch"`, Key: capability.ResourcePools, Reason: ydbworkload.FlagHint,
 			},
 		},
 		{
 			name:    "a classifier on a line whose flag is off",
-			refusal: ydbpool.CheckClassifier("c", ast.ResourcePoolClassifierSpec{ResourcePool: "p"}, capability.YDB251()),
-			want: ydbpool.Refusal{
-				Subject: `resource pool classifier "c"`, Key: capability.ResourcePools, Reason: ydbpool.FlagHint,
+			refusal: ydbworkload.CheckClassifier("c", ydbworkload.ClassifierSpec{ResourcePool: "p"}, capability.YDB251()),
+			want: ydbworkload.Refusal{
+				Subject: `resource pool classifier "c"`, Key: capability.ResourcePools, Reason: ydbworkload.FlagHint,
 			},
 		},
 		{
 			name:    "a percentage built by hand out of range",
-			refusal: ydbpool.CheckPool("p", ast.ResourcePoolSpec{ResourceWeight: new(101.0)}, withPools()),
-			want: ydbpool.Refusal{
+			refusal: ydbworkload.CheckPool("p", ydbworkload.PoolSpec{ResourceWeight: new(101.0)}, withPools()),
+			want: ydbworkload.Refusal{
 				Subject: `resource pool "p"`, Reason: "RESOURCE_WEIGHT takes a percentage from 0 to 100",
 			},
 		},
 		{
 			name:    "a negative limit built by hand",
-			refusal: ydbpool.CheckPool("p", ast.ResourcePoolSpec{QueueSize: new(int32(-1))}, withPools()),
-			want:    ydbpool.Refusal{Subject: `resource pool "p"`, Reason: "QUEUE_SIZE takes a whole number from 0"},
+			refusal: ydbworkload.CheckPool("p", ydbworkload.PoolSpec{QueueSize: new(int32(-1))}, withPools()),
+			want:    ydbworkload.Refusal{Subject: `resource pool "p"`, Reason: "QUEUE_SIZE takes a whole number from 0"},
 		},
 		{
 			name: "a limit on the pool default built by hand",
-			refusal: ydbpool.CheckPool("default",
-				ast.ResourcePoolSpec{DatabaseLoadCPUThreshold: new(80.0), ResourceWeight: new(30.0)}, withPools()),
-			want: ydbpool.Refusal{Subject: `resource pool "default"`, Reason: "the pool default takes no " +
+			refusal: ydbworkload.CheckPool("default",
+				ydbworkload.PoolSpec{DatabaseLoadCPUThreshold: new(80.0), ResourceWeight: new(30.0)}, withPools()),
+			want: ydbworkload.Refusal{Subject: `resource pool "default"`, Reason: "the pool default takes no " +
 				"database_load_cpu_threshold: YDB keeps it unlimited (`Can not change property " +
 				"database_load_cpu_threshold for default pool`)"},
 		},
 		{
 			name:    "a queue built by hand with nothing to wait for",
-			refusal: ydbpool.CheckPool("p", ast.ResourcePoolSpec{QueueSize: new(int32(1))}, withPools()),
-			want: ydbpool.Refusal{Subject: `resource pool "p"`, Reason: "a queue needs concurrent_query_limit or " +
+			refusal: ydbworkload.CheckPool("p", ydbworkload.PoolSpec{QueueSize: new(int32(1))}, withPools()),
+			want: ydbworkload.Refusal{Subject: `resource pool "p"`, Reason: "a queue needs concurrent_query_limit or " +
 				"database_load_cpu_threshold beside it (`queue_size unsupported without concurrent_query_limit or " +
 				"database_load_cpu_threshold`)"},
 		},
 		{
 			name:    "dropping the pool default",
-			refusal: ydbpool.CheckPoolDrop("default", withPools()),
-			want: ydbpool.Refusal{Subject: "DROP RESOURCE POOL default", Reason: "it is the pool YDB runs every " +
+			refusal: ydbworkload.CheckPoolDrop("default", withPools()),
+			want: ydbworkload.Refusal{Subject: "DROP RESOURCE POOL default", Reason: "it is the pool YDB runs every " +
 				"query in that no classifier sends elsewhere, and after it is dropped every query of the database " +
 				"fails with `Resource pool default not found`"},
 		},
 		{
 			name:    "a classifier built by hand with no pool",
-			refusal: ydbpool.CheckClassifier("c", ast.ResourcePoolClassifierSpec{}, withPools()),
-			want: ydbpool.Refusal{Subject: `resource pool classifier "c"`,
+			refusal: ydbworkload.CheckClassifier("c", ydbworkload.ClassifierSpec{}, withPools()),
+			want: ydbworkload.Refusal{Subject: `resource pool classifier "c"`,
 				Reason: "it names no pool (`Missing required property resource_pool`)"},
 		},
 	}
@@ -310,9 +309,9 @@ func TestCheckPool_FailurePath(t *testing.T) {
 
 func TestCheckRouting_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ydbpool.CheckRouting([]string{"batch"}, []ydbpool.Classifier{
-		{Name: "a", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1}},
-		{Name: "b", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 2}},
+	c.Assert(ydbworkload.CheckRouting([]string{"batch"}, []ydbworkload.Classifier{
+		{Name: "a", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}},
+		{Name: "b", Spec: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 2}},
 	}), qt.IsNil)
 }
 
@@ -320,26 +319,26 @@ func TestCheckRouting_FailurePath(t *testing.T) {
 	tests := []struct {
 		name        string
 		pools       []string
-		classifiers []ydbpool.Classifier
-		want        ydbpool.Refusal
+		classifiers []ydbworkload.Classifier
+		want        ydbworkload.Refusal
 	}{
 		{
 			name:  "two classifiers on one rank",
 			pools: []string{"batch"},
-			classifiers: []ydbpool.Classifier{
-				{Name: "a", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 7}},
-				{Name: "b", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 7}},
+			classifiers: []ydbworkload.Classifier{
+				{Name: "a", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 7}},
+				{Name: "b", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 7}},
 			},
-			want: ydbpool.Refusal{Subject: `resource pool classifier "b"`,
+			want: ydbworkload.Refusal{Subject: `resource pool classifier "b"`,
 				Reason: `its rank 7 is the rank of classifier "a", and YDB keeps one classifier per rank`},
 		},
 		{
 			name:  "a pool nobody declared, which YDB would route to default without a word",
 			pools: []string{"batch"},
-			classifiers: []ydbpool.Classifier{
-				{Name: "a", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "Batch", Rank: 1}},
+			classifiers: []ydbworkload.Classifier{
+				{Name: "a", Spec: ydbworkload.ClassifierSpec{ResourcePool: "Batch", Rank: 1}},
 			},
-			want: ydbpool.Refusal{Subject: `resource pool classifier "a"`, Reason: `it names resource pool "Batch", ` +
+			want: ydbworkload.Refusal{Subject: `resource pool classifier "a"`, Reason: `it names resource pool "Batch", ` +
 				`which is not declared; YDB runs the queries of a classifier whose pool does not exist in the pool ` +
 				`"default" without a word`},
 		},
@@ -347,7 +346,7 @@ func TestCheckRouting_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			refusal := ydbpool.CheckRouting(test.pools, test.classifiers)
+			refusal := ydbworkload.CheckRouting(test.pools, test.classifiers)
 			c.Assert(refusal, qt.IsNotNil)
 			c.Assert(*refusal, qt.DeepEquals, test.want)
 		})

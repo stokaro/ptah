@@ -7,7 +7,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // refuseResourcePool refuses subject, a resource pool or a classifier, on a
@@ -22,7 +22,7 @@ func refuseResourcePool(dialect string, caps capability.Capabilities, subject st
 	message := fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
 		subject, capability.ResourcePools, normalized)
 	if normalized == platform.YDB {
-		message += "; " + ydbpool.FlagHint
+		message += "; " + ydbworkload.FlagHint
 	}
 	return &ptaherr.CapabilityError{
 		Dialect: normalized,
@@ -43,30 +43,30 @@ func validateDeclaredResourcePools(dialect string, caps capability.Capabilities,
 		if err := refuseResourcePool(dialect, caps, fmt.Sprintf("resource pool %q", pool.Name)); err != nil {
 			return err
 		}
-		if err := resourcePoolRefusal(dialect, ydbpool.CheckPool(pool.Name, pool.Spec, caps)); err != nil {
+		if err := resourcePoolRefusal(dialect, ydbworkload.CheckPool(pool.Name, pool.Spec, caps)); err != nil {
 			return err
 		}
 		pools = append(pools, pool.Name)
 	}
-	classifiers := make([]ydbpool.Classifier, 0, len(database.ResourcePoolClassifiers))
+	classifiers := make([]ydbworkload.Classifier, 0, len(database.ResourcePoolClassifiers))
 	for _, classifier := range database.ResourcePoolClassifiers {
 		subject := fmt.Sprintf("resource pool classifier %q", classifier.Name)
 		if err := refuseResourcePool(dialect, caps, subject); err != nil {
 			return err
 		}
 		if err := resourcePoolRefusal(dialect,
-			ydbpool.CheckClassifier(classifier.Name, classifier.Spec, caps)); err != nil {
+			ydbworkload.CheckClassifier(classifier.Name, classifier.Spec, caps)); err != nil {
 			return err
 		}
-		classifiers = append(classifiers, ydbpool.Classifier{Name: classifier.Name, Spec: classifier.Spec})
+		classifiers = append(classifiers, ydbworkload.Classifier{Name: classifier.Name, Spec: classifier.Spec})
 	}
-	return resourcePoolRefusal(dialect, ydbpool.CheckRouting(pools, classifiers))
+	return resourcePoolRefusal(dialect, ydbworkload.CheckRouting(pools, classifiers))
 }
 
 // resourcePoolRefusal turns a refusal YDB makes on every line into the
 // renderer's error. A refusal through the key never reaches it: the key is
 // checked first.
-func resourcePoolRefusal(dialect string, refusal *ydbpool.Refusal) error {
+func resourcePoolRefusal(dialect string, refusal *ydbworkload.Refusal) error {
 	if refusal == nil {
 		return nil
 	}

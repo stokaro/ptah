@@ -7,11 +7,12 @@ import (
 	"slices"
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -411,7 +412,7 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	db.Topics = append(db.Topics, schemamodel.Topic{Name: "events", Schema: "public"})
 	db.ResourcePools = append(db.ResourcePools, schemamodel.ResourcePool{Name: "batch"})
 	db.ResourcePoolClassifiers = append(db.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
-		Name: "batch_users", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1},
+		Name: "batch_users", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1},
 	})
 	db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{Name: "mirror", Schema: "public"})
 	db.Transfers = append(db.Transfers, schemamodel.Transfer{Name: "ingest", Schema: "public"})

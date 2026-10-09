@@ -7,11 +7,10 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // withWorkloadKeys answers the keys about YDB's resource pools, backup
@@ -68,18 +67,18 @@ func ydbResourcePools() experiment {
 	return experiment{
 		decides: []capability.Capability{capability.ResourcePools},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
-			pool := ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(3)), QueryMemoryLimitPercentPerNode: new(12.5)}
-			classifier := ast.ResourcePoolClassifierSpec{
+			pool := ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(3)), QueryMemoryLimitPercentPerNode: new(12.5)}
+			classifier := ydbworkload.ClassifierSpec{
 				ResourcePool: s.namespace + "_rpk", MemberName: s.namespace + "_nobody", Rank: probeRank(s.namespace),
 			}
-			poolStatement := ydbpool.CreatePoolStatement(s.namespace+"_rpk", pool)
+			poolStatement := ydbworkload.CreatePoolStatement(s.namespace+"_rpk", pool)
 			created := s.exec(ctx, poolStatement)
 			attempts := []Attempt{created}
 			if !created.Accepted {
 				return verdicts{capability.ResourcePools: readBack{statement: poolStatement}.observation()}, attempts
 			}
 			s.resourcePools = append(s.resourcePools, s.namespace+"_rpk")
-			classifierStatement := ydbpool.CreateClassifierStatement(s.namespace+"_rpc", classifier)
+			classifierStatement := ydbworkload.CreateClassifierStatement(s.namespace+"_rpc", classifier)
 			createdClassifier := s.exec(ctx, classifierStatement)
 			attempts = append(attempts, createdClassifier)
 			if createdClassifier.Accepted {
@@ -95,7 +94,7 @@ func ydbResourcePools() experiment {
 			}
 			read.Accepted = true
 			found := slices.ContainsFunc(db.ResourcePools, func(held catalog.ResourcePool) bool {
-				return held.Name == s.namespace+"_rpk" && ydbpool.PoolsEqual(held.Spec, pool)
+				return held.Name == s.namespace+"_rpk" && ydbworkload.PoolsEqual(held.Spec, pool)
 			}) && slices.Contains(db.ResourcePoolClassifiers,
 				catalog.ResourcePoolClassifier{Name: s.namespace + "_rpc", Spec: classifier})
 			return verdicts{capability.ResourcePools: readBack{

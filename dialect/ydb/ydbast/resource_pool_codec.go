@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // ResourcePoolCodec describes the version-one pool operation and both operands.
@@ -18,7 +18,7 @@ func ResourcePoolCodec() schemaext.Codec {
 "query_memory_limit_percent_per_node":{"type":"number","minimum":0,"maximum":100},"query_cpu_limit_percent_per_node":{"type":"number","minimum":0,
 "maximum":100},"total_cpu_limit_percent_per_node":{"type":"number","minimum":0,"maximum":100},"resource_weight":{"type":"number","minimum":0,
 "maximum":100}}}`
-	allowed := slices.DeleteFunc(ydbpool.PoolAttributes(), func(name string) bool { return name == ydbpool.AttributeName })
+	allowed := slices.DeleteFunc(ydbworkload.PoolAttributes(), func(name string) bool { return name == ydbworkload.AttributeName })
 	return workloadCodec(&ResourcePool{}, spec, nil, allowed)
 }
 

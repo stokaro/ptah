@@ -23,6 +23,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/schemaprep"
@@ -32,7 +33,6 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/unloggedtable"
 	"ptah.run/internal/ydbacl"
-	"ptah.run/internal/ydbpool"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -1536,13 +1536,13 @@ func FromResourcePoolClassifier(classifier schemamodel.ResourcePoolClassifier) *
 // appendResourcePoolStatements adds a node for each declared resource pool,
 // then one for each classifier, which names a pool. The pool `default` is
 // the database's own, so a declaration of it is a change of its settings
-// rather than a creation: against nothing, its settings are what YDB gives
-// it, and the declaration is written as an ALTER from them.
+// rather than a creation. Its set-only operation preserves unspecified limits
+// without inventing a captured before state.
 func appendResourcePoolStatements(visit func(ast.Node) error, database schemamodel.Database) error {
 	for _, pool := range database.ResourcePools {
 		node := ast.Node(FromResourcePool(pool))
-		if pool.Name == ydbpool.DefaultPool {
-			node = &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: pool.Name, Spec: new(pool.Spec.Clone()), Previous: &ast.ResourcePoolSpec{}}}
+		if pool.Name == ydbworkload.DefaultPool {
+			node = &ast.ExtensionStatement{Payload: &ydbast.DefaultPoolSettings{Spec: pool.Spec.Clone()}}
 		}
 		if err := visit(node); err != nil {
 			return err

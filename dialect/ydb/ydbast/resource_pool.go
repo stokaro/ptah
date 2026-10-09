@@ -9,7 +9,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // ResourcePoolKind identifies an operation on a database-scoped YDB pool.
@@ -36,8 +36,8 @@ const (
 type ResourcePool struct {
 	Operation PoolOperation         `json:"operation"`
 	Name      string                `json:"name"`
-	Spec      *ast.ResourcePoolSpec `json:"spec,omitempty"`
-	Previous  *ast.ResourcePoolSpec `json:"previous,omitempty"`
+	Spec      *ydbworkload.PoolSpec `json:"spec,omitempty"`
+	Previous  *ydbworkload.PoolSpec `json:"previous,omitempty"`
 }
 
 // Kind returns the pool operation identity.
@@ -75,13 +75,13 @@ func (v *ResourcePool) Validate() error {
 	// it only lets the shared validator inspect names and operand values.
 	caps := capability.Capabilities{capability.ResourcePools: true}
 	if v.Operation == PoolDrop {
-		return poolInvalid(ydbpool.CheckPoolDrop(v.Name, caps))
+		return poolInvalid(ydbworkload.CheckPoolDrop(v.Name, caps))
 	}
-	if err := poolInvalid(ydbpool.CheckPool(v.Name, *v.Spec, caps)); err != nil {
+	if err := poolInvalid(ydbworkload.CheckPool(v.Name, *v.Spec, caps)); err != nil {
 		return err
 	}
 	if v.Previous != nil {
-		return poolInvalid(ydbpool.CheckPool(v.Name, *v.Previous, caps))
+		return poolInvalid(ydbworkload.CheckPool(v.Name, *v.Previous, caps))
 	}
 	return nil
 }
@@ -104,10 +104,10 @@ func (v *ResourcePool) Effect() schemaext.Effect {
 // ResourcePoolClassifier carries routing settings and an explicit transition.
 // Create requires Spec, alter requires both operands, and drop carries neither.
 type ResourcePoolClassifier struct {
-	Operation PoolOperation                   `json:"operation"`
-	Name      string                          `json:"name"`
-	Spec      *ast.ResourcePoolClassifierSpec `json:"spec,omitempty"`
-	Previous  *ast.ResourcePoolClassifierSpec `json:"previous,omitempty"`
+	Operation PoolOperation               `json:"operation"`
+	Name      string                      `json:"name"`
+	Spec      *ydbworkload.ClassifierSpec `json:"spec,omitempty"`
+	Previous  *ydbworkload.ClassifierSpec `json:"previous,omitempty"`
 }
 
 // Kind returns the classifier operation identity.
@@ -143,16 +143,16 @@ func (v *ResourcePoolClassifier) Validate() error {
 	}
 	caps := capability.Capabilities{capability.ResourcePools: true}
 	if v.Operation == PoolDrop {
-		return poolInvalid(ydbpool.CheckClassifier(v.Name, ast.ResourcePoolClassifierSpec{ResourcePool: ydbpool.DefaultPool}, caps))
+		return poolInvalid(ydbworkload.CheckClassifier(v.Name, ydbworkload.ClassifierSpec{ResourcePool: ydbworkload.DefaultPool}, caps))
 	}
-	for _, spec := range []*ast.ResourcePoolClassifierSpec{v.Spec, v.Previous} {
+	for _, spec := range []*ydbworkload.ClassifierSpec{v.Spec, v.Previous} {
 		if spec == nil {
 			continue
 		}
 		if !utf8.ValidString(spec.ResourcePool) || !utf8.ValidString(spec.MemberName) {
 			return fmt.Errorf("%w: classifier settings contain invalid UTF-8", schemaext.ErrInvalidValue)
 		}
-		if err := poolInvalid(ydbpool.CheckClassifier(v.Name, *spec, caps)); err != nil {
+		if err := poolInvalid(ydbworkload.CheckClassifier(v.Name, *spec, caps)); err != nil {
 			return err
 		}
 	}
@@ -190,7 +190,7 @@ func poolOperands[T any](operation PoolOperation, spec, previous *T) error {
 	return fmt.Errorf("%w: workload operation %q has incomplete or irrelevant operands", schemaext.ErrInvalidValue, operation)
 }
 
-func poolInvalid(refusal *ydbpool.Refusal) error {
+func poolInvalid(refusal *ydbworkload.Refusal) error {
 	if refusal == nil {
 		return nil
 	}

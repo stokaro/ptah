@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/schemafile"
-	"ptah.run/internal/ydbpool"
 )
 
 func TestYDBDesiredYQL_CoordinationAndPools(t *testing.T) {
@@ -25,8 +25,8 @@ func TestYDBDesiredYQL_CoordinationAndPools(t *testing.T) {
 			names := newPoolNames(c)
 			c.Cleanup(func() {
 				for _, statement := range []string{
-					ydbpool.DropClassifierStatement(names.toBatch),
-					ydbpool.DropPoolStatement(names.batch),
+					ydbworkload.DropClassifierStatement(names.toBatch),
+					ydbworkload.DropPoolStatement(names.batch),
 					"DROP COORDINATION NODE `" + directory + "/locks`",
 				} {
 					_ = conn.Writer().ExecuteSQL(context.Background(), statement)

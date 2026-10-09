@@ -3,10 +3,11 @@ package atlasfilter_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasfilter"
 )
@@ -24,8 +25,8 @@ func TestScopeDatabase_AKeptClassifierKeepsItsPool(t *testing.T) {
 	database := &catalog.Database{
 		ResourcePools: []catalog.ResourcePool{{Name: "batch"}, {Name: "reports"}},
 		ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{
-			{Name: "etl_users", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 10}},
-			{Name: "analysts", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "reports", Rank: 20}},
+			{Name: "etl_users", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 10}},
+			{Name: "analysts", Spec: ydbworkload.ClassifierSpec{ResourcePool: "reports", Rank: 20}},
 		},
 	}
 
@@ -42,8 +43,8 @@ func TestScopeGenerated_AKeptClassifierKeepsItsPool(t *testing.T) {
 	database := &schemamodel.Database{
 		ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}, {Name: "reports"}},
 		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
-			{Name: "etl_users", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 10}},
-			{Name: "analysts", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "reports", Rank: 20}},
+			{Name: "etl_users", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 10}},
+			{Name: "analysts", Spec: ydbworkload.ClassifierSpec{ResourcePool: "reports", Rank: 20}},
 		},
 	}
 

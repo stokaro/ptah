@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // parseResourcePoolComment reads a YDB resource pool declaration.
@@ -24,7 +24,7 @@ func (s *schemaParseState) parseResourcePoolComment(comment *ast.Comment, struct
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	name, spec, err := ydbpool.ParsePool(kv)
+	name, spec, err := ydbworkload.ParsePool(kv)
 	if err != nil {
 		return resourcePoolAttributeError(ctx, "ptah:schema:resourcepool", err)
 	}
@@ -49,7 +49,7 @@ func (s *schemaParseState) parseResourcePoolClassifierComment(comment *ast.Comme
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	name, spec, err := ydbpool.ParseClassifier(kv)
+	name, spec, err := ydbworkload.ParseClassifier(kv)
 	if err != nil {
 		return resourcePoolAttributeError(ctx, "ptah:schema:resourcepool:classifier", err)
 	}
@@ -71,7 +71,7 @@ func resourcePoolAttributeError(ctx annotationErrorContext, directive string, er
 		Err:       ptaherr.ErrInvalidAttributeValue,
 		Message:   fmt.Sprintf("%v on %s at %s", err, ctx.directive, ctx.location),
 	}
-	if declared, ok := errors.AsType[*ydbpool.DeclarationError](err); ok {
+	if declared, ok := errors.AsType[*ydbworkload.DeclarationError](err); ok {
 		parseErr.Attribute = declared.Attribute
 	}
 	return parseErr

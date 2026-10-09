@@ -14,13 +14,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -60,8 +59,8 @@ func newPoolNames(c *qt.C) poolNames {
 func removePools(conn *dbschema.DatabaseConnection, names poolNames) {
 	ctx := context.Background()
 	for _, statement := range []string{
-		ydbpool.DropClassifierStatement(names.toBatch), ydbpool.DropClassifierStatement(names.toIdle),
-		ydbpool.DropPoolStatement(names.batch), ydbpool.DropPoolStatement(names.idle),
+		ydbworkload.DropClassifierStatement(names.toBatch), ydbworkload.DropClassifierStatement(names.toIdle),
+		ydbworkload.DropPoolStatement(names.batch), ydbworkload.DropPoolStatement(names.idle),
 		"ALTER RESOURCE POOL default RESET (RESOURCE_WEIGHT);",
 	} {
 		_ = conn.Writer().ExecuteSQL(ctx, statement)
@@ -82,17 +81,17 @@ func poolDeclaration(
 ) *schemamodel.Database {
 	return &schemamodel.Database{
 		ResourcePools: []schemamodel.ResourcePool{
-			{Name: names.batch, Spec: ast.ResourcePoolSpec{
+			{Name: names.batch, Spec: ydbworkload.PoolSpec{
 				ConcurrentQueryLimit: new(limit), QueueSize: queue, QueryMemoryLimitPercentPerNode: memory,
 			}},
 			{Name: names.idle},
-			{Name: ydbpool.DefaultPool, Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
+			{Name: ydbworkload.DefaultPool, Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}},
 		},
 		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
-			{Name: names.toBatch, Spec: ast.ResourcePoolClassifierSpec{
+			{Name: names.toBatch, Spec: ydbworkload.ClassifierSpec{
 				ResourcePool: names.batch, MemberName: names.member, Rank: batchRank,
 			}},
-			{Name: names.toIdle, Spec: ast.ResourcePoolClassifierSpec{
+			{Name: names.toIdle, Spec: ydbworkload.ClassifierSpec{
 				ResourcePool: names.idle, MemberName: names.member + "g", Rank: idleRank,
 			}},
 		},
@@ -103,7 +102,7 @@ func poolDeclaration(
 // declaration order, with the pool default.
 func poolsOf(live *catalog.Database, names poolNames) ([]catalog.ResourcePool, []catalog.ResourcePoolClassifier) {
 	var pools []catalog.ResourcePool
-	for _, name := range []string{names.batch, names.idle, ydbpool.DefaultPool} {
+	for _, name := range []string{names.batch, names.idle, ydbworkload.DefaultPool} {
 		index := slices.IndexFunc(live.ResourcePools, func(pool catalog.ResourcePool) bool { return pool.Name == name })
 		if index >= 0 {
 			pools = append(pools, live.ResourcePools[index])
@@ -145,7 +144,7 @@ func TestYDBResourcePools_RoundTrip(t *testing.T) {
 			c.Assert(pools, qt.DeepEquals, []catalog.ResourcePool{
 				{Name: names.batch, Spec: declared.ResourcePools[0].Spec},
 				{Name: names.idle},
-				{Name: ydbpool.DefaultPool, Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
+				{Name: ydbworkload.DefaultPool, Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}},
 			})
 			c.Assert(classifiers, qt.DeepEquals, []catalog.ResourcePoolClassifier{
 				{Name: names.toBatch, Spec: declared.ResourcePoolClassifiers[0].Spec},
@@ -158,9 +157,9 @@ func TestYDBResourcePools_RoundTrip(t *testing.T) {
 
 			pools, classifiers = poolsOf(readScoped(c, conn, poolSchemas), names)
 			c.Assert(pools, qt.DeepEquals, []catalog.ResourcePool{
-				{Name: names.batch, Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(7))}},
+				{Name: names.batch, Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(7))}},
 				{Name: names.idle},
-				{Name: ydbpool.DefaultPool, Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
+				{Name: ydbworkload.DefaultPool, Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}},
 			})
 			c.Assert(classifiers, qt.DeepEquals, []catalog.ResourcePoolClassifier{
 				{Name: names.toBatch, Spec: changed.ResourcePoolClassifiers[0].Spec},
@@ -205,7 +204,7 @@ func TestYDBResourcePools_Rollback(t *testing.T) {
 			c.Assert(classifiers, qt.HasLen, 0)
 			c.Assert(pools, qt.DeepEquals, []catalog.ResourcePool{
 				current.ResourcePools[slices.IndexFunc(current.ResourcePools,
-					func(pool catalog.ResourcePool) bool { return pool.Name == ydbpool.DefaultPool })],
+					func(pool catalog.ResourcePool) bool { return pool.Name == ydbworkload.DefaultPool })],
 			})
 		})
 	}

@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/schemaprep"
@@ -31,7 +32,6 @@ import (
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
@@ -1301,25 +1301,25 @@ func resourcePoolAnnotations(
 	for _, pool := range sortedPools {
 		spec := pool.Spec
 		comments = append(comments, annotation("ptah:schema:resourcepool",
-			attr{name: ydbpool.AttributeName, value: pool.Name, set: true},
-			integer(ydbpool.AttributeConcurrentQueryLimit, spec.ConcurrentQueryLimit),
-			integer(ydbpool.AttributeQueueSize, spec.QueueSize),
-			fraction(ydbpool.AttributeDatabaseLoadCPUThreshold, spec.DatabaseLoadCPUThreshold),
-			fraction(ydbpool.AttributeQueryMemoryLimitPercentPerNode, spec.QueryMemoryLimitPercentPerNode),
-			fraction(ydbpool.AttributeQueryCPULimitPercentPerNode, spec.QueryCPULimitPercentPerNode),
-			fraction(ydbpool.AttributeTotalCPULimitPercentPerNode, spec.TotalCPULimitPercentPerNode),
-			fraction(ydbpool.AttributeResourceWeight, spec.ResourceWeight),
+			attr{name: ydbworkload.AttributeName, value: pool.Name, set: true},
+			integer(ydbworkload.AttributeConcurrentQueryLimit, spec.ConcurrentQueryLimit),
+			integer(ydbworkload.AttributeQueueSize, spec.QueueSize),
+			fraction(ydbworkload.AttributeDatabaseLoadCPUThreshold, spec.DatabaseLoadCPUThreshold),
+			fraction(ydbworkload.AttributeQueryMemoryLimitPercentPerNode, spec.QueryMemoryLimitPercentPerNode),
+			fraction(ydbworkload.AttributeQueryCPULimitPercentPerNode, spec.QueryCPULimitPercentPerNode),
+			fraction(ydbworkload.AttributeTotalCPULimitPercentPerNode, spec.TotalCPULimitPercentPerNode),
+			fraction(ydbworkload.AttributeResourceWeight, spec.ResourceWeight),
 		))
 	}
 	sortedClassifiers := slices.SortedFunc(slices.Values(classifiers),
 		func(a, b schemamodel.ResourcePoolClassifier) int { return strings.Compare(a.Name, b.Name) })
 	for _, classifier := range sortedClassifiers {
 		comments = append(comments, annotation("ptah:schema:resourcepool:classifier",
-			attr{name: ydbpool.AttributeName, value: classifier.Name, set: true},
-			attr{name: ydbpool.AttributeResourcePool, value: classifier.Spec.ResourcePool, set: true},
-			attr{name: ydbpool.AttributeMemberName, value: classifier.Spec.MemberName,
+			attr{name: ydbworkload.AttributeName, value: classifier.Name, set: true},
+			attr{name: ydbworkload.AttributeResourcePool, value: classifier.Spec.ResourcePool, set: true},
+			attr{name: ydbworkload.AttributeMemberName, value: classifier.Spec.MemberName,
 				set: classifier.Spec.MemberName != ""},
-			attr{name: ydbpool.AttributeRank, value: strconv.FormatInt(classifier.Spec.Rank, 10), set: true},
+			attr{name: ydbworkload.AttributeRank, value: strconv.FormatInt(classifier.Spec.Rank, 10), set: true},
 		))
 	}
 	return comments

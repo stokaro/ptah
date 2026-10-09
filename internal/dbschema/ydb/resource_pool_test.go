@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	ydbschema "ptah.run/internal/dbschema/ydb"
@@ -27,10 +28,10 @@ func poolSource() fakeSource {
 			Database: "/local",
 			Pools: []catalog.ResourcePool{
 				{Name: "default"},
-				{Name: "batch", Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10))}},
+				{Name: "batch", Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}},
 			},
 			Classifiers: []catalog.ResourcePoolClassifier{{Name: "etl_users",
-				Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}},
+				Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}},
 		},
 	}
 }

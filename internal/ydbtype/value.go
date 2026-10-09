@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"ptah.run/dialect/ydb/ydbsyntax"
 )
 
 // ValueError says why a value cannot be written into a column of a YDB type.
@@ -268,7 +270,7 @@ func durationValueLiteral(ydbType string, duration time.Duration) (string, error
 		return "", &ValueError{Type: ydbType, Value: duration.String(),
 			Reason: "it is finer than the microsecond " + ydbType + " keeps"}
 	}
-	return ydbType + "(" + quote(IntervalText(duration.Microseconds())) + ")", nil
+	return ydbType + "(" + ydbsyntax.StringLiteral(IntervalText(duration.Microseconds())) + ")", nil
 }
 
 // CanonicalValue returns value as one Go value per value a column of ydbType

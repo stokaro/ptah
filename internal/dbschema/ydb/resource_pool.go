@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 )
@@ -59,7 +60,7 @@ func readResourcePools(
 	for _, row := range pools.GetRows() {
 		read.Pools = append(read.Pools, catalog.ResourcePool{
 			Name: textOf(row, pools, "Name"),
-			Spec: ast.ResourcePoolSpec{
+			Spec: ydbworkload.PoolSpec{
 				ConcurrentQueryLimit:           int32Setting(cell(row, pools, "ConcurrentQueryLimit")),
 				QueueSize:                      int32Setting(cell(row, pools, "QueueSize")),
 				DatabaseLoadCPUThreshold:       doubleSetting(cell(row, pools, "DatabaseLoadCpuThreshold")),
@@ -78,7 +79,7 @@ func readResourcePools(
 	for _, row := range classifiers.GetRows() {
 		read.Classifiers = append(read.Classifiers, catalog.ResourcePoolClassifier{
 			Name: textOf(row, classifiers, "Name"),
-			Spec: ast.ResourcePoolClassifierSpec{
+			Spec: ydbworkload.ClassifierSpec{
 				ResourcePool: textOf(row, classifiers, "ResourcePool"),
 				MemberName:   textOf(row, classifiers, "MemberName"),
 				Rank:         cell(row, classifiers, "Rank").GetInt64Value(),

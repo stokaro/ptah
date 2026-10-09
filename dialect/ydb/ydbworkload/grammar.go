@@ -1,4 +1,4 @@
-// Package ydbpool reads, checks, compares and writes YDB's workload
+// Package ydbworkload reads, checks, compares and writes YDB's workload
 // management objects: resource pools, which limit the queries that run in
 // them, and resource pool classifiers, which send a user's or a group's
 // queries to a pool.
@@ -10,7 +10,7 @@
 //
 // Every fact here was measured on local-ydb 25.1.4.7 to 26.2.1.14 with the
 // EnableResourcePools flag on, which is off by default on each of them.
-package ydbpool
+package ydbworkload
 
 import (
 	"fmt"
@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 )
 
@@ -94,18 +93,18 @@ func (e *DeclarationError) Error() string {
 // unsupported without concurrent_query_limit or database_load_cpu_threshold`).
 // The pool `default` takes neither, so it takes no queue either; see
 // [CheckPool].
-func ParsePool(values map[string]string) (string, ast.ResourcePoolSpec, error) {
+func ParsePool(values map[string]string) (string, PoolSpec, error) {
 	name := strings.TrimSpace(values[AttributeName])
 	if err := checkName("a resource pool", name); err != nil {
-		return "", ast.ResourcePoolSpec{}, err
+		return "", PoolSpec{}, err
 	}
-	var spec ast.ResourcePoolSpec
+	var spec PoolSpec
 	var err error
 	if spec.ConcurrentQueryLimit, err = count(values, AttributeConcurrentQueryLimit); err != nil {
-		return "", ast.ResourcePoolSpec{}, err
+		return "", PoolSpec{}, err
 	}
 	if spec.QueueSize, err = count(values, AttributeQueueSize); err != nil {
-		return "", ast.ResourcePoolSpec{}, err
+		return "", PoolSpec{}, err
 	}
 	percentages := []struct {
 		attribute string
@@ -119,16 +118,16 @@ func ParsePool(values map[string]string) (string, ast.ResourcePoolSpec, error) {
 	}
 	for _, percentage := range percentages {
 		if *percentage.target, err = percent(values, percentage.attribute); err != nil {
-			return "", ast.ResourcePoolSpec{}, err
+			return "", PoolSpec{}, err
 		}
 	}
 	if attribute, reason := defaultPoolRefusal(name, spec); reason != "" {
-		return "", ast.ResourcePoolSpec{}, &DeclarationError{
+		return "", PoolSpec{}, &DeclarationError{
 			Attribute: attribute, Value: values[attribute], Reason: reason,
 		}
 	}
 	if reason := poolShapeRefusal(spec); reason != "" {
-		return "", ast.ResourcePoolSpec{}, &DeclarationError{
+		return "", PoolSpec{}, &DeclarationError{
 			Attribute: AttributeQueueSize, Value: values[AttributeQueueSize], Reason: reason,
 		}
 	}
@@ -145,28 +144,28 @@ func ParsePool(values map[string]string) (string, ast.ResourcePoolSpec, error) {
 // rank of an undeclared one depends on what the database held when it was
 // created, and a declaration could not be compared with it. A rank is a whole
 // number from 0; a negative one is a parse error in YQL.
-func ParseClassifier(values map[string]string) (string, ast.ResourcePoolClassifierSpec, error) {
+func ParseClassifier(values map[string]string) (string, ClassifierSpec, error) {
 	name := strings.TrimSpace(values[AttributeName])
 	if err := checkName("a resource pool classifier", name); err != nil {
-		return "", ast.ResourcePoolClassifierSpec{}, err
+		return "", ClassifierSpec{}, err
 	}
-	spec := ast.ResourcePoolClassifierSpec{
+	spec := ClassifierSpec{
 		ResourcePool: strings.TrimSpace(values[AttributeResourcePool]),
 		MemberName:   strings.TrimSpace(values[AttributeMemberName]),
 	}
 	if spec.ResourcePool == "" {
-		return "", ast.ResourcePoolClassifierSpec{}, &DeclarationError{Attribute: AttributeResourcePool,
+		return "", ClassifierSpec{}, &DeclarationError{Attribute: AttributeResourcePool,
 			Reason: "a classifier names the pool it sends queries to (`Missing required property resource_pool`)"}
 	}
 	raw, ok := values[AttributeRank]
 	if !ok || strings.TrimSpace(raw) == "" {
-		return "", ast.ResourcePoolClassifierSpec{}, &DeclarationError{Attribute: AttributeRank,
+		return "", ClassifierSpec{}, &DeclarationError{Attribute: AttributeRank,
 			Reason: "a classifier needs a rank; YDB ranks one declared without it after every classifier the " +
 				"database holds, so the rank would depend on the database rather than on the declaration"}
 	}
 	rank, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 	if err != nil || rank < 0 {
-		return "", ast.ResourcePoolClassifierSpec{}, &DeclarationError{Attribute: AttributeRank, Value: raw,
+		return "", ClassifierSpec{}, &DeclarationError{Attribute: AttributeRank, Value: raw,
 			Reason: "takes a whole number from 0"}
 	}
 	spec.Rank = rank
@@ -228,7 +227,7 @@ func checkName(what, name string) error {
 // concurrent_query_limit for default pool`, and the same for the threshold.
 // A queue needs one of the two, so `default` has no queue either; the shape
 // rule refuses that one.
-func defaultPoolRefusal(name string, spec ast.ResourcePoolSpec) (attribute, reason string) {
+func defaultPoolRefusal(name string, spec PoolSpec) (attribute, reason string) {
 	if name != DefaultPool {
 		return "", ""
 	}
@@ -248,7 +247,7 @@ func defaultPoolRefusal(name string, spec ast.ResourcePoolSpec) (attribute, reas
 }
 
 // poolShapeRefusal says why YDB refuses a pool on every line, or "".
-func poolShapeRefusal(spec ast.ResourcePoolSpec) string {
+func poolShapeRefusal(spec PoolSpec) string {
 	if spec.QueueSize != nil && spec.ConcurrentQueryLimit == nil && spec.DatabaseLoadCPUThreshold == nil {
 		return "a queue needs concurrent_query_limit or database_load_cpu_threshold beside it " +
 			"(`queue_size unsupported without concurrent_query_limit or database_load_cpu_threshold`)"
@@ -280,7 +279,7 @@ type Refusal struct {
 // CheckPool reports why the pool name with spec cannot be written on a target
 // holding caps, or nil when it can. A spec built by hand is held to the
 // parse's rules too, because nothing else checks it.
-func CheckPool(name string, spec ast.ResourcePoolSpec, caps capability.Capabilities) *Refusal {
+func CheckPool(name string, spec PoolSpec, caps capability.Capabilities) *Refusal {
 	subject := fmt.Sprintf("resource pool %q", name)
 	if !caps.Has(capability.ResourcePools) {
 		return &Refusal{Subject: subject, Key: capability.ResourcePools, Reason: FlagHint}
@@ -303,7 +302,7 @@ func CheckPool(name string, spec ast.ResourcePoolSpec, caps capability.Capabilit
 // CheckPoolDrop reports why the pool name cannot be dropped: it is the
 // database's own pool `default`. See [DefaultPool].
 func CheckPoolDrop(name string, caps capability.Capabilities) *Refusal {
-	if refusal := CheckPool(name, ast.ResourcePoolSpec{}, caps); refusal != nil {
+	if refusal := CheckPool(name, PoolSpec{}, caps); refusal != nil {
 		return refusal
 	}
 	if name == DefaultPool {
@@ -316,7 +315,7 @@ func CheckPoolDrop(name string, caps capability.Capabilities) *Refusal {
 
 // poolValueRefusal says which setting of spec is out of the range YDB keeps,
 // or "".
-func poolValueRefusal(spec ast.ResourcePoolSpec) string {
+func poolValueRefusal(spec PoolSpec) string {
 	for _, setting := range settingsOf(spec) {
 		switch {
 		case setting.integer != nil && *setting.integer < 0:
@@ -330,7 +329,7 @@ func poolValueRefusal(spec ast.ResourcePoolSpec) string {
 
 // CheckClassifier reports why the classifier name with spec cannot be written
 // on a target holding caps, or nil when it can.
-func CheckClassifier(name string, spec ast.ResourcePoolClassifierSpec, caps capability.Capabilities) *Refusal {
+func CheckClassifier(name string, spec ClassifierSpec, caps capability.Capabilities) *Refusal {
 	subject := fmt.Sprintf("resource pool classifier %q", name)
 	if !caps.Has(capability.ResourcePools) {
 		return &Refusal{Subject: subject, Key: capability.ResourcePools, Reason: FlagHint}
@@ -350,7 +349,7 @@ func CheckClassifier(name string, spec ast.ResourcePoolClassifierSpec, caps capa
 // Classifier is a classifier and its name, as [CheckRouting] reads one.
 type Classifier struct {
 	Name string
-	Spec ast.ResourcePoolClassifierSpec
+	Spec ClassifierSpec
 }
 
 // CheckRouting reports why a set of declared classifiers cannot stand beside

@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
@@ -1455,14 +1457,14 @@ func (v View) QualifiedName() string {
 // every setting the server holds, a setting it keeps unset left nil.
 type ResourcePool struct {
 	Name string               `json:"name"`
-	Spec ast.ResourcePoolSpec `json:"spec"`
+	Spec ydbworkload.PoolSpec `json:"spec"`
 }
 
 // ResourcePoolClassifier is a YDB resource pool classifier read from the
 // database.
 type ResourcePoolClassifier struct {
-	Name string                         `json:"name"`
-	Spec ast.ResourcePoolClassifierSpec `json:"spec"`
+	Name string                     `json:"name"`
+	Spec ydbworkload.ClassifierSpec `json:"spec"`
 }
 
 // Synonym represents a SQL Server synonym read from the database.

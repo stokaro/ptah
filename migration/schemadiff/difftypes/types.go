@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
@@ -3150,9 +3152,9 @@ type ResourcePoolDiff struct {
 	// Name is the pool's name.
 	Name string `json:"name"`
 	// Desired is the pool as the target schema declares it.
-	Desired ast.ResourcePoolSpec `json:"-"`
+	Desired ydbworkload.PoolSpec `json:"-"`
 	// Current is the pool as the database holds it.
-	Current ast.ResourcePoolSpec `json:"-"`
+	Current ydbworkload.PoolSpec `json:"-"`
 }
 
 // ResourcePoolClassifierDiff describes a YDB resource pool classifier whose
@@ -3165,9 +3167,9 @@ type ResourcePoolClassifierDiff struct {
 	// ranks it meets.
 	RankChanged bool `json:"rank_changed,omitempty"`
 	// Desired is the classifier as the target schema declares it.
-	Desired ast.ResourcePoolClassifierSpec `json:"-"`
+	Desired ydbworkload.ClassifierSpec `json:"-"`
 	// Current is the classifier as the database holds it.
-	Current ast.ResourcePoolClassifierSpec `json:"-"`
+	Current ydbworkload.ClassifierSpec `json:"-"`
 }
 
 // SynonymDiff describes a synonym whose target changed.

@@ -3,9 +3,10 @@ package yamlschema_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 )
@@ -35,15 +36,15 @@ resource_pool_classifiers:
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ResourcePools, qt.DeepEquals, []schemamodel.ResourcePool{
-		{Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
-		{Name: "reporting", Spec: ast.ResourcePoolSpec{
+		{Name: "default", Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}},
+		{Name: "reporting", Spec: ydbworkload.PoolSpec{
 			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)),
 			QueryMemoryLimitPercentPerNode: new(25.5),
 		}},
 	})
 	c.Assert(db.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{
-		{Name: "everyone", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default"}},
-		{Name: "reporters", Spec: ast.ResourcePoolClassifierSpec{
+		{Name: "everyone", Spec: ydbworkload.ClassifierSpec{ResourcePool: "default"}},
+		{Name: "reporters", Spec: ydbworkload.ClassifierSpec{
 			ResourcePool: "reporting", MemberName: "analysts", Rank: 100,
 		}},
 	})

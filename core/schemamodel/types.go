@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
@@ -1414,7 +1416,7 @@ type ResourcePool struct {
 	// Spec is the pool's settings. It carries the ast type for the reason
 	// Table.RowDeletionPolicy does: the renderer, the reader and the
 	// comparison read one value rather than three copies of it.
-	Spec ast.ResourcePoolSpec
+	Spec ydbworkload.PoolSpec
 }
 
 // ResourcePoolClassifier is a YDB resource pool classifier: a rule that sends
@@ -1425,7 +1427,7 @@ type ResourcePoolClassifier struct {
 	Name       string // Classifier name
 	// Spec is the pool the classifier sends queries to, the member whose
 	// queries it matches and its rank.
-	Spec ast.ResourcePoolClassifierSpec
+	Spec ydbworkload.ClassifierSpec
 }
 
 // AsyncReplication is a YDB async replication: a copy of tables of another

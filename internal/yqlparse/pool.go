@@ -6,7 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 func (p *parser) resourcePool() ast.Node {
@@ -27,7 +27,7 @@ func (p *parser) defaultPool() *ast.ExtensionStatement {
 	p.wantWord("RESOURCE")
 	p.wantWord("POOL")
 	name := decodedName(p.identifier())
-	if name != ydbpool.DefaultPool {
+	if name != ydbworkload.DefaultPool {
 		p.failf("only the server-owned default pool uses ALTER RESOURCE POOL in a desired schema")
 	}
 	p.wantWord("SET")
@@ -36,10 +36,10 @@ func (p *parser) defaultPool() *ast.ExtensionStatement {
 
 func (p *parser) poolSettings(name string) *ast.ExtensionStatement {
 	raw := p.options()
-	values := map[string]string{ydbpool.AttributeName: name}
+	values := map[string]string{ydbworkload.AttributeName: name}
 	for _, key := range slices.Sorted(maps.Keys(raw)) {
 		value := raw[key]
-		if key == ydbpool.AttributeName || !slices.Contains(ydbpool.PoolAttributes(), key) {
+		if key == ydbworkload.AttributeName || !slices.Contains(ydbworkload.PoolAttributes(), key) {
 			p.failf("unsupported resource pool setting %q", key)
 		}
 		// YQL spells an unset limit as the string "-1"; the shared model uses
@@ -49,7 +49,7 @@ func (p *parser) poolSettings(name string) *ast.ExtensionStatement {
 		}
 		values[key] = scalar(value)
 	}
-	parsed, spec, err := ydbpool.ParsePool(values)
+	parsed, spec, err := ydbworkload.ParsePool(values)
 	if err != nil {
 		p.failf("%v", err)
 	}
@@ -65,8 +65,8 @@ func (p *parser) poolClassifier() *ast.ExtensionStatement {
 		p.failf("a resource pool classifier needs WITH settings")
 	}
 	values := p.declarationSettings(classifierSetting)
-	values[ydbpool.AttributeName] = name
-	parsed, spec, err := ydbpool.ParseClassifier(values)
+	values[ydbworkload.AttributeName] = name
+	parsed, spec, err := ydbworkload.ParseClassifier(values)
 	if err != nil {
 		p.failf("%v", err)
 	}
@@ -77,7 +77,7 @@ func (p *parser) poolClassifier() *ast.ExtensionStatement {
 }
 
 func classifierSetting(key string) string {
-	if key == ydbpool.AttributeName || !slices.Contains(ydbpool.ClassifierAttributes(), key) {
+	if key == ydbworkload.AttributeName || !slices.Contains(ydbworkload.ClassifierAttributes(), key) {
 		return "unsupported"
 	}
 	return ""

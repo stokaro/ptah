@@ -10,12 +10,13 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbsyntax"
+
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbready"
-	"ptah.run/internal/ydbtype"
 	"ptah.run/internal/ydburl"
 )
 
@@ -620,10 +621,10 @@ func (s *session) dropRoles(ctx context.Context) []Attempt {
 func (s *session) dropResourcePools(ctx context.Context) []Attempt {
 	attempts := make([]Attempt, 0, len(s.resourcePoolClassifiers)+len(s.resourcePools))
 	for _, classifier := range s.resourcePoolClassifiers {
-		attempts = append(attempts, s.exec(ctx, ydbpool.DropClassifierStatement(classifier)))
+		attempts = append(attempts, s.exec(ctx, ydbworkload.DropClassifierStatement(classifier)))
 	}
 	for _, pool := range s.resourcePools {
-		attempts = append(attempts, s.exec(ctx, ydbpool.DropPoolStatement(pool)))
+		attempts = append(attempts, s.exec(ctx, ydbworkload.DropPoolStatement(pool)))
 	}
 	return attempts
 }
@@ -767,7 +768,7 @@ func (s *session) enterYDBDirectory() error {
 
 // ydbString is a YQL String literal holding value.
 func ydbString(value string) string {
-	return ydbtype.StringLiteral(value)
+	return ydbsyntax.StringLiteral(value)
 }
 
 // ydbSystemView is the quoted absolute path of one of the database's system

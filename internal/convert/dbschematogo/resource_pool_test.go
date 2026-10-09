@@ -3,11 +3,12 @@ package dbschematogo_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
@@ -27,21 +28,21 @@ func TestConvert_ResourcePools(t *testing.T) {
 		{
 			name: "an untouched default is left out",
 			read: []catalog.ResourcePool{{Name: "default"}, {Name: "batch",
-				Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(3))}}},
+				Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(3))}}},
 			want: []schemamodel.ResourcePool{{Name: "batch",
-				Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(3))}}},
+				Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(3))}}},
 		},
 		{
 			name: "a default with a setting is kept",
-			read: []catalog.ResourcePool{{Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}}},
-			want: []schemamodel.ResourcePool{{Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}}},
+			read: []catalog.ResourcePool{{Name: "default", Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}}},
+			want: []schemamodel.ResourcePool{{Name: "default", Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}}},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			classifier := catalog.ResourcePoolClassifier{Name: "etl",
-				Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}
+				Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}
 
 			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 				ResourcePools: test.read, ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{classifier},

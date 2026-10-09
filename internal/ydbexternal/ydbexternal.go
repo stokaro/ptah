@@ -56,13 +56,14 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbsyntax"
+
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbtype"
 )
 
 // The attributes that declare an external data source or an external table.
@@ -536,7 +537,7 @@ func DropTableStatement(name string) string {
 }
 
 func optionSetting(name, value string) string {
-	return name + " = " + ydbtype.StringLiteral(value)
+	return name + " = " + ydbsyntax.StringLiteral(value)
 }
 
 func sortedSettings(options map[string]string) []string {

@@ -3,9 +3,10 @@ package goschema_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -34,16 +35,16 @@ type Defaults struct{}
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ResourcePools, qt.DeepEquals, []schemamodel.ResourcePool{
-		{StructName: "Reporting", Name: "reporting", Spec: ast.ResourcePoolSpec{
+		{StructName: "Reporting", Name: "reporting", Spec: ydbworkload.PoolSpec{
 			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)), DatabaseLoadCPUThreshold: new(80.5),
 		}},
-		{StructName: "Defaults", Name: "default", Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}},
+		{StructName: "Defaults", Name: "default", Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}},
 	})
 	c.Assert(db.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{
-		{StructName: "Reporting", Name: "reporters", Spec: ast.ResourcePoolClassifierSpec{
+		{StructName: "Reporting", Name: "reporters", Spec: ydbworkload.ClassifierSpec{
 			ResourcePool: "reporting", MemberName: "analysts", Rank: 100,
 		}},
-		{StructName: "Defaults", Name: "everyone", Spec: ast.ResourcePoolClassifierSpec{
+		{StructName: "Defaults", Name: "everyone", Spec: ydbworkload.ClassifierSpec{
 			ResourcePool: "default", Rank: 1000,
 		}},
 	})
@@ -105,11 +106,11 @@ func TestMerge_ResourcePools_Conflict(t *testing.T) {
 	first := &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{StructName: "A", Name: "batch"}}}
 	same := &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{StructName: "B", Name: "batch"}}}
 	other := &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{StructName: "C", Name: "batch",
-		Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(1))}}}}
+		Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(1))}}}}
 	classifier := &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{
-		StructName: "A", Name: "c", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1}}}}
+		StructName: "A", Name: "c", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}}}}
 	otherClassifier := &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{
-		StructName: "B", Name: "c", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 2}}}}
+		StructName: "B", Name: "c", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 2}}}}
 
 	merged, mergeErr := schemamodel.Merge(first, same)
 	conflict, conflictErr := schemamodel.Merge(first, other)

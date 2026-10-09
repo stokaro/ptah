@@ -7,10 +7,11 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/dialect/ydb/ydbsyntax"
+
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/ydbtype"
 )
 
 // Expansion is a query whose secret values are defined in it, ready for the
@@ -97,7 +98,7 @@ func Expand(query string, lookup func(string) (string, bool)) (Expansion, error)
 			return Expansion{}, fmt.Errorf("a secret's value comes from environment variable %s, which is not set",
 				variable)
 		}
-		literal := ydbtype.StringLiteral(value)
+		literal := ydbsyntax.StringLiteral(value)
 		values = append(values, redactionForms(value, literal)...)
 		fmt.Fprintf(&definitions, "%s = %s;\n", Reference(variable), literal)
 	}

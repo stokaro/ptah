@@ -1,6 +1,7 @@
-package ast
+// Package ydbworkload owns YDB resource pool and classifier configuration.
+package ydbworkload
 
-// ResourcePoolSpec is a YDB resource pool's settings: what `CREATE RESOURCE
+// PoolSpec is a YDB resource pool's settings: what `CREATE RESOURCE
 // POOL <name> WITH (...)` takes. A resource pool limits the queries that run
 // in it, and it belongs to the whole database rather than to a directory.
 //
@@ -8,10 +9,9 @@ package ast
 // which YDB keeps as -1, its spelling of "no limit"; zero is a limit, since
 // `CONCURRENT_QUERY_LIMIT = 0` runs no query at all. The percentages,
 // DatabaseLoadCPUThreshold and ResourceWeight take a fraction; the other two
-// are whole numbers. [ptah.run/internal/ydbpool] reads both sides of a
-// comparison that way, so a spec naming a setting at -1 and one leaving it
-// out describe the same pool.
-type ResourcePoolSpec struct {
+// are whole numbers. Readers normalize the server's -1 to nil before
+// capturing a model. A declaration or model cannot contain a negative limit.
+type PoolSpec struct {
 	// ConcurrentQueryLimit is `concurrent_query_limit`, the most queries the
 	// pool runs at once.
 	ConcurrentQueryLimit *int32 `json:"concurrent_query_limit,omitempty"`
@@ -40,8 +40,8 @@ type ResourcePoolSpec struct {
 // Clone returns an independent copy, so a spec handed to a comparator or a
 // planner cannot be changed through the values it shares with the schema it
 // came from.
-func (s ResourcePoolSpec) Clone() ResourcePoolSpec {
-	return ResourcePoolSpec{
+func (s PoolSpec) Clone() PoolSpec {
+	return PoolSpec{
 		ConcurrentQueryLimit:           clonePointer(s.ConcurrentQueryLimit),
 		QueueSize:                      clonePointer(s.QueueSize),
 		DatabaseLoadCPUThreshold:       clonePointer(s.DatabaseLoadCPUThreshold),
@@ -60,11 +60,11 @@ func clonePointer[T any](value *T) *T {
 	return new(*value)
 }
 
-// ResourcePoolClassifierSpec is a YDB resource pool classifier: what `CREATE
+// ClassifierSpec is a YDB resource pool classifier: what `CREATE
 // RESOURCE POOL CLASSIFIER <name> WITH (...)` takes. A classifier sends the
 // queries of a user or a group to a resource pool, and of the classifiers
 // that match a query, the one with the lowest rank decides.
-type ResourcePoolClassifierSpec struct {
+type ClassifierSpec struct {
 	// ResourcePool is `resource_pool`, the pool the classifier sends queries
 	// to. YDB does not check that it exists: a query of a classifier that
 	// names no pool runs in the pool `default`.

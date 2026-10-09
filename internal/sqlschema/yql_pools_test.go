@@ -4,9 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -20,10 +21,10 @@ func TestReadYQLResourcePools(t *testing.T) {
 	database, _, err := sqlschema.Read([]byte("CREATE RESOURCE POOL batch WITH (CONCURRENT_QUERY_LIMIT = 4, QUEUE_SIZE = 8, QUERY_MEMORY_LIMIT_PERCENT_PER_NODE = '12.5'); CREATE RESOURCE POOL idle WITH (CONCURRENT_QUERY_LIMIT = '-1'); CREATE RESOURCE POOL CLASSIFIER to_batch WITH (RESOURCE_POOL = 'batch', RANK = 20, MEMBER_NAME = 'worker');"), "ydb")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.ResourcePools, qt.DeepEquals, []schemamodel.ResourcePool{
-		{Name: "batch", Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(4)), QueueSize: new(int32(8)), QueryMemoryLimitPercentPerNode: new(12.5)}},
+		{Name: "batch", Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(4)), QueueSize: new(int32(8)), QueryMemoryLimitPercentPerNode: new(12.5)}},
 		{Name: "idle"},
 	})
-	c.Assert(database.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{{Name: "to_batch", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 20, MemberName: "worker"}}})
+	c.Assert(database.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{{Name: "to_batch", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 20, MemberName: "worker"}}})
 }
 
 func TestReadYQLCoordinationNode(t *testing.T) {

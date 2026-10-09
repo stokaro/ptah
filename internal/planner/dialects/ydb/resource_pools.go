@@ -7,7 +7,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -88,35 +88,35 @@ func (p *Planner) planResourcePools(diff *difftypes.SchemaDiff) (poolPlan, error
 // classifiers that would share a rank once the plan ran.
 func (p *Planner) refuseResourcePools(diff *difftypes.SchemaDiff) error {
 	for _, pool := range diff.ResourcePoolsAdded {
-		if err := poolPlanRefusal(ydbpool.CheckPool(pool.Name, pool.Spec, p.caps)); err != nil {
+		if err := poolPlanRefusal(ydbworkload.CheckPool(pool.Name, pool.Spec, p.caps)); err != nil {
 			return err
 		}
 	}
 	for _, change := range diff.ResourcePoolsModified {
-		if err := poolPlanRefusal(ydbpool.CheckPool(change.Name, change.Desired, p.caps)); err != nil {
+		if err := poolPlanRefusal(ydbworkload.CheckPool(change.Name, change.Desired, p.caps)); err != nil {
 			return err
 		}
 	}
 	for _, pool := range diff.ResourcePoolsRemoved {
-		if err := poolPlanRefusal(ydbpool.CheckPoolDrop(pool.Name, p.caps)); err != nil {
+		if err := poolPlanRefusal(ydbworkload.CheckPoolDrop(pool.Name, p.caps)); err != nil {
 			return err
 		}
 	}
-	var after []ydbpool.Classifier
+	var after []ydbworkload.Classifier
 	for _, classifier := range diff.ResourcePoolClassifiersAdded {
-		if err := poolPlanRefusal(ydbpool.CheckClassifier(classifier.Name, classifier.Spec, p.caps)); err != nil {
+		if err := poolPlanRefusal(ydbworkload.CheckClassifier(classifier.Name, classifier.Spec, p.caps)); err != nil {
 			return err
 		}
-		after = append(after, ydbpool.Classifier{Name: classifier.Name, Spec: classifier.Spec})
+		after = append(after, ydbworkload.Classifier{Name: classifier.Name, Spec: classifier.Spec})
 	}
 	for _, change := range diff.ResourcePoolClassifiersModified {
-		if err := poolPlanRefusal(ydbpool.CheckClassifier(change.Name, change.Desired, p.caps)); err != nil {
+		if err := poolPlanRefusal(ydbworkload.CheckClassifier(change.Name, change.Desired, p.caps)); err != nil {
 			return err
 		}
-		after = append(after, ydbpool.Classifier{Name: change.Name, Spec: change.Desired})
+		after = append(after, ydbworkload.Classifier{Name: change.Name, Spec: change.Desired})
 	}
 	for _, classifier := range diff.ResourcePoolClassifiersRemoved {
-		refusal := ydbpool.CheckClassifier(classifier.Name, classifier.Spec, p.caps)
+		refusal := ydbworkload.CheckClassifier(classifier.Name, classifier.Spec, p.caps)
 		if err := poolPlanRefusal(refusal); err != nil {
 			return err
 		}
@@ -135,7 +135,7 @@ func (p *Planner) refuseResourcePools(diff *difftypes.SchemaDiff) error {
 
 // poolPlanRefusal turns a pool or classifier refusal into the planner's
 // error. A refusal through the key says how the cluster turns it on.
-func poolPlanRefusal(refusal *ydbpool.Refusal) error {
+func poolPlanRefusal(refusal *ydbworkload.Refusal) error {
 	switch {
 	case refusal == nil:
 		return nil

@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 // ResourcePoolHandler validates and renders standalone workload pool operations.
@@ -41,7 +41,7 @@ func workloadTarget(ctx renderer.ExtensionContext) error {
 	}
 	if !ctx.Capabilities.Has(capability.ResourcePools) {
 		return &ptaherr.CapabilityError{Dialect: ctx.Target, Feature: string(capability.ResourcePools), Err: ptaherr.ErrUnsupportedFeature,
-			Message: "resource pools require target capability resource_pools; " + ydbpool.FlagHint}
+			Message: "resource pools require target capability resource_pools; " + ydbworkload.FlagHint}
 	}
 	return nil
 }
@@ -56,11 +56,11 @@ func workloadValidation(err error) error {
 func renderPool(_ renderer.ExtensionContext, v *ydbast.ResourcePool) ([]string, error) {
 	switch v.Operation {
 	case ydbast.PoolCreate:
-		return []string{ydbpool.CreatePoolStatement(v.Name, *v.Spec)}, nil
+		return []string{ydbworkload.CreatePoolStatement(v.Name, *v.Spec)}, nil
 	case ydbast.PoolAlter:
-		return workloadStatement(ydbpool.AlterPoolStatement(v.Name, *v.Spec, *v.Previous)), nil
+		return workloadStatement(ydbworkload.AlterPoolStatement(v.Name, *v.Spec, *v.Previous)), nil
 	case ydbast.PoolDrop:
-		return []string{ydbpool.DropPoolStatement(v.Name)}, nil
+		return []string{ydbworkload.DropPoolStatement(v.Name)}, nil
 	default:
 		return nil, fmt.Errorf("%w: unknown pool operation %q", ptaherr.ErrInvalidSchemaDiff, v.Operation)
 	}
@@ -69,11 +69,11 @@ func renderPool(_ renderer.ExtensionContext, v *ydbast.ResourcePool) ([]string, 
 func renderClassifier(_ renderer.ExtensionContext, v *ydbast.ResourcePoolClassifier) ([]string, error) {
 	switch v.Operation {
 	case ydbast.PoolCreate:
-		return []string{ydbpool.CreateClassifierStatement(v.Name, *v.Spec)}, nil
+		return []string{ydbworkload.CreateClassifierStatement(v.Name, *v.Spec)}, nil
 	case ydbast.PoolAlter:
-		return workloadStatement(ydbpool.AlterClassifierStatement(v.Name, *v.Spec, *v.Previous)), nil
+		return workloadStatement(ydbworkload.AlterClassifierStatement(v.Name, *v.Spec, *v.Previous)), nil
 	case ydbast.PoolDrop:
-		return []string{ydbpool.DropClassifierStatement(v.Name)}, nil
+		return []string{ydbworkload.DropClassifierStatement(v.Name)}, nil
 	default:
 		return nil, fmt.Errorf("%w: unknown classifier operation %q", ptaherr.ErrInvalidSchemaDiff, v.Operation)
 	}

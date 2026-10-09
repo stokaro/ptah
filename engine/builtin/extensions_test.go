@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
@@ -72,7 +74,12 @@ func streamingFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture())
+}
+
+func defaultPoolFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.DefaultPoolSettings{Spec: ydbworkload.PoolSpec{ResourceWeight: new(20.0)}},
+		wantSQL: "ALTER RESOURCE POOL `default` SET (RESOURCE_WEIGHT = 20);\n"}
 }
 
 // The source inventory is independent of both owner registration and fixtures.
@@ -270,9 +277,9 @@ func TestStreamingExtensionRendersAfterSelectedCodecRoundTrip(t *testing.T) {
 }
 
 func poolFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{}}, wantSQL: "CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = \"-1\");\n"}
+	return extensionFixture{payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ydbworkload.PoolSpec{}}, wantSQL: "CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = \"-1\");\n"}
 }
 
 func classifierFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 0}}, wantSQL: "CREATE RESOURCE POOL CLASSIFIER `route` WITH (RESOURCE_POOL = 'default', RANK = 0);\n"}
+	return extensionFixture{payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 0}}, wantSQL: "CREATE RESOURCE POOL CLASSIFIER `route` WITH (RESOURCE_POOL = 'default', RANK = 0);\n"}
 }

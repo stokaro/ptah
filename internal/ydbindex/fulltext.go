@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/internal/ydbtype"
+	"ptah.run/dialect/ydb/ydbsyntax"
 )
 
 // FullTextPlainMethod and FullTextRelevanceMethod are YDB's full-text access
@@ -104,7 +104,7 @@ func FullTextClause(options map[string]string) string {
 	for _, key := range slices.Sorted(maps.Keys(options)) {
 		value := options[key]
 		if key == "language" {
-			value = ydbtype.StringLiteral(value)
+			value = ydbsyntax.StringLiteral(value)
 		}
 		parts = append(parts, key+"="+value)
 	}

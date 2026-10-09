@@ -8,12 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -37,17 +36,17 @@ func TestGenerateMigrationAST_ResourcePools_HappyPath(t *testing.T) {
 		},
 		CurrentDatabasePath: "/local",
 		ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch",
-			Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
+			Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
 		ResourcePoolsRemoved: difftypes.ResourcePoolChanges{{Name: "old"}},
 		ResourcePoolsModified: []difftypes.ResourcePoolDiff{{Name: "default",
-			Desired: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}, Current: ast.ResourcePoolSpec{}}},
+			Desired: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}, Current: ydbworkload.PoolSpec{}}},
 		ResourcePoolClassifiersAdded: difftypes.ResourcePoolClassifierChanges{{Name: "etl_users",
-			Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}},
+			Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}},
 		ResourcePoolClassifiersRemoved: difftypes.ResourcePoolClassifierChanges{{Name: "old_users",
-			Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "old", Rank: 20}}},
+			Spec: ydbworkload.ClassifierSpec{ResourcePool: "old", Rank: 20}}},
 		ResourcePoolClassifiersModified: []difftypes.ResourcePoolClassifierDiff{{Name: "everyone",
-			Desired: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1000},
-			Current: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 1000}}},
+			Desired: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1000},
+			Current: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 1000}}},
 	}
 
 	got := render(c, withPools(), diff)
@@ -72,14 +71,14 @@ func TestGenerateMigrationAST_ResourcePoolClassifierRanks_HappyPath(t *testing.T
 	diff := &difftypes.SchemaDiff{
 		ResourcePoolClassifiersModified: []difftypes.ResourcePoolClassifierDiff{
 			{Name: "a", RankChanged: true,
-				Desired: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 2},
-				Current: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 1}},
+				Desired: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 2},
+				Current: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 1}},
 			{Name: "b", RankChanged: true,
-				Desired: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 1},
-				Current: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 2}},
+				Desired: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 1},
+				Current: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 2}},
 			{Name: "c", RankChanged: true,
-				Desired: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 30},
-				Current: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 3}},
+				Desired: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 30},
+				Current: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 3}},
 		},
 	}
 
@@ -106,13 +105,13 @@ func TestGenerateMigrationAST_ResourcePools_FailurePath(t *testing.T) {
 			caps: capability.YDB262(),
 			diff: &difftypes.SchemaDiff{ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch"}}},
 			want: `resource pool "batch", which requires target capability resource_pools, unavailable on this ydb ` +
-				`target; ` + regexp.QuoteMeta(ydbpool.FlagHint),
+				`target; ` + regexp.QuoteMeta(ydbworkload.FlagHint),
 		},
 		{
 			name: "a classifier on a line whose flag is off",
 			caps: capability.YDB251(),
 			diff: &difftypes.SchemaDiff{ResourcePoolClassifiersRemoved: difftypes.ResourcePoolClassifierChanges{{
-				Name: "c", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default"},
+				Name: "c", Spec: ydbworkload.ClassifierSpec{ResourcePool: "default"},
 			}}},
 			want: `resource pool classifier "c", which requires target capability resource_pools, .*`,
 		},
@@ -128,10 +127,10 @@ func TestGenerateMigrationAST_ResourcePools_FailurePath(t *testing.T) {
 			caps: withPools(),
 			diff: &difftypes.SchemaDiff{
 				ResourcePoolClassifiersAdded: difftypes.ResourcePoolClassifierChanges{{Name: "a",
-					Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 5}}},
+					Spec: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 5}}},
 				ResourcePoolClassifiersModified: []difftypes.ResourcePoolClassifierDiff{{Name: "b", RankChanged: true,
-					Desired: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 5},
-					Current: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 6}}},
+					Desired: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 5},
+					Current: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 6}}},
 			},
 			want: `resource pool classifier "b": its rank 5 is the rank classifier "a" takes in the same plan, and ` +
 				`YDB keeps one classifier per rank`,
@@ -140,7 +139,7 @@ func TestGenerateMigrationAST_ResourcePools_FailurePath(t *testing.T) {
 			name: "a pool built by hand that YDB refuses",
 			caps: withPools(),
 			diff: &difftypes.SchemaDiff{ResourcePoolsModified: []difftypes.ResourcePoolDiff{{Name: "batch",
-				Desired: ast.ResourcePoolSpec{QueueSize: new(int32(1))}}}},
+				Desired: ydbworkload.PoolSpec{QueueSize: new(int32(1))}}}},
 			want: `resource pool "batch": a queue needs concurrent_query_limit or database_load_cpu_threshold .*`,
 		},
 	}

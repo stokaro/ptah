@@ -3,6 +3,8 @@ package safety_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
@@ -35,16 +37,16 @@ func TestClassify_ResourcePool(t *testing.T) {
 				"or to the pool default",
 		},
 		{
-			wantSubject: "batch", name: "a pool created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{}}},
+			wantSubject: "batch", name: "a pool created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ydbworkload.PoolSpec{}}},
 			wantSeverity: safety.Safe,
 			wantReason:   "does not remove data or tighten constraints",
 		},
 		{
-			wantSubject: "batch", name: "a pool altered", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{ResourceWeight: new(25.0)}, Previous: &ast.ResourcePoolSpec{}}},
+			wantSubject: "batch", name: "a pool altered", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ydbworkload.PoolSpec{ResourceWeight: new(25.0)}, Previous: &ydbworkload.PoolSpec{}}},
 			wantSeverity: safety.Warning, wantReason: "ALTER RESOURCE POOL changes the limits of running and queued queries",
 		},
 		{
-			wantSubject: "etl", name: "a classifier created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "etl", Spec: &ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}}},
+			wantSubject: "etl", name: "a classifier created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "etl", Spec: &ydbworkload.ClassifierSpec{ResourcePool: "batch"}}},
 			wantSeverity: safety.Warning, wantReason: "resource pool classifier settings change which pool receives matching queries",
 		},
 	}

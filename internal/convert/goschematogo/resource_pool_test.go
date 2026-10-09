@@ -3,9 +3,10 @@ package goschematogo_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/goschematogo"
@@ -20,7 +21,7 @@ func TestRender_ResourcePool_RoundTrip(t *testing.T) {
 	db := &schemamodel.Database{
 		ResourcePools: []schemamodel.ResourcePool{
 			{Name: "idle"},
-			{Name: "batch", Spec: ast.ResourcePoolSpec{
+			{Name: "batch", Spec: ydbworkload.PoolSpec{
 				ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(0)),
 				DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(25.0),
 				QueryCPULimitPercentPerNode: new(0.001), TotalCPULimitPercentPerNode: new(100.0),
@@ -28,8 +29,8 @@ func TestRender_ResourcePool_RoundTrip(t *testing.T) {
 			}},
 		},
 		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
-			{Name: "everyone", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 0}},
-			{Name: "etl", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}},
+			{Name: "everyone", Spec: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 0}},
+			{Name: "etl", Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}},
 		},
 	}
 
@@ -43,7 +44,7 @@ func TestRender_ResourcePool_RoundTrip(t *testing.T) {
 	c.Assert([]any{parsed.ResourcePools[0].Name, parsed.ResourcePools[0].Spec}, qt.DeepEquals,
 		[]any{"batch", db.ResourcePools[1].Spec})
 	c.Assert([]any{parsed.ResourcePools[1].Name, parsed.ResourcePools[1].Spec}, qt.DeepEquals,
-		[]any{"idle", ast.ResourcePoolSpec{}})
+		[]any{"idle", ydbworkload.PoolSpec{}})
 	c.Assert(parsed.ResourcePoolClassifiers, qt.HasLen, 2)
 	c.Assert([]any{parsed.ResourcePoolClassifiers[0].Name, parsed.ResourcePoolClassifiers[0].Spec}, qt.DeepEquals,
 		[]any{"etl", db.ResourcePoolClassifiers[1].Spec})
@@ -69,7 +70,7 @@ func TestRender_ResourcePool_AloneKeepsItsStruct(t *testing.T) {
 		{
 			name: "a classifier alone",
 			db: &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
-				{Name: "everyone", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 1}},
+				{Name: "everyone", Spec: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 1}},
 			}},
 			classifierCount: 1,
 		},

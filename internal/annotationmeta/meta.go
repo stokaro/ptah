@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
@@ -943,19 +943,19 @@ var directives = []Directive{
 			"the whole database; a setting left out has no limit.",
 		Scopes: []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
-			attr(ydbpool.AttributeName, "Pool name; `default` changes the pool YDB creates.", valueString, true, false),
-			attr(ydbpool.AttributeConcurrentQueryLimit, "Most queries that run at once.", valueString, false, false),
-			attr(ydbpool.AttributeQueueSize, "Most queries that wait; needs concurrent_query_limit or "+
+			attr(ydbworkload.AttributeName, "Pool name; `default` changes the pool YDB creates.", valueString, true, false),
+			attr(ydbworkload.AttributeConcurrentQueryLimit, "Most queries that run at once.", valueString, false, false),
+			attr(ydbworkload.AttributeQueueSize, "Most queries that wait; needs concurrent_query_limit or "+
 				"database_load_cpu_threshold.", valueString, false, false),
-			attr(ydbpool.AttributeDatabaseLoadCPUThreshold, "Database CPU load in percent above which new "+
+			attr(ydbworkload.AttributeDatabaseLoadCPUThreshold, "Database CPU load in percent above which new "+
 				"queries wait.", valueString, false, false),
-			attr(ydbpool.AttributeQueryMemoryLimitPercentPerNode, "Share of a node's memory one query may take.",
+			attr(ydbworkload.AttributeQueryMemoryLimitPercentPerNode, "Share of a node's memory one query may take.",
 				valueString, false, false),
-			attr(ydbpool.AttributeQueryCPULimitPercentPerNode, "Share of a node's CPU one query may take.",
+			attr(ydbworkload.AttributeQueryCPULimitPercentPerNode, "Share of a node's CPU one query may take.",
 				valueString, false, false),
-			attr(ydbpool.AttributeTotalCPULimitPercentPerNode, "Share of a node's CPU the pool's queries may "+
+			attr(ydbworkload.AttributeTotalCPULimitPercentPerNode, "Share of a node's CPU the pool's queries may "+
 				"take together.", valueString, false, false),
-			attr(ydbpool.AttributeResourceWeight, "The pool's share of the CPU when pools compete for it.",
+			attr(ydbworkload.AttributeResourceWeight, "The pool's share of the CPU when pools compete for it.",
 				valueString, false, false),
 		},
 	},
@@ -965,12 +965,12 @@ var directives = []Directive{
 			"to a resource pool. It belongs to the whole database.",
 		Scopes: []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
-			attr(ydbpool.AttributeName, "Classifier name.", valueString, true, false),
-			attr(ydbpool.AttributeResourcePool, "Pool the classifier sends queries to: a declared pool or "+
+			attr(ydbworkload.AttributeName, "Classifier name.", valueString, true, false),
+			attr(ydbworkload.AttributeResourcePool, "Pool the classifier sends queries to: a declared pool or "+
 				"`default`.", valueString, true, false),
-			attr(ydbpool.AttributeMemberName, "User or group whose queries the classifier matches; every "+
+			attr(ydbworkload.AttributeMemberName, "User or group whose queries the classifier matches; every "+
 				"query when omitted.", valueString, false, false),
-			attr(ydbpool.AttributeRank, "Order among the classifiers, lowest first; unique, from 0.",
+			attr(ydbworkload.AttributeRank, "Order among the classifiers, lowest first; unique, from 0.",
 				valueString, true, false),
 		},
 	},

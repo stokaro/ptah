@@ -6,7 +6,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbpool"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -42,7 +42,7 @@ func ResourcePools(
 		switch {
 		case !exists:
 			addedPools = append(addedPools, pool)
-		case !ydbpool.PoolsEqual(pool.Spec, current.Spec):
+		case !ydbworkload.PoolsEqual(pool.Spec, current.Spec):
 			diff.ResourcePoolsModified = append(diff.ResourcePoolsModified, difftypes.ResourcePoolDiff{
 				Name: pool.Name, Desired: pool.Spec.Clone(), Current: current.Spec.Clone(),
 			})
@@ -66,7 +66,7 @@ func ResourcePools(
 		switch {
 		case !exists:
 			addedClassifiers = append(addedClassifiers, classifier)
-		case !ydbpool.ClassifiersEqual(classifier.Spec, current.Spec):
+		case !ydbworkload.ClassifiersEqual(classifier.Spec, current.Spec):
 			diff.ResourcePoolClassifiersModified = append(diff.ResourcePoolClassifiersModified,
 				difftypes.ResourcePoolClassifierDiff{
 					Name:        classifier.Name,

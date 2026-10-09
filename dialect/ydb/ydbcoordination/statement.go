@@ -9,10 +9,10 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbtype"
 )
 
 // Verb is what a statement does to a node.
@@ -86,7 +86,7 @@ func optionList(spec Spec) string {
 	attributes := Attributes(spec)
 	options := make([]string, 0, len(attributes))
 	for _, attribute := range attributes {
-		value := ydbtype.StringLiteral(attribute[1])
+		value := ydbsyntax.StringLiteral(attribute[1])
 		if attribute[0] == SettingSelfCheckPeriod || attribute[0] == SettingSessionGracePeriod {
 			value = "Interval(" + value + ")"
 		}

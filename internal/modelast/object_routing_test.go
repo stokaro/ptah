@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -100,7 +102,7 @@ func routingFixture() schemamodel.Database {
 		ResourcePools:     []schemamodel.ResourcePool{{StructName: "RP", Name: "pool_probe"}},
 		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{
 			StructName: "RC", Name: "classifier_probe",
-			Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "pool_probe", Rank: 1},
+			Spec: ydbworkload.ClassifierSpec{ResourcePool: "pool_probe", Rank: 1},
 		}},
 		AsyncReplications: []schemamodel.AsyncReplication{{StructName: "AR", Name: "replication_probe",
 			Spec: ast.AsyncReplicationSpec{

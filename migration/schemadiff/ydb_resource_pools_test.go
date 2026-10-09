@@ -3,12 +3,13 @@ package schemadiff_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -21,7 +22,7 @@ import (
 // queries: every other setting unset, which .sys/resource_pools reports as -1
 // and the reader as nil.
 func readPool(name string) catalog.ResourcePool {
-	return catalog.ResourcePool{Name: name, Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10))}}
+	return catalog.ResourcePool{Name: name, Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}}
 }
 
 // A declaration and a read of the same pool or classifier compare equal, and a
@@ -29,7 +30,7 @@ func readPool(name string) catalog.ResourcePool {
 // classifier only the database holds is never a removal: both belong to the
 // whole database, which other applications may share.
 func TestCompare_ResourcePools(t *testing.T) {
-	everyone := ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1000}
+	everyone := ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1000}
 	tests := []struct {
 		name                string
 		desired             *schemamodel.Database
@@ -43,7 +44,7 @@ func TestCompare_ResourcePools(t *testing.T) {
 			name: "the same pool and classifier",
 			desired: &schemamodel.Database{
 				ResourcePools: []schemamodel.ResourcePool{{Name: "batch",
-					Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
+					Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
 				ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all", Spec: everyone}},
 			},
 			current: &catalog.Database{
@@ -73,27 +74,27 @@ func TestCompare_ResourcePools(t *testing.T) {
 			name: "another limit, and another pool and rank for the classifier",
 			desired: &schemamodel.Database{
 				ResourcePools: []schemamodel.ResourcePool{{Name: "batch",
-					Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(20))}}},
+					Spec: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(20))}}},
 				ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all",
-					Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 5}}},
+					Spec: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 5}}},
 			},
 			current: &catalog.Database{
 				ResourcePools:           []catalog.ResourcePool{readPool("batch")},
 				ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{{Name: "all", Spec: everyone}},
 			},
 			modified: []difftypes.ResourcePoolDiff{{Name: "batch",
-				Desired: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(20))},
-				Current: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
+				Desired: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(20))},
+				Current: ydbworkload.PoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
 			classifiersModified: []difftypes.ResourcePoolClassifierDiff{{Name: "all", RankChanged: true,
-				Desired: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 5}, Current: everyone}},
+				Desired: ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 5}, Current: everyone}},
 		},
 		{
 			name: "a declared default, changed in place",
 			desired: &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{Name: "default",
-				Spec: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}}}},
+				Spec: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}}}},
 			current: &catalog.Database{ResourcePools: []catalog.ResourcePool{{Name: "default"}}},
 			modified: []difftypes.ResourcePoolDiff{{Name: "default",
-				Desired: ast.ResourcePoolSpec{ResourceWeight: new(30.0)}}},
+				Desired: ydbworkload.PoolSpec{ResourceWeight: new(30.0)}}},
 		},
 	}
 	for _, test := range tests {
@@ -128,7 +129,7 @@ func TestCompare_ResourcePools_Coverage(t *testing.T) {
 		t.Context(), &schemamodel.Database{
 			ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}},
 			ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "all",
-				Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1}}},
+				Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}}},
 		},
 		&catalog.Database{NotDescribed: outside},
 		&config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()),

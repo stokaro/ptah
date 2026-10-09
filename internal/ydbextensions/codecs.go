@@ -23,6 +23,7 @@ func Codecs() []schemaext.Codec {
 		ydbast.StreamingCodec(),
 		ydbast.ResourcePoolCodec(),
 		ydbast.ResourcePoolClassifierCodec(),
+		ydbast.DefaultPoolSettingsCodec(),
 		operationCodec(&ydbast.AddChangefeed{}, decodeOperation[*ydbast.AddChangefeed]),
 		operationCodec(&ydbast.DropChangefeed{}, decodeOperation[*ydbast.DropChangefeed]),
 		operationCodec(&ydbast.AlterChangefeedTopic{}, decodeOperation[*ydbast.AlterChangefeedTopic]),

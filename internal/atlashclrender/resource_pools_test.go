@@ -3,9 +3,10 @@ package atlashclrender_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -22,7 +23,7 @@ func TestRenderForDialect_ResourcePools(t *testing.T) {
 	declared := &schemamodel.Database{
 		ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}},
 		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{Name: "etl_users",
-			Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 10}}},
+			Spec: ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 10}}},
 	}
 	losses := []atlashclrender.Diagnostic{
 		{Severity: atlashclrender.SeverityWarning, Path: "resource_pools.batch",

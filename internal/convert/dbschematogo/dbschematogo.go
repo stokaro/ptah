@@ -17,13 +17,13 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/uniquename"
-	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbsecret"
 )
 
@@ -618,7 +618,7 @@ func convertResourcePools(
 	classifiers []catalog.ResourcePoolClassifier,
 ) {
 	for _, pool := range pools {
-		if pool.Name == ydbpool.DefaultPool && ydbpool.PoolsEqual(pool.Spec, ast.ResourcePoolSpec{}) {
+		if pool.Name == ydbworkload.DefaultPool && ydbworkload.PoolsEqual(pool.Spec, ydbworkload.PoolSpec{}) {
 			continue
 		}
 		database.ResourcePools = append(database.ResourcePools, schemamodel.ResourcePool{

@@ -2,6 +2,7 @@ package schemacensus
 
 import (
 	"github.com/go-extras/go-kit/must"
+	"ptah.run/dialect/ydb/ydbworkload"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
@@ -1466,7 +1467,7 @@ func resourcePoolFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.ResourcePools = []schemamodel.ResourcePool{{
 		StructName: "RP", Name: "reporting",
-		Spec: ast.ResourcePoolSpec{
+		Spec: ydbworkload.PoolSpec{
 			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)),
 			DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(25.0),
 			QueryCPULimitPercentPerNode: new(30.0), TotalCPULimitPercentPerNode: new(70.0),
@@ -1475,7 +1476,7 @@ func resourcePoolFixture() schemamodel.Database {
 	}}
 	db.ResourcePoolClassifiers = []schemamodel.ResourcePoolClassifier{{
 		StructName: "RP", Name: "reporting_group",
-		Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "reporting", MemberName: "reporters", Rank: 100},
+		Spec: ydbworkload.ClassifierSpec{ResourcePool: "reporting", MemberName: "reporters", Rank: 100},
 	}}
 	return db
 }

@@ -3,6 +3,8 @@ package builtin_test
 import (
 	"testing"
 
+	"ptah.run/dialect/ydb/ydbworkload"
+
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
@@ -45,8 +47,8 @@ func TestWorkloadOperationsUseRegisteredCodecsAndOwnerRendering(t *testing.T) {
 func TestWorkloadOperationsRejectInvalidLaterStatementWithoutPartialSQL(t *testing.T) {
 	for _, payload := range []ast.ExtensionPayload{
 		&ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "default"},
-		&ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{}},
-		&ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ast.ResourcePoolClassifierSpec{}},
+		&ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ydbworkload.PoolSpec{}},
+		&ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ydbworkload.ClassifierSpec{}},
 	} {
 		t.Run(string(payload.Kind()), func(t *testing.T) {
 			c := qt.New(t)
