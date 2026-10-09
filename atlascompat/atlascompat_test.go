@@ -179,3 +179,23 @@ func TestWriteSumBytes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(string(data), sum.DirHash+"\n"), qt.IsTrue)
 }
+
+// SchemaToAST decodes the target's source properties before lowering, as a
+// rendered schema does, so the documented `type` attribute and ClickHouse
+// platform properties of an index reach the skipping-index settings instead of
+// arriving as a common type the ClickHouse renderer refuses.
+func TestSchemaToAST_DecodesClickHouseIndexSettings(t *testing.T) {
+	c := qt.New(t)
+	list, err := atlascompat.SchemaToAST(t.Context(), must.Must(builtin.New()), schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Event", Name: "events"}},
+		Fields: []schemamodel.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String", Primary: true}},
+		Indexes: []schemamodel.Index{{
+			StructName: "Event", Name: "idx_payload", Fields: []string{"payload"}, Type: "bloom_filter(0.01)",
+			Overrides: map[string]map[string]string{"clickhouse": {"granularity": "64"}},
+		}},
+	}, "clickhouse", capability.ForDialect("clickhouse"))
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQL("clickhouse", list.Statements...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ADD INDEX `idx_payload` payload TYPE bloom_filter(0.01) GRANULARITY 64;")
+}

@@ -63,11 +63,7 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 	}
 	if opts.Runtime != nil {
 		var err error
-		db, err = schemaproperties.DecodeTables(requestContext, db, opts.Dialect, opts.Runtime)
-		if err != nil {
-			return nil, err
-		}
-		db, err = schemaproperties.DecodeIndexes(requestContext, db, opts.Dialect, opts.Runtime)
+		db, err = schemaproperties.Decode(requestContext, db, opts.Dialect, opts.Runtime)
 		if err != nil {
 			return nil, err
 		}

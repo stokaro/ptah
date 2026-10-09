@@ -25,3 +25,16 @@ func DecodeIndexes(ctx context.Context, db *schemamodel.Database, target string,
 func EncodeIndexes(ctx context.Context, db *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, error) {
 	return encode(ctx, db, target, schemaext.IndexPlatformProperties, runtime)
 }
+
+// Decode lowers the selected target's table and then index source properties
+// with the rules of DecodeTables and DecodeIndexes. Every path that renders,
+// validates, or compares a declaration for a target uses it, so a declared
+// property means the same thing on each. Errors and cancellation return no
+// schema.
+func Decode(ctx context.Context, db *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, error) {
+	tables, err := DecodeTables(ctx, db, target, runtime)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeIndexes(ctx, tables, target, runtime)
+}
