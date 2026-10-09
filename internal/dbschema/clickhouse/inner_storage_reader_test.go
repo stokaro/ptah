@@ -53,7 +53,7 @@ func clickHouseIndexPresentReaderQuery(
 		}, nil
 	case strings.Contains(query, "FROM system.data_skipping_indices"):
 		return dbtest.QueryResult{
-			Columns: []string{"table", "name", "expr", "type", "granularity"},
+			Columns: []string{"table", "name", "expr", "type_full", "granularity"},
 		}, nil
 	default:
 		return clickHouseViewReaderQuery(query, args)

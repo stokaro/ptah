@@ -4,23 +4,37 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 )
 
-// clickHouseIndex builds a minimal secondary index carrying one declared type.
-// The table and the column are there so the render fails, when it fails, on the
-// type rather than on a missing target.
+// clickHouseIndex builds a minimal secondary index carrying one declared type
+// in the ClickHouse owner's settings, where a declaration's `type` arrives. The
+// table and the column are there so the render fails, when it fails, on the
+// type rather than on a missing target. An empty type declares no settings.
 func clickHouseIndex(indexType string) *ast.IndexNode {
-	return &ast.IndexNode{
+	node := &ast.IndexNode{
 		Name:    "idx_docs_tags",
 		Table:   "docs",
 		Columns: []string{"tags"},
-		Type:    indexType,
 	}
+	if indexType != "" {
+		node.Facets = skippingIndexFacets(chschema.DesiredIndex{IndexType: chschema.Setting{State: chschema.Explicit, Value: indexType}})
+	}
+	return node
+}
+
+// skippingIndexFacets binds settings to the ClickHouse target, as source
+// decoding does.
+func skippingIndexFacets(settings chschema.DesiredIndex) schemaext.Facets {
+	facets := must.Must(schemaext.NewFacets(&settings))
+	return must.Must(facets.WithTargetScope(chschema.IndexKind, platform.ClickHouse))
 }
 
 // TestRenderSQL_RefusesAForeignIndexAccessMethod_FailurePath measures the defect
@@ -70,6 +84,38 @@ func TestRenderSQL_RefusesAForeignIndexAccessMethod_FailurePath(t *testing.T) {
 			c.Assert(sql, qt.Equals, "")
 		})
 	}
+}
+
+// TestRenderSQL_RefusesAForeignMethodInTheCommonType_FailurePath keeps the
+// refusal for an AST built by hand. A foreign method there names no ClickHouse
+// type, so the same message applies.
+func TestRenderSQL_RefusesAForeignMethodInTheCommonType_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	node := clickHouseIndex("")
+	node.Type = "GIN"
+
+	sql, err := builtin.RenderSQL(platform.ClickHouse, node)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*names a PostgreSQL or MySQL access method.*`)
+	c.Assert(sql, qt.Equals, "")
+}
+
+// TestRenderSQL_RefusesASkippingTypeInTheCommonType_FailurePath pins the one
+// representation of the skipping-index type. Source decoding moves a declared
+// `type` into the owner's settings, so a common type that reaches this renderer
+// is a second spelling nothing decoded, and rendering either one would ignore
+// the other.
+func TestRenderSQL_RefusesASkippingTypeInTheCommonType_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	node := clickHouseIndex("set(100)")
+	node.Type = "minmax"
+
+	sql, err := builtin.RenderSQL(platform.ClickHouse, node)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `(?s).*carries type "minmax" in the common index type.*`)
+	c.Assert(sql, qt.Equals, "")
 }
 
 // TestRenderSQL_KeepsAClickHouseIndexType_HappyPath is the control that the

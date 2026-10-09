@@ -1131,7 +1131,11 @@ func TestExport_FailurePath_OutputWriteFailurePreservesSource(t *testing.T) {
 	assertFileBytes(c, source, sourceData)
 }
 
-func TestExport_FailurePath_RejectsRemovedIndexPlatformOverride(t *testing.T) {
+// TestExport_HappyPath_KeepsIndexPlatformProperties covers the index
+// properties a selected owner decodes, such as a ClickHouse skipping index's
+// granularity. The HCL document carries them in a platform block, so cleanup
+// can remove the annotation without losing them.
+func TestExport_HappyPath_KeepsIndexPlatformProperties(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	source := filepath.Join(root, "model.go")
@@ -1143,13 +1147,11 @@ type User struct {
 	//ptah:schema:field name="id" type="BIGINT"
 	ID int64
 
-	//ptah:schema:index name="idx_users_id" fields="id" platform.mysql.type="HASH"
+	//ptah:schema:index name="idx_users_id" fields="id" platform.clickhouse.granularity="4"
 	_ int
 }
 `)
-	outputData := []byte("previous schema\n")
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
 		RootDir:    root,
@@ -1157,11 +1159,15 @@ type User struct {
 		Cleanup:    true,
 	})
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "platform.mysql.type")
-	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
+	c.Assert(result.Cleanup, qt.HasLen, 1)
+	outputData, err := os.ReadFile(output)
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.Parse(outputData, output)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Indexes, qt.HasLen, 1)
+	c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, map[string]map[string]string{"clickhouse": {"granularity": "4"}})
 }
 
 func TestExport_FailurePath_RejectsCleanupModesWithoutCleanup(t *testing.T) {

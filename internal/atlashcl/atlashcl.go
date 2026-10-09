@@ -928,7 +928,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if nullsDistinct != nil && !unique {
 		return schemamodel.Index{}, p.blockError(block, "index nulls_distinct requires unique = true")
 	}
-	granularity, err := p.optionalGranularity(block)
+	overrides, err := p.parsePlatformOverrides(block, "index")
 	if err != nil {
 		return schemamodel.Index{}, err
 	}
@@ -946,7 +946,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		Comment:        p.optionalString(block.Body.Attributes["comment"]),
 		IncludeColumns: include,
 		StorageParams:  storageParams,
-		Granularity:    granularity,
+		Overrides:      overrides,
 		TableName:      tableName,
 	})
 }
@@ -1140,26 +1140,6 @@ func (p *parser) parsePlatformOverride(block *hclsyntax.Block, owner string) (pl
 	return platformOverride{key: block.Labels[0], value: value}, nil
 }
 
-// optionalGranularity reads the optional ClickHouse data-skipping index
-// GRANULARITY value. An absent attribute yields 0, which the ClickHouse
-// renderer treats as "use the dialect default". The value must be a
-// non-negative integer within the int64 range, mirroring the Go-annotation
-// path (parseIndexComment), which parses it with strconv.Atoi and rejects
-// negatives; both frontends therefore accept the same granularity values.
-func (p *parser) optionalGranularity(block *hclsyntax.Block) (int, error) {
-	value, err := p.optionalInt64(block, "granularity", "index")
-	if err != nil {
-		return 0, err
-	}
-	if value == nil {
-		return 0, nil
-	}
-	if *value < 0 {
-		return 0, p.blockError(block, "index attribute %q must be a non-negative integer", "granularity")
-	}
-	return int(*value), nil
-}
-
 func (p *parser) parseUnique(structName, tableName string, block *hclsyntax.Block) (schemamodel.Constraint, error) {
 	if len(block.Labels) != 1 {
 		return schemamodel.Constraint{}, p.blockError(block, "unique block requires exactly one label")
@@ -1281,11 +1261,14 @@ func (p *parser) indexStorageParamsMap(block *hclsyntax.Block, attr *hclsyntax.A
 	return params, nil
 }
 
-// indexOnBlocks returns the index body's `on` blocks, sending every other
-// block type through the unknown-name gate.
+// indexOnBlocks returns the index body's `on` blocks. Platform blocks are
+// consumed by parsePlatformOverrides; unknown names pass through the gate.
 func (p *parser) indexOnBlocks(block *hclsyntax.Block) ([]*hclsyntax.Block, error) {
 	onBlocks := make([]*hclsyntax.Block, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
+		if nested.Type == "platform" {
+			continue
+		}
 		if nested.Type != "on" {
 			if err := p.rejectUnsupportedBlock(nested, "index"); err != nil {
 				return nil, err
@@ -1936,7 +1919,6 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"type":            true,
 		"where":           true,
 		"comment":         true,
-		"granularity":     true,
 		"ops":             true,
 		// A YDB vector index's settings; see [parser.indexVector].
 		ydbindex.AttributeDistance:        true,

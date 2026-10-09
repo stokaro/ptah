@@ -13,7 +13,7 @@ import (
 	"ptah.run/internal/annotationmeta"
 )
 
-func tablePropertyAttrs(overrides map[string]map[string]string) []attr {
+func propertyAttrs(overrides map[string]map[string]string) []attr {
 	var result []attr
 	for _, target := range slices.Sorted(maps.Keys(overrides)) {
 		for _, key := range slices.Sorted(maps.Keys(overrides[target])) {
@@ -23,23 +23,35 @@ func tablePropertyAttrs(overrides map[string]map[string]string) []attr {
 	return result
 }
 
-func validateTableProperties(tables []schemamodel.Table) error {
-	for _, table := range tables {
-		for _, target := range slices.Sorted(maps.Keys(table.Overrides)) {
-			if strings.ContainsRune(target, '.') {
-				return fmt.Errorf("table %q has an unrepresentable Go annotation target %q", table.QualifiedName(), target)
-			}
+func validateSourceProperties(db *schemamodel.Database) error {
+	for _, table := range db.Tables {
+		if err := validateProperties("table", table.QualifiedName(), table.Overrides); err != nil {
+			return err
 		}
-		for _, property := range tablePropertyAttrs(table.Overrides) {
-			if !annotationmeta.IsPlatformAttribute(property.name) || !utf8.ValidString(property.value) || strings.ContainsRune(property.value, 0) {
-				return fmt.Errorf("table %q has an unrepresentable Go annotation property %q", table.QualifiedName(), property.name)
-			}
+	}
+	for _, index := range db.Indexes {
+		if err := validateProperties("index", index.Name, index.Overrides); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func prepareSourceTables(requestContext context.Context, db *schemamodel.Database, opts Options) (*schemamodel.Database, error) {
+func validateProperties(owner, name string, overrides map[string]map[string]string) error {
+	for _, target := range slices.Sorted(maps.Keys(overrides)) {
+		if strings.ContainsRune(target, '.') {
+			return fmt.Errorf("%s %q has an unrepresentable Go annotation target %q", owner, name, target)
+		}
+	}
+	for _, property := range propertyAttrs(overrides) {
+		if !annotationmeta.IsPlatformAttribute(property.name) || !utf8.ValidString(property.value) || strings.ContainsRune(property.value, 0) {
+			return fmt.Errorf("%s %q has an unrepresentable Go annotation property %q", owner, name, property.name)
+		}
+	}
+	return nil
+}
+
+func prepareSourceProperties(requestContext context.Context, db *schemamodel.Database, opts Options) (*schemamodel.Database, error) {
 	if requestContext == nil {
 		return nil, fmt.Errorf("Go source rendering requires a context")
 	}
@@ -55,10 +67,21 @@ func prepareSourceTables(requestContext context.Context, db *schemamodel.Databas
 		if err != nil {
 			return nil, err
 		}
+		db, err = schemaproperties.DecodeIndexes(requestContext, db, opts.Dialect, opts.Runtime)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if slices.ContainsFunc(db.Tables, func(table schemamodel.Table) bool { return !table.Facets.IsZero() }) {
 		var err error
 		db, err = schemaproperties.EncodeTables(requestContext, db, opts.Dialect, opts.Runtime)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if slices.ContainsFunc(db.Indexes, func(index schemamodel.Index) bool { return !index.Facets.IsZero() }) {
+		var err error
+		db, err = schemaproperties.EncodeIndexes(requestContext, db, opts.Dialect, opts.Runtime)
 		if err != nil {
 			return nil, err
 		}

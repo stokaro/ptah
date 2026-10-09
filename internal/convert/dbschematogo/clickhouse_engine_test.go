@@ -94,3 +94,27 @@ func TestConvertedClickHouseSettingsReachRenderingAndReports(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(labels, qt.DeepEquals, []string{"ClickHouse table settings"})
 }
+
+// An inspected skipping index converts to an explicit declaration that renders
+// the same type and granularity, and reports count and label it like a table's
+// storage settings.
+func TestConvertedClickHouseIndexSettingsReachRenderingAndReports(t *testing.T) {
+	c := qt.New(t)
+	observed := &chschema.ObservedIndex{IndexType: "set(100)", Granularity: 4}
+	runtime := must.Must(builtin.New())
+	source := engineTable(catalog.Table{Facets: must.Must(schemaext.NewFacets(&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "id"}))})
+	source.Indexes = []catalog.Index{{Name: "idx_id", TableName: "events", Columns: []string{"id"}, Facets: must.Must(schemaext.NewFacets(observed))}}
+	database, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), source, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Indexes, qt.HasLen, 1)
+	statements, err := builtin.GetOrderedCreateStatements(database, "clickhouse")
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.Contains, "ALTER TABLE `events` ADD INDEX `idx_id` id TYPE set(100) GRANULARITY 4;\n")
+	stats, err := schemastats.Collect(t.Context(), database, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(stats.Metrics, qt.Contains, schemastats.Metric{Name: "clickhouse_index_settings", Help: "Indexes with captured ClickHouse data-skipping settings", Value: 1})
+	values := must.Must(database.Indexes[0].Facets.Values())
+	labels, err := schemaexportloss.FeatureLabels(t.Context(), "clickhouse", values, runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(labels, qt.DeepEquals, []string{"ClickHouse index settings"})
+}

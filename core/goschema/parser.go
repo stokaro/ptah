@@ -354,26 +354,6 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
 	tableName := kv["table"]
 
-	// Granularity is optional and only meaningful for ClickHouse data-skipping
-	// indexes. Empty / unset => 0, which the ClickHouse renderer interprets as
-	// "use the documented default". Invalid integers panic at parse time so
-	// users see the typo immediately rather than getting a wrong default.
-	var granularity int
-	if g := strings.TrimSpace(kv["granularity"]); g != "" {
-		n, err := strconv.Atoi(g)
-		if err != nil || n < 0 {
-			return &ptaherr.ParseError{
-				File:      s.filename,
-				Line:      s.annotationContext(comment, "//ptah:schema:index", structName).line,
-				Directive: "ptah:schema:index",
-				Attribute: "granularity",
-				Err:       ptaherr.ErrInvalidAttributeValue,
-				Message:   fmt.Sprintf("invalid granularity %q on //ptah:schema:index at %s (must be a non-negative integer)", g, structName),
-			}
-		}
-		granularity = n
-	}
-
 	keyBlockSize, err := s.unsignedAttribute(kv, comment, structName, "index", "key_block_size")
 	if err != nil {
 		return err
@@ -396,15 +376,15 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Fields:         fields,
 		Unique:         kv["unique"] == "true",
 		Comment:        kv["comment"],
+		Overrides:      parseutils.ParsePlatformSpecific(kv),
 		Invisible:      kv["invisible"] == "true",
 		KeyBlockSize:   keyBlockSize,
-		Type:           kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
+		Type:           kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; the ClickHouse owner consumes it as the skipping-index type
 		Condition:      firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
 		Operator:       kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
 		IncludeColumns: includeColumns,
 		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
-		TableName:      tableName,   // Target table name
-		Granularity:    granularity, // CH only: GRANULARITY n for data-skipping indexes
+		TableName:      tableName, // Target table name
 		Partitioning:   partitioning,
 		Vector:         vector,
 		StorageParams:  fullText,

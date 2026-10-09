@@ -379,9 +379,10 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "ptah:schema:index",
-		Description: "Declares an index for a table.",
-		Scopes:      []Scope{ScopeStruct, ScopeField},
+		Name:          "ptah:schema:index",
+		Description:   "Declares an index for a table.",
+		Scopes:        []Scope{ScopeStruct, ScopeField},
+		AllowPlatform: true,
 		Attributes: []Attribute{
 			attr("name", "Index name.", valueString, false, false),
 			attr("fields", "Comma-separated Go field or column names.", valueList, false, false),
@@ -403,7 +404,6 @@ var directives = []Directive{
 			attr("ops", "PostgreSQL operator class.", valueString, false, false),
 			attr("table", "Explicit target table.", valueString, false, false),
 			attr("key_block_size", "MySQL and MariaDB index block-size hint; zero uses the engine default.", valueString, false, false),
-			attr("granularity", "ClickHouse data-skipping index granularity.", valueString, false, false),
 			attr("nulls_distinct", "Controls NULLS DISTINCT behavior where supported.", valueBoolean, false, false),
 			attr("invisible", "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB, NOT VISIBLE on CockroachDB.",
 				valueBoolean, false, true),

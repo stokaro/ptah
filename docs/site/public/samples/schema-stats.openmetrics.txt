@@ -76,6 +76,9 @@ ptah_schema_external_tables{dialect="sqlite"} 0
 # HELP ptah_schema_external_columns Columns across external tables.
 # TYPE ptah_schema_external_columns gauge
 ptah_schema_external_columns{dialect="sqlite"} 0
+# HELP ptah_schema_clickhouse_index_settings Indexes with captured ClickHouse data-skipping settings.
+# TYPE ptah_schema_clickhouse_index_settings gauge
+ptah_schema_clickhouse_index_settings{dialect="sqlite"} 0
 # HELP ptah_schema_clickhouse_table_settings Tables with captured ClickHouse storage settings.
 # TYPE ptah_schema_clickhouse_table_settings gauge
 ptah_schema_clickhouse_table_settings{dialect="sqlite"} 0

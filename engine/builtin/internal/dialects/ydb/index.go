@@ -210,8 +210,6 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode,
 		return refuseFact(subject, "a FULLTEXT parser is MySQL's")
 	case index.Operator != "" && !vector:
 		return refuseFact(subject, "YDB has no index operator class")
-	case index.Granularity != 0:
-		return refuseFact(subject, "GRANULARITY is ClickHouse's")
 	case len(index.StorageParams) > 0 && !vector && !kind.IsFullText() && !kind.IsLocal():
 		return refuseFact(subject, "a YDB global index takes no storage parameters; its settings are its "+
 			"partitioning and read replicas, declared with the auto_partitioning_* and read_replicas_settings attributes")

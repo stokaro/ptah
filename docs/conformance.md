@@ -1476,8 +1476,8 @@ comment is not one of the four: it is a relation-level attribute like
 through, and that criterion has a fifth surface the list above does not name:
 Ptah's own Go annotation surface. `//ptah:schema:index` parses `name`,
 `fields`/`columns`, `table`, `unique`, `comment`, `type`, `where`/`condition`,
-`ops`, `include`, `nulls_distinct` and `granularity` — but no storage
-parameters.
+`ops`, `include`, `nulls_distinct` and provider-owned platform properties, such
+as a ClickHouse data-skipping index's granularity, but no storage parameters.
 
 The consequence is measured. Against a database holding
 `CREATE INDEX i ON t USING brin (ts) WITH (pages_per_range = 32)`, a model

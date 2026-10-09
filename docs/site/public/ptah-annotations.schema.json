@@ -1408,6 +1408,12 @@
       "properties": {
         "attributes": {
           "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
           "properties": {
             "auto_partitioning_by_load": {
               "description": "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
@@ -1476,10 +1482,6 @@
             },
             "filter_ngram_min_length": {
               "description": "YDB full-text index: filter ngram min length.",
-              "type": "string"
-            },
-            "granularity": {
-              "description": "ClickHouse data-skipping index granularity.",
               "type": "string"
             },
             "include": {

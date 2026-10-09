@@ -408,6 +408,8 @@ v0.13.0 ptah.run/core/renderer
 # ExtensionStatement, with explicit optional before/after operands.
 # AddSkippingIndexOperation also moves to chast.AddSkippingIndex. Other targets
 # refuse that operation, and zero index granularity uses the server default 1.
+# IndexNode.Granularity is removed: a ClickHouse skipping index carries its
+# type and granularity in the owner's facet on IndexNode.Facets.
 # Callers wrap the owner payload in ExtensionAlterOperation. The common ALTER
 # interface remains sealed. This changes the Go API; pre-v1, so no compatibility
 # is owed. No aliases or legacy reader remain. The implementation follows the
@@ -451,12 +453,17 @@ v0.13.0 ptah.run/core/ast
 # Common workload coverage kinds are removed. DecodeHeader takes an explicit
 # HeaderExtension callback; owned source directives populate feature coverage.
 # Consumers use the owner model, change, and operation codecs directly.
+# Index.Granularity is removed. A ClickHouse skipping index declares its type
+# and granularity as platform properties that the selected owner decodes into
+# a facet; Index.Overrides carries those properties.
 # This changes behavior; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.
 v0.13.0 ptah.run/core/schemamodel
 v0.13.0 ptah.run/core/coverage
 # ClickHouse storage fields now use the owner's typed observed facet; the
-# catalog no longer publishes a separate writable representation.
+# catalog no longer publishes a separate writable representation. Index.Type
+# and Index.Granularity, which only the ClickHouse reader filled, are removed
+# for the same reason: skipping-index settings are an observed index facet.
 v0.13.0 ptah.run/catalog
 # TableDeclarationFor moves to the neutral schemacapture.DeclareTable so
 # source projection and comparison share capture without a pipeline dependency.

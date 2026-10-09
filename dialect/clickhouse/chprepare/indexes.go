@@ -58,7 +58,7 @@ func declaredIndexSettings(index schemamodel.Index) (*chschema.DesiredIndex, err
 	if err != nil || !found {
 		return nil, err
 	}
-	if index.Type != "" || index.Granularity != 0 {
+	if index.Type != "" {
 		return nil, fmt.Errorf("%w: ClickHouse index %q settings must be decoded before preparation", schemaext.ErrInvalidValue, index.Name)
 	}
 	return value, nil

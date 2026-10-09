@@ -331,8 +331,7 @@ func convertIndexes(
 			Invisible:     dbIndex.Invisible,
 			KeyBlockSize:  dbIndex.KeyBlockSize,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
-			Type:          indexType(dbIndex),
-			Granularity:   dbIndex.Granularity,
+			Type:          dbIndex.Method,
 
 			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
 			StorageParams:  maps.Clone(dbIndex.StorageParams),
@@ -346,18 +345,6 @@ func convertIndexes(
 		indexes = append(indexes, index)
 	}
 	return indexes
-}
-
-// indexType picks the value schemamodel.Index.Type carries for an introspected
-// index. goschema keeps one field for two concepts the database layer keeps
-// apart: the PostgreSQL access method (btree/gin/gist/brin/hash) and the
-// ClickHouse data-skipping-index type (minmax/bloom_filter/...). No reader
-// sets both, so the choice is unambiguous.
-func indexType(index catalog.Index) string {
-	if index.Method != "" {
-		return index.Method
-	}
-	return index.Type
 }
 
 func convertIndexParts(parts []catalog.IndexPart) []schemamodel.IndexPart {

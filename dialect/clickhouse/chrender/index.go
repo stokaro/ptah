@@ -24,12 +24,20 @@ func renderIndex(ctx renderer.ExtensionContext, op *chast.AddSkippingIndex) ([]s
 	if indexType == "" {
 		indexType = "minmax"
 	}
-	granularity := op.Granularity
-	if granularity == 0 {
-		granularity = 1
-	}
+	granularity := max(op.Granularity, 1)
 	return []string{fmt.Sprintf("ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;",
 		quoteTable(ctx.Parent.Name), quoteIndex(op.Name), op.Expression, indexType, granularity)}, nil
+}
+
+func validateDropIndex(ctx renderer.ExtensionContext, op *chast.DropSkippingIndex) error {
+	if ctx.Target != platform.ClickHouse {
+		return fmt.Errorf("%w: ClickHouse DROP INDEX operation on %q", ptaherr.ErrUnsupportedDialect, ctx.Target)
+	}
+	return op.Validate()
+}
+
+func renderDropIndex(ctx renderer.ExtensionContext, op *chast.DropSkippingIndex) ([]string, error) {
+	return []string{fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", quoteTable(ctx.Parent.Name), quoteIndex(op.Name))}, nil
 }
 
 func quoteIndex(name string) string {

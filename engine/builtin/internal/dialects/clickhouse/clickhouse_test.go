@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 )
 
@@ -780,29 +781,27 @@ func TestAlterTable_AddSkippingIndex_MissingExpressionErrors(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "expression")
 }
 
-// TestVisitIndex_AnnotationDrivenTypeAndGranularity exercises the end-to-end
-// path from a schemamodel.Index annotation (with type= and granularity=) through
-// modelast.FromIndex into the ClickHouse renderer. Two type spellings are
-// covered: bloom_filter(0.01) carries a parenthesised parameter (which would
-// confuse a naïve paren-aware splitter if one were ever added to VisitIndex),
-// and set(100) tests the most common alternative type spelling.
+// TestVisitIndex_AnnotationDrivenTypeAndGranularity renders the ClickHouse
+// index settings a declaration decodes into. Two type spellings are covered:
+// bloom_filter(0.01) carries a parenthesised parameter (which would confuse a
+// naïve paren-aware splitter if one were ever added to VisitIndex), and
+// set(100) tests the most common alternative type spelling.
 func TestVisitIndex_AnnotationDrivenTypeAndGranularity(t *testing.T) {
 	cases := []struct {
 		name string
 		typ  string
-		gran int
+		gran chschema.GranularitySetting
 		want string
 	}{
 		{
 			name: "bloom_filter with float parameter and custom granularity",
 			typ:  "bloom_filter(0.01)",
-			gran: 64,
+			gran: chschema.GranularitySetting{State: chschema.Explicit, Value: 64},
 			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE bloom_filter(0.01) GRANULARITY 64;",
 		},
 		{
 			name: "set with explicit max size and default granularity",
 			typ:  "set(100)",
-			gran: 0,
 			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE set(100) GRANULARITY 1;",
 		},
 	}
@@ -811,8 +810,7 @@ func TestVisitIndex_AnnotationDrivenTypeAndGranularity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			idx := ast.NewIndex("idx_e_payload", "events", "payload")
-			idx.Type = tc.typ
-			idx.Granularity = tc.gran
+			idx.Facets = skippingIndexFacets(chschema.DesiredIndex{IndexType: chschema.Setting{State: chschema.Explicit, Value: tc.typ}, Granularity: tc.gran})
 			out := render(t, idx)
 			c.Assert(out, qt.Contains, tc.want)
 		})

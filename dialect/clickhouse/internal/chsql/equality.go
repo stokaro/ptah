@@ -20,6 +20,12 @@ func SameTable(a, b *chschema.ObservedTable) bool {
 		SameExpression(a.TTL, b.TTL) && SameExpression(a.Settings, b.Settings)
 }
 
+// SameIndex compares type tokens and the exact unsigned granularity. Type
+// parameters retain their token boundaries, quoted values, and order.
+func SameIndex(a, b *chschema.ObservedIndex) bool {
+	return a.Granularity == b.Granularity && SameExpression(a.IndexType, b.IndexType)
+}
+
 // Preserve token boundaries, quoted text, identifier case, and order. Removing
 // whitespace from the whole expression would equate different string literals.
 func expressionTokens(expression string) []string {

@@ -28,6 +28,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: "ptah.run/ydb", codecs: ydbstreaming.Codecs()},
 		{owner: "ptah.run/ydb", codecs: ydbworkload.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
+		{owner: "ptah.run/clickhouse", codecs: chschema.IndexCodecs()},
 	} {
 		for _, codec := range provider.codecs {
 			if codec.Representation == schemaext.Desired {

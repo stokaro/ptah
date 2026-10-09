@@ -5,23 +5,12 @@ import (
 	"errors"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
-	"ptah.run/dialect/clickhouse/chast"
-	"ptah.run/dialect/clickhouse/chcompare"
-	"ptah.run/dialect/clickhouse/chconvert"
-	"ptah.run/dialect/clickhouse/chdiff"
-	"ptah.run/dialect/clickhouse/chplan"
-	"ptah.run/dialect/clickhouse/chprepare"
-	"ptah.run/dialect/clickhouse/chreport"
-	"ptah.run/dialect/clickhouse/chreverse"
-	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/postgres/pgproject"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
@@ -71,20 +60,7 @@ func New() (*engine.Runtime, error) {
 			provider.Targets[0].Constraints = pgproject.Constraints{}
 		}
 		if name == platform.ClickHouse {
-			provider.Targets[0].Preparation = chprepare.Service{}
-			provider.Targets[0].Creations = chprepare.Service{}
-			provider.Codecs = append(append(chschema.Codecs(), chdiff.Codecs()...), chast.Codecs()...)
-			provider.Reversals = []engine.Reversal{{Target: name, Kinds: []schemaext.Kind{chdiff.TableKind}, Service: chreverse.Service{}}}
-			provider.Planning = []engine.Planning{{Target: name, Kinds: []schemaext.Kind{chdiff.TableKind}, ParentKinds: []schemaext.Kind{chschema.TableKind}, OperationKinds: []schemaext.Kind{chast.AlterTTLKind}, Service: chplan.Service{}}}
-			provider.Properties = []engine.PropertySource{{Target: name, Format: schemaext.TablePlatformProperties, Definitions: chsource.Definitions(), Service: chsource.Service{}}}
-			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{chschema.TableKind}, Service: chconvert.Service{}}}
-			provider.FacetComparisons = []engine.FacetComparison{{
-				Target: name, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable},
-				Kinds: []schemaext.Kind{chschema.TableKind}, ChangeKinds: []schemaext.Kind{chdiff.TableKind}, Service: chcompare.Service{},
-			}}
-			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
-				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: chreport.Definitions(), Service: chreport.Service{}})
-			}
+			registerClickHouseServices(&provider, name)
 		}
 		if name == platform.YDB {
 			provider.Codecs = ydbextensions.Codecs()

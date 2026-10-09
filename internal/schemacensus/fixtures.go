@@ -134,6 +134,7 @@ func Fixtures() []Fixture {
 		{Name: "index-storage", Schema: indexStorageFixture()},
 		{Name: "index-concurrent", Schema: indexConcurrentFixture()},
 		{Name: "index-clickhouse", Schema: indexClickHouseFixture()},
+		{Name: "index-clickhouse-settings", Schema: indexClickHouseSettingsFixture()},
 		{Name: "index-fulltext", Schema: indexFullTextFixture()},
 		{Name: "index-invisible", Schema: indexInvisibleFixture()},
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
@@ -1228,11 +1229,14 @@ func indexConcurrentFixture() schemamodel.Database {
 	return db
 }
 
+// indexClickHouseFixture declares a skipping index's settings as ClickHouse
+// source properties, so the census measures that the selected owner decodes
+// Overrides into the type and granularity it renders.
 func indexClickHouseFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-		Type: "minmax", Granularity: 4,
+		Overrides: map[string]map[string]string{"clickhouse": {"type": "set(100)", "granularity": "4"}},
 	}}
 	return db
 }

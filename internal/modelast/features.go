@@ -9,12 +9,15 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/tableref"
 )
 
 // validateFeatureLowering accounts for feature state before the first node is
-// visited. Table facets and named children travel on their CREATE TABLE.
-// Other placements need a selected owner lowering service; dropping them
-// would leave a successful AST that no downstream renderer can refuse.
+// visited. Table facets and named children travel on their CREATE TABLE, and
+// index facets on their index node, where the selected renderer consumes or
+// refuses them. Other placements need a selected owner lowering service;
+// dropping them would leave a successful AST that no downstream renderer can
+// refuse.
 func validateFeatureLowering(database schemamodel.Database, dialect string) error {
 	if err := validateLoweringCoverage(database.FeatureCoverage); err != nil {
 		return err
@@ -35,16 +38,21 @@ func validateFeatureLowering(database schemamodel.Database, dialect string) erro
 
 func validateFacetLowering(database *schemamodel.Database, dialect string) error {
 	builder := objectidentity.NewBuilder(identifier.ForDialect(dialect))
-	tables := make(map[*schemaext.Facets]objectidentity.ID, len(database.Tables))
+	owners := make(map[*schemaext.Facets]objectidentity.ID, len(database.Tables)+len(database.Indexes))
 	for i := range database.Tables {
 		table := &database.Tables[i]
-		tables[&table.Facets] = builder.TableParts(table.Schema, table.Name)
+		owners[&table.Facets] = builder.TableParts(table.Schema, table.Name)
+	}
+	for i, owner := range schemamodel.ResolveIndexOwners(database.Indexes, database.Tables, database.MaterializedViews) {
+		if ref, valid := tableref.Parse(owner); valid {
+			owners[&database.Indexes[i].Facets] = builder.IndexParts(ref.Schema, ref.Name, database.Indexes[i].Name)
+		}
 	}
 	for _, facets := range database.FacetSlots() {
 		if facets.IsZero() {
 			continue
 		}
-		subject, supported := tables[facets]
+		subject, supported := owners[facets]
 		if !supported {
 			return fmt.Errorf("%w: no schema-to-AST lowering for feature facet %q", ptaherr.ErrUnsupportedFeature, facets.DeclaredKinds()[0])
 		}

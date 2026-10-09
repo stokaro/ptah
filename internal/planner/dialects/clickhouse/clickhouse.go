@@ -147,23 +147,21 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
-	result = nil
-	result, err = planObjectsAfterTables(result, diff, p.capabilities())
+	after, err := planObjectsAfterTables(nil, diff, p.capabilities())
 	if err != nil {
 		return nil, err
 	}
-	result, err = p.addNewIndexes(result, diff)
+	indexes, err := p.addNewIndexes(nil, diff)
 	if err != nil {
 		return nil, err
 	}
-	result = p.removeIndexes(result, diff)
+	indexes = p.removeIndexes(indexes, diff)
 	// Row policies go before the tables they name, so a drop never names an
 	// object that is already gone.
-	result = removeRowPolicies(result, diff, p.capabilities())
+	last := removeRowPolicies(nil, diff, p.capabilities())
+	last = p.removeTables(last, diff)
 
-	result = p.removeTables(result, diff)
-
-	return p.scheduleStorage(ctx, runtime, diff, before, columns, result)
+	return p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, columns: columns, after: after, indexes: indexes, last: last})
 }
 
 // addNewTables emits CREATE TABLE for every declared table the diff creates.
@@ -298,7 +296,9 @@ func (p *Planner) addNewIndexes(
 		if index.Type != "" {
 			node.Type = index.Type
 		}
-		node.Granularity = index.Granularity
+		// The owned skipping-index settings travel with the declaration; the
+		// renderer resolves the creation defaults for any it leaves out.
+		node.Facets = index.Facets
 		// ClickHouse has no payload columns. The node carries them anyway, so
 		// the renderer refuses the index with the message a render of the same
 		// schema gives, instead of writing a skipping index without them

@@ -58,16 +58,16 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chresolve` | Storage-setting resolution with retained intent and property origins. |
 | `dialect/clickhouse/chschema` | Desired and observed storage settings with versioned model codecs. |
-| `dialect/clickhouse/chsource` | Table property encoding and decoding that preserves setting intent. |
+| `dialect/clickhouse/chsource` | Table and index property encoding and decoding that preserves setting intent. |
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
-| `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
-| `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
+| `core/schemaproperties` | Selected table and index property decoding and export without engine-specific field access. |
+| `dialect/clickhouse/chcompare` | Comparison of resolved table and index settings with explicit knowledge limits. |
 | `dialect/clickhouse/chast` | Typed TTL and skipping-index operations with explicit codecs. |
-| `dialect/clickhouse/chrender` | Owner-selected TTL rendering. |
-| `dialect/clickhouse/chplan` | TTL planning and common-column dependencies. |
-| `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
+| `dialect/clickhouse/chrender` | Owner-selected TTL and skipping-index rendering. |
+| `dialect/clickhouse/chplan` | TTL and skipping-index planning with common-column dependencies. |
+| `dialect/clickhouse/chreverse` | Reverse TTL and index definitions with recovery limits. |
 | `dialect/clickhouse/chconvert` | Conversion between complete table/index declarations and observations. |
-| `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
+| `dialect/clickhouse/chdiff` | Captured prior and desired storage settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
@@ -227,32 +227,28 @@ fingerprints. A document records its provider, kind, representation, version,
 and model-definition hash. Unknown or incompatible definitions are errors;
 registering a codec alone does not grant a target support for that feature.
 
-`chschema.DesiredTable` distinguishes omitted settings, defaults, and explicit
-values, including empty values. `ObservedTable` requires complete settings and
-keeps sorting and primary keys separate. `chschema.Codecs()` preserves these
-distinctions. The bundled runtime consumes typed table facets through creation,
-comparison, planning, and reverse DROP plans. Mixing facets with storage
-overrides is refused, including empty overrides.
+`chschema.DesiredTable` and `DesiredIndex` distinguish omitted settings,
+defaults, and explicit values. `ObservedTable` and `ObservedIndex` require
+complete settings; table observations keep sorting and primary keys separate.
+The versioned codecs preserve these distinctions, including unsigned 64-bit
+index granularity. Mixing table facets with storage overrides is refused.
 
-Register `chcompare.Service` in a selected provider's `FacetComparisons` to
-compare resolved table settings. `chdiff.Table` and its codec retain complete
-before and after operands. Missing evidence needed for declared settings produces
-an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
-limits remain visible. The bundled runtime registers these services.
+`chcompare.Service` and `IndexService` compare resolved table and surviving-index
+settings. `chdiff.Table` and `chdiff.Index` retain complete before and after
+operands. Missing evidence for declared settings is undecided; unmentioned
+objects stay unmanaged, and explicit inspection limits remain visible.
 
 `chplan.Service` orders MergeTree TTL changes after required column additions
-and before dependent removals. It refuses unknown observations and changes to
-columns used by retained storage.
-`chast.AlterTTL` uses explicit codecs and `chrender` handlers outside transactions.
-Wrap it in `ast.ExtensionAlterOperation` under `ast.AlterTableNode`. Empty TTL
-removes the rule. Whitespace-only rules, other storage changes, and non-owning
-targets are refused without partial SQL.
+and before dependent removals, and refuses changes to columns used by retained
+storage. `chplan.IndexService` replaces an index whose type or granularity
+changes, unless the host already replaces it. `chast.AlterTTL`,
+`AddSkippingIndex`, and `DropSkippingIndex` use explicit codecs and `chrender`
+handlers outside transactions. Wrap them in `ast.ExtensionAlterOperation` under
+`ast.AlterTableNode`; non-owning targets refuse them without partial SQL.
 
-`chast.AddSkippingIndex` uses this envelope, defaults to `minmax` and
-`GRANULARITY 1`, and requires its owner renderer.
-
-`chreverse.Service` restores the captured TTL definition and reports data loss.
-Its state projection feeds reverse planning without claiming new inspection.
+`chreverse.Service` and `IndexService` restore captured definitions and report
+what they cannot recover: expired TTL data and materialized index data. Their
+state projections feed reverse planning without claiming new inspection.
 
 `chresolve.Table` and `chresolve.Index` retain declarations, resolved settings,
 and property origins. Existing objects require observations for omitted settings.
@@ -260,8 +256,7 @@ On creation, a default primary key inherits the sorting key; skipping indexes
 use Ptah's `minmax` type and granularity `1`. Missing evidence returns no partial result.
 
 `chconvert.Service` converts complete table/index observations to explicit
-declarations and resolved declarations to predictions. It preserves empty table
-settings, key roles, and unsigned 64-bit index granularity. Invalid values or
+declarations and resolved declarations to predictions. Invalid values or
 unresolved settings discard the whole batch.
 
 `Provider.Properties` declares source property ownership by target, format, and
@@ -270,24 +265,28 @@ changed kinds, missing results, and properties outside the owner's declared keys
 Empty values remain distinct from missing properties. Conversion failures and
 cancellation return no partial result or new catalog knowledge.
 
-`chsource.Service` preserves ClickHouse intent through the table platform property
-format. Bare keys carry explicit values; a `.state` suffix with value `default`
-requests the creation rule. Register its definitions and service with a selected
-provider. The bundled runtime uses it for source lowering and Go annotation export.
+`chsource.Service` and `IndexService` preserve ClickHouse intent through the
+table and index platform property formats. Bare keys carry explicit values; a
+`.state` suffix with value `default` requests the creation rule.
 
-`schemaproperties.DecodeTables` attaches decoded properties as facets bound to
-the selected target. Unclaimed keys and other target groups stay untouched.
-`EncodeTables` exports those facets through the same owner. Both refuse mixed
-typed/property declarations and duplicate alias keys. Export also refuses facets
-whose scope or presence the property format cannot preserve. Neither operation
-adds inspection coverage. Native Go export, whole-schema rendering, validation,
-and comparison decode source properties through the selected runtime. File-to-file
-comparison resolves the current document's creation rules before projecting it
-into catalog form. This prediction preserves explicit knowledge limits and proves
-no inspection or execution.
+`schemaproperties.DecodeTables` and `DecodeIndexes` attach decoded properties as
+facets bound to the selected target, leaving other target groups untouched.
+Unclaimed table keys stay for their common readers; an unclaimed index key of
+the selected target is refused. An index owner claiming `type` consumes the
+common `Type`. The `Encode` functions export facets through the same owner.
+They refuse mixed typed/property declarations and duplicate alias keys.
 
-The ClickHouse reader supplies observed facets with coverage limited to retained
-tables. `chreport.Service` supplies their counts and omission labels.
+Export also refuses facets whose scope or presence the property format cannot
+preserve. Neither operation adds inspection coverage. Native Go export,
+whole-schema rendering, validation, and comparison decode source properties
+through the selected runtime. File-to-file comparison resolves the current
+document's creation rules before projecting it into catalog form. This
+prediction preserves explicit knowledge limits and proves no inspection or
+execution.
+
+The ClickHouse reader supplies observed table and index facets; table coverage
+is limited to retained tables. `chreport.Service` and `IndexService` supply
+counts and omission labels. The bundled runtime registers every service above.
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.

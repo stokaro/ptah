@@ -71,8 +71,9 @@ current schema IR:
   whose `NULL` ordering differs from its direction's default, which is
   `NULLS LAST` for ascending and `NULLS FIRST` for descending;
   PostgreSQL indexes also support `include`, BRIN `page_per_range`, and
-  `nulls_distinct`, ClickHouse data-skipping indexes support `granularity`, and
-  the Ptah `ops` parity extension preserves the Go annotation operator class
+  `nulls_distinct`, a ClickHouse data-skipping index takes its `type` and
+  `granularity` in a nested `platform "clickhouse"` block, and the Ptah `ops`
+  parity extension preserves the Go annotation operator class
 - Ptah `constraint` blocks when complete annotation metadata cannot fit the
   Atlas-native `check`, `unique`, `primary_key`, or `foreign_key` shape, and
   for `EXCLUDE` constraints

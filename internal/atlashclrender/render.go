@@ -1188,13 +1188,6 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 			"the index is hidden from the optimizer, which HCL schema output cannot represent; "+
 				"applying this HCL makes the index visible")
 	}
-	// Granularity is always non-negative (the parser rejects negatives) and 0 is
-	// the implicit dialect default, so emit only a positive value; the parser
-	// defaults an absent attribute back to 0, keeping the render/parse pair
-	// symmetric.
-	if index.Granularity != 0 {
-		r.rawAttr(2, "granularity", strconv.Itoa(index.Granularity))
-	}
 	if len(index.IncludeColumns) > 0 {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
@@ -1213,6 +1206,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 		r.rawAttr(2, "page_per_range", pages)
 	}
 	r.renderIndexStorageParams(index)
+	r.renderPlatformOverrides(2, index.Overrides)
 	if len(index.Parts) > 0 && !simpleIndexParts(index.Parts) {
 		for _, part := range index.Parts {
 			r.line("    on {")

@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/clickhouse/chconvert"
 	"ptah.run/dialect/clickhouse/chprepare"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/engine"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -25,7 +26,33 @@ func indexCreationRuntime() *engine.Runtime {
 		ID: "example.org/clickhouse", Targets: []engine.Target{{Name: "clickhouse", Creations: chprepare.Service{}}},
 		Codecs:      append(chschema.Codecs(), chschema.IndexCodecs()...),
 		Conversions: []engine.Conversion{{Target: "clickhouse", Kinds: []schemaext.Kind{chschema.TableKind, chschema.IndexKind}, Service: chconvert.Service{}}},
+		Properties:  []engine.PropertySource{{Target: "clickhouse", Format: schemaext.IndexPlatformProperties, Definitions: chsource.IndexDefinitions(), Service: chsource.IndexService{}}},
 	}))
+}
+
+func TestDocumentProjectionDecodesIndexPropertiesBeforeCreation(t *testing.T) {
+	c := qt.New(t)
+	source := indexCreationDocument()
+	source.Indexes[0].Facets = schemaext.Facets{}
+	source.Indexes[0].Overrides = map[string]map[string]string{"clickhouse": {"type.state": "default", "granularity.state": "default"}}
+	source.Indexes[1].Facets = schemaext.Facets{}
+	source.Indexes[1].Type = "set(100)"
+	source.Indexes[1].Overrides = map[string]map[string]string{"clickhouse": {"granularity": "18446744073709551615"}}
+	projected, err := goschematodb.ToDBSchema(t.Context(), source, "clickhouse", indexCreationRuntime())
+	c.Assert(err, qt.IsNil)
+	for i, want := range []*chschema.ObservedIndex{
+		{IndexType: "minmax", Granularity: 1},
+		{IndexType: "set(100)", Granularity: math.MaxUint64},
+	} {
+		value, found, err := schemaext.FacetAs[*chschema.ObservedIndex](projected.Indexes[i].Facets, chschema.IndexKind)
+		c.Assert(err, qt.IsNil)
+		c.Assert(found, qt.IsTrue)
+		c.Assert(value, qt.DeepEquals, want)
+		c.Assert(projected.Indexes[i].Method, qt.Equals, "")
+		c.Assert(source.Indexes[i].Facets.IsZero(), qt.IsTrue)
+	}
+	c.Assert(source.Indexes[1].Type, qt.Equals, "set(100)")
+	c.Assert(source.Indexes[1].Overrides["clickhouse"]["granularity"], qt.Equals, "18446744073709551615")
 }
 
 func indexCreationDocument() *schemamodel.Database {

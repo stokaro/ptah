@@ -62,6 +62,10 @@ func clickhouseIndexFixture() extensionFixture {
 	return extensionFixture{payload: &chast.AddSkippingIndex{Name: "idx_c", Expression: "c"}, wantSQL: "ALTER TABLE `items` ADD INDEX `idx_c` c TYPE minmax GRANULARITY 1;\n"}
 }
 
+func clickhouseDropIndexFixture() extensionFixture {
+	return extensionFixture{payload: &chast.DropSkippingIndex{Name: "idx_c"}, wantSQL: "ALTER TABLE `items` DROP INDEX `idx_c`;\n"}
+}
+
 func coordinationFixture() extensionFixture {
 	return extensionFixture{payload: &ydbast.CoordinationNode{Schema: "app", Name: "locks", Change: ydbdiff.CoordinationNode{After: &ydbcoordination.Desired{}}}, wantSQL: "CREATE COORDINATION NODE `app/locks`;\n"}
 }
@@ -73,7 +77,7 @@ func streamingFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture())
 }
 
 func defaultPoolFixture() extensionFixture {

@@ -10,8 +10,8 @@ import (
 )
 
 // TestParseIndexAnnotation_TypeAndGranularity exercises the parser's strict
-// attribute validation and parsing for the ClickHouse-flavoured
-// type= / granularity= keys, alongside the existing PG-flavoured type= use.
+// attribute validation for a ClickHouse skipping index: the common type= key,
+// and the granularity as a ClickHouse source property the owner decodes.
 func TestParseIndexAnnotation_TypeAndGranularity(t *testing.T) {
 	const src = `package fixture
 
@@ -23,7 +23,7 @@ type Event struct {
 	//ptah:schema:field name="payload" type="String"
 	Payload string
 
-	//ptah:schema:index name="idx_e_payload" fields="payload" type="bloom_filter" granularity="64"
+	//ptah:schema:index name="idx_e_payload" fields="payload" type="bloom_filter" platform.clickhouse.granularity="64"
 	_ int
 }
 `
@@ -34,7 +34,31 @@ type Event struct {
 	c.Assert(idx.Name, qt.Equals, "idx_e_payload")
 	c.Assert(idx.Fields, qt.DeepEquals, []string{"payload"})
 	c.Assert(idx.Type, qt.Equals, "bloom_filter")
-	c.Assert(idx.Granularity, qt.Equals, 64)
+	c.Assert(idx.Overrides, qt.DeepEquals, map[string]map[string]string{"clickhouse": {"granularity": "64"}})
+}
+
+// TestParseIndexAnnotation_BareGranularityRejected pins that the setting has
+// one spelling. The ClickHouse owner reads platform.clickhouse.granularity; a
+// bare key is an unknown attribute rather than a second representation.
+func TestParseIndexAnnotation_BareGranularityRejected(t *testing.T) {
+	const src = `package fixture
+
+//ptah:schema:table name="events"
+type Event struct {
+	//ptah:schema:field name="payload" type="String"
+	Payload string
+
+	//ptah:schema:index name="idx_e_payload" fields="payload" granularity="64"
+	_ int
+}
+`
+	c := qt.New(t)
+	db, err := goschema.ParseSource("fixture.go", src)
+	var parseErr *ptaherr.ParseError
+	c.Assert(err, qt.ErrorAs, &parseErr)
+	c.Assert(parseErr.Attribute, qt.Equals, "granularity")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
+	c.Assert(db.Indexes, qt.HasLen, 0)
 }
 
 // TestParseIndexAnnotation_UnknownKeyRejected verifies that the strict
@@ -85,6 +109,6 @@ type User struct {
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	idx := db.Indexes[0]
 	c.Assert(idx.Type, qt.Equals, "")
-	c.Assert(idx.Granularity, qt.Equals, 0)
+	c.Assert(idx.Overrides, qt.HasLen, 0)
 	c.Assert(idx.Unique, qt.IsTrue)
 }

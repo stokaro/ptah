@@ -29,11 +29,27 @@ func observedTableSettings(engineFull, sortingKey, primaryKey, partitionKey, sam
 	return facets.WithTargetScope(chschema.TableKind, platform.ClickHouse)
 }
 
+// observedIndexSettings records an index's type, with its parameters, and its
+// granularity as the owner's observation. An incomplete row is an error rather
+// than an observation with a fabricated default.
+func observedIndexSettings(indexType string, granularity uint64) (schemaext.Facets, error) {
+	value := &chschema.ObservedIndex{IndexType: indexType, Granularity: granularity}
+	if err := chschema.ValidateObservedIndex(value); err != nil {
+		return schemaext.Facets{}, err
+	}
+	facets, err := schemaext.NewFacets(value)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return facets.WithTargetScope(chschema.IndexKind, platform.ClickHouse)
+}
+
 // The table query excludes unsupported engines and materialized-view storage.
 // Only returned, retained tables establish complete settings observations.
-func observedTableCoverage(tables []catalog.Table) (schemaext.Coverage, error) {
+// Index knowledge applies to the whole database; readSkippingIndexes says why.
+func observedCoverage(tables []catalog.Table, index schemaext.Knowledge) (schemaext.Coverage, error) {
 	var codecs []schemaext.OwnedCodec
-	for _, codec := range chschema.Codecs() {
+	for _, codec := range append(chschema.Codecs(), chschema.IndexCodecs()...) {
 		codecs = append(codecs, schemaext.OwnedCodec{Owner: "ptah.run/clickhouse", Codec: codec})
 	}
 	registry, err := schemaext.NewRegistry(codecs...)
@@ -48,12 +64,18 @@ func observedTableCoverage(tables []catalog.Table) (schemaext.Coverage, error) {
 			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
 		})
 	}
+	knowledge := map[schemaext.Kind]schemaext.Knowledge{
+		chschema.TableKind: {State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
+		chschema.IndexKind: index,
+	}
+	var kinds []schemaext.KindCoverage
 	for _, model := range registry.Definitions() {
-		if model.Kind == chschema.TableKind && model.Representation == schemaext.Observed {
-			return schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{
-				Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
-			}}, subjects)
+		if claim, found := knowledge[model.Kind]; found && model.Representation == schemaext.Observed {
+			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: claim})
 		}
 	}
-	return schemaext.Coverage{}, fmt.Errorf("%w: no observed ClickHouse table codec", schemaext.ErrUnknownCodec)
+	if len(kinds) != len(knowledge) {
+		return schemaext.Coverage{}, fmt.Errorf("%w: no observed ClickHouse storage codec", schemaext.ErrUnknownCodec)
+	}
+	return schemaext.NewCoverage(schemaext.Observed, kinds, subjects)
 }

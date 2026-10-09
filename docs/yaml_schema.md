@@ -298,7 +298,7 @@ indexes:
 | `type` | Dialect-specific index type. |
 | `where` / `condition` | Partial-index condition where supported. `where` matches Atlas terminology. |
 | `ops` | Operator or operator class string. |
-| `granularity` | ClickHouse data-skipping index granularity. |
+| `platform` | Source properties grouped by target. ClickHouse reads `type` and `granularity` under `clickhouse` for a data-skipping index. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's partitioning and read replicas, with the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
 | `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB vector index's settings, with `type: vector_kmeans_tree` and the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
 

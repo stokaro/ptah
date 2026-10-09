@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/modelast"
 )
 
@@ -30,10 +33,12 @@ func fullyDeclaredIndex() schemamodel.Index {
 		IncludeColumns: []string{"body"},
 		StorageParams:  map[string]string{"fillfactor": "70"},
 		NullsDistinct:  &nullsDistinct,
-		Granularity:    4,
-		Concurrently:   true,
-		Partitioning:   &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3},
-		Vector:         &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2},
+		Facets: must.Must(schemaext.NewFacets(&chschema.DesiredIndex{
+			Granularity: chschema.GranularitySetting{State: chschema.Explicit, Value: 4},
+		})),
+		Concurrently: true,
+		Partitioning: &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3},
+		Vector:       &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2},
 	}
 }
 

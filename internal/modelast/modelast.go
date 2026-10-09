@@ -1170,8 +1170,8 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	indexNode.Invisible = index.Invisible
 	indexNode.KeyBlockSize = index.KeyBlockSize
 
-	// Set dialect-specific features. Type covers both PG (GIN/GIST/BTREE/HASH)
-	// and CH (minmax/set/bloom_filter/...) — the renderer interprets it.
+	// Set dialect-specific features. Type is the access method or kind a
+	// dialect reads; ClickHouse skipping-index settings travel in Facets.
 	if index.Type != "" {
 		indexNode.Type = index.Type
 	}
@@ -1196,10 +1196,6 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	// field to route the statement out of a transaction block, which is what a
 	// concurrent build cannot run inside.
 	indexNode.Concurrently = index.Concurrently
-
-	// Granularity is ClickHouse-only; non-ClickHouse renderers ignore it.
-	// Zero propagates unchanged and signals "use renderer default".
-	indexNode.Granularity = index.Granularity
 
 	// Set IF NOT EXISTS for idempotent migrations
 	indexNode.IfNotExists = true

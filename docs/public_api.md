@@ -587,8 +587,9 @@ settings. Null, duplicate or unknown fields, and invalid intent are refused.
 Registering these codecs establishes model understanding without granting
 target support or inspection completeness.
 
-The bundled runtime registers the table model, preparation, conversion, and
-comparison.
+The bundled runtime registers the table and skipping-index models with their
+source properties, preparation, conversion, comparison, planning, reversal, and
+reporting.
 Programmatically supplied desired facets render through the schema API and new
 table migration plans with their reverse DROP plans. A typed facet and storage
 overrides on the same table are refused together, including empty overrides.
@@ -613,11 +614,16 @@ a transaction. Its result must join the host's complete graph before execution.
 Engine, key, partitioning, sampling, and table-setting changes remain refused.
 
 `chast.AddSkippingIndex` carries the index name, SQL expression, type, and
-index granularity. Its explicit codec and `chrender` handler work without the
-bundled runtime. Use the same ALTER envelope and parent as TTL operations.
-An empty type selects `minmax`; zero granularity selects `1`. Other targets
-refuse this ClickHouse operation. `ast.ExtensionChangeReporter` supplies its
-logical addition for schema-change reports independently of its workload risk.
+unsigned 64-bit index granularity. Its explicit codec and `chrender` handler
+work without the bundled runtime. Use the same ALTER envelope and parent as TTL
+operations. An empty type selects `minmax`; zero granularity selects `1`.
+`DeclaredFacets` returns the operation's settings as a `chschema.DesiredIndex`
+facet bound to the clickhouse target; zero granularity stays unmanaged there.
+
+`chast.DropSkippingIndex` removes an index by name, and its effect reports the
+loss of index data built for existing parts. Other targets refuse both
+operations. `ast.ExtensionChangeReporter` supplies the logical addition or
+removal for schema-change reports independently of its workload risk.
 Payloads without a valid single-action report retain a parent-level modification.
 The former `ast.AddSkippingIndexOperation` is removed without an alias. This
 changes behavior; pre-v1, so no compatibility is owed.
@@ -690,13 +696,46 @@ An omitted setting writes neither key. Register `chsource.Definitions()` and the
 service in an application-selected provider. The bundled runtime registers this
 service for source lowering and Go annotation export.
 
+`chsource.IndexService` and `IndexDefinitions()` supply the index property
+format, `schemaext.IndexPlatformProperties`. They own `type` and `granularity`
+with the same intent grammar. Explicit granularity must be a positive decimal
+integer within the unsigned 64-bit range. Registration selects decoding, not
+server support or a migration strategy.
+
+`chcompare.IndexService` compares resolved skipping-index settings of indexes
+both sides hold and adopts unmanaged observations without changing the source.
+Missing observations and explicit knowledge limits remain undecided. Common
+index lifecycle owns creation and removal. `chdiff.Index` and `IndexCodecs()`
+preserve complete directional operands, including unsigned 64-bit granularity;
+its effect is behavioral because applying it replaces the index.
+
+`chplan.IndexService` plans a settings change as `chast.DropSkippingIndex`
+followed by `chast.AddSkippingIndex` with the captured key expression and the
+desired settings, outside a transaction. Both operands must agree with the
+captured index on both table sides. The pair is ordered around common changes
+to columns the expression reads; removing such a column is refused. When the
+host's common steps drop and create the same index, the service contributes no
+steps and accounts for the change through that replacement. Parent receipts
+cover every table action: a surviving table keeps its settings unless a change
+or a common replacement covers the difference, a dropped table loses them, and
+a rebuild is refused.
+
+`chreverse.IndexService` restores the captured definition and reports that
+replacement cannot restore materialized index data. Reverse planning projects
+the forward settings onto the captured index. `chreport.IndexService` and
+`IndexDefinitions()` supply counts and omission labels.
+
 `schemaproperties.DecodeTables` attaches decoded property groups as desired
 facets bound to the selected target. It consumes only claimed keys; other keys
 and target groups remain in `Overrides`. `EncodeTables` writes table facets as
-properties for that target. Both refuse duplicate alias keys and mixed typed and
-property declarations, even when a property's value is empty. They copy table
-data and leave other schema data shared and read-only. Neither establishes
-inspection coverage or resolves omitted settings.
+properties for that target. `DecodeIndexes` and `EncodeIndexes` apply these
+rules to index owners. Index decoding consumes the common `Type` declaration
+only when the selected property definition claims `type`, and it refuses an
+index property of the selected target that no owner claims, because nothing
+else reads index properties. Export writes owned settings to scoped properties. These operations refuse duplicate alias keys and
+mixed typed and property declarations, even when a property's value is empty.
+They copy the selected owners and leave other schema data shared and read-only.
+They establish no inspection coverage and do not resolve omitted settings.
 
 An export refuses excluded facets, bindings outside the selected target, missing
 source codecs, and empty fragments that cannot preserve a facet's presence.
@@ -709,7 +748,11 @@ inspection or execution.
 
 The ClickHouse reader attaches `chschema.ObservedTable` to each returned table.
 It preserves both key expressions, including equal or empty keys. Coverage is
-complete only for tables retained in that read. `chreport.Service` supplies the
+complete only for tables retained in that read. Each skipping index carries a
+`chschema.ObservedIndex` with the full type and unsigned granularity from
+`system.data_skipping_indices`; the key expression stays in the common
+columns. Index coverage is complete for the database when that catalog table
+exists and unknown otherwise. `chreport.Service` supplies the
 storage-settings count and omission label for formats that cannot retain facets.
 Planning changes to storage settings other than TTL remains part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
@@ -746,7 +789,7 @@ Table settings use `chresolve.Table` and require complete feature coverage befor
 retaining observed values. Typed index settings use `chresolve.Index`. Captured
 index settings remain usable when sibling enumeration is incomplete; an explicit
 limit on that index takes precedence. Native index settings must be decoded into
-facets before preparation, without competing common type or granularity values.
+facets before preparation, without a competing common type.
 CREATE prediction resolves typed index facets independently of table-facet
 exclusions. Key expressions stay in common index fields and parts.
 

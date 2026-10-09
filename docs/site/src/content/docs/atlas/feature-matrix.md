@@ -162,7 +162,7 @@ seven of them as open capabilities regardless.
 | Live database as desired state | ✅ | ✅ | ✅ | One connectable DB URL can be the desired side of compat schema apply/diff and migrate diff; `ptah db read` introspects natively. |
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |
-| Ptah-only HCL schema extensions | ✅ | ➖ | ➖ | platform/override per dialect, EXCLUDE constraint block, column enum, table checks/custom, index ops, ClickHouse granularity, seed data block. |
+| Ptah-only HCL schema extensions | ✅ | ➖ | ➖ | platform/override per dialect, including ClickHouse index settings, EXCLUDE constraint block, column enum, table checks/custom, index ops, seed data block. |
 | SQL DDL schema files | ✅ | ✅ | ✅ | Native `--schema-file` and compat `--to`/`--from` accept DDL. COMMENT ON is modeled or refused. Supported PostgreSQL role-bootstrap DO blocks contribute roles; other procedural effects are refused. |
 | YAML schema files | ✅ | ❌ | ❌ | Strict parser; unknown keys fail. Repo docs list Atlas OSS data sources as SQL, HCL, external schema, and remote/template dirs. |
 

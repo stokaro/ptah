@@ -15,6 +15,11 @@ type PropertyFormat string
 // their respective quoting and container syntax.
 const TablePlatformProperties PropertyFormat = "ptah.run/source/table-platform-properties"
 
+// IndexPlatformProperties is the string-valued platform property group on an
+// index declaration. It preserves omitted keys separately from explicit values
+// and state selectors; property ownership belongs to the selected provider.
+const IndexPlatformProperties PropertyFormat = "ptah.run/source/index-platform-properties"
+
 // PropertyDefinition declares the keys one feature owns in a source format.
 // Registration grants no meaning to missing keys, no source coverage, and no
 // permission to consume a key owned by another feature.

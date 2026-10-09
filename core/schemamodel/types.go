@@ -423,18 +423,21 @@ const (
 //
 // # ClickHouse data-skipping indexes
 //
-// On ClickHouse, the `type=` and `granularity=` keys configure a
-// data-skipping index. `type=` accepts any spelling ClickHouse understands —
-// `minmax`, `set(N)`, `bloom_filter`, `bloom_filter(p)`, `tokenbf_v1(...)`,
-// `ngrambf_v1(...)`, etc. `granularity=` is the number of marks per index
-// block; omitting it falls back to ClickHouse's documented default (1).
-// Both keys are silently ignored by non-ClickHouse renderers.
+// On ClickHouse, a data-skipping index's type and granularity belong to the
+// ClickHouse owner. They are declared as platform properties,
+// `platform.clickhouse.type` and `platform.clickhouse.granularity`, which the
+// selected owner decodes into a facet before preparation or rendering. The
+// common `type=` key names the skipping-index type on ClickHouse as well. The
+// type accepts any spelling ClickHouse understands, such as `minmax`, `set(N)`,
+// `bloom_filter(p)` or `tokenbf_v1(...)`; the granularity counts table granules
+// per index block. A setting left out keeps an existing index's value and gives
+// a new index the creation default, `minmax` with granularity 1.
 //
 //	type Event struct {
 //	    //ptah:schema:field name="payload" type="String"
 //	    Payload string
 //
-//	    //ptah:schema:index name="idx_e_payload" fields="payload" type="bloom_filter(0.01)" granularity="64"
+//	    //ptah:schema:index name="idx_e_payload" fields="payload" type="bloom_filter(0.01)" platform.clickhouse.granularity="64"
 //	    _ int
 //	}
 type Index struct {
@@ -449,6 +452,10 @@ type Index struct {
 	Parts   []IndexPart
 	Unique  bool   // Whether this is a unique index
 	Comment string // Index comment/description
+	// Overrides contains target-scoped source properties. Selected feature
+	// owners decode claimed keys into facets before preparation or rendering.
+	// It is declaration syntax, not an alternative representation of settings.
+	Overrides map[string]map[string]string
 	// Invisible marks an index the optimizer does not use while the server
 	// keeps maintaining it: MySQL's INVISIBLE and MariaDB's IGNORED. A target
 	// without an invisible index refuses one rather than build it visible.
@@ -461,8 +468,8 @@ type Index struct {
 	NullsDistinct *bool
 
 	// Type carries the dialect-specific index type. For PostgreSQL this is
-	// GIN/GIST/BTREE/HASH; for ClickHouse data-skipping indexes it is
-	// "minmax"/"set(N)"/"bloom_filter(p)"/"tokenbf_v1(...)"/etc.
+	// GIN/GIST/BTREE/HASH. On ClickHouse the owner decodes it into the
+	// data-skipping-index facet, so no ClickHouse renderer reads it here.
 	Type string
 	// Parser carries a MySQL FULLTEXT parser name, for example ngram.
 	Parser string
@@ -475,8 +482,8 @@ type Index struct {
 	// so a `.sql` desired state asking for a concurrent build was planned as a
 	// locking one, silently. On a table large enough for the request to be
 	// worth making, that is the difference between a migration and an outage
-	// (stokaro/ptah#1663). It is the same loss the Granularity comment in
-	// internal/sqlschema records for ClickHouse.
+	// (stokaro/ptah#1663). internal/sqlschema records the same loss for
+	// ClickHouse skipping-index granularity.
 	//
 	// Three readers act on it, and the render path was the last to arrive
 	// (stokaro/ptah#3042). internal/planner/dialects/postgres plans the build,
@@ -511,12 +518,6 @@ type Index struct {
 	// TableName is the cross-table association (overrides StructName-based
 	// resolution when set).
 	TableName string
-
-	// Granularity is the ClickHouse data-skipping-index GRANULARITY value.
-	// Zero means "use the dialect default" (1 for ClickHouse, which is
-	// what the renderer falls back to when this field is unset). Ignored by
-	// all non-ClickHouse renderers.
-	Granularity int
 
 	// RequiresExtensions names the extensions this index cannot be built
 	// without, as the catalog resolved them rather than as the index's own DDL
