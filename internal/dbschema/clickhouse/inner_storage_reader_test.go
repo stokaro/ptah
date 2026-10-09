@@ -51,6 +51,11 @@ func clickHouseIndexPresentReaderQuery(
 			Columns: []string{"count()"},
 			Rows:    [][]driver.Value{{uint64(1)}},
 		}, nil
+	case strings.Contains(query, "hasColumnInTable('system', 'data_skipping_indices', 'type_full')"):
+		return dbtest.QueryResult{
+			Columns: []string{"hasColumnInTable('system', 'data_skipping_indices', 'type_full')"},
+			Rows:    [][]driver.Value{{uint8(1)}},
+		}, nil
 	case strings.Contains(query, "FROM system.data_skipping_indices"):
 		return dbtest.QueryResult{
 			Columns: []string{"table", "name", "expr", "type_full", "granularity"},

@@ -39,6 +39,26 @@ func parameterizedIndexQuery(indexType string, granularity uint64) dbtest.QueryH
 	}
 }
 
+// withoutFullTypeQuery answers like a server whose data_skipping_indices has
+// no type_full column, as a column read of it would fail.
+func withoutFullTypeQuery(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+	switch {
+	case strings.Contains(query, "engine LIKE '%MergeTree'"):
+		return settingsReaderQuery("MergeTree ORDER BY id")(query, args)
+	case strings.Contains(query, "hasColumnInTable('system', 'data_skipping_indices', 'type_full')"):
+		return dbtest.QueryResult{Columns: []string{"present"}, Rows: [][]driver.Value{{uint8(0)}}}, nil
+	case strings.Contains(query, "FROM system.data_skipping_indices") && strings.Contains(query, "type_full"):
+		return dbtest.QueryResult{}, fmt.Errorf("Missing columns: 'type_full'")
+	case strings.Contains(query, "FROM system.data_skipping_indices"):
+		return dbtest.QueryResult{
+			Columns: []string{"table", "name", "expr", "type", "granularity"},
+			Rows:    [][]driver.Value{{"events", "idx_value", "value", "set", uint64(4)}},
+		}, nil
+	default:
+		return clickHouseIndexPresentReaderQuery(query, args)
+	}
+}
+
 func TestSkippingIndexReaderPreservesTypeParameters(t *testing.T) {
 	for _, indexType := range []string{"set(100)", "bloom_filter(0.01)", "tokenbf_v1(256, 2, 0)"} {
 		t.Run(indexType, func(t *testing.T) {
@@ -116,4 +136,23 @@ func TestSkippingIndexReaderRefusesAnIncompleteRow(t *testing.T) {
 			c.Assert(schema, qt.IsNil)
 		})
 	}
+}
+
+// A server whose system.data_skipping_indices has no type_full column still
+// lists every index. The read keeps them, from the bare type column, and
+// reports their settings as unrepresentable instead of failing the whole read
+// or inventing a type without its parameters.
+func TestSkippingIndexReaderWithoutTheFullTypeColumnLimitsEachIndex(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, withoutFullTypeQuery)
+	schema, err := clickhouse.NewClickHouseReader(db.SQL, "analytics").ReadSchemaContext(t.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.Indexes, qt.HasLen, 1)
+	c.Assert(schema.Indexes[0].Columns, qt.DeepEquals, []string{"value"})
+	c.Assert(schema.Indexes[0].Facets.IsZero(), qt.IsTrue)
+	identities := objectidentity.NewBuilder(identifier.ForDialect("clickhouse"))
+	knowledge := schema.FeatureCoverage.Lookup(chschema.IndexKind, identities.IndexParts("", "events", "idx_value"))
+	c.Assert(knowledge.State, qt.Equals, schemaext.Unrepresentable)
+	c.Assert(knowledge.Reason, qt.Contains, "type_full")
+	c.Assert(schema.FeatureCoverage.Lookup(chschema.IndexKind, identities.IndexParts("", "events", "not_listed")).State, qt.Equals, schemaext.Complete)
 }

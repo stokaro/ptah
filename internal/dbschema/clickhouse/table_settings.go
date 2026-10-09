@@ -47,7 +47,8 @@ func observedIndexSettings(indexType string, granularity uint64) (schemaext.Face
 // The table query excludes unsupported engines and materialized-view storage.
 // Only returned, retained tables establish complete settings observations.
 // Index knowledge applies to the whole database; readSkippingIndexes says why.
-func observedCoverage(tables []catalog.Table, index schemaext.Knowledge) (schemaext.Coverage, error) {
+// An index whose settings were read but not represented carries its own limit.
+func observedCoverage(tables []catalog.Table, index indexCoverage) (schemaext.Coverage, error) {
 	var codecs []schemaext.OwnedCodec
 	for _, codec := range append(chschema.Codecs(), chschema.IndexCodecs()...) {
 		codecs = append(codecs, schemaext.OwnedCodec{Owner: "ptah.run/clickhouse", Codec: codec})
@@ -64,9 +65,15 @@ func observedCoverage(tables []catalog.Table, index schemaext.Knowledge) (schema
 			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
 		})
 	}
+	for _, limited := range index.limited {
+		subjects = append(subjects, schemaext.SubjectCoverage{
+			Kind: chschema.IndexKind, Subject: identities.IndexParts(limited.Schema, limited.TableName, limited.Name),
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: limitedIndexReason},
+		})
+	}
 	knowledge := map[schemaext.Kind]schemaext.Knowledge{
 		chschema.TableKind: {State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
-		chschema.IndexKind: index,
+		chschema.IndexKind: index.knowledge,
 	}
 	var kinds []schemaext.KindCoverage
 	for _, model := range registry.Definitions() {
