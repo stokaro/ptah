@@ -275,8 +275,6 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 	case node.Partition != nil:
 		return refuseFact(subject, "PARTITION BY is PostgreSQL's; a YDB row table splits itself by key range, "+
 			"which is a table setting rather than a clause")
-	case node.RowTTL != nil:
-		return r.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL on "+subject)
 	}
 	var dropped map[string]string
 	// Sorted, so that of two options YDB cannot carry the refusal names the

@@ -57,7 +57,7 @@ func rowDeletionPolicyOperation(change *difftypes.RowDeletionPolicyChange) ast.A
 // A diff carrying one on a target without the capability means the comparison
 // saw a declared policy the renderer will refuse, so nothing is emitted here and
 // the refusal arrives from the renderer with its measured explanation rather
-// than as an ALTER the server rejects. This mirrors planningRowTTL exactly.
+// than as an ALTER the server rejects.
 func (p *Planner) planningRowDeletionPolicy() bool {
 	return p.capabilities().Has(capability.RowDeletionPolicy)
 }

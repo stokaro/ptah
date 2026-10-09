@@ -1688,7 +1688,7 @@ func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
 		return err
 	}
-	if err := schemaprecondition.RefuseFeatureChanges(p.targetDialect(), diff); err != nil {
+	if err := schemaprecondition.RefuseFeatureChanges(p.targetDialect(), p.unownedFeatureChanges(diff)); err != nil {
 		return err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
@@ -1796,10 +1796,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		}
 	}()
 
-	return p.generateMigrationAST(diff)
+	return p.generateMigrationAST(ctx, runtime, diff)
 }
 
-func (p *Planner) generateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
 		return nil, err
 	}
@@ -2048,16 +2048,15 @@ func (p *Planner) generateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// 11. Disable RLS on tables (must be done after removing policies)
 	result = p.disableRLSOnTables(result, diff)
 
-	// 11.8. Row-level TTL, after the columns a TTL expression may refer to
-	// exist and before anything is dropped -- INCLUDING a column. The comment
-	// here has always said "before anything is dropped"; the step sat below
-	// removeTableColumns, so that was true of tables and not of columns, and a
-	// plan that moved an expression off a column and dropped it emitted
-	// `DROP COLUMN … CASCADE` first (stokaro/ptah#1027, position corrected
-	// while placing the row deletion policy, which carries the same
-	// constraint).
-	if p.planningRowTTL() {
-		result = p.applyRowTTLChanges(result, diff)
+	// 11.8. Owned table settings, CockroachDB row-level TTL among them, after
+	// the columns a TTL expression may refer to exist and before anything is
+	// dropped -- INCLUDING a column. A plan that moved an expression off a
+	// column and dropped it once emitted `DROP COLUMN … CASCADE` first
+	// (stokaro/ptah#1027, position corrected while placing the row deletion
+	// policy, which carries the same constraint).
+	result, err = p.planTableFeatures(ctx, runtime, result, diff)
+	if err != nil {
+		return nil, err
 	}
 
 	// 11.9. The row deletion policy, after the columns exist and BEFORE any

@@ -53,6 +53,16 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/clickhouse/chreport`
 - `ptah.run/dialect/clickhouse/chrender`
 - `ptah.run/dialect/clickhouse/chreverse`
+- `ptah.run/dialect/cockroachdb/crdbast`
+- `ptah.run/dialect/cockroachdb/crdbcompare`
+- `ptah.run/dialect/cockroachdb/crdbconvert`
+- `ptah.run/dialect/cockroachdb/crdbdiff`
+- `ptah.run/dialect/cockroachdb/crdbplan`
+- `ptah.run/dialect/cockroachdb/crdbrender`
+- `ptah.run/dialect/cockroachdb/crdbreport`
+- `ptah.run/dialect/cockroachdb/crdbreverse`
+- `ptah.run/dialect/cockroachdb/crdbschema`
+- `ptah.run/dialect/cockroachdb/crdbsource`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
@@ -736,6 +746,50 @@ else reads index properties. Export writes owned settings to scoped properties. 
 mixed typed and property declarations, even when a property's value is empty.
 They copy the selected owners and leave other schema data shared and read-only.
 They establish no inspection coverage and do not resolve omitted settings.
+
+`dialect/cockroachdb/crdbschema` owns CockroachDB row-level TTL as a table
+facet under `RowTTLKind`. `DesiredRowTTL` and `ObservedRowTTL` each hold a
+`Policy` whose fields are the storage parameters, which `Parameters` returns in
+statement order under the names CockroachDB uses. A table without a TTL has no
+value; whether that absence is known is coverage, which `RowTTLCoverage` builds
+under the bundled provider identity `Owner`. `ValidateDesired` refuses what the
+server refuses or does not keep as written: a parameter without
+`ttl_expiration_expression` or `ttl_expire_after`, a count below one, and an
+interval or poll duration the owner cannot read. `DecodeDeclared` reads declared
+parameters strictly and `DecodeStored` reads catalog parameters leniently. The
+codecs write each parameter under its own name and a flag only when it is true.
+
+`crdbsource.Service` decodes and encodes `platform.cockroachdb` table
+properties, one per storage parameter. Its definition also claims the derived
+`ttl` marker, so declaring it is refused with the server's reason.
+`crdbsource.Coverage` is the knowledge a source format with platform properties
+holds. Go annotations and YAML enroll it, so a table without the properties
+requests no TTL; HCL, SQL and hand-built schemas do not, and leave a live policy
+unmanaged.
+
+`crdbcompare.Service` compares the facet on tables both sides hold and reads
+`ttl_expire_after` and `ttl_row_stats_poll_interval` through the value each
+spelling denotes. `crdbdiff.RowTTL` carries an observed `Before` and a desired
+`After`; a nil side is a known absence. A managed declaration against
+uninspected live state is undecided, and an unmanaged live policy is adopted
+into the effective declaration so a rebuild keeps it.
+
+`crdbast.AlterRowTTL` carries one change in `ast.ExtensionAlterOperation`.
+`crdbrender` lowers it to `RESET (ttl)` for a removal, and otherwise to a
+`SET` of every parameter the new policy names followed by a `RESET` of the
+parameters it stops naming, so an enabler stays set at every step. `crdbrender.CreateTableClause` renders the `WITH`
+clause of a CREATE TABLE. Both refuse a target without
+`capability.RowLevelTTL`, and other targets refuse the payload and the facet.
+`crdbplan.Service` plans changes in place, accounts for the policy a dropped
+table takes with it, and refuses a rebuild. `crdbreverse.Service` restores the
+prior policy and reports that rows deleted under the forward policy cannot be
+recovered. `crdbconvert.Service` and `crdbreport.Service` complete the provider.
+
+The former `ast.RowTTLSpec`, `ast.SetRowTTLOperation`,
+`ast.ResetRowTTLOperation`, the `RowTTL` fields of `ast.CreateTableNode`,
+`schemamodel.Table` and `catalog.Table`, and `difftypes.RowTTLChange` are
+removed without aliases. This changes behavior; pre-v1, so no compatibility is
+owed.
 
 An export refuses excluded facets, bindings outside the selected target, missing
 source codecs, and empty fragments that cannot preserve a facet's presence.

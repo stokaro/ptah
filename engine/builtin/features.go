@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/internal/ydbextensions"
 )
@@ -55,10 +56,16 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	if err != nil {
 		return schemaext.Facets{}, err
 	}
-	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
+	var validate func(schemaext.Facets) error
+	switch platform.NormalizeDialect(dialect) {
+	case platform.ClickHouse:
+		validate = clickhouse.ValidateTableFacets
+	case platform.CockroachDB:
+		validate = crdbrender.ValidateTableFacets
+	default:
 		return refuseActiveFacets(dialect, projected)
 	}
-	if err := clickhouse.ValidateTableFacets(projected); err != nil {
+	if err := validate(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
 	return projected, nil

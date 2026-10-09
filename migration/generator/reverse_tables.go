@@ -110,7 +110,6 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			// all: a migration that changed a table's comment rolled back to
 			// "No rollback operations needed" (stokaro/ptah#2418).
 			CommentChange:           reverseCommentChange(tableDiff.CommentChange),
-			RowTTLChange:            reverseRowTTLChange(tableDiff.RowTTLChange),
 			RowDeletionPolicyChange: reverseRowDeletionPolicyChange(tableDiff.RowDeletionPolicyChange),
 			YDBColumnFamiliesChange: reverseColumnFamiliesChange(tableDiff.YDBColumnFamiliesChange),
 			YDBPartitioningChange:   reversePartitioningChange(tableDiff.YDBPartitioningChange),

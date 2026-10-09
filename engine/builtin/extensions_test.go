@@ -17,6 +17,10 @@ import (
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/cockroachdb/crdbast"
+	"ptah.run/dialect/cockroachdb/crdbdiff"
+	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
@@ -58,6 +62,20 @@ func clickhouseTTLFixture() extensionFixture {
 	return extensionFixture{payload: &chast.AlterTTL{Change: chdiff.Table{Before: before, After: after}}, wantSQL: "ALTER TABLE items REMOVE TTL;\n"}
 }
 
+// cockroachDBRowTTLFixture drops one parameter and changes the expression, so
+// the fixture lowers to both statements a row-level TTL change can need. The
+// header and the closing blank line are what the PostgreSQL-family renderer
+// writes around every ALTER TABLE.
+func cockroachDBRowTTLFixture() extensionFixture {
+	change := crdbdiff.RowTTL{
+		Before: &crdbschema.ObservedRowTTL{Policy: crdbschema.Policy{ExpirationExpression: "expires_at", JobCron: "@daily"}},
+		After:  &crdbschema.DesiredRowTTL{Policy: crdbschema.Policy{ExpirationExpression: "expires_at + INTERVAL '1 day'"}},
+	}
+	return extensionFixture{payload: &crdbast.AlterRowTTL{Change: change},
+		wantSQL: "-- ALTER statements: --\nALTER TABLE \"items\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');\n" +
+			"ALTER TABLE \"items\" RESET (ttl_job_cron);\n\n"}
+}
+
 func clickhouseIndexFixture() extensionFixture {
 	return extensionFixture{payload: &chast.AddSkippingIndex{Name: "idx_c", Expression: "c"}, wantSQL: "ALTER TABLE `items` ADD INDEX `idx_c` c TYPE minmax GRANULARITY 1;\n"}
 }
@@ -77,7 +95,7 @@ func streamingFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture())
 }
 
 func defaultPoolFixture() extensionFixture {
@@ -102,8 +120,10 @@ func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	clickhouseRegistry, err := chrender.Registry()
 	c.Assert(err, qt.IsNil)
+	cockroachRegistry, err := crdbrender.Registry()
+	c.Assert(err, qt.IsNil)
 	var registered, fixtures []string
-	for _, payloadType := range append(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes()...) {
+	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes()) {
 		registered = append(registered, payloadType.Elem().PkgPath()+"."+payloadType.Elem().Name())
 	}
 	for _, fixture := range allExtensionFixtures() {
@@ -180,6 +200,31 @@ func TestClickHouseExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(sql, qt.Equals, "")
 		}
+	}
+}
+
+// TestCockroachDBExtensionOwnerRendersAndNonownersRefuse renders the row-level
+// TTL operation on its owner and refuses it, without partial SQL, on every
+// other target, the PostgreSQL-wire ones that share its renderer included.
+func TestCockroachDBExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	fixture := cockroachDBRowTTLFixture()
+	parent := func() *ast.AlterTableNode {
+		return &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}}
+	}
+	t.Run("owner", func(t *testing.T) {
+		c := qt.New(t)
+		sql, err := builtin.RenderSQL("cockroachdb", parent())
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, fixture.wantSQL)
+	})
+	for _, dialect := range []string{"postgres", "yugabytedb", "spanner", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			sql, err := builtin.RenderSQL(dialect, parent())
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(fmt.Sprint(err), qt.Contains, string(crdbast.AlterRowTTLKind))
+			c.Assert(sql, qt.Equals, "")
+		})
 	}
 }
 

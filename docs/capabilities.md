@@ -1414,7 +1414,8 @@ file, exactly as any other command reaching the same URL would.
   it names, so a declaration that stops naming one has its `RESET` planned
   explicitly.
 
-  What the key promises is the surface `internal/crdbttl` models, not every
+  What the key promises is the surface the CockroachDB owner
+  (`dialect/cockroachdb/crdbschema`) models, not every
   parameter the engine spells, and that boundary is the interesting part. Nine
   parameters read back from the catalog exactly as written. `ttl_expire_after`
   does not — the server canonicalizes the interval, so `'72 hours'` is stored as
@@ -1426,10 +1427,12 @@ file, exactly as any other command reaching the same URL would.
   what an interval MEANS. The three fields stay apart, because the server keeps
   them apart: a month is not thirty days.
 
-  Two parameters remain refused by name with the measurement in the error:
-  `ttl_row_stats_poll_interval`, whose duration the server canonicalizes and
-  which stores nothing at all below one second — a value that denotes nothing
-  cannot be compared by value either — and `ttl` itself, which is derived.
+  `ttl_row_stats_poll_interval` is compared the same way, by the duration it
+  denotes (#1721); a value below one second, which the server stores nowhere at
+  all, is refused. `ttl` itself is refused by name, because it is derived.
+  A declaration names the parameters as `platform.cockroachdb.` properties, and
+  the policy travels as a table facet the CockroachDB owner compares, plans and
+  reverses (#4140).
 
   `ttl_expire_after` also adds a hidden `crdb_internal_expiration` column, so the
   CockroachDB column read now excludes hidden columns. That closes an older leak

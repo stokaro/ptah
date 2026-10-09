@@ -727,8 +727,7 @@ func fromTableWithFieldConverter(
 	createTable.Partition = toASTPartition(newTable.Partition)
 	// Cloned rather than shared: the node travels to a renderer and a planner
 	// that must not be able to reach back through a pointer into the schema
-	// this was built from (stokaro/ptah#1027).
-	createTable.RowTTL = newTable.RowTTL.Clone()
+	// this was built from (stokaro/ptah#2236).
 	createTable.RowDeletionPolicy = newTable.RowDeletionPolicy.Clone()
 	createTable.YDBColumnFamilies = ast.CloneYDBColumnFamilies(newTable.YDBColumnFamilies)
 	createTable.Facets = newTable.Facets

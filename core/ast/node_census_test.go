@@ -150,11 +150,9 @@ var nodeCensus = []censusRow{
 	{node: &ast.SetYDBTablePartitioningOperation{}},
 	{node: &ast.ReplaceIndexOperation{}},
 	{node: &ast.RenameTableOperation{}},
-	{node: &ast.ResetRowTTLOperation{}},
 	{node: &ast.SetCommentOperation{}},
 	{node: &ast.SetConstraintCommentOperation{}},
 	{node: &ast.SetRowDeletionPolicyOperation{}},
-	{node: &ast.SetRowTTLOperation{}},
 
 	// The type definitions and the ALTER TYPE operations. Each is rendered
 	// inside the CREATE TYPE or ALTER TYPE statement that carries it.

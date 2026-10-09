@@ -54,7 +54,7 @@ func TestFields_ReadsTheModelRatherThanAList(t *testing.T) {
 		qt.Commentf("the walker found %d fields", len(fields)))
 	c.Assert(fields, qt.Contains, "schemamodel.Database.Tables")
 	c.Assert(fields, qt.Contains, "schemamodel.Table.PrimaryKeyName")
-	c.Assert(fields, qt.Contains, "ast.RowTTLSpec.ExpireAfter")
+	c.Assert(fields, qt.Contains, "crdbschema.Policy.ExpireAfter")
 	c.Assert(fields, qt.Contains, "coverage.Object.Provenance")
 }
 

@@ -92,17 +92,6 @@ None.
 | `ast.RowDeletionPolicySpec.Column` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Interval` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Unit` | `ddl` | — |
-| `ast.RowTTLSpec.DeleteBatchSize` | `ddl` | — |
-| `ast.RowTTLSpec.DeleteRateLimit` | `ddl` | — |
-| `ast.RowTTLSpec.DisableChangefeedReplication` | `ddl` | — |
-| `ast.RowTTLSpec.ExpirationExpression` | `ddl` | — |
-| `ast.RowTTLSpec.ExpireAfter` | `ddl` | — |
-| `ast.RowTTLSpec.JobCron` | `ddl` | — |
-| `ast.RowTTLSpec.LabelMetrics` | `ddl` | — |
-| `ast.RowTTLSpec.Pause` | `ddl` | — |
-| `ast.RowTTLSpec.RowStatsPollInterval` | `ddl` | — |
-| `ast.RowTTLSpec.SelectBatchSize` | `ddl` | — |
-| `ast.RowTTLSpec.SelectRateLimit` | `ddl` | — |
 | `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
 | `ast.TopicConsumerSpec.Important` | `ddl` | — |
 | `ast.TopicConsumerSpec.Name` | `ddl` | — |
@@ -173,6 +162,18 @@ None.
 | `coverage.Object.Provenance` | `comparison` | how Ptah learned the object was not described |
 | `coverage.Object.Reason` | `comparison` | why it was not described |
 | `coverage.Set.Objects` | `comparison` | the per-object half of that record |
+| `crdbschema.DesiredRowTTL.Policy` | `ddl` | — |
+| `crdbschema.Policy.DeleteBatchSize` | `ddl` | — |
+| `crdbschema.Policy.DeleteRateLimit` | `ddl` | — |
+| `crdbschema.Policy.DisableChangefeedReplication` | `ddl` | — |
+| `crdbschema.Policy.ExpirationExpression` | `ddl` | — |
+| `crdbschema.Policy.ExpireAfter` | `ddl` | — |
+| `crdbschema.Policy.JobCron` | `ddl` | — |
+| `crdbschema.Policy.LabelMetrics` | `ddl` | — |
+| `crdbschema.Policy.Pause` | `ddl` | — |
+| `crdbschema.Policy.RowStatsPollInterval` | `ddl` | — |
+| `crdbschema.Policy.SelectBatchSize` | `ddl` | — |
+| `crdbschema.Policy.SelectRateLimit` | `ddl` | — |
 | `schemamodel.AsyncReplication.Name` | `ddl` | — |
 | `schemamodel.AsyncReplication.Schema` | `ddl` | — |
 | `schemamodel.AsyncReplication.Spec` | `ddl` | — |
@@ -566,7 +567,6 @@ None.
 | `schemamodel.Table.PrimaryKeyName` | `ddl` | — |
 | `schemamodel.Table.PrimaryKeyParts` | `ddl` | — |
 | `schemamodel.Table.RowDeletionPolicy` | `ddl` | — |
-| `schemamodel.Table.RowTTL` | `ddl` | — |
 | `schemamodel.Table.Schema` | `ddl` | — |
 | `schemamodel.Table.Strict` | `ddl` | — |
 | `schemamodel.Table.StructName` | `ddl` | — |

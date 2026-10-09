@@ -671,10 +671,11 @@ const (
 	// the same distinction capability.MaterializedViews draws for MySQL, where
 	// CREATE MATERIALIZED VIEW is parsed and the word discarded.
 	//
-	// What the key promises is the surface [ptah.run/internal/crdbttl]
-	// models, not every parameter the engine spells. The two whose values the
-	// server rewrites on the way in are refused there, and that refusal is
-	// part of the capability rather than a gap in it.
+	// What the key promises is the surface the CockroachDB owner,
+	// [ptah.run/dialect/cockroachdb/crdbschema], models, not every parameter
+	// the engine spells. Values the server would not keep as written are
+	// refused there, and that refusal is part of the capability rather than a
+	// gap in it.
 	RowLevelTTL Capability = "row_level_ttl"
 
 	// RowDeletionPolicy marks support for a table's row deletion policy: an
@@ -3987,7 +3988,7 @@ func SQLServer2022() Capabilities {
 // `{ttl='on',ttl_expiration_expression='expires_at',...}`, while PostgreSQL
 // 18.4 answers `ERROR: unrecognized parameter`. It is set here rather than on
 // the per-line presets because both measured lines answered identically to
-// every probe in [ptah.run/internal/crdbttl]'s measured table
+// row-level TTL probe the CockroachDB owner was measured with
 // (stokaro/ptah#1027).
 func CockroachDB23() Capabilities {
 	return Postgres16().

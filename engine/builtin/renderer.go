@@ -68,7 +68,6 @@ import (
 	"ptah.run/internal/accessscope"
 	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/clickhouserbac"
-	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/mysqlindex"
@@ -2418,23 +2417,9 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
 		return err
 	}
-	// Row-level TTL is refused here as well as at the table it belongs to,
-	// because these are the refusals that must arrive before ANY statement is
-	// emitted: a knob without an enabler, or a value the server stores
-	// differently from how it was written, is a property of the declaration
-	// rather than of the one CREATE TABLE that carries it. The per-table gate
-	// in the PostgreSQL renderer catches the dialect case; this catches the
-	// rest, whole-schema, before the first statement (stokaro/ptah#1027).
-	if err := crdbttl.ValidateDeclared(dialect, caps, crdbttl.DeclaredIn(rowTTLTables(database))); err != nil {
-		return &ptaherr.RenderError{
-			Dialect: dialect,
-			Err:     err,
-			Message: err.Error(),
-		}
-	}
 	// A row deletion policy, a changefeed and a YDB table's other settings are
-	// refused here for the same reason: a target without them must refuse
-	// before the first statement, not at the CREATE TABLE that carries one.
+	// refused here because a target without them must refuse before the first
+	// statement, not at the CREATE TABLE that carries one.
 	if err := validateDeclaredYDBObjects(dialect, caps, database); err != nil {
 		return err
 	}
@@ -4594,14 +4579,4 @@ func validateSQLServerCascadeActionGraph(
 		}
 	}
 	return nil
-}
-
-// rowTTLTables projects the schema's tables into the pairs internal/crdbttl
-// validates, so that package needs no knowledge of goschema.
-func rowTTLTables(database *schemamodel.Database) []crdbttl.TableTTL {
-	tables := make([]crdbttl.TableTTL, 0, len(database.Tables))
-	for _, table := range database.Tables {
-		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})
-	}
-	return tables
 }

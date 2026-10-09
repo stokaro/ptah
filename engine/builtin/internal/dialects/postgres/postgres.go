@@ -465,7 +465,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.CreateTableNode:
 		return r.renderCreateTable(n)
 	case *ast.AlterTableNode:
-		if err := nodedispatch.RefuseAlterExtensions(r.GetDialect(), n); err != nil {
+		if err := r.prepareAlterExtensions(n); err != nil {
 			return err
 		}
 		return r.renderAlterTable(n)
@@ -618,7 +618,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 
 	// A list of statements.
 	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
-		return nodedispatch.RefuseExtension(r.GetDialect(), node)
+		return r.renderExtensionNode(node)
 	case *ast.StatementList:
 		return r.renderStatementList(n)
 
@@ -656,11 +656,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameEnumValueOperation,
 		*ast.RenameTableOperation,
 		*ast.RenameTypeOperation,
-		*ast.ResetRowTTLOperation,
 		*ast.SetCommentOperation,
 		*ast.SetConstraintCommentOperation,
-		*ast.SetRowDeletionPolicyOperation,
-		*ast.SetRowTTLOperation:
+		*ast.SetRowDeletionPolicyOperation:
 		return r.nodeNeedsParent(node)
 
 	default:
@@ -1003,16 +1001,16 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		r.w.Write(partition)
 	}
 
-	// Row-level TTL is a storage parameter and takes the WITH position; the
-	// table options the node carries are named above the statement instead,
-	// because this target renders none of them (see writeTableOptionsSkipped),
-	// and a TTL is refused on a target that lacks the capability rather than
-	// filtered out of a map (stokaro/ptah#1027).
-	rowTTL, err := r.renderRowTTL(node)
+	// An owned storage parameter, CockroachDB row-level TTL, takes the WITH
+	// position; the table options the node carries are named above the
+	// statement instead, because this target renders none of them (see
+	// writeTableOptionsSkipped). Its owner refuses a target without the
+	// capability rather than letting the clause drop (stokaro/ptah#1027).
+	storage, err := r.renderOwnedTableStorage(node)
 	if err != nil {
 		return err
 	}
-	r.w.Write(rowTTL)
+	r.w.Write(storage)
 
 	// The row deletion policy is a clause rather than a storage parameter, so
 	// it follows the WITH position rather than sharing it.
@@ -1362,11 +1360,12 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			// budget, the way the two TTL arms below already do; writeRename
 			// re-selects between them.
 			r.writeRename(node, operation)
-		case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation,
+		case *ast.ExtensionAlterOperation,
 			*ast.SetRowDeletionPolicyOperation, *ast.DropRowDeletionPolicyOperation:
-			// Every row-expiry operation shares one branch so this switch keeps
+			// The row deletion policy and the owned operations, CockroachDB
+			// row-level TTL among them, share one branch so this switch keeps
 			// its complexity budget; writeRowExpiryOperation re-selects among
-			// them, which is a type switch of its own rather than four arms
+			// them, which is a type switch of its own rather than three arms
 			// here (stokaro/ptah#1027, stokaro/ptah#2236).
 			if err := r.writeRowExpiryOperation(node, operation); err != nil {
 				return err

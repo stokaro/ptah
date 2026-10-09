@@ -204,29 +204,18 @@ Maps a Go struct to a database table.
 | `row_deletion_interval` | No | Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner. |
 | `row_deletion_unit` | No | YDB TTL on an integer column: what the column counts since the Unix epoch, `SECONDS`, `MILLISECONDS`, `MICROSECONDS` or `NANOSECONDS`. |
 | `schema` | No | Database schema name. |
-| `ttl_delete_batch_size` | No | CockroachDB row-level TTL: rows deleted per batch; at least 1. |
-| `ttl_delete_rate_limit` | No | CockroachDB row-level TTL: rows deleted per second; at least 1. |
-| `ttl_disable_changefeed_replication` | No | CockroachDB row-level TTL: omits the job's deletes from changefeeds. `true`/`false`. |
-| `ttl_expiration_expression` | No | CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL. |
-| `ttl_expire_after` | No | CockroachDB row-level TTL: interval after a row is written at which it expires, such as `3 days`. Enables the TTL. |
-| `ttl_job_cron` | No | CockroachDB row-level TTL: cron schedule for the deletion job. |
-| `ttl_label_metrics` | No | CockroachDB row-level TTL: labels the job's metrics with the table name. `true`/`false`. |
-| `ttl_pause` | No | CockroachDB row-level TTL: pauses the deletion job without removing the policy. `true`/`false`. |
-| `ttl_select_batch_size` | No | CockroachDB row-level TTL: rows selected per batch; at least 1. |
-| `ttl_select_rate_limit` | No | CockroachDB row-level TTL: rows selected per second; at least 1. |
 
 The table engine, character set, collation and `AUTO_INCREMENT` start are
 MySQL-family options. A PostgreSQL-family target renders none of them and
 names each one it was handed on a `skipped` comment above the statement;
 declare a key's start there with `identity_start` on the column.
 
-The `ttl_` attributes declare CockroachDB row-level TTL and are refused on every
-other dialect before anything is applied. Either `ttl_expiration_expression` or
-`ttl_expire_after` enables the policy, and the rest are refused without one. One
-real CockroachDB parameter is deliberately absent — `ttl_row_stats_poll_interval`
-— because the server rewrites the duration it stores and drops a value below one
-second entirely, so a declaration could never read back as written; declaring it
-is refused by name with the reason.
+CockroachDB row-level TTL is declared with `platform.cockroachdb` properties
+named for the storage parameters, such as
+`platform.cockroachdb.ttl_expiration_expression="expires_at"`; the bare
+parameter names are not attributes of the directive. Either
+`ttl_expiration_expression` or `ttl_expire_after` enables the policy, and the
+rest are refused without one. A table that names none declares no TTL.
 See [CockroachDB row-level TTL](../../databases/distributed/#cockroachdb-row-level-ttl).
 
 The `row_deletion_` attributes declare a row deletion policy, which Spanner and

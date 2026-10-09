@@ -14,7 +14,7 @@ import (
 // ExtensionKindFloor retains coverage for the payloads moved out of core/ast.
 // It supplements NodeKindFloor; extracting a node must not shrink the combined
 // corpus or replace its owner-specific fixtures with one envelope fixture.
-const ExtensionKindFloor = 6
+const ExtensionKindFloor = 7
 
 // ExtensionKind identifies a concrete owner type implementing ExtensionPayload.
 type ExtensionKind struct {

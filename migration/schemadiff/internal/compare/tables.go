@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
-	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
@@ -249,22 +248,16 @@ func TablesAndColumnsWithTableContext(
 				spellings,
 				caps,
 			)
-			// The TTL policy is compared here rather than inside
+			// The row deletion policy is compared here rather than inside
 			// tableColumnsWithSemantics because it is a property of the table
-			// and not of any column, and because a table whose ONLY difference
-			// is its retention policy still has to reach TablesModified -- the
-			// column-count condition below would otherwise drop it, and the
-			// schema would report as synced while rows expire on a schedule
-			// nobody declared (stokaro/ptah#1027).
-			tableDiff.RowTTLChange = rowTTLChange(genTable.RowTTL, dbTable.RowTTL)
-			// The row deletion policy is compared here for exactly the reasons
-			// above: it belongs to the table, and a table whose only difference
-			// is its retention has to reach TablesModified or the schema
-			// reports synced while rows expire on a schedule nobody declared
+			// and not of any column, and because a table whose only difference
+			// is its retention has to reach TablesModified -- the column-count
+			// condition below would otherwise drop it, and the schema would
+			// report synced while rows expire on a schedule nobody declared
 			// (stokaro/ptah#2236).
 			tableDiff.RowDeletionPolicyChange = rowDeletionPolicyChange(
 				genTable.RowDeletionPolicy, dbTable.RowDeletionPolicy, semantics)
-			// A comment is compared here for the same reason as the TTL policy,
+			// A comment is compared here for the same reason as that policy,
 			// and reaches TablesModified for the same reason: it belongs to the
 			// table rather than to any column, and a table whose only
 			// difference is its comment has to arrive here or the schema
@@ -337,27 +330,10 @@ func tableDiffName(schema, name, dialect string) string {
 	return catalog.QualifyTableName(schema, name)
 }
 
-// rowTTLChange reports the row-level TTL transition between a declaration and a
-// target, and nil when there is none.
-//
-// Equality is exact, which is the whole guarantee: every parameter Ptah models
-// was measured to read back from the catalog exactly as it was written, so two
-// values that differ are two policies that differ. A comparison that normalized
-// here would be re-deriving a rule the server does not apply, and the failure
-// mode is the one stokaro/ptah#1027 names -- reporting convergence while a
-// table's data-lifecycle policy differs.
-func rowTTLChange(desired, current *ast.RowTTLSpec) *difftypes.RowTTLChange {
-	if crdbttl.Equal(desired, current) {
-		return nil
-	}
-	return &difftypes.RowTTLChange{Desired: desired.Clone(), Current: current.Clone()}
-}
-
 // rowDeletionPolicyChange is the transition a table's row deletion policy makes,
 // and nil when there is none.
 //
-// Equality is NOT exact here, and that is the difference from rowTTLChange
-// above. The server rewrites the interval it stores -- measured against the
+// Equality is NOT exact here. The server rewrites the interval it stores -- measured against the
 // Cloud Spanner emulator behind PGAdapter 0.55.2, `INTERVAL '30 days'` reads
 // back as `INTERVAL '4 WEEKS 2 DAYS'`, and YDB keeps a whole number of seconds,
 // so `PT720H` reads back as `P30D` -- so comparing the two as text would
@@ -379,7 +355,7 @@ func rowDeletionPolicyChange(
 // settings.
 func tableChanged(tableDiff difftypes.TableDiff) bool {
 	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
-		len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
+		len(tableDiff.ColumnsModified) > 0 ||
 		tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
 		len(tableDiff.FeatureChanges) > 0 || tableDiff.YDBColumnFamiliesChange != nil ||
 		tableDiff.YDBPartitioningChange != nil || tableDiff.YDBColumnTableChange != nil

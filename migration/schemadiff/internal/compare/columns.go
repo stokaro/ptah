@@ -238,7 +238,7 @@ func tableColumnsWithSemantics(
 //
 // It takes both sides because absence is a state a planner has to act on: a
 // comment the database holds and the declaration does not is a removal, and the
-// desired side alone cannot say so. This is the shape [rowTTLChange] uses, for
+// desired side alone cannot say so. This is the shape [rowDeletionPolicyChange] uses, for
 // the same reason.
 // notNullConstraintNameChange applies the repository's omitted-attribute rule
 // to the NOT NULL constraint name: an explicit desired name is compared, an

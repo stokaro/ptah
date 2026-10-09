@@ -2379,27 +2379,15 @@ type TableDiff struct {
 	// CommentChange carries the table's comment transition, and is nil when the
 	// comment is unchanged.
 	//
-	// Both sides, for the reason [RowTTLChange] gives: a comment the database
-	// holds and the declaration does not is a REMOVAL, and only the current
-	// state says so. A planner given the desired side alone cannot tell "no
+	// Both sides, because a comment the database holds and the declaration
+	// does not is a REMOVAL, and only the current state says so. A planner given the desired side alone cannot tell "no
 	// comment was declared, and none exists" from "no comment was declared, and
 	// one is there to drop" -- and the second is the case that made a changed
 	// comment report `Schema is synced` forever (stokaro/ptah#2168).
 	CommentChange *CommentChange `json:"comment_change,omitzero"`
 
-	// RowTTLChange carries a CockroachDB row-level TTL transition, and is nil
-	// when the table's policy is unchanged.
-	//
-	// It is a pointer to a pair rather than a list of changed parameters
-	// because the planner needs BOTH sides: a parameter present on the target
-	// and absent from the declaration is a RESET, and only the current state
-	// says which those are. See stokaro/ptah#1027.
-	RowTTLChange *RowTTLChange `json:"row_ttl_change,omitzero"`
-
 	// RowDeletionPolicyChange carries a row deletion policy transition, and is
-	// nil when the declaration and the database agree. It is a second field
-	// beside RowTTLChange because the two are different clauses on different
-	// engines and no table carries both (stokaro/ptah#2236).
+	// nil when the declaration and the database agree (stokaro/ptah#2236).
 	RowDeletionPolicyChange *RowDeletionPolicyChange `json:"row_deletion_policy_change,omitzero"`
 
 	// YDBColumnFamiliesChange is YDB's, and only the YDB planner plans it: a
@@ -2458,9 +2446,8 @@ type YDBColumnFamiliesChange struct {
 
 // RowDeletionPolicyChange is one table's row deletion policy transition.
 //
-// Both sides travel, for the same reason RowTTLChange carries both: adding a
-// policy and changing one are different statements, and only the pair says
-// which of the two this is.
+// Both sides travel: adding a policy and changing one are different
+// statements, and only the pair says which of the two this is.
 type RowDeletionPolicyChange struct {
 	// Desired is the policy the declaration states, nil for none.
 	Desired *ast.RowDeletionPolicySpec `json:"desired,omitzero"`
@@ -2484,18 +2471,6 @@ type YDBTablePartitioningChange struct {
 	// Current is the settings the database holds, as YDB's reader reports
 	// them: what differs from YDB's documented defaults, nil for none.
 	Current *ast.YDBTablePartitioningSpec `json:"current,omitzero"`
-}
-
-// RowTTLChange is one table's row-level TTL transition.
-//
-// Either side may be nil: a nil Current is a policy being added, a nil Desired
-// is one being removed, and both non-nil is a change. Both nil never reaches
-// here, because that is not a change.
-type RowTTLChange struct {
-	// Desired is the policy the declaration asks for, nil to remove it.
-	Desired *ast.RowTTLSpec `json:"desired,omitzero"`
-	// Current is the policy the target carries, nil when it has none.
-	Current *ast.RowTTLSpec `json:"current,omitzero"`
 }
 
 // ColumnDiff represents specific property changes within a database column.

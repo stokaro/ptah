@@ -88,17 +88,28 @@ storage parameters. Ptah manages that policy through the render, plan, apply,
 introspect, and diff cycle: a declared TTL is applied, read back from
 `pg_class.reloptions`, and compared to zero difference on the next run.
 
-Declare it as attributes on the table, named exactly for the storage parameters
-they become:
+Declare it as `platform.cockroachdb` properties on the table, named exactly for
+the storage parameters they become:
 
 ```go
-//ptah:schema:table name="sessions" ttl_expiration_expression="expires_at" ttl_job_cron="@daily"
+//ptah:schema:table name="sessions" platform.cockroachdb.ttl_expiration_expression="expires_at" platform.cockroachdb.ttl_job_cron="@daily"
 type Sessions struct {
 	//ptah:schema:field name="id" type="BIGINT" primary="true"
 	ID int64
 	//ptah:schema:field name="expires_at" type="TIMESTAMPTZ"
 	ExpiresAt time.Time
 }
+```
+
+A YAML schema puts the same names in the table's `cockroachdb` platform group:
+
+```yaml
+tables:
+  sessions:
+    platform:
+      cockroachdb:
+        ttl_expiration_expression: expires_at
+        ttl_job_cron: "@daily"
 ```
 
 `ptah schema render --dialect cockroachdb` emits that as:
@@ -112,19 +123,23 @@ CREATE TABLE "sessions" (
 
 Changing the policy emits `ALTER TABLE ... SET (...)`, and removing it emits
 `ALTER TABLE ... RESET (ttl)`, which drops the whole configuration in one
-statement and leaves the table alone.
+statement and leaves the table alone. A table in a Go or YAML schema that names
+no TTL property declares no TTL, so a policy on the live table is removed.
+`ptah introspect` writes a read policy back as the same properties.
 
 ### What Ptah manages
 
-Ten parameters. One of the two enablers is required; the rest are refused
+Eleven parameters. One of the two enablers is required; the rest are refused
 without one. Nine read back from the catalog exactly as written on both declared
-lines, and `ttl_expire_after` is compared by the interval it denotes rather than
-by its text, because the server rewrites the value it stores:
+lines. `ttl_expire_after` and `ttl_row_stats_poll_interval` are compared by the
+interval and the duration they denote rather than by their text, because the
+server rewrites the value it stores:
 
-| Attribute | What it sets |
+| Property | What it sets |
 | --- | --- |
 | `ttl_expiration_expression` | The SQL expression whose value is when a row expires. |
 | `ttl_expire_after` | The interval after a row is written at which it expires, such as `3 days`. |
+| `ttl_row_stats_poll_interval` | How often the job refreshes its row-count estimate, such as `10m`. |
 | `ttl_job_cron` | The schedule the deletion job runs on. |
 | `ttl_select_batch_size` | Rows selected per batch; at least 1. |
 | `ttl_delete_batch_size` | Rows deleted per batch; at least 1. |
@@ -136,9 +151,6 @@ by its text, because the server rewrites the value it stores:
 
 ### What Ptah refuses, and why
 
-- **`ttl_row_stats_poll_interval` is not supported**: the
-  server canonicalizes the duration (`'600s'` becomes `'10m0s'`) and stores
-  nothing at all for a value below one second.
 - **An interval Ptah cannot read is refused.** `ttl_expire_after` accepts a
   sequence of quantity-and-unit pairs (`3 days`, `2 years 3 months`,
   `1 day 2 hours`), an optional trailing `HH:MM:SS`, and the ISO-8601 form
@@ -147,13 +159,17 @@ by its text, because the server rewrites the value it stores:
   and the plan would re-issue the change forever. Ambiguous abbreviations such as
   a bare `m` are refused for the same reason: minutes and months are two
   different retention policies.
+- **A poll interval the server would not keep is refused.** The server
+  truncates `ttl_row_stats_poll_interval` to whole seconds and stores nothing
+  at all for a value below one second.
 - **`ttl` cannot be declared.** It is derived from the other parameters, and
   the server refuses it when it arrives alone.
-- **A knob without `ttl_expiration_expression` is refused**, because the server
-  refuses it too: every other `ttl_` parameter needs an expiry configured.
+- **A knob without `ttl_expiration_expression` or `ttl_expire_after` is
+  refused**, because the server refuses it too: every other `ttl_` parameter
+  needs an expiry configured.
 - **Zero and negative knob values are refused.** The server rejects a negative
   value and accepts zero while storing the parameter nowhere at all, so neither
-  can ever read back as declared. Omit the attribute to keep the engine default.
+  can ever read back as declared. Omit the property to keep the engine default.
 - **A `false` boolean normalizes to "not declared"**, because on the server
   those are the same state: `ttl_pause = false` is stored nowhere, and setting
   it erases an existing `true` exactly as a reset does.
@@ -179,13 +195,19 @@ are unchanged.
 
 ### On other engines
 
-Row-level TTL is refused on every target without the capability — PostgreSQL,
-YugabyteDB, Spanner, MySQL, MariaDB, SQLite, SQL Server and ClickHouse — before
-anything is applied. PostgreSQL answers `unrecognized parameter
-"ttl_expiration_expression"` on its own, but YugabyteDB first answers `WARNING:
-storage parameter ttl_expiration_expression is unsupported, ignoring`. An engine
-that ignores a retention policy is worse than one that refuses it, so Ptah does
-not leave that decision to the server.
+The `platform.cockroachdb` properties apply to CockroachDB only, as every
+platform property applies to its own target, so the same schema renders for
+PostgreSQL without the policy. A policy attached to a table in Go code without
+that binding is refused on every other target before anything is applied.
+PostgreSQL answers `unrecognized parameter "ttl_expiration_expression"` on its
+own, but YugabyteDB first answers `WARNING: storage parameter
+ttl_expiration_expression is unsupported, ignoring`. An engine that ignores a
+retention policy is worse than one that refuses it, so Ptah does not leave that
+decision to the server.
+
+A schema format that cannot declare the policy, such as HCL or SQL, leaves a
+live policy alone instead of removing it, and HCL export reports the policy it
+cannot write.
 
 A CockroachDB dev database is required for dev-database workflows on a
 CockroachDB target; a mismatched `--dev-url` is refused with
