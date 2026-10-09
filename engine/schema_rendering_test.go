@@ -88,3 +88,33 @@ func TestRuntimeSchemaRenderingChecksCompletionAndCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestRuntimeSchemaRenderingDecodesIndexProperties(t *testing.T) {
+	c := qt.New(t)
+	decodeCalls := 0
+	provider := propertyProvider(propertyService{decode: func(_ context.Context, request schemaext.PropertyDecodeRequest) ([]schemaext.Value, error) {
+		decodeCalls++
+		c.Assert(request.Format, qt.Equals, schemaext.IndexPlatformProperties)
+		c.Assert(request.Fragments, qt.DeepEquals, []schemaext.PropertyFragment{{Kind: conversionFirst, Properties: map[string]string{"number": "9"}}})
+		return []schemaext.Value{&conversionValue{ID: conversionFirst, Number: 9}}, nil
+	}})
+	provider.Properties[0].Format = schemaext.IndexPlatformProperties
+	var rendered *schemamodel.Database
+	provider.Targets[0].SchemaRendering = schemaRenderFunc(func(_ context.Context, request renderer.SchemaRequest) (renderer.SchemaResult, error) {
+		rendered = request.Schema
+		return renderer.SchemaResult{Complete: true, Statements: []string{"selected;"}}, nil
+	})
+	runtime := mustRuntime(c, provider)
+	source := &schemamodel.Database{Indexes: []schemamodel.Index{{Name: "by_id", Overrides: map[string]map[string]string{"alternate": {"number": "9"}}}}}
+	result, err := runtime.RenderSchema(t.Context(), renderer.SchemaRequest{Target: "alternate", Schema: source})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Statements, qt.DeepEquals, []string{"selected;"})
+	c.Assert(decodeCalls, qt.Equals, 1)
+	value, found, err := schemaext.FacetAs[*conversionValue](rendered.Indexes[0].Facets, conversionFirst)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(value.Number, qt.Equals, 9)
+	c.Assert(rendered.Indexes[0].Overrides, qt.HasLen, 0)
+	c.Assert(source.Indexes[0].Facets.IsZero(), qt.IsTrue)
+	c.Assert(source.Indexes[0].Overrides["alternate"]["number"], qt.Equals, "9")
+}

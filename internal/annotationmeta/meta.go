@@ -379,9 +379,10 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "ptah:schema:index",
-		Description: "Declares an index for a table.",
-		Scopes:      []Scope{ScopeStruct, ScopeField},
+		Name:          "ptah:schema:index",
+		Description:   "Declares an index for a table.",
+		Scopes:        []Scope{ScopeStruct, ScopeField},
+		AllowPlatform: true,
 		Attributes: []Attribute{
 			attr("name", "Index name.", valueString, false, false),
 			attr("fields", "Comma-separated Go field or column names.", valueList, false, false),

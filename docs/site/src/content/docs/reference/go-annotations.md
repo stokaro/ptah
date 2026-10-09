@@ -46,6 +46,9 @@ space-separated `key="value"` attributes.
   `platform.<dialect>.<attribute>="..."` pairs that override the base
   attribute for one dialect, for example
   `platform.mysql.type="JSON" platform.mariadb.type="LONGTEXT"`.
+  For index settings owned by a provider, these pairs declare source properties.
+  A selected provider decodes its keys into typed settings and refuses competing
+  common and scoped declarations of the same property.
 - The Required column records what the parser rejects. An attribute the
   renderer needs for valid SQL (such as `name` on a table) can still be
   omitted at parse time; the rendered SQL is then invalid. `ptah schema
@@ -311,6 +314,9 @@ which cannot infer every user-defined or dialect-specific key type.
 ### `//ptah:schema:index`
 
 Declares an index for a table.
+
+Platform overrides: yes. Provider-owned keys declare target-scoped source
+properties; a selected provider validates their values.
 
 | Attribute | Required | Description |
 | --- | --- | --- |

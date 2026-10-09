@@ -115,7 +115,8 @@ release renders unchanged.
 Skipping indexes default to `minmax` and `GRANULARITY 1`. Index granularity
 counts table granules per index block; it is separate from the table's
 `index_granularity` setting, which controls rows per granule. An explicit index
-granularity is preserved. `ADD INDEX` adds metadata for subsequent writes;
+granularity is preserved. Database inspection retains index type parameters,
+including `set(100)` and `bloom_filter(0.01)`. `ADD INDEX` adds metadata for subsequent writes;
 existing data needs a separate `MATERIALIZE INDEX` operation. See the
 [ClickHouse skipping-index reference](https://clickhouse.com/docs/reference/statements/alter/skipping-index).
 A ClickHouse `ADD INDEX` operation sent to another target is refused.

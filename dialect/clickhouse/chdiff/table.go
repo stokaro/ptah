@@ -1,4 +1,4 @@
-// Package chdiff owns captured directional changes to ClickHouse table settings.
+// Package chdiff owns captured directional changes to ClickHouse storage settings.
 package chdiff
 
 import (

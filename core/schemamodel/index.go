@@ -12,6 +12,7 @@ func (i Index) Clone() Index {
 	i.Parts = slices.Clone(i.Parts)
 	i.IncludeColumns = slices.Clone(i.IncludeColumns)
 	i.StorageParams = maps.Clone(i.StorageParams)
+	i.Overrides = cloneOverrides(i.Overrides)
 	i.RequiresExtensions = slices.Clone(i.RequiresExtensions)
 	i.Partitioning = i.Partitioning.Clone()
 	i.Vector = i.Vector.Clone()

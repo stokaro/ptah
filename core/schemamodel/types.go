@@ -449,6 +449,10 @@ type Index struct {
 	Parts   []IndexPart
 	Unique  bool   // Whether this is a unique index
 	Comment string // Index comment/description
+	// Overrides contains target-scoped source properties. Selected feature
+	// owners decode claimed keys into facets before preparation or rendering.
+	// It is declaration syntax, not an alternative representation of settings.
+	Overrides map[string]map[string]string
 	// Invisible marks an index the optimizer does not use while the server
 	// keeps maintaining it: MySQL's INVISIBLE and MariaDB's IGNORED. A target
 	// without an invisible index refuses one rather than build it visible.

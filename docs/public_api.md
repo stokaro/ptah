@@ -690,13 +690,31 @@ An omitted setting writes neither key. Register `chsource.Definitions()` and the
 service in an application-selected provider. The bundled runtime registers this
 service for source lowering and Go annotation export.
 
+`chsource.IndexService` and `IndexDefinitions()` supply the index property
+format, `schemaext.IndexPlatformProperties`. They own `type` and `granularity`
+with the same intent grammar. Explicit granularity must be a positive decimal
+integer within the unsigned 64-bit range. Registration selects decoding, not
+server support or a migration strategy.
+
+`chcompare.IndexService` compares resolved skipping-index settings and adopts
+unmanaged observations without changing the source. Missing observations and
+explicit knowledge limits remain undecided. Common index lifecycle owns creation
+and removal. `chdiff.Index` and `IndexCodecs()` preserve complete directional
+operands, including unsigned 64-bit granularity. `chreverse.IndexService` restores
+the captured definition and reports that replacement cannot restore materialized
+index data. `chreport.IndexService` and `IndexDefinitions()` supply counts and
+omission labels. Each service requires explicit registration in a selected provider.
+
 `schemaproperties.DecodeTables` attaches decoded property groups as desired
 facets bound to the selected target. It consumes only claimed keys; other keys
 and target groups remain in `Overrides`. `EncodeTables` writes table facets as
-properties for that target. Both refuse duplicate alias keys and mixed typed and
-property declarations, even when a property's value is empty. They copy table
-data and leave other schema data shared and read-only. Neither establishes
-inspection coverage or resolves omitted settings.
+properties for that target. `DecodeIndexes` and `EncodeIndexes` apply these
+rules to index owners. Index decoding consumes the common `Type` declaration
+only when the selected property definition claims `type`. Export writes owned
+settings to scoped properties. These operations refuse duplicate alias keys and
+mixed typed and property declarations, even when a property's value is empty.
+They copy the selected owners and leave other schema data shared and read-only.
+They establish no inspection coverage and do not resolve omitted settings.
 
 An export refuses excluded facets, bindings outside the selected target, missing
 source codecs, and empty fragments that cannot preserve a facet's presence.

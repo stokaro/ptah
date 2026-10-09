@@ -1,4 +1,4 @@
-// Package chcompare compares ClickHouse table facets using captured source
+// Package chcompare compares ClickHouse table and index facets using captured source
 // knowledge. Defaults are resolved by chprepare before comparison.
 package chcompare
 

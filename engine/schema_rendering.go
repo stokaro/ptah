@@ -65,5 +65,9 @@ func (r *Runtime) prepareSchemaProperties(ctx context.Context, schema *schemamod
 	if err != nil || scoped == nil {
 		return scoped, err
 	}
-	return schemaproperties.DecodeTables(ctx, scoped, target.Name(), r)
+	scoped, err = schemaproperties.DecodeTables(ctx, scoped, target.Name(), r)
+	if err != nil {
+		return nil, err
+	}
+	return schemaproperties.DecodeIndexes(ctx, scoped, target.Name(), r)
 }

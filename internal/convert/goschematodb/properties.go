@@ -42,6 +42,10 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err != nil {
 		return nil, nil, err
 	}
+	database, err = schemaproperties.DecodeIndexes(ctx, database, selected.Name(), runtime)
+	if err != nil {
+		return nil, nil, err
+	}
 	semantics := identifier.ForDialect(selected.Name())
 	identities := objectidentity.NewBuilder(semantics)
 	request := schemaprojection.TableCreationRequest{Target: selected.Name(), Identifiers: semantics, Capabilities: capability.ForDialect(selected.Name())}

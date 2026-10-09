@@ -932,6 +932,10 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if err != nil {
 		return schemamodel.Index{}, err
 	}
+	overrides, err := p.parsePlatformOverrides(block, "index")
+	if err != nil {
+		return schemamodel.Index{}, err
+	}
 	return p.indexYDBSettings(block, schemamodel.Index{
 		StructName:     structName,
 		Name:           block.Labels[0],
@@ -947,6 +951,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		IncludeColumns: include,
 		StorageParams:  storageParams,
 		Granularity:    granularity,
+		Overrides:      overrides,
 		TableName:      tableName,
 	})
 }
@@ -1281,11 +1286,14 @@ func (p *parser) indexStorageParamsMap(block *hclsyntax.Block, attr *hclsyntax.A
 	return params, nil
 }
 
-// indexOnBlocks returns the index body's `on` blocks, sending every other
-// block type through the unknown-name gate.
+// indexOnBlocks returns the index body's `on` blocks. Platform blocks are
+// consumed by parsePlatformOverrides; unknown names pass through the gate.
 func (p *parser) indexOnBlocks(block *hclsyntax.Block) ([]*hclsyntax.Block, error) {
 	onBlocks := make([]*hclsyntax.Block, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
+		if nested.Type == "platform" {
+			continue
+		}
 		if nested.Type != "on" {
 			if err := p.rejectUnsupportedBlock(nested, "index"); err != nil {
 				return nil, err

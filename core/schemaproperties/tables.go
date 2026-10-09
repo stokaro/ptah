@@ -1,4 +1,4 @@
-// Package schemaproperties moves table source properties through the selected
+// Package schemaproperties moves source properties through the selected
 // feature owners. It owns attachment and target scope, not property semantics.
 package schemaproperties
 
@@ -19,40 +19,67 @@ type Runtime interface {
 	schemaext.TargetResolver
 }
 
-type tableBatch struct {
+type propertyBatch struct {
 	database    *schemamodel.Database
 	target      schemaext.TargetSelection
 	definitions []schemaext.PropertyDefinition
+	format      schemaext.PropertyFormat
+	owners      []propertyOwner
 }
 
-func capture(ctx context.Context, db *schemamodel.Database, target string, runtime Runtime) (tableBatch, error) {
+type propertyOwner struct {
+	label      string
+	name       string
+	facets     *schemaext.Facets
+	properties *map[string]map[string]string
+	commonType *string
+}
+
+func capture(ctx context.Context, db *schemamodel.Database, target string, format schemaext.PropertyFormat, runtime Runtime) (propertyBatch, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
-		return tableBatch{}, err
+		return propertyBatch{}, err
 	}
 	if db == nil {
-		return tableBatch{}, fmt.Errorf("%w: table properties require a schema", schemaext.ErrInvalidValue)
+		return propertyBatch{}, fmt.Errorf("%w: source properties require a schema", schemaext.ErrInvalidValue)
 	}
 	selected, err := runtime.ResolveTarget(target)
 	if err != nil {
-		return tableBatch{}, err
+		return propertyBatch{}, err
 	}
 	formats, err := runtime.PropertyFormats(selected.Name())
 	if err != nil {
-		return tableBatch{}, err
+		return propertyBatch{}, err
 	}
 	var definitions []schemaext.PropertyDefinition
-	if slices.Contains(formats, schemaext.TablePlatformProperties) {
-		definitions, err = runtime.PropertyDefinitions(selected.Name(), schemaext.TablePlatformProperties)
+	if slices.Contains(formats, format) {
+		definitions, err = runtime.PropertyDefinitions(selected.Name(), format)
 		if err != nil {
-			return tableBatch{}, err
+			return propertyBatch{}, err
 		}
 	}
 	result := *db
-	result.Tables = make([]schemamodel.Table, len(db.Tables))
-	for i, table := range db.Tables {
-		result.Tables[i] = table.Clone()
+	owners := clonePropertyOwners(&result, format)
+	return propertyBatch{database: &result, target: selected, definitions: definitions, format: format, owners: owners}, nil
+}
+
+func clonePropertyOwners(db *schemamodel.Database, format schemaext.PropertyFormat) []propertyOwner {
+	var owners []propertyOwner
+	if format == schemaext.IndexPlatformProperties {
+		db.Indexes = slices.Clone(db.Indexes)
+		for i := range db.Indexes {
+			db.Indexes[i] = db.Indexes[i].Clone()
+			index := &db.Indexes[i]
+			owners = append(owners, propertyOwner{"index", index.Name, &index.Facets, &index.Overrides, &index.Type})
+		}
+		return owners
 	}
-	return tableBatch{database: &result, target: selected, definitions: definitions}, nil
+	db.Tables = slices.Clone(db.Tables)
+	for i := range db.Tables {
+		db.Tables[i] = db.Tables[i].Clone()
+		table := &db.Tables[i]
+		owners = append(owners, propertyOwner{"table", table.QualifiedName(), &table.Facets, &table.Overrides, nil})
+	}
+	return owners
 }
 
 // DecodeTables replaces claimed properties with desired table facets. It
@@ -63,58 +90,61 @@ func capture(ctx context.Context, db *schemamodel.Database, target string, runti
 // table data is copied and other schema data remains shared and read-only.
 // Errors and cancellation return no schema and confer no catalog coverage.
 func DecodeTables(ctx context.Context, db *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, error) {
-	batch, err := capture(ctx, db, target, runtime)
+	return decode(ctx, db, target, schemaext.TablePlatformProperties, runtime)
+}
+
+func decode(ctx context.Context, db *schemamodel.Database, target string, format schemaext.PropertyFormat, runtime Runtime) (*schemamodel.Database, error) {
+	batch, err := capture(ctx, db, target, format, runtime)
 	if err != nil {
 		return nil, err
 	}
 	var fragments []schemaext.PropertyFragment
-	var tables []int
-	for i := range batch.database.Tables {
-		table := &batch.database.Tables[i]
+	var owners []int
+	for i, owner := range batch.owners {
 		for _, definition := range batch.definitions {
-			properties, err := takeProperties(table, batch.target, definition)
+			properties, err := takeProperties(owner, batch.target, definition)
 			if err != nil {
 				return nil, err
 			}
 			if len(properties) == 0 {
 				continue
 			}
-			if slices.Contains(table.Facets.DeclaredKinds(), definition.Kind) {
-				return nil, fmt.Errorf("%w: table %q declares both properties and facet %q", schemaext.ErrDuplicate, table.QualifiedName(), definition.Kind)
+			if slices.Contains(owner.facets.DeclaredKinds(), definition.Kind) {
+				return nil, fmt.Errorf("%w: %s %q declares both properties and facet %q", schemaext.ErrDuplicate, owner.label, owner.name, definition.Kind)
 			}
 			fragments = append(fragments, schemaext.PropertyFragment{Kind: definition.Kind, Properties: properties})
-			tables = append(tables, i)
+			owners = append(owners, i)
 		}
 	}
-	if err := batch.decode(ctx, runtime, fragments, tables); err != nil {
+	if err := batch.decode(ctx, runtime, fragments, owners); err != nil {
 		return nil, err
 	}
 	return batch.database, nil
 }
 
-func (b tableBatch) decode(ctx context.Context, runtime Runtime, fragments []schemaext.PropertyFragment, tables []int) error {
+func (b propertyBatch) decode(ctx context.Context, runtime Runtime, fragments []schemaext.PropertyFragment, owners []int) error {
 	if len(fragments) == 0 {
 		return ctx.Err()
 	}
 	values, err := runtime.DecodeProperties(ctx, schemaext.PropertyDecodeRequest{
-		Target: b.target.Name(), Format: schemaext.TablePlatformProperties, Fragments: fragments,
+		Target: b.target.Name(), Format: b.format, Fragments: fragments,
 	})
 	if err != nil {
 		return err
 	}
-	if len(values) != len(tables) {
-		return fmt.Errorf("%w: table property decoder changed the value count", schemaext.ErrInvalidValue)
+	if len(values) != len(owners) {
+		return fmt.Errorf("%w: property decoder changed the value count", schemaext.ErrInvalidValue)
 	}
 	for i, value := range values {
 		if value == nil || value.Kind() != fragments[i].Kind {
-			return fmt.Errorf("%w: table property decoder changed an ordered kind", schemaext.ErrInvalidValue)
+			return fmt.Errorf("%w: property decoder changed an ordered kind", schemaext.ErrInvalidValue)
 		}
-		table := &b.database.Tables[tables[i]]
-		table.Facets, err = table.Facets.With(value)
+		owner := b.owners[owners[i]]
+		*owner.facets, err = owner.facets.With(value)
 		if err != nil {
 			return err
 		}
-		table.Facets, err = table.Facets.WithTargetScope(value.Kind(), b.target.Name())
+		*owner.facets, err = owner.facets.WithTargetScope(value.Kind(), b.target.Name())
 		if err != nil {
 			return err
 		}
@@ -122,25 +152,29 @@ func (b tableBatch) decode(ctx context.Context, runtime Runtime, fragments []sch
 	return ctx.Err()
 }
 
-func takeProperties(table *schemamodel.Table, target schemaext.TargetSelection, definition schemaext.PropertyDefinition) (map[string]string, error) {
+func takeProperties(owner propertyOwner, target schemaext.TargetSelection, definition schemaext.PropertyDefinition) (map[string]string, error) {
 	properties := make(map[string]string)
-	for _, name := range slices.Sorted(maps.Keys(table.Overrides)) {
+	if owner.commonType != nil && *owner.commonType != "" && slices.Contains(definition.Keys, "type") {
+		properties["type"] = *owner.commonType
+		*owner.commonType = ""
+	}
+	for _, name := range slices.Sorted(maps.Keys(*owner.properties)) {
 		if !target.Includes([]string{name}) {
 			continue
 		}
 		for _, key := range definition.Keys {
-			value, found := table.Overrides[name][key]
+			value, found := (*owner.properties)[name][key]
 			if !found {
 				continue
 			}
 			if _, duplicate := properties[key]; duplicate {
-				return nil, fmt.Errorf("%w: table %q repeats property %q through target aliases", schemaext.ErrDuplicate, table.QualifiedName(), key)
+				return nil, fmt.Errorf("%w: %s %q repeats source property %q", schemaext.ErrDuplicate, owner.label, owner.name, key)
 			}
 			properties[key] = value
-			delete(table.Overrides[name], key)
+			delete((*owner.properties)[name], key)
 		}
-		if len(table.Overrides[name]) == 0 {
-			delete(table.Overrides, name)
+		if len((*owner.properties)[name]) == 0 {
+			delete(*owner.properties, name)
 		}
 	}
 	return properties, nil

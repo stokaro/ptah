@@ -104,6 +104,10 @@ func compareReportingUndecidedAdditions(
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}
+		desired, err = schemaproperties.DecodeIndexes(ctx, desired, selected.Name(), runtime)
+		if err != nil {
+			return nil, Diagnostics{}, err
+		}
 		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
 		// A UNIQUE constraint is a unique index on YDB, which is what the
 		// reader reports for one a plan applied.

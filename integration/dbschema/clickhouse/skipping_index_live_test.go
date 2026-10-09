@@ -4,10 +4,12 @@ package clickhouse_test
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -39,6 +41,24 @@ func TestCommonIndexRenderingUsesServerGranularityDefaultLive(t *testing.T) {
 	conn, name := skippingIndexFixture(c)
 	node := &ast.IndexNode{Name: "idx_value", Table: name, Columns: []string{"value"}}
 	assertSkippingIndex(c, conn, name, []ast.Node{node}, 1)
+}
+
+func TestSkippingIndexInspectionPreservesTypeParametersLive(t *testing.T) {
+	for _, indexType := range []string{"set(100)", "bloom_filter(0.01)"} {
+		t.Run(indexType, func(t *testing.T) {
+			c := qt.New(t)
+			conn, name := skippingIndexFixture(c)
+			c.Assert(conn.Writer().ExecuteSQL(c.Context(), "ALTER TABLE "+name+" ADD INDEX idx_value value TYPE "+indexType+" GRANULARITY 4"), qt.IsNil)
+			readback, err := conn.Reader().ReadSchemaContext(c.Context())
+			c.Assert(err, qt.IsNil)
+			position := slices.IndexFunc(readback.Indexes, func(index catalog.Index) bool {
+				return index.TableName == name && index.Name == "idx_value"
+			})
+			c.Assert(position >= 0, qt.IsTrue)
+			c.Assert(readback.Indexes[position].Type, qt.Equals, indexType)
+			c.Assert(readback.Indexes[position].Definition, qt.Contains, "TYPE "+indexType+" GRANULARITY 4")
+		})
+	}
 }
 
 func skippingIndexFixture(c *qt.C) (*dbschema.DatabaseConnection, string) {

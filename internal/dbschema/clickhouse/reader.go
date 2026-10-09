@@ -519,12 +519,14 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 	// system.data_skipping_indices exposes `granularity` as UInt64. The
 	// driver decodes that into uint64 by default, so scan into that type
 	// explicitly and cast on the way out.
+	// type_full preserves parameters such as the set size or Bloom-filter
+	// probability; type contains only the index type's name.
 	// The same inner-table subtraction the table read applies: an index on a
 	// materialized view's storage belongs to a table this reader does not
 	// report, and an index whose TableName names nothing in the schema is a
 	// change the comparator cannot resolve.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT table, name, expr, type, granularity
+		SELECT table, name, expr, type_full, granularity
 		FROM system.data_skipping_indices
 		WHERE database = ?
 		  AND table NOT IN (`+materializedViewInnerTablesSubquery+`)

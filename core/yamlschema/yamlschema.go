@@ -312,6 +312,7 @@ type indexSpec struct {
 	Operator                 stringScalar  `yaml:"ops"`
 	TableName                stringScalar  `yaml:"table"`
 	Granularity              int           `yaml:"granularity"`
+	Platform                 platformSpec  `yaml:"platform"`
 
 	// The partitioning of a YDB global index, keyed as the annotation keys
 	// it; see [ydbindex.ParseDeclaration].
@@ -1154,6 +1155,7 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 		Operator:       string(spec.Operator),
 		TableName:      string(spec.TableName),
 		Granularity:    spec.Granularity,
+		Overrides:      mergePlatform(spec.Platform, nil),
 		Partitioning:   partitioning,
 		Vector:         vector,
 		StorageParams:  fullText,

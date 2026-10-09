@@ -423,6 +423,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Index.Name", Disposition: DDL},
 	{Field: "schemamodel.Index.NullsDistinct", Disposition: DDL},
 	{Field: "schemamodel.Index.Operator", Disposition: DDL},
+	{Field: "schemamodel.Index.Overrides", Disposition: DDL},
 	{Field: "schemamodel.Index.Parser", Disposition: DDL},
 	{Field: "schemamodel.Index.Partitioning", Disposition: DDL},
 	{Field: "schemamodel.Index.Parts", Disposition: DDL},

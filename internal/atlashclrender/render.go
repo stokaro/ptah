@@ -1213,6 +1213,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 		r.rawAttr(2, "page_per_range", pages)
 	}
 	r.renderIndexStorageParams(index)
+	r.renderPlatformOverrides(2, index.Overrides)
 	if len(index.Parts) > 0 && !simpleIndexParts(index.Parts) {
 		for _, part := range index.Parts {
 			r.line("    on {")

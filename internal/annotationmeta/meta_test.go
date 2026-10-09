@@ -36,6 +36,7 @@ func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
 		"ptah:schema:field",
 		"ptah:embedded",
 		"ptah:schema:table",
+		"ptah:schema:index",
 	}
 
 	for _, directive := range directives {
@@ -95,7 +96,6 @@ func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
 
 func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testing.T) {
 	directives := []string{
-		"ptah:schema:index",
 		"ptah:schema:schema",
 		"ptah:schema:view",
 		"ptah:schema:matview",

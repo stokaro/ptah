@@ -299,6 +299,7 @@ map with a `table` key.
 | `where` / `condition` | Partial-index condition where the target has one. |
 | `ops` | Operator class. |
 | `granularity` | ClickHouse data-skipping index granularity. |
+| `platform` | Source properties grouped by target. A selected provider decodes the keys it owns. |
 | `comment` | Index comment. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's [partitioning](../../databases/ydb/#index-partitioning), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
 | `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB [vector index](../../databases/ydb/#vector-indexes)'s settings, with the values the annotation attributes of the same names take. Every other dialect refuses them. |

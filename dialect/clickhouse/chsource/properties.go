@@ -1,5 +1,5 @@
-// Package chsource encodes ClickHouse table intent in source property groups.
-// Source syntax is decoded by a frontend; table-setting semantics stay here.
+// Package chsource encodes ClickHouse table and index intent in source property
+// groups. Frontends read the syntax; setting semantics stay with these owners.
 package chsource
 
 import (
@@ -36,14 +36,18 @@ func tableProperties(table *chschema.DesiredTable) []property {
 // platform.clickhouse.; YAML places them in the ClickHouse platform group.
 func Definitions() []schemaext.PropertyDefinition {
 	var table chschema.DesiredTable
-	definition := schemaext.PropertyDefinition{Kind: chschema.TableKind}
-	for _, property := range tableProperties(&table) {
+	return definitions(chschema.TableKind, tableProperties(&table))
+}
+
+func definitions(kind schemaext.Kind, properties []property) []schemaext.PropertyDefinition {
+	definition := schemaext.PropertyDefinition{Kind: kind}
+	for _, property := range properties {
 		definition.Keys = append(definition.Keys, property.name, property.name+".state")
 	}
 	return []schemaext.PropertyDefinition{definition}
 }
 
-func validateRequest(ctx context.Context, target string, format schemaext.PropertyFormat) error {
+func validateRequest(ctx context.Context, target string, format, expected schemaext.PropertyFormat) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: ClickHouse source requires a context", schemaext.ErrInvalidValue)
 	}
@@ -53,7 +57,7 @@ func validateRequest(ctx context.Context, target string, format schemaext.Proper
 	if target != "clickhouse" {
 		return fmt.Errorf("%w: ClickHouse source target %q", ptaherr.ErrUnsupportedDialect, target)
 	}
-	if format != schemaext.TablePlatformProperties {
+	if format != expected {
 		return fmt.Errorf("%w: ClickHouse source format %q", ptaherr.ErrUnsupportedFeature, format)
 	}
 	return nil
@@ -63,7 +67,7 @@ func validateRequest(ctx context.Context, target string, format schemaext.Proper
 // properties, unsupported states, and conflicting state/value declarations wrap
 // schemaext.ErrInvalidValue. Any failure or cancellation returns no partial batch.
 func (Service) DecodeProperties(ctx context.Context, request schemaext.PropertyDecodeRequest) ([]schemaext.Value, error) {
-	if err := validateRequest(ctx, request.Target, request.Format); err != nil {
+	if err := validateRequest(ctx, request.Target, request.Format, schemaext.TablePlatformProperties); err != nil {
 		return nil, err
 	}
 	result := make([]schemaext.Value, 0, len(request.Fragments))
@@ -88,14 +92,24 @@ func decodeTable(fragment schemaext.PropertyFragment) (*chschema.DesiredTable, e
 		return nil, fmt.Errorf("%w: ClickHouse source kind %q", schemaext.ErrInvalidValue, fragment.Kind)
 	}
 	result := &chschema.DesiredTable{}
+	if err := decodeSettings(fragment.Properties, tableProperties(result)); err != nil {
+		return nil, err
+	}
+	if err := chschema.ValidateDesired(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func decodeSettings(values map[string]string, properties []property) error {
 	consumed := 0
-	for _, property := range tableProperties(result) {
-		value, explicit := fragment.Properties[property.name]
-		state, stated := fragment.Properties[property.name+".state"]
+	for _, property := range properties {
+		value, explicit := values[property.name]
+		state, stated := values[property.name+".state"]
 		switch {
 		case stated:
 			if explicit || state != string(chschema.Default) {
-				return nil, fmt.Errorf("%w: ClickHouse property %s requires either a value or .state=default", schemaext.ErrInvalidValue, property.name)
+				return fmt.Errorf("%w: ClickHouse property %s requires either a value or .state=default", schemaext.ErrInvalidValue, property.name)
 			}
 			*property.value = chschema.Setting{State: chschema.Default}
 			consumed++
@@ -104,13 +118,10 @@ func decodeTable(fragment schemaext.PropertyFragment) (*chschema.DesiredTable, e
 			consumed++
 		}
 	}
-	if consumed != len(fragment.Properties) {
-		return nil, fmt.Errorf("%w: unknown ClickHouse table source property", schemaext.ErrInvalidValue)
+	if consumed != len(values) {
+		return fmt.Errorf("%w: unknown ClickHouse source property", schemaext.ErrInvalidValue)
 	}
-	if err := chschema.ValidateDesired(result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return nil
 }
 
 // EncodeProperties preserves every desired setting, including explicit empty
@@ -118,7 +129,7 @@ func decodeTable(fragment schemaext.PropertyFragment) (*chschema.DesiredTable, e
 // schemaext.ErrInvalidValue. Returned maps do not alias inputs or each other.
 // Any failure or cancellation returns no partial batch.
 func (Service) EncodeProperties(ctx context.Context, request schemaext.PropertyEncodeRequest) ([]schemaext.PropertyFragment, error) {
-	if err := validateRequest(ctx, request.Target, request.Format); err != nil {
+	if err := validateRequest(ctx, request.Target, request.Format, schemaext.TablePlatformProperties); err != nil {
 		return nil, err
 	}
 	result := make([]schemaext.PropertyFragment, 0, len(request.Values))
@@ -133,19 +144,23 @@ func (Service) EncodeProperties(ctx context.Context, request schemaext.PropertyE
 		if err := chschema.ValidateDesired(table); err != nil {
 			return nil, err
 		}
-		fragment := schemaext.PropertyFragment{Kind: chschema.TableKind, Properties: make(map[string]string)}
-		for _, property := range tableProperties(table) {
-			switch property.value.State {
-			case chschema.Default:
-				fragment.Properties[property.name+".state"] = string(chschema.Default)
-			case chschema.Explicit:
-				fragment.Properties[property.name] = property.value.Value
-			}
-		}
-		result = append(result, fragment)
+		result = append(result, encodeSettings(chschema.TableKind, tableProperties(table)))
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func encodeSettings(kind schemaext.Kind, properties []property) schemaext.PropertyFragment {
+	fragment := schemaext.PropertyFragment{Kind: kind, Properties: make(map[string]string)}
+	for _, property := range properties {
+		switch property.value.State {
+		case chschema.Default:
+			fragment.Properties[property.name+".state"] = string(chschema.Default)
+		case chschema.Explicit:
+			fragment.Properties[property.name] = property.value.Value
+		}
+	}
+	return fragment
 }
