@@ -382,29 +382,44 @@ func secretsAndNodes(objects ...schemaext.Object) *schemamodel.Database {
 	}
 }
 
+// nodesBelow declares coordination nodes from a source that describes every
+// node and makes no claim on secrets, which a line without them refuses.
+func nodesBelow(objects ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+}
+
 // TestYDBSecrets_OwnersOrderAgainstThePathsAbove creates an object below a
 // path whose occupant the plan drops, for occupants and objects of different
 // owners: a table, a coordination node and a secret. YDB needs every
 // directory above an object to be a directory, so the drop runs first, the
-// server takes both statements, and nothing is left to plan after.
+// server takes both statements, and nothing is left to plan after. 25.1 has
+// no secrets, so only the table case runs there.
 func TestYDBSecrets_OwnersOrderAgainstThePathsAbove(t *testing.T) {
 	t.Setenv(secretPasswordEnv, secretPasswordValue)
 	tests := []struct {
 		name     string
+		line     string
 		occupant string
 		declared *schemamodel.Database
 		want     []string
 	}{
-		{name: "a coordination node below a dropped table",
+		{name: "a coordination node below a dropped table on 25.1", line: "25.1",
+			occupant: "CREATE TABLE `ptah_ydb_secrets_order/occupied` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+			declared: nodesBelow(ydbcoordination.DesiredObject(secretsOrderSchema+"/occupied", "lock", "", ydbcoordination.Spec{})),
+			want:     []string{"DROP TABLE `ptah_ydb_secrets_order/occupied`", "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied/lock`"}},
+		{name: "a coordination node below a dropped table", line: "26.2",
 			occupant: "CREATE TABLE `ptah_ydb_secrets_order/occupied` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
 			declared: secretsAndNodes(ydbcoordination.DesiredObject(secretsOrderSchema+"/occupied", "lock", "", ydbcoordination.Spec{})),
 			want:     []string{"DROP TABLE `ptah_ydb_secrets_order/occupied`", "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied/lock`"}},
-		{name: "a secret below a dropped coordination node",
+		{name: "a secret below a dropped coordination node", line: "26.2",
 			occupant: "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied`",
 			declared: secretsAndNodes(ydbsecret.DesiredObject(secretsOrderSchema+"/occupied", "pw", "", secretPasswordEnv)),
 			want: []string{"DROP COORDINATION NODE `ptah_ydb_secrets_order/occupied`",
 				"CREATE SECRET `ptah_ydb_secrets_order/occupied/pw` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)"}},
-		{name: "a coordination node below a dropped secret",
+		{name: "a coordination node below a dropped secret", line: "26.2",
 			occupant: "CREATE SECRET `ptah_ydb_secrets_order/occupied` WITH (value = 'probe')",
 			declared: secretsAndNodes(ydbcoordination.DesiredObject(secretsOrderSchema+"/occupied", "lock", "", ydbcoordination.Spec{})),
 			want:     []string{"DROP SECRET `ptah_ydb_secrets_order/occupied`", "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied/lock`"}},
@@ -412,7 +427,7 @@ func TestYDBSecrets_OwnersOrderAgainstThePathsAbove(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := openYDB(c, lineNamed(c, "26.2"))
+			conn := openYDB(c, lineNamed(c, test.line))
 			dropCoordinationDirectory(c, conn, secretsOrderSchema)
 			c.Cleanup(func() { dropCoordinationDirectory(c, conn, secretsOrderSchema) })
 			apply(c, conn, []string{test.occupant})
