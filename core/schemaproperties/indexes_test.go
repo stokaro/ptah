@@ -147,3 +147,44 @@ func TestIndexPropertiesRefuseUnclaimedKeysOfTheSelectedTarget(t *testing.T) {
 		})
 	}
 }
+
+// Only a declared absorption takes the common index type. An owner whose key
+// merely spells `type`, such as a future MySQL index owner, leaves a declared
+// BTREE in the common field rather than moving it into its own facet.
+func TestIndexPropertiesAbsorbOnlyADeclaredCommonType(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(engine.Provider{
+		ID: "example.org/index-properties", Targets: []engine.Target{{Name: "other"}},
+		Codecs: chschema.IndexCodecs(), Properties: []engine.PropertySource{{
+			Target: "other", Format: schemaext.IndexPlatformProperties, Service: chsource.IndexService{},
+			Definitions: []schemaext.PropertyDefinition{{Kind: chschema.IndexKind, Keys: []string{"type", "granularity"}}},
+		}},
+	}))
+	source := &schemamodel.Database{Indexes: []schemamodel.Index{{
+		Name: "by_id", Type: "BTREE", Fields: []string{"id"}, Overrides: map[string]map[string]string{"clickhouse": {"granularity": "4"}},
+	}}}
+	decoded, err := schemaproperties.DecodeIndexes(t.Context(), source, "other", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(decoded.Indexes[0].Type, qt.Equals, "BTREE")
+	c.Assert(decoded.Indexes[0].Facets.IsZero(), qt.IsTrue)
+}
+
+// A schema with no source properties, no absorbable common field, and no
+// facets to export is returned as it is: every comparison and render decodes,
+// and copying each table and index there would buy nothing.
+func TestPropertiesLeaveASchemaWithoutPropertiesUncopied(t *testing.T) {
+	c := qt.New(t)
+	runtime := indexPropertyRuntime()
+	source := &schemamodel.Database{
+		Tables:  []schemamodel.Table{{Name: "events"}},
+		Indexes: []schemamodel.Index{{Name: "by_id", Fields: []string{"id"}}},
+	}
+	decoded, err := schemaproperties.Decode(t.Context(), source, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(decoded, qt.Equals, source)
+	encoded, err := schemaproperties.EncodeIndexes(t.Context(), source, "clickhouse", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(encoded, qt.Equals, source)
+	_, err = schemaproperties.Decode(t.Context(), source, "unknown", runtime)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+}

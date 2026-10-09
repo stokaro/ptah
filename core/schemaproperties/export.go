@@ -23,10 +23,15 @@ func EncodeTables(ctx context.Context, db *schemamodel.Database, target string, 
 }
 
 func encode(ctx context.Context, db *schemamodel.Database, target string, format schemaext.PropertyFormat, runtime Runtime) (*schemamodel.Database, error) {
-	batch, err := capture(ctx, db, target, format, runtime)
+	chosen, err := selectTarget(ctx, db, target, format, runtime)
 	if err != nil {
 		return nil, err
 	}
+	slots, _ := ownerSlots(db, format)
+	if !slices.ContainsFunc(slots, func(owner propertyOwner) bool { return len(owner.facets.DeclaredKinds()) > 0 }) {
+		return db, ctx.Err()
+	}
+	batch := capture(db, chosen, format)
 	var values []schemaext.Value
 	var owners []int
 	for i, owner := range batch.owners {

@@ -34,17 +34,24 @@ func (r *Runtime) registerPropertySource(owner string, declaration PropertySourc
 		return fmt.Errorf("%w: incomplete property source registration for %q", ErrInvalidRegistration, declaration.Target)
 	}
 	keys := make(map[string]bool)
+	absorbed := make(map[schemaext.CommonAttribute]bool)
 	for _, registered := range r.propertyServices {
 		if registered.Target == declaration.Target && registered.Format == declaration.Format {
 			for _, definition := range registered.Definitions {
 				for _, key := range definition.Keys {
 					keys[key] = true
 				}
+				for _, absorption := range definition.Absorbs {
+					absorbed[absorption.Attribute] = true
+				}
 			}
 		}
 	}
 	for _, definition := range declaration.Definitions {
 		if err := r.validatePropertyDefinition(owner, definition, keys); err != nil {
+			return err
+		}
+		if err := validateAbsorptions(declaration.Format, definition, absorbed); err != nil {
 			return err
 		}
 		key := propertyKey{declaration.Target, declaration.Format, definition.Kind}
@@ -74,6 +81,20 @@ func (r *Runtime) validatePropertyDefinition(owner string, definition schemaext.
 	return nil
 }
 
+// validateAbsorptions requires each absorbed attribute to belong to the
+// format, to land in one of the definition's own keys, and to have one owner
+// per target and format.
+func validateAbsorptions(format schemaext.PropertyFormat, definition schemaext.PropertyDefinition, absorbed map[schemaext.CommonAttribute]bool) error {
+	for _, absorption := range definition.Absorbs {
+		attributeFormat, known := absorption.Attribute.Format()
+		if !known || attributeFormat != format || !slices.Contains(definition.Keys, absorption.Key) || absorbed[absorption.Attribute] {
+			return fmt.Errorf("%w: invalid or duplicate absorption of %q into %q", ErrInvalidRegistration, absorption.Attribute, absorption.Key)
+		}
+		absorbed[absorption.Attribute] = true
+	}
+	return nil
+}
+
 func propertyName(name string) bool {
 	for part := range strings.SplitSeq(name, ".") {
 		if part == "" {
@@ -93,6 +114,7 @@ func clonePropertyDefinitions(definitions []schemaext.PropertyDefinition) []sche
 	result := slices.Clone(definitions)
 	for i := range result {
 		result[i].Keys = slices.Clone(result[i].Keys)
+		result[i].Absorbs = slices.Clone(result[i].Absorbs)
 	}
 	return result
 }
