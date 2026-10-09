@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -36,7 +37,9 @@ import (
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
+	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type ApplyOptions struct {
@@ -85,6 +88,10 @@ type ApplyOptions struct {
 	// pre-resolver loading behavior. `schema plan` sets it because a saved
 	// plan fingerprints local desired-state files only.
 	LocalFilesOnly bool
+	// assessOwnedOperations also assesses the owned feature operations of the
+	// plan, so a saved plan can record their owners' verdicts. It plans the
+	// diff a second time, as AST, which only a saved plan pays for.
+	assessOwnedOperations bool
 	// ToSources carries the same desired-state sources as ToURLs, each with the
 	// variable scope its atlas.hcl `data "hcl_schema"` block put around it. It
 	// is read only on the LocalFilesOnly path, which does not classify and so
@@ -272,6 +279,9 @@ func (c applyComputation) dataIndex() int {
 // re-reading the database.
 type applyComputation struct {
 	statements []string
+	// owned holds the owners' verdicts for the statements their feature
+	// operations render, when [ApplyOptions.assessOwnedOperations] asked.
+	owned []safety.StatementAssessment
 	// undecided are the declared objects the comparison withheld because the
 	// read did not describe their kind; see [ApplyRuntimePlan.Undecided].
 	undecided schemadiff.Diagnostics
@@ -430,23 +440,30 @@ func computeApplyPlan(
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
 	if diff.HasChanges() {
+		planOptions := planner.Options{
+			Capabilities:         info.Capabilities,
+			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			OnlineAlter:          opts.Policy.OnlineAlter,
+			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
+			),
+			OmitNullBackfill:    opts.OmitNullBackfill,
+			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+		}
 		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
 			ctx, opts.Runtime,
-			diff, info.Dialect, planner.Options{
-				Capabilities:         info.Capabilities,
-				ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-				OnlineAlter:          opts.Policy.OnlineAlter,
-				ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-				ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-					opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
-				),
-				OmitNullBackfill:    opts.OmitNullBackfill,
-				AllowTableRebuild:   opts.Policy.AllowTableRebuild,
-				TableRebuildRequest: opts.Policy.TableRebuildRequest,
-			},
+			diff, info.Dialect, planOptions,
 		)
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
+		}
+		if opts.assessOwnedOperations {
+			computation.owned, err = assessOwnedOperations(ctx, opts.Runtime, diff, info.Dialect, planOptions)
+			if err != nil {
+				return applyComputation{}, err
+			}
 		}
 	}
 	// The data stage runs whether or not the schema changed. A release that
@@ -459,6 +476,29 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	return computation, nil
+}
+
+// assessOwnedOperations returns the owners' verdicts for the statements their
+// feature operations render in this plan. It renders with the capability set
+// the SQL plan rendered with, extensions the plan installs included, so each
+// verdict's statement text is the text the plan executes.
+func assessOwnedOperations(
+	ctx context.Context,
+	runtime engine.SchemaRuntime,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	options planner.Options,
+) ([]safety.StatementAssessment, error) {
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(ctx, runtime, diff, dialect, options)
+	if err != nil {
+		return nil, fmt.Errorf("plan owned operations for assessment: %w", err)
+	}
+	caps := capability.WithDeclaredExtensions(options.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
+	assessments, err := safety.AssessOwnedRendered(ctx, runtime, nodes, dialect, caps)
+	if err != nil {
+		return nil, fmt.Errorf("assess owned operations: %w", err)
+	}
+	return assessments, nil
 }
 
 // selectApplyStates checks selectors against both sides before planning. One

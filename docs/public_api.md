@@ -1197,6 +1197,57 @@ Missing, invalid, or unexplained effects require manual review at the
 `Destructive` severity. Schema reversal cannot restore records or consumer
 positions lost when a changefeed is dropped.
 
+A change or operation payload that affects what roles may read or write also
+implements `schemaext.AccessEffectSource`. Its `schemaext.AccessEffect` is
+separate from `Effect`. `Access` is one of these values, and `Reason` is a
+required one-line explanation:
+
+- `AccessWidens`: the change can grant access, even if it also restricts some.
+- `AccessNarrows`: the change can remove access and cannot grant any.
+- `AccessUnchanged`: the owner established that no role gains or loses access.
+  Unchanged predicate text alone does not establish it.
+- `AccessUnknown`: the owner cannot establish the effect.
+
+The owner computes the assessment while it holds the captured model,
+enforcement state, and sibling objects, and stores it in the payload as data.
+`Access.Valid` and `AccessEffect.Validate` reject the zero value, other
+spellings, and a blank, padded, or multi-line reason with `ErrInvalidValue`.
+The JSON form is the record `{"access": ..., "reason": ...}`. Encoding or
+decoding an invalid record fails, and decoding refuses unknown, duplicate, or
+missing fields. An owner embeds `schemaext.AccessEffectSchema()` in its codec
+`Definition`, so the definition hash follows the record shape.
+
+`ValidatePayload` refuses a payload that implements the interface without a
+valid assessment. Codec snapshots, encoding, decoding, change clones, and value
+clones all call it. A codec that drops the record therefore fails when it
+decodes, and a planning reply whose operation lacks one is refused with no
+partial result. The prototype registered for such a codec must carry a valid
+assessment too. A payload without the interface makes no claim about access.
+
+`migration/safety` reads the assessment beside the lifecycle effect and takes
+the higher severity. `AccessWidens` and `AccessUnknown` are `Destructive`,
+`AccessNarrows` is `Warning`, and `AccessUnchanged` adds nothing. An assessment
+it cannot validate is reported as `AccessUnknown`, never as unchanged.
+
+`StatementAssessment.Access` and `AccessReason` report the assessment for each
+statement an assessed operation renders. They stay empty for every other
+statement. A statement carrying several assessed operations reports the
+strongest, in the order unchanged, narrows, unknown, widens. The text and HTML
+reports print it under the statement.
+
+`ClassifySchemaDiff` counts assessed changes under
+`feature_access_widened:<kind>`, `feature_access_narrowed:<kind>`,
+`feature_access_unchanged:<kind>`, and `feature_access_unknown:<kind>`, apart
+from their `feature_changes:<kind>` lifecycle finding. A change it cannot
+snapshot is counted under `feature_access_unknown`.
+
+`AssessOwnedRendered` renders and assesses only the nodes carrying an owned
+operation. `Fold` attaches such a verdict to the same statement classified from
+its text: the severity only rises and the strongest access assessment is kept.
+A saved schema plan uses both, so the JSON plan's statements carry `access`,
+`access_reason`, and an owner's higher verdict. The Atlas `.plan.hcl` format
+stores SQL alone, so a plan read back from it has only the text verdict.
+
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
 creation statements before phase-two foreign keys; SQLite keeps foreign keys

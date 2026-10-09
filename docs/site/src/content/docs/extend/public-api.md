@@ -688,6 +688,14 @@ API when an embedder needs the same machine-readable contract as
 `generator.GenerateMigrationOptions.ReportFormat` to `json` instead publishes
 one `.safety.json` artifact beside each generated migration pair.
 
+A statement rendered from an operation that implements
+`schemaext.AccessEffectSource` also carries `access` (`widens`, `narrows`,
+`unchanged` or `unknown`) and `access_reason`. Its severity is the higher of
+the lifecycle effect and the access effect: a widening or unknown access effect
+is destructive and a narrowing is a warning. An assessment the owner did not
+establish reads as `unknown`, never as `unchanged`. Drift and diff findings
+count these changes under `feature_access_<verdict>:<kind>`.
+
 `migration/shadow` owns verification against a live disposable database:
 `VerifyMigration` measures a candidate migration, `VerifyBaseline` measures a
 replayed history against the target, `VerifyRollback` rehearses a rollback plan,

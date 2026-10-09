@@ -120,6 +120,15 @@ The file is what a reviewer reads:
 }
 ```
 
+A statement that a feature owner's operation renders records the owner's
+verdict when it is higher than what the SQL text says, because the text of
+such a statement says little about its effect. When the owner assesses what
+the statement does to access, the statement also carries `access` --
+`widens`, `narrows`, `unchanged` or `unknown` -- and `access_reason`. A
+widening or unknown access effect makes the statement destructive. The Atlas
+`.plan.hcl` format stores only the SQL, so a plan read back from it carries
+the text's verdict alone.
+
 `from_fingerprint` describes the schemas the database URL covers. A URL that
 names no schema covers every schema in the database; one pinned with
 `search_path` covers that schema alone. When the desired schema names a schema

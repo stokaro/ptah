@@ -56,13 +56,24 @@ type Finding struct {
 // 1-based in the slices [Assess], [AssessRendered], and
 // [AssessRenderedWithCapabilities] return; [AssessSQL] classifies one
 // statement and leaves Index zero.
+//
+// Access and AccessReason carry the owner's access assessment for a statement
+// whose owned operation declares one ([schemaext.AccessEffectSource]), and are
+// empty for every other statement. They are reported apart from Severity,
+// which already includes them: a widening or unknown access effect is
+// Destructive and a narrowing is a Warning. An assessment the owner did not
+// establish is reported as unknown, never as unchanged. A statement carrying
+// several owned operations reports the strongest assessment, in the order
+// unchanged, narrows, unknown, widens.
 type StatementAssessment struct {
-	Index     int      `json:"index"`
-	NodeType  string   `json:"node_type"`
-	Subject   string   `json:"subject,omitempty"`
-	Statement string   `json:"statement,omitempty"`
-	Severity  Severity `json:"severity"`
-	Reason    string   `json:"reason"`
+	Index        int              `json:"index"`
+	NodeType     string           `json:"node_type"`
+	Subject      string           `json:"subject,omitempty"`
+	Statement    string           `json:"statement,omitempty"`
+	Severity     Severity         `json:"severity"`
+	Reason       string           `json:"reason"`
+	Access       schemaext.Access `json:"access,omitempty"`
+	AccessReason string           `json:"access_reason,omitempty"`
 }
 
 // Report is the machine-readable safety report envelope.
@@ -299,6 +310,35 @@ func AssessRenderedWithCapabilities(
 	return assessments, nil
 }
 
+// AssessOwnedRendered is [AssessRenderedWithCapabilities] limited to the nodes
+// that carry an owned extension operation, alone or inside an ALTER TABLE or a
+// statement list. Other nodes are neither rendered nor returned, and Index
+// numbers the returned statements only. A plan without owned operations
+// returns no assessments and calls no service. Each returned Statement is the
+// rendered SQL the assessment belongs to, so a caller holding the same plan as
+// text can attach the owner's verdict to the statement it executes.
+func AssessOwnedRendered(
+	ctx context.Context,
+	service renderer.Service,
+	nodes []ast.Node,
+	dialect string,
+	caps capability.Capabilities,
+) ([]StatementAssessment, error) {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return nil, err
+	}
+	owned := make([]ast.Node, 0, len(nodes))
+	for _, node := range nodes {
+		if hasExtensionEffect(node) {
+			owned = append(owned, node)
+		}
+	}
+	if len(owned) == 0 {
+		return nil, ctx.Err()
+	}
+	return AssessRenderedWithCapabilities(ctx, service, owned, dialect, caps)
+}
+
 // assessmentUnits is node, or one ALTER TABLE per operation when node is a
 // PostgreSQL-family ALTER TABLE carrying several operations and one of them
 // fills a column's NULL rows. Rendered one operation at a time, each fill and
@@ -448,6 +488,12 @@ func RenderText(w io.Writer, assessments []StatementAssessment) error {
 		if _, err := fmt.Fprintf(w, "  %-2d %-12s %-24s %s\n", assessment.Index, assessment.Severity, subject, assessment.Reason); err != nil {
 			return err
 		}
+		if assessment.Access == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "     access %s: %s\n", assessment.Access, assessment.AccessReason); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -540,7 +586,7 @@ const reportBodyHTML = `<body><div class="page">
 <td class="num">{{.Index}}</td>
 <td><span class="tag {{.Severity}}">{{.Severity}}</span></td>
 <td class="name">{{if .Subject}}{{.Subject}}{{else}}{{.NodeType}}{{end}}</td>
-<td class="comment">{{.Reason}}</td>
+<td class="comment">{{.Reason}}{{if .Access}}<div class="access">access {{.Access}}: {{.AccessReason}}</div>{{end}}</td>
 <td class="stmt"><pre>{{.Statement}}</pre></td>
 </tr>
 {{end}}
@@ -563,7 +609,9 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.StatementList:
 		return assessStatementList(n, assessment)
 	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
-		assessment.Severity, assessment.Reason = classifyExtensionNode(node)
+		verdict := classifyExtensionNode(node)
+		assessment.Severity, assessment.Reason = verdict.severity, verdict.reason
+		combineAccess(&assessment, verdict.access.Access, verdict.access.Reason)
 		assessment.Subject = extensionSubject(node)
 	case *ast.AlterTableNode:
 		assessment.Subject = n.Name
@@ -647,6 +695,10 @@ func assessStatementList(nodes *ast.StatementList, assessment StatementAssessmen
 
 func assessAlterTable(n *ast.AlterTableNode, assessment StatementAssessment) StatementAssessment {
 	for _, op := range n.Operations {
+		if extension, ok := op.(*ast.ExtensionAlterOperation); ok {
+			applyExtensionVerdict(&assessment, classifyExtensionNode(extension))
+			continue
+		}
 		severity, reason := classifyAlterOperation(op)
 		if severityRank(severity) > severityRank(assessment.Severity) {
 			assessment.Severity = severity
@@ -695,10 +747,8 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 	case *ast.AlterIndexVisibilityOperation:
 		return Warning, "ALTER INDEX changes which index the optimizer can use, and so query plans"
 	case *ast.ExtensionAlterOperation:
-		if o == nil {
-			return classifyExtension(nil)
-		}
-		return classifyExtension(o.Payload)
+		verdict := classifyExtensionNode(o)
+		return verdict.severity, verdict.reason
 	default:
 		return Safe, "does not remove data or tighten constraints"
 	}
@@ -883,7 +933,18 @@ func withoutDefaultConstraintDrop(words []string) (kept []string, dropsDefault b
 	return kept, found && !hasWordSequence(kept, "ADD", "DEFAULT")
 }
 
+// Fold raises target to source: the severity and its reason only rise, and
+// the strongest access assessment either carries is kept. Index, NodeType,
+// Subject, and Statement remain target's own. A caller uses it to attach an
+// owner's verdict to the same statement classified from its text alone.
+func Fold(target *StatementAssessment, source StatementAssessment) {
+	raiseAssessment(target, source)
+}
+
+// raiseAssessment folds source into target: the severity only rises, and the
+// strongest access assessment either carries is kept.
 func raiseAssessment(target *StatementAssessment, source StatementAssessment) {
+	combineAccess(target, source.Access, source.AccessReason)
 	if severityRank(source.Severity) <= severityRank(target.Severity) {
 		return
 	}
