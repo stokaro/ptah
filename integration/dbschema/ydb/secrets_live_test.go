@@ -331,6 +331,17 @@ func changesTo(changes []schemaext.ChangeRecord, subjects ...objectidentity.ID) 
 	return kept
 }
 
+// dropHolder removes what the holder test leaves at ptah_ydb_secrets/holder: a
+// table, or the secret below it and the directory that secret leaves behind.
+// YDB keeps that directory after its last object goes, and refuses a table at
+// its path, so a second run would fail at its first statement without this.
+func dropHolder(c *qt.C, conn *dbschema.DatabaseConnection, schemas []string) {
+	c.Helper()
+	dropSecrets(c, conn, schemas)
+	dropTables(c, conn, schemas)
+	dropCoordinationDirectory(c, conn, secretsSchema+"/holder")
+}
+
 // TestYDBSecrets_CreatedBeneathADroppedTable plans a secret beneath the path of
 // a table the plan drops. YDB needs the directory above a secret to hold no
 // other object, so CREATE SECRET runs after DROP TABLE, and the server takes
@@ -340,12 +351,8 @@ func TestYDBSecrets_CreatedBeneathADroppedTable(t *testing.T) {
 	c := qt.New(t)
 	conn := openYDB(c, lineNamed(c, "26.2"))
 	schemas := []string{secretsSchema, secretsSchema + "/holder"}
-	dropSecrets(c, conn, schemas)
-	dropTables(c, conn, schemas)
-	c.Cleanup(func() {
-		dropSecrets(c, conn, schemas)
-		dropTables(c, conn, schemas)
-	})
+	dropHolder(c, conn, schemas)
+	c.Cleanup(func() { dropHolder(c, conn, schemas) })
 	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
 		"CREATE TABLE `ptah_ydb_secrets/holder` (id Int64 NOT NULL, PRIMARY KEY (id))"), qt.IsNil)
 	declared := &schemamodel.Database{
