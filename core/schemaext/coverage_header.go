@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode"
 
 	"ptah.run/core/coverage"
 )
@@ -82,15 +83,15 @@ func decodeCoverageHeaderDocument(data json.RawMessage) (CoverageDocument, error
 	return DecodeJSON[CoverageDocument](data)
 }
 
-// encoding/json accepts case aliases, which would let Version and version
-// overwrite each other even though they are distinct JSON keys. Reject those
-// duplicate meanings before decoding the concrete coverage document.
+// encoding/json accepts Unicode case aliases, which would let distinct JSON
+// keys overwrite the same field. Reject those duplicate meanings before
+// decoding the concrete coverage document.
 func validateCoverageHeaderAliases(value any) error {
 	switch data := value.(type) {
 	case map[string]any:
 		seen := make(map[string]bool, len(data))
 		for _, key := range slices.Sorted(maps.Keys(data)) {
-			folded := strings.ToLower(key)
+			folded := strings.Map(coverageHeaderFoldRune, key)
 			if seen[folded] {
 				return fmt.Errorf("%w: duplicate coverage header field %q", ErrDuplicate, key)
 			}
@@ -107,4 +108,14 @@ func validateCoverageHeaderAliases(value any) error {
 		}
 	}
 	return nil
+}
+
+// SimpleFold matches encoding/json's field comparison, including aliases such
+// as the long s. Lowercasing alone does not put those aliases in the same group.
+func coverageHeaderFoldRune(r rune) rune {
+	minimum := r
+	for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+		minimum = min(minimum, next)
+	}
+	return minimum
 }

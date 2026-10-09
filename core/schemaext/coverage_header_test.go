@@ -66,6 +66,8 @@ func TestCoverageHeaderRefusesIncompatibleOrAmbiguousInput(t *testing.T) {
 		{"duplicate field", strings.Replace(header, `"format":1`, `"format":1,"format":1`, 1)},
 		{"case alias", strings.Replace(header, `"format":1`, `"format":1,"Format":2`, 1)},
 		{"model case alias", strings.Replace(header, `"version":1`, `"version":1,"Version":2`, 1)},
+		{"unicode field alias", strings.Replace(header, `"kinds":`, `"subjects":[],"\u017fubjects":[],"kinds":`, 1)},
+		{"unicode knowledge alias", strings.Replace(header, `"state":"complete"`, `"state":"uninspected","\u017ftate":"complete"`, 1)},
 		{"unknown field", strings.Replace(header, `"format":1`, `"format":1,"extra":true`, 1)},
 		{"direction", strings.ReplaceAll(header, `"desired"`, `"observed"`)},
 		{"model version", strings.Replace(header, `"version":1`, `"version":2`, 1)},
