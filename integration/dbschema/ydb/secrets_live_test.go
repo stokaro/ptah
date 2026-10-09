@@ -4,6 +4,8 @@ package ydb_test
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -22,6 +24,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
+	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -456,4 +459,40 @@ func TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement(t *testing.T) 
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		c.Assert(diff, qt.IsNil)
 	}
+}
+
+// TestYDBSecrets_ShadowVerifiesARotation generates a migration that rotates a
+// secret and verifies it on a dev realm. The rotation is asked for twice, in
+// the compare options and in the diff policy, and planned once. The replay
+// creates the secret from the history and rotates it, and the convergence
+// check reads the replayed secret as its declaration rather than planning the
+// rotation again.
+func TestYDBSecrets_ShadowVerifiesARotation(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	line := lineNamed(c, "26.2")
+	conn := openYDB(c, line)
+	dropSecrets(c, conn, secretsSchemas)
+	c.Cleanup(func() { dropSecrets(c, conn, secretsSchemas) })
+	declared := secretsDeclaration("pg_password")
+	apply(c, conn, planAgainst(c, conn, declared, secretsSchemas))
+	migrations := c.TempDir()
+	writeFiles(c, migrations, map[string]string{ // #nosec G101 -- statements that name a variable, not a credential
+		"0000000001_secret.up.sql":   "CREATE SECRET `ptah_ydb_secrets/pg_password` WITH (value = $" + secretPasswordEnv + ");\n",
+		"0000000001_secret.down.sql": "DROP SECRET `ptah_ydb_secrets/pg_password`;\n",
+	})
+	path := secretsSchema + "/pg_password"
+
+	result, err := generator.GenerateMigration(c.Context(), generator.GenerateMigrationOptions{
+		Runtime: must.Must(builtin.New()), Generated: declared, DBConn: conn, Schemas: secretsSchemas,
+		MigrationName: "rotate", OutputDir: migrations, ShadowDatabaseURL: enterRealm(c, line),
+		CompareOptions: &config.CompareOptions{FeatureRequests: must.Must(ydbsecret.RotationRequests([]string{path}))},
+		DiffPolicy:     generator.DiffPolicy{RotateSecrets: []string{path}},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Files, qt.HasLen, 1)
+	up, err := os.ReadFile(result.Files[0].UpFile)
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Count(string(up), "ALTER SECRET `ptah_ydb_secrets/pg_password` WITH (value = $"+secretPasswordEnv+");"), qt.Equals, 1)
 }

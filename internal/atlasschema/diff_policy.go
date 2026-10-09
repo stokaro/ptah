@@ -58,12 +58,7 @@ type DiffPolicy struct {
 // decides whether each is a rotation, a creation, or undecided, and refuses a
 // name the declaration does not hold.
 func withSecretRotation(opts *config.CompareOptions, policy DiffPolicy) error {
-	rotations, err := ydbsecret.RotationRequests(policy.RotateSecrets)
-	if err != nil {
-		return err
-	}
-	opts.FeatureRequests = append(slices.Clone(opts.FeatureRequests), rotations...)
-	return nil
+	return ydbsecret.WithRotations(opts, policy.RotateSecrets)
 }
 
 // declaredConcurrentIndexRefs is the index additions the desired description

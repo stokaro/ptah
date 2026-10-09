@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/config"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -219,4 +220,33 @@ func TestRotationRequests_FailurePath(t *testing.T) {
 	requests, err := ydbsecret.RotationRequests([]string{"ext/pg", "ext//pg"})
 	c.Assert(err, qt.ErrorMatches, `rotate secret: "ext//pg" is not a secret path \(dir/name\): .*`)
 	c.Assert(requests, qt.IsNil)
+}
+
+// TestWithRotations_HappyPath asks once per secret: a secret the options
+// already ask to rotate, and one the paths name twice, is asked for once, and
+// the options' other requests stay.
+func TestWithRotations_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	held := schemaext.ChangeRequest{Subject: ydbsecret.Ref("ext", "pg"), Action: ydbsecret.RotateAction}
+	opts := &config.CompareOptions{FeatureRequests: []schemaext.ChangeRequest{held}}
+
+	err := ydbsecret.WithRotations(opts, []string{"ext/pg", "pw", "pw"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(opts.FeatureRequests, qt.DeepEquals, []schemaext.ChangeRequest{
+		held, {Subject: ydbsecret.Ref("", "pw"), Action: ydbsecret.RotateAction},
+	})
+}
+
+// TestWithRotations_FailurePath refuses a path that names no secret and
+// leaves the options as they were.
+func TestWithRotations_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	held := schemaext.ChangeRequest{Subject: ydbsecret.Ref("ext", "pg"), Action: ydbsecret.RotateAction}
+	opts := &config.CompareOptions{FeatureRequests: []schemaext.ChangeRequest{held}}
+
+	err := ydbsecret.WithRotations(opts, []string{"pw", "/local/pw"})
+
+	c.Assert(err, qt.ErrorIs, ydbsecret.ErrAbsolutePath)
+	c.Assert(opts.FeatureRequests, qt.DeepEquals, []schemaext.ChangeRequest{held})
 }

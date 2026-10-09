@@ -11,8 +11,6 @@
 package secretrotation
 
 import (
-	"slices"
-
 	"github.com/spf13/cobra"
 
 	"ptah.run/config"
@@ -43,17 +41,12 @@ func Requested(cmd *cobra.Command) ([]string, error) {
 }
 
 // Apply adds to opts a rotation request for each secret the operator asked
-// cmd to rotate (see [ydbsecret.RotationRequests]). The comparison refuses a
+// cmd to rotate (see [ydbsecret.WithRotations]). The comparison refuses a
 // path the declaration does not hold before it plans anything.
 func Apply(cmd *cobra.Command, opts *config.CompareOptions) error {
 	requested, err := Requested(cmd)
 	if err != nil {
 		return err
 	}
-	rotations, err := ydbsecret.RotationRequests(requested)
-	if err != nil {
-		return err
-	}
-	opts.FeatureRequests = append(slices.Clone(opts.FeatureRequests), rotations...)
-	return nil
+	return ydbsecret.WithRotations(opts, requested)
 }

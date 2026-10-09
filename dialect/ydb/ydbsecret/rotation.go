@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	pathpkg "path"
+	"slices"
 	"strings"
+
+	"ptah.run/config"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
@@ -45,6 +48,29 @@ func RotationRequests(paths []string) ([]schemaext.ChangeRequest, error) {
 		requests = append(requests, schemaext.ChangeRequest{Subject: ref, Action: RotateAction})
 	}
 	return requests, nil
+}
+
+// WithRotations adds to opts a rotation request for each secret at paths,
+// read by [ParsePath], keeping one request per secret: a secret opts already
+// asks to rotate, or that paths names twice, is asked for once. It is how a
+// command or a library caller turns the secrets it names into the requests
+// of one comparison; see [RotationRequests]. A path that names no secret is
+// refused and opts is left as it was.
+func WithRotations(opts *config.CompareOptions, paths []string) error {
+	rotations, err := RotationRequests(paths)
+	if err != nil {
+		return err
+	}
+	requests := slices.Clone(opts.FeatureRequests)
+	for _, rotation := range rotations {
+		if !slices.ContainsFunc(requests, func(held schemaext.ChangeRequest) bool {
+			return held.Action == rotation.Action && held.Subject.Key() == rotation.Subject.Key()
+		}) {
+			requests = append(requests, rotation)
+		}
+	}
+	opts.FeatureRequests = requests
+	return nil
 }
 
 // ErrAbsolutePath is what [ParsePath] wraps for a path that starts with a

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"slices"
 	"sync"
 	"time"
 
@@ -398,12 +397,10 @@ func compareForPlan(
 	dbSchema *catalog.Database,
 	opts GenerateMigrationOptions,
 ) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
-	rotations, err := ydbsecret.RotationRequests(opts.DiffPolicy.RotateSecrets)
-	if err != nil {
+	compareOpts := compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy)
+	if err := ydbsecret.WithRotations(compareOpts, opts.DiffPolicy.RotateSecrets); err != nil {
 		return nil, schemadiff.Diagnostics{}, err
 	}
-	compareOpts := compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy)
-	compareOpts.FeatureRequests = append(slices.Clone(compareOpts.FeatureRequests), rotations...)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx, conn, desired, dbSchema, compareOpts, opts.Runtime,
 	)

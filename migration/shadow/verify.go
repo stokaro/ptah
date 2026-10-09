@@ -231,7 +231,9 @@ type MigrationVerifyOptions struct {
 	// round trip.
 	Generated *schemamodel.Database
 	// CompareOpts tunes the schema comparison; nil selects
-	// config.DefaultCompareOptions.
+	// config.DefaultCompareOptions. Its FeatureRequests are left out: a
+	// request such as a secret rotation belongs to the plan that wrote the
+	// candidates, and the replayed database already carries its result.
 	CompareOpts *config.CompareOptions
 	// Schemas scopes the shadow read-back to the named schemas; empty reads
 	// the connection's default scope.
@@ -419,6 +421,19 @@ func latestMigrationVersion(migrations []*migrator.Migration) int64 {
 	return latest
 }
 
+// convergenceOptions is opts without its change requests. The convergence
+// check asks whether the replayed database is the declaration, and a request
+// asked again there plans its change a second time: a rotation the candidates
+// already made would read as a schema mismatch.
+func convergenceOptions(opts *config.CompareOptions) *config.CompareOptions {
+	if opts == nil || len(opts.FeatureRequests) == 0 {
+		return opts
+	}
+	converged := *opts
+	converged.FeatureRequests = nil
+	return &converged
+}
+
 func assertSchemaMatches(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -434,7 +449,7 @@ func assertSchemaMatches(
 		conn,
 		opts.Generated,
 		dbSchema,
-		opts.CompareOpts,
+		convergenceOptions(opts.CompareOpts),
 		opts.Runtime,
 	)
 	if err != nil {
