@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/featureselect"
 )
 
 const (
@@ -163,7 +164,8 @@ func Configured(format, table string) []string {
 }
 
 // Without returns a copy of schema with the tables named in names removed,
-// together with the indexes and constraints declared on them. Names compare
+// together with their indexes, constraints, feature objects, and feature
+// coverage. Kind-wide knowledge and non-table feature subjects remain. Names compare
 // without regard to case, as the engines that fold unquoted names do.
 //
 // A nil schema yields an empty one, and schema itself is not changed.
@@ -175,6 +177,9 @@ func Without(schema *catalog.Database, names []string) *catalog.Database {
 		return slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(name, table) })
 	}
 	out := *schema
+	out.FeatureObjects, out.FeatureCoverage = featureselect.Tables(schema.FeatureObjects, schema.FeatureCoverage, func(_, table string) bool {
+		return !named(table)
+	})
 	out.Tables = keep(out.Tables, func(table catalog.Table) bool { return !named(table.Name) })
 	out.Indexes = keep(out.Indexes, func(index catalog.Index) bool { return !named(index.TableName) })
 	out.Constraints = keep(out.Constraints, func(constraint catalog.Constraint) bool { return !named(constraint.TableName) })

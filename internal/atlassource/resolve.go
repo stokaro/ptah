@@ -712,8 +712,8 @@ func verifyMigrationFS(fsys fs.FS) error {
 }
 
 // WithoutRevisionTable returns a copy of schema with the Atlas revision table
-// (and its indexes and constraints) removed, so replayed dev-database state
-// only exposes the migrations' own objects.
+// and its indexes, constraints, and feature state removed, so replayed
+// dev-database state only exposes the migrations' own objects.
 func WithoutRevisionTable(schema *catalog.Database) *catalog.Database {
 	return revisiontable.Without(schema, []string{revisiontable.Atlas})
 }

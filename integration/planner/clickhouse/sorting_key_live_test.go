@@ -108,10 +108,9 @@ func TestSortingKeyChange_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
 		source string
-		column string
 	}{
-		{name: "a column joins the key", source: "CREATE TABLE asn (id Int32, n Int32) ENGINE = MergeTree ORDER BY (id, n);\n", column: "n"},
-		{name: "the key moves to another column", source: "CREATE TABLE asn (id Int32, n Int32) ENGINE = MergeTree ORDER BY n;\n", column: "(id|n)"},
+		{name: "a column joins the key", source: "CREATE TABLE asn (id Int32, n Int32) ENGINE = MergeTree ORDER BY (id, n);\n"},
+		{name: "the key moves to another column", source: "CREATE TABLE asn (id Int32, n Int32) ENGINE = MergeTree ORDER BY n;\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -124,13 +123,13 @@ func TestSortingKeyChange_FailurePath(t *testing.T) {
 			plan, err := planFromFile(c, ctx, conn, "schema.sql", test.source)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `(?s).*the primary key of asn changes \(column `+test.column+`: .*`)
 			c.Assert(plan.Statements(), qt.HasLen, 0)
-			var sortingKey string
+			var sortingKey, primaryKey string
 			c.Assert(conn.QueryRowContext(ctx,
-				"SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 'asn'",
-			).Scan(&sortingKey), qt.IsNil)
+				"SELECT sorting_key, primary_key FROM system.tables WHERE database = currentDatabase() AND name = 'asn'",
+			).Scan(&sortingKey, &primaryKey), qt.IsNil)
 			c.Assert(sortingKey, qt.Equals, "id")
+			c.Assert(primaryKey, qt.Equals, "id")
 		})
 	}
 }

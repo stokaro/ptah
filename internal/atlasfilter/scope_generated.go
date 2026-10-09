@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/featureselect"
 )
 
 // projectGenerated applies the schema universe and include selectors to the
@@ -23,7 +24,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel
 	for _, table := range out.Tables {
 		keptTables[s.tableIdentity(table.Schema, table.Name)] = struct{}{}
 	}
-	out.FeatureObjects, out.FeatureCoverage = selectTableFeatures(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
+	out.FeatureObjects, out.FeatureCoverage = featureselect.Tables(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
 		return s.tableKept(keptTables, schema, table)
 	})
 
