@@ -1623,43 +1623,6 @@ func generateFieldName(columnName string) string {
 	return strings.Join(parts, "")
 }
 
-// clickHouseTableOverrides carries the ClickHouse engine facts a description
-// needs that have no field of their own on schemamodel.Table, and returns nil when
-// there are none.
-//
-// Only the sorting key is here so far. It reaches the renderer as the
-// `order_by` platform override, which is the same key a declaration writes, so
-// a read description and a hand-written one produce the same statement
-// (stokaro/ptah#1603).
-func clickHouseTableOverrides(dbTable catalog.Table) map[string]map[string]string {
-	// Every clause the engine spec resolves, under the key the renderer reads.
-	// An unknown override key becomes a node option under its upper-cased name,
-	// which is what resolveTableEngineSpec looks up.
-	//
-	// Carrying only the sorting key left every other clause to the renderer's
-	// defaults: a ReplacingMergeTree came back a MergeTree, and the partition
-	// key, the sampling key, the TTL and the settings came back absent
-	// (stokaro/ptah#2198).
-	overrides := make(map[string]string, 7)
-	for key, value := range map[string]string{
-		"engine":       dbTable.ClickHouseEngine,
-		"order_by":     dbTable.ClickHouseOrderBy,
-		"partition_by": dbTable.ClickHousePartitionKey,
-		"primary_key":  dbTable.ClickHousePrimaryKey,
-		"sample_by":    dbTable.ClickHouseSamplingKey,
-		"ttl":          dbTable.ClickHouseTTL,
-		"settings":     dbTable.ClickHouseSettings,
-	} {
-		if value != "" {
-			overrides[key] = value
-		}
-	}
-	if len(overrides) == 0 {
-		return nil
-	}
-	return map[string]map[string]string{"clickhouse": overrides}
-}
-
 // nullsNotDistinct reports whether a UNIQUE treats NULLs as equal.
 func nullsNotDistinct(constraint catalog.Constraint) bool {
 	return constraint.NullsDistinct != nil && !*constraint.NullsDistinct
@@ -1667,13 +1630,10 @@ func nullsNotDistinct(constraint catalog.Constraint) bool {
 
 // tableStorageOverrides preserves compression needed to replay MySQL index hints.
 func tableStorageOverrides(table catalog.Table) map[string]map[string]string {
-	overrides := clickHouseTableOverrides(table)
 	if !strings.EqualFold(table.RowFormat, "Compressed") {
-		return overrides
+		return nil
 	}
-	if overrides == nil {
-		overrides = make(map[string]map[string]string)
-	}
+	overrides := make(map[string]map[string]string)
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		overrides[dialect] = map[string]string{"row_format": "COMPRESSED"}
 	}

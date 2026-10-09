@@ -16,5 +16,6 @@ type Runtime interface {
 	schemapreparation.Runtime
 	schemaext.ReversalService
 	schemaprojection.ConstraintService
+	schemaprojection.TableCreationService
 	schemavalidation.Service
 }

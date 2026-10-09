@@ -49,7 +49,7 @@ func TestFeatureRendering_RefusesFacetsAtEveryCommonScope(t *testing.T) {
 		*slots[i] = selected
 
 		_, err := builtin.GetOrderedCreateStatementsWithCapabilities(isolated, "postgres", capability.Postgres18())
-		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(err, qt.ErrorIs, schemaext.ErrUnknownCodec)
 		files, err := goschematogo.Render(c.Context(), isolated, goschematogo.Options{SingleFile: true, Dialect: "postgres", Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		c.Assert(files, qt.IsNil)

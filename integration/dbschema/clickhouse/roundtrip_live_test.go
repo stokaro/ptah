@@ -11,8 +11,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -137,7 +139,11 @@ func readLive(c *qt.C, conn *dbschema.DatabaseConnection) *catalog.Database {
 func sortingKeyOf(live *catalog.Database, table string) string {
 	for _, candidate := range live.Tables {
 		if candidate.Name == table {
-			return candidate.ClickHouseSortingKey
+			value, _, err := schemaext.FacetAs[*chschema.ObservedTable](candidate.Facets, chschema.TableKind)
+			if err != nil || value == nil {
+				return ""
+			}
+			return value.OrderBy
 		}
 	}
 	return ""

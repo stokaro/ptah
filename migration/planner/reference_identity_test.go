@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
@@ -63,7 +64,7 @@ func TestGenerateSchemaDiffSQL_SQLiteRebuildUsesStructuralIdentity(t *testing.T)
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "tenant.data",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "obsolete"}},
-			Desired:        difftypes.TableDeclarationFor(declared, declared.Tables[1], identifier.ForDialect("sqlite")),
+			Desired:        schemacapture.DeclareTable(declared, declared.Tables[1], identifier.ForDialect("sqlite")),
 		}},
 	}
 

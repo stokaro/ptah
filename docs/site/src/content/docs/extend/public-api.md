@@ -48,7 +48,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
 | `core/schemapreparation` | Selected column-key and facet resolution with independent source and prepared captures. |
 | `core/schemaext` | Typed immutable feature values, positive source coverage, versioned codecs, and conservative operation effects. |
-| `core/schemaprojection` | Target-owned constraint effects and independent table-state predictions. |
+| `core/schemaprojection` | Target-owned CREATE defaults, constraint effects, and table-state predictions. |
 | `core/schemavalidation` | Whole-schema validation services with structured diagnostics and explicit completion. |
 | `engine` | Explicit provider registration, model codecs, and batched service dispatch. |
 | `engine/builtin` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
@@ -57,10 +57,11 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
-| `dialect/clickhouse/chprepare` | ClickHouse key membership for shared column comparison. |
+| `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chresolve` | Table-setting resolution with retained intent and property origins. |
 | `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
 | `dialect/clickhouse/chsource` | Table property encoding and decoding that preserves setting intent. |
+| `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
 | `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
@@ -143,6 +144,10 @@ Replies must set `Complete`. The migration comparator captures table facets and
 applies effective desired settings before capturing common table changes. Other
 attachment points currently refuse because they lack comparison identity capture.
 Adding a provider does not add coverage claims to an existing source.
+Comparison binds table coverage claims to the connection's identifier semantics
+before selecting parent state. The default database applies to unqualified table
+claims; explicit schemas and knowledge limits remain intact. Conflicting claims
+for the resulting identity are refused.
 
 Table selection preserves the selected tables' feature children and their source
 coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering
@@ -165,8 +170,9 @@ source context only. Metrics count captured values, so zero does not establish
 inspected absence. Statistics and DBML or JSON omission reports use these model
 services. Counts from YDB's owner include disabled changefeeds and their consumers.
 
-Every `schemadiff` entry point takes a context and a selected
-`schemapreparation.Runtime`. Non-reporting calls return no diff when evidence
+Every `schemadiff` entry point takes a context and a selected runtime. Catalog
+comparison uses `schemapreparation.Runtime`; `CompareSchemas` uses
+`schemadiff.DocumentRuntime` to include offline CREATE prediction. Non-reporting calls return no diff when evidence
 is incomplete; `ErrIncompleteComparison` identifies that refusal, and
 `IncompleteComparisonError` retains the structured diagnostics. Reporting calls
 return established changes, `Diagnostics`, and an error. Reports must retain
@@ -181,6 +187,16 @@ bindings, observations, and knowledge stay unchanged. Incomplete replies return
 no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
 captures as comparison provenance, including through reversal.
 
+`Target.Creations` selects `schemaprojection.TableCreationService` for source
+files used as current state. The service predicts CREATE defaults and column key
+membership from decoded declarations. Computed facets stay separate from source
+intent; they may describe defaults the author did not declare. The host validates
+ordered completeness, identities, column names, model ownership, and codecs.
+It retains source bindings, exclusions, and explicit knowledge limits. New kinds
+are bound to the selected target. Predictions prove no inspection or execution.
+Providers with no additional effects register `IdentityCreations` explicitly;
+a missing service is unavailable.
+
 Feature providers register their local model codecs through `Provider.Codecs`.
 `Runtime.Codecs` exposes context-aware batch encoding, decoding, and canonical
 fingerprints. A document records its provider, kind, representation, version,
@@ -194,9 +210,9 @@ optional values, and keeps sorting and primary keys separate. Register
 `chschema.Codecs()` with a provider to preserve these distinctions in envelopes.
 The bundled renderer and new-table migration planner consume programmatically
 supplied desired table facets, including reverse DROP plans. Mixing a typed facet
-with storage overrides is refused, including empty overrides. The reader and frontends do not yet produce
-typed settings; [#4140](https://github.com/stokaro/ptah/issues/4140) owns their
-integration.
+with storage overrides is refused, including empty overrides. The reader captures
+typed settings; source properties reach their selected owner before rendering or
+comparison.
 
 Register `chcompare.Service` in a selected provider's `FacetComparisons` to
 compare resolved table settings. `chdiff.Table` and its codec retain complete
@@ -226,17 +242,24 @@ cancellation return no partial result or new catalog knowledge.
 `chsource.Service` preserves ClickHouse intent through the table platform property
 format. Bare keys carry explicit values; a `.state` suffix with value `default`
 requests the creation rule. Register its definitions and service with a selected
-provider. The bundled runtime registers it for Go annotation export.
+provider. The bundled runtime uses it for source lowering and Go annotation export.
 
 `schemaproperties.DecodeTables` attaches decoded properties as facets bound to
 the selected target. Unclaimed keys and other target groups stay untouched.
 `EncodeTables` exports those facets through the same owner. Both refuse mixed
 typed/property declarations and duplicate alias keys. Export also refuses facets
 whose scope or presence the property format cannot preserve. Neither operation
-adds inspection coverage. Native Go export uses these operations; other Go/YAML
-consumers call `DecodeTables` after parsing. Automatic source lowering for schema
-rendering and comparison remains part of
-[#4140](https://github.com/stokaro/ptah/issues/4140).
+adds inspection coverage. Native Go export, whole-schema rendering, validation,
+and comparison decode source properties through the selected runtime. File-to-file
+comparison resolves the current document's creation rules before projecting it
+into catalog form. This prediction preserves explicit knowledge limits and proves
+no inspection or execution.
+
+The ClickHouse reader carries storage settings in `chschema.ObservedTable` facets.
+It preserves sorting and primary keys independently, including empty values.
+Coverage describes only tables retained in the read. `chreport.Service` supplies
+counts and omission labels for captured settings. Table-setting ALTER planning
+remains part of [#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.

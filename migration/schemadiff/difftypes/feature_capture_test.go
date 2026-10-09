@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -23,7 +24,7 @@ func TestTableCaptures_OwnedFeaturesKeepIdentityAndUnknownState(t *testing.T) {
 			return c.OwnedObjects, c.FeatureCoverage
 		}},
 		{name: "rebuild", capture: func(db *schemamodel.Database, table schemamodel.Table, semantics identifier.Semantics) (schemaext.Objects, schemaext.Coverage) {
-			c := difftypes.TableDeclarationFor(db, table, semantics)
+			c := schemacapture.DeclareTable(db, table, semantics)
 			return c.OwnedObjects, c.FeatureCoverage
 		}},
 	}

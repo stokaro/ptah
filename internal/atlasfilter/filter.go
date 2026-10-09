@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/tableref"
 )
 
@@ -101,7 +102,7 @@ func excludeDatabase(
 	// left, and that answer has to exist before the first object is judged.
 	filtered.Schemas = state.filterSchemas(filtered.Schemas)
 	filtered.Tables = state.filterTables(filtered.Tables)
-	filtered.FeatureObjects, filtered.FeatureCoverage = selectTableFeatures(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
+	filtered.FeatureObjects, filtered.FeatureCoverage = featureselect.Tables(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
 	})
 	state.excludeColumnSequences(schema.Tables)
@@ -218,7 +219,7 @@ func excludeGenerated(
 	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
 	state.excludeGeneratedColumnSequences(schema.Tables, schema.Fields)
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
-	filtered.FeatureObjects, filtered.FeatureCoverage = selectTableFeatures(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
+	filtered.FeatureObjects, filtered.FeatureCoverage = featureselect.Tables(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
 	})
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)

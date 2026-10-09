@@ -12,10 +12,14 @@ import (
 	"testing/fstest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/migration/importer"
@@ -102,7 +106,7 @@ func verify() error {
 		return err
 	}
 	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec()},
-		Targets: []engine.Target{{Name: "widget", Rendering: service{extensions: handlers}, Validation: service{}, SchemaRendering: service{}}}})
+		Targets: []engine.Target{{Name: "widget", Rendering: service{extensions: handlers}, Validation: service{}, SchemaRendering: service{}, Creations: service{}}}})
 	if err != nil {
 		return err
 	}
@@ -149,6 +153,9 @@ func verify() error {
 		return err
 	}
 	if err := verifyTargetScope(decoded); err != nil {
+		return err
+	}
+	if err := verifyCreationProjection(runtime); err != nil {
 		return err
 	}
 	if err := verifyImport(); err != nil {
@@ -424,4 +431,45 @@ func verifyFacetTargetScope(runtime *engine.Runtime, foreign schemaext.Facets) e
 	schema := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{Name: "local", Facets: decoded}}}
 	_, err = runtime.RenderSchema(ctx, renderer.SchemaRequest{Target: "custom+wire", Schema: schema})
 	return err
+}
+
+func (service) ProjectTableCreations(ctx context.Context, request schemaprojection.TableCreationRequest) (schemaprojection.TableCreationResult, error) {
+	result := schemaprojection.TableCreationResult{Complete: true}
+	for _, table := range request.Tables {
+		if err := ctx.Err(); err != nil {
+			return schemaprojection.TableCreationResult{}, err
+		}
+		values, err := schemaext.NewFacets(&widget{Name: table.Declaration.Table.Name, Levels: []string{"default"}})
+		if err != nil {
+			return schemaprojection.TableCreationResult{}, err
+		}
+		result.Tables = append(result.Tables, schemaprojection.TableCreation{Subject: table.Subject, Facets: values})
+	}
+	return result, nil
+}
+
+func verifyCreationProjection(runtime *engine.Runtime) error {
+	semantics := identifier.ForDialect("widget")
+	subject := objectidentity.NewBuilder(semantics).TableParts("", "sample")
+	request := schemaprojection.TableCreationRequest{Target: "widget", Identifiers: semantics,
+		Tables: []schemaprojection.TableCreationInput{{Subject: subject, Declaration: schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "sample"}}}},
+	}
+	result, err := runtime.ProjectTableCreations(context.Background(), request)
+	if err != nil {
+		return err
+	}
+	if !result.Complete || len(result.Tables) != 1 {
+		return fmt.Errorf("creation prediction did not complete")
+	}
+	value, found, err := schemaext.FacetAs[*widget](result.Tables[0].Facets, (&widget{}).Kind())
+	if err != nil {
+		return err
+	}
+	if !found || value.Name != "sample" || !slices.Equal(value.Levels, []string{"default"}) {
+		return fmt.Errorf("creation prediction lost provider defaults")
+	}
+	if !request.Tables[0].Declaration.Table.Facets.IsZero() {
+		return fmt.Errorf("creation prediction changed source intent")
+	}
+	return nil
 }

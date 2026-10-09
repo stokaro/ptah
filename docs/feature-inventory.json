@@ -808,6 +808,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-clickhouse-chreport",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chreport",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-clickhouse-chresolve",
       "kind": "public-package",
       "surface": "ptah.run/dialect/clickhouse/chresolve",

@@ -157,7 +157,7 @@ func TestTableDeclarationsOwnNestedSourceState(t *testing.T) {
 	field.GeneratedFromEmbedded = false
 	constraint.ForeignTable = ""
 	desired := &schemamodel.Database{Tables: []schemamodel.Table{table}, Fields: []schemamodel.Field{field}, Constraints: []schemamodel.Constraint{constraint}, Triggers: []schemamodel.Trigger{trigger}, Enums: []schemamodel.Enum{enum}}
-	declaration := difftypes.TableDeclarationFor(desired, table, identifier.ForDialect("postgres"))
+	declaration := schemacapture.DeclareTable(desired, table, identifier.ForDialect("postgres"))
 	creation := difftypes.TableCreationFor(desired, table, table.QualifiedName(), identifier.ForDialect("postgres"))
 	mutateSnapshot(reflect.ValueOf(&desired.Tables[0]).Elem())
 	mutateSnapshot(reflect.ValueOf(&desired.Fields[0]).Elem())

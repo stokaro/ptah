@@ -115,8 +115,8 @@ func TestSchemaDiffRefusesAServerVersionNamingNoServer(t *testing.T) {
 func TestSchemaDiffSaysWhenAVersionCouldNotRefine(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE t (a integer);\n")
-	toPath := writeSchemaSQLFile(c, dir, "to.sql", "CREATE TABLE t (a integer, b text);\n")
+	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE t (a integer PRIMARY KEY);\n")
+	toPath := writeSchemaSQLFile(c, dir, "to.sql", "CREATE TABLE t (a integer PRIMARY KEY, b text);\n")
 
 	// ClickHouse has a ladder now (one step, at 24.11), but 24.3 is not one of
 	// its measured lines, so the value is accepted and buys the arm below the

@@ -13,6 +13,8 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/engine"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -52,7 +54,7 @@ func reverseCoveragePlan(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamod
 		return json.Marshal(value.(*coverageChange).Number)
 	}
 	runtime, err := engine.New(engine.Provider{
-		ID: "example.org/reversal", Targets: []engine.Target{{Name: "postgres"}},
+		ID: "example.org/reversal", Targets: []engine.Target{{Name: "postgres", Preparation: schemapreparation.Identity{}, Creations: schemaprojection.IdentityCreations{}}},
 		Codecs: []schemaext.Codec{{Prototype: &coverageChange{}, Representation: schemaext.Change, Version: 1, Definition: json.RawMessage(`{"type":"integer"}`),
 			Clone: func(value schemaext.Payload) (schemaext.Payload, error) {
 				return value.(*coverageChange).CloneChange(), nil

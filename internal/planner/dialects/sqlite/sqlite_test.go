@@ -1053,7 +1053,7 @@ func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database
 			continue
 		}
 		if table, ok := declaredTableNamed(desired, tableDiff.TableName); ok {
-			completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, table, identifier.ForDialect("sqlite"))
+			completed.TablesModified[i].Desired = schemacapture.DeclareTable(desired, table, identifier.ForDialect("sqlite"))
 		}
 	}
 	if len(completed.DeclaredTables) == 0 {
@@ -1101,14 +1101,14 @@ func declaringTheOnlyTable(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 	completed.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
 	copy(completed.TablesModified, diff.TablesModified)
 	for i := range completed.TablesModified {
-		completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, desired.Tables[0], identifier.ForDialect("sqlite"))
+		completed.TablesModified[i].Desired = schemacapture.DeclareTable(desired, desired.Tables[0], identifier.ForDialect("sqlite"))
 	}
 	completed.DeclaredTables = desired.Tables
 	// The one table is the only host a constraint change here can name, and
 	// naming it by identity is the whole point of the fixtures that use this:
 	// the diff and the constraint spell the table differently on purpose.
 	completed.DeclaredConstraintHosts = []schemacapture.TableDeclaration{
-		difftypes.TableDeclarationFor(desired, desired.Tables[0], identifier.ForDialect("sqlite")),
+		schemacapture.DeclareTable(desired, desired.Tables[0], identifier.ForDialect("sqlite")),
 	}
 	return &completed
 }

@@ -4,6 +4,7 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
 )
 
@@ -12,6 +13,7 @@ import (
 // accept only the individual service they call. Both in-process runtimes and transport adapters can satisfy it.
 type SchemaRuntime interface {
 	schemapreparation.Runtime
+	schemaprojection.TableCreationService
 	featureplan.Runtime
 	renderer.Service
 	renderer.SchemaService

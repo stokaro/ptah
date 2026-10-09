@@ -725,7 +725,10 @@ func compareReplayedState(
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 	policy atlasschema.DiffPolicy,
-	selected schemadiff.DatabaseRuntime,
+	selected interface {
+		schemadiff.DatabaseRuntime
+		goschematodb.Runtime
+	},
 ) (*catalog.Database, *difftypes.SchemaDiff, error) {
 	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
 	if err != nil {

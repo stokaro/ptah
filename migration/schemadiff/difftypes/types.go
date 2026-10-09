@@ -3880,7 +3880,7 @@ func ConstraintHostDeclarationsOf(
 		if table == nil {
 			continue
 		}
-		declarations = append(declarations, TableDeclarationFor(db, *table, semantics))
+		declarations = append(declarations, schemacapture.DeclareTable(db, *table, semantics))
 	}
 	if len(declarations) == 0 {
 		return nil
@@ -4117,7 +4117,7 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 		}
 	}
 	creation.Fields = owned
-	creation.Enums = schemaprep.EnumsFor(owned, desired.Enums)
+	creation.Enums = schemacapture.EnumsFor(owned, desired.Enums)
 	for i := range creation.Enums {
 		creation.Enums[i] = creation.Enums[i].Clone()
 	}
@@ -4146,82 +4146,8 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 	// inside the CREATE, so they belong to the creation the way its columns do.
 	// SQLite is that target: it has no ADD CONSTRAINT at all, and read the
 	// declaration for them (stokaro/ptah#2315).
-	creation.Constraints = constraintsOfTable(desired.Constraints, table)
+	creation.Constraints = schemacapture.ConstraintsFor(desired.Constraints, table)
 	return creation
-}
-
-// constraintsOfTable selects the constraints one table owns.
-//
-// It is one function because two callers ask the same question --
-// [TableCreationFor] for what a CREATE renders inline and [TableDeclarationFor]
-// for what a rebuild must put back -- and a predicate written twice is a
-// predicate that agrees until one of them is extended.
-//
-// A constraint names its host in one of three ways: by the Go struct, by the
-// qualified table name, or by the bare one. The declaration leaves `Table`
-// empty whenever it matches the struct's own table, which is the ordinary case.
-func constraintsOfTable(constraints []schemamodel.Constraint, table schemamodel.Table) []schemamodel.Constraint {
-	qualified := table.QualifiedName()
-	owned := make([]schemamodel.Constraint, 0, len(constraints))
-	for _, constraint := range constraints {
-		if constraint.StructName == table.StructName ||
-			constraint.Table == qualified ||
-			constraint.Table == table.Name {
-			owned = append(owned, constraint.Clone())
-		}
-	}
-	return nilWhenEmpty(owned)
-}
-
-// TableDeclarationFor assembles what the declaration says about one table.
-//
-// The four lists are filtered the way each planner filtered them: columns by
-// the table's Go struct with embedded fields folded in, constraints by the
-// table they name, indexes by the table they name or the struct they were
-// declared on, and triggers by the table they fire on.
-func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table, semantics identifier.Semantics) schemacapture.TableDeclaration {
-	declaration := schemacapture.TableDeclaration{Table: table.Clone()}
-	if desired == nil {
-		return declaration
-	}
-	parent := objectidentity.NewBuilder(semantics).TableParts(table.Schema, table.Name)
-	declaration.OwnedObjects = desired.FeatureObjects.ForParent(parent)
-	declaration.FeatureCoverage = desired.FeatureCoverage.ForParent(parent)
-	qualified := table.QualifiedName()
-
-	all := schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
-	owned := make([]schemamodel.Field, 0, len(all))
-	for _, field := range all {
-		if field.StructName == table.StructName {
-			owned = append(owned, field.Clone())
-		}
-	}
-	declaration.Fields = nilWhenEmpty(owned)
-	declaration.Enums = schemaprep.EnumsFor(owned, desired.Enums)
-	for i := range declaration.Enums {
-		declaration.Enums[i] = declaration.Enums[i].Clone()
-	}
-
-	declaration.Constraints = nilWhenEmpty(constraintsOfTable(desired.Constraints, table))
-
-	indexes := make([]schemamodel.Index, 0, len(desired.Indexes))
-	for _, index := range desired.Indexes {
-		named := strings.TrimSpace(index.TableName)
-		if named == qualified || named == table.Name || (named == "" && index.StructName == table.StructName) {
-			indexes = append(indexes, index.Clone())
-		}
-	}
-	declaration.Indexes = nilWhenEmpty(indexes)
-
-	triggers := make([]schemamodel.Trigger, 0, len(desired.Triggers))
-	for _, trigger := range desired.Triggers {
-		if trigger.Table == qualified || trigger.Table == table.Name {
-			triggers = append(triggers, trigger.Clone())
-		}
-	}
-	declaration.Triggers = nilWhenEmpty(triggers)
-
-	return declaration
 }
 
 // TableCreationsFor assembles the creations for the named tables.

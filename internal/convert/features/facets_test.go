@@ -12,6 +12,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/engine"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -58,7 +60,7 @@ func facetRuntime(c *qt.C, service *facetService) *engine.Runtime {
 			Encode:     encode, Canonical: encode, Decode: func(data json.RawMessage) (schemaext.Payload, error) { return schemaext.DecodeJSON[*facetValue](data) },
 		})
 	}
-	runtime, err := engine.New(engine.Provider{ID: "example.org/facets", Targets: []engine.Target{{Name: "postgres"}}, Codecs: codecs,
+	runtime, err := engine.New(engine.Provider{ID: "example.org/facets", Targets: []engine.Target{{Name: "postgres", Preparation: schemapreparation.Identity{}, Creations: schemaprojection.IdentityCreations{}}}, Codecs: codecs,
 		Conversions: []engine.Conversion{{Target: "postgres", Kinds: []schemaext.Kind{facetKind}, Service: service}},
 	})
 	c.Assert(err, qt.IsNil)

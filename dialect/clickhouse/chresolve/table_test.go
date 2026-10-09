@@ -175,3 +175,25 @@ func TestMalformedCommonKeyCannotProducePreparedState(t *testing.T) {
 		c.Assert(result, qt.DeepEquals, chresolve.Result{})
 	}
 }
+
+func TestTargetEngineIntentOverridesTheCommonFallback(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		desired chschema.Setting
+		want    string
+	}{
+		{"unspecified", chschema.Setting{}, "Memory"},
+		{"explicit", chschema.Setting{State: chschema.Explicit, Value: "Log"}, "Log"},
+		{"default", chschema.Setting{State: chschema.Default}, "MergeTree"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := &chschema.DesiredTable{Engine: test.desired}
+			result, err := chresolve.Table(chresolve.Request{Desired: source, Creating: true, BaseEngine: "Memory", CommonKey: []string{"id"}})
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Prepared.Engine.Value, qt.Equals, test.want)
+			c.Assert(result.Declared.Engine, qt.DeepEquals, test.desired)
+			c.Assert(source.Engine, qt.DeepEquals, test.desired)
+		})
+	}
+}

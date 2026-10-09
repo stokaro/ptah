@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaproperties"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/crdbttl"
@@ -99,6 +100,10 @@ func compareReportingUndecidedAdditions(
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}
+		desired, err = schemaproperties.DecodeTables(ctx, desired, selected.Name(), runtime)
+		if err != nil {
+			return nil, Diagnostics{}, err
+		}
 		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
 		// A UNIQUE constraint is a unique index on YDB, which is what the
 		// reader reports for one a plan applied.
@@ -109,10 +114,12 @@ func compareReportingUndecidedAdditions(
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	identifierSemantics, err := comparisonIdentifiers(desired, database, opts)
+	identity, err := comparisonTableIdentities(desired, database, opts)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
+	desired, database = identity.desired, identity.current
+	identifierSemantics := identity.semantics
 	if opts.IdentifierSemantics != nil {
 		stored := identifierSemantics.Clone()
 		diff.IdentifierSemantics = &stored

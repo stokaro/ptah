@@ -29,6 +29,9 @@ table "orders" {
   column "id" {
     type = int
   }
+  primary_key {
+    columns = [column.id]
+  }
 }
 `
 

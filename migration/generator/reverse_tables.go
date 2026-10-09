@@ -188,7 +188,7 @@ func priorTableDeclaration(prior *schemamodel.Database, tableName string, semant
 	}
 	for _, table := range prior.Tables {
 		if table.Name == tableName || table.QualifiedName() == tableName {
-			return difftypes.TableDeclarationFor(prior, table, semantics)
+			return schemacapture.DeclareTable(prior, table, semantics)
 		}
 	}
 	return schemacapture.TableDeclaration{}

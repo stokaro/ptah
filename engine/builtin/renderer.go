@@ -54,6 +54,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/engine/builtin/internal/dialects/mariadb"
 	"ptah.run/engine/builtin/internal/dialects/mssql"
@@ -2179,7 +2180,17 @@ func ValidateSchemaWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) error {
-	return validateSchemaWithCapabilities(context.Background(), r, dialect, caps)
+	runtime, err := New()
+	if err != nil {
+		return err
+	}
+	result, err := runtime.ValidateSchema(context.Background(), schemavalidation.Request{
+		Target: renderTarget(dialect), Schema: r, Capabilities: caps,
+	})
+	if err != nil {
+		return err
+	}
+	return result.Err(renderTarget(dialect))
 }
 
 func validateSchemaWithCapabilities(ctx context.Context, r *schemamodel.Database, dialect string, caps capability.Capabilities) error {
@@ -2265,9 +2276,8 @@ func GetOrderedCreateStatementsWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) ([]string, error) {
-	// A nil sink drops what it is given, so the reporting variant and this one
-	// are the same render rather than two that can drift apart.
-	return orderedCreateStatements(context.Background(), r, dialect, caps, nil)
+	statements, _, err := GetOrderedCreateStatementsReportingOmissions(r, dialect, caps)
+	return statements, err
 }
 
 func orderedCreateStatements(

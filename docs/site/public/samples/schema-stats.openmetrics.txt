@@ -88,6 +88,9 @@ ptah_schema_external_columns{dialect="sqlite"} 0
 # HELP ptah_schema_streaming_queries Streaming queries.
 # TYPE ptah_schema_streaming_queries gauge
 ptah_schema_streaming_queries{dialect="sqlite"} 0
+# HELP ptah_schema_clickhouse_table_settings Tables with captured ClickHouse storage settings.
+# TYPE ptah_schema_clickhouse_table_settings gauge
+ptah_schema_clickhouse_table_settings{dialect="sqlite"} 0
 # HELP ptah_schema_changefeeds Table changefeeds.
 # TYPE ptah_schema_changefeeds gauge
 ptah_schema_changefeeds{dialect="sqlite"} 0

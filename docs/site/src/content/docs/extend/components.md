@@ -370,7 +370,11 @@ Offline target-aware comparison requires `schemadiff.TargetRuntime`, including
 its selected validation service. Live comparison requires
 `schemadiff.DatabaseRuntime`, adding selected AST rendering for normalization
 probes. Completed rendering refusals leave normalization unresolved; service
-failures abort comparison. Pure comparison accepts `schemapreparation.Runtime`.
+failures abort comparison. Pure catalog comparison accepts
+`schemapreparation.Runtime`. Comparing source documents requires
+`schemadiff.DocumentRuntime`, which also predicts the current document's CREATE
+result through the selected provider. This prediction preserves explicit source
+knowledge limits and establishes no live inspection.
 Validation sends the whole captured schema with target facts in one call.
 
 `runtime.ResolveTarget(name)` returns an immutable `schemaext.TargetSelection`.

@@ -8,7 +8,9 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/core/schemaprojection"
 	"ptah.run/dialect/clickhouse/chprepare"
+	"ptah.run/dialect/clickhouse/chschema"
 )
 
 // ExampleService_PrepareTables preserves authored fields while resolving the
@@ -31,4 +33,32 @@ func ExampleService_PrepareTables() {
 	// Output:
 	// source column flag: false
 	// prepared column flag: true
+}
+
+// ExampleService_ProjectTableCreations predicts storage defaults for a table
+// without platform properties while keeping the declaration unchanged.
+func ExampleService_ProjectTableCreations() {
+	request := schemaprojection.TableCreationRequest{Target: "clickhouse", Tables: []schemaprojection.TableCreationInput{{
+		Declaration: schemacapture.TableDeclaration{
+			Table:  schemamodel.Table{Name: "events"},
+			Fields: []schemamodel.Field{{Name: "id", Type: "UInt64", Primary: true}},
+		},
+	}}}
+	result, err := (chprepare.Service{}).ProjectTableCreations(context.Background(), request)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	settings, _, err := schemaext.FacetAs[*chschema.DesiredTable](result.Tables[0].Facets, chschema.TableKind)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("predicted engine:", settings.Engine.Value)
+	fmt.Println("predicted key:", result.Tables[0].ColumnPrimaryKeys)
+	fmt.Println("source facets:", request.Tables[0].Declaration.Table.Facets.Len())
+	// Output:
+	// predicted engine: MergeTree
+	// predicted key: [id]
+	// source facets: 0
 }

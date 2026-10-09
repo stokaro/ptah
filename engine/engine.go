@@ -69,6 +69,9 @@ type Target struct {
 	Validation schemavalidation.Service
 	// Preparation normalizes captured tables before comparison. Nil is unavailable.
 	Preparation schemapreparation.Service
+	// Creations predicts table defaults and key membership for source documents.
+	// Nil leaves this offline operation unavailable.
+	Creations schemaprojection.TableCreationService
 	// Constraints predicts constraint-owned index and column effects. Nil
 	// explicitly leaves that prediction unavailable for this target.
 	Constraints schemaprojection.ConstraintService
@@ -105,6 +108,7 @@ type target struct {
 	schemaRendering renderer.SchemaService
 	validation      schemavalidation.Service
 	preparation     schemapreparation.Service
+	creations       schemaprojection.TableCreationService
 	constraints     schemaprojection.ConstraintService
 }
 
@@ -216,6 +220,9 @@ func (r *Runtime) register(owner string, declared Target) error {
 	if declared.Preparation != nil && nilService(declared.Preparation) {
 		return fmt.Errorf("%w: target %q has a typed-nil preparation service", ErrInvalidRegistration, declared.Name)
 	}
+	if declared.Creations != nil && nilService(declared.Creations) {
+		return fmt.Errorf("%w: target %q has a typed-nil creation projection service", ErrInvalidRegistration, declared.Name)
+	}
 	if declared.Constraints != nil && nilService(declared.Constraints) {
 		return fmt.Errorf("%w: target %q has a typed-nil constraint projection service", ErrInvalidRegistration, declared.Name)
 	}
@@ -228,7 +235,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 			owner: owner, name: declared.Name, selection: selection,
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation,
-			constraints: declared.Constraints,
+			constraints: declared.Constraints, creations: declared.Creations,
 		}
 	}
 	return nil

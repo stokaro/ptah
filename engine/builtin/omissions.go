@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
@@ -35,12 +34,17 @@ func GetOrderedCreateStatementsReportingOmissions(
 	dialect string,
 	caps capability.Capabilities,
 ) ([]string, []renderer.Omission, error) {
-	sink := &renderdiag.Sink{}
-	statements, err := orderedCreateStatements(context.Background(), r, dialect, caps, sink)
+	runtime, err := New()
 	if err != nil {
 		return nil, nil, err
 	}
-	return statements, publicOmissions(platform.NormalizeDialect(dialect), sink), nil
+	result, err := runtime.RenderSchema(context.Background(), renderer.SchemaRequest{
+		Target: renderTarget(dialect), Schema: r, Capabilities: caps,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return result.Statements, result.Omissions, nil
 }
 
 // RenderSQLReportingOmissions renders nodes the way

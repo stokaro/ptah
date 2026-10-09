@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/chtype"
@@ -150,7 +151,7 @@ func tableColumnsWithSemantics(
 		TableName: genTable.QualifiedName(),
 		// Everything the declaration says about this table, for the rebuild a
 		// dialect reaches for when ALTER TABLE cannot express the change.
-		Desired: difftypes.TableDeclarationFor(desired, genTable, semantics),
+		Desired: schemacapture.DeclareTable(desired, genTable, semantics),
 	}
 
 	// Create maps for quick lookup

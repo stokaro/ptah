@@ -35,17 +35,15 @@ func projectColumns(ctx context.Context, table difftypes.TableDiff, dialect stri
 	for _, change := range table.ColumnsModified {
 		fields = append(fields, change.Desired)
 	}
-	converted, err := goschematodb.ToDBSchema(ctx, &schemamodel.Database{
-		Tables: []schemamodel.Table{shape}, Fields: fields, Enums: table.Desired.Enums,
-	}, dialect, runtime)
+	converted, err := goschematodb.Columns(ctx, shape, fields, dialect, runtime)
 	if err != nil {
 		return nil, err
 	}
-	if len(converted.Tables) != 1 || len(converted.Tables[0].Columns) != len(fields) {
+	if len(converted) != len(fields) {
 		return nil, fmt.Errorf("cannot project incomplete columns of %q", table.TableName)
 	}
 	definitions := make(map[string]catalog.Column, len(fields))
-	for _, column := range converted.Tables[0].Columns {
+	for _, column := range converted {
 		key := semantics.ColumnIdentityKey(column.Name)
 		if _, duplicate := definitions[key]; duplicate {
 			return nil, fmt.Errorf("duplicate projected column %q", column.Name)

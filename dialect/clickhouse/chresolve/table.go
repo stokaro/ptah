@@ -50,6 +50,9 @@ type Request struct {
 	Current   *chschema.ObservedTable
 	Creating  bool
 	CommonKey []string
+	// BaseEngine is the common table engine declaration. Target-specific engine
+	// intent takes precedence; an unspecified engine retains this declaration.
+	BaseEngine string
 }
 
 // Result keeps authored intent separate from fully explicit prepared intent.
@@ -89,8 +92,12 @@ func Table(request Request) (Result, error) {
 	}
 	result := Result{Declared: *request.Desired}
 	p, o := &result.Prepared, &result.Origins
+	engine := request.Desired.Engine
+	if engine.State == chschema.Unspecified && request.BaseEngine != "" {
+		engine = chschema.Setting{State: chschema.Explicit, Value: request.BaseEngine}
+	}
 	properties := []property{
-		{"engine", request.Desired.Engine, current.Engine, "MergeTree", &p.Engine, &o.Engine},
+		{"engine", engine, current.Engine, "MergeTree", &p.Engine, &o.Engine},
 		{"order_by", request.Desired.OrderBy, current.OrderBy, "", &p.OrderBy, &o.OrderBy},
 		{"primary_key", request.Desired.PrimaryKey, current.PrimaryKey, "", &p.PrimaryKey, &o.PrimaryKey},
 		{"partition_by", request.Desired.PartitionBy, current.PartitionBy, "", &p.PartitionBy, &o.PartitionBy},

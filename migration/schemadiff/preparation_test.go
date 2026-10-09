@@ -10,9 +10,12 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
@@ -40,6 +43,7 @@ func TestClickHousePreparationKeepsTableKeysIndependent(t *testing.T) {
 			{Name: "ts", DataType: "DateTime", ColumnType: "DateTime", IsNullable: "NO", IsPrimaryKey: true},
 		}},
 	}}
+	observePreparationTables(c, current, map[string]string{"first": "id", "second": "ts"})
 	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "clickhouse", must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
@@ -110,6 +114,7 @@ func TestClickHousePreparationRetainsPlanningDeclarations(t *testing.T) {
 	current := &catalog.Database{Tables: []catalog.Table{{Name: "existing", Columns: []catalog.Column{
 		{Name: "id", DataType: "UInt64", ColumnType: "UInt64", IsNullable: "NO", IsPrimaryKey: true},
 	}}}}
+	observePreparationTables(c, current, map[string]string{"existing": "id, ts"})
 	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "clickhouse", must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
@@ -123,4 +128,23 @@ func TestClickHousePreparationRetainsPlanningDeclarations(t *testing.T) {
 	c.Assert(modified.Desired.Fields, qt.DeepEquals, desired.Fields)
 	c.Assert(diff.TablePreparation.Prepared[0].Desired.Fields[1].Primary, qt.IsTrue)
 	c.Assert(diff.TablePreparation.Prepared[1].CurrentKnowledge.State, qt.Equals, schemaext.Absent)
+}
+
+func observePreparationTables(c *qt.C, db *catalog.Database, keys map[string]string) {
+	c.Helper()
+	c.Assert(keys, qt.HasLen, len(db.Tables))
+	runtime := must.Must(builtin.New())
+	identities := objectidentity.NewBuilder(identifier.ForDialect("clickhouse"))
+	var subjects []schemaext.SubjectCoverage
+	for i, table := range db.Tables {
+		key, found := keys[table.Name]
+		c.Assert(found, qt.IsTrue)
+		db.Tables[i].Facets = must.Must(schemaext.NewFacets(&chschema.ObservedTable{Engine: "MergeTree", OrderBy: key, PrimaryKey: key}))
+		subjects = append(subjects, schemaext.SubjectCoverage{Kind: chschema.TableKind, Subject: identities.TableParts(db.Tables[i].Schema, db.Tables[i].Name), Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+	}
+	for _, model := range runtime.Codecs().Definitions() {
+		if model.Kind == chschema.TableKind && model.Representation == schemaext.Observed {
+			db.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, subjects))
+		}
+	}
 }

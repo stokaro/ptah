@@ -90,7 +90,7 @@ func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T)
 	c := qt.New(t)
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "E", Name: "events"}},
-		Fields: []schemamodel.Field{{StructName: "E", Name: "payload", Type: "String"}},
+		Fields: []schemamodel.Field{{StructName: "E", Name: "payload", Type: "String", Primary: true}},
 		Indexes: []schemamodel.Index{
 			{
 				StructName:  "E",
