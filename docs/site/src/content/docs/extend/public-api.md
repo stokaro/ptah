@@ -141,8 +141,9 @@ identities. Process adapters transfer diagnostic data instead of Go errors.
 plans standalone creation from desired and operation codecs. Each object and
 operation is accounted for; refusals retain diagnostics indexed to input objects.
 Contributions join the common creation graph. `atlascompat.SchemaToAST` requires
-context, declaration runtime, schema, target, and capabilities. It shares these
-checks with whole-schema rendering and returns no partial AST list.
+context, a lowering runtime, schema, target, and capabilities. It decodes source
+properties and shares these checks with whole-schema rendering, and returns no
+partial AST list.
 
 `Request.CommonSteps` supplies isolated accepted operations; `Result.Rewrites`
 claims their replacements. `plangraph.ScheduleRewritten` validates claims,

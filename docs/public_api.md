@@ -101,13 +101,17 @@ conformance tooling. It intentionally wraps parser, HCL schema,
 conversion, and migration sum internals without making those implementation
 packages importable directly.
 
-`atlascompat.SchemaToAST` takes caller context, a selected declaration runtime,
-the desired schema, target, and capabilities. It returns a statement list and an error. Invalid
-identities and feature state without an AST lowering path return a nil list.
-Table facets and named feature children remain attached to their table. Facet
-values and target bindings reach the selected renderer unchanged; lowering
-does not establish that the renderer supports them. Other facet placements are
-refused. Standalone objects use the selected declaration owners and join the
+`atlascompat.SchemaToAST` takes caller context, a selected `LoweringRuntime`,
+the desired schema, target, and capabilities. The runtime supplies declaration
+planning and the target's source-property owners: the schema's table and index
+properties are decoded into owner facets before lowering, as rendering and
+comparison decode them. It returns a statement list and an error.
+
+Invalid identities and feature state without an AST lowering path return a nil
+list. Table facets and named feature children remain attached to their table,
+and index facets to their index node. Facet values and target bindings reach
+the selected renderer unchanged; lowering does not establish that the renderer
+supports them. Other facet placements are refused. Standalone objects use the selected declaration owners and join the
 common creation graph. Missing owners, incomplete receipts, graph conflicts,
 and cancellation return no statement list.
 Coverage records describe source knowledge and never authorize destructive SQL.
@@ -628,7 +632,11 @@ unsigned 64-bit index granularity. Its explicit codec and `chrender` handler
 work without the bundled runtime. Use the same ALTER envelope and parent as TTL
 operations. An empty type selects `minmax`; zero granularity selects `1`.
 `DeclaredFacets` returns the operation's settings as a `chschema.DesiredIndex`
-facet bound to the clickhouse target; zero granularity stays unmanaged there.
+facet bound to the clickhouse target. Zero granularity is a SQL statement that
+left `GRANULARITY` out, which ClickHouse defines as one granule, so it requests
+the default. `SkippingIndexExpression` joins key parts the way ADD INDEX takes
+them: several parts, or one part that is a top-level comma list as the catalog
+reports a tuple key, become one tuple.
 
 `chast.DropSkippingIndex` removes an index by name, and its effect reports the
 loss of index data built for existing parts. Other targets refuse both
@@ -690,8 +698,13 @@ does not replace a catalog read.
 selected target and format. A `PropertySource` must own the desired model codec
 for each kind, and two definitions cannot claim the same key in that format.
 `PropertyDefinitions` returns independent copies for a frontend to group input
-without knowing the feature's Go type. `PropertyFormats` distinguishes a selected
-target without property services from an unknown target.
+without knowing the feature's Go type. A definition's `Absorbs` names the
+common attributes it takes over, each into one of its keys; registration refuses
+an attribute of another format, a key the definition does not own, and a second
+owner of one attribute on a target and format. `schemaext.IndexTypeAttribute`,
+the common index type, is the one attribute defined. `PropertyFormats`
+distinguishes a selected target without property services from an unknown
+target.
 
 `DecodeProperties` and `EncodeProperties` preserve ordered batches and explicit
 empty values. Every input is validated before dispatch. Replies must preserve
@@ -720,11 +733,12 @@ preserve complete directional operands, including unsigned 64-bit granularity;
 its effect is behavioral because applying it replaces the index.
 
 `chplan.IndexService` plans a settings change as `chast.DropSkippingIndex`
-followed by `chast.AddSkippingIndex` with the captured key expression and the
+followed by `chast.AddSkippingIndex` with the declared key expression and the
 desired settings, outside a transaction. Both operands must agree with the
-captured index on both table sides. The pair is ordered around common changes
-to columns the expression reads; removing such a column is refused. When the
-host's common steps drop and create the same index, the service contributes no
+captured index on both table sides. The removal is ordered before common
+changes to columns the captured expression reads, and the addition after
+changes to columns the declared expression reads; removing a column the
+declared expression reads is refused. When the host's common steps drop and create the same index, the service contributes no
 steps and accounts for the change through that replacement. Parent receipts
 cover every table action: a surviving table keeps its settings unless a change
 or a common replacement covers the difference, a dropped table loses them, and
@@ -740,11 +754,15 @@ facets bound to the selected target. It consumes only claimed keys; other keys
 and target groups remain in `Overrides`. `EncodeTables` writes table facets as
 properties for that target. `DecodeIndexes` and `EncodeIndexes` apply these
 rules to index owners. Index decoding consumes the common `Type` declaration
-only when the selected property definition claims `type`, and it refuses an
-index property of the selected target that no owner claims, because nothing
-else reads index properties. Export writes owned settings to scoped properties. These operations refuse duplicate alias keys and
-mixed typed and property declarations, even when a property's value is empty.
-They copy the selected owners and leave other schema data shared and read-only.
+only when a selected definition absorbs `schemaext.IndexTypeAttribute`, and it
+refuses an index property of the selected target that no owner claims, because
+nothing else reads index properties. `Decode` applies the table and then the
+index rules. Export writes owned settings to scoped properties.
+
+These operations refuse duplicate alias keys and mixed typed and property
+declarations, even when a property's value is empty. They copy the selected owners and leave other
+schema data shared and read-only; a schema holding nothing to decode or export
+is returned as it is, so callers treat every result as read-only.
 They establish no inspection coverage and do not resolve omitted settings.
 
 `dialect/cockroachdb/crdbschema` owns CockroachDB row-level TTL as a table
@@ -806,8 +824,9 @@ complete only for tables retained in that read. Each skipping index carries a
 `chschema.ObservedIndex` with the full type and unsigned granularity from
 `system.data_skipping_indices`; the key expression stays in the common
 columns. Index coverage is complete for the database when that catalog table
-exists and unknown otherwise. `chreport.Service` supplies the
-storage-settings count and omission label for formats that cannot retain facets.
+exists and unknown otherwise. On a server without the `type_full` column, each
+index is read without a facet and its settings are reported unrepresentable.
+`chreport.Service` supplies the storage-settings count and omission label for formats that cannot retain facets.
 Planning changes to storage settings other than TTL remains part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
