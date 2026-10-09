@@ -399,7 +399,9 @@ v0.12.0 ptah.run/core/platform/capability
 # preserving local input-node provenance through BatchRefusalError.
 v0.13.0 ptah.run/core/renderer
 
-# #4140 moves YDB changefeed operations out of core/ast into dialect/ydb/ydbast.
+# #4140 puts changefeed operations in dialect/ydb/ydbast and TTL operations in
+# dialect/clickhouse/chast. ModifyTTLOperation is removed; callers supply the
+# complete before/after storage operands required by chast.AlterTTL.
 # Callers wrap the owner payload in ExtensionAlterOperation. The common ALTER
 # interface remains sealed. This changes the Go API; pre-v1, so no compatibility
 # is owed. No aliases or legacy reader remain. The implementation follows the

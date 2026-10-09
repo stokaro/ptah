@@ -541,6 +541,9 @@ unknown and prevent planning.
 
 `chast.AlterTTL` carries both complete storage operands. Its codec and
 `chrender` handlers refuse changes to other settings inside a TTL operation.
+Use it inside `ast.ExtensionAlterOperation` with an `ast.AlterTableNode` parent.
+An empty desired TTL removes the rule; whitespace-only rules are invalid.
+Non-owning targets refuse the payload without returning partial SQL.
 The planner contributes explicit object effects and requires execution outside
 a transaction. Its result must join the host's complete graph before execution.
 Engine, key, partitioning, sampling, and table-setting changes remain refused.

@@ -283,9 +283,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		"ModifyColumnOperation": func() ast.Node {
 			return &ast.ModifyColumnOperation{Column: ast.NewColumn("c", "INTEGER")}
 		},
-		"ModifyTTLOperation": func() ast.Node {
-			return &ast.ModifyTTLOperation{Expression: "d + INTERVAL 1 DAY"}
-		},
 		"RenameColumnOperation": func() ast.Node {
 			return &ast.RenameColumnOperation{OldName: "a", NewName: "b"}
 		},

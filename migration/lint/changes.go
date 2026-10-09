@@ -409,8 +409,6 @@ func alterOperationChange(alter *ast.AlterTableNode, op ast.AlterOperation) (Sch
 		return SchemaChangeRename, o.OldName
 	case *ast.AddSkippingIndexOperation:
 		return SchemaChangeAdd, o.Name
-	case *ast.ModifyTTLOperation:
-		return SchemaChangeModify, alter.Name
 	default:
 		// Any other ALTER TABLE action still mutates the table.
 		return SchemaChangeModify, alter.Name

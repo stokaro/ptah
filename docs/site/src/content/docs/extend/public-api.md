@@ -234,16 +234,18 @@ before and after operands. Missing evidence needed for declared settings produce
 an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
 limits remain visible. The bundled runtime registers these services.
 
-`chplan.Service` plans MergeTree TTL changes and assesses common column
-operations against captured storage. It orders required column additions before
-the TTL change and dependent removals after it. Unknown observations and
-modifications to columns used by retained storage rules are refused.
+`chplan.Service` plans MergeTree TTL changes from captured storage, ordering
+required column additions before the rule change and dependent removals after
+it. Unknown observations and changes to columns used by retained storage are
+refused.
 `chast.AlterTTL` has explicit codecs and `chrender` handlers; it requires
 execution outside a transaction. Other storage-setting changes remain refused.
+Wrap it in `ast.ExtensionAlterOperation` under an `ast.AlterTableNode`.
+An empty desired TTL removes the rule; whitespace-only rules are invalid.
+Non-owning targets refuse the payload without partial SQL.
 
-`chreverse.Service` restores the captured TTL definition and reports data that
-the reverse cannot recover. Its forward-state projection feeds reverse planning
-without establishing new inspection evidence.
+`chreverse.Service` restores the captured TTL definition and reports data loss.
+Its state projection feeds reverse planning without claiming new inspection.
 
 `chresolve.Table` retains the declaration, resolved settings, and each property's
 origin. Omitted creation settings use defaults; a default primary key inherits
