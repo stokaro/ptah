@@ -7,7 +7,6 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbstream"
 )
 
 func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
@@ -26,12 +25,13 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	case *ast.CreateSecretNode:
 		ref, _ := tableref.Parse(node.Name)
 		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})
-	case *ydbstream.Node:
-		return true, appendStreamingQuery(database, document.base, node)
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
 	case *ast.ExtensionStatement:
+		if value, ok := node.Payload.(*ydbast.StreamingQuery); ok {
+			return true, appendStreamingQuery(database, document.base, value)
+		}
 		value, ok := node.Payload.(*ydbast.CoordinationNode)
 		if !ok || value == nil || value.Change.Before != nil || value.Change.After == nil {
 			return false, nil

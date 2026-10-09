@@ -4,19 +4,17 @@ import (
 	"fmt"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbstream"
+	"ptah.run/dialect/ydb/ydbast"
 )
 
-func appendStreamingQuery(database, base *schemamodel.Database, node *ydbstream.Node) error {
-	if node.Operation != ydbstream.CreateOperation {
+func appendStreamingQuery(database, base *schemamodel.Database, node *ydbast.StreamingQuery) error {
+	if err := node.Validate(); err != nil {
+		return err
+	}
+	if node.Operation != ydbast.StreamingCreate {
 		return fmt.Errorf("%w: only CREATE declares a streaming query", ErrUnmodeledStatement)
 	}
-	ref, ok := tableref.Parse(node.Name)
-	if !ok {
-		return fmt.Errorf("invalid streaming query path %q", node.Name)
-	}
-	query := schemamodel.StreamingQuery{Name: ref.Name, Schema: ref.Schema, Spec: node.Spec.Clone(), AllowStateReset: node.Creation.ReplacesExisting()}
+	query := schemamodel.StreamingQuery{Name: node.Name, Schema: node.Schema, Spec: node.Spec.Clone(), AllowStateReset: node.Creation.OrReplace && !node.Creation.IfNotExists}
 	for _, source := range []*schemamodel.Database{database, base} {
 		if source == nil {
 			continue
@@ -33,7 +31,7 @@ func appendStreamingQuery(database, base *schemamodel.Database, node *ydbstream.
 				*held = query
 				return nil
 			default:
-				return fmt.Errorf("streaming query %q is declared twice", node.Name)
+				return fmt.Errorf("streaming query %q is declared twice", node.QualifiedName())
 			}
 		}
 	}

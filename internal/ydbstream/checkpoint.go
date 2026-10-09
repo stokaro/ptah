@@ -2,6 +2,12 @@ package ydbstream
 
 import "slices"
 
+// ExecutionChange explains the risk of changing continuous execution settings.
+const ExecutionChange = "ALTER STREAMING QUERY changes continuous query execution"
+
+// CheckpointLoss explains why declaration rollback cannot recover query state.
+const CheckpointLoss = "the operation removes or resets streaming-query checkpoint state; a rollback restores the declaration, not the discarded state"
+
 // LosesCheckpoint identifies SQL operations that discard streaming-query state.
 // Safety assessment and migration lint must recognize the same operations.
 // Words are uppercase SQL tokens with comments and literals excluded.

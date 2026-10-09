@@ -8,7 +8,6 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
-	"ptah.run/internal/ydbstream"
 )
 
 // defaultPrivilegeReason is why YDB refuses a default privilege.
@@ -183,9 +182,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
 		return r.renderSecretNode(node)
 
-	case *ydbstream.Node:
-		return r.renderStreamingQuery(n)
-
 	// External data sources and external tables, which hold no data in YDB.
 	case *ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode,
 		*ast.DropExternalDataSourceNode, *ast.DropExternalTableNode:
@@ -345,15 +341,6 @@ func (r *Renderer) renderResourcePoolNode(node ast.Node) error {
 		return fmt.Errorf("%w: %s: %T is not a resource pool or classifier node",
 			ptaherr.ErrInvalidSchemaDiff, DialectName, node)
 	}
-}
-
-func (r *Renderer) renderStreamingQuery(node *ydbstream.Node) error {
-	statement, err := node.Statement(r.caps)
-	if err != nil {
-		return err
-	}
-	r.w.WriteLine(statement)
-	return nil
 }
 
 func (r *Renderer) renderTableStatement(node ast.Node) error {

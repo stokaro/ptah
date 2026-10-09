@@ -13,8 +13,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/modelast"
-	"ptah.run/internal/ydbstream"
 )
 
 // routedKind is one declared object kind, the AST node the converter must
@@ -32,7 +32,7 @@ type routedKind struct {
 }
 
 var routedKinds = []routedKind{
-	{name: "streaming query", want: 1, count: countNodes[*ydbstream.Node]},
+	{name: "streaming query", want: 1, count: countStreamingQueries},
 	{name: "sequence", want: 1, count: countNodes[*ast.CreateSequenceNode]},
 	{name: "user type", want: 3, count: countNodes[*ast.CreateTypeNode]},
 	{name: "role", want: 1, count: countNodes[*ast.CreateRoleNode]},
@@ -293,4 +293,16 @@ func declaredCollectionNames(database schemamodel.Database) []string {
 		names = append(names, value.Type().Field(i).Name)
 	}
 	return names
+}
+
+func countStreamingQueries(statements []ast.Node) int {
+	found := 0
+	for _, statement := range statements {
+		if envelope, ok := statement.(*ast.ExtensionStatement); ok {
+			if _, matches := envelope.Payload.(*ydbast.StreamingQuery); matches {
+				found++
+			}
+		}
+	}
+	return found
 }

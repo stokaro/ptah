@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chrender"
@@ -63,8 +64,14 @@ func coordinationFixture() extensionFixture {
 	return extensionFixture{payload: &ydbast.CoordinationNode{Schema: "app", Name: "locks", Change: ydbdiff.CoordinationNode{After: &ydbcoordination.Desired{}}}, wantSQL: "CREATE COORDINATION NODE `app/locks`;\n"}
 }
 
+func streamingFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Schema: "jobs.daily", Name: "copy.events",
+		Spec: ast.StreamingQuerySpec{Text: "SELECT 1;", Run: new(false)}},
+		wantSQL: "CREATE STREAMING QUERY `jobs.daily/copy.events` WITH (RUN = FALSE, RESOURCE_POOL = `default`) AS DO BEGIN\nSELECT 1;\nEND DO;\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), coordinationFixture(), streamingFixture())
 }
 
 // The source inventory is independent of both owner registration and fixtures.
@@ -235,4 +242,28 @@ func mustClickHouseRenderer(c *qt.C) renderer.RenderVisitor {
 	r, err := builtin.NewRenderer("clickhouse")
 	c.Assert(err, qt.IsNil)
 	return r
+}
+
+func TestStreamingExtensionRendersAfterSelectedCodecRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	fixture := streamingFixture()
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	data, err := runtime.Codecs().Marshal(c.Context(), schemaext.Operation, []schemaext.Payload{fixture.payload})
+	c.Assert(err, qt.IsNil)
+	values, err := runtime.Codecs().Unmarshal(c.Context(), data)
+	c.Assert(err, qt.IsNil)
+	node := &ast.ExtensionStatement{Payload: values[0].(ast.ExtensionPayload)}
+	caps := capability.YDB262().With(capability.StreamingQueries, true)
+	visitor, err := builtin.NewRendererWithCapabilities("ydb", caps)
+	c.Assert(err, qt.IsNil)
+	visited, err := visitor.Render(node)
+	c.Assert(err, qt.IsNil)
+	c.Assert(visited, qt.Equals, fixture.wantSQL)
+	rendered, err := builtin.RenderSQLWithCapabilities("ydb", caps, node)
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered, qt.Equals, fixture.wantSQL)
+	result, err := runtime.Render(c.Context(), renderer.Request{Target: "ydb", Capabilities: caps, Nodes: []ast.Node{node}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Fragments, qt.DeepEquals, []string{fixture.wantSQL})
 }

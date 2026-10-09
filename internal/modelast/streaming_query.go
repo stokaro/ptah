@@ -1,11 +1,13 @@
 package modelast
 
 import (
+	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbstream"
+	"ptah.run/dialect/ydb/ydbast"
 )
 
 // FromStreamingQuery lowers a declaration to an independent create statement.
-func FromStreamingQuery(query schemamodel.StreamingQuery) *ydbstream.Node {
-	return &ydbstream.Node{Operation: ydbstream.CreateOperation, Name: query.QualifiedName(), Spec: query.Spec.Clone(), Creation: ydbstream.CreateOptions{OrReplace: query.AllowStateReset}}
+func FromStreamingQuery(query schemamodel.StreamingQuery) *ast.ExtensionStatement {
+	return &ast.ExtensionStatement{Payload: &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate,
+		Schema: query.Schema, Name: query.Name, Spec: query.Spec.Clone(), Creation: ydbast.StreamingCreation{OrReplace: query.AllowStateReset}}}
 }

@@ -630,8 +630,6 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.DropSecretNode, *ast.AlterSecretNode, *ast.DropExternalDataSourceNode, *ast.DropExternalTableNode,
 		*ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode:
 		return assessYDBObject(n, assessment)
-	case *ydbstream.Node:
-		return assessStreamingQuery(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
 		return assessRawSQL(n.SQL, assessment, false)
@@ -1190,7 +1188,7 @@ const (
 // entry the statement's words start with.
 func destructivePrefixReason(words []string) (string, bool) {
 	if ydbstream.LosesCheckpoint(words) {
-		return streamingCheckpointLoss, true
+		return ydbstream.CheckpointLoss, true
 	}
 	for _, prefix := range destructivePrefixes {
 		if hasWordPrefix(words, prefix.words...) {
@@ -1277,7 +1275,7 @@ func assessResourcePoolNode(node ast.Node, assessment StatementAssessment) State
 func runtimeObjectChangeReason(words []string) (string, bool) {
 	switch {
 	case hasWordPrefix(words, "ALTER", "STREAMING", "QUERY"):
-		return streamingExecutionChange, true
+		return ydbstream.ExecutionChange, true
 	case hasWordPrefix(words, "DROP", "EXTERNAL", "DATA", "SOURCE"):
 		return dropExternalDataSourceReason, true
 	case hasWordPrefix(words, "DROP", "EXTERNAL", "TABLE"):

@@ -104,10 +104,10 @@ type AlterOptions struct {
 // explicit permission because YDB discards aggregation state. Topic offsets
 // remain in the checkpoint; no DROP/CREATE fallback is used.
 func Alter(name string, desired, current ast.StreamingQuerySpec, options AlterOptions) (string, error) {
-	textChanged := !SameBody(desired.Text, current.Text)
-	if textChanged && !options.AllowStateReset {
-		return "", fmt.Errorf("streaming query %q: changing text resets aggregation state; declare allow_state_reset=true to permit it", name)
+	if err := ValidateAlter(name, desired, current, options); err != nil {
+		return "", err
 	}
+	textChanged := !SameBody(desired.Text, current.Text)
 	settingsSQL := settings(desired)
 	if textChanged {
 		settingsSQL += ", FORCE = TRUE"
@@ -124,4 +124,13 @@ func Drop(name string) string { return "DROP STREAMING QUERY " + ydbexternal.Pat
 
 func settings(spec ast.StreamingQuerySpec) string {
 	return "RUN = " + strings.ToUpper(strconv.FormatBool(Running(spec))) + ", RESOURCE_POOL = " + sqlident.Quote("ydb", Pool(spec))
+}
+
+// ValidateAlter checks reset permission without rendering. Both typed operation
+// validation and SQL generation use this predicate so they cannot disagree.
+func ValidateAlter(name string, desired, current ast.StreamingQuerySpec, options AlterOptions) error {
+	if !SameBody(desired.Text, current.Text) && !options.AllowStateReset {
+		return fmt.Errorf("streaming query %q: changing text resets aggregation state; declare allow_state_reset=true to permit it", name)
+	}
+	return nil
 }

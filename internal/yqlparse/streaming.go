@@ -3,21 +3,27 @@ package yqlparse
 import (
 	"strings"
 
+	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbstream"
 )
 
-func (p *parser) streamingQuery(replace bool) *ydbstream.Node {
+func (p *parser) streamingQuery(replace bool) *ast.ExtensionStatement {
 	p.wantWord("QUERY")
-	options := ydbstream.CreateOptions{OrReplace: replace}
+	options := ydbast.StreamingCreation{OrReplace: replace}
 	if p.word("IF") {
 		p.pos++
 		p.wantWord("NOT")
 		p.wantWord("EXISTS")
 		options.IfNotExists = true
 	}
-	node := &ydbstream.Node{Operation: ydbstream.CreateOperation, Name: p.canonicalPath(), Creation: options}
+	ref, ok := tableref.Parse(p.canonicalPath())
+	if !ok {
+		p.failf("invalid streaming query path")
+	}
+	node := &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Schema: ref.Schema, Name: ref.Name, Creation: options}
 	if p.word("WITH") {
 		p.pos++
 		p.optionsUsing(func(key string) string {
@@ -53,7 +59,7 @@ func (p *parser) streamingQuery(replace bool) *ydbstream.Node {
 	if err := ydbstream.Validate(node.Spec); err != nil {
 		p.failf("%v", err)
 	}
-	return node
+	return &ast.ExtensionStatement{Payload: node}
 }
 
 func (p *parser) streamingBody() string {
