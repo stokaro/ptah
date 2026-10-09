@@ -93,10 +93,50 @@ func (CoordinationService) PlanFeatures(ctx context.Context, request featureplan
 	return result, nil
 }
 
-// The slot is shared with tables and other scheme objects, while the model
-// identity stays specific to coordination nodes. Only replacing a dropped
-// occupant is valid; an ALTER cannot turn another object kind into a node.
+// schemePathDependencies orders a standalone object's statement against the
+// common statements at its scheme path and above it. The slot is shared with
+// tables and other scheme objects, while the model identity stays specific to
+// the owner's family. Only replacing a dropped occupant is valid; an ALTER
+// cannot turn another object kind into this one. Every directory above the
+// slot must be a directory, so a creation follows a common drop at any of
+// them, and a drop precedes a common creation there.
 func schemePathDependencies(family string, id plangraph.StepID, slot objectidentity.ID, action plangraph.Action, common []featureplan.CommonStep) ([]plangraph.Dependency, error) {
+	edges, err := slotDependencies(family, id, slot, action, common)
+	if err != nil {
+		return nil, err
+	}
+	return append(edges, directoryDependencies(id, slot, action, common)...), nil
+}
+
+// directoryDependencies orders a creation after every common drop at a
+// directory above slot, and a drop before every common creation there.
+func directoryDependencies(id plangraph.StepID, slot objectidentity.ID, action plangraph.Action, common []featureplan.CommonStep) []plangraph.Dependency {
+	if action == plangraph.Alter {
+		return nil
+	}
+	above := make(map[objectidentity.Key]bool)
+	for _, directory := range ydbscheme.DirectoriesAbove(slot) {
+		above[directory.Key()] = true
+	}
+	var edges []plangraph.Dependency
+	for _, step := range common {
+		for _, effect := range step.Effects {
+			if !above[effect.Subject.Key()] {
+				continue
+			}
+			switch {
+			case action == plangraph.Create && effect.Action == plangraph.Drop:
+				edges = append(edges, plangraph.Dependency{Before: step.ID, After: id})
+			case action == plangraph.Drop && effect.Action == plangraph.Create:
+				edges = append(edges, plangraph.Dependency{Before: id, After: step.ID})
+			}
+		}
+	}
+	return edges
+}
+
+// slotDependencies orders the handoff of the slot itself.
+func slotDependencies(family string, id plangraph.StepID, slot objectidentity.ID, action plangraph.Action, common []featureplan.CommonStep) ([]plangraph.Dependency, error) {
 	type use struct {
 		id     plangraph.StepID
 		action plangraph.Action

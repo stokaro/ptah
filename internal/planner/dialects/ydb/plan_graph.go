@@ -97,6 +97,7 @@ func scheduleFeatures(ctx context.Context, common plangraph.Contribution[[]ast.N
 			}
 		}
 	}
+	common.Dependencies = append(common.Dependencies, directoryEdges(common, features.Contributions)...)
 	plan, err := plangraph.ScheduleRewritten(ctx, common, features.Rewrites, features.Contributions...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
@@ -106,4 +107,52 @@ func scheduleFeatures(ctx context.Context, common plangraph.Contribution[[]ast.N
 		nodes = append(nodes, step.Payload...)
 	}
 	return nodes, nil
+}
+
+// directoryEdges orders statements of different owners along one chain of
+// scheme paths: an object created below a path follows every statement that
+// drops what is at the path, and an object dropped below a path precedes every
+// statement that creates an object there, since YDB needs each directory above
+// an object to be a directory. Each standalone owner orders its own statements
+// against the common ones; these edges order owners against each other, which
+// neither can see. A plan whose other edges require the opposite order is
+// refused by scheduling as a cycle.
+func directoryEdges(common plangraph.Contribution[[]ast.Node], contributions []plangraph.Contribution[[]ast.Node]) []plangraph.Dependency {
+	type pathUse struct {
+		contribution int
+		step         plangraph.StepID
+		action       plangraph.Action
+		path         objectidentity.ID
+	}
+	uses := make(map[objectidentity.Key][]pathUse)
+	var changed []pathUse
+	for index, contribution := range append([]plangraph.Contribution[[]ast.Node]{common}, contributions...) {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				if effect.Subject.Kind != ydbscheme.PathKind {
+					continue
+				}
+				use := pathUse{contribution: index, step: step.ID, action: effect.Action, path: effect.Subject}
+				uses[effect.Subject.Key()] = append(uses[effect.Subject.Key()], use)
+				if use.action == plangraph.Create || use.action == plangraph.Drop {
+					changed = append(changed, use)
+				}
+			}
+		}
+	}
+	var edges []plangraph.Dependency
+	for _, child := range changed {
+		for _, directory := range ydbscheme.DirectoriesAbove(child.path) {
+			for _, use := range uses[directory.Key()] {
+				switch {
+				case use.contribution == child.contribution:
+				case child.action == plangraph.Create && use.action == plangraph.Drop:
+					edges = append(edges, plangraph.Dependency{Before: use.step, After: child.step})
+				case child.action == plangraph.Drop && use.action == plangraph.Create:
+					edges = append(edges, plangraph.Dependency{Before: child.step, After: use.step})
+				}
+			}
+		}
+	}
+	return edges
 }

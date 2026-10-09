@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
@@ -121,26 +120,15 @@ func indexCommonSteps(steps []featureplan.CommonStep) commonSteps {
 }
 
 // secretDependencies orders one operation on the secret ref, at the scheme
-// path slot, against the common statements: a creation after the drops that
-// free its path or a directory above it, a drop before the creations there,
-// each before the next common statement, and before every statement that
-// reads the secret. A drop that a statement still reads is an error, since the
-// reader would name a secret that is gone.
+// path slot, against the common statements: the handoffs at its path and the
+// directories above it (see [schemePathDependencies]), before the next common
+// statement, and before every statement that reads the secret. A drop that a
+// statement still reads is an error, since the reader would name a secret that
+// is gone.
 func secretDependencies(id plangraph.StepID, ref, slot objectidentity.ID, action plangraph.Action, common commonSteps) ([]plangraph.Dependency, error) {
 	edges, err := schemePathDependencies("secret", id, slot, action, common.steps)
 	if err != nil {
 		return nil, err
-	}
-	for _, directory := range secretDirectories(ref) {
-		for _, use := range common.uses[directory.Key()] {
-			step := common.steps[use.position].ID
-			switch {
-			case action == plangraph.Create && use.action == plangraph.Drop:
-				edges = append(edges, plangraph.Dependency{Before: step, After: id})
-			case action == plangraph.Drop && use.action == plangraph.Create:
-				edges = append(edges, plangraph.Dependency{Before: id, After: step})
-			}
-		}
 	}
 	next := 0
 	for _, edge := range edges {
@@ -162,21 +150,6 @@ func secretDependencies(id plangraph.StepID, ref, slot objectidentity.ID, action
 		edges = append(edges, plangraph.Dependency{Before: id, After: common.steps[use.position].ID})
 	}
 	return edges, nil
-}
-
-// secretDirectories returns the scheme path of each directory above the secret
-// ref, nearest first: `a/b` and `a` for the secret `a/b/pw`.
-func secretDirectories(ref objectidentity.ID) []objectidentity.ID {
-	var directories []objectidentity.ID
-	for directory := ref.Schema.Source; directory != ""; {
-		parent, name := "", directory
-		if slash := strings.LastIndex(directory, "/"); slash >= 0 {
-			parent, name = directory[:slash], directory[slash+1:]
-		}
-		directories = append(directories, ydbscheme.Path(parent, name))
-		directory = parent
-	}
-	return directories
 }
 
 func secretOperations(ctx context.Context, request featureplan.Request) ([]secretChange, error) {
