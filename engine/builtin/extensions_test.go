@@ -53,8 +53,12 @@ func clickhouseTTLFixture() extensionFixture {
 	return extensionFixture{payload: &chast.AlterTTL{Change: chdiff.Table{Before: before, After: after}}, wantSQL: "ALTER TABLE items REMOVE TTL;\n"}
 }
 
+func clickhouseIndexFixture() extensionFixture {
+	return extensionFixture{payload: &chast.AddSkippingIndex{Name: "idx_c", Expression: "c"}, wantSQL: "ALTER TABLE `items` ADD INDEX `idx_c` c TYPE minmax GRANULARITY 1;\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture())
 }
 
 // The source inventory is independent of both owner registration and fixtures.
@@ -132,24 +136,25 @@ func mustYDBRenderer(c *qt.C) renderer.RenderVisitor {
 }
 
 func TestClickHouseExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
-	fixture := clickhouseTTLFixture()
-	for _, dialect := range renderedDialects() {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			parent := &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}}
-			answer := renderSQLAnswer(dialect, parent)
-			c.Assert(answer, qt.DeepEquals, visitAnswer(c, dialect, parent))
-			c.Assert(answer, qt.DeepEquals, renderAnswer(c, dialect, parent))
-		})
-	}
-	c := qt.New(t)
-	sql, err := builtin.RenderSQL("clickhouse", &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Equals, fixture.wantSQL)
-	for _, dialect := range []string{"postgres", "mysql", "sqlite", "sqlserver", "oracle", "ydb"} {
-		sql, err := builtin.RenderSQL(dialect, &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
-		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-		c.Assert(sql, qt.Equals, "")
+	for _, fixture := range []extensionFixture{clickhouseTTLFixture(), clickhouseIndexFixture()} {
+		for _, dialect := range renderedDialects() {
+			t.Run(dialect+"/"+string(fixture.payload.Kind()), func(t *testing.T) {
+				c := qt.New(t)
+				parent := &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}}
+				answer := renderSQLAnswer(dialect, parent)
+				c.Assert(answer, qt.DeepEquals, visitAnswer(c, dialect, parent))
+				c.Assert(answer, qt.DeepEquals, renderAnswer(c, dialect, parent))
+			})
+		}
+		c := qt.New(t)
+		sql, err := builtin.RenderSQL("clickhouse", &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, fixture.wantSQL)
+		for _, dialect := range []string{"postgres", "mysql", "sqlite", "sqlserver", "oracle", "ydb"} {
+			sql, err := builtin.RenderSQL(dialect, &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(sql, qt.Equals, "")
+		}
 	}
 }
 
@@ -193,4 +198,34 @@ func TestExtensionPayloads_NonownersRefuseClaimedCapabilities(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestClickHouseIndexExtensionRefusesMissingOperandsWithoutPartialSQL(t *testing.T) {
+	for _, payload := range []ast.ExtensionPayload{(*chast.AddSkippingIndex)(nil), &chast.AddSkippingIndex{Name: "idx"}} {
+		c := qt.New(t)
+		parent := &ast.AlterTableNode{Name: "events", Operations: []ast.AlterOperation{
+			&ast.AddColumnOperation{Column: ast.NewColumn("valid", "UInt64")},
+			&ast.ExtensionAlterOperation{Payload: payload},
+		}}
+		for _, visitor := range []renderer.RenderVisitor{clickhouse.New(), mustClickHouseRenderer(c)} {
+			sql, err := visitor.Render(parent)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(visitor.Output(), qt.Equals, "")
+		}
+	}
+	c := qt.New(t)
+	fragment := &ast.ExtensionAlterOperation{Payload: clickhouseIndexFixture().payload}
+	for _, visitor := range []renderer.RenderVisitor{clickhouse.New(), mustClickHouseRenderer(c)} {
+		sql, err := visitor.Render(fragment)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+		c.Assert(sql, qt.Equals, "")
+	}
+}
+
+func mustClickHouseRenderer(c *qt.C) renderer.RenderVisitor {
+	c.Helper()
+	r, err := builtin.NewRenderer("clickhouse")
+	c.Assert(err, qt.IsNil)
+	return r
 }

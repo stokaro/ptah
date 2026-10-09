@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 )
 
@@ -86,20 +87,15 @@ func TestPostgres_CreateTableSelectWithTypedColumnsUnsupported(t *testing.T) {
 }
 
 // ClickHouse skipping indexes have no PostgreSQL spelling.
-func TestPostgres_AlterTable_ClickHouseSkippingIndexEmitsComment(t *testing.T) {
+func TestPostgres_AlterTable_ClickHouseSkippingIndexRefused(t *testing.T) {
 	c := qt.New(t)
-	alter := &ast.AlterTableNode{
-		Name: "events",
-		Operations: []ast.AlterOperation{
-			&ast.AddSkippingIndexOperation{Name: "idx_e_src", Expression: "source"},
-		},
-	}
-	out := renderPG(t, alter)
-
-	c.Assert(out, qt.Contains, "-- POSTGRES: data-skipping indexes are ClickHouse-specific; ignored.")
-	// No executable ALTER statement should have been emitted by these branches.
-	c.Assert(out, qt.Not(qt.Contains), "ADD INDEX",
-		qt.Commentf("postgres must not emit ADD INDEX for an AddSkippingIndexOperation; got: %q", out))
+	alter := &ast.AlterTableNode{Name: "events", Operations: []ast.AlterOperation{
+		&ast.ExtensionAlterOperation{Payload: &chast.AddSkippingIndex{Name: "idx_e_src", Expression: "source"}},
+	}}
+	r := postgres.New()
+	out, err := r.Render(alter)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(out, qt.Equals, "")
 }
 
 func TestPostgres_AlterTable_SetGeneratedExpression(t *testing.T) {

@@ -164,7 +164,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"AddConstraintOperation":                  &ast.AddConstraintOperation{},
 		"AddEnumValueOperation":                   &ast.AddEnumValueOperation{},
 		"AddIndexOperation":                       &ast.AddIndexOperation{},
-		"AddSkippingIndexOperation":               &ast.AddSkippingIndexOperation{},
 		"AlterAsyncReplicationNode":               &ast.AlterAsyncReplicationNode{},
 		"AlterColumnOperation":                    &ast.AlterColumnOperation{},
 		"AlterCoordinationNodeNode":               &ast.AlterCoordinationNodeNode{},

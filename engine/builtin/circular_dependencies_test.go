@@ -666,7 +666,6 @@ func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
 	var dropConstraint *ast.DropConstraintOperation
 	var renameColumn *ast.RenameColumnOperation
 	var renameTable *ast.RenameTableOperation
-	var addSkippingIndex *ast.AddSkippingIndexOperation
 	var alterColumn *ast.AlterColumnOperation
 	tests := []struct {
 		name      string
@@ -677,7 +676,6 @@ func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
 		{name: "drop constraint", operation: dropConstraint},
 		{name: "rename column", operation: renameColumn},
 		{name: "rename table", operation: renameTable},
-		{name: "add skipping index", operation: addSkippingIndex},
 		{name: "alter column", operation: alterColumn},
 	}
 

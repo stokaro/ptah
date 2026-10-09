@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/parser"
 )
 
@@ -407,8 +408,8 @@ func alterOperationChange(alter *ast.AlterTableNode, op ast.AlterOperation) (Sch
 		return SchemaChangeDrop, o.ConstraintName
 	case *ast.RenameColumnOperation:
 		return SchemaChangeRename, o.OldName
-	case *ast.AddSkippingIndexOperation:
-		return SchemaChangeAdd, o.Name
+	case *ast.ExtensionAlterOperation:
+		return extensionOperationChange(alter, o)
 	default:
 		// Any other ALTER TABLE action still mutates the table.
 		return SchemaChangeModify, alter.Name
@@ -427,4 +428,32 @@ func constraintName(constraint *ast.ConstraintNode) string {
 		return ""
 	}
 	return constraint.Name
+}
+
+// A logical addition can have a behavioral execution risk. Do not derive these
+// reporting categories from Effect, which serves the safety classifier.
+func extensionOperationChange(alter *ast.AlterTableNode, op *ast.ExtensionAlterOperation) (SchemaChangeKind, string) {
+	if op == nil || schemaext.ValidatePayload(op.Payload) != nil {
+		return SchemaChangeModify, alter.Name
+	}
+	reporter, ok := op.Payload.(ast.ExtensionChangeReporter)
+	if !ok {
+		return SchemaChangeModify, alter.Name
+	}
+	change := reporter.SchemaChange()
+	if strings.TrimSpace(change.Name) == "" {
+		return SchemaChangeModify, alter.Name
+	}
+	switch change.Action {
+	case ast.ExtensionAdd:
+		return SchemaChangeAdd, change.Name
+	case ast.ExtensionDrop:
+		return SchemaChangeDrop, change.Name
+	case ast.ExtensionModify:
+		return SchemaChangeModify, change.Name
+	case ast.ExtensionRename:
+		return SchemaChangeRename, change.Name
+	default:
+		return SchemaChangeModify, alter.Name
+	}
 }

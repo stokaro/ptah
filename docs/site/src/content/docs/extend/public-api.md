@@ -64,7 +64,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table property decoding and export without engine-specific field access. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
-| `dialect/clickhouse/chast` | Typed TTL operations and explicit codecs. |
+| `dialect/clickhouse/chast` | Typed TTL and skipping-index operations with explicit codecs. |
 | `dialect/clickhouse/chrender` | Owner-selected TTL rendering. |
 | `dialect/clickhouse/chplan` | TTL planning and common-column dependencies. |
 | `dialect/clickhouse/chreverse` | Reverse TTL definitions with recovery limits. |
@@ -234,15 +234,16 @@ before and after operands. Missing evidence needed for declared settings produce
 an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
 limits remain visible. The bundled runtime registers these services.
 
-`chplan.Service` plans MergeTree TTL changes from captured storage, ordering
-required column additions before the rule change and dependent removals after
-it. Unknown observations and changes to columns used by retained storage are
-refused.
-`chast.AlterTTL` has explicit codecs and `chrender` handlers; it requires
-execution outside a transaction. Other storage-setting changes remain refused.
-Wrap it in `ast.ExtensionAlterOperation` under an `ast.AlterTableNode`.
-An empty desired TTL removes the rule; whitespace-only rules are invalid.
-Non-owning targets refuse the payload without partial SQL.
+`chplan.Service` plans MergeTree TTL changes, adding required columns before
+the rule change and removing retired columns afterward. Unknown observations
+and changes to columns used by retained storage are refused.
+`chast.AlterTTL` uses explicit codecs and `chrender` handlers outside transactions.
+Wrap it in `ast.ExtensionAlterOperation` under an `ast.AlterTableNode`. Empty TTL
+removes the rule; whitespace-only rules are invalid. Other storage changes and
+non-owning targets are refused without partial SQL.
+
+`chast.AddSkippingIndex` uses this envelope with defaults `minmax` and
+`GRANULARITY 1`. Other targets refuse it.
 
 `chreverse.Service` restores the captured TTL definition and reports data loss.
 Its state projection feeds reverse planning without claiming new inspection.

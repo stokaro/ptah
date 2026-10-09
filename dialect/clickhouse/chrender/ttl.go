@@ -15,7 +15,10 @@ import (
 
 // Handlers returns independent descriptors for the supported operation roles.
 func Handlers() []renderer.ExtensionHandler {
-	return []renderer.ExtensionHandler{renderer.TypedHandler(&chast.AlterTTL{}, ast.AlterExtension, validateTTL, renderTTL)}
+	return []renderer.ExtensionHandler{
+		renderer.TypedHandler(&chast.AlterTTL{}, ast.AlterExtension, validateTTL, renderTTL),
+		renderer.TypedHandler(&chast.AddSkippingIndex{}, ast.AlterExtension, validateIndex, renderIndex),
+	}
 }
 
 // Registry creates a local handler registry. Unknown kinds and roles fail

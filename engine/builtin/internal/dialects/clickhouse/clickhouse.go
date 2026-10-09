@@ -34,6 +34,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chresolve"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/chrefresh"
@@ -109,6 +110,7 @@ func (r *Renderer) GetOutput() string { return r.Output() }
 func (r *Renderer) Render(node ast.Node) (string, error) {
 	r.Reset()
 	if err := node.Accept(r); err != nil {
+		r.Reset()
 		return "", err
 	}
 	return r.Output(), nil
@@ -999,10 +1001,6 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
 		case *ast.RenameTableOperation:
 			r.w.WriteLinef("RENAME TABLE %s TO %s;", node.Name, op.NewName)
-		case *ast.AddSkippingIndexOperation:
-			if err := r.renderAddSkippingIndex(node.Name, op); err != nil {
-				return err
-			}
 		default:
 			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, DialectName, op)
 		}
@@ -1144,35 +1142,6 @@ func removesDefault(op *ast.ModifyColumnOperation, clause string) bool {
 		op.Column.GeneratedExpression == ""
 }
 
-// renderAddSkippingIndex emits the ClickHouse-native
-// `ALTER TABLE x ADD INDEX name expression TYPE indexType GRANULARITY n;`
-// statement. IndexType defaults to "minmax" when blank, and Granularity
-// defaults to 8192 when zero — both matching the documented ClickHouse
-// defaults. An empty Expression is rejected because there is no sensible
-// fallback for it.
-func (r *Renderer) renderAddSkippingIndex(tableName string, op *ast.AddSkippingIndexOperation) error {
-	if strings.TrimSpace(op.Expression) == "" {
-		return fmt.Errorf("clickhouse: ADD INDEX %q on table %q requires a non-empty expression", op.Name, tableName)
-	}
-	idxType := op.IndexType
-	if idxType == "" {
-		idxType = "minmax"
-	}
-	granularity := op.Granularity
-	if granularity == 0 {
-		granularity = 8192
-	}
-	r.w.WriteLinef(
-		"ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;",
-		escapeQualifiedIdentifier(tableName),
-		escapeIdentifier(op.Name),
-		op.Expression,
-		idxType,
-		granularity,
-	)
-	return nil
-}
-
 // renderColumnNode answers a column that arrives on its own, which is nothing.
 // A column reaches the output as part of the table or the ALTER that carries
 // it, and renderColumn is what writes it there.
@@ -1183,8 +1152,7 @@ func (r *Renderer) renderColumnNode(*ast.ColumnNode) error { return nil }
 func (r *Renderer) renderConstraint(*ast.ConstraintNode) error { return nil }
 
 // renderIndex emits a ClickHouse data-skipping index. Without an explicit
-// type annotation we emit a `minmax` index with GRANULARITY 8192, which is
-// the most generally-useful default. Users wanting `set(N)` /
+// type annotation we emit a `minmax` index with GRANULARITY 1. Users wanting `set(N)` /
 // `bloom_filter(p)` / `tokenbf_v1(...)` etc. override via the `type=` and
 // `granularity=` keys on //ptah:schema:index.
 func (r *Renderer) renderIndex(node *ast.IndexNode) error {
@@ -1231,27 +1199,13 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if node.Unique {
 		r.w.WriteLinef("-- CLICKHOUSE: UNIQUE index %q downgraded to a minmax skipping index; uniqueness is not enforced by ClickHouse", node.Name)
 	}
-	idxType := node.Type
-	if idxType == "" {
-		idxType = "minmax"
-	}
-	granularity := node.Granularity
-	if granularity == 0 {
-		granularity = 8192
-	}
 	expr := strings.Join(node.Columns, ", ")
 	if len(node.Columns) > 1 {
 		expr = "(" + expr + ")"
 	}
-	r.w.WriteLinef(
-		"ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;",
-		escapeQualifiedIdentifier(node.Table),
-		escapeIdentifier(node.Name),
-		expr,
-		idxType,
-		granularity,
-	)
-	return nil
+	return r.renderOwnedExtension(&ast.AlterTableNode{Name: node.Table}, ast.AlterExtension, &chast.AddSkippingIndex{
+		Name: node.Name, Expression: expr, IndexType: node.Type, Granularity: node.Granularity,
+	})
 }
 
 // recordLostPartOrder names every index part whose declared direction is gone.

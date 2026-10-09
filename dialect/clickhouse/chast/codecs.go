@@ -10,7 +10,7 @@ import (
 )
 
 // Codecs returns fresh version-one operation descriptors. The wire shape is an
-// explicit table-change operand, never a serialized common Go AST. Invalid or
+// explicit owner-defined operand, never a serialized common Go AST. Invalid or
 // unsupported transitions fail before encoding and after decoding.
 func Codecs() []schemaext.Codec {
 	change := chdiff.Codecs()[0]
@@ -50,7 +50,7 @@ func Codecs() []schemaext.Codec {
 			}
 			return value, nil
 		},
-	}}
+	}, indexCodec()}
 }
 
 func ttlValue(payload schemaext.Payload) (*AlterTTL, error) {

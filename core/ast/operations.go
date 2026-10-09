@@ -382,39 +382,6 @@ func (op *AddIndexOperation) Accept(visitor Visitor) error { return visitor.Visi
 
 func (op *AddIndexOperation) alterOperation() {}
 
-// AddSkippingIndexOperation represents ClickHouse's
-// `ALTER TABLE x ADD INDEX name expression TYPE indexType GRANULARITY n`.
-//
-// Skipping indexes are a ClickHouse-only concept; other dialects emit a
-// `-- <DIALECT>: data-skipping indexes are ClickHouse-specific; ignored.`
-// comment and otherwise treat the operation as a no-op.
-type AddSkippingIndexOperation struct {
-	// Name is the index name.
-	Name string
-	// Expression is the indexed expression (column name, function call, tuple,
-	// etc.). Empty Expression is rejected by the ClickHouse renderer.
-	Expression string
-	// IndexType is the ClickHouse skipping-index type. Examples:
-	// "minmax", "set(N)", "bloom_filter(0.01)", "tokenbf_v1(...)". The empty
-	// string defaults to "minmax" at render time.
-	IndexType string
-	// Granularity is the GRANULARITY value. Zero defaults to 8192 at render
-	// time, matching ClickHouse's documented default for skipping indexes.
-	Granularity int
-}
-
-// Accept implements the Node interface for AddSkippingIndexOperation.
-//
-// The actual rendering is handled by the dialect's VisitAlterTable method.
-func (op *AddSkippingIndexOperation) Accept(visitor Visitor) error {
-	return visitor.VisitNode(
-
-		// alterOperation implements the marker method for type safety.
-		op)
-}
-
-func (op *AddSkippingIndexOperation) alterOperation() {}
-
 // SetRowTTLOperation represents ALTER TABLE ... SET (<storage parameters>) for
 // CockroachDB row-level TTL.
 //

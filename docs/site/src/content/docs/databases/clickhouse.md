@@ -112,6 +112,14 @@ default. As with the engine, the refusal reads the closed PostgreSQL and MySQL
 sets rather than deciding what a ClickHouse type is, so a type from a future
 release renders unchanged.
 
+Skipping indexes default to `minmax` and `GRANULARITY 1`. Index granularity
+counts table granules per index block; it is separate from the table's
+`index_granularity` setting, which controls rows per granule. An explicit index
+granularity is preserved. `ADD INDEX` adds metadata for subsequent writes;
+existing data needs a separate `MATERIALIZE INDEX` operation. See the
+[ClickHouse skipping-index reference](https://clickhouse.com/docs/reference/statements/alter/skipping-index).
+A ClickHouse `ADD INDEX` operation sent to another target is refused.
+
 Before adopting the round trip, know that both of these come from the server's
 answer rather than from the declaration's text:
 

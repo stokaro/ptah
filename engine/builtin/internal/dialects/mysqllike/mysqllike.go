@@ -1357,12 +1357,6 @@ func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, enums map
 			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME TO %s",
 				escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(op.NewName))
 
-		case *ast.AddSkippingIndexOperation:
-			// Data-skipping indexes are a ClickHouse-specific construct; no
-			// MySQL/MariaDB equivalent exists. Emit a self-explanatory
-			// comment so the migration is still readable and diffable.
-			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
-
 		default:
 			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, r.dialect, operation)
 		}

@@ -548,6 +548,16 @@ The planner contributes explicit object effects and requires execution outside
 a transaction. Its result must join the host's complete graph before execution.
 Engine, key, partitioning, sampling, and table-setting changes remain refused.
 
+`chast.AddSkippingIndex` carries the index name, SQL expression, type, and
+index granularity. Its explicit codec and `chrender` handler work without the
+bundled runtime. Use the same ALTER envelope and parent as TTL operations.
+An empty type selects `minmax`; zero granularity selects `1`. Other targets
+refuse this ClickHouse operation. `ast.ExtensionChangeReporter` supplies its
+logical addition for schema-change reports independently of its workload risk.
+Payloads without a valid single-action report retain a parent-level modification.
+The former `ast.AddSkippingIndexOperation` is removed without an alias. This
+changes behavior; pre-v1, so no compatibility is owed.
+
 `chreverse.Service` reconstructs the prior TTL definition and projects the
 forward state for reverse planning. This projection establishes no inspection
 evidence. Its recovery limitations report that restoring TTL rules cannot

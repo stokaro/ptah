@@ -434,7 +434,7 @@ const (
 // data-skipping index. `type=` accepts any spelling ClickHouse understands —
 // `minmax`, `set(N)`, `bloom_filter`, `bloom_filter(p)`, `tokenbf_v1(...)`,
 // `ngrambf_v1(...)`, etc. `granularity=` is the number of marks per index
-// block; omitting it falls back to ClickHouse's documented default (8192).
+// block; omitting it falls back to ClickHouse's documented default (1).
 // Both keys are silently ignored by non-ClickHouse renderers.
 //
 //	type Event struct {
@@ -520,7 +520,7 @@ type Index struct {
 	TableName string
 
 	// Granularity is the ClickHouse data-skipping-index GRANULARITY value.
-	// Zero means "use the dialect default" (8192 for ClickHouse, which is
+	// Zero means "use the dialect default" (1 for ClickHouse, which is
 	// what the renderer falls back to when this field is unset). Ignored by
 	// all non-ClickHouse renderers.
 	Granularity int
