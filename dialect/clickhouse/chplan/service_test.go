@@ -58,7 +58,9 @@ func TestTTLPlanOrdersColumnDependenciesAndPreservesOperands(t *testing.T) {
 	result, err := runtime.PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Err(request), qt.IsNil)
-	c.Assert(result.Parents, qt.HasLen, 1)
+	// Every registered ClickHouse parent model accounts for the altered table.
+	c.Assert(result.Parents, qt.HasLen, 2)
+	c.Assert([]schemaext.Kind{result.Parents[0].Kind, result.Parents[1].Kind}, qt.DeepEquals, []schemaext.Kind{chschema.TableKind, chschema.IndexKind})
 	c.Assert(result.Changes, qt.HasLen, 1)
 	c.Assert(result.Contributions, qt.HasLen, 1)
 	feature := result.Contributions[0]

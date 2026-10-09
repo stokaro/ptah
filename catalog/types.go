@@ -784,11 +784,9 @@ const (
 
 // Index represents a database index.
 //
-// Most fields are dialect-neutral. The Type/Expression/Granularity trio is
-// populated only by the ClickHouse reader for data-skipping indexes; other
-// readers leave them at their zero values so the diff layer does not start
-// emitting spurious type/granularity changes for PostgreSQL or MySQL
-// indexes.
+// Most fields are dialect-neutral. Expression is populated only by the
+// ClickHouse reader, for a data-skipping index's key expression; that index's
+// type and granularity are an observed facet the ClickHouse owner reads.
 type Index struct {
 	// Facets carries typed settings owned by feature providers.
 	Facets    schemaext.Facets `json:"facets,omitzero"`
@@ -840,12 +838,11 @@ type Index struct {
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
 
 	// Method is the index access method as the server spells it -- btree,
-	// gin, gist, brin, hash. It is deliberately not Type: Type is the
-	// ClickHouse data-skipping-index type below, a different concept that
-	// happens to share a slot in the annotation surface, and overloading one
-	// field with both would make a ClickHouse "bloom_filter" and a PostgreSQL
-	// "gin" indistinguishable at this layer. Empty means the reader did not
-	// report an access method.
+	// gin, gist, brin, hash. A ClickHouse data-skipping-index type is a
+	// different concept that happens to share a slot in the annotation
+	// surface; it travels in the owner's facet, so a ClickHouse "bloom_filter"
+	// and a PostgreSQL "gin" stay distinguishable at this layer. Empty means the
+	// reader did not report an access method.
 	//
 	// A dropped access method is not always a quiet degradation: an index on
 	// a type with no btree operator class, such as point, does not replay at
@@ -904,20 +901,12 @@ type Index struct {
 	// methods index. Readers with no catalog to ask leave it unset.
 	RequiresExtensions []string `json:"requires_extensions,omitempty"`
 
-	// Type is the ClickHouse data-skipping-index type. One of
-	// "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
-	// "tokenbf_v1(...)" / "ngrambf_v1(...)" etc. Empty on non-ClickHouse
-	// readers.
-	Type string `json:"type,omitempty"`
 	// Expression is the full ClickHouse skipping-index expression
 	// (column reference, function call, tuple, etc.). The reader also writes
 	// the expression into Columns[0] for back-compat with the existing diff
 	// layer; Expression is the canonical field for richer diffing once
 	// that's wired up. Empty on non-ClickHouse readers.
 	Expression string `json:"expression,omitempty"`
-	// Granularity is the GRANULARITY value the index was declared with.
-	// Non-zero only on ClickHouse skipping indexes.
-	Granularity int `json:"granularity,omitempty"`
 
 	// PartitionAttached reports that this index is a partition's copy of an
 	// index on its partitioned parent, attached to that parent index rather

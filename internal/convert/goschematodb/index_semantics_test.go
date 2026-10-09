@@ -8,7 +8,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
@@ -82,10 +84,11 @@ func TestToDBSchema_PostgresIndexSemanticsAreIdempotent(t *testing.T) {
 }
 
 // TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod keeps the two
-// concepts schemamodel.Index.Type carries apart. On ClickHouse the field is the
-// data-skipping-index type, which the DB shape keeps in Index.Type; reporting
-// it as a PostgreSQL access method would make a ClickHouse "bloom_filter" and a
-// PostgreSQL "gin" indistinguishable at the comparison layer.
+// concepts schemamodel.Index.Type carries apart. On ClickHouse the owner
+// decodes the field as the data-skipping-index type, which the DB shape keeps
+// in its settings facet; reporting it as a PostgreSQL access method would make
+// a ClickHouse "bloom_filter" and a PostgreSQL "gin" indistinguishable at the
+// comparison layer.
 func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
@@ -93,11 +96,11 @@ func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T)
 		Fields: []schemamodel.Field{{StructName: "E", Name: "payload", Type: "String", Primary: true}},
 		Indexes: []schemamodel.Index{
 			{
-				StructName:  "E",
-				Name:        "idx_events_payload",
-				Fields:      []string{"payload"},
-				Type:        "bloom_filter",
-				Granularity: 64,
+				StructName: "E",
+				Name:       "idx_events_payload",
+				Fields:     []string{"payload"},
+				Type:       "bloom_filter",
+				Overrides:  map[string]map[string]string{"clickhouse": {"granularity": "64"}},
 			},
 		},
 	}
@@ -107,6 +110,8 @@ func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T)
 
 	c.Assert(got.Indexes, qt.HasLen, 1)
 	c.Assert(got.Indexes[0].Method, qt.Equals, "")
-	c.Assert(got.Indexes[0].Type, qt.Equals, "bloom_filter")
-	c.Assert(got.Indexes[0].Granularity, qt.Equals, 64)
+	settings, found, err := schemaext.FacetAs[*chschema.ObservedIndex](got.Indexes[0].Facets, chschema.IndexKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(settings, qt.DeepEquals, &chschema.ObservedIndex{IndexType: "bloom_filter", Granularity: 64})
 }

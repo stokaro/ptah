@@ -1230,12 +1230,6 @@ type IndexNode struct {
 	// transaction block). Ignored by non-PostgreSQL renderers.
 	Concurrently bool
 
-	// ClickHouse-specific features
-	// Granularity is the GRANULARITY value for data-skipping indexes. Zero
-	// instructs the ClickHouse renderer to fall back to its documented
-	// default (1). Ignored by non-ClickHouse renderers.
-	Granularity int
-
 	// ForeignKeyIndex marks the index a MySQL `FOREIGN KEY name (columns)`
 	// clause names, rather than one the table body declares on its own.
 	//

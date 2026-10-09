@@ -100,11 +100,7 @@ func compareReportingUndecidedAdditions(
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}
-		desired, err = schemaproperties.DecodeTables(ctx, desired, selected.Name(), runtime)
-		if err != nil {
-			return nil, Diagnostics{}, err
-		}
-		desired, err = schemaproperties.DecodeIndexes(ctx, desired, selected.Name(), runtime)
+		desired, err = decodeSourceProperties(ctx, desired, selected.Name(), runtime)
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}
@@ -676,4 +672,15 @@ func isMySQLFamilyComparison(dialect string) bool {
 	default:
 		return false
 	}
+}
+
+// decodeSourceProperties lowers the selected target's table and index source
+// properties into owned facets, after scoping and before any comparison step
+// reads the desired schema.
+func decodeSourceProperties(ctx context.Context, desired *schemamodel.Database, target string, runtime schemaproperties.Runtime) (*schemamodel.Database, error) {
+	desired, err := schemaproperties.DecodeTables(ctx, desired, target, runtime)
+	if err != nil {
+		return nil, err
+	}
+	return schemaproperties.DecodeIndexes(ctx, desired, target, runtime)
 }

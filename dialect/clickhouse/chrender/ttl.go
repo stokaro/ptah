@@ -18,6 +18,7 @@ func Handlers() []renderer.ExtensionHandler {
 	return []renderer.ExtensionHandler{
 		renderer.TypedHandler(&chast.AlterTTL{}, ast.AlterExtension, validateTTL, renderTTL),
 		renderer.TypedHandler(&chast.AddSkippingIndex{}, ast.AlterExtension, validateIndex, renderIndex),
+		renderer.TypedHandler(&chast.DropSkippingIndex{}, ast.AlterExtension, validateDropIndex, renderDropIndex),
 	}
 }
 

@@ -23,3 +23,19 @@ func tableClickHouseSettingsFixture() schemamodel.Database {
 		schemamodel.Field{StructName: "Events", Name: "version", Type: "UInt64"},
 	)
 }
+
+// indexClickHouseSettingsFixture declares a skipping index's settings as the
+// owner's typed facet, the shape source decoding produces, so the census
+// measures each setting of the model.
+func indexClickHouseSettingsFixture() schemamodel.Database {
+	db := indexedTable()
+	settings := &chschema.DesiredIndex{
+		IndexType:   chschema.Setting{State: chschema.Explicit, Value: "bloom_filter(0.01)"},
+		Granularity: chschema.GranularitySetting{State: chschema.Explicit, Value: 4},
+	}
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
+		Facets: must.Must(must.Must(schemaext.NewFacets(settings)).WithTargetScope(chschema.IndexKind, "clickhouse")),
+	}}
+	return db
+}

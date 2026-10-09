@@ -8,7 +8,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
@@ -53,7 +55,7 @@ func TestParserReadsAnAddedSkippingIndex(t *testing.T) {
 		statement       string
 		wantExpression  string
 		wantType        string
-		wantGranularity int
+		wantGranularity uint64
 	}{
 		{
 			name:            "a column expression",
@@ -93,6 +95,13 @@ func TestParserReadsAnAddedSkippingIndex(t *testing.T) {
 			wantExpression:  "lower(b)",
 			wantType:        "bloom_filter(0.01)",
 			wantGranularity: 3,
+		},
+		{
+			name:            "the largest granularity",
+			statement:       "ALTER TABLE t ADD INDEX idx_b b TYPE minmax GRANULARITY 18446744073709551615;",
+			wantExpression:  "b",
+			wantType:        "minmax",
+			wantGranularity: 18446744073709551615,
 		},
 		{
 			// GRANULARITY is optional; the renderer supplies ClickHouse's
@@ -141,7 +150,17 @@ func TestParserRefusesAMalformedSkippingIndex(t *testing.T) {
 		{
 			name:      "a granularity that is not a number",
 			statement: "ALTER TABLE t ADD INDEX idx_b b TYPE minmax GRANULARITY wide;",
-			wantErr:   `.*GRANULARITY on index idx_b must be a number.*`,
+			wantErr:   `.*GRANULARITY on index idx_b must be a positive number.*`,
+		},
+		{
+			name:      "a zero granularity",
+			statement: "ALTER TABLE t ADD INDEX idx_b b TYPE minmax GRANULARITY 0;",
+			wantErr:   `.*GRANULARITY on index idx_b must be a positive number.*`,
+		},
+		{
+			name:      "a granularity past the unsigned range",
+			statement: "ALTER TABLE t ADD INDEX idx_b b TYPE minmax GRANULARITY 18446744073709551616;",
+			wantErr:   `.*GRANULARITY on index idx_b must be a positive number.*`,
 		},
 	}
 
@@ -205,7 +224,7 @@ func TestParserReadsAnInlineSkippingIndex(t *testing.T) {
 		wantName        string
 		wantExpression  string
 		wantType        string
-		wantGranularity int
+		wantGranularity uint64
 	}{
 		{
 			name:            "a column expression",
@@ -245,8 +264,14 @@ func TestParserReadsAnInlineSkippingIndex(t *testing.T) {
 			c.Assert(table.Indexes, qt.HasLen, 1)
 			c.Assert(table.Indexes[0].Name, qt.Equals, tt.wantName)
 			c.Assert(table.Indexes[0].Columns, qt.DeepEquals, []string{tt.wantExpression})
-			c.Assert(table.Indexes[0].Type, qt.Equals, tt.wantType)
-			c.Assert(table.Indexes[0].Granularity, qt.Equals, tt.wantGranularity)
+			// The settings are the ClickHouse owner's declaration, not the
+			// common index type.
+			c.Assert(table.Indexes[0].Type, qt.Equals, "")
+			c.Assert(table.Indexes[0].Facets.TargetScope(chschema.IndexKind), qt.DeepEquals, []string{"clickhouse"})
+			settings, found, err := schemaext.FacetAs[*chschema.DesiredIndex](table.Indexes[0].Facets, chschema.IndexKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(settings, qt.DeepEquals, (&chschema.ObservedIndex{IndexType: tt.wantType, Granularity: tt.wantGranularity}).Desired())
 		})
 	}
 }
@@ -296,7 +321,7 @@ func TestAnInlineIndexOnAnotherDialectIsNotASkippingIndex(t *testing.T) {
 	c.Assert(table.Indexes[0].Unique, qt.IsFalse)
 	// The two readings differ here, which is what this test is for.
 	c.Assert(table.Indexes[0].Type, qt.Equals, "")
-	c.Assert(table.Indexes[0].Granularity, qt.Equals, 0)
+	c.Assert(table.Indexes[0].Facets.IsZero(), qt.IsTrue)
 }
 
 func parseOneClickHouseTable(c *qt.C, sql string) *ast.CreateTableNode {

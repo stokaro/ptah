@@ -3,6 +3,7 @@ package atlasreport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -12,19 +13,23 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaproperties"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbmlrender"
 	"ptah.run/internal/schemaviz"
 )
 
-// InspectRuntime provides feature reporting and whole-schema SQL rendering
-// from one explicit selection. Format adapters do not choose built-in targets.
+// InspectRuntime provides feature reporting, source-property export, and
+// whole-schema SQL rendering from one explicit selection. Format adapters do
+// not choose built-in targets.
 type InspectRuntime interface {
 	schemaext.ReportingRuntime
 	renderer.SchemaService
+	schemaproperties.Runtime
 }
 
 type SchemaInspectReport struct {
@@ -386,10 +391,38 @@ func frameCompatibilityHCL(document string) string {
 // binary it stands in for cannot PARSE the block, and that is a question only
 // the HCL document raises. SQL output is read by a database.
 func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
-	if r.omitAtlasRefusedBlocks {
-		return atlashclrender.RenderInspectedForAtlasCLI(r.db, r.info.Dialect, r.defaultSchemaName())
+	db, err := r.hclSource()
+	if err != nil {
+		return atlashclrender.Result{}, err
 	}
-	return atlashclrender.RenderInspected(r.db, r.info.Dialect, r.defaultSchemaName())
+	if r.omitAtlasRefusedBlocks {
+		return atlashclrender.RenderInspectedForAtlasCLI(db, r.info.Dialect, r.defaultSchemaName())
+	}
+	return atlashclrender.RenderInspected(db, r.info.Dialect, r.defaultSchemaName())
+}
+
+// hclSource exports typed table and index settings as the platform properties
+// HCL can carry, so a ClickHouse skipping index keeps its type and granularity
+// in the document. A model without a source-property codec stays a facet, and
+// the renderer reports it as a loss rather than writing a partial block.
+func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
+	db := r.db
+	if db == nil || r.info.Dialect == "" {
+		return db, nil
+	}
+	for _, encode := range []func(context.Context, *schemamodel.Database, string, schemaproperties.Runtime) (*schemamodel.Database, error){
+		schemaproperties.EncodeTables, schemaproperties.EncodeIndexes,
+	} {
+		encoded, err := encode(r.ctx, db, r.info.Dialect, r.runtime)
+		switch {
+		case errors.Is(err, ptaherr.ErrUnsupportedFeature):
+			continue
+		case err != nil:
+			return nil, err
+		}
+		db = encoded
+	}
+	return db, nil
 }
 
 // sqlSource is the database the SQL format renders, which is the inspected one

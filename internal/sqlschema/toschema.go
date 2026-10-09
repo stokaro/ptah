@@ -443,11 +443,11 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 		KeyBlockSize: index.KeyBlockSize,
 		// PostgreSQL-specific features
 		Type: index.Type,
-		// ClickHouse's data-skipping granularity. Dropping it here let the
-		// renderer substitute its own default, so an index read with
-		// GRANULARITY 1 was written back with GRANULARITY 8192
-		// (stokaro/ptah#1574).
-		Granularity:    index.Granularity,
+		// ClickHouse's data-skipping type and granularity arrive as the
+		// owner's facets. Dropping them here let the renderer substitute its
+		// own defaults, so an index read with GRANULARITY 1 was written back
+		// with GRANULARITY 8192 (stokaro/ptah#1574).
+		Facets:         index.Facets,
 		Parser:         index.Parser,
 		Condition:      index.Condition,
 		Concurrently:   index.Concurrently,

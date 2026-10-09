@@ -64,15 +64,32 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	return projected, nil
 }
 
+func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
+	projected, err := projectFacets(dialect, facets)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
+		return refuseActiveFacets(dialect, projected)
+	}
+	if err := clickhouse.ValidateIndexFacets(projected); err != nil {
+		return schemaext.Facets{}, err
+	}
+	return projected, nil
+}
+
 func validateDeclaredFacets(dialect string, database *schemamodel.Database) error {
-	tables := make(map[*schemaext.Facets]struct{}, len(database.Tables))
+	owners := make(map[*schemaext.Facets]func(string, schemaext.Facets) (schemaext.Facets, error), len(database.Tables)+len(database.Indexes))
 	for i := range database.Tables {
-		tables[&database.Tables[i].Facets] = struct{}{}
+		owners[&database.Tables[i].Facets] = prepareTableFacets
+	}
+	for i := range database.Indexes {
+		owners[&database.Indexes[i].Facets] = prepareIndexFacets
 	}
 	for _, facets := range database.FacetSlots() {
 		prepare := prepareFacets
-		if _, table := tables[facets]; table {
-			prepare = prepareTableFacets
+		if owner, found := owners[facets]; found {
+			prepare = owner
 		}
 		if _, err := prepare(dialect, *facets); err != nil {
 			return err

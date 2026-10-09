@@ -147,7 +147,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	indexes := indexesByName(after.Indexes)
 	c.Assert(indexes, qt.HasLen, 2)
 	c.Assert(indexes["users_email_search"].Operator, qt.Equals, "gin_trgm_ops")
-	c.Assert(indexes["users_score_bloom"].Granularity, qt.Equals, 64)
+	c.Assert(indexes["users_score_bloom"].Overrides, qt.DeepEquals, map[string]map[string]string{"clickhouse": {"granularity": "64"}})
 
 	constraints := constraintsByName(after.Constraints)
 	c.Assert(constraints["users_positive_id"].Comment, qt.Equals, "Positive identifier")

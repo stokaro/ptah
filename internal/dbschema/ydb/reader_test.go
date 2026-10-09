@@ -1534,7 +1534,6 @@ func TestReader_ColumnTableMetadata(t *testing.T) {
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].YDBColumnTable, qt.DeepEquals, spec)
 	c.Assert(db.Indexes, qt.HasLen, 1)
-	c.Assert(db.Indexes[0].Type, qt.Equals, "bloom_filter")
 	c.Assert(db.Indexes[0].Method, qt.Equals, "bloom_filter")
 	c.Assert(db.Indexes[0].Columns, qt.DeepEquals, []string{"body"})
 	c.Assert(db.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"false_positive_probability": "0.01"})

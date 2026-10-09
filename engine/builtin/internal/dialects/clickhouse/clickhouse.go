@@ -1151,16 +1151,29 @@ func (r *Renderer) renderColumnNode(*ast.ColumnNode) error { return nil }
 // the table / alter handlers, so one on its own writes nothing.
 func (r *Renderer) renderConstraint(*ast.ConstraintNode) error { return nil }
 
-// renderIndex emits a ClickHouse data-skipping index. Without an explicit
-// type annotation we emit a `minmax` index with GRANULARITY 1. Users wanting `set(N)` /
-// `bloom_filter(p)` / `tokenbf_v1(...)` etc. override via the `type=` and
-// `granularity=` keys on //ptah:schema:index.
+// renderIndex emits a ClickHouse data-skipping index. The type and granularity
+// come from the ClickHouse owner's index settings; without them the index is a
+// `minmax` index with GRANULARITY 1. A declaration states `set(N)`,
+// `bloom_filter(p)`, `tokenbf_v1(...)` and other types through the `type`
+// attribute or `platform.clickhouse.type`, and the granularity through
+// `platform.clickhouse.granularity`.
 func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	// Before anything is recorded or written: a type this server cannot read
 	// makes the whole ALTER fail, so the author gets no index rather than a
 	// weaker one, and a record about a lesser loss would describe the wrong
 	// problem.
 	if err := refuseForeignIndexAccessMethod(node.Name, node.Type); err != nil {
+		return err
+	}
+	if node.Type != "" {
+		return fmt.Errorf("%w: ClickHouse index %q carries type %q in the common index type; "+
+			"a data-skipping type is a ClickHouse index setting", ptaherr.ErrInvalidSchemaDiff, node.Name, node.Type)
+	}
+	settings, err := skippingIndexSettings(node)
+	if err != nil {
+		return err
+	}
+	if err := refuseForeignIndexAccessMethod(node.Name, settings.IndexType); err != nil {
 		return err
 	}
 	// A data-skipping index carries no comment clause, so the declaration
@@ -1204,7 +1217,7 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 		expr = "(" + expr + ")"
 	}
 	return r.renderOwnedExtension(&ast.AlterTableNode{Name: node.Table}, ast.AlterExtension, &chast.AddSkippingIndex{
-		Name: node.Name, Expression: expr, IndexType: node.Type, Granularity: node.Granularity,
+		Name: node.Name, Expression: expr, IndexType: settings.IndexType, Granularity: settings.Granularity,
 	})
 }
 

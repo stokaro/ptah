@@ -30,7 +30,7 @@ func TestIndexPropertiesConsumeClaimedTypeWithoutMutatingSource(t *testing.T) {
 	runtime := indexPropertyRuntime()
 	source := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "by.id", Type: "set(100)", Fields: []string{"id"}, Overrides: map[string]map[string]string{
-			"ch": {"granularity": "18446744073709551615", "future": "retained"}, "other": {"type": "foreign"},
+			"ch": {"granularity": "18446744073709551615"}, "other": {"type": "foreign"},
 		}},
 		{Name: "unmanaged"},
 	}}
@@ -41,7 +41,7 @@ func TestIndexPropertiesConsumeClaimedTypeWithoutMutatingSource(t *testing.T) {
 	c.Assert(found, qt.IsTrue)
 	c.Assert(value, qt.DeepEquals, (&chschema.ObservedIndex{IndexType: "set(100)", Granularity: math.MaxUint64}).Desired())
 	c.Assert(decoded.Indexes[0].Type, qt.Equals, "")
-	c.Assert(decoded.Indexes[0].Overrides, qt.DeepEquals, map[string]map[string]string{"ch": {"future": "retained"}, "other": {"type": "foreign"}})
+	c.Assert(decoded.Indexes[0].Overrides, qt.DeepEquals, map[string]map[string]string{"other": {"type": "foreign"}})
 	c.Assert(decoded.Indexes[0].Facets.TargetScope(chschema.IndexKind), qt.DeepEquals, []string{"clickhouse"})
 	c.Assert(decoded.Indexes[1].Facets.IsZero(), qt.IsTrue)
 	c.Assert(source.Indexes[0].Type, qt.Equals, "set(100)")
@@ -58,8 +58,8 @@ func TestIndexPropertiesConsumeClaimedTypeWithoutMutatingSource(t *testing.T) {
 	reread, err := schemaproperties.DecodeIndexes(t.Context(), exported, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(reread.Indexes[0].Facets.Equal(decoded.Indexes[0].Facets), qt.IsTrue)
-	exported.Indexes[0].Overrides["ch"]["future"] = "changed"
-	c.Assert(decoded.Indexes[0].Overrides["ch"]["future"], qt.Equals, "retained")
+	exported.Indexes[0].Overrides["other"]["type"] = "changed"
+	c.Assert(decoded.Indexes[0].Overrides["other"]["type"], qt.Equals, "foreign")
 }
 
 func TestDecodeIndexesRefusesCompetingDeclarationsAndPartialResults(t *testing.T) {
@@ -122,4 +122,28 @@ func TestIndexPropertyOwnershipLeavesUnclaimedCommonTypeIntact(t *testing.T) {
 	c.Assert(decoded.Indexes, qt.DeepEquals, source.Indexes)
 	decoded.Indexes[0].Overrides["clickhouse"]["granularity"] = "changed"
 	c.Assert(source.Indexes[0].Overrides["clickhouse"]["granularity"], qt.Equals, "8")
+}
+
+// Only the selected target's owners read index properties, so a key none of
+// them claims would otherwise be accepted and ignored by every renderer. A
+// target without index property owners refuses every key of its own group.
+func TestIndexPropertiesRefuseUnclaimedKeysOfTheSelectedTarget(t *testing.T) {
+	for _, test := range []struct {
+		name, target, want string
+		overrides          map[string]map[string]string
+	}{
+		{"owned target", "clickhouse", `.*index "by_id" declares property "future" for "ch", which no feature owner of target "clickhouse" claims.*`,
+			map[string]map[string]string{"ch": {"granularity": "4", "future": "x"}}},
+		{"target without owners", "other", `.*index "by_id" declares property "fillfactor" for "other", which no feature owner of target "other" claims.*`,
+			map[string]map[string]string{"other": {"fillfactor": "70"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := &schemamodel.Database{Indexes: []schemamodel.Index{{Name: "by_id", Fields: []string{"id"}, Overrides: test.overrides}}}
+			decoded, err := schemaproperties.DecodeIndexes(t.Context(), source, test.target, indexPropertyRuntime())
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(decoded, qt.IsNil)
+		})
+	}
 }

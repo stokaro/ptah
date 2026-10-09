@@ -20,8 +20,8 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
 		IndexesAdded: difftypes.IndexChanges{
-			{Index: schemamodel.Index{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"}, TableName: "events"},
-			{Index: schemamodel.Index{Name: "idx_shared", TableName: "metrics", Fields: []string{"metric_id"}, Type: "minmax"}, TableName: "metrics"},
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}}, TableName: "events"},
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "metrics", Fields: []string{"metric_id"}}, TableName: "metrics"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "events"},
@@ -29,8 +29,8 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 		},
 	}
 	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
-		{Name: "idx_shared", TableName: "metrics", Fields: []string{"metric_id"}, Type: "minmax"},
-		{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"},
+		{Name: "idx_shared", TableName: "metrics", Fields: []string{"metric_id"}},
+		{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}},
 	}}
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(

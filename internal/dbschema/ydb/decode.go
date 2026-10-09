@@ -74,7 +74,7 @@ func (r *Reader) table(
 	if columnTable != nil {
 		table.YDBColumnTable = columnTable.Spec.Clone()
 		for _, index := range columnTable.Indexes {
-			db.Indexes = append(db.Indexes, catalog.Index{Name: index.Name, TableName: name, Schema: schema, Type: index.Method, Method: index.Method, Columns: index.Columns, StorageParams: index.Options, Comment: comments.Indexes[index.Name]})
+			db.Indexes = append(db.Indexes, catalog.Index{Name: index.Name, TableName: name, Schema: schema, Method: index.Method, Columns: index.Columns, StorageParams: index.Options, Comment: comments.Indexes[index.Name]})
 		}
 	} else {
 		families, familiesRead := r.columnFamilies(described)

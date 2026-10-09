@@ -69,7 +69,6 @@ func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 	c.Assert(embeddedProperties["index"], qt.IsNil)
 
 	directivesWithoutPlatformOverrides := []string{
-		"ptah.schema.index",
 		"ptah.schema.schema",
 		"ptah.schema.view",
 		"ptah.schema.matview",
@@ -107,6 +106,24 @@ func TestGenerateIncludesIndexCoveringColumns(t *testing.T) {
 		qt.Equals,
 		"Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only; SQL Server: default/BTREE, rendered nonclustered; YDB: COVER on a global index).",
 	)
+}
+
+// TestGenerateAcceptsIndexPlatformPropertiesWithoutBareGranularity pins where
+// a skipping index's settings are written: platform properties a selected
+// owner decodes, such as platform.clickhouse.granularity, and no bare key.
+func TestGenerateAcceptsIndexPlatformPropertiesWithoutBareGranularity(t *testing.T) {
+	c := qt.New(t)
+
+	desired, err := annotationschema.Generate()
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(json.Unmarshal(desired, &doc), qt.IsNil)
+	defs := doc["$defs"].(map[string]any)
+	index := defs["ptah.schema.index"].(map[string]any)
+	attributes := index["properties"].(map[string]any)["attributes"].(map[string]any)
+	c.Assert(attributes["patternProperties"], qt.IsNotNil)
+	c.Assert(attributes["properties"].(map[string]any)["granularity"], qt.IsNil)
 }
 
 // TestGenerateRefusesRetiredAttributesAndSaysWhy pins the one property shape

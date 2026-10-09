@@ -82,23 +82,11 @@ func TestIndexCreationDoesNotRestoreExcludedIndexSettings(t *testing.T) {
 	c.Assert(result.Tables[0].Facets[0].Values.Kinds(), qt.DeepEquals, []schemaext.Kind{chschema.TableKind})
 }
 
-func TestIndexCreationRefusesCompetingSettingsWithoutPartialTable(t *testing.T) {
-	for _, test := range []struct {
-		name        string
-		indexType   string
-		granularity int
-	}{
-		{name: "type", indexType: "set(100)"},
-		{name: "granularity", granularity: 8},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			request := indexCreationRequest()
-			request.Tables[0].Declaration.Indexes[0].Type = test.indexType
-			request.Tables[0].Declaration.Indexes[0].Granularity = test.granularity
-			result, err := (chprepare.Service{}).ProjectTableCreations(t.Context(), request)
-			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-			c.Assert(result, qt.DeepEquals, schemaprojection.TableCreationResult{})
-		})
-	}
+func TestIndexCreationRefusesCompetingTypeWithoutPartialTable(t *testing.T) {
+	c := qt.New(t)
+	request := indexCreationRequest()
+	request.Tables[0].Declaration.Indexes[0].Type = "set(100)"
+	result, err := (chprepare.Service{}).ProjectTableCreations(t.Context(), request)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(result, qt.DeepEquals, schemaprojection.TableCreationResult{})
 }

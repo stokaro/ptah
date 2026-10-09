@@ -126,25 +126,13 @@ func TestIndexPreparationRefusesUnknownEvidenceWithoutPartialOutput(t *testing.T
 	}
 }
 
-func TestIndexPreparationRefusesCompetingSourceSettings(t *testing.T) {
-	for _, test := range []struct {
-		name        string
-		indexType   string
-		granularity int
-	}{
-		{name: "undecoded type", indexType: "minmax"},
-		{name: "undecoded granularity", granularity: 8},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			request := indexRequest()
-			request.Tables[0].Desired.Indexes[0].Type = test.indexType
-			request.Tables[0].Desired.Indexes[0].Granularity = test.granularity
-			result, err := (chprepare.Service{}).PrepareTables(t.Context(), request)
-			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-			c.Assert(result, qt.DeepEquals, schemapreparation.Result{})
-		})
-	}
+func TestIndexPreparationRefusesAnUndecodedType(t *testing.T) {
+	c := qt.New(t)
+	request := indexRequest()
+	request.Tables[0].Desired.Indexes[0].Type = "minmax"
+	result, err := (chprepare.Service{}).PrepareTables(t.Context(), request)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(result, qt.DeepEquals, schemapreparation.Result{})
 }
 
 func TestIndexPreparationUsesStructuralObservedOwner(t *testing.T) {

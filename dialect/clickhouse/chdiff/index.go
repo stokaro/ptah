@@ -21,6 +21,13 @@ type Index struct {
 // Kind returns the owned change identity.
 func (*Index) Kind() schemaext.Kind { return IndexKind }
 
+// Effect reports the replacement the change requires. ClickHouse cannot change
+// a skipping index's type or granularity in place, and a replacement discards
+// the index data built for existing parts until MATERIALIZE INDEX rebuilds it.
+func (*Index) Effect() schemaext.Effect {
+	return schemaext.Effect{Impact: schemaext.Behavioral, Reason: "changing a skipping index's type or granularity replaces the index and discards the index data built for existing parts"}
+}
+
 // CloneChange returns independent operands. A nil receiver remains typed nil.
 func (v *Index) CloneChange() schemaext.ChangeValue {
 	if v == nil {

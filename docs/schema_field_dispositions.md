@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-587 fields are reachable from the desired schema, and each one carries
+591 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 510 | reaches rendered SQL on at least one target |
+| `ddl` | 514 | reaches rendered SQL on at least one target |
 | `comparison` | 9 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -155,6 +155,8 @@ None.
 | `ast.YDBTieredTTLSpec.Column` | `ddl` | — |
 | `ast.YDBTieredTTLSpec.Tiers` | `ddl` | — |
 | `ast.YDBTieredTTLSpec.Unit` | `ddl` | — |
+| `chschema.DesiredIndex.Granularity` | `ddl` | — |
+| `chschema.DesiredIndex.IndexType` | `ddl` | — |
 | `chschema.DesiredTable.Engine` | `ddl` | — |
 | `chschema.DesiredTable.OrderBy` | `ddl` | — |
 | `chschema.DesiredTable.PartitionBy` | `ddl` | — |
@@ -162,6 +164,8 @@ None.
 | `chschema.DesiredTable.SampleBy` | `ddl` | — |
 | `chschema.DesiredTable.Settings` | `ddl` | — |
 | `chschema.DesiredTable.TTL` | `ddl` | — |
+| `chschema.GranularitySetting.State` | `ddl` | — |
+| `chschema.GranularitySetting.Value` | `ddl` | — |
 | `chschema.Setting.State` | `ddl` | — |
 | `chschema.Setting.Value` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
@@ -413,13 +417,13 @@ None.
 | `schemamodel.Index.Condition` | `ddl` | — |
 | `schemamodel.Index.Facets` | `ddl` | — |
 | `schemamodel.Index.Fields` | `ddl` | — |
-| `schemamodel.Index.Granularity` | `ddl` | — |
 | `schemamodel.Index.IncludeColumns` | `ddl` | — |
 | `schemamodel.Index.Invisible` | `ddl` | — |
 | `schemamodel.Index.KeyBlockSize` | `ddl` | — |
 | `schemamodel.Index.Name` | `ddl` | — |
 | `schemamodel.Index.NullsDistinct` | `ddl` | — |
 | `schemamodel.Index.Operator` | `ddl` | — |
+| `schemamodel.Index.Overrides` | `ddl` | — |
 | `schemamodel.Index.Parser` | `ddl` | — |
 | `schemamodel.Index.Partitioning` | `ddl` | — |
 | `schemamodel.Index.Parts` | `ddl` | — |

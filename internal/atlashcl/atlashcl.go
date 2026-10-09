@@ -928,10 +928,6 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if nullsDistinct != nil && !unique {
 		return schemamodel.Index{}, p.blockError(block, "index nulls_distinct requires unique = true")
 	}
-	granularity, err := p.optionalGranularity(block)
-	if err != nil {
-		return schemamodel.Index{}, err
-	}
 	overrides, err := p.parsePlatformOverrides(block, "index")
 	if err != nil {
 		return schemamodel.Index{}, err
@@ -950,7 +946,6 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		Comment:        p.optionalString(block.Body.Attributes["comment"]),
 		IncludeColumns: include,
 		StorageParams:  storageParams,
-		Granularity:    granularity,
 		Overrides:      overrides,
 		TableName:      tableName,
 	})
@@ -1143,26 +1138,6 @@ func (p *parser) parsePlatformOverride(block *hclsyntax.Block, owner string) (pl
 		return platformOverride{}, err
 	}
 	return platformOverride{key: block.Labels[0], value: value}, nil
-}
-
-// optionalGranularity reads the optional ClickHouse data-skipping index
-// GRANULARITY value. An absent attribute yields 0, which the ClickHouse
-// renderer treats as "use the dialect default". The value must be a
-// non-negative integer within the int64 range, mirroring the Go-annotation
-// path (parseIndexComment), which parses it with strconv.Atoi and rejects
-// negatives; both frontends therefore accept the same granularity values.
-func (p *parser) optionalGranularity(block *hclsyntax.Block) (int, error) {
-	value, err := p.optionalInt64(block, "granularity", "index")
-	if err != nil {
-		return 0, err
-	}
-	if value == nil {
-		return 0, nil
-	}
-	if *value < 0 {
-		return 0, p.blockError(block, "index attribute %q must be a non-negative integer", "granularity")
-	}
-	return int(*value), nil
 }
 
 func (p *parser) parseUnique(structName, tableName string, block *hclsyntax.Block) (schemamodel.Constraint, error) {
@@ -1944,7 +1919,6 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"type":            true,
 		"where":           true,
 		"comment":         true,
-		"granularity":     true,
 		"ops":             true,
 		// A YDB vector index's settings; see [parser.indexVector].
 		ydbindex.AttributeDistance:        true,

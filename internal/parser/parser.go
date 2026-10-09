@@ -6284,12 +6284,17 @@ func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
 	if err != nil {
 		return err
 	}
+	// The type and granularity are the ClickHouse owner's settings, not the
+	// common index type, so they travel as its declaration.
+	facets, err := index.DeclaredFacets()
+	if err != nil {
+		return err
+	}
 	table.AddIndex(&ast.IndexNode{
-		Name:        index.Name,
-		Table:       table.Name,
-		Columns:     []string{index.Expression},
-		Type:        index.IndexType,
-		Granularity: index.Granularity,
+		Facets:  facets,
+		Name:    index.Name,
+		Table:   table.Name,
+		Columns: []string{index.Expression},
 	})
 	return nil
 }
@@ -6308,8 +6313,9 @@ func (p *Parser) parseAddSkippingIndex() (ast.AlterOperation, error) {
 // The expression and the type are both captured as source text: an expression
 // is arbitrary, and a type carries its own parameters -- `set(100)`,
 // `bloom_filter(0.01)`, `tokenbf_v1(256, 2, 0)` -- so neither survives being
-// rebuilt from tokens. GRANULARITY is optional; the renderer supplies
-// ClickHouse's documented default for a missing one.
+// rebuilt from tokens. GRANULARITY is optional and, when present, a positive
+// unsigned 64-bit number; a missing one is left to the owner, which keeps an
+// existing index's granularity and creates a new one with ClickHouse's default.
 func (p *Parser) parseSkippingIndex() (*chast.AddSkippingIndex, error) {
 	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
 		return nil, err
@@ -6354,9 +6360,9 @@ func (p *Parser) parseSkippingIndex() (*chast.AddSkippingIndex, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected a value after GRANULARITY on index %s: %w", name, err)
 	}
-	parsed, err := strconv.Atoi(granularity)
-	if err != nil {
-		return nil, fmt.Errorf("GRANULARITY on index %s must be a number, got %q", name, granularity)
+	parsed, err := strconv.ParseUint(granularity, 10, 64)
+	if err != nil || parsed == 0 {
+		return nil, fmt.Errorf("GRANULARITY on index %s must be a positive number, got %q", name, granularity)
 	}
 	operation.Granularity = parsed
 	return operation, nil

@@ -346,8 +346,6 @@ func toDBIndexes(
 			StorageParams:      maps.Clone(index.StorageParams),
 			Partitioning:       index.Partitioning.Clone(),
 			Vector:             index.Vector.Clone(),
-			Type:               index.Type,
-			Granularity:        index.Granularity,
 			RequiresExtensions: slices.Clone(index.RequiresExtensions),
 		})
 	}
@@ -355,10 +353,10 @@ func toDBIndexes(
 }
 
 // indexAccessMethod reports schemamodel.Index.Type as an access method only where
-// that is what it means. On ClickHouse the same field carries the
-// data-skipping-index type, which is a different concept the DB shape keeps in
-// Index.Type. On YDB it carries how the index is maintained, synchronously or
-// not, and the YDB comparison reads that from Method on the current side.
+// that is what it means. On ClickHouse the selected owner consumes the field as
+// the data-skipping-index type, a facet rather than an access method. On YDB it
+// carries how the index is maintained, synchronously or not, and the YDB
+// comparison reads that from Method on the current side.
 func indexAccessMethod(indexType, dialect string) string {
 	if !platform.IsPostgresFamily(dialect) && platform.NormalizeDialect(dialect) != platform.YDB {
 		return ""

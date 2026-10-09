@@ -48,7 +48,7 @@ func TestDocumentProjectionDecodesIndexPropertiesBeforeCreation(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(found, qt.IsTrue)
 		c.Assert(value, qt.DeepEquals, want)
-		c.Assert(projected.Indexes[i].Type, qt.Equals, "")
+		c.Assert(projected.Indexes[i].Method, qt.Equals, "")
 		c.Assert(source.Indexes[i].Facets.IsZero(), qt.IsTrue)
 	}
 	c.Assert(source.Indexes[1].Type, qt.Equals, "set(100)")

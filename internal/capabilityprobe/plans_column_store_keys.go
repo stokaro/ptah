@@ -32,7 +32,7 @@ func withColumnStoreKeys(p plan, dialect string) plan {
 		p.experiments = append(p.experiments, proven(index.key, schemaChange{
 			setup:  []string{fmt.Sprintf("CREATE TABLE %s (id Uint64 NOT NULL, body Utf8, PRIMARY KEY(id)) PARTITION BY HASH(id) WITH (STORE=COLUMN, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT=1)", table)},
 			change: []string{fmt.Sprintf("ALTER TABLE %s ADD INDEX local_ix LOCAL USING %s ON (%s)", table, method, index.column)},
-			after:  []check{ydbDescribedIndex(table, "local_ix", "the local index read through monitoring", func(index catalog.Index) bool { return index.Type == method })},
+			after:  []check{ydbDescribedIndex(table, "local_ix", "the local index read through monitoring", func(index catalog.Index) bool { return index.Method == method })},
 		}))
 	}
 	if p.undecided == nil {

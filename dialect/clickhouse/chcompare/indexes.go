@@ -61,10 +61,12 @@ func (IndexService) CompareFacets(ctx context.Context, request schemaext.FacetCo
 	return result, nil
 }
 
+// compareIndex resolves and compares settings only for an index both sides
+// hold. A new index is created from its declaration and a removed one goes
+// with its definition, so neither needs a resolved operand here.
 func compareIndex(request schemaext.FacetComparisonRequest, owner schemaext.ParentState, result *schemaext.FacetComparisonResult) error {
-	desired, current, err := indexValues(request, owner.Subject)
-	if err != nil || !owner.Desired {
-		return err
+	if !owner.Desired {
+		return nil
 	}
 	if indexLimited(request.Desired.Coverage, owner.Subject) {
 		indexUndecided(result, owner.Subject, "the desired source could not describe ClickHouse index settings")
@@ -72,6 +74,10 @@ func compareIndex(request schemaext.FacetComparisonRequest, owner schemaext.Pare
 	}
 	if !owner.Current {
 		return nil
+	}
+	desired, current, err := indexValues(request, owner.Subject)
+	if err != nil {
+		return err
 	}
 	if desired == nil && current == nil &&
 		request.Desired.Coverage.Lookup(chschema.IndexKind, owner.Subject).State == schemaext.Uninspected &&

@@ -12,7 +12,9 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -217,18 +219,18 @@ func TestGenerateMigrationAST_IndexExplicitTableNameWins(t *testing.T) {
 }
 
 // TestGenerateMigrationAST_IndexTypeAndGranularityPropagate guards the
-// annotation-driven CH skipping-index path: type= and granularity= must
-// reach the AST node so the renderer can emit the right SQL.
+// declared skipping-index path: the owner's settings must reach the AST node
+// so the renderer can emit the right SQL.
 func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 	c := qt.New(t)
 	gen := mkDB()
+	settings := must.Must(schemaext.NewFacets((&chschema.ObservedIndex{IndexType: "bloom_filter(0.01)", Granularity: 64}).Desired()))
 	gen.Indexes = []schemamodel.Index{
 		{
-			StructName:  "Event",
-			Name:        "idx_e_payload",
-			Fields:      []string{"payload"},
-			Type:        "bloom_filter(0.01)",
-			Granularity: 64,
+			Facets:     settings,
+			StructName: "Event",
+			Name:       "idx_e_payload",
+			Fields:     []string{"payload"},
 		},
 	}
 	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexAdditionsFor(gen, difftypes.IndexRef{Name: "idx_e_payload", TableName: "events"})}
@@ -242,8 +244,11 @@ func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 	c.Assert(nodes, qt.HasLen, 1)
 	idx, ok := nodes[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(idx.Type, qt.Equals, "bloom_filter(0.01)")
-	c.Assert(idx.Granularity, qt.Equals, 64)
+	c.Assert(idx.Type, qt.Equals, "")
+	c.Assert(idx.Facets, qt.DeepEquals, settings)
+	sql, err := builtin.RenderSQL("clickhouse", idx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "TYPE bloom_filter(0.01) GRANULARITY 64;")
 }
 
 func TestGenerateMigrationAST_NilSchemaHappyPath(t *testing.T) {

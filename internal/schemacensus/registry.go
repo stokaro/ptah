@@ -7,6 +7,8 @@ package schemacensus
 // set to match Fields() exactly, requires a reason on every entry that is not
 // DDL, and requires Measure to agree with every entry that is.
 var registry = []Entry{
+	{Field: "chschema.DesiredIndex.Granularity", Disposition: DDL},
+	{Field: "chschema.DesiredIndex.IndexType", Disposition: DDL},
 	{Field: "chschema.DesiredTable.Engine", Disposition: DDL},
 	{Field: "chschema.DesiredTable.OrderBy", Disposition: DDL},
 	{Field: "chschema.DesiredTable.PartitionBy", Disposition: DDL},
@@ -14,6 +16,8 @@ var registry = []Entry{
 	{Field: "chschema.DesiredTable.SampleBy", Disposition: DDL},
 	{Field: "chschema.DesiredTable.Settings", Disposition: DDL},
 	{Field: "chschema.DesiredTable.TTL", Disposition: DDL},
+	{Field: "chschema.GranularitySetting.State", Disposition: DDL},
+	{Field: "chschema.GranularitySetting.Value", Disposition: DDL},
 	{Field: "chschema.Setting.State", Disposition: DDL},
 	{Field: "chschema.Setting.Value", Disposition: DDL},
 	{Field: "schemamodel.CompositeType.Facets", Disposition: DDL},
@@ -416,7 +420,6 @@ var registry = []Entry{
 	{Field: "schemamodel.Index.Concurrently", Disposition: Planning, Reason: "asks that the index be BUILT without locking when added to a live table; internal/concurrentindex owns that decision, and only a plan carries it into DDL"},
 	{Field: "schemamodel.Index.Condition", Disposition: DDL},
 	{Field: "schemamodel.Index.Fields", Disposition: DDL},
-	{Field: "schemamodel.Index.Granularity", Disposition: DDL},
 	{Field: "schemamodel.Index.IncludeColumns", Disposition: DDL},
 	{Field: "schemamodel.Index.Invisible", Disposition: DDL},
 	{Field: "schemamodel.Index.KeyBlockSize", Disposition: DDL},

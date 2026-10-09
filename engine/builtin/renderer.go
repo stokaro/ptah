@@ -579,7 +579,7 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			Message: "index node is nil",
 		}
 	}
-	facets, err := prepareFacets(dialect, node.Facets)
+	facets, err := prepareIndexFacets(dialect, node.Facets)
 	if err != nil {
 		return nil, err
 	}

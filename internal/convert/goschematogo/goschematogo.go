@@ -862,7 +862,6 @@ func indexDefinitionAttrs(index schemamodel.Index) []attr {
 		{name: "condition", value: index.Condition, set: index.Condition != ""},
 		{name: "ops", value: index.Operator, set: index.Operator != ""},
 		{name: "table", value: index.TableName, set: index.TableName != ""},
-		{name: "granularity", value: strconv.Itoa(index.Granularity), set: index.Granularity > 0},
 		{name: "comment", value: index.Comment, set: index.Comment != ""},
 		{name: "invisible", value: strconv.FormatBool(index.Invisible), set: index.Invisible},
 		{name: "key_block_size", value: strconv.FormatUint(index.KeyBlockSize, 10), set: index.KeyBlockSize != 0},

@@ -224,7 +224,7 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 	indexName := "idx`; DROP TABLE users; --"
 	diff := &difftypes.SchemaDiff{
 		IndexesAdded: difftypes.IndexChanges{
-			{Index: schemamodel.Index{Name: indexName, TableName: tableName, Fields: []string{"payload"}, Type: "minmax"}, TableName: tableName},
+			{Index: schemamodel.Index{Name: indexName, TableName: tableName, Fields: []string{"payload"}}, TableName: tableName},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: indexName, TableName: tableName},

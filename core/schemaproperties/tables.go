@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
@@ -115,11 +116,34 @@ func decode(ctx context.Context, db *schemamodel.Database, target string, format
 			fragments = append(fragments, schemaext.PropertyFragment{Kind: definition.Kind, Properties: properties})
 			owners = append(owners, i)
 		}
+		if err := refuseUnclaimed(owner, batch.target, format); err != nil {
+			return nil, err
+		}
 	}
 	if err := batch.decode(ctx, runtime, fragments, owners); err != nil {
 		return nil, err
 	}
 	return batch.database, nil
+}
+
+// refuseUnclaimed reports an index property the selected target's owners left
+// in place. Nothing else reads index properties, so an unclaimed key would be
+// accepted and then ignored. Table properties also carry common target
+// options, which their own readers consume, and are left for those readers.
+func refuseUnclaimed(owner propertyOwner, target schemaext.TargetSelection, format schemaext.PropertyFormat) error {
+	if format != schemaext.IndexPlatformProperties {
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(*owner.properties)) {
+		if !target.Includes([]string{name}) {
+			continue
+		}
+		if keys := slices.Sorted(maps.Keys((*owner.properties)[name])); len(keys) > 0 {
+			return fmt.Errorf("%w: %s %q declares property %q for %q, which no feature owner of target %q claims",
+				ptaherr.ErrUnsupportedFeature, owner.label, owner.name, keys[0], name, target.Name())
+		}
+	}
+	return nil
 }
 
 func (b propertyBatch) decode(ctx context.Context, runtime Runtime, fragments []schemaext.PropertyFragment, owners []int) error {

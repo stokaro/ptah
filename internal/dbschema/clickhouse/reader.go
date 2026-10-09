@@ -7,6 +7,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/revisiontable"
@@ -94,7 +95,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read tables: %w", err)
 	}
-	indexes, err := r.readSkippingIndexes(ctx, dbName)
+	indexes, indexKnowledge, err := r.readSkippingIndexes(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read indexes: %w", err)
 	}
@@ -115,7 +116,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		Views:    views,
 		MatViews: matViews,
 	}, revisiontable.NativeNames())
-	schema.FeatureCoverage, err = observedTableCoverage(schema.Tables)
+	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexKnowledge)
 	if err != nil {
 		return nil, err
 	}
@@ -504,21 +505,26 @@ func (r *Reader) skippingIndexTablePresent(ctx context.Context) (bool, error) {
 	return n > 0, nil
 }
 
-func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]catalog.Index, error) {
+// readSkippingIndexes reports every data-skipping index of the database and
+// what the read established about their settings. The type and granularity are
+// the ClickHouse owner's observation, attached as a facet.
+// system.data_skipping_indices lists every skipping index with its settings,
+// so a server that has it establishes them for the whole database, including
+// the absence of any index it does not list. Without it nothing is known.
+func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]catalog.Index, schemaext.Knowledge, error) {
 	// system.data_skipping_indices was added in 21.x; on very old servers it
 	// is absent. Feature-detect by probing system.tables before querying so
 	// real failures aren't swallowed by an error-substring sniff.
 	present, err := r.skippingIndexTablePresent(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("clickhouse: detect system.data_skipping_indices: %w", err)
+		return nil, schemaext.Knowledge{}, fmt.Errorf("clickhouse: detect system.data_skipping_indices: %w", err)
 	}
 	if !present {
-		return nil, nil
+		return nil, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the server has no system.data_skipping_indices table"}, nil
 	}
 
-	// system.data_skipping_indices exposes `granularity` as UInt64. The
-	// driver decodes that into uint64 by default, so scan into that type
-	// explicitly and cast on the way out.
+	// system.data_skipping_indices exposes `granularity` as UInt64, and the
+	// owner's model keeps the whole range.
 	// type_full preserves parameters such as the set size or Bloom-filter
 	// probability; type contains only the index type's name.
 	// The same inner-table subtraction the table read applies: an index on a
@@ -533,7 +539,7 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 		ORDER BY table, name
 	`, dbName, dbName)
 	if err != nil {
-		return nil, err
+		return nil, schemaext.Knowledge{}, err
 	}
 	defer rows.Close()
 
@@ -544,26 +550,28 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 			granularity                uint64
 		)
 		if err := rows.Scan(&table, &name, &expr, &idxType, &granularity); err != nil {
-			return nil, err
+			return nil, schemaext.Knowledge{}, err
 		}
-		// Populate Columns[0] = expression for back-compat with the
-		// existing diff layer (which compares Columns), AND set Expression
-		// for richer downstream diffing once that's wired up. The duality
-		// is intentional and documented on catalog.Index.
+		settings, err := observedIndexSettings(idxType, granularity)
+		if err != nil {
+			return nil, schemaext.Knowledge{}, fmt.Errorf("index %s on %s: %w", name, table, err)
+		}
+		// Columns[0] holds the key expression for the common diff layer,
+		// which compares Columns; Expression keeps it whole for the reports
+		// that read an expression index.
 		indexes = append(indexes, catalog.Index{
-			Name:        name,
-			TableName:   table,
-			Columns:     []string{expr},
-			Definition:  fmt.Sprintf("INDEX %s %s TYPE %s GRANULARITY %d", name, expr, idxType, granularity),
-			Type:        idxType,
-			Expression:  expr,
-			Granularity: int(granularity),
+			Facets:     settings,
+			Name:       name,
+			TableName:  table,
+			Columns:    []string{expr},
+			Definition: fmt.Sprintf("INDEX %s %s TYPE %s GRANULARITY %d", name, expr, idxType, granularity),
+			Expression: expr,
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, schemaext.Knowledge{}, err
 	}
-	return indexes, nil
+	return indexes, schemaext.Knowledge{State: schemaext.Complete}, nil
 }
 
 // readRefreshableViews returns the names of the materialized views the server

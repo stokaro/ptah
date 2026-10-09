@@ -579,12 +579,12 @@ func TestRenderIndexGranularityRoundTrip(t *testing.T) {
 		Tables: []schemamodel.Table{{StructName: "Event", Name: "events"}},
 		Fields: []schemamodel.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String"}},
 		Indexes: []schemamodel.Index{{
-			StructName:  "Event",
-			TableName:   "events",
-			Name:        "idx_events_payload",
-			Fields:      []string{"payload"},
-			Type:        "bloom_filter",
-			Granularity: 64,
+			StructName: "Event",
+			TableName:  "events",
+			Name:       "idx_events_payload",
+			Fields:     []string{"payload"},
+			Type:       "bloom_filter",
+			Overrides:  map[string]map[string]string{"clickhouse": {"granularity": "64"}},
 		}},
 	}
 	schemamodel.Finalize(db)
@@ -594,12 +594,13 @@ func TestRenderIndexGranularityRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
 	hcl := string(rendered.Data)
-	c.Assert(hcl, qt.Contains, `granularity = 64`)
+	c.Assert(hcl, qt.Contains, `override "granularity"`)
+	c.Assert(hcl, qt.Not(qt.Contains), `granularity =`)
 
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
-	c.Assert(parsed.Indexes[0].Granularity, qt.Equals, 64)
+	c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, db.Indexes[0].Overrides)
 }
 
 func TestRenderIndexZeroGranularityOmitsAttribute(t *testing.T) {
