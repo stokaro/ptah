@@ -997,13 +997,18 @@ by dropping and creating them. A classifier names a declared pool or
 `default`: YDB takes a classifier whose pool does not exist and runs its
 member's queries in `default` without a word.
 
+Safety reports classify pool limit changes and classifier routing changes as
+warnings because they affect running or queued workloads. Creating an unused
+pool is safe. Dropping a pool or classifier redirects queries and also carries
+a warning.
+
 A plan never drops a pool or a classifier the database holds and the schema
 does not declare, as it never drops a user: several applications may share a
 database. Drop one by hand, or roll back the plan that created it. A dev realm
 cannot hold one, so a plan against a realm withholds a declared pool and
 reports it; `ptah db drop-all` and a dev database reset leave pools and
 classifiers in place. The read takes them from `.sys/resource_pools` and
-`.sys/resource_pool_classifiers`. HCL, SQL and DBML have no spelling for
+`.sys/resource_pool_classifiers`. HCL and DBML have no spelling for
 either, and a document in one of them records both as not described.
 
 ### Streaming queries

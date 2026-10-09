@@ -596,7 +596,8 @@ func waitForDirectory(c *qt.C, line ydbLine, want []string, segments ...string) 
 // CASCADE, five times on each line. The replica is then being created or
 // dropped, and YDB may list it while it does not describe it: GitHub's runners
 // met that state on 25.1.4.7. Every read succeeds, and records the replica
-// only once YDB describes it.
+// only once YDB describes it. CASCADE also returns before the replica disappears
+// from the catalog, so absence is checked after that asynchronous removal.
 func TestYDBReplication_ReadsWhileReplicasComeAndGo(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -618,7 +619,12 @@ func TestYDBReplication_ReadsWhileReplicasComeAndGo(t *testing.T) {
 				c.Assert(created.AsyncReplications, qt.HasLen, 1)
 				c.Assert(tableNames(created), qt.DeepEquals, []string{"ptah_ydb_repl|src"})
 				c.Assert(dropped.AsyncReplications, qt.HasLen, 0)
-				c.Assert(dropped.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".cycle_rep"),
+				c.Assert(tableNames(dropped), qt.DeepEquals, []string{"ptah_ydb_repl|src"})
+
+				waitForDirectory(c, line, []string{"src"}, replicationSchema)
+				settled := readScoped(c, conn, replicationSchemas)
+				c.Assert(settled.AsyncReplications, qt.HasLen, 0)
+				c.Assert(settled.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".cycle_rep"),
 					qt.IsTrue)
 			}
 		})

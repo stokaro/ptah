@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/schemaprep"
@@ -1521,15 +1522,15 @@ func appendTopicStatements(visit func(ast.Node) error, topics []schemamodel.Topi
 }
 
 // FromResourcePool converts a schemamodel.ResourcePool to an
-// ast.CreateResourcePoolNode carrying the pool's settings.
-func FromResourcePool(pool schemamodel.ResourcePool) *ast.CreateResourcePoolNode {
-	return ast.NewCreateResourcePool(pool.Name, pool.Spec)
+// ast.ExtensionStatement carrying the pool's settings.
+func FromResourcePool(pool schemamodel.ResourcePool) *ast.ExtensionStatement {
+	return &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: pool.Name, Spec: new(pool.Spec.Clone())}}
 }
 
 // FromResourcePoolClassifier converts a schemamodel.ResourcePoolClassifier to
-// an ast.CreateResourcePoolClassifierNode.
-func FromResourcePoolClassifier(classifier schemamodel.ResourcePoolClassifier) *ast.CreateResourcePoolClassifierNode {
-	return ast.NewCreateResourcePoolClassifier(classifier.Name, classifier.Spec)
+// an ast.ExtensionStatement.
+func FromResourcePoolClassifier(classifier schemamodel.ResourcePoolClassifier) *ast.ExtensionStatement {
+	return &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: classifier.Name, Spec: new(classifier.Spec)}}
 }
 
 // appendResourcePoolStatements adds a node for each declared resource pool,
@@ -1541,7 +1542,7 @@ func appendResourcePoolStatements(visit func(ast.Node) error, database schemamod
 	for _, pool := range database.ResourcePools {
 		node := ast.Node(FromResourcePool(pool))
 		if pool.Name == ydbpool.DefaultPool {
-			node = ast.NewAlterResourcePool(pool.Name, pool.Spec, ast.ResourcePoolSpec{})
+			node = &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: pool.Name, Spec: new(pool.Spec.Clone()), Previous: &ast.ResourcePoolSpec{}}}
 		}
 		if err := visit(node); err != nil {
 			return err

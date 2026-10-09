@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -18,24 +19,33 @@ func TestClassify_ResourcePool(t *testing.T) {
 	tests := []struct {
 		name         string
 		node         ast.Node
+		wantSubject  string
 		wantSeverity safety.Severity
 		wantReason   string
 	}{
 		{
-			name: "a pool dropped", node: ast.NewDropResourcePool("batch"),
-			wantSeverity: safety.Warning,
-			wantReason:   "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default",
+			name: "a pool dropped", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolDrop, Name: "batch"}},
+			wantSubject: "batch", wantSeverity: safety.Warning,
+			wantReason: "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default",
 		},
 		{
-			name: "a classifier dropped", node: ast.NewDropResourcePoolClassifier("etl"),
+			wantSubject: "etl", name: "a classifier dropped", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolDrop, Name: "etl"}},
 			wantSeverity: safety.Warning,
 			wantReason: "DROP RESOURCE POOL CLASSIFIER sends its member's queries to another classifier's pool " +
 				"or to the pool default",
 		},
 		{
-			name: "a pool created", node: ast.NewCreateResourcePool("batch", ast.ResourcePoolSpec{}),
+			wantSubject: "batch", name: "a pool created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ast.ResourcePoolSpec{}}},
 			wantSeverity: safety.Safe,
 			wantReason:   "does not remove data or tighten constraints",
+		},
+		{
+			wantSubject: "batch", name: "a pool altered", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePool{Operation: ydbast.PoolAlter, Name: "batch", Spec: &ast.ResourcePoolSpec{ResourceWeight: new(25.0)}, Previous: &ast.ResourcePoolSpec{}}},
+			wantSeverity: safety.Warning, wantReason: "ALTER RESOURCE POOL changes the limits of running and queued queries",
+		},
+		{
+			wantSubject: "etl", name: "a classifier created", node: &ast.ExtensionStatement{Payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "etl", Spec: &ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}}},
+			wantSeverity: safety.Warning, wantReason: "resource pool classifier settings change which pool receives matching queries",
 		},
 	}
 	for _, test := range tests {
@@ -47,6 +57,7 @@ func TestClassify_ResourcePool(t *testing.T) {
 			c.Assert(assessments, qt.HasLen, 1)
 			c.Assert(assessments[0].Severity, qt.Equals, test.wantSeverity)
 			c.Assert(assessments[0].Reason, qt.Equals, test.wantReason)
+			c.Assert(assessments[0].Subject, qt.Equals, test.wantSubject)
 		})
 	}
 }

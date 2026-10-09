@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/modelast"
 )
 
@@ -44,8 +45,8 @@ var routedKinds = []routedKind{
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
 	{name: "topic", want: 1, count: countNodes[*ast.CreateTopicNode]},
-	{name: "resource pool", want: 1, count: countNodes[*ast.CreateResourcePoolNode]},
-	{name: "resource pool classifier", want: 1, count: countNodes[*ast.CreateResourcePoolClassifierNode]},
+	{name: "resource pool", want: 1, count: countPoolOperations[*ydbast.ResourcePool]},
+	{name: "resource pool classifier", want: 1, count: countPoolOperations[*ydbast.ResourcePoolClassifier]},
 	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
 	{name: "secret", want: 1, count: countNodes[*ast.CreateSecretNode]},
@@ -290,4 +291,16 @@ func declaredCollectionNames(database schemamodel.Database) []string {
 		names = append(names, value.Type().Field(i).Name)
 	}
 	return names
+}
+
+func countPoolOperations[T ast.ExtensionPayload](statements []ast.Node) int {
+	found := 0
+	for _, statement := range statements {
+		if envelope, ok := statement.(*ast.ExtensionStatement); ok {
+			if _, matches := envelope.Payload.(T); matches {
+				found++
+			}
+		}
+	}
+	return found
 }
