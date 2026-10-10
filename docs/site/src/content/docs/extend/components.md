@@ -375,10 +375,13 @@ intact and includes other values connected through its dependencies. Unknown
 namespaces or unresolved references return `schemaext.ErrIncompleteRelations`.
 
 The result is context for owner assessment. It does not authorize changing its
-prerequisites or expanding the user's selected scope. Built-in comparison and
-filtering do not invoke this service automatically; that integration is part of
-[#4140](https://github.com/stokaro/ptah/issues/4140). Independent providers can
-use the public batch and capture contracts without importing built-in engines.
+prerequisites or expanding the user's selected scope. Built-in scope selection
+and comparison capture these relations themselves. A scope that selects some of
+the tables an object binds, and not the others, is refused. So is a plan that
+drops a table, column or function a standalone feature object of the desired
+state still binds.
+Independent providers can use the public batch and capture contracts without
+importing built-in engines.
 
 Pass the same `context.Context` and selected runtime to `safety.AssessRendered` or
 `AssessRenderedWithCapabilities` as well. Safety renders the assessment units
