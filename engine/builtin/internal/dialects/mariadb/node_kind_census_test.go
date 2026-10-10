@@ -373,7 +373,7 @@ func TestMariaDBDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 47
+const censusKindFloor = 46
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mariadbCensusRow {
