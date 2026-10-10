@@ -26,6 +26,10 @@ type ComparisonRequest struct {
 	Desired      FeatureState
 	Current      FeatureState
 	Owners       []ParentState
+	// Requests are changes the caller asks for that a comparison cannot find,
+	// one per subject and action. Each goes to the owner of its subject's
+	// named-object kind; see [ChangeRequest].
+	Requests []ChangeRequest
 }
 
 // ComparisonResult joins the selected object and facet owners' replies. No

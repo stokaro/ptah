@@ -156,9 +156,6 @@ func declaredYDBDirectory(database *schemamodel.Database, name string) bool {
 	for _, object := range database.Transfers {
 		directories = append(directories, object.Schema)
 	}
-	for _, object := range database.Secrets {
-		directories = append(directories, object.Schema)
-	}
 	for _, object := range database.ExternalDataSources {
 		directories = append(directories, object.Schema)
 	}

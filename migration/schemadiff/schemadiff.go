@@ -138,7 +138,7 @@ func compareReportingUndecidedAdditions(
 	}
 	desired, diff.TablePreparation = prepared.desired, prepared.capture
 
-	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, runtime)
+	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, opts.FeatureRequests, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -212,7 +212,6 @@ func compareReportingUndecidedAdditions(
 	compare.Topics(desired, database, diff, cov)
 	compare.Replications(desired, database, diff, cov)
 
-	compare.Secrets(desired, database, diff, cov)
 	compare.ExternalObjects(desired, database, diff, cov)
 
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)

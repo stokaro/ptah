@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
@@ -95,7 +96,8 @@ func exportFamilyLimits(known schemaext.Coverage, family sourceFamily, model sch
 		if record.Knowledge.State == schemaext.Complete && namespace == schemaext.Complete {
 			continue
 		}
-		if !sourceLimitRepresentable(record.Knowledge, unmanagedObjectReason) {
+		if !sourceLimitRepresentable(record.Knowledge, unmanagedObjectReason) &&
+			(family.unmanaged == "" || !sourceLimitRepresentable(record.Knowledge, family.unmanaged)) {
 			return nil, fmt.Errorf("%w: %s object %s cannot be exported without losing its coverage record: %s %s",
 				ptaherr.ErrUnsupportedFeature, family.label, record.Subject, record.Knowledge.State, record.Knowledge.Reason)
 		}
@@ -106,6 +108,8 @@ func exportFamilyLimits(known schemaext.Coverage, family sourceFamily, model sch
 
 // A source directive has a fixed decoded meaning. Equality with that meaning
 // proves it can round-trip; arbitrary read errors cannot use this spelling.
+// A family's own unmanaged reason is the exception: the read left the object
+// unmanaged on purpose, which is what the directive says.
 func sourceLimitRepresentable(knowledge schemaext.Knowledge, reason string) bool {
 	return knowledge.State == schemaext.Uninspected && knowledge.Reason == reason
 }
@@ -122,6 +126,10 @@ func limitSubjectName(kind schemaext.Kind, ref objectidentity.ID) (string, error
 		if err := ydbstreaming.ValidateIdentity(ref); err != nil {
 			return "", err
 		}
+	case ydbsecret.Kind:
+		// A secret limit is read as a path, so its directory and name
+		// need no leading slash to keep a dot literal.
+		return ydbsecret.Display(ref.Schema.Source, ref.Name.Source), ydbsecret.ValidateIdentity(ref)
 	default:
 		return "", fmt.Errorf("%w: no source limit spelling for %s", schemaext.ErrInvalidValue, kind)
 	}

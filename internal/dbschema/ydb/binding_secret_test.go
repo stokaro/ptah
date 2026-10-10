@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	ydbschema "ptah.run/internal/dbschema/ydb"
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/internal/ydbsecretvalue"
 )
 
 // errServerRefused stands in for a refusal the server answers a statement with.
@@ -164,6 +164,6 @@ func TestBindingConnector_FailurePath_RefusesASecretValueBeforeSendingIt(t *test
 		c := qt.New(t)
 		db, _ := openQueryPool(c, false)
 		_, err := db.ExecContext(context.Background(), "SELECT $PTAH_SECRET_BINDING_PW")
-		c.Assert(err, qt.ErrorIs, ydbsecret.ErrReference)
+		c.Assert(err, qt.ErrorIs, ydbsecretvalue.ErrReference)
 	})
 }

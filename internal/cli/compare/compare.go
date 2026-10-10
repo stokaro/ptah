@@ -209,6 +209,9 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	compareOpts = dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, compareOpts)
+	if err := secretrotation.Apply(cmd, compareOpts); err != nil {
+		return err
+	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		cmd.Context(), conn, result, dbSchema, compareOpts, runtime,
 	)
@@ -220,13 +223,6 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	// SQL that reconciles them.
 	rebuild, err := tablerebuild.Requested(cmd)
 	if err != nil {
-		return err
-	}
-	rotateSecrets, err := secretrotation.Requested(cmd)
-	if err != nil {
-		return err
-	}
-	if err := diff.RotateSecrets(rotateSecrets); err != nil {
 		return err
 	}
 	output, err := planner.GenerateSchemaDiffSQLWithOptions(

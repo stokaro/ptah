@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
 // secretStatement creates the probe's secret. The value is a literal: the
@@ -51,10 +52,13 @@ func ydbDescribedSecret(name string) check {
 				return attempt, false, "was refused"
 			}
 			attempt.Accepted = true
-			for _, secret := range db.Secrets {
-				if secret.Name == name {
-					return attempt, true, "listed it"
-				}
+			object, found, err := db.FeatureObjects.Get(ydbsecret.Ref(s.namespace, name))
+			if err != nil {
+				attempt.ServerErr = err.Error()
+				return attempt, false, "could not be captured"
+			}
+			if _, observed := object.Value.(*ydbsecret.Observed); found && observed {
+				return attempt, true, "listed it"
 			}
 			return attempt, false, "found no such secret"
 		},

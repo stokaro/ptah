@@ -406,8 +406,8 @@ func prepareNode(
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		key, subject := replicationNodeSubject(typed)
 		return node, refuseReplicationFamily(dialect, caps, key, subject)
-	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode, *ast.CreateExternalDataSourceNode,
-		*ast.DropExternalDataSourceNode, *ast.CreateExternalTableNode, *ast.DropExternalTableNode:
+	case *ast.CreateExternalDataSourceNode, *ast.DropExternalDataSourceNode, *ast.CreateExternalTableNode,
+		*ast.DropExternalTableNode:
 		return node, refuseYDBObject(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
@@ -1155,28 +1155,19 @@ func refuseVectorIndex(dialect string, caps capability.Capabilities, name string
 
 // validateDeclaredYDBObjects refuses the YDB table settings and objects a
 // declaration holds that the target cannot write: a table's row deletion
-// policy and changefeeds, the secrets, and the external data sources and
-// tables.
+// policy and changefeeds, and the external data sources and tables. A secret
+// is a feature object its owner validates.
 func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	if err := validateDeclaredTableSettings(dialect, caps, database); err != nil {
-		return err
-	}
-	if err := validateDeclaredSecrets(dialect, caps, database); err != nil {
 		return err
 	}
 	return validateDeclaredExternalObjects(dialect, caps, database)
 }
 
-// refuseYDBObject refuses node, a YDB secret or external object statement, on
-// a target without the key it needs, naming the object.
+// refuseYDBObject refuses node, a YDB external object statement, on a target
+// without the key it needs, naming the object.
 func refuseYDBObject(dialect string, caps capability.Capabilities, node ast.Node) error {
 	switch typed := node.(type) {
-	case *ast.CreateSecretNode:
-		return refuseSecret(dialect, caps, "secret "+typed.Name)
-	case *ast.AlterSecretNode:
-		return refuseSecret(dialect, caps, "ALTER SECRET "+typed.Name)
-	case *ast.DropSecretNode:
-		return refuseSecret(dialect, caps, "DROP SECRET "+typed.Name)
 	case *ast.CreateExternalDataSourceNode:
 		return refuseExternal(dialect, caps, "external data source "+typed.Name)
 	case *ast.DropExternalDataSourceNode:
@@ -1209,7 +1200,8 @@ func refuseExternal(dialect string, caps capability.Capabilities, subject string
 // validateDeclaredExternalObjects refuses a declared external data source or
 // external table the target cannot create, before any statement is emitted:
 // on a target without [capability.ExternalDataSources]; on YDB one whose path
-// another declared object holds, since a path names one object (measured on
+// another declared table or external object holds, since a path names one
+// object (measured on
 // 25.1.4.7 and 26.2.1.14: `unexpected path type`); and an external table over
 // a declared data source that is not object storage, which the server refuses
 // (`Only ObjectStorage source type supported but got PostgreSQL`).
@@ -1217,9 +1209,6 @@ func validateDeclaredExternalObjects(dialect string, caps capability.Capabilitie
 	paths := make(map[string]string)
 	for _, table := range database.Tables {
 		paths[table.QualifiedName()] = "table"
-	}
-	for _, secret := range database.Secrets {
-		paths[secret.QualifiedName()] = "secret"
 	}
 	sourceTypes := make(map[string]string, len(database.ExternalDataSources))
 	claim := func(name, kind string) error {
@@ -1260,51 +1249,6 @@ func validateDeclaredExternalObjects(dialect string, caps capability.Capabilitie
 				Message: fmt.Sprintf("external table %s reads data source %s, a %s source; an external table reads "+
 					"files, from an ObjectStorage source (`Only ObjectStorage source type supported`)",
 					name, table.DataSource, sourceType),
-			}
-		}
-	}
-	return nil
-}
-
-// refuseSecret refuses subject, a YDB secret, on a target without
-// [capability.Secrets]: a target that built nothing for it would report the
-// declaration applied, and an external data source that names the secret
-// would then fail at its first read.
-func refuseSecret(dialect string, caps capability.Capabilities, subject string) error {
-	if caps.Has(capability.Secrets) {
-		return nil
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.Secrets),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, capability.Secrets, normalized),
-	}
-}
-
-// validateDeclaredSecrets refuses a declared secret the target cannot create,
-// before any statement is emitted: on a target without [capability.Secrets],
-// and on YDB a secret whose path a declared table holds, since a path names
-// one object (measured on 26.2.1.14: CREATE SECRET over a table's path answers
-// `unexpected path type ... EPathTypeTable`).
-func validateDeclaredSecrets(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	tables := make(map[string]bool, len(database.Tables))
-	for _, table := range database.Tables {
-		tables[table.QualifiedName()] = true
-	}
-	for _, secret := range database.Secrets {
-		name := secret.QualifiedName()
-		if err := refuseSecret(dialect, caps, "secret "+name); err != nil {
-			return err
-		}
-		if tables[name] {
-			return &ptaherr.RenderError{
-				Dialect: platform.NormalizeDialect(dialect),
-				Err:     ptaherr.ErrUnsupportedFeature,
-				Message: fmt.Sprintf("secret %s has the path of a declared table, and YDB keeps one object "+
-					"at a path (`unexpected path type`)", name),
 			}
 		}
 	}

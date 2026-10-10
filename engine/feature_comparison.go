@@ -86,6 +86,9 @@ func (r *Runtime) featureComparisonKinds(request schemaext.ComparisonRequest) (f
 			}
 		}
 	}
+	if err := r.requestKinds(request, facets, all); err != nil {
+		return nil, nil, err
+	}
 	for _, state := range []schemaext.FeatureState{request.Desired, request.Current} {
 		for _, ref := range state.Objects.Refs() {
 			if facets[schemaext.Kind(ref.Kind)] {
@@ -102,11 +105,26 @@ func (r *Runtime) featureComparisonKinds(request schemaext.ComparisonRequest) (f
 	return slices.Sorted(maps.Keys(facets)), objects, nil
 }
 
+// requestKinds adds the kind of each change request's subject to all. A
+// request names a named-object model; one that names a facet model is
+// refused, since a facet owner takes no request.
+func (r *Runtime) requestKinds(request schemaext.ComparisonRequest, facets, all map[schemaext.Kind]bool) error {
+	for _, change := range request.Requests {
+		kind := schemaext.Kind(change.Subject.Kind)
+		if _, found := r.facetComparisons[conversionKey{target: request.Target, kind: kind}]; found || facets[kind] {
+			return fmt.Errorf("%w: a change request names facet model %q", schemaext.ErrInvalidValue, kind)
+		}
+		all[kind] = true
+	}
+	return nil
+}
+
 func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemaext.ComparisonRequest, objectKinds, facetKinds []schemaext.Kind) (schemaext.ObjectComparisonRequest, schemaext.FacetComparisonRequest, error) {
 	objects := schemaext.ObjectComparisonRequest{
 		Target: request.Target, Identifiers: request.Identifiers, Capabilities: request.Capabilities,
-		Desired: schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: request.Desired.Coverage.SelectKinds(objectKinds)},
-		Current: schemaext.ObjectState{Objects: request.Current.Objects, Coverage: request.Current.Coverage.SelectKinds(objectKinds)},
+		Desired:  schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: request.Desired.Coverage.SelectKinds(objectKinds)},
+		Current:  schemaext.ObjectState{Objects: request.Current.Objects, Coverage: request.Current.Coverage.SelectKinds(objectKinds)},
+		Requests: request.Requests,
 	}
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind == objectidentity.KindTable {

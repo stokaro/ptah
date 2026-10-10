@@ -3,7 +3,8 @@ package lint
 import (
 	"fmt"
 
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/internal/ydbsecretvalue"
 )
 
 // ydbSchemaSecretInClearRule reports a statement that writes a YDB secret's value
@@ -29,7 +30,7 @@ func ydbSchemaSecretInClearRule() Rule {
 			if !ydbRun(stmt.Target) {
 				return false, ""
 			}
-			form, path, writes := ydbsecret.ClearValue(stmt.SQL)
+			form, path, writes := ydbsecretvalue.ClearValue(stmt.SQL)
 			if !writes {
 				return false, ""
 			}

@@ -392,6 +392,7 @@ planning. It reads the change owner's `schemaext.EffectSource` metadata and
 reports each kind under `feature_changes:<kind>`. Missing or invalid metadata
 requires the strongest review. Removing a coordination node is destructive
 because it also removes application semaphores and rate limiter resources.
+Removing a YDB secret is destructive because nothing can read its value back.
 
 YDB inspection records unknown coordination settings as incomplete subject
 coverage. Go and HCL export refuse those limits before writing output, because

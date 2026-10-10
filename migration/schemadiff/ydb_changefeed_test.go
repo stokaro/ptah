@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
@@ -183,6 +184,7 @@ func completeYDBFixtureCoverage() schemaext.Coverage {
 	feeds := must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil))
 	nodes := must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	queries := must.Must(ydbstreaming.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	combined := must.Must(must.Must(feeds.Combine(nodes)).Combine(queries))
+	secrets := must.Must(ydbsecret.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	combined := must.Must(must.Must(must.Must(feeds.Combine(nodes)).Combine(queries)).Combine(secrets))
 	return must.Must(combined.Combine(workloadCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete})))
 }

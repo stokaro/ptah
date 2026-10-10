@@ -34,7 +34,10 @@ func ydbMetadata(ctx context.Context, nodes []ast.Node) ([]featureplan.CommonSte
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		effects, err := ydbscheme.CommonEffects(builder, node)
+		// A schema rendered from nothing creates each declared secret before
+		// any other statement, so a read through an absolute path, which an
+		// unknown root leaves out, orders nothing it would not already.
+		effects, err := ydbscheme.CommonEffects(builder, "", node)
 		if err != nil {
 			return nil, err
 		}

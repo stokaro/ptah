@@ -28,10 +28,10 @@ func TestCommonEffectsUseRenderedSchemePaths(t *testing.T) {
 			c := qt.New(t)
 			builder := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
 			c.Assert(ydbscheme.ObjectPath(test.name), qt.Equals, test.path)
-			view, err := ydbscheme.CommonEffects(builder, &ast.CreateViewNode{Name: test.name})
+			view, err := ydbscheme.CommonEffects(builder, "", &ast.CreateViewNode{Name: test.name})
 			c.Assert(err, qt.IsNil)
 			c.Assert(view, qt.DeepEquals, []plangraph.Effect{{Subject: test.ref, Action: plangraph.Create}})
-			table, err := ydbscheme.CommonEffects(builder, &ast.DropTableNode{Name: test.name})
+			table, err := ydbscheme.CommonEffects(builder, "", &ast.DropTableNode{Name: test.name})
 			c.Assert(err, qt.IsNil)
 			c.Assert(table, qt.DeepEquals, []plangraph.Effect{
 				{Subject: test.ref, Action: plangraph.Drop},
@@ -56,7 +56,7 @@ func TestPrincipalEffectsDoNotOccupySchemePaths(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			builder := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
-			effects, err := ydbscheme.CommonEffects(builder, test.node)
+			effects, err := ydbscheme.CommonEffects(builder, "", test.node)
 			c.Assert(err, qt.IsNil)
 			c.Assert(effects, qt.DeepEquals, []plangraph.Effect{{Subject: builder.Role("App.Team"), Action: test.action}})
 			c.Assert(effects[0].Subject.Schema.Empty(), qt.IsTrue)
@@ -69,7 +69,7 @@ func TestPrincipalEffectsDoNotOccupySchemePaths(t *testing.T) {
 func TestPrincipalEffectsRefuseAnEmptyIdentity(t *testing.T) {
 	for _, node := range []ast.Node{&ast.CreateRoleNode{}, &ast.AlterRoleNode{}, &ast.DropRoleNode{}} {
 		c := qt.New(t)
-		effects, err := ydbscheme.CommonEffects(objectidentity.NewBuilder(identifier.ForDialect("ydb")), node)
+		effects, err := ydbscheme.CommonEffects(objectidentity.NewBuilder(identifier.ForDialect("ydb")), "", node)
 		c.Assert(err, qt.ErrorMatches, "YDB principal operation requires an object name")
 		c.Assert(effects, qt.IsNil)
 	}

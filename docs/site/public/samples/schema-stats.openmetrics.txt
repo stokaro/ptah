@@ -64,9 +64,6 @@ ptah_schema_async_replications{dialect="sqlite"} 0
 # HELP ptah_schema_transfers Transfers.
 # TYPE ptah_schema_transfers gauge
 ptah_schema_transfers{dialect="sqlite"} 0
-# HELP ptah_schema_secrets Secret objects, without their values.
-# TYPE ptah_schema_secrets gauge
-ptah_schema_secrets{dialect="sqlite"} 0
 # HELP ptah_schema_external_data_sources External data sources.
 # TYPE ptah_schema_external_data_sources gauge
 ptah_schema_external_data_sources{dialect="sqlite"} 0
@@ -100,6 +97,9 @@ ptah_schema_resource_pools{dialect="sqlite"} 0
 # HELP ptah_schema_resource_pool_classifiers Resource pool classifiers.
 # TYPE ptah_schema_resource_pool_classifiers gauge
 ptah_schema_resource_pool_classifiers{dialect="sqlite"} 0
+# HELP ptah_schema_secrets Secret objects, without their values.
+# TYPE ptah_schema_secrets gauge
+ptah_schema_secrets{dialect="sqlite"} 0
 # HELP ptah_schema_streaming_queries Standalone streaming queries.
 # TYPE ptah_schema_streaming_queries gauge
 ptah_schema_streaming_queries{dialect="sqlite"} 0

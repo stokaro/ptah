@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/atlasreport"
 )
 
@@ -73,7 +76,7 @@ func TestSchemaInspectReport_DBMLReportsYDBObjectsOnDiagnostics(t *testing.T) {
 	db := &schemamodel.Database{
 		Tables:            []schemamodel.Table{{StructName: "T", Name: "t"}},
 		AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
-		Secrets:           []schemamodel.Secret{{Name: "credentials"}},
+		FeatureObjects:    must.Must(schemaext.NewObjects(ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"))),
 	}
 	report := newInspectReport(c,
 		db, &catalog.Database{}, catalog.ServerInfo{Dialect: "ydb"}, &diagnostics,

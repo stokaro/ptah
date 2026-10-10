@@ -188,7 +188,7 @@ const (
 // carries it, so a description's silence about them is never read as their
 // absence and nothing plans their removal. Like [ChangeStream], none of them
 // but [Topic], [Replication],
-// [Transfer], [Secret] and [ReplicaTable] is consulted by a comparator or a planner,
+// [Transfer] and [ReplicaTable] is consulted by a comparator or a planner,
 // because no planner writes the others.
 const (
 	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
@@ -227,17 +227,11 @@ const (
 	// ExternalDataSource is a YDB external data source. The reader describes
 	// one on a server with the external_data_sources capability, and records
 	// one it meets on a server without it. The comparator consults the kind in
-	// both directions, as it does a secret's.
+	// both directions.
 	ExternalDataSource Kind = "external_data_source"
 	// ExternalTable is a YDB external table over an external data source,
 	// described and recorded as an external data source is.
 	ExternalTable Kind = "external_table"
-	// Secret is a YDB secret. Its value is never read. The reader describes a
-	// secret by its path on a server with the secrets capability, and records
-	// one it meets on a server without it. The secret comparator consults the
-	// kind in both directions, so a description that cannot express secrets,
-	// such as an HCL document, does not plan their removal.
-	Secret Kind = "secret"
 	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
 	// named by the table's path and the changefeed's name.
 	Changefeed Kind = "changefeed"
@@ -276,7 +270,7 @@ const (
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
-	Role, Schema, Secret, Sequence, Synonym, TableOption,
+	Role, Schema, Sequence, Synonym, TableOption,
 	Topic, Transfer, TTL, View, VirtualTable,
 }
 

@@ -4,25 +4,23 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
-
-// secretNodes are the three secret statements, as nodes, with the subject the
-// renderer's central check names each by.
-var secretNodes = []struct {
-	node    ast.Node
-	subject string
-}{
-	{node: ast.NewCreateSecret("ext.pw", "PTAH_SECRET_PW"), subject: "secret ext.pw"},
-	{node: ast.NewAlterSecret("ext.pw", "PTAH_SECRET_PW"), subject: "ALTER SECRET ext.pw"},
-	{node: ast.NewDropSecret("ext.pw"), subject: "DROP SECRET ext.pw"},
-}
 
 // secretlessTargets are the targets of every engine but YDB, which has the one
 // secret Ptah models.
@@ -39,90 +37,111 @@ var secretlessTargets = []struct {
 	{dialect: platform.Oracle, caps: capability.Oracle23()},
 }
 
-// TestRender_Secret_FailurePath refuses a secret on every target without the
-// secrets key, through the whole-schema render and each secret node alike:
-// built as nothing, the declaration would report a secret created that the
-// target does not hold, and an external data source naming it would fail at
-// its first read.
-func TestRender_Secret_FailurePath(t *testing.T) {
-	schema := &schemamodel.Database{Secrets: []schemamodel.Secret{{Name: "pw", Schema: "ext", ValueEnv: "PTAH_SECRET_PW"}}}
-	targets := append(secretlessTargets, struct {
-		dialect string
-		caps    capability.Capabilities
-	}{dialect: platform.YDB, caps: capability.YDB251()})
-	for _, test := range targets {
-		t.Run(test.dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, test.dialect, test.caps)
-			c.Assert(err, qt.ErrorMatches, `secret ext\.pw, which requires target capability secrets, unavailable on this \w+ target`)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(statements, qt.IsNil)
-
-			for _, node := range secretNodes {
-				sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps, node.node)
-				c.Assert(err, qt.ErrorMatches, node.subject+`, which requires target capability secrets, unavailable on this \w+ target`)
-				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-				c.Assert(sql, qt.Equals, "")
-			}
-		})
+// secretSchema declares one secret beside a table.
+func secretSchema(schema, name string) *schemamodel.Database {
+	database := &schemamodel.Database{
+		Tables:          []schemamodel.Table{{StructName: "T", Name: "notes", Schema: "app"}},
+		Fields:          []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbsecret.DesiredObject(schema, name, "", "PTAH_SECRET_PW"))),
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	}
+	schemamodel.Finalize(database)
+	return database
 }
 
-// A caller that claims the secrets key for a target whose renderer writes no
-// secret passes the central check, and the renderer refuses the node itself,
-// naming itself.
-func TestRender_Secret_RenderersWithoutSecretsRefuse(t *testing.T) {
-	for _, test := range secretlessTargets {
-		t.Run(test.dialect, func(t *testing.T) {
-			c := qt.New(t)
-			for _, node := range secretNodes {
-				sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps.With(capability.Secrets, true), node.node)
-				c.Assert(err, qt.ErrorMatches, node.subject+`: the \w+ renderer writes no secret; a secret needs target `+
-					`capability secrets, which only YDB has`)
-				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-				c.Assert(sql, qt.Equals, "")
-			}
-		})
-	}
-}
-
-// A secret whose path a declared table holds is refused before anything is
-// written: YDB keeps one object at a path, and answers `unexpected path type`
-// for the second.
-func TestRender_Secret_OnATablePath(t *testing.T) {
-	c := qt.New(t)
-	schema := &schemamodel.Database{
-		Tables:  []schemamodel.Table{{StructName: "T", Name: "pw", Schema: "ext"}},
-		Fields:  []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
-		Secrets: []schemamodel.Secret{{Name: "pw", Schema: "ext", ValueEnv: "PTAH_SECRET_PW"}},
-	}
-	schemamodel.Finalize(schema)
-
-	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, platform.YDB, capability.YDB262())
-
-	c.Assert(err, qt.ErrorMatches, "secret ext.pw has the path of a declared table, and YDB keeps one object at a path "+
-		"\\(`unexpected path type`\\)")
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(statements, qt.IsNil)
-}
-
-// A declared secret renders ahead of the tables, so an external data source
-// that names it finds it, and its value is the reference to its variable.
+// TestRender_Secret_HappyPath writes a declared secret through its owner
+// ahead of every other statement, with its value the reference to its
+// variable, on every whole-schema entry point.
 func TestRender_Secret_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	schema := &schemamodel.Database{
-		Tables:  []schemamodel.Table{{StructName: "T", Name: "notes", Schema: "app"}},
-		Fields:  []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
-		Secrets: []schemamodel.Secret{{Name: "pw", Schema: "ext", ValueEnv: "PTAH_SECRET_PW"}},
-	}
-	schemamodel.Finalize(schema)
+	database := secretSchema("ext", "pw")
 
-	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, platform.YDB, capability.YDB262())
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, platform.YDB, capability.YDB262())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
 		"CREATE SECRET `ext/pw` WITH (value = $PTAH_SECRET_PW);\n",
 		"CREATE TABLE `app/notes` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n);\n",
 	})
+	assertOwnedSchemaEntryPoints(c, database, capability.YDB262(), "CREATE SECRET `ext/pw` WITH (value = $PTAH_SECRET_PW);")
+}
+
+// TestRender_Secret_FailurePath refuses a declared secret on every target
+// without a selected, enabled owner: built as nothing, the declaration would
+// report a secret created that the target does not hold, and an external data
+// source naming it would fail at its first read. A secret whose path a
+// declared table holds is refused too, since YDB keeps one object at a path.
+func TestRender_Secret_FailurePath(t *testing.T) {
+	type target struct {
+		name     string
+		dialect  string
+		caps     capability.Capabilities
+		database *schemamodel.Database
+		wantErr  string
+		wantIs   error
+	}
+	tests := []target{
+		{name: "ydb 25.1", dialect: platform.YDB, caps: capability.YDB251(), database: secretSchema("ext", "pw"),
+			wantErr: `secret ext/pw, which requires target capability secrets, unavailable on this ydb target`, wantIs: ptaherr.ErrUnsupportedFeature},
+		{name: "a table's path", dialect: platform.YDB, caps: capability.YDB262(), database: secretSchema("app", "notes"),
+			wantErr: `secret create conflicts with create at scheme path ptah\.run/ydb/scheme-path app\.notes`, wantIs: ptaherr.ErrInvalidSchemaDiff},
+	}
+	for _, other := range secretlessTargets {
+		tests = append(tests, target{name: other.dialect, dialect: other.dialect, caps: other.caps.With(capability.Secrets, true),
+			database: secretSchema("ext", "pw"),
+			wantErr:  `unsupported feature: feature objects are not registered for target "` + other.dialect + `"`, wantIs: ptaherr.ErrUnsupportedFeature})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(test.database, test.dialect, test.caps)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorIs, test.wantIs)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestRender_SecretOperation_NonOwningRenderersRefuse hands each statement on a
+// secret to every renderer: only YDB's owner writes one, and every other
+// renderer refuses the payload through the common extension boundary without
+// knowing what it is.
+func TestRender_SecretOperation_NonOwningRenderersRefuse(t *testing.T) {
+	for _, test := range secretlessTargets {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			for _, operation := range []*ydbast.Secret{
+				{Operation: ydbast.SecretCreate, Schema: "ext", Name: "pw", ValueEnv: "PTAH_SECRET_PW"},
+				{Operation: ydbast.SecretRotate, Schema: "ext", Name: "pw", ValueEnv: "PTAH_SECRET_PW"},
+				{Operation: ydbast.SecretDrop, Schema: "ext", Name: "pw"},
+			} {
+				sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps.With(capability.Secrets, true), &ast.ExtensionStatement{Payload: operation})
+				c.Assert(err, qt.ErrorMatches, `target "`+test.dialect+`" does not support extension "ptah\.run/ydb/secret-operation" in role "statement"`,
+					qt.Commentf("%s", operation.Operation))
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature, qt.Commentf("%s", operation.Operation))
+				c.Assert(sql, qt.Equals, "")
+			}
+		})
+	}
+}
+
+// TestSecretFeatures_RefuseUnsupportedTargets refuses a declared secret, and a
+// secret change, on every target but YDB: the shared model no longer
+// enumerates secrets, so no other path can drop one silently.
+func TestSecretFeatures_RefuseUnsupportedTargets(t *testing.T) {
+	for _, test := range secretlessTargets {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			desired := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(ydbsecret.DesiredObject("", "pw", "", "PTAH_SECRET_PW")))}
+			c.Assert(builtin.ValidateSchema(desired, test.dialect), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: test.dialect}, nil, runtime)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(diff, qt.IsNil)
+			change := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbsecret.Ref("", "pw"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}}}}
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, change, test.dialect, planner.Options{})
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(statements, qt.HasLen, 0)
+		})
+	}
 }

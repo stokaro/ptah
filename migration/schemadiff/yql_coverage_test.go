@@ -8,6 +8,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
@@ -47,22 +50,21 @@ func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 
 func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		source  string
-		removed []string
+		name   string
+		source string
+		want   []schemaext.ChangeRecord
 	}{
 		{name: "declared", source: "CREATE SECRET credential WITH (value = $PTAH_SECRET_TEST);"},
-		{name: "omitted", removed: []string{"credential"}},
+		{name: "omitted", want: []schemaext.ChangeRecord{{Subject: ydbsecret.Ref("", "credential"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
 			c.Assert(err, qt.IsNil)
-			held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), Secrets: []catalog.Secret{{Name: "credential"}}}
+			held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(),
+				FeatureObjects: must.Must(schemaext.NewObjects(ydbsecret.ObservedObject("", "credential")))}
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
-			c.Assert(diff.SecretsRemoved.Names(), qt.DeepEquals, test.removed)
-			c.Assert(diff.SecretsAdded, qt.HasLen, 0)
-			c.Assert(diff.SecretsRotated, qt.HasLen, 0)
+			c.Assert(diff.FeatureChanges, qt.DeepEquals, test.want)
 		})
 	}
 }

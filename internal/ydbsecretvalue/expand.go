@@ -1,4 +1,10 @@
-package ydbsecret
+// Package ydbsecretvalue defines a YDB secret's value in the query the YDB
+// connection sends, reading it from the environment variable the statement
+// names, and keeps that value out of whatever the connection reports. The
+// declaration grammar and the statements live in
+// [ptah.run/dialect/ydb/ydbsecret]; this package is execution machinery and
+// never part of a schema model.
+package ydbsecretvalue
 
 import (
 	"errors"
@@ -8,6 +14,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -50,9 +57,9 @@ var ErrReference = errors.New("a secret value is referred to outside the value o
 // unchanged when it refers to none.
 //
 // A reference is a named expression `$<variable>` whose name starts with
-// [ValuePrefix]. Expand defines one only where the query uses it as the value
+// [ydbsecret.ValuePrefix]. Expand defines one only where the query uses it as the value
 // of `CREATE SECRET <path> WITH (value = ...)` or `ALTER SECRET <path> WITH
-// (value = ...)`, the statements [CreateStatement] and [AlterStatement] write,
+// (value = ...)`, the statements [ydbsecret.CreateStatement] and [ydbsecret.AlterStatement] write,
 // and refuses the whole query when a reference stands anywhere else -- in
 // another statement, in a definition, in a block -- so a value only ever
 // reaches a secret, which nothing reads back. A query that defines such a
@@ -79,7 +86,7 @@ func Expand(query string, lookup func(string) (string, bool)) (Expansion, error)
 			return Expansion{}, fmt.Errorf("%w: %s at offset %d; Ptah defines it only there", ErrReference,
 				token.Value, token.Start)
 		}
-		if err := CheckValueEnv(variable); err != nil {
+		if err := ydbsecret.CheckValueEnv(variable); err != nil {
 			return Expansion{}, fmt.Errorf("secret value %s: %w", token.Value, err)
 		}
 		if !slices.Contains(variables, variable) {
@@ -99,7 +106,7 @@ func Expand(query string, lookup func(string) (string, bool)) (Expansion, error)
 		}
 		literal := ydbsyntax.StringLiteral(value)
 		values = append(values, redactionForms(value, literal)...)
-		fmt.Fprintf(&definitions, "%s = %s;\n", Reference(variable), literal)
+		fmt.Fprintf(&definitions, "%s = %s;\n", ydbsecret.Reference(variable), literal)
 	}
 	slices.SortFunc(values, func(a, b string) int { return len(b) - len(a) })
 	insertAt := tokens[firstStatement].Start
@@ -137,14 +144,14 @@ func References(query string) []string {
 }
 
 // referenceName returns the variable a token refers to as a secret value: a
-// named expression whose name starts with [ValuePrefix] in any case. YQL
+// named expression whose name starts with [ydbsecret.ValuePrefix] in any case. YQL
 // resolves a name by its case (measured on 26.2.1.14: `$PTAH_SECRET_X = 'v';
 // SELECT $ptah_secret_x` answers `Unknown name: $ptah_secret_x`), so folding
-// only widens what the rules hold, and [CheckValueEnv] then refuses any
+// only widens what the rules hold, and [ydbsecret.CheckValueEnv] then refuses any
 // spelling but the exact one.
 func referenceName(token lexer.Token) (string, bool) {
-	if token.Type != lexer.TokenIdentifier || len(token.Value) <= len(ValuePrefix) ||
-		!strings.EqualFold(token.Value[:len(ValuePrefix)+1], "$"+ValuePrefix) {
+	if token.Type != lexer.TokenIdentifier || len(token.Value) <= len(ydbsecret.ValuePrefix) ||
+		!strings.EqualFold(token.Value[:len(ydbsecret.ValuePrefix)+1], "$"+ydbsecret.ValuePrefix) {
 		return "", false
 	}
 	return token.Value[1:], true
@@ -153,7 +160,7 @@ func referenceName(token lexer.Token) (string, bool) {
 // mentionsPrefix reports whether query may hold a reference at all, a cheap
 // test that spares the lexer every query that names no secret value.
 func mentionsPrefix(query string) bool {
-	return strings.Contains(strings.ToUpper(query), "$"+ValuePrefix)
+	return strings.Contains(strings.ToUpper(query), "$"+ydbsecret.ValuePrefix)
 }
 
 // significantTokens reads query as YQL, leaving out whitespace and comments.
@@ -288,7 +295,7 @@ func ClearValue(statement string) (form, path string, writes bool) {
 	path = identifierText(tokens[header])
 	for _, position := range secretValueOptions(tokens) {
 		variable, isReference := referenceName(tokens[position])
-		if !isReference || CheckValueEnv(variable) != nil {
+		if !isReference || ydbsecret.CheckValueEnv(variable) != nil {
 			return form, path, true
 		}
 	}

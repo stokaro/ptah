@@ -4,18 +4,29 @@ package ydb_test
 
 import (
 	"context"
+	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
+	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -38,12 +49,35 @@ const (
 	secretKeyValue      = "s3-SENTINEL-v1"                  // #nosec G101 -- a made-up value every output is searched for
 )
 
-// secretsDeclaration declares the two secrets.
-func secretsDeclaration() *schemamodel.Database {
-	return &schemamodel.Database{Secrets: []schemamodel.Secret{
-		{Name: "pg_password", Schema: secretsSchema, ValueEnv: secretPasswordEnv},
-		{Name: "s3.key", Schema: secretsNestedSchema, ValueEnv: secretKeyEnv},
-	}}
+// secretsDeclaration declares the given secrets, of the two the tests use,
+// from a source that describes the secret namespace: a secret it leaves out
+// is one it asks to drop.
+func secretsDeclaration(names ...string) *schemamodel.Database {
+	all := map[string]schemaext.Object{
+		"pg_password": ydbsecret.DesiredObject(secretsSchema, "pg_password", "", secretPasswordEnv),
+		"s3.key":      ydbsecret.DesiredObject(secretsNestedSchema, "s3.key", "", secretKeyEnv),
+	}
+	if len(names) == 0 {
+		names = []string{"pg_password", "s3.key"}
+	}
+	var objects []schemaext.Object
+	for _, name := range names {
+		objects = append(objects, all[name])
+	}
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+}
+
+// liveSecrets names, by path, every secret a read observed.
+func liveSecrets(c *qt.C, db *catalog.Database) []string {
+	c.Helper()
+	var paths []string
+	for _, ref := range db.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbsecret.Kind) }).Refs() {
+		paths = append(paths, ydbsecret.Display(ref.Schema.Source, ref.Name.Source))
+	}
+	return paths
 }
 
 // dropSecrets drops every secret in the directories a test owns.
@@ -51,8 +85,8 @@ func dropSecrets(c *qt.C, conn *dbschema.DatabaseConnection, schemas []string) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(context.Background(), conn, schemas)
 	c.Assert(err, qt.IsNil)
-	for _, secret := range live.Secrets {
-		statement := "DROP SECRET " + sqlident.Quote("ydb", secret.Schema+"/"+secret.Name)
+	for _, path := range liveSecrets(c, live) {
+		statement := "DROP SECRET " + sqlident.Quote("ydb", path)
 		c.Assert(conn.Writer().ExecuteSQL(context.Background(), statement), qt.IsNil)
 	}
 }
@@ -77,9 +111,8 @@ func TestYDBSecrets_RoundTrip_NothingLeftToPlan(t *testing.T) {
 		"CREATE SECRET `ptah_ydb_secrets/pg_password` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)",
 		"CREATE SECRET `ptah_ydb_secrets/ext/s3.key` WITH (value = $PTAH_SECRET_LIVE_S3_KEY)",
 	})
-	c.Assert(readScoped(c, conn, secretsSchemas).Secrets, qt.DeepEquals, []catalog.Secret{
-		{Name: "pg_password", Schema: secretsSchema},
-		{Name: "s3.key", Schema: secretsNestedSchema},
+	c.Assert(liveSecrets(c, readScoped(c, conn, secretsSchemas)), qt.ContentEquals, []string{
+		"ptah_ydb_secrets/pg_password", "ptah_ydb_secrets/ext/s3.key",
 	})
 	c.Assert(planAgainst(c, conn, secretsDeclaration(), secretsSchemas), qt.HasLen, 0)
 	apply(c, conn, planAgainst(c, conn, secretsDeclaration(), secretsSchemas))
@@ -110,16 +143,13 @@ func TestYDBSecrets_RotatedOnlyWhenAsked(t *testing.T) {
 		"ALTER SECRET `ptah_ydb_secrets/pg_password` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)",
 	})
 
-	kept := secretsDeclaration()
-	kept.Secrets = kept.Secrets[:1]
+	kept := secretsDeclaration("pg_password")
 	dropped := planAgainst(c, conn, kept, secretsSchemas)
 	apply(c, conn, dropped)
 
 	c.Assert(dropped, qt.DeepEquals, []string{"DROP SECRET `ptah_ydb_secrets/ext/s3.key`"})
 	c.Assert(planAgainst(c, conn, kept, secretsSchemas), qt.HasLen, 0)
-	c.Assert(readScoped(c, conn, secretsSchemas).Secrets, qt.DeepEquals, []catalog.Secret{
-		{Name: "pg_password", Schema: secretsSchema},
-	})
+	c.Assert(liveSecrets(c, readScoped(c, conn, secretsSchemas)), qt.DeepEquals, []string{"ptah_ydb_secrets/pg_password"})
 }
 
 // TestYDBSecrets_FailurePath_RefusesWithoutSendingTheValue runs the statements
@@ -152,7 +182,7 @@ func TestYDBSecrets_FailurePath_RefusesWithoutSendingTheValue(t *testing.T) {
 	c.Assert(refused, qt.ErrorMatches, "(?s)ydb: SQL execution failed: .*unexpected path type.*\n"+
 		"SQL: CREATE SECRET `ptah_ydb_secrets/taken` WITH \\(value = \\$PTAH_SECRET_LIVE_S3_KEY\\)")
 	c.Assert(refused, qt.Not(qt.ErrorMatches), "(?s).*SENTINEL.*")
-	c.Assert(readScoped(c, conn, secretsSchemas).Secrets, qt.HasLen, 0)
+	c.Assert(liveSecrets(c, readScoped(c, conn, secretsSchemas)), qt.HasLen, 0)
 }
 
 // TestYDBSecrets_FailurePath_RefusedOnALineWithout plans a declared secret
@@ -166,7 +196,7 @@ func TestYDBSecrets_FailurePath_RefusedOnALineWithout(t *testing.T) {
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), secretsDeclaration(), readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches,
-		"secret ptah_ydb_secrets.pg_password, which requires target capability secrets, unavailable on this ydb target")
+		"secret ptah_ydb_secrets/pg_password, which requires target capability secrets, unavailable on this ydb target")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(diff, qt.IsNil)
 	c.Assert(info.Capabilities.Has(capability.Secrets), qt.IsFalse)
@@ -177,9 +207,9 @@ func TestYDBSecrets_FailurePath_RefusedOnALineWithout(t *testing.T) {
 func planRotating(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, path string) []string {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+	opts := &config.CompareOptions{FeatureRequests: must.Must(ydbsecret.RotationRequests([]string{path}))}
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, opts, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.RotateSecrets([]string{path}), qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
@@ -212,7 +242,7 @@ func TestYDBSecrets_DropAllTablesDropsThem(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.Secrets, qt.HasLen, 0)
+	c.Assert(liveSecrets(c, live), qt.HasLen, 0)
 	c.Assert(live.Tables, qt.HasLen, 0)
 	c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), "ptah_ydb_dropall_secrets")
 }
@@ -239,4 +269,351 @@ func TestYDBSecrets_DropDirectoryDropsThem(t *testing.T) {
 	c.Assert(dropper.DropDirectory(c.Context(), "ptah_ydb_dropdir_secrets/probe"), qt.IsNil)
 
 	c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropdir_secrets"), qt.DeepEquals, []string{"keep"})
+}
+
+// The root secrets the limit test makes: one whose name holds a dot, which
+// the source leaves unmanaged, and one the source describes by leaving it out.
+const (
+	secretsLimitKept    = "ptah_ydb_secrets_limit.pw"    // #nosec G101 -- a secret's path, not a credential
+	secretsLimitDropped = "ptah_ydb_secrets_limit_other" // #nosec G101 -- a secret's path, not a credential
+)
+
+// dropRootSecrets drops the root secrets the limit test makes, and no other.
+// It runs in a cleanup too, where the test's context has ended.
+func dropRootSecrets(c *qt.C, conn *dbschema.DatabaseConnection) {
+	c.Helper()
+	root, err := dbschema.ReadSchemaWithSchemasContext(context.Background(), conn, []string{""})
+	c.Assert(err, qt.IsNil)
+	for _, path := range liveSecrets(c, root) {
+		if path != secretsLimitKept && path != secretsLimitDropped {
+			continue
+		}
+		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP SECRET "+sqlident.Quote("ydb", path)), qt.IsNil)
+	}
+}
+
+// TestYDBSecrets_LimitNamesADottedRootSecret reads a Go source that leaves the
+// root secret ptah_ydb_secrets_limit.pw unmanaged and plans it against a
+// database that holds it: the limit names that path, not pw in a directory
+// ptah_ydb_secrets_limit, so the secret is left alone. The source still
+// describes every other secret, so the test's other root secret is dropped.
+// Only the changes to the test's own secrets are compared.
+func TestYDBSecrets_LimitNamesADottedRootSecret(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	dropRootSecrets(c, conn)
+	c.Cleanup(func() { dropRootSecrets(c, conn) })
+	for _, path := range []string{secretsLimitKept, secretsLimitDropped} {
+		c.Assert(conn.Writer().ExecuteSQL(c.Context(), "CREATE SECRET "+sqlident.Quote("ydb", path)+" WITH (value = 'probe')"), qt.IsNil)
+	}
+	source, err := goschema.ParseSource("limits.go",
+		"package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\""+secretsLimitKept+"\"\ntype Unmanaged struct{}\n")
+	c.Assert(err, qt.IsNil)
+	declared := &schemamodel.Database{FeatureCoverage: source.FeatureCoverage.SelectKinds([]schemaext.Kind{ydbsecret.Kind})}
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, []string{""}), conn.Info(), nil, must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(changesTo(diff.FeatureChanges, ydbsecret.Ref("", secretsLimitKept), ydbsecret.Ref("", secretsLimitDropped)), qt.DeepEquals,
+		[]schemaext.ChangeRecord{{Subject: ydbsecret.Ref("", secretsLimitDropped), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}}})
+}
+
+// changesTo keeps the changes to the given subjects. The limit test reads the
+// root of a server other tests share, so a root secret another test left
+// behind is planned too, and is not this test's to judge.
+func changesTo(changes []schemaext.ChangeRecord, subjects ...objectidentity.ID) []schemaext.ChangeRecord {
+	var kept []schemaext.ChangeRecord
+	for _, change := range changes {
+		if slices.ContainsFunc(subjects, func(subject objectidentity.ID) bool { return subject.Key() == change.Subject.Key() }) {
+			kept = append(kept, change)
+		}
+	}
+	return kept
+}
+
+// dropHolder removes what the holder test leaves at ptah_ydb_secrets/holder: a
+// table, or the secret below it and the directory that secret leaves behind.
+// YDB keeps that directory after its last object goes, and refuses a table at
+// its path, so a second run would fail at its first statement without this.
+func dropHolder(c *qt.C, conn *dbschema.DatabaseConnection, schemas []string) {
+	c.Helper()
+	dropSecrets(c, conn, schemas)
+	dropTables(c, conn, schemas)
+	dropCoordinationDirectory(c, conn, secretsSchema+"/holder")
+}
+
+// TestYDBSecrets_CreatedBeneathADroppedTable plans a secret beneath the path of
+// a table the plan drops. YDB needs the directory above a secret to hold no
+// other object, so CREATE SECRET runs after DROP TABLE, and the server takes
+// both; nothing is left to plan after.
+func TestYDBSecrets_CreatedBeneathADroppedTable(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	schemas := []string{secretsSchema, secretsSchema + "/holder"}
+	dropHolder(c, conn, schemas)
+	c.Cleanup(func() { dropHolder(c, conn, schemas) })
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `ptah_ydb_secrets/holder` (id Int64 NOT NULL, PRIMARY KEY (id))"), qt.IsNil)
+	declared := &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbsecret.DesiredObject(secretsSchema+"/holder", "pw", "", secretPasswordEnv))),
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+
+	plan := planAgainst(c, conn, declared, schemas)
+	apply(c, conn, plan)
+
+	c.Assert(plan, qt.DeepEquals, []string{
+		"DROP TABLE `ptah_ydb_secrets/holder`",
+		"CREATE SECRET `ptah_ydb_secrets/holder/pw` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)",
+	})
+	c.Assert(liveSecrets(c, readScoped(c, conn, schemas)), qt.DeepEquals, []string{"ptah_ydb_secrets/holder/pw"})
+	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
+}
+
+// secretsOrderSchema is the directory the ordering test writes into, and
+// secretsOrderSchemas the directories it reads: the one that holds the
+// occupant, and the one the occupant's path becomes.
+const secretsOrderSchema = "ptah_ydb_secrets_order" // #nosec G101 -- a directory name, not a credential
+
+var secretsOrderSchemas = []string{secretsOrderSchema, secretsOrderSchema + "/occupied"}
+
+// secretsAndNodes declares objects from a source that describes every secret
+// and every coordination node, so an occupant it leaves out is dropped.
+func secretsAndNodes(objects ...schemaext.Object) *schemamodel.Database {
+	secrets := must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	nodes := must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(secrets.Combine(nodes)),
+	}
+}
+
+// nodesBelow declares coordination nodes from a source that describes every
+// node and makes no claim on secrets, which a line without them refuses.
+func nodesBelow(objects ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+}
+
+// TestYDBSecrets_OwnersOrderAgainstThePathsAbove creates an object below a
+// path whose occupant the plan drops, for occupants and objects of different
+// owners: a table, a coordination node and a secret. YDB needs every
+// directory above an object to be a directory, so the drop runs first, the
+// server takes both statements, and nothing is left to plan after. 25.1 has
+// no secrets, so only the table case runs there.
+func TestYDBSecrets_OwnersOrderAgainstThePathsAbove(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	tests := []struct {
+		name     string
+		line     string
+		occupant string
+		declared *schemamodel.Database
+		want     []string
+	}{
+		{name: "a coordination node below a dropped table on 25.1", line: "25.1",
+			occupant: "CREATE TABLE `ptah_ydb_secrets_order/occupied` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+			declared: nodesBelow(ydbcoordination.DesiredObject(secretsOrderSchema+"/occupied", "lock", "", ydbcoordination.Spec{})),
+			want:     []string{"DROP TABLE `ptah_ydb_secrets_order/occupied`", "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied/lock`"}},
+		{name: "a coordination node below a dropped table", line: "26.2",
+			occupant: "CREATE TABLE `ptah_ydb_secrets_order/occupied` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+			declared: secretsAndNodes(ydbcoordination.DesiredObject(secretsOrderSchema+"/occupied", "lock", "", ydbcoordination.Spec{})),
+			want:     []string{"DROP TABLE `ptah_ydb_secrets_order/occupied`", "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied/lock`"}},
+		{name: "a secret below a dropped coordination node", line: "26.2",
+			occupant: "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied`",
+			declared: secretsAndNodes(ydbsecret.DesiredObject(secretsOrderSchema+"/occupied", "pw", "", secretPasswordEnv)),
+			want: []string{"DROP COORDINATION NODE `ptah_ydb_secrets_order/occupied`",
+				"CREATE SECRET `ptah_ydb_secrets_order/occupied/pw` WITH (value = $PTAH_SECRET_LIVE_PG_PASSWORD)"}},
+		{name: "a coordination node below a dropped secret", line: "26.2",
+			occupant: "CREATE SECRET `ptah_ydb_secrets_order/occupied` WITH (value = 'probe')",
+			declared: secretsAndNodes(ydbcoordination.DesiredObject(secretsOrderSchema+"/occupied", "lock", "", ydbcoordination.Spec{})),
+			want:     []string{"DROP SECRET `ptah_ydb_secrets_order/occupied`", "CREATE COORDINATION NODE `ptah_ydb_secrets_order/occupied/lock`"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, lineNamed(c, test.line))
+			dropCoordinationDirectory(c, conn, secretsOrderSchema)
+			c.Cleanup(func() { dropCoordinationDirectory(c, conn, secretsOrderSchema) })
+			apply(c, conn, []string{test.occupant})
+
+			plan := planAgainst(c, conn, test.declared, secretsOrderSchemas)
+			apply(c, conn, plan)
+
+			c.Assert(plan, qt.DeepEquals, test.want)
+			c.Assert(planAgainst(c, conn, test.declared, secretsOrderSchemas), qt.HasLen, 0)
+		})
+	}
+}
+
+// planFailure plans the declaration against the directories a test owns and
+// returns why the plan was refused.
+func planFailure(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database, schemas []string) error {
+	c.Helper()
+	info := conn.Info()
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, schemas), info, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()), diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	c.Assert(statements, qt.IsNil)
+	return err
+}
+
+// absoluteSecret is the secret the absolute-path test declares.
+func absoluteSecret() schemaext.Object {
+	return ydbsecret.DesiredObject(externalSchema, "abs_pw", "", externalSecretEnv)
+}
+
+// absoluteSecretSource declares secrets, from a source that describes every
+// secret, and a PostgreSQL source at location whose password the secret at
+// path holds.
+func absoluteSecretSource(location, path string, secrets ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(secrets...)),
+		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "warehouse", Schema: externalSchema, SourceType: "PostgreSQL",
+			Location: location, AuthMethod: "BASIC",
+			Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": path}}},
+	}
+}
+
+// openAbsoluteSecretDatabase opens the line the absolute-path tests run on,
+// with external data sources enabled and the tests' directories emptied after
+// them, and returns the database's own path.
+func openAbsoluteSecretDatabase(c *qt.C) (*dbschema.DatabaseConnection, string) {
+	c.Helper()
+	line := lineNamed(c, "26.2")
+	setClusterFlags(c, line, externalSourcesOn)
+	conn := openYDB(c, line)
+	c.Cleanup(func() {
+		externalTeardown(c, conn, nil)
+		dropSecrets(c, conn, externalSchemas)
+	})
+	return conn, readScoped(c, conn, externalSchemas).DatabasePath
+}
+
+// TestYDBSecrets_ReadThroughAnAbsolutePath declares a data source that names
+// its secret by an absolute path, as YDB stores it. The path is read against
+// the database the plan runs in: the secret is created before the source, and
+// the two compare equal after.
+func TestYDBSecrets_ReadThroughAnAbsolutePath(t *testing.T) {
+	t.Setenv(externalSecretEnv, "probe")
+	c := qt.New(t)
+	conn, root := openAbsoluteSecretDatabase(c)
+	declared := absoluteSecretSource("pg.invalid:5432", root+"/"+externalSchema+"/abs_pw", absoluteSecret())
+
+	first := planAgainst(c, conn, declared, externalSchemas)
+	apply(c, conn, first)
+
+	c.Assert(first, qt.HasLen, 2)
+	c.Assert(first[0], qt.Equals, "CREATE SECRET `ptah_ydb_external/abs_pw` WITH (value = $PTAH_SECRET_LIVE_EXTERNAL_PG)")
+	c.Assert(planAgainst(c, conn, declared, externalSchemas), qt.HasLen, 0)
+}
+
+// TestYDBSecrets_FailurePath_ReadThroughAnAbsolutePath starts from a data
+// source that reads its secret by an absolute path. A plan that drops the
+// secret while it creates the source again is refused, and so is a source
+// whose path is outside the database, since no statement of it could read the
+// secret.
+func TestYDBSecrets_FailurePath_ReadThroughAnAbsolutePath(t *testing.T) {
+	t.Setenv(externalSecretEnv, "probe")
+	c := qt.New(t)
+	conn, root := openAbsoluteSecretDatabase(c)
+	path := root + "/" + externalSchema + "/abs_pw"
+	apply(c, conn, planAgainst(c, conn, absoluteSecretSource("pg.invalid:5432", path, absoluteSecret()), externalSchemas))
+
+	dropped := planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", path), externalSchemas)
+	outside := planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", "/elsewhere/abs_pw", absoluteSecret()), externalSchemas)
+
+	c.Assert(dropped, qt.ErrorMatches, ".*secret ptah_ydb_external/abs_pw is dropped while a statement of this plan reads it by its path.*")
+	c.Assert(outside, qt.ErrorMatches, `.*secret path "/elsewhere/abs_pw" is outside the database `+root+`.*`)
+}
+
+// TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns compares the secret a
+// database holds against a target without the secrets key, as a 25.3 server
+// with EnableSchemaSecrets on lists one: a source with no claim on secrets
+// keeps it and plans no secret statement, so the comparison is not refused.
+// On 25.1 a source that describes every secret and declares none plans
+// nothing either.
+func TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	dropSecrets(c, conn, secretsSchemas)
+	c.Cleanup(func() { dropSecrets(c, conn, secretsSchemas) })
+	apply(c, conn, planAgainst(c, conn, secretsDeclaration("pg_password"), secretsSchemas))
+	info := conn.Info()
+	info.Capabilities = capability.YDB253()
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), &schemamodel.Database{}, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.FeatureChanges, qt.HasLen, 0)
+
+	old := openYDB(c, lineNamed(c, "25.1"))
+	described := &schemamodel.Database{FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))}
+	c.Assert(planAgainst(c, old, described, secretsSchemas), qt.HasLen, 0)
+}
+
+// TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement compares the
+// same database against a target without the secrets key: a source that
+// describes every secret and leaves this one out asks for a drop the target
+// cannot run, and a source that declares it declares an object the target
+// cannot create, as any declaration such a target cannot write is refused.
+// Both are refused by the secret's path.
+func TestYDBSecrets_FailurePath_RefusedWithoutTheKeyForAStatement(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	dropSecrets(c, conn, secretsSchemas)
+	c.Cleanup(func() { dropSecrets(c, conn, secretsSchemas) })
+	apply(c, conn, planAgainst(c, conn, secretsDeclaration("pg_password"), secretsSchemas))
+	info := conn.Info()
+	info.Capabilities = capability.YDB253()
+	described := &schemamodel.Database{FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))}
+
+	for _, declared := range []*schemamodel.Database{described, secretsDeclaration("pg_password")} {
+		diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, secretsSchemas), info, nil, must.Must(builtin.New()))
+		c.Assert(err, qt.ErrorMatches, ".*secret ptah_ydb_secrets/pg_password, which requires target capability secrets, unavailable on this ydb target")
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(diff, qt.IsNil)
+	}
+}
+
+// TestYDBSecrets_ShadowVerifiesARotation generates a migration that rotates a
+// secret and verifies it on a dev realm. The rotation is asked for twice, in
+// the compare options and in the diff policy, and planned once. The replay
+// creates the secret from the history and rotates it, and the convergence
+// check reads the replayed secret as its declaration rather than planning the
+// rotation again.
+func TestYDBSecrets_ShadowVerifiesARotation(t *testing.T) {
+	t.Setenv(secretPasswordEnv, secretPasswordValue)
+	c := qt.New(t)
+	line := lineNamed(c, "26.2")
+	conn := openYDB(c, line)
+	dropSecrets(c, conn, secretsSchemas)
+	c.Cleanup(func() { dropSecrets(c, conn, secretsSchemas) })
+	declared := secretsDeclaration("pg_password")
+	apply(c, conn, planAgainst(c, conn, declared, secretsSchemas))
+	migrations := c.TempDir()
+	writeFiles(c, migrations, map[string]string{ // #nosec G101 -- statements that name a variable, not a credential
+		"0000000001_secret.up.sql":   "CREATE SECRET `ptah_ydb_secrets/pg_password` WITH (value = $" + secretPasswordEnv + ");\n",
+		"0000000001_secret.down.sql": "DROP SECRET `ptah_ydb_secrets/pg_password`;\n",
+	})
+	path := secretsSchema + "/pg_password"
+
+	result, err := generator.GenerateMigration(c.Context(), generator.GenerateMigrationOptions{
+		Runtime: must.Must(builtin.New()), Generated: declared, DBConn: conn, Schemas: secretsSchemas,
+		MigrationName: "rotate", OutputDir: migrations, ShadowDatabaseURL: enterRealm(c, line),
+		CompareOptions: &config.CompareOptions{FeatureRequests: must.Must(ydbsecret.RotationRequests([]string{path}))},
+		DiffPolicy:     generator.DiffPolicy{RotateSecrets: []string{path}},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Files, qt.HasLen, 1)
+	up, err := os.ReadFile(result.Files[0].UpFile)
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Count(string(up), "ALTER SECRET `ptah_ydb_secrets/pg_password` WITH (value = $"+secretPasswordEnv+");"), qt.Equals, 1)
 }

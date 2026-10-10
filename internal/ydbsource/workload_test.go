@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/convert/goschematogo"
@@ -49,6 +50,66 @@ type Unmanaged struct{}
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch.jobs")).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("other")).State, qt.Equals, schemaext.Complete)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, ydbworkload.ClassifierRef("other")).State, qt.Equals, schemaext.Uninspected)
+}
+
+// A Go source's secret limit belongs to the secret owner's coverage: the named
+// secret is unmanaged, and the rest of the namespace is still described.
+func TestGoSourceSecretLimitsBelongToFeatureCoverage(t *testing.T) {
+	c := qt.New(t)
+	db, err := goschema.ParseSource("limits.go", `package entities
+//ptah:schema:notdescribed kind="secret" name="ext/pg.pw"
+type Unmanaged struct{}
+`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.NotDescribed.IsZero(), qt.IsTrue)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "pg.pw")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "ext.pg.pw")).State, qt.Equals, schemaext.Complete)
+}
+
+// TestGoSecretLimitsReadThePath reads a Go source's secret limit as the
+// secret's path: a dot stays in its segment and only a slash separates a
+// directory.
+func TestGoSecretLimitsReadThePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		limit     string
+		unmanaged objectidentity.ID
+		described objectidentity.ID
+	}{
+		{name: "a dotted root name", limit: "pg.pw", unmanaged: ydbsecret.Ref("", "pg.pw"), described: ydbsecret.Ref("pg", "pw")},
+		{name: "a directory", limit: "pg/pw", unmanaged: ydbsecret.Ref("pg", "pw"), described: ydbsecret.Ref("", "pg.pw")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := goschema.ParseSource("limits.go", fmt.Sprintf("package entities\n//ptah:schema:notdescribed kind=%q name=%q\ntype Unmanaged struct{}\n", "secret", test.limit))
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, test.unmanaged).State, qt.Equals, schemaext.Uninspected)
+			c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, test.described).State, qt.Equals, schemaext.Complete)
+		})
+	}
+}
+
+// TestGoSecretLimits_RefuseAnAbsolutePath refuses a limit written from the
+// server root. A source names no database, so `/local/ext/pw` cannot be read
+// as the secret ext/pw; read with the slash stripped it would leave a secret
+// local/ext/pw unmanaged and let the plan drop ext/pw.
+func TestGoSecretLimits_RefuseAnAbsolutePath(t *testing.T) {
+	c := qt.New(t)
+	db, err := goschema.ParseSource("limits.go", "package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\"/local/ext/pw\"\ntype Unmanaged struct{}\n")
+	c.Assert(err, qt.ErrorMatches, `.*"/local/ext/pw" is not a secret path \(dir/name\): .*write the secret's path relative to the database root.*`)
+	c.Assert(err, qt.ErrorIs, ydbsecret.ErrAbsolutePath)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+}
+
+// TestYQLSecretLimitsReadThePath reads a YQL header's secret limit as the
+// secret's path, as the Go annotation reads it.
+func TestYQLSecretLimitsReadThePath(t *testing.T) {
+	c := qt.New(t)
+	db, _, err := sqlschema.Read([]byte("-- ptah:not-described secret \"pg.pw\"\nCREATE SECRET `other` WITH (value = $PTAH_SECRET_OTHER);\n"), "ydb")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "pg.pw")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("pg", "pw")).State, qt.Equals, schemaext.Complete)
 }
 
 func TestSQLHeaderWorkloadLimitsRemainScoped(t *testing.T) {
@@ -149,7 +210,7 @@ func TestGoExportPreservesUnenrolledNamespaces(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
 				c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("missing")).State, qt.Equals, test.pools)
-				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing")} {
+				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing"), ydbsecret.Ref("", "missing")} {
 					c.Assert(parsed.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State, qt.Equals, schemaext.Uninspected)
 				}
 				again, err := goschematogo.Render(t.Context(), parsed, goschematogo.Options{SingleFile: layout.single, Dialect: "ydb"})
@@ -169,6 +230,8 @@ func TestGoExportPreservesAuthoredSubjectLimitsInEveryFile(t *testing.T) {
 //ptah:schema:notdescribed kind="streaming_query" name="app.v1/copy"
 //ptah:schema:notdescribed kind="resource_pool" name="Batch.jobs"
 //ptah:schema:notdescribed kind="resource_pool_classifier" name="route.jobs"
+//ptah:schema:notdescribed kind="secret" name="ext/pg.pw"
+//ptah:schema:notdescribed kind="secret" name="pg.pw"
 type Limits struct{}
 `)
 			c.Assert(err, qt.IsNil)
@@ -204,4 +267,43 @@ func TestGoExportPartialFilesKeepUnknownNamespaces(t *testing.T) {
 			c.Assert(parsed.FeatureCoverage.Lookup(kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected, qt.Commentf("%s in %s", kind, file.Name))
 		}
 	}
+}
+
+func secretExportSource(c *qt.C, knowledge schemaext.Knowledge) *schemamodel.Database {
+	c.Helper()
+	known, err := ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: ydbsecret.Kind, Subject: ydbsecret.Ref("ext", "pg.pw"), Knowledge: knowledge}})
+	c.Assert(err, qt.IsNil)
+	return &schemamodel.Database{FeatureCoverage: known}
+}
+
+// TestGoExport_CarriesASecretAReadLeftUnmanaged writes a secret that a read
+// of a line without the secrets capability left unmanaged as a limit on that
+// secret, so the exported source leaves it unmanaged as well.
+func TestGoExport_CarriesASecretAReadLeftUnmanaged(t *testing.T) {
+	c := qt.New(t)
+	db := secretExportSource(c, schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbsecret.UnsupportedReason})
+
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(string(files[0].Data), qt.Contains, `//ptah:schema:notdescribed kind="secret" name="ext/pg.pw"`)
+	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "pg.pw")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "other")).State, qt.Equals, schemaext.Complete)
+}
+
+// TestGoExport_RefusesASecretLeftUnknownForAnotherReason refuses to write a
+// secret whose record says something a limit cannot: a directive would turn a
+// read failure into an authored decision.
+func TestGoExport_RefusesASecretLeftUnknownForAnotherReason(t *testing.T) {
+	c := qt.New(t)
+	db := secretExportSource(c, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the read failed"})
+
+	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+
+	c.Assert(err, qt.ErrorMatches, `.*secrets object .* cannot be exported without losing its coverage record.*`)
+	c.Assert(files, qt.IsNil)
 }

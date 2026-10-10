@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
@@ -30,7 +31,6 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		},
 		AsyncReplications:   make([]schemamodel.AsyncReplication, 7),
 		Transfers:           make([]schemamodel.Transfer, 8),
-		Secrets:             make([]schemamodel.Secret, 9),
 		ExternalDataSources: make([]schemamodel.ExternalDataSource, 10),
 	}
 	var err error
@@ -53,6 +53,10 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 	}
 	db.FeatureObjects = addStreamingMetricFixtures(c, db.FeatureObjects)
+	for i := range 9 {
+		db.FeatureObjects, err = db.FeatureObjects.With(ydbsecret.DesiredObject("ext", fmt.Sprintf("secret_%d", i), "", "PTAH_SECRET_X"))
+		c.Assert(err, qt.IsNil)
+	}
 	body := render(c, db, nil)
 	for _, test := range []struct{ name, want string }{
 		{"tables", "2"}, {"columns", "0"},

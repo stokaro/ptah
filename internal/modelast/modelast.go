@@ -1551,22 +1551,6 @@ func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.
 	return nil
 }
 
-// FromSecret converts a schemamodel.Secret to an ast.CreateSecretNode, which
-// names the environment variable the value comes from and never the value.
-func FromSecret(secret schemamodel.Secret) *ast.CreateSecretNode {
-	return ast.NewCreateSecret(secret.QualifiedName(), secret.ValueEnv)
-}
-
-// appendSecretStatements adds a CREATE SECRET node for each declared secret.
-func appendSecretStatements(visit func(ast.Node) error, secrets []schemamodel.Secret) error {
-	for _, secret := range secrets {
-		if err := visit(FromSecret(secret)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // FromExternalDataSource converts a schemamodel.ExternalDataSource to the node
 // that creates it, or replaces it when replace is set.
 func FromExternalDataSource(source schemamodel.ExternalDataSource, replace bool) *ast.CreateExternalDataSourceNode {
@@ -2347,14 +2331,10 @@ func appendPreTableStatements(
 		return err
 	}
 
-	// A YDB secret depends on nothing, and an external data source names one
-	// for its credentials, so the secrets come before every other object.
-	if err := appendSecretStatements(visit, database.Secrets); err != nil {
-		return err
-	}
 	// A data source names a secret by its path, and the server looks the
-	// secret up when the source is created; an external table reads a data
-	// source, and a view may read an external table.
+	// secret up when the source is created, so the secret's owner places its
+	// creation before the source; an external table reads a data source, and
+	// a view may read an external table.
 	if err := appendExternalStatements(visit, &database); err != nil {
 		return err
 	}

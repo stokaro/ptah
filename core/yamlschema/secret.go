@@ -2,10 +2,9 @@ package yamlschema
 
 import (
 	"fmt"
-	"strings"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
 // secretSpec is one YDB secret in a YAML document: its directory and the
@@ -32,15 +31,10 @@ func (d document) addSecrets(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("secret %q: %w", key, err)
 		}
-		name := valueOrDefault(spec.Name, key)
-		if err := ydbsecret.CheckName(name); err != nil {
+		db.FeatureObjects, err = ydbsecret.Declare(db.FeatureObjects, string(spec.Schema), valueOrDefault(spec.Name, key), "", valueEnv)
+		if err != nil {
 			return fmt.Errorf("secret %q: %w", key, err)
 		}
-		db.Secrets = append(db.Secrets, schemamodel.Secret{
-			Name:     name,
-			Schema:   strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"),
-			ValueEnv: valueEnv,
-		})
 	}
 	return nil
 }

@@ -141,7 +141,7 @@ func (r *Runtime) validateReversals(ctx context.Context, inputs []schemaext.Chan
 	if len(replies) != len(inputs) {
 		return nil, fmt.Errorf("%w: reversal changed the result count", schemaext.ErrInvalidValue)
 	}
-	changes := make([]schemaext.ChangeRecord, len(replies))
+	var changes []schemaext.ChangeRecord
 	for i, reply := range replies {
 		if reply.Change.Subject != inputs[i].Subject || !reversalText(reply.Strategy) {
 			return nil, fmt.Errorf("%w: reversal changed its subject or omitted its strategy", schemaext.ErrInvalidValue)
@@ -151,30 +151,44 @@ func (r *Runtime) validateReversals(ctx context.Context, inputs []schemaext.Chan
 				return nil, fmt.Errorf("%w: invalid reversal limitation", schemaext.ErrInvalidValue)
 			}
 		}
-		changes[i] = reply.Change
+		if reply.Change.Value == nil {
+			// A reverse with no statement must say what it leaves behind.
+			if len(reply.Limitations) == 0 {
+				return nil, fmt.Errorf("%w: a reversal without a change must state its limitations", schemaext.ErrInvalidValue)
+			}
+			continue
+		}
+		changes = append(changes, reply.Change)
 	}
 	captured, err := r.codecs.SnapshotChanges(ctx, changes)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]schemaext.Reversal, len(replies))
-	for i, change := range captured {
-		if change.Value.Kind() != inputs[i].Value.Kind() {
-			return nil, fmt.Errorf("%w: reversal changed the ordered change kind", schemaext.ErrInvalidValue)
+	for i, reply := range replies {
+		change := schemaext.ChangeRecord{Subject: reply.Change.Subject}
+		if reply.Change.Value != nil {
+			change, captured = captured[0], captured[1:]
+			if change.Value.Kind() != inputs[i].Value.Kind() {
+				return nil, fmt.Errorf("%w: reversal changed the ordered change kind", schemaext.ErrInvalidValue)
+			}
 		}
-		state, err := r.snapshotReversalState(ctx, change, replies[i].ForwardState)
+		state, err := r.snapshotReversalState(ctx, inputs[i], change.Subject, reply.ForwardState)
 		if err != nil {
 			return nil, err
 		}
-		result[i] = schemaext.Reversal{Change: change, ForwardState: state, Strategy: replies[i].Strategy, Limitations: slices.Clone(replies[i].Limitations)}
+		result[i] = schemaext.Reversal{Change: change, ForwardState: state, Strategy: reply.Strategy, Limitations: slices.Clone(reply.Limitations)}
 	}
 	return result, nil
 }
 
-func (r *Runtime) snapshotReversalState(ctx context.Context, change schemaext.ChangeRecord, projections []schemaext.ProjectedValue) ([]schemaext.ProjectedValue, error) {
+// snapshotReversalState validates the projections a reversal of input makes
+// at subject. The input's change kind names the owner, which the reply keeps
+// or, for a reverse without a statement, leaves out.
+func (r *Runtime) snapshotReversalState(ctx context.Context, input schemaext.ChangeRecord, subject objectidentity.ID, projections []schemaext.ProjectedValue) ([]schemaext.ProjectedValue, error) {
 	owner := ""
 	for _, definition := range r.codecs.Definitions() {
-		if definition.Kind == change.Value.Kind() && definition.Representation == schemaext.Change {
+		if definition.Kind == input.Value.Kind() && definition.Representation == schemaext.Change {
 			owner = definition.Owner
 			break
 		}
@@ -189,7 +203,7 @@ func (r *Runtime) snapshotReversalState(ctx context.Context, change schemaext.Ch
 		if projection.Placement != schemaext.ObjectPlacement && projection.Placement != schemaext.FacetPlacement {
 			return nil, fmt.Errorf("%w: unknown reversal state placement", schemaext.ErrInvalidValue)
 		}
-		if projection.Placement == schemaext.ObjectPlacement && objectidentity.Kind(projection.Kind) != change.Subject.Kind {
+		if projection.Placement == schemaext.ObjectPlacement && objectidentity.Kind(projection.Kind) != subject.Kind {
 			return nil, fmt.Errorf("%w: projected object kind disagrees with its subject", schemaext.ErrInvalidValue)
 		}
 		key := projectionKey{projection.Placement, projection.Kind}

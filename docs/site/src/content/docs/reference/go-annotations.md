@@ -610,8 +610,16 @@ is the usual case — declaring it instead hands Ptah the object, and that
 includes removing it.
 
 The source parser recognizes common kinds and the YDB kinds `coordination_node`,
-`streaming_query`, `resource_pool`, and `resource_pool_classifier`. Dots in pool
-and classifier names are literal characters.
+`streaming_query`, `resource_pool`, `resource_pool_classifier` and `secret`.
+Dots in pool and classifier names are literal characters.
+
+A secret is named by its path relative to the database root, as YDB writes it:
+a slash separates directories and a dot is part of a name. `name="pg.pw"` is
+the secret `pg.pw` at the root, never `pw` in a directory `pg`, and
+`name="ext/pg.pw"` is `pg.pw` in `ext`. A YQL schema file takes the same limit
+in its header, as `-- ptah:not-described secret "ext/pg.pw"`. An HCL document
+and an SQL file of another dialect refuse the `secret` kind, since neither can
+declare a secret.
 
 Go export adds whole-family annotations when those namespaces were not
 inspected. These annotations keep the generated source from claiming that
@@ -1169,12 +1177,13 @@ value itself. Every other dialect refuses a secret. See
 
 | Attribute | Required | Description |
 | --- | --- | --- |
-| `name` | Yes | Secret name, the last segment of its path. |
+| `name` | Yes | Secret name, the last segment of its path. A dot is part of the name; a slash is refused. |
 | `schema` | No | Directory that holds the secret, relative to the database root. |
 | `value_env` | Yes | Environment variable that holds the value. Its name starts with `PTAH_SECRET_`. |
 
 A `value` attribute is refused, and the error names the attribute and not what
-it held.
+it held. The secret's path is `schema/name`, which is how every other place
+names it: a limit, `--rotate-secret` and every message.
 
 ### `//ptah:schema:externaldatasource`
 

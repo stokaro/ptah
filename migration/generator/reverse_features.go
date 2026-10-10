@@ -87,9 +87,14 @@ func recoveryNotes(recovery []schemaext.Reversal) []ast.Node {
 	return notes
 }
 
+// reversedRecords keeps the reverse changes that run a statement. A reversal
+// without a change value has none to run; its limitations reach the notes.
 func reversedRecords(recovery []schemaext.Reversal) []schemaext.ChangeRecord {
 	var records []schemaext.ChangeRecord
 	for _, result := range recovery {
+		if result.Change.Value == nil {
+			continue
+		}
 		records = append(records, result.Change)
 	}
 	return records

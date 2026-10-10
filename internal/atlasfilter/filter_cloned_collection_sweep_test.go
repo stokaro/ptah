@@ -188,12 +188,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			field: "Secrets", present: "pg_password", absent: "nosuch_secret",
-			seed: func(s *catalog.Database) {
-				s.Secrets = append(s.Secrets, catalog.Secret{Name: "pg_password"})
-			},
-		},
-		{
 			field: "ExternalDataSources", present: "s3_bucket", absent: "nosuch_source",
 			seed: func(s *catalog.Database) {
 				s.ExternalDataSources = append(s.ExternalDataSources, catalog.ExternalDataSource{Name: "s3_bucket"})

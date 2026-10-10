@@ -98,20 +98,7 @@ func valueSpec(payload schemaext.Payload) (ChangefeedSpec, error) {
 // empty namespace. No other kind is enrolled when more codecs join the runtime.
 // Callers provide explicit subject limitations for unread or unrepresentable state.
 func ChangefeedCoverage(representation schemaext.Representation, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
-	var owned []schemaext.OwnedCodec
-	for _, codec := range Codecs() {
-		owned = append(owned, schemaext.OwnedCodec{Owner: "ptah.run/ydb", Codec: codec})
-	}
-	registry, err := schemaext.NewRegistry(owned...)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	for _, model := range registry.Definitions() {
-		if model.Kind == ChangefeedKind && model.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, subjects)
-		}
-	}
-	return schemaext.Coverage{}, fmt.Errorf("%w: changefeed coverage requires a schema representation", schemaext.ErrInvalidValue)
+	return schemaext.OwnedCoverage("ptah.run/ydb", Codecs(), ChangefeedKind, representation, schemaext.Knowledge{State: schemaext.Complete}, subjects)
 }
 
 // Keep observation ownership and a retained planning binding distinct on the wire.

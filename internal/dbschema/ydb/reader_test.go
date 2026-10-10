@@ -20,10 +20,12 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	ydbreader "ptah.run/internal/dbschema/ydb"
@@ -510,7 +512,20 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("pool")).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
-	c.Assert(db.Secrets, qt.DeepEquals, []catalog.Secret{{Name: "key"}})
+	c.Assert(observedSecrets(c, db), qt.DeepEquals, []string{"key"})
+}
+
+// observedSecrets names, by path, every secret a read observed.
+func observedSecrets(c *qt.C, db *catalog.Database) []string {
+	c.Helper()
+	var paths []string
+	objects, err := db.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbsecret.Kind) }).All()
+	c.Assert(err, qt.IsNil)
+	for _, object := range objects {
+		c.Assert(object.Value, qt.DeepEquals, &ydbsecret.Observed{})
+		paths = append(paths, ydbsecret.Display(object.Ref.Schema.Source, object.Ref.Name.Source))
+	}
+	return paths
 }
 
 // A secret is read by its path alone: the listing names it, and the reader
@@ -527,13 +542,10 @@ func TestReader_ReadsASecretByItsPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		schemas []string
-		want    []catalog.Secret
+		want    []string
 	}{
-		{name: "every directory", want: []catalog.Secret{
-			{Name: "pg_password"}, {Name: "s3.key", Schema: "ext"}, {Name: "token", Schema: "ext/aws"},
-		}},
-		{name: "one directory, not the ones below it", schemas: []string{"ext"},
-			want: []catalog.Secret{{Name: "s3.key", Schema: "ext"}}},
+		{name: "every directory", want: []string{"pg_password", "ext/s3.key", "ext/aws/token"}},
+		{name: "one directory, not the ones below it", schemas: []string{"ext"}, want: []string{"ext/s3.key"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -544,26 +556,49 @@ func TestReader_ReadsASecretByItsPath(t *testing.T) {
 			db, err := reader.ReadSchemaContext(context.Background())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Secrets, qt.DeepEquals, test.want)
-			c.Assert(db.NotDescribed.Describes(coverage.Secret), qt.IsTrue)
+			c.Assert(observedSecrets(c, db), qt.ContentEquals, test.want)
+			c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "missing")).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }
 
-// On a line without the secrets key a secret is recorded rather than read,
-// as a view is without the views key, so a plan never meets a secret the
-// renderer would refuse.
+// On a line without the secrets key a secret is recorded as uninspected
+// rather than observed, as a view is without the views key: Ptah plans no
+// secret statement there, so a plan neither keeps nor drops it and never reads
+// its silence as absence. A scoped read records only the secrets of the
+// directories it names.
 func TestReader_RecordsASecretOnALineWithoutSecrets(t *testing.T) {
-	c := qt.New(t)
 	source := fakeSource{
-		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("pg_password", Ydb_Scheme.Entry_SECRET)}},
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local":     {entry("pg_password", Ydb_Scheme.Entry_SECRET), entry("ext", Ydb_Scheme.Entry_DIRECTORY)},
+			"/local/ext": {entry("s3.key", Ydb_Scheme.Entry_SECRET)},
+		},
 	}
+	unmanaged := schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbsecret.UnsupportedReason}
+	tests := []struct {
+		name    string
+		schemas []string
+		want    []schemaext.Knowledge
+	}{
+		{name: "every directory", want: []schemaext.Knowledge{unmanaged, unmanaged}},
+		{name: "one directory", schemas: []string{"ext"}, want: []schemaext.Knowledge{{State: schemaext.Complete}, unmanaged}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := ydbreader.NewReaderFromSource(source, "/local", capability.YDB253())
+			reader.SetSchemas(test.schemas)
 
-	db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB253()).ReadSchemaContext(context.Background())
+			db, err := reader.ReadSchemaContext(context.Background())
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(db.Secrets, qt.HasLen, 0)
-	c.Assert(db.NotDescribed.DescribesIn(coverage.Secret, "", "pg_password"), qt.IsFalse)
+			c.Assert(err, qt.IsNil)
+			c.Assert(observedSecrets(c, db), qt.HasLen, 0)
+			c.Assert([]schemaext.Knowledge{
+				db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "pg_password")),
+				db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("ext", "s3.key")),
+			}, qt.DeepEquals, test.want)
+		})
+	}
 }
 
 // A storage setting is recorded only where it differs from what a table

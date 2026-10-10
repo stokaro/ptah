@@ -264,3 +264,41 @@ func TestReversalDiscardsEarlierOwnerResultsWhenALaterOwnerFails(t *testing.T) {
 	c.Assert(result, qt.IsNil)
 	c.Assert(calls, qt.DeepEquals, []string{"first", "second"})
 }
+
+// TestReversal_AcceptsAReverseWithoutAStatement keeps a reversal that carries
+// no change value but states its limitations, in its place among the others,
+// with its subject.
+func TestReversal_AcceptsAReverseWithoutAStatement(t *testing.T) {
+	c := qt.New(t)
+	runtime := mustRuntime(c, reversalProvider(reversalFunc(func(ctx context.Context, request schemaext.ReversalRequest) ([]schemaext.Reversal, error) {
+		result, err := reverseFixture(ctx, request)
+		result[1].Change.Value = nil
+		return result, err
+	})))
+
+	result, err := runtime.ReverseChanges(t.Context(), reversalRequest())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.HasLen, 3)
+	c.Assert(result[0].Change.Value, qt.DeepEquals, &reversalChange{ID: conversionFirst, Number: -3})
+	c.Assert(result[1].Change, qt.DeepEquals, schemaext.ChangeRecord{Subject: comparedRef(conversionSecond, "two")})
+	c.Assert(result[1].Limitations, qt.DeepEquals, []string{"previously removed data is not recovered"})
+	c.Assert(result[2].Change.Value, qt.DeepEquals, &reversalChange{ID: conversionFirst, Number: -7})
+}
+
+// TestReversal_RefusesASilentReverseWithoutAStatement refuses a reversal that
+// carries no change value and says nothing about what it leaves behind.
+func TestReversal_RefusesASilentReverseWithoutAStatement(t *testing.T) {
+	c := qt.New(t)
+	runtime := mustRuntime(c, reversalProvider(reversalFunc(func(ctx context.Context, request schemaext.ReversalRequest) ([]schemaext.Reversal, error) {
+		result, err := reverseFixture(ctx, request)
+		result[1].Change.Value, result[1].Limitations = nil, nil
+		return result, err
+	})))
+
+	result, err := runtime.ReverseChanges(t.Context(), reversalRequest())
+
+	c.Assert(err, qt.ErrorMatches, `.*a reversal without a change must state its limitations`)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(result, qt.IsNil)
+}

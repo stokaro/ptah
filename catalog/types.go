@@ -83,11 +83,6 @@ type Database struct {
 	AsyncReplications []AsyncReplication `json:"async_replications,omitempty"`
 	// Transfers are the YDB transfers this description covers.
 	Transfers []Transfer `json:"transfers,omitempty"`
-	// Secrets are the YDB secrets this description covers, by path alone:
-	// the server never returns a secret's value, and the reader asks for
-	// nothing else. omitempty keeps the serialization of every dialect that
-	// has no secrets byte-identical.
-	Secrets []Secret `json:"secrets,omitempty"`
 	// ExternalDataSources and ExternalTables are the YDB external data
 	// sources and external tables this description covers. omitempty keeps
 	// the serialization of every other dialect byte-identical.
@@ -1540,24 +1535,6 @@ type Transfer struct {
 // the name alone at the database root.
 func (t Transfer) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
-}
-
-// Secret is a YDB secret read from the database: a scheme object at a path,
-// whose value the server keeps and never returns. The description holds where
-// the secret is and nothing else, so a comparison can tell only whether one
-// exists.
-//
-// Schema is the directory that holds the secret, "" for the database root, as
-// it is for a table.
-type Secret struct {
-	Name   string `json:"name"`
-	Schema string `json:"schema,omitempty"`
-}
-
-// QualifiedName returns the secret's canonical reference: schema.name, or the
-// name alone at the database root.
-func (s Secret) QualifiedName() string {
-	return tableref.Canonical(s.Schema, s.Name)
 }
 
 // ExternalDataSource is a YDB external data source read from the database:

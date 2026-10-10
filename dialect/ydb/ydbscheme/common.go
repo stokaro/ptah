@@ -1,6 +1,10 @@
 package ydbscheme
 
 import (
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -8,14 +12,22 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
-// CommonEffects describes scheme paths and principals used by a common AST node.
+// CommonEffects describes scheme paths, principals and secret reads of a common
+// AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
 // batch, not the Go AST node or a per-node remote call.
-func CommonEffects(builder objectidentity.Builder, node ast.Node) ([]plangraph.Effect, error) {
+//
+// root is the absolute path of the database the statement runs in, such as
+// /local, or empty when it is not known. A secret path the statement writes
+// absolute is read relative to root, and one outside root is refused, since
+// no statement of the database can read it. With an empty root an absolute
+// secret path reads nothing.
+func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) ([]plangraph.Effect, error) {
 	if name, action := principalUse(node); action != "" {
 		ref := builder.Role(name)
 		if ref.Name.Source == "" || ref.Name.Normalized == "" {
@@ -40,7 +52,66 @@ func CommonEffects(builder objectidentity.Builder, node ast.Node) ([]plangraph.E
 	if use.table {
 		effects = append(effects, plangraph.Effect{Subject: ref, Action: use.action})
 	}
+	reads, err := secretReads(root, node)
+	if err != nil {
+		return nil, err
+	}
+	return append(effects, reads...), nil
+}
+
+// secretReads names each YDB secret a statement reads by its path when it
+// runs: the _SECRET_PATH options of an external data source and the
+// credentials of an async replication or a transfer. YDB looks the secret up
+// when the object is created or its connection changes (`secret ... not
+// found`), so a secret's owner orders its creation before these reads. YDB
+// stores the path absolute, so an absolute path under root names the same
+// secret as the relative one. A path outside root is refused; a path that
+// cannot name a secret is left out.
+func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
+	var paths []string
+	switch n := node.(type) {
+	case *ast.CreateExternalDataSourceNode:
+		for _, option := range slices.Sorted(maps.Keys(n.Options)) {
+			if strings.HasSuffix(strings.ToUpper(option), "_SECRET_PATH") {
+				paths = append(paths, n.Options[option])
+			}
+		}
+	case *ast.CreateAsyncReplicationNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	case *ast.AlterAsyncReplicationNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	case *ast.CreateTransferNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	case *ast.AlterTransferNode:
+		paths = connectionSecretPaths(n.Spec.Connection)
+	}
+	var effects []plangraph.Effect
+	seen := make(map[objectidentity.Key]bool)
+	for _, written := range paths {
+		if strings.TrimSpace(written) == "" {
+			continue
+		}
+		ref, err := ydbsecret.ResolvePath(root, written)
+		if errors.Is(err, ydbsecret.ErrOutsideDatabase) {
+			return nil, (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+				Code: schemavalidation.InvalidSchema, Kind: "secret", Object: written,
+				Message: fmt.Sprintf("secret path %q is outside the database %s, so no statement of it can read the secret",
+					written, "/"+strings.Trim(root, "/")),
+			}}}).Err(platform.YDB)
+		}
+		// A path written absolute where the root is not known, or one that
+		// cannot name a secret, reads nothing Ptah manages.
+		if err != nil || seen[ref.Key()] {
+			continue
+		}
+		seen[ref.Key()] = true
+		effects = append(effects, plangraph.Effect{Subject: ref, Action: plangraph.Read})
+	}
 	return effects, nil
+}
+
+func connectionSecretPaths(connection ast.ReplicationConnectionSpec) []string {
+	return []string{connection.TokenSecretPath, connection.PasswordSecretPath}
 }
 
 func invalidCommonName(kind, name string) error {
@@ -95,12 +166,6 @@ func commonSchemeUse(node ast.Node) schemeUse {
 	case *ast.AlterTopicNode:
 		return schemeUse{n.Name, plangraph.Alter, false}
 	case *ast.DropTopicNode:
-		return schemeUse{n.Name, plangraph.Drop, false}
-	case *ast.CreateSecretNode:
-		return schemeUse{n.Name, plangraph.Create, false}
-	case *ast.AlterSecretNode:
-		return schemeUse{n.Name, plangraph.Alter, false}
-	case *ast.DropSecretNode:
 		return schemeUse{n.Name, plangraph.Drop, false}
 	default:
 		return externalSchemeUse(node)

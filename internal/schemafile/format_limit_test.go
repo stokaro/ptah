@@ -8,6 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/schemafile"
 )
 
@@ -31,13 +33,14 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
 			// name a virtual table, a table's row deletion policy, a changefeed,
 			// a YDB topic, a column family, or a YDB async replication or
-			// transfer, secret, external object, resource pool or classifier.
+			// transfer, external object, resource pool or classifier. A secret
+			// is an owned feature the format makes no claim about.
 			name: "HCL cannot name a virtual table, a TTL, a changefeed, a topic, a column family, a " +
-				"replication, transfer, secret, external object, resource pool or classifier",
+				"replication, transfer, external object, resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
 			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.ExternalDataSource, coverage.ExternalTable,
-				coverage.Replication, coverage.Secret, coverage.Topic,
+				coverage.Replication, coverage.Topic,
 				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 		{
@@ -52,7 +55,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
 				coverage.ContinuousAggregate, coverage.ExtendedProperty, coverage.ExternalDataSource, coverage.ExternalTable,
-				coverage.Hypertable, coverage.Replication, coverage.Secret, coverage.Synonym, coverage.Topic, coverage.Transfer),
+				coverage.Hypertable, coverage.Replication, coverage.Synonym, coverage.Topic, coverage.Transfer),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -62,7 +65,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// Spanner's policy clause, so both rows are the control on the TTL,
 			// changefeed and column family records HCL and DBML carry. It is
 			// also the control on the topic, the replication and the
-			// transfer, secret and external objects: YAML has a key for each, so a loader that recorded
+			// transfer and external objects: YAML has a key for each, so a loader that recorded
 			// them for every format fails here.
 			name:     "YAML cannot name nine families",
 			file:     "schema.yaml",
@@ -86,7 +89,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.Composite, coverage.ContinuousAggregate,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Hypertable,
-				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Secret, coverage.Sequence,
+				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Sequence,
 				coverage.Synonym, coverage.Topic, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 	}
@@ -119,4 +122,38 @@ func unsupportedRecords(kinds ...coverage.Kind) []coverage.Object {
 		})
 	}
 	return records
+}
+
+// TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace holds the secret
+// namespace to the formats that can declare a secret. YAML and YQL claim it
+// complete, so a secret only the database holds is planned for removal; HCL,
+// DBML and SQL of another dialect make no claim, so applying one keeps every
+// secret the database holds instead of planning DROP SECRET, which loses a
+// value nothing can read back.
+func TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		dialect  string
+		contents string
+		want     schemaext.KnowledgeState
+	}{
+		{name: "YAML", file: "schema.yaml", contents: "secrets:\n  pw:\n    value_env: PTAH_SECRET_PW\n", want: schemaext.Complete},
+		{name: "YQL", file: "schema.sql", dialect: "ydb", contents: "CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id));\n", want: schemaext.Complete},
+		{name: "HCL", file: "schema.hcl", contents: "schema \"main\" {\n}\n", want: schemaext.Uninspected},
+		{name: "DBML", file: "schema.dbml", contents: "Table users {\n  id integer [pk]\n}\n", want: schemaext.Uninspected},
+		{name: "SQL", file: "schema.sql", contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n", want: schemaext.Uninspected},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(t.TempDir(), test.file)
+			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
+
+			database, err := schemafile.LoadPath(path, schemafile.Options{Dialect: test.dialect})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "held")).State, qt.Equals, test.want)
+		})
+	}
 }

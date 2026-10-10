@@ -1,6 +1,7 @@
-// Package ydbsecret owns the rules of a YDB secret: what a declaration may
-// say, the statements that create, rotate and drop one, and how a secret's
-// value reaches the server without Ptah ever writing, printing or reading it.
+// Package ydbsecret owns YDB secrets: the desired and observed models, what a
+// declaration may say, the statements that create, rotate and drop one, and
+// the rule that keeps a secret's value out of every model, file and log. The
+// common schema, catalog, AST and diff types hold no secret.
 //
 // A YDB secret is a scheme object whose value the server keeps and never
 // returns: `CREATE SECRET <path> WITH (value = '...')`, `ALTER SECRET` to set a
@@ -34,20 +35,31 @@
 // So a declaration never carries the value. It names an environment variable
 // whose name starts with [ValuePrefix], every statement Ptah writes refers to
 // that variable as the named expression `$<variable>`, and the YDB connection
-// defines the expression from the environment as the statement is sent,
-// through [Expand]. A migration file, a plan and a log hold the
-// variable's name, and a statement run without Ptah fails loudly on an unknown
-// name instead of creating a secret with some other value.
+// defines the expression from the environment as the statement is sent
+// (ptah.run/internal/ydbsecretvalue). A migration file, a plan and a log hold
+// the variable's name, and a statement run without Ptah fails loudly on an
+// unknown name instead of creating a secret with some other value.
+//
+// The server never returns a value, so a desired and an observed secret
+// compare by path alone. A changed value cannot be observed; a plan writes
+// ALTER SECRET only for a secret a comparison request names (see
+// [RotationRequests]).
+//
+// Every spelling of a secret is its path relative to the database root, and
+// [ParsePath] reads it: a slash separates directories and a dot is part of a
+// name, so `pg.pw` is one secret at the root and `ext/pg` is pg in ext.
 package ydbsecret
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/tableref"
 )
 
 // ValuePrefix starts the name of every environment variable a secret's value
@@ -142,18 +154,64 @@ func variableName(name string) bool {
 	return name != ""
 }
 
-// CheckName reports why name cannot be a secret's name, or nil. A name is one
-// path segment; the directories of a path are the secret's schema.
-func CheckName(name string) error {
+// DuplicateError is a second declaration of one secret path. It wraps
+// [schemaext.ErrDuplicate].
+type DuplicateError struct {
+	// Path is the secret's path relative to the database root.
+	Path string
+}
+
+func (e *DuplicateError) Error() string { return "secret " + e.Path + " is declared twice" }
+
+// Unwrap returns [schemaext.ErrDuplicate].
+func (e *DuplicateError) Unwrap() error { return schemaext.ErrDuplicate }
+
+// Declare returns objects with the secret name in the directory schema added,
+// declared by the Go struct holder (empty for every other source format) with
+// its value read from valueEnv. Every source format declares a secret through
+// it, so they agree on what a declaration may hold and on what a repeated one
+// is told. objects is not modified.
+//
+// The name is one segment of the secret's path: it holds no slash, and a dot
+// is part of it. The directory is relative to the database root and takes no
+// leading or trailing slash; surrounding space is ignored. A name, directory or
+// variable a secret cannot take is refused with a [DeclarationError] naming the
+// attribute, and a secret declared twice with a [DuplicateError] naming its
+// path. Two declarations that meet only when sources are merged are refused by
+// the merge, with [schemaext.ErrDuplicate] and the secret's identity.
+func Declare(objects schemaext.Objects, schema, name, holder, valueEnv string) (schemaext.Objects, error) {
+	name = strings.TrimSpace(name)
 	switch {
-	case strings.TrimSpace(name) == "":
-		return &DeclarationError{Attribute: AttributeName, Reason: "a secret needs a name"}
+	case name == "":
+		return objects, &DeclarationError{Attribute: AttributeName, Reason: "a secret needs a name"}
 	case strings.Contains(name, "/"):
-		return &DeclarationError{Attribute: AttributeName,
+		return objects, &DeclarationError{Attribute: AttributeName,
 			Reason: fmt.Sprintf("%q holds a slash; name the directory with %s", name, AttributeSchema)}
-	default:
-		return nil
+	case ValidateIdentity(Ref("", name)) != nil:
+		return objects, &DeclarationError{Attribute: AttributeName, Reason: fmt.Sprintf("%q is not a path segment", name)}
 	}
+	if err := CheckValueEnv(valueEnv); err != nil {
+		return objects, err
+	}
+	schema = strings.TrimSpace(schema)
+	if strings.HasPrefix(schema, "/") {
+		return objects, &DeclarationError{Attribute: AttributeSchema,
+			Reason: fmt.Sprintf("%q starts with a slash; name the directory relative to the database root, "+
+				"without the database's own path", schema)}
+	}
+	object := DesiredObject(schema, name, holder, valueEnv)
+	if ValidateIdentity(object.Ref) != nil {
+		return objects, &DeclarationError{Attribute: AttributeSchema,
+			Reason: fmt.Sprintf("%q is not a directory path relative to the database root", schema)}
+	}
+	declared, err := objects.With(object)
+	if errors.Is(err, schemaext.ErrDuplicate) {
+		return objects, &DuplicateError{Path: Display(object.Ref.Schema.Source, name)}
+	}
+	if err != nil {
+		return objects, err
+	}
+	return declared, nil
 }
 
 // DefaultValueEnv is the variable Ptah names for a secret it did not declare
@@ -179,46 +237,38 @@ func DefaultValueEnv(schema, name string) string {
 	return b.String()
 }
 
-// Refusal says why a secret cannot be written on a target: Key is the
-// capability it needs and the target lacks, or empty when the declaration is
-// wrong whatever the target, and Reason then says why.
-type Refusal struct {
-	// Subject names what is refused.
-	Subject string
-	// Key is the capability the target lacks.
-	Key capability.Capability
-	// Reason is why the declaration is refused, for a refusal without a key.
-	Reason string
-}
-
-// Check reports why the secret name, a canonical reference, cannot be created
-// or rotated with its value taken from valueEnv on a target holding caps, or
-// nil. An empty valueEnv checks a drop, which needs no value.
-func Check(name, valueEnv string, caps capability.Capabilities) *Refusal {
-	subject := "secret " + name
-	if !caps.Has(capability.Secrets) {
-		return &Refusal{Subject: subject, Key: capability.Secrets}
-	}
-	if strings.TrimSpace(name) == "" {
-		return &Refusal{Subject: "a secret", Reason: "a secret needs a name"}
-	}
-	if valueEnv == "" {
+// Refuse returns a capability error naming subject unless caps holds
+// [capability.Secrets]. A target that built nothing for a secret would report
+// the declaration applied, and an external data source that names the secret
+// would then fail at its first read.
+func Refuse(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Secrets) {
 		return nil
 	}
-	if err := CheckValueEnv(valueEnv); err != nil {
-		return &Refusal{Subject: subject, Reason: err.Error()}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Secrets),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Secrets, normalized),
 	}
-	return nil
 }
 
-// Path writes name, a secret's canonical reference, as one quoted YDB path:
-// `<directory>/<secret>`, or the name alone at the database root.
-func Path(name string) string {
-	ref, ok := tableref.Parse(name)
-	if !ok {
-		return sqlident.Quote(platform.YDB, name)
+// Path writes the secret in the directory schema, relative to the database
+// root, as one quoted YDB path: `<directory>/<secret>`, or the name alone at
+// the root. A dot in either part stays literal.
+func Path(schema, name string) string {
+	return sqlident.Qualified(platform.YDB, schema, name)
+}
+
+// Display names the secret by the path YDB writes for it, unquoted, for
+// messages and reports: `dir/name`, or `name` at the database root.
+func Display(schema, name string) string {
+	if schema == "" {
+		return name
 	}
-	return sqlident.Qualified(platform.YDB, ref.Schema, ref.Name)
+	return strings.TrimRight(schema, "/") + "/" + name
 }
 
 // Reference is the named expression a statement writes in place of the value
@@ -227,21 +277,33 @@ func Reference(valueEnv string) string {
 	return "$" + valueEnv
 }
 
-// CreateStatement writes what creates the secret name with the value valueEnv
+// CreateStatement writes what creates the secret with the value valueEnv
 // holds when the statement runs. The secret takes YDB's default permissions:
 // it inherits only DESCRIBE SCHEMA from its directory.
-func CreateStatement(name, valueEnv string) string {
-	return fmt.Sprintf("CREATE SECRET %s WITH (value = %s);", Path(name), Reference(valueEnv))
+func CreateStatement(schema, name, valueEnv string) string {
+	return fmt.Sprintf("CREATE SECRET %s WITH (value = %s);", Path(schema, name), Reference(valueEnv))
 }
 
-// AlterStatement writes what gives the secret name the value valueEnv holds
-// when the statement runs.
-func AlterStatement(name, valueEnv string) string {
-	return fmt.Sprintf("ALTER SECRET %s WITH (value = %s);", Path(name), Reference(valueEnv))
+// AlterStatement writes what gives the secret the value valueEnv holds when
+// the statement runs.
+func AlterStatement(schema, name, valueEnv string) string {
+	return fmt.Sprintf("ALTER SECRET %s WITH (value = %s);", Path(schema, name), Reference(valueEnv))
 }
 
-// DropStatement writes what drops the secret name and its value, which nothing
-// can read back.
-func DropStatement(name string) string {
-	return "DROP SECRET " + Path(name) + ";"
+// DropStatement writes what drops the secret and its value, which nothing can
+// read back.
+func DropStatement(schema, name string) string {
+	return "DROP SECRET " + Path(schema, name) + ";"
 }
+
+// The consequences of the three statements, in the words every report uses:
+// a change's effect, a statement's safety assessment and the classification
+// of migration SQL text.
+const (
+	// CreateReason is why creating a secret is additive.
+	CreateReason = "CREATE SECRET creates a YDB secret with the value its variable holds when the statement runs"
+	// RotateReason is why rotating a secret changes behavior.
+	RotateReason = "ALTER SECRET replaces the value every external data source naming the secret uses"
+	// DropReason is why dropping a secret is destructive.
+	DropReason = "DROP SECRET removes a YDB secret whose value nothing can read back"
+)

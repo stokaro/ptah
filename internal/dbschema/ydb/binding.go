@@ -17,8 +17,9 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/ydbcomment"
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/internal/ydbsecretvalue"
 )
 
 // connector hands database/sql the SDK's connections with Ptah's argument
@@ -120,7 +121,7 @@ type connState struct {
 
 // ExecContext runs a statement after the connection's prefix and returns its
 // error without stack frames. A secret value the statement refers to is
-// defined from the environment first; see [ydbsecret.Expand].
+// defined from the environment first; see [ydbsecretvalue.Expand].
 //
 // A query that runs one of Ptah's coordination node statements (see
 // [ydbcoordination.Recognize]) is not sent to YDB, which has no such
@@ -152,7 +153,7 @@ func (c conn) ExecContext(ctx context.Context, query string, args []driver.Named
 	case recognized:
 		return c.runCoordination(ctx, coordination, args)
 	}
-	expanded, err := ydbsecret.Expand(query, os.LookupEnv)
+	expanded, err := ydbsecretvalue.Expand(query, os.LookupEnv)
 	if err != nil {
 		return nil, fmt.Errorf("ydb: %w", err)
 	}
@@ -221,7 +222,7 @@ func (c conn) QueryContext(ctx context.Context, query string, args []driver.Name
 		return nil, errors.Join(err, fmt.Errorf("%w: a coordination node statement returns no rows; execute it",
 			ydbcoordination.ErrStatement))
 	}
-	expanded, err := ydbsecret.Expand(query, os.LookupEnv)
+	expanded, err := ydbsecretvalue.Expand(query, os.LookupEnv)
 	if err != nil {
 		return nil, fmt.Errorf("ydb: %w", err)
 	}
@@ -232,7 +233,7 @@ func (c conn) QueryContext(ctx context.Context, query string, args []driver.Name
 // redacted returns err with every secret value expanded defined written out of
 // its text, so a refusal the server answers a CREATE SECRET with cannot carry
 // the value into a log or an error. errors.Is and errors.As still reach err.
-func redacted(expanded ydbsecret.Expansion, err error) error {
+func redacted(expanded ydbsecretvalue.Expansion, err error) error {
 	if err == nil || !expanded.Defines() {
 		return err
 	}
@@ -284,7 +285,7 @@ func (c conn) Prepare(query string) (driver.Stmt, error) {
 
 // refuseSecretPreparation refuses a statement that refers to a secret value.
 func refuseSecretPreparation(query string) error {
-	if variables := ydbsecret.References(query); len(variables) > 0 {
+	if variables := ydbsecretvalue.References(query); len(variables) > 0 {
 		return fmt.Errorf("ydb: a prepared statement cannot take a secret's value; run the statement that "+
 			"refers to %s directly", ydbsecret.Reference(variables[0]))
 	}

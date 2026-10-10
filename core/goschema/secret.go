@@ -4,12 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"strings"
 
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbsecret"
+	"ptah.run/dialect/ydb/ydbsecret"
 )
 
 // parseSecretComment reads a YDB secret declaration: the secret's path and
@@ -33,20 +31,15 @@ func (s *schemaParseState) parseSecretComment(comment *ast.Comment, structName s
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	name := strings.TrimSpace(kv[ydbsecret.AttributeName])
-	if err := ydbsecret.CheckName(name); err != nil {
-		return secretAttributeError(ctx, err)
-	}
 	valueEnv, err := ydbsecret.ParseValueEnv(kv)
 	if err != nil {
 		return secretAttributeError(ctx, err)
 	}
-	s.secrets = append(s.secrets, schemamodel.Secret{
-		StructName: structName,
-		Name:       name,
-		Schema:     strings.Trim(strings.TrimSpace(kv[ydbsecret.AttributeSchema]), "/"),
-		ValueEnv:   valueEnv,
-	})
+	objects, err := ydbsecret.Declare(s.featureObjects, kv[ydbsecret.AttributeSchema], kv[ydbsecret.AttributeName], structName, valueEnv)
+	if err != nil {
+		return secretAttributeError(ctx, err)
+	}
+	s.featureObjects = objects
 	return nil
 }
 

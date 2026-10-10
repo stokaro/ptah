@@ -3,6 +3,7 @@
 package ydbsource
 
 import (
+	"fmt"
 	"strings"
 
 	"ptah.run/core/coverage"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
@@ -22,6 +24,7 @@ type Limits struct {
 	Streaming    []string
 	Pools        []string
 	Classifiers  []string
+	Secrets      []string
 }
 
 const unmanagedObjectReason = "the source leaves this object unmanaged"
@@ -34,16 +37,20 @@ type sourceFamily struct {
 	kind  schemaext.Kind
 	token string
 	label string
+	// unmanaged is a reason a database read gives an object it leaves
+	// unmanaged, which a source writes as an unmanaged object, or empty.
+	unmanaged string
 }
 
 // sourceKinds is shared by limit decoding and export. A new spelling must be
 // recognized in both directions or exporting unknown coverage would grant
 // authority that the input never held.
 var sourceKinds = []sourceFamily{
-	{ydbcoordination.Kind, "coordination_node", "coordination nodes"},
-	{ydbstreaming.Kind, "streaming_query", "streaming queries"},
-	{ydbworkload.PoolKind, "resource_pool", "resource pools"},
-	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers"},
+	{ydbcoordination.Kind, "coordination_node", "coordination nodes", ""},
+	{ydbstreaming.Kind, "streaming_query", "streaming queries", ""},
+	{ydbworkload.PoolKind, "resource_pool", "resource pools", ""},
+	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers", ""},
+	{ydbsecret.Kind, "secret", "secrets", ydbsecret.UnsupportedReason},
 }
 
 func sourceKind(token string) schemaext.Kind {
@@ -82,6 +89,8 @@ func (l *Limits) Add(kind, name string) bool {
 		l.Pools = append(l.Pools, name)
 	case ydbworkload.ClassifierKind:
 		l.Classifiers = append(l.Classifiers, name)
+	case ydbsecret.Kind:
+		l.Secrets = append(l.Secrets, name)
 	default:
 		return false
 	}
@@ -129,13 +138,24 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
+	for _, name := range limits.Secrets {
+		if _, err := ydbsecret.ParsePath(name); name != "" && err != nil {
+			return schemaext.Coverage{}, fmt.Errorf("%w: secret limit: %w", schemaext.ErrInvalidValue, err)
+		}
+	}
+	secrets, err := namespaceCoverage(limits.Secrets, ydbsecret.Kind, secretIdentity, ydbsecret.ValidateIdentity, ydbsecret.Coverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
 	combined, err := feeds.Combine(nodes)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	combined, err = combined.Combine(queries)
-	if err != nil {
-		return schemaext.Coverage{}, err
+	for _, known := range []schemaext.Coverage{queries, secrets} {
+		combined, err = combined.Combine(known)
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
 	}
 	for _, family := range []struct {
 		limits   []string
@@ -184,6 +204,19 @@ func namespaceCoverage(limits []string, kind schemaext.Kind,
 		}
 	}
 	return enroll(schemaext.Desired, namespace, subjects)
+}
+
+// secretIdentity reads a secret limit as the secret's path: a slash separates
+// directories and a dot stays in its segment, as in every other spelling of a
+// secret (see [ydbsecret.ParsePath]). `pg.pw` is one secret at the root, never
+// pw in a directory pg.
+//
+// An invalid path, an absolute one included, yields an identity the
+// validation refuses; [Coverage] reports it with [ydbsecret.ParsePath]'s
+// reason first.
+func secretIdentity(name string) objectidentity.ID {
+	ref, _ := ydbsecret.ParsePath(name)
+	return ref
 }
 
 // Scheme paths and database-wide workload names have different grammars. A

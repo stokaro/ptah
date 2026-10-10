@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/atlasreport"
@@ -27,12 +28,11 @@ func TestSchemaInspectJSON_ReportsOmittedYDBFamilies(t *testing.T) {
 			var diagnostics bytes.Buffer
 			db := &schemamodel.Database{
 				AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
-				FeatureObjects:    must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false))),
+				FeatureObjects:    must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false), ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"))),
 
 				ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "bucket"}},
 				ExternalTables:      []schemamodel.ExternalTable{{Name: "files"}},
 
-				Secrets:   []schemamodel.Secret{{Name: "credentials"}},
 				Topics:    []schemamodel.Topic{{Name: "events"}},
 				Transfers: []schemamodel.Transfer{{Name: "copy"}},
 				Roles:     []schemamodel.Role{{Name: "user"}},

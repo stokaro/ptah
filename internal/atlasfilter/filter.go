@@ -107,6 +107,7 @@ func excludeDatabase(
 	})
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
@@ -123,7 +124,6 @@ func excludeDatabase(
 	filtered.Topics = state.filterTopics(filtered.Topics)
 	filtered.AsyncReplications = state.filterAsyncReplications(filtered.AsyncReplications)
 	filtered.Transfers = state.filterTransfers(filtered.Transfers)
-	filtered.Secrets = state.filterSecrets(filtered.Secrets)
 	filtered.ExternalDataSources = state.filterExternalDataSources(filtered.ExternalDataSources)
 	filtered.ExternalTables = state.filterExternalTables(filtered.ExternalTables)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
@@ -224,6 +224,7 @@ func excludeGenerated(
 
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
@@ -1170,19 +1171,6 @@ func (s *exclusionState) filterTransfers(transfers []catalog.Transfer) []catalog
 	return result
 }
 
-// filterSecrets drops YDB secrets an exclusion selector names, and secrets
-// whose directory is excluded. A secret is selected on its own name.
-func (s *exclusionState) filterSecrets(secrets []catalog.Secret) []catalog.Secret {
-	result := make([]catalog.Secret, 0, len(secrets))
-	for _, secret := range secrets {
-		if s.matches("secret", s.nameCandidates(secret.Schema, secret.Name)...) || s.schemaExcluded(secret.Schema) {
-			continue
-		}
-		result = append(result, secret)
-	}
-	return result
-}
-
 // filterExternalDataSources drops YDB external data sources an exclusion
 // selector names, and the ones whose directory is excluded.
 func (s *exclusionState) filterExternalDataSources(sources []catalog.ExternalDataSource) []catalog.ExternalDataSource {
@@ -1953,7 +1941,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Topics:               slices.Clone(schema.Topics),
 		AsyncReplications:    slices.Clone(schema.AsyncReplications),
 		Transfers:            slices.Clone(schema.Transfers),
-		Secrets:              slices.Clone(schema.Secrets),
 		ExternalDataSources:  slices.Clone(schema.ExternalDataSources),
 		ExternalTables:       slices.Clone(schema.ExternalTables),
 		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
@@ -2015,7 +2002,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Topics = slices.Clone(schema.Topics)
 	filtered.AsyncReplications = slices.Clone(schema.AsyncReplications)
 	filtered.Transfers = slices.Clone(schema.Transfers)
-	filtered.Secrets = slices.Clone(schema.Secrets)
 	filtered.ExternalDataSources = slices.Clone(schema.ExternalDataSources)
 	filtered.ExternalTables = slices.Clone(schema.ExternalTables)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)

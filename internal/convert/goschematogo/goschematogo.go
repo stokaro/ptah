@@ -33,7 +33,6 @@ import (
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbreplication"
-	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
 )
@@ -247,6 +246,7 @@ type renderContext struct {
 	coordinationAnnotations []string
 	streamingAnnotations    []string
 	workloadAnnotations     []string
+	secretAnnotations       []string
 	changefeedsByTable      map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                      *schemamodel.Database
 	opts                    Options
@@ -418,7 +418,7 @@ func (ctx *renderContext) hasYDBObjects() bool {
 
 // hasExternalObjects reports declarations for external access and its credentials.
 func (ctx *renderContext) hasExternalObjects() bool {
-	return len(ctx.db.Secrets) > 0 || len(ctx.db.ExternalDataSources) > 0 || len(ctx.db.ExternalTables) > 0
+	return len(ctx.secretAnnotations) > 0 || len(ctx.db.ExternalDataSources) > 0 || len(ctx.db.ExternalTables) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -556,8 +556,8 @@ func (ctx *renderContext) writeExternalObjects(w *sourceWriter) {
 
 // writeSecrets writes secret references in stable order without their values.
 func (ctx *renderContext) writeSecrets(w *sourceWriter) {
-	for _, secret := range sortedSecrets(ctx.db.Secrets) {
-		w.writeComment(secretAnnotation(secret))
+	for _, text := range ctx.secretAnnotations {
+		w.writeComment(text)
 	}
 }
 
@@ -1145,16 +1145,6 @@ func transferAnnotation(transfer schemamodel.Transfer) string {
 	return annotation("ptah:schema:transfer", attrs...)
 }
 
-// secretAnnotation writes a YDB secret as its annotation: its path and the
-// variable its value comes from, and never a value, which no model holds.
-func secretAnnotation(secret schemamodel.Secret) string {
-	return annotation("ptah:schema:secret",
-		attr{name: ydbsecret.AttributeName, value: secret.Name, set: true},
-		attr{name: ydbsecret.AttributeSchema, value: secret.Schema, set: secret.Schema != ""},
-		attr{name: ydbsecret.AttributeValueEnv, value: secret.ValueEnv, set: true},
-	)
-}
-
 // externalDataSourceAnnotation writes a YDB external data source as its
 // annotation. A credential is an option naming a secret, never a value.
 func externalDataSourceAnnotation(source schemamodel.ExternalDataSource) string {
@@ -1615,12 +1605,6 @@ func sortedReplications(values []schemamodel.AsyncReplication) []schemamodel.Asy
 }
 
 func sortedTransfers(values []schemamodel.Transfer) []schemamodel.Transfer {
-	sorted := slices.Clone(values)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
-	return sorted
-}
-
-func sortedSecrets(values []schemamodel.Secret) []schemamodel.Secret {
 	sorted := slices.Clone(values)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
 	return sorted

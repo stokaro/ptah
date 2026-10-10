@@ -228,6 +228,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
 	compareOpts := dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, nil)
+	if err := secretrotation.Apply(cmd, compareOpts); err != nil {
+		return err
+	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		cmd.Context(), conn, result, dbSchema, compareOpts, runtime,
 	)
@@ -239,13 +242,6 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	// 4. Display differences summary
 	rebuild, err := tablerebuild.Requested(cmd)
 	if err != nil {
-		return err
-	}
-	rotateSecrets, err := secretrotation.Requested(cmd)
-	if err != nil {
-		return err
-	}
-	if err := diff.RotateSecrets(rotateSecrets); err != nil {
 		return err
 	}
 	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(

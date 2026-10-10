@@ -17,6 +17,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dialect/ydb/ydbsecret" // names the prefix of a secret's value variable, which is not a boolean
 	// Importing the owners is what populates the registry the enumeration check
 	// reads back. A package left out here contributes no declarations, so its
 	// variables would look unclassified rather than boolean -- which is the
@@ -32,8 +33,7 @@ import (
 	_ "ptah.run/internal/reservedrole"       // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/rolescope"          // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
-	"ptah.run/internal/ydbsecret"
-	_ "ptah.run/migration/migrator" // links its PTAH_* declarations into the registry
+	_ "ptah.run/migration/migrator"          // links its PTAH_* declarations into the registry
 )
 
 // nonBooleanPtahVars is the ONLY hand-written list in this file: the `PTAH_*`

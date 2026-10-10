@@ -17,7 +17,7 @@
 //  2. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
 //     External tables are dropped before their data sources.
-//  3. DROP TOPIC and DROP SECRET for removed topics and secrets, then the coordination nodes the
+//  3. DROP TOPIC for removed topics, then the coordination nodes the
 //     plan drops, so a table created under one's path finds the path free.
 //     YQL has no statement for a coordination node, so the plan carries Ptah's
 //     own, which Ptah's YDB connection runs through the coordination service;
@@ -46,11 +46,10 @@
 //     YDB adds one only to a table that exists;
 //  10. DROP TABLE for every removed table, which drops its changefeeds;
 //  11. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
-//     one, then CREATE SECRET and the requested ALTER SECRET rotations,
-//     then the coordination nodes the plan creates and changes, after
+//     one, then the coordination nodes the plan creates and changes, after
 //     the tables are dropped, so an object created under a dropped table's
-//     path finds the path free;
-//     External data sources and external tables follow their secrets.
+//     path finds the path free; then external data sources and external
+//     tables;
 //  12. CREATE ASYNC REPLICATION and ALTER ASYNC REPLICATION, then CREATE
 //     TRANSFER and ALTER TRANSFER, once the tables, changefeeds, topics and
 //     consumers a transfer uses exist and the paths a replication creates its
@@ -67,6 +66,12 @@
 // An index a plan creates, in CREATE TABLE or by ADD INDEX, takes its declared
 // partitioning from an ALTER INDEX the renderer writes after it, because no
 // statement that creates an index takes the settings.
+//
+// YDB secrets are planned by their owner (ptah.run/dialect/ydb/ydbplan): each
+// statement runs before these phases, except a creation at a path the plan
+// frees, which follows the drop that frees it, and every external data source,
+// async replication and transfer that names a secret by its path follows the
+// secret's creation or rotation.
 //
 // Users, groups, memberships and permissions are planned around these phases:
 // revokes, removed memberships and new or changed principals before them, new
@@ -244,7 +249,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, removedTablesBeforeSources(diff, external)...)
 	result = append(result, external.drops...)
 	result = append(result, dropTopics(diff)...)
-	result = append(result, dropSecrets(diff)...)
 	earlyTables, lateTables := splitColumnTTLCreations(p.createTables(diff, inlineIndexes, sequences.created, semantics))
 	result = append(result, earlyTables...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
@@ -262,7 +266,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = nil
 	result = append(result, removedTablesAfterSources(diff, external)...)
 	result = append(result, changeTopics(diff)...)
-	result = append(result, changeSecrets(diff)...)
 	result = append(result, external.creations...)
 	result = append(result, lateTables...)
 	result = append(result, columnTTL.after...)
@@ -289,7 +292,7 @@ func (p *Planner) refuseUnplannableObjectChanges(
 	if err := p.refuseIndexChangesInPlace(diff); err != nil {
 		return err
 	}
-	if err := p.refuseTopicsAndSecrets(diff); err != nil {
+	if err := p.refuseTopics(diff); err != nil {
 		return err
 	}
 	return p.refuseReplications(diff)

@@ -57,7 +57,6 @@ type Database struct {
 	Topics                     []Topic                        `json:",omitempty"` // YDB topics and their consumers
 	AsyncReplications          []AsyncReplication             `json:",omitempty"` // YDB async replications
 	Transfers                  []Transfer                     `json:",omitempty"` // YDB transfers
-	Secrets                    []Secret                       `json:",omitempty"` // YDB secrets, by name; never their values
 	ExternalDataSources        []ExternalDataSource           `json:",omitempty"` // YDB external data sources
 	ExternalTables             []ExternalTable                `json:",omitempty"` // YDB external tables
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
@@ -1434,29 +1433,6 @@ func (t Transfer) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
 }
 
-// Secret is a YDB secret: a scheme object whose value the server keeps and
-// never returns, created with CREATE SECRET and used by an external data
-// source for its credentials.
-//
-// It never holds the value. ValueEnv names the environment variable the value
-// is read from when a statement that creates or rotates the secret runs; a
-// declaration that writes the value itself is refused where it is written.
-// Schema is the directory that holds the secret, "" for the database root, as
-// it is for a YDB table. Dialects is absent for the reason [Synonym] gives: a
-// secret belongs to YDB alone, and every other target refuses one.
-type Secret struct {
-	StructName string // Name of the Go struct this secret is associated with
-	Name       string // Secret name, the last segment of its path
-	Schema     string // Directory that holds the secret, relative to the database root
-	ValueEnv   string // Environment variable the value is read from, starting with PTAH_SECRET_
-}
-
-// QualifiedName returns the secret's canonical reference: schema.name, or the
-// name alone at the database root.
-func (s Secret) QualifiedName() string {
-	return tableref.Canonical(s.Schema, s.Name)
-}
-
 // ExternalDataSource is a YDB external data source: a scheme object that names
 // another system -- an object storage bucket, a PostgreSQL, ClickHouse, MySQL
 // or YDB database -- and how YDB authenticates to it, so a query or an
@@ -1466,7 +1442,7 @@ func (s Secret) QualifiedName() string {
 // Options holds every option of CREATE EXTERNAL DATA SOURCE besides
 // SOURCE_TYPE, LOCATION and AUTH_METHOD, keyed by upper-case name, with its
 // value as written. A credential is never a value: an option ending in
-// _SECRET_PATH names a YDB [Secret] by its path, and one ending in
+// _SECRET_PATH names a YDB secret by its path, and one ending in
 // _SECRET_NAME names a deprecated secret object Ptah does not manage. Schema
 // is the directory that holds the data source, "" for the database root, as
 // it is for a YDB table.

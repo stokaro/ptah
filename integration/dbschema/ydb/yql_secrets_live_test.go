@@ -10,7 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -44,7 +45,8 @@ func TestYDBDesiredYQL_SecretsRefusedOnOlderLine(t *testing.T) {
 	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	_, err = schemadiff.CompareWithDatabaseInfo(t.Context(), desired, readScoped(c, conn, nil), conn.Info(), nil, must.Must(builtin.New()))
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "secrets")
-	c.Assert(desired.Secrets, qt.DeepEquals, []schemamodel.Secret{{Name: "first", ValueEnv: "PTAH_SECRET_YQL_TEST"}})
+	c.Assert(err, qt.ErrorMatches, "secret first, which requires target capability secrets, unavailable on this ydb target")
+	objects, err := desired.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{ydbsecret.DesiredObject("", "first", "", "PTAH_SECRET_YQL_TEST")})
 }

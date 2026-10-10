@@ -75,6 +75,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbreverse`
 - `ptah.run/dialect/ydb/ydbschema`
 - `ptah.run/dialect/ydb/ydbscheme`
+- `ptah.run/dialect/ydb/ydbsecret`
 - `ptah.run/dialect/ydb/ydbstreaming`
 - `ptah.run/dialect/ydb/ydbsyntax`
 - `ptah.run/dialect/ydb/ydbworkload`
@@ -436,6 +437,16 @@ points currently refuse because their comparison identity capture is not
 implemented. A successful runtime reply sets `Complete`;
 undecided diagnostics remain distinct from operational failures.
 
+`ComparisonRequest.Requests` carries `schemaext.ChangeRequest` values: changes
+the caller asks for that no comparison can find, such as a new value for an
+object whose value the server never returns. A request belongs to one
+comparison and to neither schema state. An `ObjectComparison` lists the
+`Actions` it accepts; the runtime sends each request to the owner of its
+subject's named-object kind, in subject and action order, and refuses a
+request no owner accepts, a duplicate, and one naming a facet model before any
+service runs. `config.CompareOptions.FeatureRequests` is how a migration
+comparison receives them.
+
 Before table preparation, comparison binds table and index coverage claims to the
 same identifier semantics and default database as their common owners. Explicit schemas
 remain explicit. Binding preserves source knowledge, refuses identity collisions,
@@ -446,7 +457,10 @@ and leaves the source snapshots unchanged.
 batch per registered service. Each reply preserves its subject and change kind,
 reconstructs its directional operands, and describes its strategy and recovery
 limits. Missing handlers, invalid replies, errors, and cancellation return no
-partial result. Callers must retain and report the limits with the plan.
+partial result. Callers must retain and report the limits with the plan. A
+reply with no change value says the reverse direction runs no statement, as
+for a value nothing can read back; it keeps its subject, must state at least one
+limitation, and a host publishes no reverse change for it.
 
 `Reversal.ForwardState` carries complete typed values for the state left by each
 accepted forward change. It distinguishes named objects from attached facets;
@@ -519,7 +533,9 @@ collections, positive source coverage, explicit codecs, and operation effects.
 values with structured references. Insertions and lookups clone values.
 Duplicate kinds or object identities and nil payloads are errors. `Value.Equal`
 compares local representations; target-aware comparison resolves defaults and
-inspection limits separately.
+inspection limits separately. `OwnedCoverage` enrolls one model in a source's
+coverage claim from its owner's codecs alone, so a runtime that registers more
+models later cannot widen a claim already captured.
 
 `engine.Provider.Relations` assigns dependency discovery by target, model kind,
 and source representation. `runtime.CaptureRelations` validates a complete
@@ -991,6 +1007,36 @@ operands. Explicit namespace and subject coverage distinguish absence from
 uninspected or unrepresentable queries. Planning stops running queries before
 common operations and restarts them afterward. Reverse planning preserves
 permission from an accepted body change and reports checkpoint recovery limits.
+
+`dialect/ydb/ydbsecret` owns YDB secrets: the desired and observed models in
+`Database.FeatureObjects`, the declaration grammar and the statements. No
+model carries a secret's value. `Desired.ValueEnv` names the environment
+variable the value comes from, and an empty one selects `DefaultValueEnv` for
+the secret's path. `Observed` is empty, because the server returns a secret's
+path and nothing else. A desired and an observed secret compare by path alone;
+a rotation request from `RotationRequests` is the only way a plan writes
+`ALTER SECRET`, and no declaration carries one; `WithRotations` adds them to
+compare options without repeating one.
+
+`Declare` is how every source format adds a secret declaration, and
+`ParsePath` reads every other spelling of a secret as its path below the
+database root, with a slash as the only separator, and refuses a leading or
+trailing slash. `ResolvePath` reads the path a statement names, which YDB
+stores absolute, against the database root, and refuses one outside it. The
+common schema, catalog, AST, and diff types contain no secret fields.
+
+The secret services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
+`ydbreport` consume this model, `ydbdiff.Secret` captures both change operands,
+and `ydbast.Secret` is the statement payload `ydbrender.SecretHandler` writes;
+a change with both operands is a rotation. Planning creates or drops a secret
+before the common statements, except a creation at a path the plan frees or
+beneath one, and before every external data source, async replication, or
+transfer that names the secret by path. Every standalone YDB object orders
+itself against the paths above it the same way, and the planner orders objects
+of different owners against each other's paths. `ydbscheme.CommonEffects` reads such a
+path relative to the database root it is given. Reverse planning reports the
+values a rollback cannot restore, and the reversal of a rotation carries no
+change.
 
 `dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
 are distinct values in `Database.FeatureObjects`, with their table recorded as

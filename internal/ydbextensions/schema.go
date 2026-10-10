@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/tableref"
@@ -46,6 +47,10 @@ func ValidateObjects(target string, caps capability.Capabilities, objects schema
 			}
 		case *ydbworkload.DesiredClassifier:
 			if err := validateClassifierObject(target, caps, object, value); err != nil {
+				return err
+			}
+		case *ydbsecret.Desired:
+			if err := validateSecretObject(target, caps, object, value); err != nil {
 				return err
 			}
 		default:
@@ -135,4 +140,16 @@ func validateStreamingObject(target string, caps capability.Capabilities, object
 	operation := &ydbast.StreamingQuery{Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
 		Operation: ydbast.StreamingCreate, Spec: value.Spec, Creation: ydbast.StreamingCreation{OrReplace: value.AllowStateReset}}
 	return ydbrender.StreamingHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
+}
+
+// validateSecretObject reuses the operation owner's validation, so schema
+// validation and rendering require the same capability and accept the same
+// variable.
+func validateSecretObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbsecret.Desired) error {
+	if err := ydbsecret.ValidateIdentity(object.Ref); err != nil {
+		return fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
+	}
+	operation := &ydbast.Secret{Operation: ydbast.SecretCreate, Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
+		ValueEnv: value.Variable(object.Ref)}
+	return ydbrender.SecretHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
 }

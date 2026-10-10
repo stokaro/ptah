@@ -1,13 +1,15 @@
 package sqlschema
 
 import (
+	"fmt"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbworkload"
-	"ptah.run/internal/tableref"
 )
 
 func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
@@ -23,9 +25,6 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 			return false, nil
 		}
 		return true, alterYDBSequence(database, document, node)
-	case *ast.CreateSecretNode:
-		ref, _ := tableref.Parse(node.Name)
-		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
@@ -35,6 +34,9 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		}
 		if value, ok := node.Payload.(*ydbast.StreamingQuery); ok {
 			return true, appendStreamingQuery(database, document.base, value)
+		}
+		if value, ok := node.Payload.(*ydbast.Secret); ok {
+			return true, appendSecret(database, value)
 		}
 		value, ok := node.Payload.(*ydbast.CoordinationNode)
 		if !ok || value == nil || value.Change.Before != nil || value.Change.After == nil {
@@ -74,4 +76,18 @@ func appendPoolDeclaration(database *schemamodel.Database, payload ast.Extension
 	default:
 		return false, nil
 	}
+}
+
+// appendSecret declares the secret a CREATE SECRET statement names, with the
+// variable its value comes from. A YQL document declares a secret once.
+func appendSecret(database *schemamodel.Database, node *ydbast.Secret) error {
+	if err := node.Validate(); err != nil {
+		return err
+	}
+	if node.Operation != ydbast.SecretCreate {
+		return fmt.Errorf("%w: only CREATE declares a secret", ErrUnmodeledStatement)
+	}
+	var err error
+	database.FeatureObjects, err = ydbsecret.Declare(database.FeatureObjects, node.Schema, node.Name, "", node.ValueEnv)
+	return err
 }

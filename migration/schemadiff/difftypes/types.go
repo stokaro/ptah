@@ -162,33 +162,6 @@ func (t TopicChanges) Names() []string {
 	return names
 }
 
-// SecretChanges is a set of YDB secrets one change applies to, carrying each
-// one's directory and the environment variable its value comes from: a
-// created or rotated secret is written from them. No change carries a value,
-// which the server never returns and a declaration never holds.
-type SecretChanges []schemamodel.Secret
-
-// MarshalJSON writes the secret names alone, as the other object lists of a
-// diff write theirs.
-func (s SecretChanges) MarshalJSON() ([]byte, error) {
-	if s == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(s.Names())
-}
-
-// Names is the canonical references of the secrets this change applies to.
-func (s SecretChanges) Names() []string {
-	if s == nil {
-		return nil
-	}
-	names := make([]string, 0, len(s))
-	for _, secret := range s {
-		names = append(names, secret.QualifiedName())
-	}
-	return names
-}
-
 // ExternalDataSourceChanges is a set of YDB external data sources one change
 // applies to, each carrying everything a CREATE needs: an added one is created
 // from it, and a removed one is created again from it by a rollback.
@@ -1369,22 +1342,6 @@ type SchemaDiff struct {
 	// TopicsModified are the YDB topics both sides hold whose settings or
 	// consumers differ, each changed in place by ALTER TOPIC.
 	TopicsModified []TopicDiff `json:"topics_modified,omitempty"`
-	// SecretsAdded are the YDB secrets the target schema declares and the
-	// database does not hold, each with the variable its value comes from.
-	SecretsAdded SecretChanges `json:"secrets_added,omitempty"`
-
-	// SecretsRemoved are the YDB secrets the database holds and the target
-	// schema does not declare. Dropping one loses its value, which nothing can
-	// read back to create the secret again.
-	SecretsRemoved SecretChanges `json:"secrets_removed,omitempty"`
-
-	// SecretsRotated are the declared secrets the database holds that the
-	// caller asked to give the value their variable holds now. A comparison
-	// never finds one by itself: a value the server never returns cannot be
-	// compared, so a secret both sides hold is equal by its presence, and
-	// only [SchemaDiff.RotateSecrets] adds one here.
-	SecretsRotated SecretChanges `json:"secrets_rotated,omitempty"`
-
 	// AsyncReplicationsAdded are the YDB async replications the target schema
 	// declares and the database does not have, each with its connection and
 	// items.
@@ -1530,11 +1487,6 @@ type SchemaDiff struct {
 	// It holds the tables, not their columns: what a reference resolution reads
 	// is the name and the schema.
 	DeclaredTables []schemamodel.Table `json:"-"`
-
-	// DeclaredSecrets is every YDB secret the declaration holds, carried once
-	// for the whole diff and off the wire, so a rotation request can name a
-	// secret both sides hold and find the variable its value comes from.
-	DeclaredSecrets []schemamodel.Secret `json:"-"`
 
 	// DeclaredExternalTables is every YDB external table the declaration
 	// holds, carried once for the whole diff and off the wire, so a plan that
@@ -2200,22 +2152,16 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 }
 
 // hasYDBObjectChanges reports a change to the objects only YDB has outside a
-// table: topics, async replications, transfers, secrets and external objects.
+// table that the common model still carries: topics, async replications,
+// transfers and external objects.
 func (d *SchemaDiff) hasYDBObjectChanges() bool {
-	return d.hasTopicChanges() || d.hasReplicationChanges() ||
-		d.hasSecretChanges() || d.hasExternalChanges()
+	return d.hasTopicChanges() || d.hasReplicationChanges() || d.hasExternalChanges()
 }
 
 func (d *SchemaDiff) hasTopicChanges() bool {
 	return len(d.TopicsAdded) > 0 ||
 		len(d.TopicsRemoved) > 0 ||
 		len(d.TopicsModified) > 0
-}
-
-func (d *SchemaDiff) hasSecretChanges() bool {
-	return len(d.SecretsAdded) > 0 ||
-		len(d.SecretsRemoved) > 0 ||
-		len(d.SecretsRotated) > 0
 }
 
 func (d *SchemaDiff) hasExternalChanges() bool {

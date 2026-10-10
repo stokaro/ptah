@@ -192,14 +192,13 @@ func RefuseTopics(dialect string, diff *difftypes.SchemaDiff) error {
 	}
 }
 
-// RefuseYDBObjects refuses a diff that changes a YDB topic, secret, external
-// data source or external table, for a planner of dialect that plans none of
-// them, through [RefuseTopics], [RefuseSecrets] and [RefuseExternalObjects] in
-// that order. The families share one call because each planner refuses all of
+// RefuseYDBObjects refuses a diff that changes a YDB topic, external data
+// source or external table, for a planner of dialect that plans none of them,
+// through [RefuseTopics] and [RefuseExternalObjects] in that order. The families share one call because each planner refuses all of
 // them at the same point, before it emits anything.
 func RefuseYDBObjects(dialect string, diff *difftypes.SchemaDiff) error {
 	for _, refuse := range []func(string, *difftypes.SchemaDiff) error{
-		RefuseTopics, RefuseSecrets, RefuseExternalObjects,
+		RefuseTopics, RefuseExternalObjects,
 	} {
 		if err := refuse(dialect, diff); err != nil {
 			return err
@@ -300,35 +299,6 @@ func RefuseYDBTablePartitioningChanges(dialect string, diff *difftypes.SchemaDif
 		}
 	}
 	return nil
-}
-
-// RefuseSecrets refuses a diff that creates, drops or rotates a YDB secret,
-// for a planner of dialect that plans none. The comparison records a secret
-// change whenever a desired schema declares one, and only the YDB planner
-// plans it, so planning nothing here would report the secret applied while
-// the database has none.
-func RefuseSecrets(dialect string, diff *difftypes.SchemaDiff) error {
-	if diff == nil {
-		return nil
-	}
-	var subject string
-	switch {
-	case len(diff.SecretsAdded) > 0:
-		subject = "creates secret " + diff.SecretsAdded[0].QualifiedName()
-	case len(diff.SecretsRemoved) > 0:
-		subject = "drops secret " + diff.SecretsRemoved[0].QualifiedName()
-	case len(diff.SecretsRotated) > 0:
-		subject = "rotates secret " + diff.SecretsRotated[0].QualifiedName()
-	default:
-		return nil
-	}
-	return &ptaherr.CapabilityError{
-		Dialect: dialect,
-		Feature: string(capability.Secrets),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("the diff %s, which requires target capability %s, unavailable on this %s target; "+
-			"only a YDB plan creates, drops or rotates a secret", subject, capability.Secrets, dialect),
-	}
 }
 
 // RefuseExternalObjects refuses a diff that creates, drops or replaces a YDB
