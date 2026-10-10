@@ -744,14 +744,16 @@ type Table struct {
 	APIName string `ptah_export:"api_name"`
 	// APINames overrides APIName for a single export target, and is empty in
 	// the ordinary case. See TargetNames.
-	APINames      TargetNames `ptah_export:",inline"`
-	Schema        string      // Optional database schema/namespace (PostgreSQL-style)
-	Engine        string      // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
-	AutoIncrement string      // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
-	Charset       string      // Table default character set (MySQL/MariaDB specific)
-	Collate       string      // Table default collation (MySQL/MariaDB specific)
-	Strict        bool        // SQLite STRICT table option
-	WithoutRowID  bool        // SQLite WITHOUT ROWID table option
+	APINames TargetNames `ptah_export:",inline"`
+	Schema   string      // Optional database schema/namespace (PostgreSQL-style)
+	// Engine is the table's storage engine as a declaration writes it, the
+	// bare `engine` attribute, which more than one target reads: the MySQL
+	// family writes it as ENGINE, under an engine its own table options state,
+	// and ClickHouse starts its settings from it.
+	Engine       string
+	Collate      string // Table default collation (MySQL/MariaDB specific)
+	Strict       bool   // SQLite STRICT table option
+	WithoutRowID bool   // SQLite WITHOUT ROWID table option
 	// Unlogged marks a PostgreSQL table whose writes skip the write-ahead log.
 	// The table is faster to write and is truncated after a crash, and it is
 	// not replicated, so it suits a cache or a staging table and nothing whose

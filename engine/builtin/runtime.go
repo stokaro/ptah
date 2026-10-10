@@ -75,6 +75,9 @@ func New() (*engine.Runtime, error) {
 		if name == platform.ClickHouse {
 			registerClickHouseServices(&provider, name)
 		}
+		if name == platform.MySQL {
+			registerMySQLServices(&provider)
+		}
 		if name == platform.YDB {
 			provider.Codecs = ydbextensions.Codecs()
 			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, Service: ydbconvert.Service{}}}

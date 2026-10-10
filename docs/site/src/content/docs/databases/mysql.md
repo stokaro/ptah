@@ -426,6 +426,31 @@ SQL:
   backslash escape are read as the server reads them, and of two `COMMENT`
   clauses on one column the last is kept.
 
+## Table options
+
+A table's storage engine, the first value of its auto-increment column and its
+default character set are the options `CREATE TABLE` takes as `ENGINE=`,
+`AUTO_INCREMENT=` and `CHARSET=`. A Go annotation declares the engine with the
+table's `engine` attribute and the others as platform properties of the
+target:
+
+```go
+//ptah:schema:table name="orders" engine="InnoDB" platform.mysql.auto_increment="1000" platform.mysql.charset="utf8mb4" platform.mariadb.charset="utf8mb4"
+type Order struct{}
+```
+
+YAML places `auto_increment` and `charset` in the target's platform group, and
+an HCL table block takes `engine`, `auto_increment` and `charset` as
+attributes, for MySQL and MariaDB alike. An engine or a character set that is
+not a name of letters, digits and underscores, and an auto-increment value
+that is not a whole number, is refused where it is written.
+
+The options apply when the table is created. A read reports the character set
+and neither the engine nor the next auto-increment value, so a plan never
+changes the options of a table that exists. Another target leaves the
+auto-increment value and the character set out, as it leaves out any other
+target's properties.
+
 ## Dev-database cleanup privileges
 
 Database-realm cleanup requires global `SELECT`, `DROP`, `ALTER`,

@@ -988,6 +988,54 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mysql-mysqlcompare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlcompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mysql-mysqlconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mysql-mysqldiff",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqldiff",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mysql-mysqlplan",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mysql-mysqlrender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mysql-mysqlreport",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mysql-mysqlschema",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlschema",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mysql-mysqlsource",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlsource",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-postgres-pgproject",
       "kind": "public-package",
       "surface": "ptah.run/dialect/postgres/pgproject",

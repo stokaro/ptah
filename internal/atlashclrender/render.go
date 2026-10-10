@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/mysqlindex"
@@ -755,16 +756,17 @@ func (r *renderer) renderTable(
 	if schema := r.schemaFor(table.Schema); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
-	r.stringAttr(1, "engine", table.Engine)
+	options := mysqlTableOptions(table)
+	r.stringAttr(1, "engine", cmp.Or(options.Engine, table.Engine))
 	r.stringAttr(1, "api_name", table.APIName)
 	r.stringAttr(1, "openapi_name", table.APINames.OpenAPI)
 	r.stringAttr(1, "graphql_name", table.APINames.GraphQL)
 	r.stringAttr(1, "proto_name", table.APINames.Protobuf)
-	r.stringAttr(1, "charset", table.Charset)
+	r.stringAttr(1, "charset", options.Charset)
 	r.stringAttr(1, "collate", table.Collate)
 	r.stringAttr(1, "comment", table.Comment)
-	if table.AutoIncrement != "" {
-		r.rawAttr(1, "auto_increment", table.AutoIncrement)
+	if options.AutoIncrement != "" {
+		r.rawAttr(1, "auto_increment", options.AutoIncrement)
 	}
 	if table.Strict {
 		r.rawAttr(1, "strict", "true")
@@ -1804,4 +1806,18 @@ func vectorSettings(facets schemaext.Facets) (ydbschema.VectorSettings, bool) {
 		return observed.Settings(), true
 	}
 	return ydbschema.VectorSettings{}, false
+}
+
+// mysqlTableOptions are the MySQL-family table options a table's facet holds,
+// declared or read, written as the table block's engine, charset and
+// auto_increment attributes the HCL parser reads them from. An invalid value
+// holds none here and is refused where it is used.
+func mysqlTableOptions(table schemamodel.Table) mysqlschema.DesiredTable {
+	if declared, found, err := schemaext.FacetAs[*mysqlschema.DesiredTable](table.Facets, mysqlschema.TableKind); err == nil && found {
+		return *declared
+	}
+	if observed, found, err := schemaext.FacetAs[*mysqlschema.ObservedTable](table.Facets, mysqlschema.TableKind); err == nil && found {
+		return *observed.Desired()
+	}
+	return mysqlschema.DesiredTable{}
 }

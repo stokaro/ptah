@@ -1,0 +1,43 @@
+{
+  "$id": "ptah.run/mysql/table/v1",
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_]+$"
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/mysql/table": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "$ref": "#/$defs/name"
+          },
+          "auto_increment": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "charset": {
+            "$ref": "#/$defs/name"
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The options a declaration states for a table: its storage engine, the first value of its auto-increment column and its default character set. An option left out is the server's to decide. The options apply when the table is created."
+      }
+    },
+    "observed": {
+      "ptah.run/mysql/table": {
+        "type": "object",
+        "properties": {
+          "charset": {
+            "$ref": "#/$defs/name"
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The default character set a read found the table holding, from its collation. The engine and the next auto-increment value are not read."
+      }
+    }
+  },
+  "canonicalization": "Keys are written in the order above, and an option left out is omitted. Names keep the spelling they were written in."
+}

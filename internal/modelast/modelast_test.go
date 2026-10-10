@@ -780,47 +780,15 @@ func TestFromTable_BasicTable(t *testing.T) {
 			},
 		},
 		{
-			name: "table with auto increment option",
-			table: schemamodel.Table{
-				StructName:    "User",
-				Name:          "users",
-				AutoIncrement: "1000",
-			},
-			fields: []schemamodel.Field{
-				{
-					StructName: "User",
-					Name:       "id",
-					Type:       "BIGINT",
-					Primary:    true,
-					AutoInc:    true,
-				},
-			},
-			expected: func(table *ast.CreateTableNode) bool {
-				return table.Name == "users" &&
-					table.Options["AUTO_INCREMENT"] == "1000" &&
-					len(table.Columns) == 1
-			},
-		},
-		{
-			name: "table with charset and collate options",
+			name: "table with collate option",
 			table: schemamodel.Table{
 				StructName: "User",
 				Name:       "users",
-				Charset:    "utf8mb4",
 				Collate:    "utf8mb4_bin",
 			},
-			fields: []schemamodel.Field{
-				{
-					StructName: "User",
-					Name:       "name",
-					Type:       "VARCHAR(255)",
-				},
-			},
+			fields: []schemamodel.Field{{StructName: "User", Name: "name", Type: "VARCHAR(255)"}},
 			expected: func(table *ast.CreateTableNode) bool {
-				return table.Name == "users" &&
-					table.Options["CHARSET"] == "utf8mb4" &&
-					table.Options["COLLATE"] == "utf8mb4_bin" &&
-					len(table.Columns) == 1
+				return table.Name == "users" && table.Options["COLLATE"] == "utf8mb4_bin" && len(table.Columns) == 1
 			},
 		},
 	}
@@ -2240,11 +2208,10 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		{
 			name: "MySQL engine and comment override",
 			table: schemamodel.Table{
-				StructName:    "Product",
-				Name:          "products",
-				Comment:       "Default comment",
-				Engine:        "MyISAM",
-				AutoIncrement: "100",
+				StructName: "Product",
+				Name:       "products",
+				Comment:    "Default comment",
+				Engine:     "MyISAM",
 				Overrides: map[string]map[string]string{
 					"mysql": {
 						"engine":         "InnoDB",

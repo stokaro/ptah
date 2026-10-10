@@ -183,17 +183,17 @@ func ExampleValidateSchema() {
 // ExampleGetOrderedCreateStatementsReportingOmissions shows how an embedder
 // asks what a target could not carry.
 //
-// The schema is written for MySQL, which renders all four table options, and
-// pointed at PostgreSQL, which renders none of them. Before this entry point
+// The schema is written for MySQL, which renders its engine and collation as
+// table options, and pointed at PostgreSQL, which renders neither. Before this entry point
 // the render exited 0 and the loss was visible only as a comment in the SQL,
 // which is not something a pipeline can branch on.
 func ExampleGetOrderedCreateStatementsReportingOmissions() {
 	database := &schemamodel.Database{
 		Tables: []schemamodel.Table{{
-			StructName:    "User",
-			Name:          "users",
-			Engine:        "InnoDB",
-			AutoIncrement: "100",
+			StructName: "User",
+			Name:       "users",
+			Engine:     "InnoDB",
+			Collate:    "utf8mb4_bin",
 		}},
 		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INT", Primary: true},
@@ -211,7 +211,7 @@ func ExampleGetOrderedCreateStatementsReportingOmissions() {
 	}
 
 	// Output:
-	// table "users": table option AUTO_INCREMENT=100 would be skipped
+	// table "users": table option COLLATE=utf8mb4_bin would be skipped
 	// table "users": table option ENGINE=InnoDB would be skipped
 }
 

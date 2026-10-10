@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-610 fields are reachable from the desired schema, and each one carries
+611 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 520 | reaches rendered SQL on at least one target |
+| `ddl` | 521 | reaches rendered SQL on at least one target |
 | `comparison` | 18 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -122,6 +122,9 @@ None.
 | `mssqlschema.Predicate.Operation` | `ddl` | — |
 | `mssqlschema.Predicate.Table` | `ddl` | — |
 | `mssqlschema.Predicate.Type` | `ddl` | — |
+| `mysqlschema.DesiredTable.AutoIncrement` | `ddl` | — |
+| `mysqlschema.DesiredTable.Charset` | `ddl` | — |
+| `mysqlschema.DesiredTable.Engine` | `ddl` | — |
 | `pgpolicy.DesiredPolicy.Command` | `ddl` | — |
 | `pgpolicy.DesiredPolicy.Comment` | `ddl` | — |
 | `pgpolicy.DesiredPolicy.Composition` | `ddl` | — |
@@ -462,8 +465,6 @@ None.
 | `schemamodel.Synonym.Target` | `ddl` | — |
 | `schemamodel.Table.APIName` | `export` | the name an exported API document carries when it differs from the database name |
 | `schemamodel.Table.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |
-| `schemamodel.Table.AutoIncrement` | `ddl` | — |
-| `schemamodel.Table.Charset` | `ddl` | — |
 | `schemamodel.Table.Checks` | `ddl` | — |
 | `schemamodel.Table.Collate` | `ddl` | — |
 | `schemamodel.Table.Comment` | `ddl` | — |

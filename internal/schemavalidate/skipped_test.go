@@ -14,16 +14,18 @@ import (
 )
 
 // tableWithMySQLOptions is a schema written for MySQL and pointed at a second
-// target, which is the case stokaro/ptah#2976 is about.
+// target, which is the case stokaro/ptah#2976 is about. The common engine and
+// collation reach every target; the auto-increment start and the character
+// set are the MySQL family's own table options, which another target leaves
+// out as it leaves out any other target's properties.
 func tableWithMySQLOptions() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{
-			StructName:    "User",
-			Name:          "users",
-			Engine:        "InnoDB",
-			AutoIncrement: "100",
-			Charset:       "utf8mb4",
-			Collate:       "utf8mb4_bin",
+			StructName: "User",
+			Name:       "users",
+			Engine:     "InnoDB",
+			Collate:    "utf8mb4_bin",
+			Overrides:  map[string]map[string]string{"mysql": {"auto_increment": "100", "charset": "utf8mb4"}},
 		}},
 		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INT", Primary: true},
@@ -80,9 +82,6 @@ func TestCollectWithOptions_NoSkippedNamesEveryLostTableOption(t *testing.T) {
 		lines = append(lines, problem.String())
 	}
 	c.Assert(lines, qt.DeepEquals, []string{
-		`postgres: table "users": table option AUTO_INCREMENT=100 would be skipped; ` +
-			`declare the start on the key column with identity_start`,
-		`postgres: table "users": table option CHARSET=utf8mb4 would be skipped`,
 		`postgres: table "users": table option COLLATE=utf8mb4_bin would be skipped`,
 		`postgres: table "users": table option ENGINE=InnoDB would be skipped`,
 	})

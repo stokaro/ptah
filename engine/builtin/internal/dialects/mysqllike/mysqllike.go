@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
@@ -414,10 +415,16 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
 	}
+	// The options a declaration states are the MySQL owner's facet; a node
+	// built without one carries them as options.
+	tableOptions, err := mysqlrender.CreateTableOptions(node.Facets, node.Options)
+	if err != nil {
+		return fmt.Errorf("table %q: %w", node.Name, err)
+	}
 
 	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
 		r.w.Writef("CREATE TABLE%s %s", guard, escapeQualifiedIdentifier(node.Name))
-		options := r.renderTableOptions(node.Options)
+		options := r.renderTableOptions(tableOptions)
 		options = appendTableComment(options, r.escapeValue, node.Comment)
 		if options != "" {
 			r.w.Write(" ")
@@ -474,7 +481,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	r.w.Write(")")
 
 	// Close table definition with MariaDB-specific options
-	options := r.renderTableOptions(node.Options)
+	options := r.renderTableOptions(tableOptions)
 	options = appendTableComment(options, r.escapeValue, node.Comment)
 	if options != "" {
 		r.w.Write(" ")

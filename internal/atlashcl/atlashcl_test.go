@@ -443,7 +443,8 @@ table "users" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].AutoIncrement, qt.Equals, "1000")
+	c.Assert(db.Tables[0].Overrides["mysql"]["auto_increment"], qt.Equals, "1000")
+	c.Assert(db.Tables[0].Overrides["mariadb"]["auto_increment"], qt.Equals, "1000")
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, "AUTO_INCREMENT=1000")
@@ -467,7 +468,7 @@ table "users" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Charset, qt.Equals, "utf8mb4")
+	c.Assert(db.Tables[0].Overrides["mysql"]["charset"], qt.Equals, "utf8mb4")
 	c.Assert(db.Tables[0].Collate, qt.Equals, "utf8mb4_bin")
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
