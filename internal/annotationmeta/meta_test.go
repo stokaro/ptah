@@ -229,7 +229,7 @@ func shadeOwner(c *qt.C, directive, attribute string) annotation.Set {
 	c.Helper()
 	set, err := annotation.NewSet(annotation.Extension{
 		Owner:    "example.org/paint",
-		Coverage: func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil },
+		Coverage: annotation.Unlimited(func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil }),
 		Attributes: []annotation.DirectiveAttributes{{
 			Directive: directive, Attributes: []annotation.Attribute{{Name: attribute, Value: "string"}},
 			Decode: func(map[string]string) (schemaext.Facets, error) { return schemaext.Facets{}, nil },

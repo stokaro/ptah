@@ -57,7 +57,7 @@ func widgetOwner(c *qt.C, name string, decode func(annotation.Declaration) ([]an
 			Attributes: []annotation.Attribute{{Name: "table", Value: "string", Required: true}, {Name: "level", Value: "string"}}}},
 		Kinds:    []schemaext.Kind{widgetKind},
 		Decode:   decode,
-		Coverage: widgetCoverage,
+		Coverage: annotation.Unlimited(widgetCoverage),
 	})
 	c.Assert(err, qt.IsNil)
 	return set
@@ -201,22 +201,4 @@ func TestParse_RefusesAnUnselectedOwnerSet(t *testing.T) {
 			c.Assert(test.parse(), qt.ErrorIs, annotation.ErrUnselected)
 		})
 	}
-}
-
-// TestParseSource_AnUnqualifiedChangefeedTableTwoSchemasDeclareIsRefused pins
-// the refusal for a changefeed that names its table without the schema when
-// the file declares the name in two schemas. Owner facets share the lookup;
-// tssource holds a hypertable to the same rule.
-func TestParseSource_AnUnqualifiedChangefeedTableTwoSchemasDeclareIsRefused(t *testing.T) {
-	c := qt.New(t)
-	source := "package models\n\n" +
-		"//ptah:schema:table name=\"readings\" schema=\"public\"\ntype Reading struct {\n\t//ptah:schema:field name=\"time\" type=\"TIMESTAMPTZ\"\n\tTime string\n}\n\n" +
-		"//ptah:schema:table name=\"readings\" schema=\"archive\"\ntype ArchivedReading struct {\n\t//ptah:schema:field name=\"time\" type=\"TIMESTAMPTZ\"\n\tTime string\n}\n\n" +
-		"type H struct {\n\t//ptah:schema:changefeed name=\"feed\" table=\"readings\" mode=\"UPDATES\" format=\"JSON\"\n\t_ int\n}\n"
-
-	db, err := goschema.ParseSource(noOwners, "readings.go", source)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
-	c.Assert(err, qt.ErrorMatches, `(?s).*table "readings" is declared in schemas "public" and "archive"; name the schema in the table attribute.*changefeed.*`)
-	c.Assert(db.Tables, qt.HasLen, 0)
 }

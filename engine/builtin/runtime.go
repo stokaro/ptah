@@ -26,6 +26,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbextensions"
+	"ptah.run/internal/ydbsource"
 )
 
 // bundled is the runtime the package-level helpers (RenderSQL,
@@ -111,6 +112,7 @@ func New() (*engine.Runtime, error) {
 			registerYDBColumnStoreServices(&provider, name)
 			registerYDBVectorIndexServices(&provider, name)
 			registerYDBIndexPartitioningServices(&provider, name)
+			provider.Annotations = append(provider.Annotations, ydbsource.Annotations())
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

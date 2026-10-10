@@ -20,7 +20,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/dialectscope"
@@ -30,7 +29,6 @@ import (
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
-	"ptah.run/internal/ydbsource"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so
@@ -577,7 +575,8 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	if s.featureLimits.Add(kv["kind"], kv["name"]) {
+	if _, owned := s.annotations.LimitOwner(kv["kind"]); owned {
+		s.limits = append(s.limits, coverage.Object{Kind: coverage.Kind(kv["kind"]), Name: kv["name"], Provenance: coverage.Declared})
 		return nil
 	}
 	kind, err := coverage.ParseKind(kv["kind"])
@@ -707,10 +706,13 @@ func splitCSVAttribute(value string) []string {
 type schemaParseState struct {
 	// annotations are the owners the caller selected, and catalog and kv
 	// read their directives beside the frontend's own.
-	annotations           annotation.Set
+	annotations annotation.Set
+	// owners reads this file's owner declarations, and limits are the
+	// not-described declarations an owner reads rather than the frontend.
+	owners                *annotation.Reader
+	limits                []coverage.Object
 	catalog               annotationmeta.Catalog
 	kv                    parseutils.KeyValueParser
-	featureLimits         ydbsource.Limits
 	featureObjects        schemaext.Objects
 	featureCoverage       schemaext.Coverage
 	filename              string
@@ -742,13 +744,6 @@ type schemaParseState struct {
 	managedData           []schemamodel.ManagedData
 	schemas               []schemamodel.Schema
 	notDescribed          []coverage.Object
-	changefeeds           []pendingChangefeed
-	columnFamilies        []pendingColumnFamily
-	consumers             []pendingConsumer
-	topics                []pendingTopic
-	topicConsumers        []pendingTopicConsumer
-	asyncReplications     []pendingReplication
-	replicationItems      []pendingReplicationItem
 }
 
 type structDeclaration struct {
@@ -765,6 +760,7 @@ type schemaCommentTarget struct {
 func newSchemaParseState(filename string, fset *token.FileSet, selection parseSelection) *schemaParseState {
 	return &schemaParseState{
 		annotations:           selection.annotations,
+		owners:                selection.annotations.Reader(),
 		catalog:               selection.catalog,
 		kv:                    parseutils.NewKeyValueParser(selection.catalog),
 		filename:              filename,
@@ -854,44 +850,27 @@ type sharedDirectiveParser func(*schemaParseState, *ast.Comment, string) error
 // belongs to which parser and nothing else, and a new object family adds one
 // line instead of pushing the function past the complexity gate.
 var sharedDirectiveParsers = map[string]sharedDirectiveParser{
-	"ptah:schema:constraint":              (*schemaParseState).parseConstraintComment,
-	"ptah:schema:enum":                    ignoringStruct((*schemaParseState).parseEnumComment),
-	"ptah:schema:extension":               ignoringStruct((*schemaParseState).parseExtensionComment),
-	"ptah:schema:function":                (*schemaParseState).parseFunctionComment,
-	"ptah:schema:procedure":               (*schemaParseState).parseProcedureComment,
-	"ptah:schema:sequence":                (*schemaParseState).parseSequenceComment,
-	"ptah:schema:domain":                  (*schemaParseState).parseDomainComment,
-	"ptah:schema:composite":               (*schemaParseState).parseCompositeComment,
-	"ptah:schema:range":                   (*schemaParseState).parseRangeComment,
-	"ptah:schema:view":                    (*schemaParseState).parseViewComment,
-	"ptah:schema:matview":                 (*schemaParseState).parseMaterializedViewComment,
-	"ptah:schema:synonym":                 (*schemaParseState).parseSynonymComment,
-	"ptah:schema:coordinationnode":        (*schemaParseState).parseCoordinationNodeComment,
-	"ptah:schema:trigger":                 (*schemaParseState).parseTriggerComment,
-	"ptah:schema:rls:policy":              (*schemaParseState).parseRLSPolicyComment,
-	"ptah:schema:rls:enable":              (*schemaParseState).parseRLSEnableComment,
-	"ptah:schema:role":                    (*schemaParseState).parseRoleComment,
-	"ptah:schema:grant":                   (*schemaParseState).parseGrantComment,
-	"ptah:schema:revoke":                  (*schemaParseState).parseRevokeComment,
-	"ptah:schema:defaultprivilege":        (*schemaParseState).parseDefaultPrivilegeComment,
-	"ptah:schema:data":                    (*schemaParseState).parseManagedDataComment,
-	"ptah:schema:notdescribed":            ignoringStruct((*schemaParseState).parseNotDescribedComment),
-	"ptah:schema:changefeed":              (*schemaParseState).parseChangefeedComment,
-	columnFamilyDirective:                 (*schemaParseState).parseColumnFamilyComment,
-	"ptah:schema:changefeed:consumer":     (*schemaParseState).parseChangefeedConsumerComment,
-	"ptah:schema:topic":                   (*schemaParseState).parseTopicComment,
-	"ptah:schema:topic:consumer":          (*schemaParseState).parseTopicConsumerComment,
-	"ptah:schema:resourcepool":            (*schemaParseState).parseResourcePoolComment,
-	"ptah:schema:resourcepool:classifier": (*schemaParseState).parseResourcePoolClassifierComment,
-
-	// YDB's async replications, their items and transfers.
-	"ptah:schema:async_replication":      (*schemaParseState).parseAsyncReplicationComment,
-	"ptah:schema:async_replication:item": (*schemaParseState).parseAsyncReplicationItemComment,
-	"ptah:schema:transfer":               (*schemaParseState).parseTransferComment,
-	"ptah:schema:secret":                 (*schemaParseState).parseSecretComment,
-	"ptah:schema:streamingquery":         (*schemaParseState).parseStreamingQueryComment,
-	"ptah:schema:externaldatasource":     (*schemaParseState).parseExternalDataSourceComment,
-	"ptah:schema:externaltable":          (*schemaParseState).parseExternalTableComment,
+	"ptah:schema:constraint":       (*schemaParseState).parseConstraintComment,
+	"ptah:schema:enum":             ignoringStruct((*schemaParseState).parseEnumComment),
+	"ptah:schema:extension":        ignoringStruct((*schemaParseState).parseExtensionComment),
+	"ptah:schema:function":         (*schemaParseState).parseFunctionComment,
+	"ptah:schema:procedure":        (*schemaParseState).parseProcedureComment,
+	"ptah:schema:sequence":         (*schemaParseState).parseSequenceComment,
+	"ptah:schema:domain":           (*schemaParseState).parseDomainComment,
+	"ptah:schema:composite":        (*schemaParseState).parseCompositeComment,
+	"ptah:schema:range":            (*schemaParseState).parseRangeComment,
+	"ptah:schema:view":             (*schemaParseState).parseViewComment,
+	"ptah:schema:matview":          (*schemaParseState).parseMaterializedViewComment,
+	"ptah:schema:synonym":          (*schemaParseState).parseSynonymComment,
+	"ptah:schema:trigger":          (*schemaParseState).parseTriggerComment,
+	"ptah:schema:rls:policy":       (*schemaParseState).parseRLSPolicyComment,
+	"ptah:schema:rls:enable":       (*schemaParseState).parseRLSEnableComment,
+	"ptah:schema:role":             (*schemaParseState).parseRoleComment,
+	"ptah:schema:grant":            (*schemaParseState).parseGrantComment,
+	"ptah:schema:revoke":           (*schemaParseState).parseRevokeComment,
+	"ptah:schema:defaultprivilege": (*schemaParseState).parseDefaultPrivilegeComment,
+	"ptah:schema:data":             (*schemaParseState).parseManagedDataComment,
+	"ptah:schema:notdescribed":     ignoringStruct((*schemaParseState).parseNotDescribedComment),
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -1063,21 +1042,17 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 	if err := state.processFileAST(f); err != nil {
 		return schemamodel.Database{}, err
 	}
-	if err := state.attachChangefeeds(); err != nil {
-		return schemamodel.Database{}, err
-	}
-	if err := state.attachTopicConsumers(); err != nil {
-		return schemamodel.Database{}, err
-	}
-	if err := state.attachReplicationItems(); err != nil {
-		return schemamodel.Database{}, err
-	}
-	if err := state.attachColumnFamilies(); err != nil {
+	if err := state.finishOwnerDirectives(); err != nil {
 		return schemamodel.Database{}, err
 	}
 	if err := state.attachOwnerFacets(); err != nil {
 		return schemamodel.Database{}, err
 	}
+	known, err := sourceCoverage(state.annotations, state.limits...)
+	if err != nil {
+		return schemamodel.Database{}, err
+	}
+	state.featureCoverage = known
 	policies, switches, err := state.attachRowSecurity()
 	if err != nil {
 		return schemamodel.Database{}, err
@@ -1764,50 +1739,6 @@ func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName 
 		Comment:    kv["comment"],
 	})
 	return nil
-}
-
-// parseCoordinationNodeComment reads a YDB coordination node declaration.
-//
-// There is no dialect scope here, for the reason a synonym has none: a
-// coordination node is a YDB object and nothing else. The settings are read
-// and checked by dialect/ydb/ydbcoordination, which the YAML reader asks too, so
-// a value one source accepts is one the other accepts. Ptah's own lock node
-// and a name with a segment that starts with a dot are refused where they are
-// written.
-func (s *schemaParseState) parseCoordinationNodeComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:coordinationnode", structName)
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := ydbcoordination.RefuseName(kv["schema"], kv["name"]); err != nil {
-		return coordinationNodeError(ctx, "name", err)
-	}
-	spec, err := ydbcoordination.ParseDeclaration(kv)
-	if setting, ok := errors.AsType[*ydbcoordination.SettingError](err); ok {
-		return coordinationNodeError(ctx, setting.Setting, err)
-	}
-	if err != nil {
-		return err
-	}
-	s.featureObjects, err = s.featureObjects.With(ydbcoordination.DesiredObject(kv["schema"], kv["name"], structName, spec))
-	return err
-}
-
-// coordinationNodeError is the parse error for a coordination node
-// attribute whose value the node cannot take.
-func coordinationNodeError(ctx annotationErrorContext, attribute string, err error) error {
-	return &ptaherr.ParseError{
-		File:      ctx.file,
-		Line:      ctx.line,
-		Directive: strings.TrimPrefix(ctx.directive, "//"),
-		Attribute: attribute,
-		Err:       ptaherr.ErrInvalidAttributeValue,
-		Message:   fmt.Sprintf("%s on %s at %s", err.Error(), ctx.directive, ctx.location),
-	}
 }
 
 func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, structName string) error {

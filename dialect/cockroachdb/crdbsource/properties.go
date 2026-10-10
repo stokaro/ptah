@@ -128,7 +128,7 @@ func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner:    crdbschema.Owner,
 		Kinds:    []schemaext.Kind{crdbschema.RowTTLKind},
-		Coverage: Coverage,
+		Coverage: annotation.Unlimited(Coverage),
 	}
 }
 

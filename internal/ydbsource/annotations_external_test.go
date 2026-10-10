@@ -1,4 +1,4 @@
-package goschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -21,7 +21,7 @@ func externalSource(annotation string) string {
 // models, and claims both namespaces the source describes.
 func TestParseSource_ExternalObjects_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	db, err := goschema.ParseDir(noOwners, "../../integration/internal/fixtures/entities/053-ydb-external-sources")
+	db, err := goschema.ParseDir(ydbOwners, "../../integration/internal/fixtures/entities/053-ydb-external-sources")
 	c.Assert(err, qt.IsNil)
 	objects, err := db.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)
@@ -106,7 +106,7 @@ func TestParseSource_ExternalObjects_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "external.go", externalSource(test.annotation))
+			db, err := goschema.ParseSource(ydbOwners, "external.go", externalSource(test.annotation))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			var parseErr *ptaherr.ParseError
 			c.Assert(err, qt.ErrorAs, &parseErr)

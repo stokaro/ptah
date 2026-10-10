@@ -1,12 +1,14 @@
 package annotation
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 )
 
@@ -26,6 +28,10 @@ type Declaration struct {
 	// Struct is the Go struct the comment is attached to, or empty for a
 	// file-level comment.
 	Struct string
+	// Line is the line of the file the directive is written on, counting
+	// from 1, or 0 where the frontend does not know it. A refusal that names
+	// the declaration is reported there.
+	Line int
 }
 
 // Contribution is one thing a declaration adds to the schema: a standalone
@@ -44,6 +50,11 @@ type Contribution struct {
 	// Label names what the contribution declares in a refusal, such as
 	// `continuous aggregate "app.hourly"` or `a hypertable`.
 	Label string
+	// Source is the declaration the contribution comes from. A contribution
+	// [FileDecoder.Finish] returns sets it: the frontend places a facet by
+	// Source's struct and reports a refusal at Source. A contribution a
+	// decoder returns for the declaration it is decoding leaves it zero.
+	Source Declaration
 }
 
 // DirectiveAttributes are attributes an owner adds to one of the frontend's
@@ -79,13 +90,25 @@ type Extension struct {
 	// directives.
 	Attributes []DirectiveAttributes
 	// Decode turns one declaration of one of Directives into what it
-	// declares. It is required when Directives is not empty. It must not keep
-	// the declaration, and it returns an error for a value it refuses.
+	// declares. It must not keep the declaration, and it returns an error for
+	// a value it refuses, a [DeclarationError] to name the attribute.
 	Decode func(Declaration) ([]Contribution, error)
-	// Coverage is the knowledge a Go annotation source holds about Kinds: a
-	// source that could have declared a model and did not declares its
-	// absence. It is required, so the claim is always the owner's to make.
-	Coverage func() (schemaext.Coverage, error)
+	// File starts a [FileDecoder] for one file, for an owner whose
+	// declarations refer to each other or to the file's tables. Exactly one
+	// of Decode and File is set when Directives is not empty.
+	File func() FileDecoder
+	// Limits are the kinds of ptah:schema:notdescribed declaration the owner
+	// reads, in lower case, such as "coordination_node". A file's
+	// declarations of them reach Coverage instead of the frontend's own
+	// coverage set. A kind belongs to one owner, and never to the frontend's
+	// own vocabulary.
+	Limits []string
+	// Coverage is the knowledge a Go annotation source holds about Kinds,
+	// given the not-described declarations of Limits it wrote: a source that
+	// could have declared a model and did not declares its absence, except
+	// where a limit leaves it unmanaged. It is required, so the claim is
+	// always the owner's to make.
+	Coverage func(limits []coverage.Object) (schemaext.Coverage, error)
 }
 
 // Set is the frozen collection of extensions one parse selects. The zero
@@ -95,6 +118,8 @@ type Set struct {
 	selected   bool
 	extensions []Extension
 	owners     map[string]int
+	// limits holds the extension index that reads each not-described kind.
+	limits map[string]int
 	// attributes holds, for each frontend directive, the extension index
 	// that owns each attribute an owner adds to it.
 	attributes map[string]map[string]int
@@ -107,12 +132,14 @@ func None() Set {
 }
 
 // NewSet validates and freezes extensions. It refuses an extension without
-// an owner or a coverage claim, one that declares directives and no decoder,
-// a directive without a name, attributes on a directive without a decoder or
-// a name, and a directive name, an attribute of one directive or a kind two
-// extensions claim.
+// an owner or a coverage claim, one that declares directives and not exactly
+// one decoder, a directive without a name, attributes on a directive without a
+// decoder or a name, a limit kind that is empty, not in lower case or one of
+// the frontend's own, and a directive name, an attribute of one directive, a
+// limit kind or a model two extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
-	set := Set{selected: true, owners: make(map[string]int), attributes: make(map[string]map[string]int)}
+	set := Set{selected: true, owners: make(map[string]int), limits: make(map[string]int),
+		attributes: make(map[string]map[string]int)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
@@ -121,8 +148,11 @@ func NewSet(extensions ...Extension) (Set, error) {
 		if extension.Coverage == nil {
 			return Set{}, fmt.Errorf("annotation extension of %s makes no coverage claim", extension.Owner)
 		}
-		if len(extension.Directives) > 0 && extension.Decode == nil {
+		if len(extension.Directives) > 0 && extension.Decode == nil && extension.File == nil {
 			return Set{}, fmt.Errorf("annotation extension of %s declares directives and no decoder", extension.Owner)
+		}
+		if extension.Decode != nil && extension.File != nil {
+			return Set{}, fmt.Errorf("annotation extension of %s declares both a decoder and a file decoder", extension.Owner)
 		}
 		for _, kind := range extension.Kinds {
 			if owner, claimed := kinds[kind]; claimed {
@@ -141,6 +171,9 @@ func NewSet(extensions ...Extension) (Set, error) {
 			set.owners[directive.Name] = index
 		}
 		if err := set.claimAttributes(index, extension); err != nil {
+			return Set{}, err
+		}
+		if err := set.claimLimits(index, extension); err != nil {
 			return Set{}, err
 		}
 		set.extensions = append(set.extensions, cloneExtension(extension))
@@ -172,6 +205,23 @@ func (s *Set) claimAttributes(index int, extension Extension) error {
 			}
 			claimed[attribute.Name] = index
 		}
+	}
+	return nil
+}
+
+func (s *Set) claimLimits(index int, extension Extension) error {
+	for _, kind := range extension.Limits {
+		if kind == "" || kind != strings.ToLower(strings.TrimSpace(kind)) {
+			return fmt.Errorf("annotation extension of %s reads not-described kind %q, which is not a lower-case name", extension.Owner, kind)
+		}
+		if _, err := coverage.ParseKind(kind); err == nil {
+			return fmt.Errorf("annotation extension of %s reads not-described kind %q, which is the frontend's own", extension.Owner, kind)
+		}
+		if previous, claimed := s.limits[kind]; claimed {
+			return fmt.Errorf("%w: not-described kind %q is read by %s and %s", schemaext.ErrDuplicate, kind,
+				s.extensions[previous].Owner, extension.Owner)
+		}
+		s.limits[kind] = index
 	}
 	return nil
 }
@@ -262,42 +312,59 @@ func (s Set) Owner(directive string) (string, bool) {
 	return s.extensions[index].Owner, true
 }
 
-// Decode hands declaration to the owner of its directive. A directive no
-// extension declares is an error.
-func (s Set) Decode(declaration Declaration) ([]Contribution, error) {
-	index, found := s.owners[declaration.Directive]
+// LimitOwner returns the owner that reads not-described declarations of
+// kind, compared without case and surrounding space, or false when no
+// extension of the set does.
+func (s Set) LimitOwner(kind string) (string, bool) {
+	index, found := s.limits[strings.ToLower(strings.TrimSpace(kind))]
 	if !found {
-		return nil, fmt.Errorf("no selected owner declares directive %q", declaration.Directive)
+		return "", false
 	}
-	declaration.Attributes = maps.Clone(declaration.Attributes)
-	contributions, err := s.extensions[index].Decode(declaration)
-	if err != nil {
-		return nil, err
-	}
-	extension := s.extensions[index]
+	return s.extensions[index].Owner, true
+}
+
+// checkContributions refuses a contribution that sets neither or both of an
+// object and a facet, and one of a model extension does not declare.
+// directive names the declaration decoded, or is empty for a contribution
+// that names its source.
+func checkContributions(extension Extension, directive string, contributions []Contribution) error {
 	for _, contribution := range contributions {
+		written := cmp.Or(directive, contribution.Source.Directive)
 		if (contribution.Object == nil) == (contribution.Facet == nil) {
-			return nil, fmt.Errorf("%w: directive %q contributed neither or both of an object and a facet",
-				schemaext.ErrInvalidValue, declaration.Directive)
+			return fmt.Errorf("%w: directive %q contributed neither or both of an object and a facet",
+				schemaext.ErrInvalidValue, written)
 		}
 		value := contribution.Facet
 		if contribution.Object != nil {
 			value = contribution.Object.Value
 		}
 		if value == nil || !slices.Contains(extension.Kinds, value.Kind()) {
-			return nil, fmt.Errorf("%w: directive %q contributed a model %s does not declare",
-				schemaext.ErrInvalidValue, declaration.Directive, extension.Owner)
+			return fmt.Errorf("%w: directive %q contributed a model %s does not declare",
+				schemaext.ErrInvalidValue, written, extension.Owner)
 		}
 	}
-	return contributions, nil
+	return nil
 }
 
-// Coverage combines the coverage claims of every extension of the set. A set
-// without extensions has none.
-func (s Set) Coverage() (schemaext.Coverage, error) {
+func cloneAttributes(attributes map[string]string) map[string]string {
+	return maps.Clone(attributes)
+}
+
+// Coverage combines the coverage claims of every extension of the set, each
+// given the limits whose kind it reads. A set without extensions has none. A
+// limit of a kind no extension reads is an error.
+func (s Set) Coverage(limits ...coverage.Object) (schemaext.Coverage, error) {
+	read := make(map[int][]coverage.Object)
+	for _, limit := range limits {
+		index, found := s.limits[strings.ToLower(strings.TrimSpace(string(limit.Kind)))]
+		if !found {
+			return schemaext.Coverage{}, fmt.Errorf("no selected owner reads not-described kind %q", limit.Kind)
+		}
+		read[index] = append(read[index], limit)
+	}
 	var combined schemaext.Coverage
-	for _, extension := range s.extensions {
-		claim, err := extension.Coverage()
+	for index, extension := range s.extensions {
+		claim, err := extension.Coverage(read[index])
 		if err != nil {
 			return schemaext.Coverage{}, fmt.Errorf("coverage of %s: %w", extension.Owner, err)
 		}
@@ -325,6 +392,7 @@ func cloneExtension(extension Extension) Extension {
 	}
 	extension.Directives = directives
 	extension.Kinds = slices.Clone(extension.Kinds)
+	extension.Limits = slices.Clone(extension.Limits)
 	groups := make([]DirectiveAttributes, 0, len(extension.Attributes))
 	for _, group := range extension.Attributes {
 		group.Attributes = slices.Clone(group.Attributes)
@@ -339,4 +407,11 @@ func cloneExtension(extension Extension) Extension {
 // compares with. *ptah.run/engine.Runtime implements it.
 type Runtime interface {
 	Annotations() Set
+}
+
+// Unlimited adapts the coverage claim of an owner that reads no
+// not-described kind into [Extension.Coverage]: the claim is the same
+// whatever the source declares unmanaged.
+func Unlimited(claim func() (schemaext.Coverage, error)) func(limits []coverage.Object) (schemaext.Coverage, error) {
+	return func([]coverage.Object) (schemaext.Coverage, error) { return claim() }
 }
