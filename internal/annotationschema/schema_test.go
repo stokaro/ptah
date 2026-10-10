@@ -34,7 +34,7 @@ func TestGenerateFieldSchemaRejectsUnknownAttributes(t *testing.T) {
 	properties := field["properties"].(map[string]any)
 	attrs := properties["attributes"].(map[string]any)
 
-	c.Assert(attrs["additionalProperties"], qt.Equals, false)
+	c.Assert(attrs["additionalProperties"], qt.IsFalse)
 	c.Assert(attrs["patternProperties"], qt.IsNotNil)
 	patterns := attrs["patternProperties"].(map[string]any)
 	c.Assert(patterns[`^platform\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$`], qt.IsNotNil)

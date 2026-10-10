@@ -337,7 +337,7 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 	c.Assert(additions[0].Columns, qt.DeepEquals, []string{"email"})
 	c.Assert(additions[0].IncludeColumns, qt.DeepEquals, []string{"updated_at"})
 	c.Assert(additions[0].NullsDistinct, qt.IsNotNil)
-	c.Assert(*additions[0].NullsDistinct, qt.Equals, false)
+	c.Assert(*additions[0].NullsDistinct, qt.IsFalse)
 }
 
 // TestReverseConstraintAdditions_NilDBSchema is the legacy-caller path: with no

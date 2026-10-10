@@ -44,8 +44,8 @@ func TestSchemaCleanFormatDryRunJSONDoesNotApply(t *testing.T) {
 	c.Assert(testutils.URLDatabasePath(got.Env.URL.Opaque, got.Env.URL.Path), qt.Equals, dbPath)
 	c.Assert(got.Env.URL.RawQuery, qt.Equals, "password=xxxxx")
 	c.Assert(got.Env.URL.Schema, qt.Equals, "main")
-	c.Assert(got.DryRun, qt.Equals, true)
-	c.Assert(got.Applied, qt.Equals, false)
+	c.Assert(got.DryRun, qt.IsTrue)
+	c.Assert(got.Applied, qt.IsFalse)
 	c.Assert(got.Objects, qt.DeepEquals, []schemaCleanJSONObject{{Type: "table", Name: "users"}})
 	c.Assert(got.Changes, qt.DeepEquals, []schemaCleanJSONChange{
 		{Type: "table", Name: "users", Cmd: `DROP TABLE IF EXISTS "users"`},
@@ -188,8 +188,8 @@ func TestSchemaCleanFormatAutoApproveApplies(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	got := schemaCleanJSONReport{}
 	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
-	c.Assert(got.DryRun, qt.Equals, false)
-	c.Assert(got.Applied, qt.Equals, true)
+	c.Assert(got.DryRun, qt.IsFalse)
+	c.Assert(got.Applied, qt.IsTrue)
 	c.Assert(got.Changes, qt.DeepEquals, []schemaCleanJSONChange{
 		{Type: "table", Name: "applied_users", Cmd: `DROP TABLE IF EXISTS "applied_users"`},
 	})

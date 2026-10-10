@@ -177,7 +177,7 @@ func TestResolveRows_AnswersLikeTheFileLoader(t *testing.T) {
 	c.Assert(resolved[0]["zero"], qt.Equals, 7)
 	c.Assert(resolved[0]["quoted"], qt.Equals, "007")
 	c.Assert(resolved[0]["rate"], qt.Equals, 1.0)
-	c.Assert(resolved[0]["active"], qt.Equals, true)
+	c.Assert(resolved[0]["active"], qt.IsTrue)
 	c.Assert(resolved[0]["retired"], qt.IsNil)
 	c.Assert(resolved[0]["since"], qt.Equals, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 }

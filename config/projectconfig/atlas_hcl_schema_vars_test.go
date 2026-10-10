@@ -342,7 +342,7 @@ env "local" {
 			c.Assert(err, qt.IsNil)
 			c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://s.hcl"})
 			values, scoped := cfg.SchemaSourceVars("file://s.hcl")
-			c.Check(scoped, qt.Equals, true)
+			c.Check(scoped, qt.IsTrue)
 			c.Check(values, qt.DeepEquals, test.wantValues)
 		})
 	}
@@ -473,7 +473,7 @@ env "local" {
 			c.Assert(err, qt.IsNil)
 			c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://s.hcl"})
 			values, scoped := cfg.SchemaSourceVars("file://s.hcl")
-			c.Check(scoped, qt.Equals, true)
+			c.Check(scoped, qt.IsTrue)
 			c.Check(values, qt.DeepEquals, test.wantValues)
 		})
 	}
@@ -558,10 +558,10 @@ env "local" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://a.hcl", "file://b.hcl"})
 	appValues, appScoped := cfg.SchemaSourceVars("file://a.hcl")
-	c.Check(appScoped, qt.Equals, true)
+	c.Check(appScoped, qt.IsTrue)
 	c.Check(appValues, qt.DeepEquals, map[string]string{"tenant": "acme"})
 	otherValues, otherScoped := cfg.SchemaSourceVars("file://b.hcl")
-	c.Check(otherScoped, qt.Equals, true)
+	c.Check(otherScoped, qt.IsTrue)
 	c.Check(otherValues, qt.DeepEquals, map[string]string{"tenant": "zzz"})
 }
 
