@@ -235,6 +235,7 @@ do not import a parser to carry a declaration.
   decoders that turn them into facets and into options the common model
   carries, such as an index's WITH options;
 - the models it produces;
+- the frontend directives whose target-scoped declarations it reads;
 - the `ptah:schema:notdescribed` kinds it reads;
 - the coverage a Go annotation source holds about those models, given the
   not-described declarations of those kinds the source wrote.
@@ -243,7 +244,17 @@ A decoder reads one declaration at a time. An owner whose declarations refer
 to each other or to the file's tables, such as a consumer of a changefeed
 declared later in the file, sets `File` instead, and its `FileDecoder` reads
 every declaration of one file before `Finish` contributes what they declare
-together. `Tables.Owning` places a part on its table by the rule the frontend
+together. A `FileDecoder` that also implements `FileCoverage` narrows the
+owner's claim for its file once it has finished.
+
+An owner may also read declarations of the frontend's own directives that
+their target scope makes its own. A `TargetScope` names a directive, the
+dialects whose declarations the owner reads, and whether it also reads the
+declarations that name none: the row-security owner reads `rls:policy` and
+`rls:enable` without a scope or scoped to PostgreSQL-family targets.
+`Set.TargetOwner` is the one place that routes a declaration by its scope, and
+it refuses a scope that names one owner's targets beside others. The routed
+declaration carries its `Targets`, and a facet it contributes keeps them. `Tables.Owning` places a part on its table by the rule the frontend
 applies to owner facets. A `DeclarationError` names the attribute a refusal is
 about and, from `Finish`, the declaration it refuses; the frontend reports the
 refusal there as a `ptaherr.ParseError` that wraps the owner's error.

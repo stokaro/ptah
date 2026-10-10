@@ -13,7 +13,7 @@ import (
 func TestRLSPolicyGenerationInventarioReproduction(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseDir(noOwners, "../../integration/internal/fixtures/entities/017-rls-inventario-reproduction")
+	database, err := goschema.ParseDir(rowSecurityOwners, "../../integration/internal/fixtures/entities/017-rls-inventario-reproduction")
 	c.Assert(err, qt.IsNil)
 
 	// One policy and one enablement in each file reach the row-security owner.

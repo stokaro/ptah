@@ -17,14 +17,14 @@ import (
 
 func mustParseSource(c *qt.C, filename string, source any) schemamodel.Database {
 	c.Helper()
-	db, err := goschema.ParseSource(noOwners, filename, source)
+	db, err := goschema.ParseSource(rowSecurityOwners, filename, source)
 	c.Assert(err, qt.IsNil)
 	return db
 }
 
 func mustParseFile(c *qt.C, filename string) schemamodel.Database {
 	c.Helper()
-	db, err := goschema.ParseFile(noOwners, filename)
+	db, err := goschema.ParseFile(rowSecurityOwners, filename)
 	c.Assert(err, qt.IsNil)
 	return db
 }
@@ -157,7 +157,7 @@ type User struct {
 func TestParseSource_FieldIdentityAttributesRejectInvalidGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschema.ParseSource(noOwners, "schema.go", `
+	_, err := goschema.ParseSource(rowSecurityOwners, "schema.go", `
 package test
 
 //ptah:schema:table name="users"
@@ -191,7 +191,7 @@ type User struct {
 func TestParseSource_HappyPath_NearPrefixDirectiveIsOrdinaryComment(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseSource(noOwners, "schema.go", `
+	database, err := goschema.ParseSource(rowSecurityOwners, "schema.go", `
 package test
 
 //ptah:schema:tableau name="users"
@@ -205,7 +205,7 @@ type User struct{}
 func TestParseSource_HappyPath_IgnoresFileOnlyRLSOnField(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseSource(noOwners, "schema.go", `
+	database, err := goschema.ParseSource(rowSecurityOwners, "schema.go", `
 package test
 
 //ptah:schema:table name="users"
@@ -250,7 +250,7 @@ func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
 			if tt.field {
 				fieldAnnotation = tt.annotation
 			}
-			_, err := goschema.ParseSource(noOwners, "schema.go", `
+			_, err := goschema.ParseSource(rowSecurityOwners, "schema.go", `
 package test
 
 `+written+`
@@ -349,7 +349,7 @@ func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := goschema.ParseSource(noOwners, "schema_object_invalid.go", `
+			_, err := goschema.ParseSource(rowSecurityOwners, "schema_object_invalid.go", `
 package test
 `+tt.annotation+`
 type User struct{}
@@ -583,7 +583,7 @@ func TestParsePackageRecursively(t *testing.T) {
 	c := qt.New(t)
 
 	// Test parsing the stubs directory
-	result, err := goschema.ParseDir(noOwners, "../../internal/stubs")
+	result, err := goschema.ParseDir(rowSecurityOwners, "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Verify we found entities (includes all test files in stubs directory)
@@ -614,7 +614,7 @@ func TestParsePackageRecursively(t *testing.T) {
 func TestDependencyResolution(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir(noOwners, "../../internal/stubs")
+	result, err := goschema.ParseDir(rowSecurityOwners, "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Check that dependencies are correctly identified
@@ -631,7 +631,7 @@ func TestDependencyResolution(t *testing.T) {
 func TestDeduplication(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir(noOwners, "../../internal/stubs")
+	result, err := goschema.ParseDir(rowSecurityOwners, "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Verify no duplicate tables
@@ -673,7 +673,7 @@ func TestParsePackageRecursively_ErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := goschema.ParseDir(noOwners, tt.rootDir)
+			result, err := goschema.ParseDir(rowSecurityOwners, tt.rootDir)
 			c.Assert(err == nil, qt.Equals, !tt.expectError, qt.Commentf("Unexpected error value: %v", err))
 			c.Assert(result, tt.resultChecker, qt.Commentf("Unexpected result value: %v", result))
 		})
@@ -1054,7 +1054,7 @@ type Widget struct {
 			err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 			c.Assert(err, qt.IsNil)
 
-			_, err = goschema.ParseFile(noOwners, testFile)
+			_, err = goschema.ParseFile(rowSecurityOwners, testFile)
 			c.Assert(err, qt.ErrorMatches, ".*unknown annotation attribute.*")
 			c.Assert(err.Error(), qt.Contains, tt.mustContain)
 		})
@@ -1168,7 +1168,7 @@ type Post struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database, err := goschema.ParseDir(noOwners, tmpDir)
+	database, err := goschema.ParseDir(rowSecurityOwners, tmpDir)
 	c.Assert(err, qt.IsNil)
 
 	var authorField *schemamodel.Field

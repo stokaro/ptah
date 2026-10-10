@@ -50,7 +50,8 @@ func Common() Catalog {
 // set, and adds to each of the frontend's directives the attributes owners add
 // to it. It refuses an unselected set, an owner directive that takes the name
 // of one of the frontend's own, an owner attribute the directive declares
-// already, and owner attributes on a directive that is not the frontend's.
+// already, and owner attributes or target scopes on a directive that is not
+// the frontend's.
 func NewCatalog(set annotation.Set) (Catalog, error) {
 	if !set.Selected() {
 		return Catalog{}, annotation.ErrUnselected
@@ -58,6 +59,11 @@ func NewCatalog(set annotation.Set) (Catalog, error) {
 	for _, name := range set.AttributedDirectives() {
 		if !slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == name }) {
 			return Catalog{}, fmt.Errorf("an owner adds attributes to %q, which is not one of the frontend's own directives", name)
+		}
+	}
+	for _, name := range set.TargetScopedDirectives() {
+		if !slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == name }) {
+			return Catalog{}, fmt.Errorf("an owner reads scoped declarations of %q, which is not one of the frontend's own directives", name)
 		}
 	}
 	joined := make([]Directive, 0, len(directives))
