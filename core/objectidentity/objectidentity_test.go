@@ -143,6 +143,13 @@ func TestIdentity_EqualityHoldsWhereItShould(t *testing.T) {
 			left:  builder.Function("public.f", "( INT , TEXT )"),
 			right: builder.Function("public.f", "int,text"),
 		},
+		{
+			// A trailing parenthesis that closes a type modifier is part of the
+			// type, not the end of a wrapped list, so the bare list keeps it.
+			name:  "a wrapped list and the bare one ending in a type modifier",
+			left:  builder.Function("public.f", "(varchar(20))"),
+			right: builder.Function("public.f", "varchar(20)"),
+		},
 	}
 
 	for _, test := range tests {

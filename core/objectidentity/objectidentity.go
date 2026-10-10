@@ -654,7 +654,11 @@ func (b Builder) schemaPart(schema string) Part {
 // lower case, one space after each comma, no surrounding parentheses.
 func normalizeSignature(signature string) string {
 	trimmed := strings.TrimSpace(signature)
-	trimmed = strings.TrimSuffix(strings.TrimPrefix(trimmed, "("), ")")
+	// Only a pair that wraps the whole list is the list's own parentheses: a
+	// trailing one may close a type modifier, as in `n varchar(20)`.
+	if strings.HasPrefix(trimmed, "(") && strings.HasSuffix(trimmed, ")") {
+		trimmed = trimmed[1 : len(trimmed)-1]
+	}
 	if trimmed == "" {
 		return ""
 	}

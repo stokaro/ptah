@@ -49,18 +49,21 @@ func (v *fixtureOperation) CloneExtension() ast.ExtensionPayload {
 }
 
 // fixtureRuntime plans each change as one operation of phase in the
-// contribution of the owner the change names, with no dependency of its own,
-// so the window it joins and the effects of other owners decide where it
-// lands.
+// contribution of the owner the change names. ordered lists pairs of change
+// indexes the owner orders, the first before the second; nothing else orders
+// the steps, so the window each joins and the effects of other owners decide
+// where it lands.
 type fixtureRuntime struct {
 	*engine.Runtime
-	phase featureplan.Phase
+	phase   featureplan.Phase
+	ordered [][2]int
 }
 
 func (r fixtureRuntime) PlanFeatures(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
 	result := featureplan.Result{Complete: true}
 	contributions := make(map[string]*plangraph.Contribution[featureplan.Operation])
 	var owners []string
+	ids := make([]plangraph.StepID, len(request.Changes))
 	for i, record := range request.Changes {
 		change := record.Value.(*fixtureChange)
 		contribution := contributions[change.Owner]
@@ -70,12 +73,17 @@ func (r fixtureRuntime) PlanFeatures(_ context.Context, request featureplan.Requ
 			owners = append(owners, change.Owner)
 		}
 		id := plangraph.StepID{Owner: change.Owner, Name: fmt.Sprintf("%06d", i)}
+		ids[i] = id
 		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
 			Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &fixtureOperation{Owner: change.Owner, Action: change.Action}, Phase: r.phase},
 			Effects: []plangraph.Effect{{Subject: record.Subject, Action: change.Action}}, Transaction: plangraph.TransactionAllowed,
 			Impact: schemaext.Effect{Impact: schemaext.Additive, Reason: "test"},
 		})
 		result.Changes = append(result.Changes, featureplan.ChangePlan{Subject: record.Subject, Kind: record.Value.Kind(), Strategy: "test", Steps: []plangraph.StepID{id}})
+	}
+	for _, pair := range r.ordered {
+		owner := contributions[ids[pair[0]].Owner]
+		owner.Dependencies = append(owner.Dependencies, plangraph.Dependency{Before: ids[pair[0]], After: ids[pair[1]]})
 	}
 	for _, owner := range owners {
 		result.Contributions = append(result.Contributions, *contributions[owner])
@@ -120,8 +128,8 @@ func fixtureOrder(nodes []ast.Node) []string {
 // the tables. A dependent one names objects of every family and nothing
 // common reads it, so it is created after the views and triggers and before
 // the held-back column drops, indexes and grants, and dropped before any of
-// those removals. In both phases one object is created before another is
-// dropped.
+// those removals. In the default phase one object is created before another
+// is dropped; in the dependent phase the owner orders the two.
 func TestPlanner_PlacesFeatureOperations(t *testing.T) {
 	created := &difftypes.SchemaDiff{
 		FeatureChanges:    []schemaext.ChangeRecord{fixtureRecord("guarded", fixtureOwner, plangraph.Create)},
@@ -134,16 +142,17 @@ func TestPlanner_PlacesFeatureOperations(t *testing.T) {
 		ViewsRemoved:   difftypes.ViewChanges{{Name: "recent"}},
 		TablesRemoved:  difftypes.TableRemovals{{Name: "legacy"}},
 	}
-	// The drop is the first change, so only the windows order it after the
-	// creation.
+	// The drop is the first change, so in the default phase only the windows
+	// order it after the creation.
 	exchanged := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
 		fixtureRecord("old", fixtureOwner, plangraph.Drop), fixtureRecord("new", fixtureOwner, plangraph.Create),
 	}}
 	tests := []struct {
-		name  string
-		phase featureplan.Phase
-		diff  *difftypes.SchemaDiff
-		want  []string
+		name    string
+		phase   featureplan.Phase
+		diff    *difftypes.SchemaDiff
+		ordered [][2]int
+		want    []string
 	}{
 		{name: "a default creation", phase: featureplan.PhaseDefault, diff: created,
 			want: []string{fixtureOwner + " creates", "create view", "grant"}},
@@ -155,13 +164,15 @@ func TestPlanner_PlacesFeatureOperations(t *testing.T) {
 			want: []string{fixtureOwner + " drops", "drop view", "drop table"}},
 		{name: "a default exchange", phase: featureplan.PhaseDefault, diff: exchanged,
 			want: []string{fixtureOwner + " creates", fixtureOwner + " drops"}},
-		{name: "a dependent exchange", phase: featureplan.PhaseDependent, diff: exchanged,
+		{name: "a dependent exchange the owner drops first", phase: featureplan.PhaseDependent, diff: exchanged, ordered: [][2]int{{0, 1}},
+			want: []string{fixtureOwner + " drops", fixtureOwner + " creates"}},
+		{name: "a dependent exchange the owner creates first", phase: featureplan.PhaseDependent, diff: exchanged, ordered: [][2]int{{1, 0}},
 			want: []string{fixtureOwner + " creates", fixtureOwner + " drops"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			runtime := fixtureRuntime{Runtime: must.Must(builtin.New()), phase: test.phase}
+			runtime := fixtureRuntime{Runtime: must.Must(builtin.New()), phase: test.phase, ordered: test.ordered}
 
 			nodes, err := mssql.New().GenerateMigrationAST(context.Background(), runtime, test.diff)
 

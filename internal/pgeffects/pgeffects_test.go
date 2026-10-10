@@ -63,10 +63,13 @@ func TestSequence_ReadsEachStatementInItsHistory(t *testing.T) {
 
 // TestStatement_ReadsColumnDropsRoutinesAndRoles pins the effects an owner
 // orders a dependent object against: the column an ALTER TABLE drops, a routine
-// created or dropped, and a role created, changed or dropped. A routine keeps
-// the argument list the statement names, and a procedure is not a function.
+// created, replaced or dropped, and a role created, changed or dropped. A
+// routine is identified by its input argument types, so a creation that names
+// its parameters, gives one a default and declares an OUT argument, and the
+// catalog's identity a drop names, are one routine. A procedure is not a
+// function.
 func TestStatement_ReadsColumnDropsRoutinesAndRoles(t *testing.T) {
-	arguments := "integer"
+	arguments, catalogIdentity, none := "integer", "n character varying", ""
 	tests := []struct {
 		name string
 		node ast.Node
@@ -80,8 +83,16 @@ func TestStatement_ReadsColumnDropsRoutinesAndRoles(t *testing.T) {
 			want: []plangraph.Effect{effect(routineOf(objectidentity.KindProcedure, "app.refresh", ""), plangraph.Create)}},
 		{name: "a function dropped with its arguments", node: &ast.DropFunctionNode{Name: "app.tenant", Parameters: &arguments},
 			want: []plangraph.Effect{effect(builder.Function("app.tenant", "integer"), plangraph.Drop)}},
-		{name: "a function dropped by name", node: &ast.DropFunctionNode{Name: "app.tenant"},
+		{name: "a function created with names, a default, a modifier and an OUT argument",
+			node: &ast.CreateFunctionNode{Name: "app.tenant", Parameters: "n varchar(20) DEFAULT 'x', OUT r int"},
+			want: []plangraph.Effect{effect(builder.Function("app.tenant", "character varying"), plangraph.Create)}},
+		{name: "the same function dropped by the catalog's identity", node: &ast.DropFunctionNode{Name: "app.tenant", Parameters: &catalogIdentity},
+			want: []plangraph.Effect{effect(builder.Function("app.tenant", "character varying"), plangraph.Drop)}},
+		{name: "a function replaced", node: &ast.CreateFunctionNode{Name: "app.tenant", Parameters: "integer", Replace: true},
+			want: []plangraph.Effect{effect(builder.Function("app.tenant", "integer"), plangraph.Alter)}},
+		{name: "the zero-argument function dropped", node: &ast.DropFunctionNode{Name: "app.tenant", Parameters: &none},
 			want: []plangraph.Effect{effect(builder.Function("app.tenant", ""), plangraph.Drop)}},
+		{name: "a function dropped by name alone", node: &ast.DropFunctionNode{Name: "app.tenant"}},
 		{name: "a role created", node: &ast.CreateRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Create)}},
 		{name: "a role changed", node: &ast.AlterRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Alter)}},
 		{name: "a role dropped", node: &ast.DropRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Drop)}},

@@ -98,24 +98,26 @@ type Operation struct {
 	Phase   Phase
 }
 
-// Phase selects where a host places a feature operation among its common
-// steps. An owner orders an operation further through dependencies on the
-// common steps whose effects it can identify; the phase is the window those
-// dependencies move within. In either phase a host places the operations that
-// create or change objects before the ones that drop them, so an object
-// replaced under another name is never absent while the plan runs.
+// Phase selects the host window a feature operation joins. A host defines the
+// windows it has and refuses a phase it has none for, so an operation is never
+// placed where its owner did not ask. An owner orders an operation further
+// through dependencies on the common steps whose effects it can identify; the
+// phase is the window those dependencies move within.
 type Phase string
 
 const (
-	// PhaseDefault places an object beside the relations it reads: created
-	// after the tables and columns it may read and before the views that may
-	// read it, and dropped after those views and before the tables.
+	// PhaseDefault is a host's ordinary window for feature operations, which
+	// every host accepts. Where it lies, and whether it orders creations
+	// against drops, is the host's.
 	PhaseDefault Phase = ""
-	// PhaseDependent places an object that depends on objects of every common
-	// family -- relations, columns, routines and roles -- and that no common
-	// object reads, such as a row-security policy: created after the host's
-	// creations and changes of those families, and dropped before the host
-	// removes any of them.
+	// PhaseDependent is for an operation on an object that depends on objects
+	// of every common family -- relations, columns, routines and roles -- and
+	// that no common object reads, such as a row-security policy. A host that
+	// accepts it places the operation after its creations and changes of those
+	// families and before its removals, in one window that creations and drops
+	// share, and the owner orders its own steps there. The migration planners
+	// of the PostgreSQL family and of SQL Server accept it; every other host
+	// refuses it, a whole-schema render included.
 	PhaseDependent Phase = "dependent"
 )
 

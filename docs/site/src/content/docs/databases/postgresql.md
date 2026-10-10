@@ -1132,14 +1132,28 @@ A migration creates a policy after the views, the role changes and the
 enablement it may name. It drops a policy your schema no longer declares after
 the new policies are created, so renaming a policy never leaves the table with
 neither one, and before the columns, constraints, views, functions and roles
-the migration drops. Two changes run before that drop, and PostgreSQL refuses
-both while a policy uses the object they change: `ALTER COLUMN ... TYPE` on a
-column the policy names (`cannot alter type of a column used in a policy
-definition`), and a function change the server cannot make in place, which is a
-drop and a create (see [Function changes](#function-changes)). A migration that
-combines either one with removing or changing that policy stops at that
-statement and changes nothing. Change the policy in one migration and the
-column or the function in the next. Measured on PostgreSQL 17.
+the migration drops.
+
+Some changes run before that drop, and PostgreSQL refuses them while a policy
+uses the object they change:
+
+- `ALTER COLUMN ... TYPE` on a column the policy names (`cannot alter type of
+  a column used in a policy definition`);
+- a function change the server cannot make in place, which is a drop and a
+  create (see [Function changes](#function-changes));
+- a domain or composite type that is dropped and created again (`cannot drop
+  type ... because other objects depend on it`).
+
+A migration that combines one of them with removing or changing that policy
+stops at that statement. Inside a transaction, nothing the migration holds is
+applied; a migration that runs without one keeps the statements that ran
+before it. Change the policy in one migration and the column, the function or
+the type in the next. Measured on PostgreSQL 17.
+
+A view that has to be dropped and created again is dropped with `CASCADE`,
+which removes a policy that reads the view, and the migration does not create
+that policy again
+([stokaro/ptah#4305](https://github.com/stokaro/ptah/issues/4305)).
 
 Both ways of taking the protection away are lint findings at error severity:
 `DISABLE ROW LEVEL SECURITY` is `DS109` and `NO FORCE ROW LEVEL SECURITY` is

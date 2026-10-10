@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"testing"
@@ -8,13 +9,16 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -23,47 +27,67 @@ import (
 
 const phaseOwner = "example.org/phase"
 
-// phaseChange asks the phase owner to create or to drop one object.
-type phaseChange struct{ Drop bool }
+// secondOwner is another owner, which reads an object the phase owner creates.
+const secondOwner = "example.org/second"
+
+// phaseChange asks an owner to create, drop or read one object; an empty
+// Action creates it. An empty Owner is the phase owner.
+type phaseChange struct {
+	Action plangraph.Action
+	Owner  string
+}
 
 func (*phaseChange) Kind() schemaext.Kind { return phaseOwner + "/change" }
 func (v *phaseChange) CloneChange() schemaext.ChangeValue {
-	return &phaseChange{Drop: v.Drop}
+	return &phaseChange{Action: v.Action, Owner: v.Owner}
 }
 
-// phaseOperation is the statement the phase owner contributes.
-type phaseOperation struct{ Drop bool }
+// phaseOperation is the statement an owner contributes.
+type phaseOperation struct {
+	Action plangraph.Action
+	Second bool
+}
 
 func (*phaseOperation) Kind() schemaext.Kind { return phaseOwner + "/operation" }
 func (v *phaseOperation) CloneExtension() ast.ExtensionPayload {
-	return &phaseOperation{Drop: v.Drop}
+	return &phaseOperation{Action: v.Action, Second: v.Second}
 }
 
-// phaseRuntime plans every change as one operation of phase, with no
-// dependency of its own, so the window it joins decides where it lands.
+// phaseRuntime plans every change as one operation of phase, in the
+// contribution of the change's owner. ordered lists pairs of change indexes the
+// owner orders, the first before the second; nothing else orders the steps,
+// so the windows and the lifecycle decide where they land.
 type phaseRuntime struct {
 	*engine.Runtime
-	phase featureplan.Phase
+	phase   featureplan.Phase
+	ordered [][2]int
 }
 
 func (r phaseRuntime) PlanFeatures(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
 	result := featureplan.Result{Complete: true}
-	contribution := plangraph.Contribution[featureplan.Operation]{Owner: phaseOwner}
+	contributions := map[string]*plangraph.Contribution[featureplan.Operation]{
+		phaseOwner: {Owner: phaseOwner}, secondOwner: {Owner: secondOwner},
+	}
+	ids := make([]plangraph.StepID, len(request.Changes))
 	for i, change := range request.Changes {
-		drop := change.Value.(*phaseChange).Drop
-		action := plangraph.Create
-		if drop {
-			action = plangraph.Drop
-		}
-		id := plangraph.StepID{Owner: phaseOwner, Name: fmt.Sprintf("%06d", i)}
-		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
-			Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &phaseOperation{Drop: drop}, Phase: r.phase},
+		value := change.Value.(*phaseChange)
+		owner := cmp.Or(value.Owner, phaseOwner)
+		action := cmp.Or(value.Action, plangraph.Create)
+		ids[i] = plangraph.StepID{Owner: owner, Name: fmt.Sprintf("%06d", i)}
+		contributions[owner].Steps = append(contributions[owner].Steps, plangraph.Step[featureplan.Operation]{ID: ids[i],
+			Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &phaseOperation{Action: action, Second: owner == secondOwner}, Phase: r.phase},
 			Effects: []plangraph.Effect{{Subject: change.Subject, Action: action}}, Transaction: plangraph.TransactionAllowed,
 			Impact: schemaext.Effect{Impact: schemaext.Additive, Reason: "test"},
 		})
-		result.Changes = append(result.Changes, featureplan.ChangePlan{Subject: change.Subject, Kind: change.Value.Kind(), Strategy: "test", Steps: []plangraph.StepID{id}})
+		result.Changes = append(result.Changes, featureplan.ChangePlan{Subject: change.Subject, Kind: change.Value.Kind(), Strategy: "test", Steps: []plangraph.StepID{ids[i]}})
 	}
-	result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
+	for _, pair := range r.ordered {
+		contributions[ids[pair[0]].Owner].Dependencies = append(contributions[ids[pair[0]].Owner].Dependencies,
+			plangraph.Dependency{Before: ids[pair[0]], After: ids[pair[1]]})
+	}
+	for _, owner := range []string{phaseOwner, secondOwner} {
+		result.Contributions = append(result.Contributions, *contributions[owner])
+	}
 	return result, nil
 }
 
@@ -93,6 +117,8 @@ func phaseOrder(nodes []ast.Node) []string {
 			order = append(order, "drop function")
 		case *ast.DropRoleNode:
 			order = append(order, "drop role")
+		case *ast.DropTableNode:
+			order = append(order, "drop table")
 		case *ast.AlterTableNode:
 			for _, operation := range typed.Operations {
 				switch operation.(type) {
@@ -104,7 +130,8 @@ func phaseOrder(nodes []ast.Node) []string {
 			}
 		case *ast.ExtensionStatement:
 			if operation, ok := typed.Payload.(*phaseOperation); ok {
-				order = append(order, map[bool]string{false: "owner creates", true: "owner drops"}[operation.Drop])
+				order = append(order, map[bool]string{false: "owner", true: "second owner"}[operation.Second]+
+					map[plangraph.Action]string{plangraph.Create: " creates", plangraph.Drop: " drops", plangraph.Read: " reads"}[operation.Action])
 			}
 		}
 	}
@@ -117,12 +144,8 @@ func phaseOrder(nodes []ast.Node) []string {
 // dependent one names objects of every family and nothing common reads it, so
 // it is created after the views, the role changes and the row-security
 // switches, before the grants, and dropped before row security is disabled
-// and before any column, constraint, view, routine or role is.
-//
-// In both phases an object is created before another is dropped, so a
-// replacement under a new name never leaves the table without either: a
-// restrictive policy exchanged for another keeps hiding the rows while a plan
-// runs without a transaction.
+// and before any column, constraint, view, routine or role is. In the default
+// phase an object is created before another is dropped.
 func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 	created := &difftypes.SchemaDiff{
 		FeatureChanges:    []schemaext.ChangeRecord{{Subject: phaseSubject("guarded"), Value: &phaseChange{}}},
@@ -134,7 +157,7 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 		GrantsAdded:           []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"}},
 	}
 	dropped := &difftypes.SchemaDiff{
-		FeatureChanges:          []schemaext.ChangeRecord{{Subject: phaseSubject("guarded"), Value: &phaseChange{Drop: true}}},
+		FeatureChanges:          []schemaext.ChangeRecord{{Subject: phaseSubject("guarded"), Value: &phaseChange{Action: plangraph.Drop}}},
 		ViewsRemoved:            difftypes.ViewChanges{{Name: "recent"}},
 		TablesModified:          []difftypes.TableDiff{{TableName: "orders", ColumnsRemoved: difftypes.ColumnChanges{{Name: "tenant"}}}},
 		ConstraintsRemoved:      difftypes.ConstraintRemovals{{Name: "orders_tenant_check", TableName: "orders", Type: "CHECK"}},
@@ -144,9 +167,7 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 	}
 	// The drop is the first change, so only the windows order it after the
 	// creation.
-	exchanged := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
-		{Subject: phaseSubject("old"), Value: &phaseChange{Drop: true}}, {Subject: phaseSubject("new"), Value: &phaseChange{}},
-	}}
+	exchanged := exchange("old", "new")
 	tests := []struct {
 		name  string
 		phase featureplan.Phase
@@ -162,7 +183,6 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 		{name: "a dependent removal", phase: featureplan.PhaseDependent, diff: dropped,
 			want: []string{"owner drops", "disable row security", "drop column", "drop constraint", "drop view", "drop function", "drop role"}},
 		{name: "a default exchange", phase: featureplan.PhaseDefault, diff: exchanged, want: []string{"owner creates", "owner drops"}},
-		{name: "a dependent exchange", phase: featureplan.PhaseDependent, diff: exchanged, want: []string{"owner creates", "owner drops"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -175,4 +195,112 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 			c.Assert(phaseOrder(nodes), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// exchange drops the object named dropped and creates the one named created,
+// the drop first.
+func exchange(dropped, created string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+		{Subject: phaseSubject(dropped), Value: &phaseChange{Action: plangraph.Drop}},
+		{Subject: phaseSubject(created), Value: &phaseChange{}},
+	}}
+}
+
+// TestPlanner_LetsTheOwnerOrderDependentOperations pins the dependent window:
+// creations and drops share it, so the order between them is the owner's. A
+// policy replaced under its own name is dropped first, and whether a
+// replacement under a new name drops or creates first depends on what the
+// policy admits, which only its owner knows. An object one owner creates and
+// another reads is ordered by its lifecycle, the creation first, though the
+// reader is listed first.
+func TestPlanner_LetsTheOwnerOrderDependentOperations(t *testing.T) {
+	tests := []struct {
+		name    string
+		diff    *difftypes.SchemaDiff
+		ordered [][2]int
+		want    []string
+	}{
+		{name: "the owner drops first", diff: exchange("old", "new"), ordered: [][2]int{{0, 1}}, want: []string{"owner drops", "owner creates"}},
+		{name: "the owner creates first", diff: exchange("old", "new"), ordered: [][2]int{{1, 0}}, want: []string{"owner creates", "owner drops"}},
+		{name: "a replacement under one name", diff: exchange("guarded", "guarded"), ordered: [][2]int{{0, 1}},
+			want: []string{"owner drops", "owner creates"}},
+		{name: "an object another owner reads", diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+			{Subject: phaseSubject("guarded"), Value: &phaseChange{Action: plangraph.Read, Owner: secondOwner}},
+			{Subject: phaseSubject("guarded"), Value: &phaseChange{}},
+		}}, want: []string{"owner creates", "second owner reads"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := phaseRuntime{Runtime: must.Must(builtin.New()), phase: featureplan.PhaseDependent, ordered: test.ordered}
+
+			nodes, err := postgres.New().GenerateMigrationAST(context.Background(), runtime, test.diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(phaseOrder(nodes), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestPlanner_RefusesSplitReplacements pins the replacements no window can
+// order: one split over the two default windows, which would create the
+// object before the drop it replaces, and one in the dependent window that its
+// owner left unordered.
+func TestPlanner_RefusesSplitReplacements(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase featureplan.Phase
+		want  string
+	}{
+		{name: "in the default phase", phase: featureplan.PhaseDefault, want: `.*creates .*guarded, which step example\.org/phase/000000 drops; a replacement is one step.*`},
+		{name: "unordered in the dependent phase", phase: featureplan.PhaseDependent, want: `.*unordered effects on .*guarded.*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := phaseRuntime{Runtime: must.Must(builtin.New()), phase: test.phase}
+
+			nodes, err := postgres.New().GenerateMigrationAST(context.Background(), runtime, exchange("guarded", "guarded"))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// removalRuntime accounts for every removed table it is asked about with one
+// dependent-phase operation that drops an object of the phase owner.
+type removalRuntime struct{ *engine.Runtime }
+
+func (removalRuntime) PlanFeatures(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
+	result := featureplan.Result{Complete: true}
+	contribution := plangraph.Contribution[featureplan.Operation]{Owner: phaseOwner}
+	for i, table := range request.Tables {
+		id := plangraph.StepID{Owner: phaseOwner, Name: fmt.Sprintf("table-%06d", i)}
+		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
+			Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &phaseOperation{Action: plangraph.Drop}, Phase: featureplan.PhaseDependent},
+			Effects: []plangraph.Effect{{Subject: phaseSubject("guarded"), Action: plangraph.Drop}}, Transaction: plangraph.TransactionAllowed,
+			Impact: schemaext.Effect{Impact: schemaext.Behavioral, Reason: "test"},
+		})
+		result.Parents = append(result.Parents, featureplan.ParentPlan{Subject: table.Subject, Kind: tsschema.HypertableKind,
+			Action: table.Action, Strategy: "test", Steps: []plangraph.StepID{id}})
+	}
+	result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
+	return result, nil
+}
+
+// TestPlanner_PlacesADependentOperationOfARemovedTable pins the removed-table
+// path, which places an owner's operations at one position rather than in a
+// window: a dependent operation is accepted there, ahead of the table's drop.
+func TestPlanner_PlacesADependentOperationOfARemovedTable(t *testing.T) {
+	c := qt.New(t)
+	removal := difftypes.TableRemoval{Name: "orders"}
+	removal.Current.Table = catalog.Table{Name: "orders", Facets: must.Must(schemaext.NewFacets(&tsschema.ObservedHypertable{Column: "ts"}))}
+
+	nodes, err := postgres.New().GenerateMigrationAST(context.Background(), removalRuntime{Runtime: must.Must(builtin.New())},
+		&difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{removal}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"owner drops", "drop table"})
 }

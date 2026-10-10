@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -327,9 +328,9 @@ func TestPlanningKeepsValidationInputsSeparateFromTheService(t *testing.T) {
 func TestPlanningKeepsTheOperationPhase(t *testing.T) {
 	c := qt.New(t)
 	runtime := mustRuntime(c, planningProvider(planningFunc(func(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
-		reply, err := plannedFixture(ctx, request)
+		reply := must.Must(plannedFixture(ctx, request))
 		reply.Contributions[0].Steps[0].Payload.Phase = featureplan.PhaseDependent
-		return reply, err
+		return reply, nil
 	})))
 
 	result, err := runtime.PlanFeatures(t.Context(), planningRequest())
