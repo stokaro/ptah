@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
 
@@ -132,12 +133,24 @@ func (s Synonym) Ref() objectidentity.ID {
 	return objectidentity.ID{Kind: objectidentity.Kind(Kind), Schema: part(s.Schema), Name: part(s.Name)}
 }
 
-// SameTarget reports whether two targets name the same object: the same
-// parts in the same positions, compared without their quoting and without
-// case. SQL Server records a target with its own bracket quoting, so a
-// declared `dbo.orders` and a stored `[dbo].[orders]` are one target.
-func SameTarget(a, b string) bool {
-	return fold(strings.Join(sliceOf(TargetParts(a)), ".")) == fold(strings.Join(sliceOf(TargetParts(b)), "."))
+// SameTarget reports whether two targets name the same object under a
+// connection's identifier rules: the same parts in the same positions,
+// compared without their quoting and without case, with an absent schema part
+// read as the default schema when the target names no database or server. SQL
+// Server records a target with its own bracket quoting, so a declared
+// `dbo.orders` and a stored `[dbo].[orders]` are one target, and Oracle records
+// the owner a declaration may leave out, so a declared `orders` and a stored
+// `APP.ORDERS` are one target for a connection whose default schema is APP.
+func SameTarget(semantics identifier.Semantics, a, b string) bool {
+	return targetKey(semantics, a) == targetKey(semantics, b)
+}
+
+func targetKey(semantics identifier.Semantics, target string) string {
+	parts := TargetParts(target)
+	if parts[0] == "" && parts[1] == "" && parts[2] == "" {
+		parts[2] = semantics.DefaultSchema
+	}
+	return fold(strings.Join(parts[:], "."))
 }
 
 // TargetParts splits a target into its server, database, schema and object
@@ -176,8 +189,6 @@ func DeclaredTarget(parts [4]string) string {
 	}
 	return strings.Join(written, ".")
 }
-
-func sliceOf(parts [4]string) []string { return parts[:] }
 
 // splitQualified splits a name on the dots outside a bracket, double-quote or
 // backtick quoted part. Each part is a slice of the input, quotes included.

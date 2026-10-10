@@ -122,6 +122,10 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	schema.MatViews = matViews
 
+	if err := r.readSynonyms(ctx, schema); err != nil {
+		return nil, fmt.Errorf("oracle: read synonyms: %w", err)
+	}
+
 	if err := r.readRolesInto(ctx, schema); err != nil {
 		return nil, fmt.Errorf("oracle: %w", err)
 	}

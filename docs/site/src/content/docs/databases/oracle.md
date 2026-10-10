@@ -94,6 +94,18 @@ type when it produces a different one. Replacing a type a column uses answers
 `ORA-02303` and changes nothing — the server declining to leave that column
 naming a shape it no longer has, which is kept rather than forced.
 
+## Synonyms
+
+A synonym is declared with `//ptah:schema:synonym` or the HCL `synonym` block,
+as on SQL Server, and the same declaration renders on both targets. Ptah
+writes `CREATE SYNONYM`, reads the schema's own synonyms back from
+`ALL_SYNONYMS`, and plans a changed target as a drop and a create. Oracle
+records the target's owner even when the statement left it out, so a declared
+`orders` and a stored `APP.ORDERS` are one target for a connection whose schema
+is `APP`. A synonym through a database link is left as it is: a declaration has
+no place for the link, so it is neither dropped nor declared again. Public
+synonyms belong to `PUBLIC` and are not read.
+
 ## Keys that defer their check
 
 A primary key and a `UNIQUE` can be `DEFERRABLE`, with `INITIALLY DEFERRED`

@@ -57,27 +57,49 @@ func TestTargetParts_HappyPath(t *testing.T) {
 }
 
 // TestSameTarget compares targets without their quoting and without case,
-// part by part: a declared `dbo.orders` and a stored `[dbo].[orders]` are one
-// target, and a target in another database is not the local one of the same
-// name.
+// part by part, with an absent schema read as the connection's default: a
+// declared `dbo.orders` and a stored `[dbo].[orders]` are one target, an
+// Oracle declaration `orders` and the stored `APP.ORDERS` are one target for a
+// connection whose default schema is APP, and a target in another database is
+// not the local one of the same name.
 func TestSameTarget(t *testing.T) {
+	oracle := identifier.ForDialect(platform.Oracle)
+	oracle.DefaultSchema = "APP"
 	tests := []struct {
-		name string
-		a, b string
-		want bool
+		name      string
+		semantics identifier.Semantics
+		a, b      string
+		want      bool
 	}{
-		{name: "the server's bracket quoting", a: "dbo.orders", b: "[dbo].[orders]", want: true},
-		{name: "letter case", a: "DBO.Orders", b: "[dbo].[orders]", want: true},
-		{name: "an empty middle part", a: "remote..dbo.orders", b: "[remote]..[dbo].[orders]", want: true},
-		{name: "another object", a: "dbo.orders", b: "[dbo].[invoices]", want: false},
-		{name: "another database", a: "other.dbo.orders", b: "[dbo].[orders]", want: false},
+		{name: "the server's bracket quoting", semantics: identifier.ForDialect(platform.SQLServer), a: "dbo.orders", b: "[dbo].[orders]", want: true},
+		{name: "letter case", semantics: identifier.ForDialect(platform.SQLServer), a: "DBO.Orders", b: "[dbo].[orders]", want: true},
+		{name: "an empty middle part", semantics: identifier.ForDialect(platform.SQLServer), a: "remote..dbo.orders", b: "[remote]..[dbo].[orders]", want: true},
+		{name: "the default schema left out", semantics: oracle, a: "orders", b: "APP.ORDERS", want: true},
+		{name: "another schema left out", semantics: oracle, a: "orders", b: "SALES.ORDERS", want: false},
+		{name: "another object", semantics: identifier.ForDialect(platform.SQLServer), a: "dbo.orders", b: "[dbo].[invoices]", want: false},
+		{name: "another database", semantics: identifier.ForDialect(platform.SQLServer), a: "other.dbo.orders", b: "[dbo].[orders]", want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(synonym.SameTarget(test.a, test.b), qt.Equals, test.want)
+			c.Assert(synonym.SameTarget(test.semantics, test.a, test.b), qt.Equals, test.want)
 		})
 	}
+}
+
+// TestCompareService_LeavesAnUnrepresentableSynonymAlone declines a synonym
+// the read found and could not describe, such as one through an Oracle
+// database link: a declaration of the same alias is not added, since the add
+// would fail on the synonym the database holds.
+func TestCompareService_LeavesAnUnrepresentableSynonymAlone(t *testing.T) {
+	c := qt.New(t)
+	remote := synonym.Synonym{Schema: "dbo", Name: "remote", Target: "sales.orders"}
+	current := schemaext.ObjectState{Coverage: must.Must(synonym.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: synonym.Kind, Subject: remote.Ref(),
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "a database link"}}}))}
+	desired := schemaext.ObjectState{Objects: objects(c, declared(remote)), Coverage: complete(schemaext.Desired)}
+
+	c.Assert(compare(c, desired, current).Changes, qt.HasLen, 0)
 }
 
 // TestValidate_FailurePath refuses a synonym no target can hold.

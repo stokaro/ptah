@@ -57,6 +57,7 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	unrepresentable := unrepresentableKeys(request.Identifiers, request.Current.Coverage)
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
 	keys := make([]objectidentity.Key, 0, len(desired)+len(current))
 	for key := range desired {
@@ -77,6 +78,9 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 		wanted, held := desired[key], current[key]
 		declared, observed := wanted.value, held.value
 		switch {
+		case observed == nil && unrepresentable[key]:
+			// The read found the alias and could not describe it, so an add
+			// would fail on the synonym the database holds.
 		case observed == nil:
 			result.Changes = append(result.Changes, record(wanted.ref, nil, declared))
 		case declared == nil && !removable(request.Desired.Coverage, held.ref):
@@ -86,7 +90,7 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 			}
 		case declared == nil:
 			result.Changes = append(result.Changes, record(held.ref, observed, nil))
-		case !SameTarget(declared.Target, observed.Target):
+		case !SameTarget(request.Identifiers, declared.Target, observed.Target):
 			result.Changes = append(result.Changes, record(wanted.ref, observed, declared))
 		}
 	}
@@ -102,6 +106,26 @@ func label(desired map[objectidentity.Key]entry[*DesiredSynonym], current map[ob
 
 func record(subject objectidentity.ID, before *ObservedSynonym, after *DesiredSynonym) schemaext.ChangeRecord {
 	return schemaext.ChangeRecord{Subject: subject, Value: (&Change{Before: before, After: after}).Copy()}
+}
+
+// identityKey is a synonym's alias under the builder's identifier rules.
+func identityKey(builder objectidentity.Builder, ref objectidentity.ID) objectidentity.Key {
+	key := builder.TablePartsVerbatim(ref.Schema.Source, ref.Name.Source)
+	key.Kind = ref.Kind
+	return key.Key()
+}
+
+// unrepresentableKeys is every synonym a read found and could not describe,
+// such as one through an Oracle database link, keyed like [collect] keys it.
+func unrepresentableKeys(semantics identifier.Semantics, coverage schemaext.Coverage) map[objectidentity.Key]bool {
+	builder := objectidentity.NewBuilder(semantics)
+	keys := make(map[objectidentity.Key]bool)
+	for _, record := range coverage.SubjectRecords() {
+		if record.Kind == Kind && record.Knowledge.State == schemaext.Unrepresentable {
+			keys[identityKey(builder, record.Subject)] = true
+		}
+	}
+	return keys
 }
 
 // removable reports whether the desired source knows the synonym's absence:
@@ -144,9 +168,7 @@ func collect[V interface {
 		if !ok || value == zero {
 			return nil, fmt.Errorf("%w: unexpected synonym value %T", schemaext.ErrInvalidValue, object.Value)
 		}
-		key := builder.TablePartsVerbatim(object.Ref.Schema.Source, object.Ref.Name.Source)
-		key.Kind = object.Ref.Kind
-		values[key.Key()] = entry[V]{ref: object.Ref, value: value}
+		values[identityKey(builder, object.Ref)] = entry[V]{ref: object.Ref, value: value}
 	}
 	return values, nil
 }
