@@ -91,12 +91,6 @@
       "count": 3
     },
     {
-      "path": "core/goschema/rls_robust_parsing_test.go",
-      "function": "TestRLSPolicyParsingRobustness",
-      "kind": "if",
-      "count": 2
-    },
-    {
       "path": "core/goschema/walker_test.go",
       "function": "TestParseDir_Deduplication",
       "kind": "if",
