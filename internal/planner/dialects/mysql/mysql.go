@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
+	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
@@ -1357,7 +1358,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseFeatureChanges(p.targetDialect(), diff); err != nil {
+	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseYDBObjects(p.targetDialect(), diff); err != nil {
@@ -1468,6 +1469,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	}
 
 	result = append(result, fkPlan.readds...)
+	windows := featurehost.Windows{Creation: len(result)}
 
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff)
@@ -1485,7 +1487,11 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// a new body uses exist and before the columns an old body reads go away.
 	result = p.planTriggers(result, diff)
 
-	// 4.7. Drop the columns step 4 held back.
+	// 4.7. Drop the columns step 4 held back. A dependent feature object is
+	// created and dropped just before them: after the tables, columns,
+	// routines, views and triggers it may name are created or changed, and
+	// before any column, view, table or routine it names is removed.
+	windows.DependentCreation, windows.DependentRemoval = len(result), len(result)
 	result = append(result, columnDrops...)
 
 	// 5. Add new indexes
@@ -1539,6 +1545,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeRLS(result, diff)
 
 	// 7. Remove tables (dangerous!)
+	windows.Removal = len(result)
 	result = p.removeTables(result, diff)
 
 	// 7a. Remove sequences after the tables whose defaults drew from them.
@@ -1559,7 +1566,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// every object in them and every key into them is gone.
 	result = p.removeServerSchemas(result, diff)
 
-	return result, nil
+	return p.scheduleFeatures(ctx, runtime, diff, result, windows)
 }
 
 // rejectUniqueIncludeConstraints refuses a covering UNIQUE this plan would have
