@@ -96,6 +96,14 @@ type Report struct {
 // enforcement with it, or a column modification the server refuses to cast
 // while rows hold values. Read the findings as reasons to look, not as a
 // partition whose counts sum to a statement total.
+//
+// A feature change that cannot be snapshotted, an invalid access assessment
+// included, is counted as Destructive rather than dropped, under its kind when
+// it names a valid one. Encoding the same diff through the owners' codecs
+// refuses that change instead, because a document must not carry an assessment
+// its owner did not establish. Both fail closed. Comparison snapshots every
+// change through its owner's codec, so only a diff assembled by hand reaches
+// either path.
 func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	if diff == nil {
 		return nil

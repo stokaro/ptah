@@ -8,14 +8,20 @@ import "ptah.run/core/schemaext"
 //
 // The access assessment is reported under its own category, so a drift report
 // says "this widens access" apart from "this drops an object". An assessment
-// the classifier cannot trust is reported as unknown.
+// the classifier cannot trust is reported as unknown. A change that cannot be
+// snapshotted is still counted under its kind when it names a valid one, and
+// without a kind only when it does not.
 func appendFeatureFindings(findings *[]Finding, changes []schemaext.ChangeRecord) {
 	for _, change := range changes {
 		snapshot, err := change.Clone()
 		if err != nil {
-			add(findings, "feature_changes", 1, Destructive)
+			suffix := ""
+			if schemaext.ValidatePayload(change.Value) == nil {
+				suffix = ":" + string(change.Value.Kind())
+			}
+			add(findings, "feature_changes"+suffix, 1, Destructive)
 			if _, declares := change.Value.(schemaext.AccessEffectSource); declares {
-				add(findings, accessCategory(schemaext.AccessUnknown), 1, Destructive)
+				add(findings, accessCategory(schemaext.AccessUnknown)+suffix, 1, Destructive)
 			}
 			continue
 		}

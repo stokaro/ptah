@@ -400,8 +400,8 @@ func TestClassifySchemaDiff_ReportsAccessEffectsApartFromLifecycle(t *testing.T)
 		{
 			name: "not established",
 			want: []safety.Finding{
-				{Category: "feature_access_unknown", Count: 2, Severity: safety.Destructive},
-				{Category: "feature_changes", Count: 2, Severity: safety.Destructive},
+				{Category: "feature_access_unknown:example.org/access-change", Count: 2, Severity: safety.Destructive},
+				{Category: "feature_changes:example.org/access-change", Count: 2, Severity: safety.Destructive},
 			},
 		},
 	}
@@ -417,6 +417,19 @@ func TestClassifySchemaDiff_ReportsAccessEffectsApartFromLifecycle(t *testing.T)
 			c.Assert(safety.ClassifySchemaDiff(diff), qt.DeepEquals, tc.want)
 		})
 	}
+}
+
+// A change that names no valid kind has no kind to be counted under; it is
+// still counted, and its access claim still reads as unknown.
+func TestClassifySchemaDiff_CountsAChangeWithoutAKindApart(t *testing.T) {
+	c := qt.New(t)
+	ref := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts("example.org/access-change", "app", "p")
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ref, Value: (*accessChange)(nil)}}}
+
+	c.Assert(safety.ClassifySchemaDiff(diff), qt.DeepEquals, []safety.Finding{
+		{Category: "feature_access_unknown", Count: 1, Severity: safety.Destructive},
+		{Category: "feature_changes", Count: 1, Severity: safety.Destructive},
+	})
 }
 
 func TestRenderers_ShowTheAccessAssessment(t *testing.T) {
