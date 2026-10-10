@@ -622,3 +622,11 @@ v0.13.0 ptah.run/migration/schemadiff/difftypes
 # clean-break policy.
 v0.13.0 ptah.run/catalog
 v0.13.0 ptah.run/core/schemamodel
+
+# #4140 takes the path of the database a description was read from out of the
+# schema model: it is where the read was made, not part of the schema.
+# schemamodel.Database.DatabasePath is removed; a render of a read takes the
+# path as renderer.SchemaRequest.DatabasePath. This changes the Go API; pre-v1,
+# so no compatibility is owed under the authorized #4140/#4204 clean-break
+# policy.
+v0.13.0 ptah.run/core/schemamodel

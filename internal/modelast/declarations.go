@@ -28,6 +28,11 @@ type Lowering struct {
 	Runtime        featureplan.DeclarationRuntime
 	Capabilities   capability.Capabilities
 	CommonMetadata func(context.Context, []ast.Node) ([]featureplan.CommonStep, error)
+	// DatabasePath is the absolute path of the database a lowered description
+	// was read from, such as /local, and empty for a declaration. On YDB a
+	// grant on the database itself, and on its older lines one on an object at
+	// the database root, is named by its absolute path when it is known.
+	DatabasePath string
 }
 
 // DeclarationServiceError identifies a failed owner call. Schema adapters must
@@ -47,7 +52,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		return err
 	}
 	if len(objects) == 0 {
-		return walkCommonDatabase(database, target, visit)
+		return walkCommonDatabase(database, target, lowering.DatabasePath, visit)
 	}
 	if err := schemaext.RequireRuntime(lowering.Context, lowering.Runtime); err != nil {
 		return fmt.Errorf("%w: standalone feature lowering: %w", ptaherr.ErrUnsupportedFeature, err)
@@ -56,7 +61,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	// position before, between, or after them; streaming SQL before scheduling
 	// would make a late conflict leave a successful prefix.
 	var nodes []ast.Node
-	if err := walkCommonDatabase(tables, target, func(node ast.Node) error {
+	if err := walkCommonDatabase(tables, target, lowering.DatabasePath, func(node ast.Node) error {
 		nodes = append(nodes, node)
 		return lowering.Context.Err()
 	}); err != nil {

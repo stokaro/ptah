@@ -26,11 +26,12 @@ func TestROL01_NamesAGrantOnTheDatabase(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{
-				Grants:       []schemamodel.Grant{{Role: "app", Privileges: []string{"ydb.database.connect"}, OnDatabase: true}},
-				DatabasePath: test.databasePath,
+				Grants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ydb.database.connect"}, OnDatabase: true}},
 			}
 
-			report := schemasecurity.Analyze(db, schemasecurity.Options{RoleObjectUsage: make([]schemasecurity.RoleObjectUsage, 0)})
+			report := schemasecurity.Analyze(db, schemasecurity.Options{
+				RoleObjectUsage: make([]schemasecurity.RoleObjectUsage, 0), DatabasePath: test.databasePath,
+			})
 
 			c.Assert(report.Findings, qt.HasLen, 1)
 			c.Assert(report.Findings[0].Code, qt.Equals, "ROL01")

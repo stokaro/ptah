@@ -22,6 +22,14 @@ type SchemaRequest struct {
 	Capabilities capability.Capabilities
 	Identifiers  identifier.Semantics
 	Schema       *schemamodel.Database
+	// DatabasePath is the absolute path of the database Schema was read from,
+	// such as /local, when the render describes a live read on a target that
+	// names some objects only by an absolute path: YDB, whose GRANT takes the
+	// database itself that way, and on its older lines an object at the
+	// database root. It is where the read was made, not part of the schema,
+	// so it is empty for a declaration, which is not about one database, and
+	// a render with it empty names those objects as the schema spells them.
+	DatabasePath string
 }
 
 // SchemaResult contains dependency-ordered SQL and recorded omissions from one

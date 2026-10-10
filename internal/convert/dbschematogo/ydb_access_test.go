@@ -14,8 +14,9 @@ import (
 )
 
 // TestConvertDBSchemaToGoSchema_YDBAccessModel describes a YDB read's groups,
-// memberships and grant on the database the way a declaration writes them, and
-// carries the database's path for a render that names the database by it.
+// memberships and grant on the database the way a declaration writes them. The
+// database's path stays on the read: it says where the read was made, and a
+// render of the description takes it from there.
 func TestConvertDBSchemaToGoSchema_YDBAccessModel(t *testing.T) {
 	c := qt.New(t)
 	read := &catalog.Database{
@@ -37,7 +38,6 @@ func TestConvertDBSchemaToGoSchema_YDBAccessModel(t *testing.T) {
 	c.Assert(described.Grants, qt.DeepEquals, []schemamodel.Grant{
 		{Role: "app", Privileges: []string{"YDB.DATABASE.CONNECT"}, OnDatabase: true},
 	})
-	c.Assert(described.DatabasePath, qt.Equals, "/local")
 }
 
 // TestConvertDBSchemaToGoSchema_RoleGraphStaysAnalysisOnly describes a

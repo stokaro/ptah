@@ -21,5 +21,4 @@ func TestYQLSerialSettingsAcrossFiles(t *testing.T) {
 	c.Assert(database.Fields, qt.HasLen, 1)
 	c.Assert(database.Fields[0].IdentityStart, qt.Equals, "100")
 	c.Assert(database.Fields[0].IdentityIncrement, qt.Equals, "5")
-	c.Assert(database.DatabasePath, qt.Equals, "")
 }
