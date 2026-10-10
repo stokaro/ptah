@@ -90,11 +90,11 @@ func WritesTableFacet(kind schemaext.Kind) bool {
 func WritesColumnFacet(kind schemaext.Kind) bool { return kind == mysqlschema.ColumnSettingsKind }
 
 // WritesIndexFacet reports an index facet kind the renderer writes itself
-// rather than as platform properties: a YDB vector index's settings and a
-// YDB index's partitioning and read replicas, which it writes as attributes
-// of the index block.
+// rather than as platform properties: a YDB vector index's settings, a YDB
+// index's partitioning and read replicas, and a MySQL FULLTEXT index's parser,
+// which it writes as attributes of the index block.
 func WritesIndexFacet(kind schemaext.Kind) bool {
-	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind
+	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind || kind == mysqlschema.IndexKind
 }
 
 // renderHypertables writes the TimescaleDB hypertable blocks.

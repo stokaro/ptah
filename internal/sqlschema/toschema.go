@@ -448,7 +448,6 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 		// own defaults, so an index read with GRANULARITY 1 was written back
 		// with GRANULARITY 8192 (stokaro/ptah#1574).
 		Facets:         index.Facets,
-		Parser:         index.Parser,
 		Condition:      index.Condition,
 		Concurrently:   index.Concurrently,
 		Operator:       index.Operator,
@@ -946,7 +945,7 @@ func appendCreateTable(
 	// constraints so that the order the document declared them in survives to
 	// the naming pass below.
 	constraintsStart := len(database.Constraints)
-	order := declaredOrder(database, node, tableSchema, sourcePlatform)
+	order := declaredOrder(database, document, node, tableSchema, sourcePlatform)
 	places := constraintPlaces(order, constraintsStart, len(database.Constraints)-constraintsStart)
 
 	// A UNIQUE or EXCLUDE the server folds into another one is not built.
@@ -999,10 +998,10 @@ func appendCreateTable(
 // order does not account for every element, because a partial order is worse
 // than none: it would silently drop whatever it failed to mention.
 func declaredOrder(
-	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table, sourcePlatform string,
+	database *schemamodel.Database, document *Document, node *ast.CreateTableNode, table schemamodel.Table, sourcePlatform string,
 ) []namedElement {
 	if !ordersEverything(node) {
-		return unorderedElements(database, node, table, sourcePlatform)
+		return unorderedElements(database, document, node, table, sourcePlatform)
 	}
 	// A node whose columns were assigned rather than added records no place
 	// for them, and every element comes after all of them.
@@ -1021,7 +1020,7 @@ func declaredOrder(
 		if element.Index != nil {
 			database.Indexes = append(database.Indexes, ToIndex(element.Index, sourcePlatform))
 			order = append(order, namedElement{
-				constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: element.Index.ForeignKeyIndex,
+				constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: document.foreignKeyIndex(element.Index),
 				columnsBefore: before,
 			})
 			continue
@@ -1056,7 +1055,7 @@ func ordersEverything(node *ast.CreateTableNode) bool {
 // unorderedElements appends in the order this package always used, for a node
 // that recorded none.
 func unorderedElements(
-	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table, sourcePlatform string,
+	database *schemamodel.Database, document *Document, node *ast.CreateTableNode, table schemamodel.Table, sourcePlatform string,
 ) []namedElement {
 	order := make([]namedElement, 0, len(node.Indexes)+len(node.Constraints))
 	for _, constraint := range node.Constraints {
@@ -1071,7 +1070,7 @@ func unorderedElements(
 	for _, index := range node.Indexes {
 		database.Indexes = append(database.Indexes, ToIndex(index, sourcePlatform))
 		order = append(order, namedElement{
-			constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: index.ForeignKeyIndex,
+			constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: document.foreignKeyIndex(index),
 			columnsBefore: len(node.Columns),
 		})
 	}
@@ -1102,6 +1101,7 @@ func appendAlterTable(
 		statement.laterDrops = droppedConstraintNames(node.Operations[i+1:], sourcePlatform)
 		target.statement = statement
 		target.keys = &document.keys
+		target.document = document
 		if err := applyAlterOperation(database, base, target, op, sourcePlatform); err != nil {
 			return err
 		}
@@ -1175,7 +1175,7 @@ func applyAddIndex(database *schemamodel.Database, target alterTarget, typed *as
 	index := ToIndex(typed.Index, sourcePlatform)
 	index.StructName = target.structName
 	index.TableName = target.qualified
-	if typed.Index.ForeignKeyIndex {
+	if target.document.foreignKeyIndex(typed.Index) {
 		// The key the clause belongs to is the next operation, and the
 		// index is its own; see [alterTarget.buildKeyIndex].
 		target.statement.clause = &index

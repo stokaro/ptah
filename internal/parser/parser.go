@@ -34,6 +34,12 @@ import (
 // representation of SQL DDL statements. It supports CREATE TABLE, ALTER TABLE, CREATE INDEX,
 // and other DDL operations.
 type Parser struct {
+	// foreignKeyIndexes are the indexes a MySQL `FOREIGN KEY name (columns)`
+	// clause names: what this parse found about the AST it returns that no
+	// common node carries, since it is how a MySQL-family server builds the
+	// index rather than anything a renderer writes. See
+	// [Parser.ForeignKeyIndex].
+	foreignKeyIndexes map[*ast.IndexNode]bool
 	// lastGuard is the text of the most recent version-guarded span
 	// skipWhitespace stepped over, so a clause hiding inside one can still be
 	// read at the place that expects it.
@@ -4310,13 +4316,45 @@ func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.Ind
 		constraint.Name = p.foreignKeyIndexName
 		return nil
 	}
-	return &ast.IndexNode{
-		Name:            p.foreignKeyIndexName,
-		Columns:         constraint.Columns,
-		Parts:           indexPartsFromConstraintColumns(constraint.ColumnParts),
-		ForeignKeyIndex: true,
+	index := &ast.IndexNode{
+		Name:    p.foreignKeyIndexName,
+		Columns: constraint.Columns,
+		Parts:   indexPartsFromConstraintColumns(constraint.ColumnParts),
 	}
+	if p.foreignKeyIndexes == nil {
+		p.foreignKeyIndexes = make(map[*ast.IndexNode]bool)
+	}
+	p.foreignKeyIndexes[index] = true
+	return index
 }
+
+// withIndexParser records a FULLTEXT parser on index as the MySQL owner's
+// index option, bound to the MySQL family, since it is a MySQL-family index
+// option rather than part of the common definition. The facet holds the
+// plugin's name; the backticks a dump writes are its spelling. An empty name
+// records nothing.
+func withIndexParser(index *ast.IndexNode, parserName string) error {
+	if parserName == "" {
+		return nil
+	}
+	facets, err := mysqlschema.WithIndexOptions(index.Facets, mysqlschema.DesiredIndex{Parser: unquoteLiteral(parserName, '`')})
+	if err != nil {
+		return fmt.Errorf("index %s: %w", index.Name, err)
+	}
+	index.Facets = facets
+	return nil
+}
+
+// ForeignKeyIndex reports whether index is the index a MySQL `FOREIGN KEY
+// name (columns)` clause names in the AST this parser returned, rather than
+// one the table body declares on its own.
+//
+// The server builds that index for the key, and treats it as the key's: it
+// drops the index once another index begins with the same columns, which it
+// never does to an index the author declared. A renderer has no use for the
+// difference, since an index written out is declared, so no AST node carries
+// it; the reader of this parse's declarations asks here.
+func (p *Parser) ForeignKeyIndex(index *ast.IndexNode) bool { return p.foreignKeyIndexes[index] }
 
 func (p *Parser) handleTableConstraintCheck(constraint *ast.ConstraintNode) {
 	p.advance()
@@ -5152,29 +5190,39 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	}
 
 	if isIndex {
-		return nil, &ast.IndexNode{
-			Name:    constraint.Name,
-			Columns: constraint.Columns,
-			// The per-column attributes travel too. parseConstraintColumn
-			// already reads MySQL's prefix length and DESC into
-			// ast.ConstraintColumn, and dropping them here would keep the index
-			// but silently flatten `KEY k (name(7) DESC)` into `KEY k (name)` --
-			// a different index that applies cleanly.
-			Parts: indexPartsFromConstraintColumns(constraint.ColumnParts),
-			// A prefix kind and an access method never meet on one index --
-			// SPATIAL and FULLTEXT take no USING clause -- so one field holds
-			// whichever the element asked for. mysqlindex reads both questions
-			// out of it.
-			Type:         cmp.Or(indexMethod, p.indexAccessMethod),
-			Parser:       parserName,
-			Unique:       uniqueIndex,
-			Comment:      p.keyOptions.comment,
-			Invisible:    p.keyOptions.invisible,
-			KeyBlockSize: p.keyOptions.keyBlockSize,
-		}, nil
+		index, err := p.tableIndex(constraint, indexMethod, parserName, uniqueIndex)
+		return nil, index, err
 	}
 
 	return constraint, p.foreignKeyBackingIndex(constraint), nil
+}
+
+// tableIndex builds the index a key element of a table body declares, from
+// the columns read into constraint and the options read since.
+func (p *Parser) tableIndex(constraint *ast.ConstraintNode, indexMethod, parserName string, unique bool) (*ast.IndexNode, error) {
+	index := &ast.IndexNode{
+		Name:    constraint.Name,
+		Columns: constraint.Columns,
+		// The per-column attributes travel too. parseConstraintColumn
+		// already reads MySQL's prefix length and DESC into
+		// ast.ConstraintColumn, and dropping them here would keep the index
+		// but silently flatten `KEY k (name(7) DESC)` into `KEY k (name)` --
+		// a different index that applies cleanly.
+		Parts: indexPartsFromConstraintColumns(constraint.ColumnParts),
+		// A prefix kind and an access method never meet on one index --
+		// SPATIAL and FULLTEXT take no USING clause -- so one field holds
+		// whichever the element asked for. mysqlindex reads both questions
+		// out of it.
+		Type:         cmp.Or(indexMethod, p.indexAccessMethod),
+		Unique:       unique,
+		Comment:      p.keyOptions.comment,
+		Invisible:    p.keyOptions.invisible,
+		KeyBlockSize: p.keyOptions.keyBlockSize,
+	}
+	if err := withIndexParser(index, parserName); err != nil {
+		return nil, err
+	}
+	return index, nil
 }
 
 func (p *Parser) handleTableEngine(table *ast.CreateTableNode) error {

@@ -69,6 +69,7 @@ func applyDropTable(database, base *schemamodel.Database, document *Document, no
 	}
 	for _, target := range targets {
 		target.keys = &document.keys
+		target.document = document
 		removeTable(target)
 	}
 	return nil

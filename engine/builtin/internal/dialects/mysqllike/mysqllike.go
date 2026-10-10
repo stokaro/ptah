@@ -625,8 +625,10 @@ func (r *Renderer) indexDefinition(node *ast.IndexNode, placement string) []stri
 		parts = append(parts, placement)
 	}
 	columnSpec := fmt.Sprintf("(%s)", strings.Join(renderIndexParts(node.EffectiveParts()), ", "))
-	if node.Parser != "" {
-		columnSpec += fmt.Sprintf(" /*!50100 WITH PARSER %s */", escapeIdentifier(node.Parser))
+	// The FULLTEXT parser is the MySQL owner's index option, which the
+	// node's preparation validated.
+	if options, err := mysqlrender.IndexOptions(node.Facets); err == nil && options != nil && options.Parser != "" {
+		columnSpec += fmt.Sprintf(" /*!50100 WITH PARSER %s */", escapeIdentifier(options.Parser))
 	}
 	parts = append(parts, columnSpec)
 

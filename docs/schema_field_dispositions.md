@@ -133,6 +133,7 @@ None.
 | `mssqlschema.Predicate.Type` | `ddl` | — |
 | `mysqlschema.DesiredColumnSettings.Charset` | `ddl` | — |
 | `mysqlschema.DesiredColumnSettings.OnUpdate` | `ddl` | — |
+| `mysqlschema.DesiredIndex.Parser` | `ddl` | — |
 | `mysqlschema.DesiredTable.AutoIncrement` | `ddl` | — |
 | `mysqlschema.DesiredTable.Charset` | `ddl` | — |
 | `mysqlschema.DesiredTable.Engine` | `ddl` | — |
@@ -352,7 +353,6 @@ None.
 | `schemamodel.Index.NullsDistinct` | `ddl` | — |
 | `schemamodel.Index.Operator` | `ddl` | — |
 | `schemamodel.Index.Overrides` | `ddl` | — |
-| `schemamodel.Index.Parser` | `ddl` | — |
 | `schemamodel.Index.Parts` | `ddl` | — |
 | `schemamodel.Index.RequiresExtensions` | `planning` | the same ordering fact for an index |
 | `schemamodel.Index.StorageParams` | `ddl` | — |

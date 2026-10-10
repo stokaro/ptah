@@ -781,8 +781,6 @@ type IndexNode struct {
 	// PostgreSQL; "minmax", "set(N)", "bloom_filter(p)", "tokenbf_v1(...)"
 	// etc. for ClickHouse data-skipping indexes) - database-specific.
 	Type string
-	// Parser specifies the MySQL FULLTEXT parser name, for example ngram.
-	Parser string
 	// Comment is an optional index comment
 	Comment string
 	// Invisible asks for an index the optimizer does not use; see
@@ -810,15 +808,6 @@ type IndexNode struct {
 	// caller opted into concurrent builds (they cannot run inside a
 	// transaction block). Ignored by non-PostgreSQL renderers.
 	Concurrently bool
-
-	// ForeignKeyIndex marks the index a MySQL `FOREIGN KEY name (columns)`
-	// clause names, rather than one the table body declares on its own.
-	//
-	// The server builds that index for the key, and treats it as the key's: it
-	// drops the index once another index begins with the same columns, which
-	// it never does to an index the author declared. Renderers ignore it: an
-	// index written out is declared, and its catalog is the same.
-	ForeignKeyIndex bool
 }
 
 // ExtensionNode represents a CREATE EXTENSION statement for PostgreSQL.

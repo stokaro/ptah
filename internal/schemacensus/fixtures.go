@@ -145,6 +145,7 @@ func Fixtures() []Fixture {
 		{Name: "index-clickhouse", Schema: indexClickHouseFixture()},
 		{Name: "index-clickhouse-settings", Schema: indexClickHouseSettingsFixture()},
 		{Name: "index-fulltext", Schema: indexFullTextFixture()},
+		{Name: "index-mysql-parser", Schema: indexMySQLParserFixture()},
 		{Name: "index-invisible", Schema: indexInvisibleFixture()},
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
 		{Name: "index-partitioning", Schema: indexPartitioningFixture()},
@@ -1240,12 +1241,23 @@ func indexClickHouseFixture() schemamodel.Database {
 	return db
 }
 
+// indexMySQLParserFixture declares a FULLTEXT index with the parser the MySQL
+// owner holds.
+func indexMySQLParserFixture() schemamodel.Database {
+	db := indexedTable()
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, Type: "FULLTEXT",
+		Facets: must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndex{Parser: "ngram"})),
+	}}
+	return db
+}
+
 func indexFullTextFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Extensions = []schemamodel.Extension{{Name: "pg_trgm"}}
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-		Type: "GIN", Operator: "gin_trgm_ops", Parser: "ngram",
+		Type: "GIN", Operator: "gin_trgm_ops",
 		RequiresExtensions: []string{"pg_trgm"},
 	}}
 	return db

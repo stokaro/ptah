@@ -34,3 +34,25 @@ func columnSettingsAttrs(facets schemaext.Facets) []attr {
 // isAnnotatedColumnFacet reports a column facet the export writes as
 // attributes of the field's directive.
 func isAnnotatedColumnFacet(kind schemaext.Kind) bool { return kind == mysqlschema.ColumnSettingsKind }
+
+// mysqlIndexOptionAttrs writes the MySQL owner's index options as the platform
+// property the owner decodes, `platform.<target>.parser`, once for each target
+// the options are bound to, and for every MySQL-family target when they are
+// bound to none. A SQL source binds them to both MySQL and MariaDB, which one
+// target's property encoding cannot write.
+func mysqlIndexOptionAttrs(facets schemaext.Facets) []attr {
+	options, found, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](facets, mysqlschema.IndexKind)
+	if err != nil || !found || options.Parser == "" {
+		// A value of another type is refused by refuseUnwrittenFacets.
+		return nil
+	}
+	targets := facets.TargetScope(mysqlschema.IndexKind)
+	if len(targets) == 0 {
+		targets = mysqlschema.Targets()
+	}
+	attrs := make([]attr, 0, len(targets))
+	for _, target := range targets {
+		attrs = append(attrs, attr{name: "platform." + target + "." + mysqlsource.ParserProperty, value: options.Parser, set: true})
+	}
+	return attrs
+}

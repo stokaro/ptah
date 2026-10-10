@@ -56,7 +56,8 @@ func ReadOnto(
 			return schemamodel.Database{}, nil, fmt.Errorf("%w: SQL schema sources cannot decode a feature coverage header; read the HCL source instead", ptaherr.ErrUnsupportedFeature)
 		}
 	}
-	statements, err := parser.NewParser(string(data), parser.WithDialect(dialect)).Parse()
+	parsed := parser.NewParser(string(data), parser.WithDialect(dialect))
+	statements, err := parsed.Parse()
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
@@ -64,6 +65,8 @@ func ReadOnto(
 	if alone {
 		document = NewDocument(nil)
 	}
+	document.notes = parsed
+	defer func() { document.notes = nil }()
 	database, err := toDatabase(statements, dialect, document)
 	if err != nil {
 		return schemamodel.Database{}, nil, err

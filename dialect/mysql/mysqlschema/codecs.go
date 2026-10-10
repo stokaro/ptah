@@ -88,3 +88,30 @@ func wireShape[T any](name string) schemaext.ObjectShape {
 	}
 	return shape
 }
+
+//go:embed index-codecs.json
+var indexDefinition []byte
+
+// IndexWireDefinition returns an independent description of the index options
+// wire model. The definition covers both representations.
+func IndexWireDefinition() json.RawMessage { return slices.Clone(indexDefinition) }
+
+var (
+	desiredIndexShape  = wireShape[DesiredIndex]("MySQL index options")
+	observedIndexShape = wireShape[ObservedIndex]("MySQL index options")
+)
+
+// IndexCodecs returns the version-one desired and observed index options
+// codecs, in that order, with the strictness [TableCodecs] has.
+func IndexCodecs() []schemaext.Codec {
+	return []schemaext.Codec{
+		schemaext.ModelCodec[*DesiredIndex]{
+			Prototype: &DesiredIndex{}, Representation: schemaext.Desired, Version: 1, Definition: IndexWireDefinition(),
+			Shape: shape(desiredIndexShape), Validate: ValidateDesiredIndex,
+		}.Codec(),
+		schemaext.ModelCodec[*ObservedIndex]{
+			Prototype: &ObservedIndex{}, Representation: schemaext.Observed, Version: 1, Definition: IndexWireDefinition(),
+			Shape: shape(observedIndexShape), Validate: ValidateObservedIndex,
+		}.Codec(),
+	}
+}

@@ -27,7 +27,6 @@ func fullyDeclaredIndex() schemamodel.Index {
 		Unique:         true,
 		Comment:        "lookup",
 		Type:           "btree",
-		Parser:         "ngram",
 		Condition:      "archived = false",
 		Operator:       "text_pattern_ops",
 		IncludeColumns: []string{"body"},

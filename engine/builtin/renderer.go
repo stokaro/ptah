@@ -4084,7 +4084,7 @@ func indexHasFullColumnPrefix(index schemamodel.Index, columns []string) bool {
 		return false
 	}
 	indexType := strings.ToUpper(strings.TrimSpace(index.Type))
-	if (indexType != "" && indexType != "BTREE") || strings.TrimSpace(index.Parser) != "" {
+	if (indexType != "" && indexType != "BTREE") || mysqlIndexParser(index) != "" {
 		return false
 	}
 	if len(index.Parts) == 0 {
@@ -4190,4 +4190,14 @@ func validateSQLServerCascadeActionGraph(
 		}
 	}
 	return nil
+}
+
+// mysqlIndexParser is the FULLTEXT parser an index declares, the MySQL owner's
+// index option, and empty for an index that declares none.
+func mysqlIndexParser(index schemamodel.Index) string {
+	options, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](index.Facets, mysqlschema.IndexKind)
+	if err != nil || options == nil {
+		return ""
+	}
+	return options.Parser
 }

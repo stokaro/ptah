@@ -264,6 +264,9 @@ func (ctx *renderContext) refuseUnwrittenFacets() error {
 				if err := validateVectorDeclaration(*facets); err != nil {
 					return err
 				}
+				if _, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](*facets, mysqlschema.IndexKind); err != nil {
+					return err
+				}
 			case columns[facets] && isAnnotatedColumnFacet(kind) && active:
 				if _, _, err := mysqlschema.Settings(*facets); err != nil {
 					return err

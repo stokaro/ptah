@@ -586,8 +586,10 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		Comment:      p.optionalString(block.Body.Attributes["comment"]),
 		Checks:       checks,
 		CustomSQL:    customSQL,
-		Overrides: mysqlTableOptions(overrides,
-			p.optionalString(block.Body.Attributes["auto_increment"]), p.optionalString(block.Body.Attributes["charset"])),
+		Overrides: mysqlProperties(overrides, map[string]string{
+			"auto_increment": p.optionalString(block.Body.Attributes["auto_increment"]),
+			"charset":        p.optionalString(block.Body.Attributes["charset"]),
+		}),
 		DependsOn: p.objectRefListAttr(block, "depends_on"),
 	}
 
@@ -1016,12 +1018,11 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		NullsDistinct:  nullsDistinct,
 		Type:           indexType,
 		Operator:       operator,
-		Parser:         parserName,
 		Condition:      p.optionalString(block.Body.Attributes["where"]),
 		Comment:        p.optionalString(block.Body.Attributes["comment"]),
 		IncludeColumns: include,
 		StorageParams:  storageParams,
-		Overrides:      overrides,
+		Overrides:      mysqlProperties(overrides, map[string]string{"parser": parserName}),
 		TableName:      tableName,
 	})
 }
@@ -2589,12 +2590,13 @@ func writePrintLine(line string) {
 	fmt.Fprintln(printDestination, line)
 }
 
-// mysqlTableOptions states a table's auto_increment and charset, which only
-// the MySQL family has, as the platform properties of the mysql and mariadb
-// targets, where the MySQL owner reads them. A target group that states one
-// already keeps its own. overrides is not changed.
-func mysqlTableOptions(overrides map[string]map[string]string, autoIncrement, charset string) map[string]map[string]string {
-	if autoIncrement == "" && charset == "" {
+// mysqlProperties states options only the MySQL family has, such as a
+// table's auto_increment and charset or a FULLTEXT index's parser, as the
+// platform properties of the mysql and mariadb targets, where the MySQL owner
+// reads them. An empty option states nothing, and a target group that states
+// one already keeps its own. overrides is not changed.
+func mysqlProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(options)), func(value string) bool { return value != "" }) {
 		return overrides
 	}
 	result := make(map[string]map[string]string, len(overrides)+2)
@@ -2602,15 +2604,15 @@ func mysqlTableOptions(overrides map[string]map[string]string, autoIncrement, ch
 		result[target] = maps.Clone(group)
 	}
 	for _, target := range []string{"mysql", "mariadb"} {
-		for _, option := range []struct{ key, value string }{{"auto_increment", autoIncrement}, {"charset", charset}} {
-			if option.value == "" {
+		for key, value := range options {
+			if value == "" {
 				continue
 			}
 			if result[target] == nil {
 				result[target] = make(map[string]string)
 			}
-			if _, stated := result[target][option.key]; !stated {
-				result[target][option.key] = option.value
+			if _, stated := result[target][key]; !stated {
+				result[target][key] = value
 			}
 		}
 	}

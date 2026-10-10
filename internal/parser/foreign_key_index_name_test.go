@@ -34,12 +34,21 @@ const foreignKeyIndexParents = "CREATE TABLE parents (id INT PRIMARY KEY);\n"
 
 func parsedChildTable(c *qt.C, sql, dialect string) *ast.CreateTableNode {
 	c.Helper()
-	result, err := parser.NewParser(foreignKeyIndexParents+sql, parser.WithDialect(dialect)).Parse()
+	table, _ := parsedChildTableAndParser(c, sql, dialect)
+	return table
+}
+
+// parsedChildTableAndParser is parsedChildTable with the parser that read it,
+// which answers what no AST node carries.
+func parsedChildTableAndParser(c *qt.C, sql, dialect string) (*ast.CreateTableNode, *parser.Parser) {
+	c.Helper()
+	parsed := parser.NewParser(foreignKeyIndexParents+sql, parser.WithDialect(dialect))
+	result, err := parsed.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Statements, qt.HasLen, 2)
 	table, ok := result.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
-	return table
+	return table, parsed
 }
 
 // On MySQL the name declares the index the server builds for an unnamed key.
@@ -51,11 +60,11 @@ func TestParseForeignKeyIndexName_MySQLHappyPath(t *testing.T) {
 		t.Run(body, func(t *testing.T) {
 			c := qt.New(t)
 
-			table := parsedChildTable(c, "CREATE TABLE child (a INT, "+body+");", platform.MySQL)
+			table, parsed := parsedChildTableAndParser(c, "CREATE TABLE child (a INT, "+body+");", platform.MySQL)
 
 			c.Assert(table.Indexes, qt.HasLen, 1)
 			c.Assert(table.Indexes[0].Name, qt.Equals, "zidxonly27")
-			c.Assert(table.Indexes[0].ForeignKeyIndex, qt.IsTrue)
+			c.Assert(parsed.ForeignKeyIndex(table.Indexes[0]), qt.IsTrue)
 			c.Assert(table.Indexes[0].Columns, qt.DeepEquals, []string{"a"})
 			c.Assert(table.Indexes[0].Unique, qt.IsFalse)
 			c.Assert(table.Constraints, qt.HasLen, 1)
@@ -94,14 +103,21 @@ func TestParseForeignKeyIndexName_MariaDBHappyPath(t *testing.T) {
 // the parents and a child table the fixture declares.
 func parsedAlterOperations(c *qt.C, sql, dialect string) []ast.AlterOperation {
 	c.Helper()
-	result, err := parser.NewParser(
-		foreignKeyIndexParents+"CREATE TABLE child (a INT);\n"+sql, parser.WithDialect(dialect),
-	).Parse()
+	operations, _ := parsedAlterOperationsAndParser(c, sql, dialect)
+	return operations
+}
+
+// parsedAlterOperationsAndParser is parsedAlterOperations with the parser
+// that read them.
+func parsedAlterOperationsAndParser(c *qt.C, sql, dialect string) ([]ast.AlterOperation, *parser.Parser) {
+	c.Helper()
+	parsed := parser.NewParser(foreignKeyIndexParents+"CREATE TABLE child (a INT);\n"+sql, parser.WithDialect(dialect))
+	result, err := parsed.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Statements, qt.HasLen, 3)
 	alter, ok := result.Statements[2].(*ast.AlterTableNode)
 	c.Assert(ok, qt.IsTrue)
-	return alter.Operations
+	return alter.Operations, parsed
 }
 
 // The same clause in ALTER TABLE ... ADD declares the same objects. On MySQL
@@ -111,7 +127,7 @@ func parsedAlterOperations(c *qt.C, sql, dialect string) []ast.AlterOperation {
 func TestParseAlterAddForeignKeyIndexName_MySQL(t *testing.T) {
 	c := qt.New(t)
 
-	operations := parsedAlterOperations(c,
+	operations, parsed := parsedAlterOperationsAndParser(c,
 		"ALTER TABLE child ADD FOREIGN KEY zidx (a) REFERENCES parents(id);", platform.MySQL)
 
 	c.Assert(operations, qt.HasLen, 2)
@@ -119,7 +135,7 @@ func TestParseAlterAddForeignKeyIndexName_MySQL(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(index.Index.Name, qt.Equals, "zidx")
 	c.Assert(index.Index.Columns, qt.DeepEquals, []string{"a"})
-	c.Assert(index.Index.ForeignKeyIndex, qt.IsTrue)
+	c.Assert(parsed.ForeignKeyIndex(index.Index), qt.IsTrue)
 	key, ok := operations[1].(*ast.AddConstraintOperation)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(key.Constraint.Type, qt.Equals, ast.ForeignKeyConstraint)
@@ -217,10 +233,10 @@ func TestParseForeignKeyIndexName_FailurePath(t *testing.T) {
 func TestParseDeclaredIndexBesideAForeignKeyIsNotTheKeys(t *testing.T) {
 	c := qt.New(t)
 
-	table := parsedChildTable(c,
+	table, parsed := parsedChildTableAndParser(c,
 		"CREATE TABLE child (a INT, KEY zidx (a), FOREIGN KEY (a) REFERENCES parents(id));", platform.MySQL)
 
 	c.Assert(table.Indexes, qt.HasLen, 1)
 	c.Assert(table.Indexes[0].Name, qt.Equals, "zidx")
-	c.Assert(table.Indexes[0].ForeignKeyIndex, qt.IsFalse)
+	c.Assert(parsed.ForeignKeyIndex(table.Indexes[0]), qt.IsFalse)
 }

@@ -199,8 +199,8 @@ the target dropped on its own, so it stays quiet about:
 The check reads a render of the create statements, so what it can see is what
 a `CREATE` carries: tables, columns and indexes. It covers what a renderer names
 as skipped, the table options a target cannot carry, every property a column
-declares, and an index's condition, operator class, FULLTEXT parser, storage
-parameters, part order and uniqueness.
+declares, and an index's condition, operator class, storage parameters, part
+order and uniqueness.
 
 It also covers what a whole object declares: a table's partitioning, a schema's
 character set and collation, and a role's comment.
@@ -223,12 +223,13 @@ worth a gate on its own: the MySQL family and ClickHouse render the index over
 the whole table instead, so a unique index starts rejecting rows the author
 meant to allow.
 
-The rest of an index reports the same way:
+A FULLTEXT parser is a platform property of the MySQL family, so another
+target leaves it out without a report, as it leaves out any other target's
+properties. The rest of an index reports the same way:
 
 | Property | Kept by | Dropped by |
 | --- | --- | --- |
 | Operator class | the PostgreSQL family | every other target |
-| FULLTEXT parser | the MySQL family | every other target |
 | Storage parameters | the PostgreSQL family | every other target |
 | Descending part | every target but ClickHouse | ClickHouse |
 | `UNIQUE` | every target but ClickHouse | ClickHouse |

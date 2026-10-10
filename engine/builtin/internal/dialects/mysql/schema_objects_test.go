@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin/internal/dialects/mysql"
 )
@@ -157,7 +159,7 @@ func TestMySQLRenderer_FulltextIndexParser(t *testing.T) {
 
 	index := ast.NewIndex("idx_users_bio", "users", "bio")
 	index.Type = "FULLTEXT"
-	index.Parser = "ngram"
+	index.Facets = must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndex{Parser: "ngram"}))
 
 	sql := renderMySQL(t, index)
 

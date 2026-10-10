@@ -838,6 +838,7 @@ func indexAttrs(index schemamodel.Index, partitioning *ydbschema.IndexPartitioni
 	attrs := append(indexDefinitionAttrs(index), partitioningAttrs(partitioning)...)
 	attrs = append(attrs, propertyAttrs(index.Overrides)...)
 	attrs = append(attrs, fullTextAttrs(index)...)
+	attrs = append(attrs, mysqlIndexOptionAttrs(index.Facets)...)
 	return append(attrs, vectorAttrs(index.Facets)...)
 }
 

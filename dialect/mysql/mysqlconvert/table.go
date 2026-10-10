@@ -21,22 +21,51 @@ type TableService struct{}
 // schemaext.ErrInvalidValue; other targets wrap ptaherr.ErrUnsupportedDialect.
 // Any error, including cancellation, returns no partial result.
 func (TableService) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
+	return optionConversion[*mysqlschema.DesiredTable, *mysqlschema.ObservedTable]{
+		name: "MySQL table options", observe: (*mysqlschema.DesiredTable).Observed,
+		validate: mysqlschema.ValidateObservedTable, declare: (*mysqlschema.ObservedTable).Desired,
+	}.convert(ctx, request)
+}
+
+// IndexService converts index options, as [TableService] converts table
+// options.
+type IndexService struct{}
+
+// ConvertFeatures converts an ordered batch, as [TableService.ConvertFeatures]
+// does.
+func (IndexService) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
+	return optionConversion[*mysqlschema.DesiredIndex, *mysqlschema.ObservedIndex]{
+		name: "MySQL index options", observe: (*mysqlschema.DesiredIndex).Observed,
+		validate: mysqlschema.ValidateObservedIndex, declare: (*mysqlschema.ObservedIndex).Desired,
+	}.convert(ctx, request)
+}
+
+// optionConversion converts one kind of options between their declaration D
+// and their observation O.
+type optionConversion[D, O schemaext.Value] struct {
+	name     string
+	observe  func(D) (O, error)
+	validate func(O) error
+	declare  func(O) D
+}
+
+func (c optionConversion[D, O]) convert(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: conversion requires a context", schemaext.ErrInvalidValue)
 	}
 	if request.Target != platform.MySQL && request.Target != platform.MariaDB {
-		return nil, fmt.Errorf("%w: MySQL table options conversion on %q", ptaherr.ErrUnsupportedDialect, request.Target)
+		return nil, fmt.Errorf("%w: %s conversion on %q", ptaherr.ErrUnsupportedDialect, c.name, request.Target)
 	}
 	if (request.From != schemaext.Desired && request.From != schemaext.Observed) ||
 		(request.To != schemaext.Desired && request.To != schemaext.Observed) || request.From == request.To {
-		return nil, fmt.Errorf("%w: invalid MySQL table options conversion direction", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: invalid %s conversion direction", schemaext.ErrInvalidValue, c.name)
 	}
 	result := make([]schemaext.Value, 0, len(request.Values))
 	for _, value := range request.Values {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		converted, err := convertTable(request.From, value)
+		converted, err := c.one(request.From, value)
 		if err != nil {
 			return nil, err
 		}
@@ -45,20 +74,20 @@ func (TableService) ConvertFeatures(ctx context.Context, request schemaext.Conve
 	return result, ctx.Err()
 }
 
-func convertTable(from schemaext.Representation, value schemaext.Value) (schemaext.Value, error) {
+func (c optionConversion[D, O]) one(from schemaext.Representation, value schemaext.Value) (schemaext.Value, error) {
 	if from == schemaext.Desired {
-		desired, ok := value.(*mysqlschema.DesiredTable)
+		desired, ok := value.(D)
 		if !ok {
-			return nil, fmt.Errorf("%w: expected desired MySQL table options, got %T", schemaext.ErrInvalidValue, value)
+			return nil, fmt.Errorf("%w: expected desired %s, got %T", schemaext.ErrInvalidValue, c.name, value)
 		}
-		return desired.Observed()
+		return c.observe(desired)
 	}
-	observed, ok := value.(*mysqlschema.ObservedTable)
+	observed, ok := value.(O)
 	if !ok {
-		return nil, fmt.Errorf("%w: expected observed MySQL table options, got %T", schemaext.ErrInvalidValue, value)
+		return nil, fmt.Errorf("%w: expected observed %s, got %T", schemaext.ErrInvalidValue, c.name, value)
 	}
-	if err := mysqlschema.ValidateObservedTable(observed); err != nil {
+	if err := c.validate(observed); err != nil {
 		return nil, err
 	}
-	return observed.Desired(), nil
+	return c.declare(observed), nil
 }

@@ -1601,21 +1601,6 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 			},
 		},
 		{
-			name: "fulltext index with parser",
-			index: schemamodel.Index{
-				Name:       "idx_users_bio",
-				StructName: "users",
-				Fields:     []string{"bio"},
-				Type:       "FULLTEXT",
-				Parser:     "ngram",
-			},
-			expected: func(idx *ast.IndexNode) bool {
-				return idx.Name == "idx_users_bio" &&
-					idx.Type == "FULLTEXT" &&
-					idx.Parser == "ngram"
-			},
-		},
-		{
 			name: "structured index parts",
 			index: schemamodel.Index{
 				Name:       "idx_users_rank_name",

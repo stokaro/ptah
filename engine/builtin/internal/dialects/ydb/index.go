@@ -215,8 +215,6 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode,
 			subject+" treats NULLs as equal; a YDB unique index treats them as distinct")
 	case index.Invisible:
 		return r.keyed(capability.InvisibleIndexes, "invisible index", subject+" is invisible")
-	case index.Parser != "":
-		return refuseFact(subject, "a FULLTEXT parser is MySQL's")
 	case index.Operator != "" && !vector:
 		return refuseFact(subject, "YDB has no index operator class")
 	case len(index.StorageParams) > 0 && !vector && !kind.IsFullText() && !kind.IsLocal():
