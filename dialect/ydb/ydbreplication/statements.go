@@ -4,7 +4,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
@@ -26,7 +25,7 @@ func Path(name string) string {
 // credential and the consistency settings it names. A setting spec leaves out
 // is left to YDB, which gives it the value [CompareReplication] reads the
 // declaration with.
-func CreateReplicationStatement(name string, spec ast.AsyncReplicationSpec) string {
+func CreateReplicationStatement(name string, spec ReplicationSpec) string {
 	items := make([]string, len(spec.Items))
 	for i, item := range spec.Items {
 		items[i] = quotePath(item.Source) + " AS " + quotePath(item.Target)
@@ -53,7 +52,7 @@ func CreateReplicationStatement(name string, spec ast.AsyncReplicationSpec) stri
 // keeps the others, so naming the whole group is not needed for the change to
 // take, and it keeps the statement saying what the replication holds after
 // it.
-func AlterReplicationStatement(name string, desired, previous ast.AsyncReplicationSpec) string {
+func AlterReplicationStatement(name string, desired, previous ReplicationSpec) string {
 	settings := alteredConnection(desired.Connection, previous.Connection)
 	if len(settings) == 0 {
 		return ""
@@ -61,15 +60,15 @@ func AlterReplicationStatement(name string, desired, previous ast.AsyncReplicati
 	return "ALTER ASYNC REPLICATION " + Path(name) + " SET (" + strings.Join(settings, ", ") + ");"
 }
 
-// DropReplicationStatement writes what drops the replication node names.
-// With [ast.DropAsyncReplicationNode.Cascade] it drops the replica tables
-// too; without it they stay, writable only where the replication was failed
-// over first: measured on 25.1.4.7 and 26.2.1.14, the replica of a running
-// replication dropped without CASCADE refuses every write and every ALTER for
-// good (`path is an async replica table`).
-func DropReplicationStatement(node *ast.DropAsyncReplicationNode) string {
-	statement := "DROP ASYNC REPLICATION " + Path(node.Name)
-	if node.Cascade {
+// DropReplicationStatement writes what drops the replication name. With
+// cascade it drops the replica tables too; without it they stay, writable
+// only where the replication was failed over first: measured on 25.1.4.7 and
+// 26.2.1.14, the replica of a running replication dropped without CASCADE
+// refuses every write and every ALTER for good (`path is an async replica
+// table`).
+func DropReplicationStatement(name string, cascade bool) string {
+	statement := "DROP ASYNC REPLICATION " + Path(name)
+	if cascade {
 		statement += " CASCADE"
 	}
 	return statement + ";"
@@ -77,7 +76,7 @@ func DropReplicationStatement(node *ast.DropAsyncReplicationNode) string {
 
 // CreateTransferStatement writes what creates the transfer name as spec
 // declares it, the lambda as written.
-func CreateTransferStatement(name string, spec ast.TransferSpec) string {
+func CreateTransferStatement(name string, spec TransferSpec) string {
 	var b strings.Builder
 	b.WriteString("CREATE TRANSFER " + Path(name) + " FROM " + quotePath(spec.Source) + " TO " +
 		quotePath(spec.Target) + " USING " + strings.TrimSpace(spec.Lambda))
@@ -104,7 +103,7 @@ func CreateTransferStatement(name string, spec ast.TransferSpec) string {
 // credential as [AlterReplicationStatement] writes them. Measured on 26.2.1.14,
 // one ALTER TRANSFER takes `SET USING ..., SET (...)`, and a SET naming one
 // batch setting keeps the other.
-func AlterTransferStatement(name string, desired, previous ast.TransferSpec) string {
+func AlterTransferStatement(name string, desired, previous TransferSpec) string {
 	changes := CompareTransfer(desired, previous)
 	var actions []string
 	if changes.Lambda {
@@ -134,7 +133,7 @@ func DropTransferStatement(name string) string {
 
 // alteredConnection writes the SET settings that move a connection from
 // previous to desired.
-func alteredConnection(desired, previous ast.ReplicationConnectionSpec) []string {
+func alteredConnection(desired, previous Connection) []string {
 	var settings []string
 	if CanonicalConnectionString(desired.ConnectionString) != CanonicalConnectionString(previous.ConnectionString) {
 		settings = append(settings, connectionStringSettings(desired)...)
@@ -147,7 +146,7 @@ func alteredConnection(desired, previous ast.ReplicationConnectionSpec) []string
 
 // connectionStringSettings writes a connection's string as a setting, or none
 // where the connection names none.
-func connectionStringSettings(connection ast.ReplicationConnectionSpec) []string {
+func connectionStringSettings(connection Connection) []string {
 	if connection.ConnectionString == "" {
 		return nil
 	}
@@ -156,7 +155,7 @@ func connectionStringSettings(connection ast.ReplicationConnectionSpec) []string
 
 // credentialSettings writes a connection's credential as its settings: the
 // token secret, or the user with the password secret, each by name or by path.
-func credentialSettings(connection ast.ReplicationConnectionSpec) []string {
+func credentialSettings(connection Connection) []string {
 	var settings []string
 	switch {
 	case connection.TokenSecretName != "":

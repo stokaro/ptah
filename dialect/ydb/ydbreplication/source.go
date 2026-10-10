@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"strings"
-
-	"ptah.run/core/ast"
 )
 
 // SourceKind identifies the declaration whose YQL settings are being read.
@@ -51,33 +49,33 @@ func SourceSettingType(name string, kind SourceKind) string {
 
 // ParseReplicationSource reads YQL settings, including ENDPOINT and DATABASE,
 // through the same model rules as Go and YAML. Items belong to the caller.
-func ParseReplicationSource(settings map[string]string) (ast.AsyncReplicationSpec, error) {
+func ParseReplicationSource(settings map[string]string) (ReplicationSpec, error) {
 	values, err := sourceValues(nil, settings)
 	if err != nil {
-		return ast.AsyncReplicationSpec{}, err
+		return ReplicationSpec{}, err
 	}
 	return ParseReplication(values)
 }
 
 // ParseTransferSource reads a transfer's YQL settings and its FROM, TO and
 // USING clauses through the shared declaration rules.
-func ParseTransferSource(settings map[string]string) (ast.TransferSpec, error) {
+func ParseTransferSource(settings map[string]string) (TransferSpec, error) {
 	values, err := sourceValues(nil, settings)
 	if err != nil {
-		return ast.TransferSpec{}, err
+		return TransferSpec{}, err
 	}
 	return ParseTransfer(values)
 }
 
 // ApplyReplicationSettings folds a source ALTER into its earlier declaration.
 // Lifecycle commands and create-only settings are not desired-state changes.
-func ApplyReplicationSettings(previous ast.AsyncReplicationSpec, settings map[string]string) (ast.AsyncReplicationSpec, error) {
+func ApplyReplicationSettings(previous ReplicationSpec, settings map[string]string) (ReplicationSpec, error) {
 	if err := mutableSourceSettings(settings, ReplicationSource); err != nil {
-		return ast.AsyncReplicationSpec{}, err
+		return ReplicationSpec{}, err
 	}
 	values, err := sourceValues(replicationValues(previous), settings)
 	if err != nil {
-		return ast.AsyncReplicationSpec{}, err
+		return ReplicationSpec{}, err
 	}
 	spec, err := ParseReplication(values)
 	spec.Items = previous.Clone().Items
@@ -86,13 +84,13 @@ func ApplyReplicationSettings(previous ast.AsyncReplicationSpec, settings map[st
 
 // ApplyTransferSettings folds mutable YQL settings and an optional inline
 // lambda into a previously declared transfer.
-func ApplyTransferSettings(previous ast.TransferSpec, settings map[string]string) (ast.TransferSpec, error) {
+func ApplyTransferSettings(previous TransferSpec, settings map[string]string) (TransferSpec, error) {
 	if err := mutableSourceSettings(settings, TransferSource); err != nil {
-		return ast.TransferSpec{}, err
+		return TransferSpec{}, err
 	}
 	values, err := sourceValues(transferValues(previous), settings)
 	if err != nil {
-		return ast.TransferSpec{}, err
+		return TransferSpec{}, err
 	}
 	return ParseTransfer(values)
 }

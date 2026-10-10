@@ -20,11 +20,11 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 	"ptah.run/internal/ydbflags"
-	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydburl"
 	"ptah.run/internal/yqlquery"
 )

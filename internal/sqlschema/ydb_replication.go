@@ -5,7 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 func appendYDBReplication(database *schemamodel.Database, document *Document, statement ast.Node, dialect string) (bool, error) {

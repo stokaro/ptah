@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 )
 
@@ -29,7 +27,7 @@ type Refusal struct {
 // It holds what a declaration's parse cannot know -- the target, through the
 // async_replication key and the key of a secret path -- and holds a spec built
 // by hand to the parse's rules, because nothing else checks it.
-func CheckReplication(name string, spec ast.AsyncReplicationSpec, caps capability.Capabilities) *Refusal {
+func CheckReplication(name string, spec ReplicationSpec, caps capability.Capabilities) *Refusal {
 	subject := "async replication " + name
 	if !caps.Has(capability.AsyncReplication) {
 		return &Refusal{Subject: subject, Key: capability.AsyncReplication}
@@ -51,7 +49,7 @@ func CheckReplication(name string, spec ast.AsyncReplicationSpec, caps capabilit
 
 // CheckTransfer reports why the transfer name, declared as spec, cannot be
 // created on a target holding caps, or nil when it can.
-func CheckTransfer(name string, spec ast.TransferSpec, caps capability.Capabilities) *Refusal {
+func CheckTransfer(name string, spec TransferSpec, caps capability.Capabilities) *Refusal {
 	subject := "transfer " + name
 	if !caps.Has(capability.Transfers) {
 		return &Refusal{Subject: subject, Key: capability.Transfers}
@@ -78,7 +76,7 @@ func CheckTransfer(name string, spec ast.TransferSpec, caps capability.Capabilit
 // that was failed over replicates nothing more; Ptah never pauses, resumes or
 // fails over a replication by itself, because each is an operation on the
 // data path rather than a setting.
-func ReplicationChangeRefusal(name string, desired, current ast.AsyncReplicationSpec, state string) *Refusal {
+func ReplicationChangeRefusal(name string, desired, current ReplicationSpec, state string) *Refusal {
 	changes := CompareReplication(desired, current)
 	subject := "async replication " + name
 	switch {
@@ -89,13 +87,13 @@ func ReplicationChangeRefusal(name string, desired, current ast.AsyncReplication
 			strings.Join(changes.CreateOnly, " and "), strings.ToUpper(createOnlyExample(changes.CreateOnly)))}
 	case !changes.ConnectionString && !changes.Credentials:
 		return nil
-	case state == catalog.ReplicationDone:
+	case state == StateDone:
 		return &Refusal{Subject: subject, Reason: "it was failed over (STATE = 'DONE') and replicates nothing more, " +
 			"so its connection no longer applies; remove it from the schema, which drops it and keeps its tables"}
 	case HasCredentials(current.Connection) && !HasCredentials(desired.Connection):
 		return &Refusal{Subject: subject, Reason: "it is declared with no credential and holds one, and YDB has no " +
 			"statement that takes a credential away"}
-	case state != catalog.ReplicationPaused:
+	case state != StatePaused:
 		return &Refusal{Subject: subject, Reason: fmt.Sprintf("its connection or credential differs, and YDB "+
 			"changes them only while the replication is paused (`Modifications are not allowed in StandBy state`), "+
 			"which it is not (%s); pause it with ALTER ASYNC REPLICATION %s SET (STATE = 'PAUSED'), apply, and "+
@@ -110,7 +108,7 @@ func ReplicationChangeRefusal(name string, desired, current ast.AsyncReplication
 // the batch settings change in any state; the source, the target and the
 // consumer never; the connection and the credentials only while the transfer
 // is paused.
-func TransferChangeRefusal(name string, desired, current ast.TransferSpec, state string) *Refusal {
+func TransferChangeRefusal(name string, desired, current TransferSpec, state string) *Refusal {
 	changes := CompareTransfer(desired, current)
 	subject := "transfer " + name
 	switch {
@@ -124,7 +122,7 @@ func TransferChangeRefusal(name string, desired, current ast.TransferSpec, state
 	case HasCredentials(current.Connection) && !HasCredentials(desired.Connection):
 		return &Refusal{Subject: subject, Reason: "it is declared with no credential and holds one, and YDB has no " +
 			"statement that takes a credential away"}
-	case state != catalog.ReplicationPaused:
+	case state != StatePaused:
 		return &Refusal{Subject: subject, Reason: fmt.Sprintf("its connection or credential differs, and YDB "+
 			"changes them only while the transfer is paused (`Modifications are not allowed in StandBy state`), "+
 			"which it is not (%s); pause it with ALTER TRANSFER %s SET (STATE = 'PAUSED'), apply, and resume it "+
@@ -155,7 +153,7 @@ func stateWord(state string) string {
 
 // replicationValues writes a spec's connection and consistency back as the
 // attribute values [ParseReplication] reads.
-func replicationValues(spec ast.AsyncReplicationSpec) map[string]string {
+func replicationValues(spec ReplicationSpec) map[string]string {
 	values := connectionValues(spec.Connection)
 	if spec.ConsistencyLevel != "" {
 		values[AttributeConsistencyLevel] = spec.ConsistencyLevel
@@ -168,7 +166,7 @@ func replicationValues(spec ast.AsyncReplicationSpec) map[string]string {
 
 // transferValues writes a transfer back as the attribute values
 // [ParseTransfer] reads.
-func transferValues(spec ast.TransferSpec) map[string]string {
+func transferValues(spec TransferSpec) map[string]string {
 	values := connectionValues(spec.Connection)
 	values[AttributeSource] = spec.Source
 	values[AttributeTarget] = spec.Target
@@ -186,7 +184,7 @@ func transferValues(spec ast.TransferSpec) map[string]string {
 }
 
 // connectionValues writes a connection back as attribute values.
-func connectionValues(connection ast.ReplicationConnectionSpec) map[string]string {
+func connectionValues(connection Connection) map[string]string {
 	values := make(map[string]string)
 	for attribute, value := range map[string]string{
 		AttributeConnectionString:   connection.ConnectionString,
@@ -205,7 +203,7 @@ func connectionValues(connection ast.ReplicationConnectionSpec) map[string]strin
 
 // ValidateReplicationItems checks source and target paths and rejects repeated
 // replica targets. The source reader and renderer use the same rule.
-func ValidateReplicationItems(items []ast.AsyncReplicationItem) error {
+func ValidateReplicationItems(items []Item) error {
 	if len(items) == 0 {
 		return fmt.Errorf("it replicates no table; declare an item naming a source and a " +
 			"target, since YDB takes no replication without one (`expecting {',', WITH}`)")

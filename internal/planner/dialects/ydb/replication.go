@@ -11,10 +11,10 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbreplication"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 

@@ -5,24 +5,22 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // mirror is a replication of /prod's accounts table into a replica.
-func mirror() ast.AsyncReplicationSpec {
-	return ast.AsyncReplicationSpec{
-		Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+func mirror() ydbreplication.ReplicationSpec {
+	return ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 			TokenSecretName: "token"},
-		Items: []ast.AsyncReplicationItem{{Source: "accounts", Target: "replica/accounts"}},
+		Items: []ydbreplication.Item{{Source: "accounts", Target: "replica/accounts"}},
 	}
 }
 
 // ingest is a transfer of a topic into a table.
-func ingest() ast.TransferSpec {
-	return ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: "($m) -> { return []; }"}
+func ingest() ydbreplication.TransferSpec {
+	return ydbreplication.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: "($m) -> { return []; }"}
 }
 
 // TestCheckReplication_HappyPath accepts a replication each target that has
@@ -32,7 +30,7 @@ func TestCheckReplication_HappyPath(t *testing.T) {
 	byPath.Connection.TokenSecretName, byPath.Connection.TokenSecretPath = "", "secrets/token"
 	tests := []struct {
 		name string
-		spec ast.AsyncReplicationSpec
+		spec ydbreplication.ReplicationSpec
 		caps capability.Capabilities
 	}{
 		{name: "a token secret by name on 25.1", spec: mirror(), caps: capability.YDB251()},
@@ -55,13 +53,13 @@ func TestCheckReplication_FailurePath(t *testing.T) {
 	noItems := mirror()
 	noItems.Items = nil
 	twoAtOnePlace := mirror()
-	twoAtOnePlace.Items = append(twoAtOnePlace.Items, ast.AsyncReplicationItem{Source: "ledger",
+	twoAtOnePlace.Items = append(twoAtOnePlace.Items, ydbreplication.Item{Source: "ledger",
 		Target: "replica/accounts"})
 	plaintext := mirror()
 	plaintext.Connection.ConnectionString = "grpc://primary:2136/?database=/prod&password=x"
 	tests := []struct {
 		name string
-		spec ast.AsyncReplicationSpec
+		spec ydbreplication.ReplicationSpec
 		caps capability.Capabilities
 		want ydbreplication.Refusal
 	}{
@@ -108,11 +106,11 @@ func TestCheckTransfer_HappyPath(t *testing.T) {
 // and one naming a secret by path where the line takes none.
 func TestCheckTransfer_FailurePath(t *testing.T) {
 	remote := ingest()
-	remote.Connection = ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+	remote.Connection = ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 		TokenSecretPath: "secrets/token"}
 	tests := []struct {
 		name string
-		spec ast.TransferSpec
+		spec ydbreplication.TransferSpec
 		caps capability.Capabilities
 		want ydbreplication.Refusal
 	}{
@@ -142,13 +140,13 @@ func TestReplicationChangeRefusal_HappyPath(t *testing.T) {
 		"", "replicator", "password"
 	tests := []struct {
 		name    string
-		desired ast.AsyncReplicationSpec
+		desired ydbreplication.ReplicationSpec
 		state   string
 	}{
-		{name: "nothing differs while running", desired: mirror(), state: catalog.ReplicationRunning},
-		{name: "nothing differs after failover", desired: mirror(), state: catalog.ReplicationDone},
-		{name: "another host while paused", desired: moved, state: catalog.ReplicationPaused},
-		{name: "another credential while paused", desired: byUser, state: catalog.ReplicationPaused},
+		{name: "nothing differs while running", desired: mirror(), state: ydbreplication.StateRunning},
+		{name: "nothing differs after failover", desired: mirror(), state: ydbreplication.StateDone},
+		{name: "another host while paused", desired: moved, state: ydbreplication.StatePaused},
+		{name: "another credential while paused", desired: byUser, state: ydbreplication.StatePaused},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -171,30 +169,30 @@ func TestReplicationChangeRefusal_FailurePath(t *testing.T) {
 	tokenless.Connection.TokenSecretName = ""
 	tests := []struct {
 		name    string
-		desired ast.AsyncReplicationSpec
+		desired ydbreplication.ReplicationSpec
 		state   string
 		want    string
 	}{
-		{name: "the level", desired: global, state: catalog.ReplicationPaused,
+		{name: "the level", desired: global, state: ydbreplication.StatePaused,
 			want: "its consistency_level differ from the database's, and YDB changes none of them in place " +
 				"(`CONSISTENCY_LEVEL is not supported in ALTER`, and ALTER takes no FOR clause); drop it with " +
 				"DROP ASYNC REPLICATION ... CASCADE, which drops its replica tables, and plan again"},
-		{name: "the items", desired: retargeted, state: catalog.ReplicationPaused,
+		{name: "the items", desired: retargeted, state: ydbreplication.StatePaused,
 			want: "its items differ from the database's, and YDB changes none of them in place " +
 				"(`CONSISTENCY_LEVEL is not supported in ALTER`, and ALTER takes no FOR clause); drop it with " +
 				"DROP ASYNC REPLICATION ... CASCADE, which drops its replica tables, and plan again"},
-		{name: "a connection after failover", desired: moved, state: catalog.ReplicationDone,
+		{name: "a connection after failover", desired: moved, state: ydbreplication.StateDone,
 			want: "it was failed over (STATE = 'DONE') and replicates nothing more, so its connection no longer " +
 				"applies; remove it from the schema, which drops it and keeps its tables"},
-		{name: "a credential taken away", desired: tokenless, state: catalog.ReplicationPaused,
+		{name: "a credential taken away", desired: tokenless, state: ydbreplication.StatePaused,
 			want: "it is declared with no credential and holds one, and YDB has no statement that takes a " +
 				"credential away"},
-		{name: "a connection while running", desired: moved, state: catalog.ReplicationRunning,
+		{name: "a connection while running", desired: moved, state: ydbreplication.StateRunning,
 			want: "its connection or credential differs, and YDB changes them only while the replication is paused " +
 				"(`Modifications are not allowed in StandBy state`), which it is not (it is running); pause it with " +
 				"ALTER ASYNC REPLICATION `mirror` SET (STATE = 'PAUSED'), apply, and resume it with " +
 				"SET (STATE = 'StandBy')"},
-		{name: "a connection in error", desired: moved, state: catalog.ReplicationError,
+		{name: "a connection in error", desired: moved, state: ydbreplication.StateError,
 			want: "its connection or credential differs, and YDB changes them only while the replication is paused " +
 				"(`Modifications are not allowed in StandBy state`), which it is not (it is error); pause it with " +
 				"ALTER ASYNC REPLICATION `mirror` SET (STATE = 'PAUSED'), apply, and resume it with " +
@@ -225,13 +223,13 @@ func TestTransferChangeRefusal_HappyPath(t *testing.T) {
 	moved.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
 	tests := []struct {
 		name    string
-		desired ast.TransferSpec
-		current ast.TransferSpec
+		desired ydbreplication.TransferSpec
+		current ydbreplication.TransferSpec
 		state   string
 	}{
-		{name: "the lambda while running", desired: relambda, current: ingest(), state: catalog.ReplicationRunning},
-		{name: "the batch while running", desired: rebatched, current: ingest(), state: catalog.ReplicationRunning},
-		{name: "another host while paused", desired: moved, current: remote, state: catalog.ReplicationPaused},
+		{name: "the lambda while running", desired: relambda, current: ingest(), state: ydbreplication.StateRunning},
+		{name: "the batch while running", desired: rebatched, current: ingest(), state: ydbreplication.StateRunning},
+		{name: "another host while paused", desired: moved, current: remote, state: ydbreplication.StatePaused},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -252,16 +250,16 @@ func TestTransferChangeRefusal_FailurePath(t *testing.T) {
 	moved.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
 	tests := []struct {
 		name    string
-		desired ast.TransferSpec
-		current ast.TransferSpec
+		desired ydbreplication.TransferSpec
+		current ydbreplication.TransferSpec
 		state   string
 		want    string
 	}{
-		{name: "the target", desired: retargeted, current: ingest(), state: catalog.ReplicationPaused,
+		{name: "the target", desired: retargeted, current: ingest(), state: ydbreplication.StatePaused,
 			want: "its target differ from the database's, and YDB changes none of them in place (`CONSUMER is not " +
 				"supported in ALTER`, and ALTER takes no FROM or TO); drop it with DROP TRANSFER, which loses the " +
 				"position of a consumer YDB created for it, and plan again"},
-		{name: "a connection while running", desired: moved, current: remote, state: catalog.ReplicationRunning,
+		{name: "a connection while running", desired: moved, current: remote, state: ydbreplication.StateRunning,
 			want: "its connection or credential differs, and YDB changes them only while the transfer is paused " +
 				"(`Modifications are not allowed in StandBy state`), which it is not (it is running); pause it with " +
 				"ALTER TRANSFER `ingest` SET (STATE = 'PAUSED'), apply, and resume it with SET (STATE = 'StandBy')"},

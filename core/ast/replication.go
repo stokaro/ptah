@@ -43,7 +43,7 @@ type AsyncReplicationItem struct {
 // YDB creates each target itself as a read-only replica table and keeps it
 // current. The items, the consistency level and the commit interval never
 // change in place; the connection and the credentials change while the
-// replication is paused. [ptah.run/internal/ydbreplication] owns the rules.
+// replication is paused. [ptah.run/dialect/ydb/ydbreplication] owns the rules.
 type AsyncReplicationSpec struct {
 	// Connection is how the replication reaches the source database.
 	Connection ReplicationConnectionSpec `json:"connection"`

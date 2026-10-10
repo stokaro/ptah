@@ -16,8 +16,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbreplication"
 )
 
 // replicaAttribute is the attribute YDB gives a table an async replication
