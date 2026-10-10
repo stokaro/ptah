@@ -1,9 +1,10 @@
 package schemasource_test
 
-import "ptah.run/core/yamlext"
+import (
+	"ptah.run/core/yamlext"
+	"ptah.run/sourceformats"
+)
 
-// noOwners selects no feature owner for the output formats that have owners:
-// these tests read the frontends' own keys.
-type noOwners struct{}
-
-func (noOwners) YAML() yamlext.Set { return yamlext.None() }
+// noOwners reads each output format and selects no feature owner: these
+// tests read the frontends' own keys.
+var noOwners = sourceformats.New(yamlext.None())

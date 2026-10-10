@@ -168,6 +168,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `migration/schemadiff/difftypes` | Shared schema-diff types. |
 | `migration/seeder` | Seed discovery and execution. |
 | `migration/shadow` | Migration verification against a live disposable database. |
+| `sourceformats` | The bundled readers of an external schema program's output, which `core/schemasource.Run` takes. |
 
 Import paths use the module prefix:
 

@@ -154,6 +154,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/migration/schemadiff/difftypes`
 - `ptah.run/migration/seeder`
 - `ptah.run/migration/shadow`
+- `ptah.run/sourceformats`
 
 `atlascompat` is a narrow compatibility surface for external Atlas parity and
 conformance tooling. It intentionally wraps parser, HCL schema,
@@ -2286,9 +2287,7 @@ about them; `engine.Provider.YAML` registers it, and `engine.Runtime.YAML`
 returns the frozen set. A document claims knowledge of an owner's models only
 when the parse selects the owner, so a parse without it leaves them unknown
 rather than absent. The zero set is refused with `yamlext.ErrUnselected`, and
-`yamlext.None` selects no owner on purpose. `schemasource.Run` takes the owners
-the same way, through `schemasource.Owners`, which `*engine.Runtime`
-implements.
+`yamlext.None` selects no owner on purpose.
 
 An owner may also read top-level keys of its own. Each `yamlext.Section` names
 a key and decodes its value through a callback. The callback refuses a key the
@@ -2963,7 +2962,11 @@ parses SQL, HCL, or YAML stdout into Ptah's schema IR. Empty output is rejected
 to prevent an accidentally broken provider from becoming an empty desired
 schema, and displayed stderr/parser diagnostics are bounded, secret-redacted,
 and terminal-safe. Embedders can use the same external desired-schema contract
-as the CLI without depending on Cobra or any command-tree package.
+as the CLI without depending on Cobra or any command-tree package. `Run` takes
+a `schemasource.Formats`, the readers of each output format, because the SQL
+and HCL readers decode owner syntax and the package links no owner:
+`sourceformats.New` returns the bundled readers, with YAML read by the owners
+it is given.
 
 `migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning

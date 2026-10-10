@@ -30,7 +30,7 @@ features, database implementations, or external modules.
 
 | Rule | Property | Recorded |
 | --- | --- | --- |
-| `model-imports-pipeline` | The canonical model (`core/`) must not import comparison, planning or conversion. | 1 |
+| `model-imports-pipeline` | The canonical model (`core/`) must not import comparison, planning or conversion. | 0 |
 | `pipeline-builds-source-description` | A planner or comparator must not construct a source schema description. | 0 |
 | `pipeline-imports-execution` | Planning must not import versioned execution. | 0 |
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
@@ -48,9 +48,6 @@ number would let the debt return to it with the gate green the whole way.
 
 ### What the recorded debt is
 
-The remaining `model-imports-pipeline` edge is
-`core/schemasource` → `internal/sqlschema`.
-
 `neutral-packages-link-owners` holds the neutral layer of the
 [#4140](https://github.com/stokaro/ptah/issues/4140) design to its import rule.
 The layer is every package at or under `catalog`, `core`, `engine` (except
@@ -58,11 +55,10 @@ The layer is every package at or under `catalog`, `core`, `engine` (except
 one neutral package and one owner it links through any chain of imports:
 `dialect/<name>`, `feature/<name>` or `engine/builtin`. Moving a type between two
 packages of one owner does not change the count; a neutral package that starts
-linking another owner does. The recorded findings are the source frontends that
-still decode owner models (`core/goschema`, `core/yamlschema`,
-`core/schemasource`) and comparison and planning code that still
-names YDB, ClickHouse, CockroachDB, Spanner, TimescaleDB and `feature/pgpolicy`
-types. Run
+linking another owner does. The recorded findings are comparison and planning
+code that still names YDB types. The SQL and HCL readers under `internal/`
+still decode owner syntax themselves; they sit outside the layer, so
+`core/schemasource` takes them from its caller rather than importing them. Run
 `go run ./internal/cmd/boundaries -json` for the current list.
 
 Renderer assembly lives in `engine/builtin`, above the neutral contracts in

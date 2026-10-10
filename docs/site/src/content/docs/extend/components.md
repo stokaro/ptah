@@ -309,7 +309,8 @@ ptah schema render --schema-file schema.yaml --dialect postgres
 
 When the YAML is written by another program rather than held in a file, use
 `core/schemasource` instead: it runs that program and parses its standard output
-through the same reader.
+through the readers `sourceformats.New(runtime.YAML())` returns, the same YAML
+reader among them.
 
 ### Inspect a live database and diff
 
