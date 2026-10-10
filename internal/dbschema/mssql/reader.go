@@ -171,7 +171,14 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read security policies: %w", err)
 	}
-	schema.FeatureObjects, schema.FeatureCoverage = policies, coverage
+	// The extended properties are already recorded, so the policies join them
+	// rather than replace them.
+	if schema.FeatureObjects, err = schema.FeatureObjects.Merge(policies); err != nil {
+		return nil, fmt.Errorf("sqlserver: record security policies: %w", err)
+	}
+	if schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(coverage); err != nil {
+		return nil, fmt.Errorf("sqlserver: record security policies: %w", err)
+	}
 
 	reconcileColumnFlags(schema)
 	return schema, nil
