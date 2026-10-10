@@ -29,7 +29,7 @@ func withFacetFixtures(fixtures []Fixture) []Fixture {
 		for _, fixture := range fixtures {
 			copyOfSchema := deepCopyDatabase(fixture.Schema)
 			found := false
-			visitField(reflect.ValueOf(&copyOfSchema).Elem(), path, func(field reflect.Value) {
+			visitField(reflect.ValueOf(&copyOfSchema).Elem(), path, readWrite, func(field reflect.Value) {
 				if field.CanSet() {
 					field.Set(reflect.ValueOf(must.Must(schemaext.NewFacets(&unknownFacet{}))))
 					found = true

@@ -81,7 +81,7 @@ const ptahModule = "ptah.run"
 // declares changes nothing, and that reads exactly like a field nothing renders.
 func Populated(schema schemamodel.Database, path string) bool {
 	populated := false
-	visitField(reflect.ValueOf(schema), path, func(field reflect.Value) {
+	visitField(reflect.ValueOf(schema), path, readOnly, func(field reflect.Value) {
 		if !field.IsZero() {
 			populated = true
 		}
@@ -106,7 +106,7 @@ func Ablate(schema schemamodel.Database, path string) schemamodel.Database {
 	// The walk is handed the ADDRESS of the copy, which is what makes the
 	// fields it reaches settable; a value obtained from reflect.ValueOf is not.
 	ablated := deepCopyDatabase(schema)
-	visitField(reflect.ValueOf(&ablated).Elem(), path, func(field reflect.Value) {
+	visitField(reflect.ValueOf(&ablated).Elem(), path, readWrite, func(field reflect.Value) {
 		if field.CanSet() {
 			field.Set(reflect.Zero(field.Type()))
 		}
@@ -114,9 +114,24 @@ func Ablate(schema schemamodel.Database, path string) schemamodel.Database {
 	return ablated
 }
 
+// access is what a walk may do to the value it visits.
+//
+// Passing a schema by value does not make a walk read-only: an element reached
+// through a slice or a pointer is settable, and it is the caller's memory. So a
+// walk says which it is, rather than letting settability decide.
+type access int
+
+const (
+	// readOnly leaves every container as the walk found it.
+	readOnly access = iota
+	// readWrite rebuilds a feature container from the values the walk visited,
+	// which is how a change to one of them reaches the copy being written.
+	readWrite
+)
+
 // visitField calls visit for every instance of the field named by path that is
 // reachable from value.
-func visitField(value reflect.Value, path string, visit func(reflect.Value)) {
+func visitField(value reflect.Value, path string, mode access, visit func(reflect.Value)) {
 	separator := strings.LastIndex(path, ".")
 	if separator < 0 {
 		return
@@ -125,7 +140,7 @@ func visitField(value reflect.Value, path string, visit func(reflect.Value)) {
 
 	var walk func(reflect.Value)
 	walk = func(v reflect.Value) {
-		if visitFeatures(v, walk) {
+		if visitFeatures(v, mode, walk) {
 			return
 		}
 		switch v.Kind() {
