@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -17,28 +19,29 @@ import (
 // carries quotes and a newline, which an attribute value has to keep.
 func TestRender_Replication_RoundTrip(t *testing.T) {
 	c := qt.New(t)
-	replication := schemamodel.AsyncReplication{Name: "mirror", Schema: "dr", Spec: ast.AsyncReplicationSpec{
-		Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpcs://primary:2135/?database=/prod",
+	replication := ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: "grpcs://primary:2135/?database=/prod",
 			User: "replicator", PasswordSecretPath: "secrets/password"},
-		Items: []ast.AsyncReplicationItem{
+		Items: []ydbreplication.Item{
 			{Source: "accounts", Target: "replica/accounts"},
 			{Source: "/prod/ledger", Target: "replica/ledger"},
 		},
 		ConsistencyLevel: "global",
 		CommitInterval:   "PT1.5S",
-	}}
-	transfer := schemamodel.Transfer{Name: "ingest", Spec: ast.TransferSpec{
-		Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+	}
+	transfer := ydbreplication.TransferSpec{
+		Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 			TokenSecretName: "token"},
 		Source: "events", Target: "log",
 		Lambda:   "($m) -> {\n  return [<| a: CAST($m._data AS Utf8), b: \"it's\" |>];\n}",
 		Consumer: "ingest", BatchSizeBytes: 1048576, FlushInterval: "PT10S",
-	}}
-	db := &schemamodel.Database{
-		AsyncReplications: []schemamodel.AsyncReplication{replication},
-		Transfers: []schemamodel.Transfer{transfer, {Name: "plain", Spec: ast.TransferSpec{Source: "tp", Target: "t",
-			Lambda: "($m) -> { return []; }"}}},
 	}
+	plain := ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }"}
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		ydbreplication.DesiredReplicationObject("dr", "mirror", "", replication),
+		ydbreplication.DesiredTransferObject("", "ingest", "", transfer),
+		ydbreplication.DesiredTransferObject("", "plain", "", plain),
+	))}
 
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
@@ -46,11 +49,12 @@ func TestRender_Replication_RoundTrip(t *testing.T) {
 	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.AsyncReplications, qt.HasLen, 1)
-	c.Assert(parsed.AsyncReplications[0].Spec, qt.DeepEquals, replication.Spec)
-	c.Assert([]string{parsed.AsyncReplications[0].Name, parsed.AsyncReplications[0].Schema}, qt.DeepEquals,
-		[]string{"mirror", "dr"})
-	c.Assert(parsed.Transfers, qt.HasLen, 2)
-	c.Assert(parsed.Transfers[0].Spec, qt.DeepEquals, transfer.Spec)
-	c.Assert(parsed.Transfers[1].Name, qt.Equals, "plain")
+	objects, err := parsed.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.HasLen, 3)
+	c.Assert(objects[0].Ref, qt.Equals, ydbreplication.ReplicationRef("dr", "mirror"))
+	c.Assert(objects[0].Value.(*ydbreplication.DesiredReplication).Spec, qt.DeepEquals, replication)
+	c.Assert(objects[1].Ref, qt.Equals, ydbreplication.TransferRef("", "ingest"))
+	c.Assert(objects[1].Value.(*ydbreplication.DesiredTransfer).Spec, qt.DeepEquals, transfer)
+	c.Assert(objects[2].Value.(*ydbreplication.DesiredTransfer).Spec, qt.DeepEquals, plain)
 }

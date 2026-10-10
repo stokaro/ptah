@@ -7,53 +7,63 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbreplication"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A rollback drops the replication the forward plan created, with CASCADE,
-// since the forward plan left it running; creates again the one it dropped
-// from the specification the removal carried; and moves a paused replication's
-// connection and a transfer's lambda back. The forward diff is left as it was.
+// since the forward plan left it running; creates again the running one it
+// dropped from the specification the removal carried; and moves a paused
+// replication's connection and a transfer's lambda back. Each step says what
+// it cannot recover. The forward diff is left as it was.
 func TestPlanBidirectionalSchemaDiff_ReplicationsRollBack(t *testing.T) {
 	c := qt.New(t)
-	replicationOf := func(source, target string) ast.AsyncReplicationSpec {
-		return ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"},
-			Items:      []ast.AsyncReplicationItem{{Source: source, Target: target}},
+	replicationOf := func(source, target string) ydbreplication.ReplicationSpec {
+		return ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod"},
+			Items:      []ydbreplication.Item{{Source: source, Target: target}},
 		}
 	}
 	moved := replicationOf("p", "rp")
 	moved.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
-	before := ast.TransferSpec{Source: "events", Target: "log", Lambda: "($m) -> { return []; }"}
+	before := ydbreplication.TransferSpec{Source: "events", Target: "log", Lambda: "($m) -> { return []; }"}
 	after := before
 	after.Lambda = "($m) -> { return [<| a: 1 |>]; }"
 	diff := &difftypes.SchemaDiff{
-		AsyncReplicationsAdded:   difftypes.AsyncReplicationChanges{{Name: "mirror", Spec: replicationOf("a", "ra")}},
-		AsyncReplicationsRemoved: difftypes.AsyncReplicationChanges{{Name: "old", Spec: replicationOf("o", "ro")}},
-		AsyncReplicationsModified: []difftypes.AsyncReplicationDiff{{Name: "paused", ConnectionChanged: true,
-			Desired: moved, Current: replicationOf("p", "rp"), State: catalog.ReplicationPaused}},
-		TransfersModified: []difftypes.TransferDiff{{Name: "ingest", LambdaChanged: true, Desired: after,
-			Current: before, State: catalog.ReplicationRunning}},
+		FeatureChanges: []schemaext.ChangeRecord{
+			{Subject: ydbreplication.ReplicationRef("", "mirror"), Value: ydbdiff.NewAsyncReplication(nil,
+				&ydbreplication.DesiredReplication{Spec: replicationOf("a", "ra")})},
+			{Subject: ydbreplication.ReplicationRef("", "old"), Value: ydbdiff.NewAsyncReplication(
+				&ydbreplication.ObservedReplication{Spec: replicationOf("o", "ro"), State: ydbreplication.StateRunning}, nil)},
+			{Subject: ydbreplication.ReplicationRef("", "paused"), Value: ydbdiff.NewAsyncReplication(
+				&ydbreplication.ObservedReplication{Spec: replicationOf("p", "rp"), State: ydbreplication.StatePaused},
+				&ydbreplication.DesiredReplication{Spec: moved})},
+			{Subject: ydbreplication.TransferRef("", "ingest"), Value: ydbdiff.NewTransfer(
+				&ydbreplication.ObservedTransfer{Spec: before, State: ydbreplication.StateRunning},
+				&ydbreplication.DesiredTransfer{Spec: after})},
+		},
 		DeclaredTables: []schemamodel.Table{{StructName: "L", Name: "log"}},
-		Replications: difftypes.ReplicationContext{
-			CurrentReplications: []catalog.AsyncReplication{
-				{Name: "old", State: catalog.ReplicationDone, Spec: replicationOf("o", "ro")},
-				{Name: "paused", State: catalog.ReplicationPaused, Spec: replicationOf("p", "rp")},
-			},
-			CurrentTransfers: []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning, Spec: before}},
-			DeclaredReplications: []schemamodel.AsyncReplication{
-				{Name: "mirror", Spec: replicationOf("a", "ra")},
-				{Name: "paused", Spec: moved},
-			},
-			DeclaredTransfers: []schemamodel.Transfer{{Name: "ingest", Spec: after}},
-			CurrentTopics:     []string{"events"},
-			DeclaredTopics:    []string{"events"},
+		Features: difftypes.FeatureContext{
+			CurrentObjects: must.Must(schemaext.NewObjects(
+				ydbreplication.ObservedReplicationObject("", "old", replicationOf("o", "ro"), ydbreplication.StateRunning),
+				ydbreplication.ObservedReplicationObject("", "paused", replicationOf("p", "rp"), ydbreplication.StatePaused),
+				ydbreplication.ObservedTransferObject("", "ingest", before, ydbreplication.StateRunning),
+				ydbtopic.ObservedObject("", "events", ydbtopic.Spec{}),
+			)),
+			DesiredObjects: must.Must(schemaext.NewObjects(
+				ydbreplication.DesiredReplicationObject("", "mirror", "", replicationOf("a", "ra")),
+				ydbreplication.DesiredReplicationObject("", "paused", "", moved),
+				ydbreplication.DesiredTransferObject("", "ingest", "", after),
+				ydbtopic.DesiredObject("", "events", "", ydbtopic.Spec{}),
+			)),
 		},
 	}
 	current := &catalog.Database{Tables: []catalog.Table{{Name: "log", Type: "TABLE", Columns: []catalog.Column{
@@ -71,11 +81,17 @@ func TestPlanBidirectionalSchemaDiff_ReplicationsRollBack(t *testing.T) {
 	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Equals, "DROP ASYNC REPLICATION `mirror` CASCADE;\n"+
+	c.Assert(sql, qt.Equals, "-- Rollback of \"ptah.run/ydb/async-replication mirror\": \"drop the created replication with its replica tables\".\n"+
+		"-- Recovery limit: \"dropping async replication mirror drops the replica tables it created, with every row it copied\"\n"+
+		"-- Rollback of \"ptah.run/ydb/async-replication old\": \"create the dropped replication again with its connection and items\".\n"+
+		"-- Recovery limit: \"the replica tables async replication old dropped are created again empty, and the replication copies its source again from the start\"\n"+
+		"-- Rollback of \"ptah.run/ydb/async-replication paused\": \"restore the replication's connection and credential in place\".\n"+
+		"-- Rollback of \"ptah.run/ydb/transfer ingest\": \"restore the transfer's lambda, batch settings and connection in place\".\n"+
+		"-- Recovery limit: \"the rows transfer ingest wrote with the changed lambda stay as written\"\n"+
+		"DROP ASYNC REPLICATION `mirror` CASCADE;\n"+
 		"CREATE ASYNC REPLICATION `old` FOR `o` AS `ro` WITH (CONNECTION_STRING = 'grpc://primary:2136/?database=/prod');\n"+
 		"ALTER ASYNC REPLICATION `paused` SET (CONNECTION_STRING = 'grpc://primary:2136/?database=/prod');\n"+
 		"ALTER TRANSFER `ingest` SET USING ($m) -> { return []; };\n")
-	c.Assert(diff.AsyncReplicationsAdded.Names(), qt.DeepEquals, []string{"mirror"})
-	c.Assert(diff.AsyncReplicationsModified[0].Desired.Connection.ConnectionString, qt.Equals,
+	c.Assert(diff.FeatureChanges[2].Value.(*ydbdiff.AsyncReplication).After.Spec.Connection.ConnectionString, qt.Equals,
 		"grpc://standby:2136/?database=/prod", qt.Commentf("the reversal must not write through to the forward diff"))
 }

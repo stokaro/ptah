@@ -188,20 +188,11 @@ func reverseSchemaDiffWithPrior(
 		SynonymsAdded:    diff.SynonymsRemoved,
 		SynonymsRemoved:  diff.SynonymsAdded,
 		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified, prior),
-		// An async replication and a transfer reverse like a synonym: the down
-		// direction drops what the up direction created, and creates what it
-		// dropped from the specification the removal carried. A change carries
-		// both of its states, so the reversal swaps them and builds the change
-		// again. The context the down plan reads is the database the up
-		// migration left: the declared objects become the current ones, with
-		// the state each had where the database held it already.
-		AsyncReplicationsAdded:    cloneAsyncReplications(diff.AsyncReplicationsRemoved),
-		AsyncReplicationsRemoved:  cloneAsyncReplications(diff.AsyncReplicationsAdded),
-		AsyncReplicationsModified: reverseAsyncReplicationDiffs(diff.AsyncReplicationsModified),
-		TransfersAdded:            slices.Clone(diff.TransfersRemoved),
-		TransfersRemoved:          slices.Clone(diff.TransfersAdded),
-		TransfersModified:         reverseTransferDiffs(diff.TransfersModified),
-		Replications:              reverseReplicationContext(diff.Replications),
+		// The context the down plan reads is the database the up migration
+		// left: the declared objects become the current ones, each with the
+		// value the database held where it held one already, which carries
+		// the state a replication or a transfer reported.
+		Features: reverseFeatureContext(diff.Features),
 
 		// A resource pool and a classifier reverse like a synonym: the down
 		// direction drops what the up direction created, and creates what it
@@ -621,77 +612,23 @@ func reverseIndexComments(changes []difftypes.IndexCommentChange) []difftypes.In
 	return reversed
 }
 
-// reverseAsyncReplicationDiffs swaps the two states of every replication
-// change and builds the change again from them. The state the database
-// reports is the forward change's: YDB changes a replication's connection
-// only while it is paused, and the change leaves it paused.
-func reverseAsyncReplicationDiffs(changes []difftypes.AsyncReplicationDiff) []difftypes.AsyncReplicationDiff {
-	if changes == nil {
-		return nil
-	}
-	reversed := make([]difftypes.AsyncReplicationDiff, 0, len(changes))
-	for _, change := range changes {
-		if back, differs := difftypes.NewAsyncReplicationDiff(change.Name, change.Current, change.Desired,
-			change.State); differs {
-			reversed = append(reversed, back)
+// reverseFeatureContext is the context a down plan reads: the database the up
+// migration left holds what the target schema declared, and the down plan
+// declares what the database held. An object both sides held keeps the
+// database's value, which carries what only a read reports, such as the
+// state of a YDB replication; the forward plan changed no such value an
+// object has outside its declaration.
+func reverseFeatureContext(context difftypes.FeatureContext) difftypes.FeatureContext {
+	current := context.DesiredObjects
+	for _, ref := range context.DesiredObjects.Refs() {
+		held, found, err := context.CurrentObjects.Get(ref)
+		if err != nil || !found {
+			continue
+		}
+		if replaced, err := current.Replace(held); err == nil {
+			current = replaced
 		}
 	}
-	return reversed
-}
-
-// reverseTransferDiffs swaps the two states of every transfer change and
-// builds the change again from them.
-func reverseTransferDiffs(changes []difftypes.TransferDiff) []difftypes.TransferDiff {
-	if changes == nil {
-		return nil
-	}
-	reversed := make([]difftypes.TransferDiff, 0, len(changes))
-	for _, change := range changes {
-		if back, differs := difftypes.NewTransferDiff(change.Name, change.Current, change.Desired,
-			change.State); differs {
-			reversed = append(reversed, back)
-		}
-	}
-	return reversed
-}
-
-// reverseReplicationContext is the context a down plan reads: the database the
-// up migration left holds the declared replications, transfers and topics,
-// each replication and transfer with the state the database reported where it
-// held the object already, and the schema the down plan restores declares the
-// ones the database held.
-func reverseReplicationContext(context difftypes.ReplicationContext) difftypes.ReplicationContext {
-	states := make(map[string]string, len(context.CurrentReplications)+len(context.CurrentTransfers))
-	for _, replication := range context.CurrentReplications {
-		states["replication "+replication.QualifiedName()] = replication.State
-	}
-	for _, transfer := range context.CurrentTransfers {
-		states["transfer "+transfer.QualifiedName()] = transfer.State
-	}
-	reversed := difftypes.ReplicationContext{}
-	for _, replication := range context.DeclaredReplications {
-		reversed.CurrentReplications = append(reversed.CurrentReplications, catalog.AsyncReplication{
-			Name: replication.Name, Schema: replication.Schema, Spec: replication.Spec.Clone(),
-			State: states["replication "+replication.QualifiedName()],
-		})
-	}
-	for _, transfer := range context.DeclaredTransfers {
-		reversed.CurrentTransfers = append(reversed.CurrentTransfers, catalog.Transfer{
-			Name: transfer.Name, Schema: transfer.Schema, Spec: transfer.Spec,
-			State: states["transfer "+transfer.QualifiedName()],
-		})
-	}
-	for _, replication := range context.CurrentReplications {
-		reversed.DeclaredReplications = append(reversed.DeclaredReplications, schemamodel.AsyncReplication{
-			Name: replication.Name, Schema: replication.Schema, Spec: replication.Spec.Clone(),
-		})
-	}
-	for _, transfer := range context.CurrentTransfers {
-		reversed.DeclaredTransfers = append(reversed.DeclaredTransfers, schemamodel.Transfer{
-			Name: transfer.Name, Schema: transfer.Schema, Spec: transfer.Spec,
-		})
-	}
-	reversed.CurrentTopics = slices.Clone(context.DeclaredTopics)
-	reversed.DeclaredTopics = slices.Clone(context.CurrentTopics)
-	return reversed
+	return difftypes.FeatureContext{DesiredObjects: context.CurrentObjects, CurrentObjects: current,
+		CurrentCoverage: context.CurrentCoverage}
 }

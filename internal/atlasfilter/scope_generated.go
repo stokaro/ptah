@@ -36,6 +36,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectExternalFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectReplicationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTimescaleFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
@@ -100,12 +101,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	})
 	out.Synonyms = keep(db.Synonyms, func(synonym schemamodel.Synonym) bool {
 		return s.selectedQualifiedName(typeList("synonym"), synonym.QualifiedName())
-	})
-	out.AsyncReplications = keep(db.AsyncReplications, func(replication schemamodel.AsyncReplication) bool {
-		return s.selected(typeList("async_replication"), replication.Schema, replication.Name)
-	})
-	out.Transfers = keep(db.Transfers, func(transfer schemamodel.Transfer) bool {
-		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
 	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property schemamodel.ExtendedProperty) bool {

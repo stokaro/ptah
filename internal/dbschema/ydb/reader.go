@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -191,7 +192,7 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 		return nil, err
 	}
 	for _, enroll := range []func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error){
-		ydbexternal.SourceCoverage, ydbexternal.TableCoverage,
+		ydbexternal.SourceCoverage, ydbexternal.TableCoverage, ydbreplication.ReplicationCoverage, ydbreplication.TransferCoverage,
 	} {
 		external, err := enroll(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		if err != nil {
@@ -271,7 +272,7 @@ func (r *Reader) entry(
 		}
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER,
 		Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
-		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
+		if described, err := r.keyedEntry(ctx, source, schema, entry, db, unread); described || err != nil {
 			return err
 		}
 	case Ydb_Scheme.Entry_DATABASE:
@@ -303,6 +304,12 @@ func (r *Reader) entry(
 		return nil
 	case Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		unread.add(ydbexternal.TableKind, ydbexternal.TableRef(schema, name), ydbexternal.UnsupportedReason)
+		return nil
+	case Ydb_Scheme.Entry_REPLICATION:
+		unread.add(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef(schema, name), ydbreplication.UnsupportedReplicationReason)
+		return nil
+	case Ydb_Scheme.Entry_TRANSFER:
+		unread.add(ydbreplication.TransferKind, ydbreplication.TransferRef(schema, name), ydbreplication.UnsupportedTransferReason)
 		return nil
 	}
 	kind, known := unmodeledEntries[entry.GetType()]
@@ -364,6 +371,7 @@ func (r *Reader) keyedEntry(
 	schema string,
 	entry *Ydb_Scheme.Entry,
 	db *catalog.Database,
+	unread *unreadObjects,
 ) (bool, error) {
 	if !r.caps.Has(keyedEntries[entry.GetType()]) || !r.inScope(schema) {
 		return false, nil
@@ -379,11 +387,11 @@ func (r *Reader) keyedEntry(
 	case Ydb_Scheme.Entry_TOPIC:
 		return true, r.topic(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_REPLICATION:
-		return true, r.replication(ctx, source, schema, name, db)
+		return true, r.replication(ctx, source, schema, name, db, unread)
 	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		return true, r.externalObject(ctx, source, schema, entry, db)
 	default:
-		return true, r.transfer(ctx, source, schema, name, db)
+		return true, r.transfer(ctx, source, schema, name, db, unread)
 	}
 }
 
@@ -404,17 +412,13 @@ func (r *Reader) directory(ctx context.Context, source Source, schema, name stri
 }
 
 // unmodeledEntries maps each scheme entry type Ptah does not model to the
-// coverage kind it is recorded under. A view, an async replication and a
-// transfer are here for a server without [capability.Views],
-// [capability.AsyncReplication] or [capability.Transfers], whose reader
-// records them rather than describing them.
+// coverage kind it is recorded under. A view is here for a server without
+// [capability.Views], whose reader records it rather than describing it.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_VIEW:         coverage.View,
 	Ydb_Scheme.Entry_COLUMN_TABLE: coverage.ColumnTable,
 	Ydb_Scheme.Entry_COLUMN_STORE: coverage.ColumnTable,
 	Ydb_Scheme.Entry_SEQUENCE:     coverage.Sequence,
-	Ydb_Scheme.Entry_REPLICATION:  coverage.Replication,
-	Ydb_Scheme.Entry_TRANSFER:     coverage.Transfer,
 }
 
 // EntryStreamingQuery is the scheme entry type of a streaming query, which the

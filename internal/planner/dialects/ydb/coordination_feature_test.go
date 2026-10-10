@@ -6,7 +6,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -80,19 +79,3 @@ func TestCoordinationFeaturesRefuseAPathClaimedByAnotherCreation(t *testing.T) {
 	c.Assert(nodes, qt.IsNil)
 }
 
-func TestCommonSchemeStepRefusesAnEmptyLeafName(t *testing.T) {
-	c := qt.New(t)
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	diff := &difftypes.SchemaDiff{AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{{
-		Schema: "app", Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpcs://primary.example.com:2135/?database=/prod", User: "replicator", PasswordSecretPath: "secrets/replicator"},
-			Items:      []ast.AsyncReplicationItem{{Source: "accounts", Target: "replica/accounts"}}, ConsistencyLevel: "global", CommitInterval: "PT30S",
-		},
-	}}}
-
-	nodes, err := ydb.New().GenerateMigrationAST(t.Context(), runtime, diff)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `YDB scheme operation requires an object name`)
-	c.Assert(nodes, qt.IsNil)
-}

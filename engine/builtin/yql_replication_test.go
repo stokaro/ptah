@@ -23,16 +23,17 @@ func TestDesiredYQLReplicationRendersItsPathsAndLambda(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TRANSFER `archive/ingest` FROM `archive/events` TO `archive/rows` USING ($msg) -> { RETURN [<|id:$msg._offset|>]; };")
 }
 
-// A source patch cannot be ignored in favor of a complete Spec beside it.
-// Resolve it against the source declarations before asking any renderer.
+// TestUnresolvedYQLReplicationChangesCannotRender refuses an ALTER of a
+// desired YQL schema that reaches a renderer unresolved: the YQL source folds
+// it into the earlier declaration, and no renderer writes the patch alone.
 func TestUnresolvedYQLReplicationChangesCannotRender(t *testing.T) {
 	for _, node := range []ast.Node{
-		&ast.AlterAsyncReplicationNode{Name: "mirror", Spec: ast.AsyncReplicationSpec{Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://source:2136/?database=/remote"}, Items: []ast.AsyncReplicationItem{{Source: "src", Target: "dst"}}}, SourceSettings: map[string]string{"database": "/changed"}},
-		&ast.AlterTransferNode{Name: "ingest", Spec: ast.TransferSpec{Source: "topic", Target: "table", Lambda: "($msg) -> { RETURN []; }"}, SourceSettings: map[string]string{"batch_size_bytes": "4096"}},
+		&yqlparse.ReplicationSettings{Kind: "replication", Name: "mirror", Settings: map[string]string{"database": "/changed"}},
+		&yqlparse.ReplicationSettings{Kind: "transfer", Name: "ingest", Settings: map[string]string{"batch_size_bytes": "4096"}},
 	} {
 		c := qt.New(t)
-		_, err := builtin.RenderSQLWithCapabilities("ydb", capability.YDB262(), node)
+		sql, err := builtin.RenderSQLWithCapabilities("ydb", capability.YDB262(), node)
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-		c.Assert(err.Error(), qt.Contains, "resolve the desired declaration")
+		c.Assert(sql, qt.Equals, "")
 	}
 }

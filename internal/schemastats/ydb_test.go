@@ -21,9 +21,7 @@ import (
 func TestCollect_YDBFamilies(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
-		Tables:            []schemamodel.Table{{Name: "orders"}, {Name: "users"}},
-		AsyncReplications: make([]schemamodel.AsyncReplication, 7),
-		Transfers:         make([]schemamodel.Transfer, 8),
+		Tables: []schemamodel.Table{{Name: "orders"}, {Name: "users"}},
 	}
 	var err error
 	db.FeatureObjects, err = schemaext.NewObjects(
@@ -59,8 +57,8 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		{"topics", "2"}, {"topic_consumers", "5"},
 		{"changefeeds", "3"}, {"changefeed_consumers", "6"},
 		{"coordination_nodes", "4"}, {"resource_pools", "5"},
-		{"resource_pool_classifiers", "6"}, {"async_replications", "9"},
-		{"transfers", "11"}, {"secrets", "9"},
+		{"resource_pool_classifiers", "6"}, {"async_replications", "2"},
+		{"transfers", "3"}, {"secrets", "9"},
 		{"external_data_sources", "10"}, {"external_tables", "3"},
 		{"external_columns", "6"}, {"streaming_queries", "11"},
 	} {
@@ -69,8 +67,8 @@ func TestCollect_YDBFamilies(t *testing.T) {
 	}
 }
 
-// addReplicationMetricFixtures adds two owned async replications and three
-// owned transfers, which the owner counts beside the common ones.
+// addReplicationMetricFixtures adds two async replications and three
+// transfers.
 func addReplicationMetricFixtures(c *qt.C, objects schemaext.Objects) schemaext.Objects {
 	c.Helper()
 	connection := ydbreplication.Connection{ConnectionString: "grpc://primary.example.com:2136/?database=/prod"}

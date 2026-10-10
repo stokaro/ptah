@@ -5,22 +5,112 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbpath"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// refuseReplications refuses an async replication or transfer change YDB
-// cannot make, or one that would break what such an object owns or depends
-// on, before any node is returned.
+// The replication owner plans, renders and refuses each statement on an async
+// replication or a transfer on its own (see dialect/ydb/ydbplan). What it
+// cannot see is the rest of the plan: the tables a replication owns and the
+// tables, topics and changefeeds a transfer depends on. The rules here read
+// the owned objects of [difftypes.FeatureContext] and the plan's table
+// changes, and refuse a plan the two together would break.
+
+// replication is an async replication of one side, by its canonical
+// reference, with the state the database reported, empty for a declaration.
+type replication struct {
+	name  string
+	spec  ydbreplication.ReplicationSpec
+	state string
+}
+
+// transfer is a transfer of one side, by its canonical reference.
+type transfer struct {
+	name string
+	spec ydbreplication.TransferSpec
+}
+
+// replicationsOf lists the replications objects holds, in either
+// representation, in reference order.
+func replicationsOf(objects schemaext.Objects) []replication {
+	var found []replication
+	for _, object := range ownedObjects(objects, ydbreplication.ReplicationKind) {
+		name := ydbreplication.Reference(object.Ref.Schema.Source, object.Ref.Name.Source)
+		switch value := object.Value.(type) {
+		case *ydbreplication.DesiredReplication:
+			found = append(found, replication{name: name, spec: value.Spec})
+		case *ydbreplication.ObservedReplication:
+			found = append(found, replication{name: name, spec: value.Spec, state: value.State})
+		}
+	}
+	return found
+}
+
+// transfersOf lists the transfers objects holds, in either representation, in
+// reference order.
+func transfersOf(objects schemaext.Objects) []transfer {
+	var found []transfer
+	for _, object := range ownedObjects(objects, ydbreplication.TransferKind) {
+		name := ydbreplication.Reference(object.Ref.Schema.Source, object.Ref.Name.Source)
+		switch value := object.Value.(type) {
+		case *ydbreplication.DesiredTransfer:
+			found = append(found, transfer{name: name, spec: value.Spec})
+		case *ydbreplication.ObservedTransfer:
+			found = append(found, transfer{name: name, spec: value.Spec})
+		}
+	}
+	return found
+}
+
+// ownedObjects is every object of kind in objects, in reference order. A
+// collection that cannot list its objects lists none: the owner refused it
+// before planning.
+func ownedObjects(objects schemaext.Objects, kind schemaext.Kind) []schemaext.Object {
+	selected, err := objects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(kind) }).All()
+	if err != nil {
+		return nil
+	}
+	return selected
+}
+
+// replicationChanges are the replication changes of the diff, by kind of
+// change.
+type replicationChanges struct {
+	created, removed []*ydbdiff.AsyncReplication
+	names            map[*ydbdiff.AsyncReplication]string
+}
+
+func changedReplications(diff *difftypes.SchemaDiff) replicationChanges {
+	changes := replicationChanges{names: make(map[*ydbdiff.AsyncReplication]string)}
+	for _, record := range diff.FeatureChanges {
+		change, ok := record.Value.(*ydbdiff.AsyncReplication)
+		if !ok {
+			continue
+		}
+		changes.names[change] = ydbreplication.Reference(record.Subject.Schema.Source, record.Subject.Name.Source)
+		switch {
+		case change.Before == nil && change.After != nil:
+			changes.created = append(changes.created, change)
+		case change.After == nil && change.Before != nil:
+			changes.removed = append(changes.removed, change)
+		}
+	}
+	return changes
+}
+
+// refuseReplications refuses a plan whose table changes would break what an
+// async replication owns or what a transfer depends on.
 //
 // A replication owns its replica tables. While it runs they are read-only and
 // the read records them rather than describing them, so no table change
@@ -30,45 +120,19 @@ import (
 // on 26.2.1.14, DROP TABLE and DROP TOPIC under a running transfer are both
 // accepted, and the transfer stops with `Discovery for all topics failed`.
 func (p *Planner) refuseReplications(diff *difftypes.SchemaDiff) error {
-	if err := p.refuseReplicationChanges(diff); err != nil {
-		return err
+	changes := changedReplications(diff)
+	for _, change := range changes.removed {
+		if err := dropReplicationRefusal(diff, changes.names[change], change); err != nil {
+			return err
+		}
 	}
-	if err := refuseReplicaTables(diff); err != nil {
-		return err
-	}
-	if err := p.refuseTransferChanges(diff); err != nil {
+	if err := refuseReplicaTables(diff, changes); err != nil {
 		return err
 	}
 	return refuseTransferDependencies(diff)
 }
 
-// refuseReplicationChanges refuses a replication the target cannot create and
-// a change of one YDB cannot make in place.
-func (p *Planner) refuseReplicationChanges(diff *difftypes.SchemaDiff) error {
-	for _, replication := range diff.AsyncReplicationsAdded {
-		if err := planReplicationRefusal(
-			ydbreplication.CheckReplication(replication.QualifiedName(), replication.Spec, p.caps)); err != nil {
-			return err
-		}
-	}
-	for _, change := range diff.AsyncReplicationsModified {
-		if err := planReplicationRefusal(ydbreplication.CheckReplication(change.Name, change.Desired, p.caps)); err != nil {
-			return err
-		}
-		if err := planReplicationRefusal(
-			ydbreplication.ReplicationChangeRefusal(change.Name, change.Desired, change.Current, change.State)); err != nil {
-			return err
-		}
-	}
-	for _, replication := range diff.AsyncReplicationsRemoved {
-		if err := dropReplicationRefusal(diff, replication); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// dropReplicationRefusal refuses the drop of replication when its replica
+// dropReplicationRefusal refuses the drop of replication name when its replica
 // tables would outlive it read-only.
 //
 // Measured on 25.1.4.7 and 26.2.1.14: a replication dropped without CASCADE
@@ -78,13 +142,11 @@ func (p *Planner) refuseReplicationChanges(diff *difftypes.SchemaDiff) error {
 // replication is dropped with CASCADE, which drops its replica tables with it,
 // and a schema that removes the replication but declares one of its tables is
 // asking for that table to stay writable, which only a failover gives.
-func dropReplicationRefusal(diff *difftypes.SchemaDiff, replication schemamodel.AsyncReplication) error {
-	name := replication.QualifiedName()
-	current, found := diff.Replications.CurrentReplication(name)
-	if !found || current.State == catalog.ReplicationDone {
+func dropReplicationRefusal(diff *difftypes.SchemaDiff, name string, change *ydbdiff.AsyncReplication) error {
+	if !change.Cascade() {
 		return nil
 	}
-	targets := currentTargets(current)
+	targets := ydbreplication.Targets(change.Before.Spec)
 	for _, table := range diff.DeclaredTables {
 		if ydbreplication.UnderTarget(ydbreplication.TablePath(table.Schema, table.Name), targets) {
 			return refuseFact("async replication "+name, fmt.Sprintf("the schema drops it and declares table %s, "+
@@ -98,35 +160,41 @@ func dropReplicationRefusal(diff *difftypes.SchemaDiff, replication schemamodel.
 }
 
 // refuseReplicaTables refuses a table change that would reach a table a
-// replication owns: a declared table at the path of a live replica, a table
-// the plan creates under a replication the plan creates, and a failed-over
-// replica the plan would drop while the schema keeps its replication.
-func refuseReplicaTables(diff *difftypes.SchemaDiff) error {
+// replication owns: a declared table at the path of a live replica, a
+// replication the plan creates where a live replica of another stands, and a
+// failed-over replica the plan would drop while the schema keeps its
+// replication.
+func refuseReplicaTables(diff *difftypes.SchemaDiff, changes replicationChanges) error {
+	current := replicationsOf(diff.Features.CurrentObjects)
 	for _, creation := range diff.TablesAdded {
 		tablePath := namePath(creation.Name)
 		if record, found := replicaRecord(diff.CurrentNotDescribed, tablePath); found {
-			return refuseFact("table "+creation.Name, replicaRefusal(diff, record.Name, tablePath))
+			return refuseFact("table "+creation.Name, replicaRefusal(current, record.Name, tablePath))
 		}
 	}
-	for _, replication := range diff.AsyncReplicationsAdded {
-		for _, target := range ydbreplication.Targets(replication.Spec) {
+	for _, change := range changes.created {
+		for _, target := range ydbreplication.Targets(change.After.Spec) {
 			if record, found := replicaUnder(diff.CurrentNotDescribed, target); found {
-				return refuseFact("async replication "+replication.QualifiedName(), fmt.Sprintf("its target %s "+
+				return refuseFact("async replication "+changes.names[change], fmt.Sprintf("its target %s "+
 					"holds %s, a replica table of another replication, and YDB creates a replica only at a free "+
 					"path (measured: `Create dst error`)", target, record))
 			}
 		}
 	}
+	declared := make(map[string]bool)
+	for _, kept := range replicationsOf(diff.Features.DesiredObjects) {
+		declared[kept.name] = true
+	}
 	for _, removed := range diff.TablesRemoved.Names() {
 		tablePath := namePath(removed)
-		for _, replication := range diff.Replications.CurrentReplications {
-			if replication.State != catalog.ReplicationDone || !diff.Replications.Declares(replication.QualifiedName()) ||
-				!ydbreplication.UnderTarget(tablePath, currentTargets(replication)) {
+		for _, held := range current {
+			if held.state != ydbreplication.StateDone || !declared[held.name] ||
+				!ydbreplication.UnderTarget(tablePath, ydbreplication.Targets(held.spec)) {
 				continue
 			}
 			return refuseFact("table "+removed, fmt.Sprintf("it is a table async replication %s created and "+
 				"failed over, which the schema keeps; declare the table, which is an ordinary table now, or "+
-				"remove the replication from the schema", replication.QualifiedName()))
+				"remove the replication from the schema", held.name))
 		}
 	}
 	return nil
@@ -134,40 +202,18 @@ func refuseReplicaTables(diff *difftypes.SchemaDiff) error {
 
 // replicaRefusal says why a table cannot be declared at the path of a live
 // replica table.
-func replicaRefusal(diff *difftypes.SchemaDiff, recorded, tablePath string) string {
-	for _, replication := range diff.Replications.CurrentReplications {
-		if ydbreplication.UnderTarget(tablePath, currentTargets(replication)) {
+func replicaRefusal(current []replication, recorded, tablePath string) string {
+	for _, held := range current {
+		if ydbreplication.UnderTarget(tablePath, ydbreplication.Targets(held.spec)) {
 			return fmt.Sprintf("it is a replica table async replication %s writes, read-only while the "+
 				"replication runs (`path is an async replica table`); remove the table from the schema, or fail the "+
 				"replication over first with ALTER ASYNC REPLICATION %s SET (STATE = 'DONE', FAILOVER_MODE = "+
-				"'FORCE'), which makes it an ordinary table", replication.QualifiedName(),
-				ydbreplication.Path(replication.QualifiedName()))
+				"'FORCE'), which makes it an ordinary table", held.name, ydbreplication.Path(held.name))
 		}
 	}
 	return fmt.Sprintf("%s is a replica table no replication of this database writes any more, which YDB keeps "+
 		"read-only for good (`path is an async replica table`); drop it by hand with DROP TABLE, which YDB "+
 		"accepts, or remove it from the schema", recorded)
-}
-
-// refuseTransferChanges refuses a transfer the target cannot create and a
-// change of one YDB cannot make in place.
-func (p *Planner) refuseTransferChanges(diff *difftypes.SchemaDiff) error {
-	for _, transfer := range diff.TransfersAdded {
-		if err := planReplicationRefusal(
-			ydbreplication.CheckTransfer(transfer.QualifiedName(), transfer.Spec, p.caps)); err != nil {
-			return err
-		}
-	}
-	for _, change := range diff.TransfersModified {
-		if err := planReplicationRefusal(ydbreplication.CheckTransfer(change.Name, change.Desired, p.caps)); err != nil {
-			return err
-		}
-		if err := planReplicationRefusal(
-			ydbreplication.TransferChangeRefusal(change.Name, change.Desired, change.Current, change.State)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // refuseTransferDependencies refuses a declared transfer whose table or topic
@@ -186,23 +232,24 @@ func refuseTransferDependencies(diff *difftypes.SchemaDiff) error {
 	for _, table := range diff.DeclaredTables {
 		declared[ydbreplication.TablePath(table.Schema, table.Name)] = table
 	}
-	topics := make(map[string]bool, len(diff.Replications.DeclaredTopics))
-	for _, topic := range diff.Replications.DeclaredTopics {
-		topics[topic] = true
+	topics := make(map[string]bool)
+	for _, object := range ownedObjects(diff.Features.DesiredObjects, ydbtopic.Kind) {
+		topics[ydbtopic.Display(object.Ref.Schema.Source, object.Ref.Name.Source)] = true
 	}
-	for _, transfer := range diff.Replications.DeclaredTransfers {
-		subject := "transfer " + transfer.QualifiedName()
-		target := strings.Trim(transfer.Spec.Target, "/")
+	for _, declaredTransfer := range transfersOf(diff.Features.DesiredObjects) {
+		subject := "transfer " + declaredTransfer.name
+		target := strings.Trim(declaredTransfer.spec.Target, "/")
 		if _, ok := declared[target]; !ok {
 			return refuseFact(subject, fmt.Sprintf("it writes table %s, which the schema does not declare, and YDB "+
 				"creates no transfer into a table that is not there (`Path does not exist`); declare the table",
 				target))
 		}
-		if !ydbreplication.LocalSource(transfer.Spec) {
+		if !ydbreplication.LocalSource(declaredTransfer.spec) {
 			continue
 		}
-		source := transferSource(diff.CurrentDatabasePath, transfer.Spec.Source)
-		if topics[source] || declaresChangefeed(diff.Replications.DesiredObjects, declared, source) || recordsTopic(diff.Replications.CurrentCoverage, source) || recordsChangefeed(diff.Replications.CurrentCoverage, declared, source) {
+		source := transferSource(diff.CurrentDatabasePath, declaredTransfer.spec.Source)
+		if topics[source] || declaresChangefeed(diff.Features.DesiredObjects, declared, source) ||
+			recordsTopic(diff.Features.CurrentCoverage, source) || recordsChangefeed(diff.Features.CurrentCoverage, declared, source) {
 			continue
 		}
 		return refuseFact(subject, fmt.Sprintf("it reads topic %s, which the schema declares neither as a topic "+
@@ -282,67 +329,40 @@ func cutLast(value string) (before, after string, found bool) {
 // with the old changefeed.
 func transferOfTable(diff *difftypes.SchemaDiff, table schemamodel.Table) string {
 	tablePath := ydbreplication.TablePath(table.Schema, table.Name)
-	for _, transfer := range diff.Replications.CurrentTransfers {
-		source := transferSource(diff.CurrentDatabasePath, transfer.Spec.Source)
-		if strings.Trim(transfer.Spec.Target, "/") == tablePath ||
-			(ydbreplication.LocalSource(transfer.Spec) && strings.HasPrefix(source, tablePath+"/")) {
-			return transfer.QualifiedName()
+	for _, held := range transfersOf(diff.Features.CurrentObjects) {
+		source := transferSource(diff.CurrentDatabasePath, held.spec.Source)
+		if strings.Trim(held.spec.Target, "/") == tablePath ||
+			(ydbreplication.LocalSource(held.spec) && strings.HasPrefix(source, tablePath+"/")) {
+			return held.name
 		}
 	}
 	return ""
 }
 
-// dropReplications drops every transfer and every replication the plan
-// removes, first: a transfer before the table, changefeed or topic it uses
-// goes, and a replication before a table is created at one of its paths.
-//
-// A replication that was failed over is dropped without CASCADE, which keeps
-// its tables, ordinary tables by then; any other is dropped with CASCADE,
-// which drops the replica tables it created. [dropReplicationRefusal] has
-// refused the plan where the schema declares one of them.
-func dropReplications(diff *difftypes.SchemaDiff) []ast.Node {
-	nodes := make([]ast.Node, 0, len(diff.TransfersRemoved)+len(diff.AsyncReplicationsRemoved))
-	for _, transfer := range diff.TransfersRemoved {
-		node := ast.NewDropTransfer(transfer.QualifiedName())
-		if ydbreplication.LocalSource(transfer.Spec) {
-			node.Topic = transfer.Spec.Source
+// replicaReads is a read of every replica path a replication the plan creates
+// writes. YDB checks a view's query when it creates the view (`Cannot find
+// table`), and a replication creates its replica tables itself, so a view the
+// plan creates runs after the replications that create the tables it may
+// read. The view's query is not parsed for the tables it names, so each view
+// waits for every such replication.
+func replicaReads(diff *difftypes.SchemaDiff) []plangraph.Effect {
+	var effects []plangraph.Effect
+	seen := make(map[objectidentity.Key]bool)
+	for _, change := range changedReplications(diff).created {
+		for _, item := range change.After.Spec.Items {
+			schema, name, err := ydbpath.Split(item.Target)
+			if err != nil {
+				continue
+			}
+			ref := ydbscheme.Path(schema, name)
+			if seen[ref.Key()] {
+				continue
+			}
+			seen[ref.Key()] = true
+			effects = append(effects, plangraph.Effect{Subject: ref, Action: plangraph.Read})
 		}
-		nodes = append(nodes, node)
 	}
-	for _, replication := range diff.AsyncReplicationsRemoved {
-		name := replication.QualifiedName()
-		current, found := diff.Replications.CurrentReplication(name)
-		nodes = append(nodes, ast.NewDropAsyncReplication(name, !found || current.State != catalog.ReplicationDone))
-	}
-	return nodes
-}
-
-// changeReplications creates and changes every replication and transfer the
-// plan adds or modifies, after the tables and their changefeeds: a replication
-// creates its replica tables at paths the dropped tables freed, and a
-// transfer needs its table, its changefeed and its consumer to exist.
-func changeReplications(diff *difftypes.SchemaDiff) []ast.Node {
-	nodes := make([]ast.Node, 0, len(diff.AsyncReplicationsAdded)+len(diff.AsyncReplicationsModified)+
-		len(diff.TransfersAdded)+len(diff.TransfersModified))
-	for _, replication := range diff.AsyncReplicationsAdded {
-		nodes = append(nodes, ast.NewCreateAsyncReplication(replication.QualifiedName(), replication.Spec))
-	}
-	for _, change := range diff.AsyncReplicationsModified {
-		nodes = append(nodes, ast.NewAlterAsyncReplication(change.Name, change.Desired, change.Current))
-	}
-	for _, transfer := range diff.TransfersAdded {
-		nodes = append(nodes, ast.NewCreateTransfer(transfer.QualifiedName(), transfer.Spec))
-	}
-	for _, change := range diff.TransfersModified {
-		nodes = append(nodes, ast.NewAlterTransfer(change.Name, change.Desired, change.Current))
-	}
-	return nodes
-}
-
-// currentTargets are the paths a replication the database holds wrote its
-// replica tables at.
-func currentTargets(replication catalog.AsyncReplication) []string {
-	return ydbreplication.Targets(replication.Spec)
+	return effects
 }
 
 // namePath is the path of a table the diff names by its canonical reference.
@@ -373,17 +393,4 @@ func replicaUnder(notDescribed coverage.Set, target string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// planReplicationRefusal turns a replication or transfer refusal into the
-// planner's error.
-func planReplicationRefusal(refusal *ydbreplication.Refusal) error {
-	switch {
-	case refusal == nil:
-		return nil
-	case refusal.Key != "":
-		return refuseKey(refusal.Key, refusal.Subject)
-	default:
-		return refuseFact(refusal.Subject, refusal.Reason)
-	}
 }

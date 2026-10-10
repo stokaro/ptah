@@ -375,15 +375,15 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     does; HCL, DBML and other SQL have no spelling for one. Those make no
 //     claim about the secret namespace, so applying one to a database that
 //     holds a secret keeps it rather than planning `DROP SECRET`, which loses
-//     a value nothing can read back. A YDB external data source and an
-//     external table are the same: YAML, YQL and a Go schema declare them,
-//     and the other formats make no claim about either namespace.
+//     a value nothing can read back. A YDB external data source, an external
+//     table, an async replication and a transfer are the same: YAML, YQL and
+//     a Go schema declare them, and the other formats make no claim about
+//     their namespaces.
 func withFormatLimits(database *schemamodel.Database, resolved, dialect string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
-	yql := extension == dirSQLExtension && platform.NormalizeDialect(dialect) == platform.YDB
 	if extension == dirHCLExtension || extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(
 			unsupportedByFormat(coverage.Changefeed, coverage.ColumnTable, coverage.TTL)...)
@@ -398,13 +398,6 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	if extension != dirHCLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Synonym, coverage.ExtendedProperty)...)
-	}
-	// The YQL reader records unsupported families itself, including empty
-	// documents. Do not replace its evolving coverage with a format-wide
-	// refusal every time the parser gains another object family.
-	if !slices.Contains(yamlOnlyExtensions, extension) && !yql {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Replication, coverage.Transfer)...)
 	}
 	if extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
@@ -895,8 +888,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	privilegefold.Merge(dst, src)
 	dst.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(dst.DefaultPrivileges, src.DefaultPrivileges)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
-	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
-	dst.Transfers = append(dst.Transfers, src.Transfers...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only

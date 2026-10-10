@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -23,11 +24,13 @@ func TestCompare_YQLOmittedReplicationRequestsRemoval(t *testing.T) {
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{
-		FeatureCoverage:   completeYDBFixtureCoverage(),
-		AsyncReplications: []catalog.AsyncReplication{{Name: "copy"}},
+		FeatureCoverage: completeYDBFixtureCoverage(),
+		FeatureObjects: must.Must(schemaext.NewObjects(ydbreplication.ObservedReplicationObject("", "copy",
+			ydbreplication.ReplicationSpec{}, ydbreplication.StateRunning))),
 	}
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
-	c.Assert(diff.AsyncReplicationsRemoved, qt.HasLen, 1)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{{Subject: ydbreplication.ReplicationRef("", "copy"),
+		Value: ydbdiff.NewAsyncReplication(&ydbreplication.ObservedReplication{State: ydbreplication.StateRunning}, nil)}})
 }
 
 func TestCompare_YQLOmittedTTLRequestsRemoval(t *testing.T) {

@@ -26,6 +26,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -505,11 +506,13 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.TTL, "app.t"),
 		observed(coverage.TableOption, "app.t"),
 		observed(coverage.ColumnTable, "olap"),
-		observed(coverage.Replication, "repl"),
 		observed(coverage.Sequence, "seq"),
 		observed(coverage.ColumnTable, "store"),
-		observed(coverage.Transfer, "xfer"),
 	))
+	c.Assert(db.FeatureCoverage.Lookup(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef("", "repl")), qt.DeepEquals,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbreplication.ServiceUnavailableReason})
+	c.Assert(db.FeatureCoverage.Lookup(ydbreplication.TransferKind, ydbreplication.TransferRef("", "xfer")), qt.DeepEquals,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbreplication.ServiceUnavailableReason})
 	c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "legacy_queue")), qt.DeepEquals,
 		schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbtopic.QueueGroupReason})
 	c.Assert(db.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("", "src")), qt.DeepEquals,

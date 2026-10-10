@@ -197,5 +197,6 @@ func ydbFixtureCoverageExceptTTL() schemaext.Coverage {
 	topics := must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	combined := must.Must(must.Must(must.Must(must.Must(feeds.Combine(nodes)).Combine(queries)).Combine(secrets)).Combine(topics))
 	combined = must.Must(combined.Combine(externalCoverage(schemaext.Observed)))
+	combined = must.Must(combined.Combine(replicationCoverage(schemaext.Observed)))
 	return must.Must(combined.Combine(workloadCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete})))
 }

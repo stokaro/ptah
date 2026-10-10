@@ -4,50 +4,37 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/atlashclrender"
 )
 
 // A document leaves a YDB async replication and a transfer out, since Atlas
-// HCL has no block for either, and says so twice: a loss diagnostic for each,
-// and a header recording that it describes neither, so applying it back plans
-// no `DROP ASYNC REPLICATION ... CASCADE`. A document for another dialect whose
-// schema holds neither records nothing.
+// HCL has no block for either, and reports each as a loss. It makes no claim
+// about either namespace, so applying it back plans no `DROP ASYNC
+// REPLICATION ... CASCADE`.
 func TestRenderForDialect_Replications(t *testing.T) {
-	tests := []struct {
-		name        string
-		dialect     string
-		db          *schemamodel.Database
-		diagnostics []atlashclrender.Diagnostic
-		recorded    bool
-	}{
-		{name: "a YDB document holding both", dialect: platform.YDB,
-			db: &schemamodel.Database{
-				AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror", Schema: "dr"}},
-				Transfers:         []schemamodel.Transfer{{Name: "ingest"}},
-			},
-			diagnostics: []atlashclrender.Diagnostic{
-				{Severity: atlashclrender.SeverityWarning, Path: "async_replications.dr.mirror",
-					Message: "a YDB async replication is not represented in HCL"},
-				{Severity: atlashclrender.SeverityWarning, Path: "transfers.ingest",
-					Message: "a YDB transfer is not represented in HCL"},
-			},
-			recorded: true},
-		{name: "a YDB document holding none", dialect: platform.YDB, db: &schemamodel.Database{}, recorded: true},
-		{name: "a PostgreSQL document holding none", dialect: platform.Postgres, db: &schemamodel.Database{},
-			recorded: false},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			result, err := atlashclrender.RenderForDialect(test.db, test.dialect)
-			c.Assert(err, qt.IsNil)
-			c.Assert(result.Diagnostics, qt.DeepEquals, test.diagnostics)
-			c.Assert(result.NotDescribed.Describes(coverage.Replication), qt.Equals, !test.recorded)
-			c.Assert(result.NotDescribed.Describes(coverage.Transfer), qt.Equals, !test.recorded)
-		})
-	}
+	c := qt.New(t)
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		ydbreplication.DesiredReplicationObject("dr", "mirror", "", ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpc://h:2136/?database=/prod"},
+			Items:      []ydbreplication.Item{{Source: "t", Target: "r"}}}),
+		ydbreplication.DesiredTransferObject("", "ingest", "", ydbreplication.TransferSpec{Source: "tp", Target: "t",
+			Lambda: "($m) -> { return []; }"}),
+	))}
+
+	result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
+		{Severity: atlashclrender.SeverityWarning, Path: `features["ptah.run/ydb/async-replication"][""]["dr"][""]["mirror"][""]`,
+			Message: "feature object ptah.run/ydb/async-replication dr.mirror of kind ptah.run/ydb/async-replication is not represented in HCL"},
+		{Severity: atlashclrender.SeverityWarning, Path: `features["ptah.run/ydb/transfer"][""][""][""]["ingest"][""]`,
+			Message: "feature object ptah.run/ydb/transfer ingest of kind ptah.run/ydb/transfer is not represented in HCL"},
+	})
+	c.Assert(result.NotDescribed.Objects, qt.HasLen, 0)
 }

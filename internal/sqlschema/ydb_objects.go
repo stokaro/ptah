@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/internal/yqlparse"
 )
 
 func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
@@ -33,6 +34,9 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		if handled, err := appendExternalDeclaration(database, node.Payload); handled {
 			return true, err
 		}
+		if handled, err := appendReplicationDeclaration(database, node.Payload); handled {
+			return true, err
+		}
 		if value, ok := node.Payload.(*ydbast.StreamingQuery); ok {
 			return true, appendStreamingQuery(database, document.base, value)
 		}
@@ -46,8 +50,10 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		var err error
 		database.FeatureObjects, err = database.FeatureObjects.With(ydbcoordination.DesiredObject(value.Schema, value.Name, value.Change.After.StructName, value.Change.After.Spec))
 		return true, err
+	case *yqlparse.ReplicationSettings:
+		return true, applyReplicationSettings(database, document.base, node)
 	default:
-		return appendYDBReplication(database, document, statement, sourcePlatform)
+		return false, nil
 	}
 }
 

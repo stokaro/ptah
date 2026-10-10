@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -32,6 +33,10 @@ type Limits struct {
 	// paths, as Secrets and Topics do.
 	ExternalDataSources []string
 	ExternalTables      []string
+	// Replications and Transfers name async replications and transfers by
+	// their paths, as the external objects are named.
+	Replications []string
+	Transfers    []string
 }
 
 const unmanagedObjectReason = "the source leaves this object unmanaged"
@@ -61,6 +66,10 @@ var sourceKinds = []sourceFamily{
 	{ydbtopic.Kind, "topic", "topics", []string{ydbtopic.UnsupportedReason, ydbtopic.QueueGroupReason}},
 	{ydbexternal.SourceKind, "external_data_source", "external data sources", []string{ydbexternal.UnsupportedReason}},
 	{ydbexternal.TableKind, "external_table", "external tables", []string{ydbexternal.UnsupportedReason}},
+	{ydbreplication.ReplicationKind, "replication", "async replications",
+		[]string{ydbreplication.UnsupportedReplicationReason, ydbreplication.ServiceUnavailableReason}},
+	{ydbreplication.TransferKind, "transfer", "transfers",
+		[]string{ydbreplication.UnsupportedTransferReason, ydbreplication.ServiceUnavailableReason}},
 }
 
 func sourceKind(token string) schemaext.Kind {
@@ -107,6 +116,10 @@ func (l *Limits) Add(kind, name string) bool {
 		l.ExternalDataSources = append(l.ExternalDataSources, name)
 	case ydbexternal.TableKind:
 		l.ExternalTables = append(l.ExternalTables, name)
+	case ydbreplication.ReplicationKind:
+		l.Replications = append(l.Replications, name)
+	case ydbreplication.TransferKind:
+		l.Transfers = append(l.Transfers, name)
 	default:
 		return false
 	}
@@ -186,11 +199,21 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
+	replications, err := pathNamespaceCoverage(limits.Replications, "async replication", ydbreplication.ReplicationKind,
+		replicationPath(ydbreplication.ReplicationKind), ydbreplication.ValidateIdentity, ydbreplication.ReplicationCoverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	transfers, err := pathNamespaceCoverage(limits.Transfers, "transfer", ydbreplication.TransferKind,
+		replicationPath(ydbreplication.TransferKind), ydbreplication.ValidateIdentity, ydbreplication.TransferCoverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
 	combined, err := feeds.Combine(nodes)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, known := range []schemaext.Coverage{queries, secrets, topics, sources, tables} {
+	for _, known := range []schemaext.Coverage{queries, secrets, topics, sources, tables, replications, transfers} {
 		combined, err = combined.Combine(known)
 		if err != nil {
 			return schemaext.Coverage{}, err
@@ -265,6 +288,12 @@ func pathNamespaceCoverage(limits []string, label string, kind schemaext.Kind,
 		return ref
 	}
 	return namespaceCoverage(limits, kind, identity, validate, enroll)
+}
+
+// replicationPath reads a limit on an async replication or a transfer of kind
+// as its path.
+func replicationPath(kind schemaext.Kind) func(string) (objectidentity.ID, error) {
+	return func(written string) (objectidentity.ID, error) { return ydbreplication.ParsePath(kind, written) }
 }
 
 // externalPath reads a limit on an external object of kind as its path.

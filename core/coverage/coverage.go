@@ -153,9 +153,8 @@ const (
 // records each one it meets, by the path of the object or of the table that
 // carries it, so a description's silence about them is never read as their
 // absence and nothing plans their removal. Like [ChangeStream], none of them
-// but [Replication], [Transfer] and [ReplicaTable] is consulted by a
-// comparator or a planner,
-// because no planner writes the others.
+// but [ReplicaTable] is consulted by a comparator or a planner, because no
+// planner writes the others.
 const (
 	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
 	// a server without the views capability. Every YDB line Ptah measured has
@@ -164,15 +163,6 @@ const (
 	// ColumnTable is a YDB column-oriented table (STORE = COLUMN), or the
 	// column store that holds such tables.
 	ColumnTable Kind = "column_table"
-	// Replication is a YDB asynchronous replication. The reader describes
-	// one on a server with the async replication capability whose
-	// replication service answers, and records it otherwise.
-	Replication Kind = "replication"
-	// Transfer is a YDB transfer, which moves messages from a topic into a
-	// table. The reader describes one on a server with the transfers
-	// capability whose replication service answers, and records it
-	// otherwise.
-	Transfer Kind = "transfer"
 	// ReplicaTable is a table a YDB async replication writes, named by its
 	// path: read-only while the replication runs, and read-only for good
 	// once the replication is dropped without being failed over first. YDB
@@ -213,9 +203,9 @@ const (
 // constant says what that costs a serialized [Set].
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnTable, Composite, DefaultPrivilege, Domain,
-	Extension, ExtendedProperty, Grant, Policy, Range, Replication,
+	Extension, ExtendedProperty, Grant, Policy, Range,
 	Role, Schema, Sequence, Synonym, TableOption,
-	Transfer, TTL, View, VirtualTable,
+	TTL, View, VirtualTable,
 }
 
 // ParseKind resolves a serialized kind token. It refuses anything not in the

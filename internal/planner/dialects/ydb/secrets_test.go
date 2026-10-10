@@ -106,8 +106,8 @@ func TestGenerateMigrationAST_SecretsPrecedeReplications(t *testing.T) {
 	spec := replicationOf("accounts", "replica/accounts")
 	spec.Connection.TokenSecretPath = "token"
 	diff := &difftypes.SchemaDiff{
-		FeatureChanges:         []schemaext.ChangeRecord{secretCreated("", "token", "PTAH_SECRET_TOKEN")},
-		AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{{Name: "mirror", Spec: spec}},
+		FeatureChanges: []schemaext.ChangeRecord{secretCreated("", "token", "PTAH_SECRET_TOKEN"),
+			replicationCreated("mirror", spec)},
 	}
 
 	got := render(c, capability.YDB262(), diff)

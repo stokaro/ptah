@@ -234,8 +234,6 @@ var convertedFamilies = map[string]string{
 	"Views":              "Views",
 	"MatViews":           "MaterializedViews",
 	"Synonyms":           "Synonyms",
-	"AsyncReplications":  "AsyncReplications",
-	"Transfers":          "Transfers",
 	"ExtendedProperties": "ExtendedProperties",
 	"Triggers":           "Triggers",
 	"RLSPolicies":        "RLSPolicies",

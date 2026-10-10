@@ -1,6 +1,7 @@
 package ydbreplication
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbpath"
 )
 
 // ReplicationKind identifies one YDB async replication: tables of another
@@ -184,12 +186,17 @@ func (v *ObservedReplication) Desired() *DesiredReplication {
 }
 
 // Observed projects the declaration as a read would report it once applied,
-// in state. It establishes no inspection evidence.
+// in state: a consistency level is spelled as YDB reports it. It establishes
+// no inspection evidence.
 func (v *DesiredReplication) Observed(state string) *ObservedReplication {
 	if v == nil {
 		return nil
 	}
-	return &ObservedReplication{Spec: v.Spec.Clone(), State: state}
+	spec := v.Spec.Clone()
+	if spec.ConsistencyLevel != "" {
+		spec.ConsistencyLevel = consistencyLevel(spec)
+	}
+	return &ObservedReplication{Spec: spec, State: state}
 }
 
 // Desired converts an observation into a declaration that keeps the transfer
@@ -468,4 +475,106 @@ func DesiredTransferObject(schema, name, structName string, spec TransferSpec) s
 // it reported.
 func ObservedTransferObject(schema, name string, spec TransferSpec, state string) schemaext.Object {
 	return schemaext.Object{Ref: TransferRef(schema, name), Value: &ObservedTransfer{Spec: spec, State: state}}
+}
+
+// DuplicateError is a second declaration of one replication's or transfer's
+// path. It wraps [schemaext.ErrDuplicate].
+type DuplicateError struct {
+	// Family is "async replication" or "transfer".
+	Family string
+	// Path is the object's path relative to the database root.
+	Path string
+}
+
+func (e *DuplicateError) Error() string { return e.Family + " " + e.Path + " is declared twice" }
+
+// Unwrap returns [schemaext.ErrDuplicate].
+func (e *DuplicateError) Unwrap() error { return schemaext.ErrDuplicate }
+
+// DeclareReplication returns objects with the async replication name in the
+// directory schema added, declared by the Go struct holder (empty for every
+// other source format) as spec. Every source format declares a replication
+// through it, so they agree on what a declaration may hold and on what a
+// repeated one is told. objects is not modified.
+//
+// The name is one segment of the path: it holds no slash, and a dot is part
+// of it. Slashes around the directory are dropped and surrounding space is
+// ignored. A name or directory a replication cannot take is refused with a
+// [DeclarationError] naming the attribute, a spec [ValidateReplication]
+// refuses with its refusal, and a replication declared twice with a
+// [DuplicateError]. Two declarations that meet only when sources are merged
+// are refused by the merge, with [schemaext.ErrDuplicate].
+func DeclareReplication(objects schemaext.Objects, schema, name, holder string, spec ReplicationSpec) (schemaext.Objects, error) {
+	schema, name, err := declaredPath(schema, name, ReplicationRef)
+	if err != nil {
+		return objects, err
+	}
+	if err := ValidateReplication(spec); err != nil {
+		return objects, err
+	}
+	return declare(objects, DesiredReplicationObject(schema, name, holder, spec), "async replication")
+}
+
+// DeclareTransfer returns objects with the transfer name in the directory
+// schema added, as [DeclareReplication] adds a replication.
+func DeclareTransfer(objects schemaext.Objects, schema, name, holder string, spec TransferSpec) (schemaext.Objects, error) {
+	schema, name, err := declaredPath(schema, name, TransferRef)
+	if err != nil {
+		return objects, err
+	}
+	if err := ValidateTransfer(spec); err != nil {
+		return objects, err
+	}
+	return declare(objects, DesiredTransferObject(schema, name, holder, spec), "transfer")
+}
+
+// declaredPath reads a declaration's directory and name, and refuses a path an
+// object cannot take.
+func declaredPath(schema, name string, ref func(schema, name string) objectidentity.ID) (directory, leaf string, err error) {
+	name = strings.TrimSpace(name)
+	schema = strings.Trim(strings.TrimSpace(schema), "/")
+	switch {
+	case name == "":
+		return "", "", &DeclarationError{Attribute: AttributeName, Reason: "an async replication or a transfer needs a name"}
+	case strings.Contains(name, "/"):
+		return "", "", &DeclarationError{Attribute: AttributeName, Value: name,
+			Reason: "holds a slash; name the directory with " + AttributeSchema}
+	case ValidateIdentity(ref("", name)) != nil:
+		return "", "", &DeclarationError{Attribute: AttributeName, Value: name, Reason: "is not a path segment"}
+	case schema != "" && ValidateIdentity(ref(schema, name)) != nil:
+		return "", "", &DeclarationError{Attribute: AttributeSchema, Value: schema,
+			Reason: "is not a directory path relative to the database root"}
+	}
+	return schema, name, nil
+}
+
+func declare(objects schemaext.Objects, object schemaext.Object, family string) (schemaext.Objects, error) {
+	declared, err := objects.With(object)
+	if errors.Is(err, schemaext.ErrDuplicate) {
+		return objects, &DuplicateError{Family: family, Path: Display(object.Ref.Schema.Source, object.Ref.Name.Source)}
+	}
+	if err != nil {
+		return objects, err
+	}
+	return declared, nil
+}
+
+// ParsePath reads the path of an object of kind, an async replication or a
+// transfer, relative to the database root, as a source limit names one: a
+// slash separates directories and a dot is part of a name. A path that
+// starts with a slash is refused, as is one with an empty, `.` or `..`
+// segment.
+func ParsePath(kind schemaext.Kind, written string) (objectidentity.ID, error) {
+	schema, name, err := ydbpath.Split(written)
+	if err != nil {
+		return objectidentity.ID{}, fmt.Errorf("%q is not a path (dir/name): %w: %w", written, schemaext.ErrInvalidValue, err)
+	}
+	ref := ReplicationRef(schema, name)
+	if kind == TransferKind {
+		ref = TransferRef(schema, name)
+	}
+	if err := ValidateIdentity(ref); err != nil {
+		return objectidentity.ID{}, fmt.Errorf("%q is not a path (dir/name): %w", written, err)
+	}
+	return ref, nil
 }

@@ -37,6 +37,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectExternalFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectReplicationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTimescaleFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
@@ -84,16 +85,9 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Synonyms = keep(db.Synonyms, func(synonym catalog.Synonym) bool {
 		return s.selected(typeList("synonym"), synonym.Schema, synonym.Name)
 	})
-	// A YDB topic, external data source and external table are feature
-	// objects; selectTopicFeatures and selectExternalFeatures select them.
-	// A YDB async replication and a transfer are each selected on their own
-	// name, in the directory that holds them.
-	out.AsyncReplications = keep(db.AsyncReplications, func(replication catalog.AsyncReplication) bool {
-		return s.selected(typeList("async_replication"), replication.Schema, replication.Name)
-	})
-	out.Transfers = keep(db.Transfers, func(transfer catalog.Transfer) bool {
-		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
-	})
+	// A YDB topic, external data source, external table, async replication
+	// and transfer are feature objects; selectTopicFeatures,
+	// selectExternalFeatures and selectReplicationFeatures select them.
 	// An extended property rides with the object it hangs off, and is also
 	// selectable on its own name. SQL Server drops the property with the
 	// table, so a selection that kept the property and dropped its owner would

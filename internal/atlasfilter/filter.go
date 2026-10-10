@@ -114,6 +114,7 @@ func excludeDatabase(
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterExternalFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterReplicationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	state.excludeColumnSequences(schema.Tables)
@@ -128,8 +129,6 @@ func excludeDatabase(
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
-	filtered.AsyncReplications = state.filterAsyncReplications(filtered.AsyncReplications)
-	filtered.Transfers = state.filterTransfers(filtered.Transfers)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
@@ -233,6 +232,7 @@ func excludeGenerated(
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterExternalFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterReplicationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
@@ -1137,35 +1137,6 @@ func (s *exclusionState) filterSynonyms(synonyms []catalog.Synonym) []catalog.Sy
 	return result
 }
 
-// filterAsyncReplications drops YDB async replications an exclusion selector
-// names, and replications whose directory is excluded. A replication is
-// selected on its own name; its items ride with it.
-func (s *exclusionState) filterAsyncReplications(replications []catalog.AsyncReplication) []catalog.AsyncReplication {
-	result := make([]catalog.AsyncReplication, 0, len(replications))
-	for _, replication := range replications {
-		if s.matches("async_replication", s.nameCandidates(replication.Schema, replication.Name)...) ||
-			s.schemaExcluded(replication.Schema) {
-			continue
-		}
-		result = append(result, replication)
-	}
-	return result
-}
-
-// filterTransfers drops YDB transfers an exclusion selector names, and
-// transfers whose directory is excluded.
-func (s *exclusionState) filterTransfers(transfers []catalog.Transfer) []catalog.Transfer {
-	result := make([]catalog.Transfer, 0, len(transfers))
-	for _, transfer := range transfers {
-		if s.matches("transfer", s.nameCandidates(transfer.Schema, transfer.Name)...) ||
-			s.schemaExcluded(transfer.Schema) {
-			continue
-		}
-		result = append(result, transfer)
-	}
-	return result
-}
-
 // filterExtendedProperties drops the extended properties an exclusion selector
 // names, and the ones whose owner is excluded.
 //
@@ -1868,8 +1839,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Ranges:             slices.Clone(schema.Ranges),
 		Views:              slices.Clone(schema.Views),
 		Synonyms:           slices.Clone(schema.Synonyms),
-		AsyncReplications:  slices.Clone(schema.AsyncReplications),
-		Transfers:          slices.Clone(schema.Transfers),
 		ExtendedProperties: slices.Clone(schema.ExtendedProperties),
 		MatViews:           slices.Clone(schema.MatViews),
 		Triggers:           slices.Clone(schema.Triggers),
@@ -1924,8 +1893,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.Synonyms = slices.Clone(schema.Synonyms)
-	filtered.AsyncReplications = slices.Clone(schema.AsyncReplications)
-	filtered.Transfers = slices.Clone(schema.Transfers)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

@@ -5,6 +5,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -18,7 +19,7 @@ import (
 // the same change that adds its selector.
 var namedFeatureKinds = []schemaext.Kind{
 	ydbcoordination.Kind, ydbsecret.Kind, ydbstreaming.Kind, ydbtopic.Kind, tsschema.ContinuousAggregateKind,
-	ydbworkload.PoolKind, ydbworkload.ClassifierKind,
+	ydbworkload.PoolKind, ydbworkload.ClassifierKind, ydbreplication.ReplicationKind, ydbreplication.TransferKind,
 }
 
 // Coordination objects are standalone. Table selection must not remove them,

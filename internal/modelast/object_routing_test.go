@@ -43,8 +43,6 @@ var routedKinds = []routedKind{
 	{name: "rls enable", want: 1, count: countNodes[*ast.AlterTableEnableRLSNode]},
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
-	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
-	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
 	{name: "revoked grant", want: 1, count: countNodes[*ast.RevokePrivilegeNode]},
@@ -87,14 +85,6 @@ func routingFixture() schemamodel.Database {
 		Views:             []schemamodel.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
 		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
 		Synonyms:          []schemamodel.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
-		AsyncReplications: []schemamodel.AsyncReplication{{StructName: "AR", Name: "replication_probe",
-			Spec: ast.AsyncReplicationSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"},
-				Items:      []ast.AsyncReplicationItem{{Source: "table_probe", Target: "replica_probe"}},
-			}}},
-		Transfers: []schemamodel.Transfer{{StructName: "TF", Name: "transfer_probe", Spec: ast.TransferSpec{
-			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
-		}}},
 		ExtendedProperties: []schemamodel.ExtendedProperty{{
 			StructName: "XP", Name: "property_probe", Schema: "dbo",
 			Table: "table_probe", Value: "probe",

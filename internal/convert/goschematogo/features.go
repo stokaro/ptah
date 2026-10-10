@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -169,8 +170,9 @@ func (ctx *renderContext) captureChangefeed(object schemaext.Object, feed *ydbsc
 }
 
 // capturePathObject writes a declared secret, a declared topic and its
-// consumers, or a declared external object as their annotations, and reports
-// whether object is one of them.
+// consumers, a declared external object, or a declared async replication with
+// its items or transfer as their annotations, and reports whether object is
+// one of them.
 func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, error) {
 	switch value := object.Value.(type) {
 	case *ydbsecret.Desired:
@@ -188,6 +190,26 @@ func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, erro
 			return true, err
 		}
 		ctx.topicAnnotations = append(ctx.topicAnnotations, topicAnnotations(object.Ref.Schema.Source, object.Ref.Name.Source, value.Spec)...)
+		return true, nil
+	case *ydbreplication.DesiredReplication:
+		if err := ydbreplication.ValidateIdentity(object.Ref); err != nil {
+			return true, err
+		}
+		if err := value.Validate(); err != nil {
+			return true, err
+		}
+		ctx.replicationAnnotations = append(ctx.replicationAnnotations,
+			replicationAnnotations(object.Ref.Schema.Source, object.Ref.Name.Source, value.Spec)...)
+		return true, nil
+	case *ydbreplication.DesiredTransfer:
+		if err := ydbreplication.ValidateIdentity(object.Ref); err != nil {
+			return true, err
+		}
+		if err := value.Validate(); err != nil {
+			return true, err
+		}
+		ctx.transferAnnotations = append(ctx.transferAnnotations,
+			transferAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, value.Spec))
 		return true, nil
 	case *ydbexternal.DesiredSource:
 		if err := ydbexternal.ValidateIdentity(object.Ref); err != nil {

@@ -248,9 +248,13 @@ type renderContext struct {
 	featureLimitAnnotations []string
 	coordinationAnnotations []string
 	topicAnnotations        []string
-	streamingAnnotations    []string
-	workloadAnnotations     []string
-	secretAnnotations       []string
+	// replicationAnnotations are the declared async replications, each
+	// followed by its items, and transferAnnotations the declared transfers.
+	replicationAnnotations []string
+	transferAnnotations    []string
+	streamingAnnotations   []string
+	workloadAnnotations    []string
+	secretAnnotations      []string
 	// externalAnnotations are the declared external data sources, then the
 	// external tables.
 	externalAnnotations  [2][]string
@@ -429,8 +433,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 func (ctx *renderContext) hasYDBObjects() bool {
 	return len(ctx.featureLimitAnnotations) > 0 || len(ctx.topicAnnotations) > 0 ||
 		len(ctx.workloadAnnotations) > 0 ||
-		len(ctx.db.AsyncReplications) > 0 ||
-		len(ctx.db.Transfers) > 0 ||
+		len(ctx.replicationAnnotations) > 0 ||
+		len(ctx.transferAnnotations) > 0 ||
 		len(ctx.coordinationAnnotations) > 0 ||
 		len(ctx.streamingAnnotations) > 0
 }
@@ -533,13 +537,11 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, comment := range ctx.topicAnnotations {
 		w.writeComment(comment)
 	}
-	for _, replication := range sortedReplications(ctx.db.AsyncReplications) {
-		for _, comment := range replicationAnnotations(replication) {
-			w.writeComment(comment)
-		}
+	for _, comment := range ctx.replicationAnnotations {
+		w.writeComment(comment)
 	}
-	for _, transfer := range sortedTransfers(ctx.db.Transfers) {
-		w.writeComment(transferAnnotation(transfer))
+	for _, comment := range ctx.transferAnnotations {
+		w.writeComment(comment)
 	}
 	ctx.writeSecrets(w)
 	ctx.writeExternalObjects(w)
@@ -1104,7 +1106,7 @@ func topicAnnotations(schema, name string, spec ydbtopic.Spec) []string {
 
 // connectionAttrs writes a replication's or a transfer's connection as
 // annotation attributes, each naming only what the connection names.
-func connectionAttrs(connection ast.ReplicationConnectionSpec) []attr {
+func connectionAttrs(connection ydbreplication.Connection) []attr {
 	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
 	return []attr{
 		text(ydbreplication.AttributeConnectionString, connection.ConnectionString),
@@ -1116,14 +1118,14 @@ func connectionAttrs(connection ast.ReplicationConnectionSpec) []attr {
 	}
 }
 
-// replicationAnnotations writes a YDB async replication as its annotation and
-// one annotation per item, each naming only what differs from the zero value.
-func replicationAnnotations(replication schemamodel.AsyncReplication) []string {
-	spec := replication.Spec
+// replicationAnnotations writes the YDB async replication name in the
+// directory schema as its annotation and one annotation per item, each naming
+// only what differs from the zero value.
+func replicationAnnotations(schema, name string, spec ydbreplication.ReplicationSpec) []string {
 	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
 	attrs := append([]attr{
-		{name: ydbreplication.AttributeName, value: replication.Name, set: true},
-		text(ydbreplication.AttributeSchema, replication.Schema),
+		{name: ydbreplication.AttributeName, value: name, set: true},
+		text(ydbreplication.AttributeSchema, schema),
 	}, connectionAttrs(spec.Connection)...)
 	attrs = append(attrs,
 		text(ydbreplication.AttributeConsistencyLevel, spec.ConsistencyLevel),
@@ -1132,8 +1134,8 @@ func replicationAnnotations(replication schemamodel.AsyncReplication) []string {
 	comments := []string{annotation("ptah:schema:async_replication", attrs...)}
 	for _, item := range spec.Items {
 		comments = append(comments, annotation("ptah:schema:async_replication:item",
-			attr{name: ydbreplication.AttributeReplication, value: replication.Name, set: true},
-			text(ydbreplication.AttributeSchema, replication.Schema),
+			attr{name: ydbreplication.AttributeReplication, value: name, set: true},
+			text(ydbreplication.AttributeSchema, schema),
 			attr{name: ydbreplication.AttributeSource, value: item.Source, set: true},
 			attr{name: ydbreplication.AttributeTarget, value: item.Target, set: true},
 		))
@@ -1141,14 +1143,13 @@ func replicationAnnotations(replication schemamodel.AsyncReplication) []string {
 	return comments
 }
 
-// transferAnnotation writes a YDB transfer as its annotation, naming only what
-// differs from the zero value.
-func transferAnnotation(transfer schemamodel.Transfer) string {
-	spec := transfer.Spec
+// transferAnnotation writes the YDB transfer name in the directory schema as
+// its annotation, naming only what differs from the zero value.
+func transferAnnotation(schema, name string, spec ydbreplication.TransferSpec) string {
 	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
 	attrs := append([]attr{
-		{name: ydbreplication.AttributeName, value: transfer.Name, set: true},
-		text(ydbreplication.AttributeSchema, transfer.Schema),
+		{name: ydbreplication.AttributeName, value: name, set: true},
+		text(ydbreplication.AttributeSchema, schema),
 	}, connectionAttrs(spec.Connection)...)
 	attrs = append(attrs,
 		attr{name: ydbreplication.AttributeSource, value: spec.Source, set: true},
@@ -1598,18 +1599,6 @@ func sortedFunctions(values []schemamodel.Function) []schemamodel.Function {
 	result := append([]schemamodel.Function(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
-}
-
-func sortedReplications(values []schemamodel.AsyncReplication) []schemamodel.AsyncReplication {
-	sorted := slices.Clone(values)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
-	return sorted
-}
-
-func sortedTransfers(values []schemamodel.Transfer) []schemamodel.Transfer {
-	sorted := slices.Clone(values)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
-	return sorted
 }
 
 func sortedViews(values []schemamodel.View) []schemamodel.View {

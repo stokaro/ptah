@@ -745,9 +745,8 @@ type schemaParseState struct {
 	consumers             []pendingConsumer
 	topics                []pendingTopic
 	topicConsumers        []pendingTopicConsumer
-	asyncReplications     []schemamodel.AsyncReplication
+	asyncReplications     []pendingReplication
 	replicationItems      []pendingReplicationItem
-	transfers             []schemamodel.Transfer
 }
 
 type structDeclaration struct {
@@ -1077,8 +1076,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Ranges:             state.ranges,
 		Views:              state.views,
 		Synonyms:           state.synonyms,
-		AsyncReplications:  state.asyncReplications,
-		Transfers:          state.transfers,
 		ExtendedProperties: state.extendedProperties,
 		MaterializedViews:  state.materializedViews,
 		Triggers:           state.triggers,

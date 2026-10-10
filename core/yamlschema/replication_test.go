@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // TestParse_YDBAsyncReplication_HappyPath reads async replications and
@@ -48,29 +48,27 @@ transfers:
 `))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.AsyncReplications, qt.DeepEquals, []schemamodel.AsyncReplication{{
-		Name:   "mirror",
-		Schema: "replicas",
-		Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpcs://primary:2135/?database=/prod",
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbreplication.DesiredReplicationObject("replicas", "mirror", "", ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpcs://primary:2135/?database=/prod",
 				User: "replicator", PasswordSecretName: "password"},
-			Items: []ast.AsyncReplicationItem{
+			Items: []ydbreplication.Item{
 				{Source: "accounts", Target: "replica/accounts"},
 				{Source: "/prod/ledger", Target: "replica/ledger"},
 			},
 			ConsistencyLevel: "global",
 			CommitInterval:   "PT30S",
-		},
-	}})
-	c.Assert(db.Transfers, qt.DeepEquals, []schemamodel.Transfer{
-		{Name: "archive_transfer", Spec: ast.TransferSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+		}),
+		ydbreplication.DesiredTransferObject("", "archive_transfer", "", ydbreplication.TransferSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 				TokenSecretName: "token"},
 			Source: "events", Target: "archive", Lambda: "($m) -> { return []; }", Consumer: "archive",
 			FlushInterval: "PT10S",
-		}},
-		{Name: "ingest", Spec: ast.TransferSpec{Source: "orders/feed", Target: "order_log",
-			Lambda: "($m) -> { return []; }", BatchSizeBytes: 1048576}},
+		}),
+		ydbreplication.DesiredTransferObject("", "ingest", "", ydbreplication.TransferSpec{Source: "orders/feed", Target: "order_log",
+			Lambda: "($m) -> { return []; }", BatchSizeBytes: 1048576}),
 	})
 }
 

@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-621 fields are reachable from the desired schema, and each one carries
+611 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 532 | reaches rendered SQL on at least one target |
+| `ddl` | 524 | reaches rendered SQL on at least one target |
 | `comparison` | 16 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 31 | identifies the source text the declaration was read from |
+| `source` | 29 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -65,31 +65,12 @@ None.
 
 | Field | Disposition | Why it is not rendered |
 | --- | --- | --- |
-| `ast.AsyncReplicationItem.Source` | `ddl` | — |
-| `ast.AsyncReplicationItem.Target` | `ddl` | — |
-| `ast.AsyncReplicationSpec.CommitInterval` | `ddl` | — |
-| `ast.AsyncReplicationSpec.Connection` | `ddl` | — |
-| `ast.AsyncReplicationSpec.ConsistencyLevel` | `ddl` | — |
-| `ast.AsyncReplicationSpec.Items` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ByLoad` | `ddl` | — |
 | `ast.IndexPartitioningSpec.BySize` | `ddl` | — |
 | `ast.IndexPartitioningSpec.MaxPartitions` | `ddl` | — |
 | `ast.IndexPartitioningSpec.MinPartitions` | `ddl` | — |
 | `ast.IndexPartitioningSpec.PartitionSizeMB` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ReadReplicas` | `ddl` | — |
-| `ast.ReplicationConnectionSpec.ConnectionString` | `ddl` | — |
-| `ast.ReplicationConnectionSpec.PasswordSecretName` | `ddl` | — |
-| `ast.ReplicationConnectionSpec.PasswordSecretPath` | `ddl` | — |
-| `ast.ReplicationConnectionSpec.TokenSecretName` | `ddl` | — |
-| `ast.ReplicationConnectionSpec.TokenSecretPath` | `ddl` | — |
-| `ast.ReplicationConnectionSpec.User` | `ddl` | — |
-| `ast.TransferSpec.BatchSizeBytes` | `ddl` | — |
-| `ast.TransferSpec.Connection` | `ddl` | — |
-| `ast.TransferSpec.Consumer` | `ddl` | — |
-| `ast.TransferSpec.FlushInterval` | `ddl` | — |
-| `ast.TransferSpec.Lambda` | `ddl` | — |
-| `ast.TransferSpec.Source` | `ddl` | — |
-| `ast.TransferSpec.Target` | `ddl` | — |
 | `ast.VectorIndexSpec.Clusters` | `ddl` | — |
 | `ast.VectorIndexSpec.Dimension` | `ddl` | — |
 | `ast.VectorIndexSpec.Distance` | `ddl` | — |
@@ -170,10 +151,6 @@ None.
 | `pgpolicy.NormalizedPolicy.WithCheck` | `comparison` | the server's spelling of a declared WITH CHECK expression, compared with the catalog's and never rendered |
 | `pgpolicy.RoleSelector.Keyword` | `ddl` | — |
 | `pgpolicy.RoleSelector.Name` | `ddl` | — |
-| `schemamodel.AsyncReplication.Name` | `ddl` | — |
-| `schemamodel.AsyncReplication.Schema` | `ddl` | — |
-| `schemamodel.AsyncReplication.Spec` | `ddl` | — |
-| `schemamodel.AsyncReplication.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.CompositeField.Name` | `ddl` | — |
 | `schemamodel.CompositeField.Type` | `ddl` | — |
 | `schemamodel.CompositeType.Comment` | `ddl` | — |
@@ -209,7 +186,6 @@ None.
 | `schemamodel.Constraint.Type` | `ddl` | — |
 | `schemamodel.Constraint.UsingMethod` | `ddl` | — |
 | `schemamodel.Constraint.WhereCondition` | `ddl` | — |
-| `schemamodel.Database.AsyncReplications` | `ddl` | — |
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.DatabasePath` | `ddl` | — |
@@ -242,7 +218,6 @@ None.
 | `schemamodel.Database.Sequences` | `ddl` | — |
 | `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
-| `schemamodel.Database.Transfers` | `ddl` | — |
 | `schemamodel.Database.Triggers` | `ddl` | — |
 | `schemamodel.Database.Views` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.Comment` | `ddl` | — |
@@ -532,10 +507,6 @@ None.
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |
-| `schemamodel.Transfer.Name` | `ddl` | — |
-| `schemamodel.Transfer.Schema` | `ddl` | — |
-| `schemamodel.Transfer.Spec` | `ddl` | — |
-| `schemamodel.Transfer.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Trigger.Body` | `ddl` | — |
 | `schemamodel.Trigger.Comment` | `ddl` | — |
 | `schemamodel.Trigger.Dialects` | `ddl` | — |
@@ -594,10 +565,29 @@ None.
 | `ydbexternal.Table.DataSource` | `ddl` | — |
 | `ydbexternal.Table.Location` | `ddl` | — |
 | `ydbexternal.Table.Options` | `ddl` | — |
+| `ydbreplication.Connection.ConnectionString` | `ddl` | — |
+| `ydbreplication.Connection.PasswordSecretName` | `ddl` | — |
+| `ydbreplication.Connection.PasswordSecretPath` | `ddl` | — |
+| `ydbreplication.Connection.TokenSecretName` | `ddl` | — |
+| `ydbreplication.Connection.TokenSecretPath` | `ddl` | — |
+| `ydbreplication.Connection.User` | `ddl` | — |
 | `ydbreplication.DesiredReplication.Spec` | `ddl` | — |
 | `ydbreplication.DesiredReplication.StructName` | `source` | the annotation holder, independent of the replication's path |
 | `ydbreplication.DesiredTransfer.Spec` | `ddl` | — |
 | `ydbreplication.DesiredTransfer.StructName` | `source` | the annotation holder, independent of the transfer's path |
+| `ydbreplication.Item.Source` | `ddl` | — |
+| `ydbreplication.Item.Target` | `ddl` | — |
+| `ydbreplication.ReplicationSpec.CommitInterval` | `ddl` | — |
+| `ydbreplication.ReplicationSpec.Connection` | `ddl` | — |
+| `ydbreplication.ReplicationSpec.ConsistencyLevel` | `ddl` | — |
+| `ydbreplication.ReplicationSpec.Items` | `ddl` | — |
+| `ydbreplication.TransferSpec.BatchSizeBytes` | `ddl` | — |
+| `ydbreplication.TransferSpec.Connection` | `ddl` | — |
+| `ydbreplication.TransferSpec.Consumer` | `ddl` | — |
+| `ydbreplication.TransferSpec.FlushInterval` | `ddl` | — |
+| `ydbreplication.TransferSpec.Lambda` | `ddl` | — |
+| `ydbreplication.TransferSpec.Source` | `ddl` | — |
+| `ydbreplication.TransferSpec.Target` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Consumers` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Disabled` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Format` | `ddl` | — |

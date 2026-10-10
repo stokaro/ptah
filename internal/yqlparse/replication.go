@@ -6,6 +6,9 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/lexer"
 )
@@ -21,12 +24,41 @@ func (p *parser) replicationError() {
 	}
 }
 
-func (p *parser) createReplication() *ast.CreateAsyncReplicationNode {
+// ReplicationSettings is an `ALTER ASYNC REPLICATION ... SET` or `ALTER
+// TRANSFER ... SET` of a desired YQL schema: the settings it names, which the
+// YQL source folds into the object an earlier statement declared, through
+// [ydbreplication.ApplyReplicationSettings] or
+// [ydbreplication.ApplyTransferSettings]. A transfer's patch names a new
+// lambda under "using". No renderer writes one.
+type ReplicationSettings struct {
+	// Kind is the kind of object the statement changes.
+	Kind ydbreplication.SourceKind
+	// Schema and Name are the object's directory and name.
+	Schema, Name string
+	// Settings are the settings the statement names, by attribute name.
+	Settings map[string]string
+}
+
+// Accept implements the Node interface for ReplicationSettings.
+func (n *ReplicationSettings) Accept(visitor ast.Visitor) error { return visitor.VisitNode(n) }
+
+// replicationName reads the path of a replication or a transfer: a directory
+// and a name, relative to the database root.
+func (p *parser) replicationName(kind schemaext.Kind) (schema, name string) {
+	ref, err := ydbreplication.ParsePath(kind, decodedName(p.path()))
+	if err != nil {
+		p.failf("invalid path")
+		return "", ""
+	}
+	return ref.Schema.Source, ref.Name.Source
+}
+
+func (p *parser) createReplication() *ast.ExtensionStatement {
 	defer p.replicationError()
 	p.wantWord("REPLICATION")
-	name := p.path()
+	schema, name := p.replicationName(ydbreplication.ReplicationKind)
 	p.wantWord("FOR")
-	var items []ast.AsyncReplicationItem
+	var items []ydbreplication.Item
 	for !p.done() {
 		source := p.replicationPath(p.identifier())
 		p.wantWord("AS")
@@ -49,12 +81,13 @@ func (p *parser) createReplication() *ast.CreateAsyncReplicationNode {
 	if err := ydbreplication.ValidateReplicationItems(items); err != nil {
 		p.failf("invalid replication items")
 	}
-	return ast.NewCreateAsyncReplication(name, spec)
+	return &ast.ExtensionStatement{Payload: &ydbast.AsyncReplication{Schema: schema, Name: name,
+		Change: ydbdiff.AsyncReplication{After: &ydbreplication.DesiredReplication{Spec: spec}}}}
 }
 
-func (p *parser) createTransfer() *ast.CreateTransferNode {
+func (p *parser) createTransfer() *ast.ExtensionStatement {
 	defer p.replicationError()
-	name := p.path()
+	schema, name := p.replicationName(ydbreplication.TransferKind)
 	p.wantWord("FROM")
 	source := p.replicationPath(p.identifier())
 	p.wantWord("TO")
@@ -71,20 +104,23 @@ func (p *parser) createTransfer() *ast.CreateTransferNode {
 	if err != nil {
 		p.failf("invalid transfer settings")
 	}
-	return ast.NewCreateTransfer(name, spec)
+	return &ast.ExtensionStatement{Payload: &ydbast.Transfer{Schema: schema, Name: name,
+		Change: ydbdiff.Transfer{After: &ydbreplication.DesiredTransfer{Spec: spec}}}}
 }
 
-func (p *parser) alterReplication() *ast.AlterAsyncReplicationNode {
+func (p *parser) alterReplication() *ReplicationSettings {
 	defer p.replicationError()
 	p.wantWord("REPLICATION")
-	name := p.path()
+	schema, name := p.replicationName(ydbreplication.ReplicationKind)
 	p.wantWord("SET")
-	return &ast.AlterAsyncReplicationNode{Name: name, SourceSettings: p.replicationSettings(ydbreplication.ReplicationSource)}
+	return &ReplicationSettings{Kind: ydbreplication.ReplicationSource, Schema: schema, Name: name,
+		Settings: p.replicationSettings(ydbreplication.ReplicationSource)}
 }
 
-func (p *parser) alterTransfer() *ast.AlterTransferNode {
+func (p *parser) alterTransfer() *ReplicationSettings {
 	defer p.replicationError()
-	node := &ast.AlterTransferNode{Name: p.path(), SourceSettings: make(map[string]string)}
+	schema, name := p.replicationName(ydbreplication.TransferKind)
+	node := &ReplicationSettings{Kind: ydbreplication.TransferSource, Schema: schema, Name: name, Settings: make(map[string]string)}
 	for !p.done() {
 		p.wantWord("SET")
 		settings := make(map[string]string)
@@ -95,10 +131,10 @@ func (p *parser) alterTransfer() *ast.AlterTransferNode {
 			settings = p.replicationSettings(ydbreplication.TransferSource)
 		}
 		for name, value := range settings {
-			if _, exists := node.SourceSettings[name]; exists {
+			if _, exists := node.Settings[name]; exists {
 				p.failf("duplicate transfer setting")
 			}
-			node.SourceSettings[name] = value
+			node.Settings[name] = value
 		}
 		if !p.accept(",") {
 			break

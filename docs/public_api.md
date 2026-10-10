@@ -1478,10 +1478,18 @@ observed models of both kinds, whose observations carry the state the object
 reported, the declaration grammar, the checks a declaration and a change are
 held to, and the statements. `ReplicationsEqual` and `TransfersEqual` compare
 two specs as YDB keeps them: a directory item read back as its tables and a
-consumer YDB created for a transfer are no change. No source declares or reads
-these models yet: every source still carries replications and transfers in the
-common schema, and the specs are aliases of the `core/ast` types until the
-sources move onto the owner.
+consumer YDB created for a transfer are no change.
+
+`DeclareReplication` and `DeclareTransfer` are how a source declares one, and
+refuse a second declaration at the same path with `schemaext.ErrDuplicate`.
+The Go, YAML and YQL sources declare these models, and the YDB reader reports
+them, with a replication or a transfer it could not describe recorded as
+uninspected under `UnsupportedReplicationReason`, `UnsupportedTransferReason`
+or `ServiceUnavailableReason`. The common schema, catalog, AST, coverage and
+diff types contain no replication or transfer fields. `difftypes.FeatureContext`
+carries the owned objects of both sides into planning, where the YDB planner
+reads them for the rules that span a replication and the tables it owns, or a
+transfer and the table and topic it uses.
 
 The replication services in `ydbcompare`, `ydbconvert`, `ydbplan`,
 `ydbreverse` and `ydbreport` consume this model, one batch per kind.

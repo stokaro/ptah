@@ -8,12 +8,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
@@ -25,47 +24,59 @@ import (
 // mirrorRead the same one as the YDB reader reports it: the level in its
 // default left out, and the source by the path relative to its database.
 var (
-	mirrorDeclared = schemamodel.AsyncReplication{Name: "mirror", Spec: ast.AsyncReplicationSpec{
-		Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136?database=/prod",
+	mirrorDeclared = ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136?database=/prod",
 			TokenSecretName: "token"},
-		Items:            []ast.AsyncReplicationItem{{Source: "/prod/accounts", Target: "replica/accounts"}},
+		Items:            []ydbreplication.Item{{Source: "/prod/accounts", Target: "replica/accounts"}},
 		ConsistencyLevel: "ROW",
-	}}
-	mirrorRead = catalog.AsyncReplication{Name: "mirror", State: catalog.ReplicationRunning,
-		Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
-				TokenSecretName: "token"},
-			Items: []ast.AsyncReplicationItem{{Source: "accounts", Target: "replica/accounts"}},
-		}}
-	ingestDeclared = schemamodel.Transfer{Name: "ingest", Spec: ast.TransferSpec{Source: "events/feed",
-		Target: "event_log", Lambda: "($m) -> { return []; }\n", FlushInterval: "PT1M"}}
-	ingestRead = catalog.Transfer{Name: "ingest", State: catalog.ReplicationRunning, Spec: ast.TransferSpec{
+	}
+	mirrorRead = ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
+			TokenSecretName: "token"},
+		Items: []ydbreplication.Item{{Source: "accounts", Target: "replica/accounts"}},
+	}
+	ingestDeclared = ydbreplication.TransferSpec{Source: "events/feed",
+		Target: "event_log", Lambda: "($m) -> { return []; }\n", FlushInterval: "PT1M"}
+	ingestRead = ydbreplication.TransferSpec{
 		Source: "events/feed", Target: "event_log", Lambda: "($m) -> { return []; }",
-		Consumer: "fbc17198-8229c5ec-37e45ba-fe47b6c1"}}
+		Consumer: "fbc17198-8229c5ec-37e45ba-fe47b6c1"}
 )
 
-// replicationDeclaration declares the given replications and transfers.
-func replicationDeclaration(replications []schemamodel.AsyncReplication, transfers ...schemamodel.Transfer) *schemamodel.Database {
-	return &schemamodel.Database{AsyncReplications: replications, Transfers: transfers}
+// replicationCoverage claims both namespaces in full.
+func replicationCoverage(representation schemaext.Representation) schemaext.Coverage {
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	replications := must.Must(ydbreplication.ReplicationCoverage(representation, complete, nil))
+	return must.Must(replications.Combine(must.Must(ydbreplication.TransferCoverage(representation, complete, nil))))
+}
+
+// replicationDeclaration declares the given replications and transfers and
+// claims both namespaces.
+func replicationDeclaration(objects ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: replicationCoverage(schemaext.Desired)}
 }
 
 // replicationCatalog is a database holding the given replications and
-// transfers.
-func replicationCatalog(replications []catalog.AsyncReplication, transfers ...catalog.Transfer) *catalog.Database {
-	return &catalog.Database{AsyncReplications: replications, Transfers: transfers}
+// transfers, read in full.
+func replicationCatalog(objects ...schemaext.Object) *catalog.Database {
+	return &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: replicationCoverage(schemaext.Observed)}
 }
 
 // TestCompare_YDBReplicationReadsBackAsDeclared holds a replication and a
 // transfer the database holds as declared equal to their declarations, and a
 // document equal to itself: neither plans anything.
 func TestCompare_YDBReplicationReadsBackAsDeclared(t *testing.T) {
-	declaration := replicationDeclaration([]schemamodel.AsyncReplication{mirrorDeclared}, ingestDeclared)
+	declaration := replicationDeclaration(ydbreplication.DesiredReplicationObject("", "mirror", "", mirrorDeclared),
+		ydbreplication.DesiredTransferObject("", "ingest", "", ingestDeclared))
 	tests := []struct {
 		name string
 		diff *difftypes.SchemaDiff
 	}{
 		{name: "against the database", diff: must.Must(schemadiff.CompareWithDialect(t.Context(), declaration,
-			replicationCatalog([]catalog.AsyncReplication{mirrorRead}, ingestRead), platform.YDB, must.Must(builtin.New())))},
+			replicationCatalog(ydbreplication.ObservedReplicationObject("", "mirror", mirrorRead, ydbreplication.StateRunning),
+				ydbreplication.ObservedTransferObject("", "ingest", ingestRead, ydbreplication.StateRunning)),
+			platform.YDB, must.Must(builtin.New())))},
 		{name: "against the same document", diff: must.Must(schemadiff.CompareSchemas(t.Context(), declaration, declaration, platform.YDB, must.Must(builtin.New())))},
 	}
 	for _, test := range tests {
@@ -78,62 +89,61 @@ func TestCompare_YDBReplicationReadsBackAsDeclared(t *testing.T) {
 
 // TestCompare_YDBReplicationChange lists what is added, removed and changed,
 // each change with both operands and the state the database reports, and
-// carries every replication and transfer of each side for the plan.
+// carries every feature object of each side for the plan.
 func TestCompare_YDBReplicationChange(t *testing.T) {
 	c := qt.New(t)
-	moved := mirrorDeclared
-	moved.Spec = mirrorDeclared.Spec.Clone()
-	moved.Spec.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
-	added := schemamodel.Transfer{Name: "archive", Schema: "dr", Spec: ast.TransferSpec{Source: "t/f", Target: "a",
-		Lambda: "($m) -> { return []; }"}}
-	stale := catalog.AsyncReplication{Name: "old", Schema: "dr", State: catalog.ReplicationDone,
-		Spec: mirrorRead.Spec.Clone()}
-	desired := replicationDeclaration([]schemamodel.AsyncReplication{moved}, added)
-	current := replicationCatalog([]catalog.AsyncReplication{mirrorRead, stale}, ingestRead)
+	moved := mirrorDeclared.Clone()
+	moved.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
+	added := ydbreplication.TransferSpec{Source: "t/f", Target: "a", Lambda: "($m) -> { return []; }"}
+	desired := replicationDeclaration(ydbreplication.DesiredReplicationObject("", "mirror", "", moved),
+		ydbreplication.DesiredTransferObject("dr", "archive", "", added))
+	current := replicationCatalog(ydbreplication.ObservedReplicationObject("", "mirror", mirrorRead, ydbreplication.StateRunning),
+		ydbreplication.ObservedReplicationObject("dr", "old", mirrorRead.Clone(), ydbreplication.StateDone),
+		ydbreplication.ObservedTransferObject("", "ingest", ingestRead, ydbreplication.StateRunning))
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New())))
 
-	c.Assert(diff.AsyncReplicationsAdded, qt.HasLen, 0)
-	c.Assert(diff.AsyncReplicationsRemoved.Names(), qt.DeepEquals, []string{"dr.old"})
-	c.Assert(diff.AsyncReplicationsModified, qt.DeepEquals, []difftypes.AsyncReplicationDiff{{
-		Name: "mirror", ConnectionChanged: true, Desired: moved.Spec, Current: mirrorRead.Spec,
-		State: catalog.ReplicationRunning,
-	}})
-	c.Assert(diff.TransfersAdded.Names(), qt.DeepEquals, []string{"dr.archive"})
-	c.Assert(diff.TransfersRemoved.Names(), qt.DeepEquals, []string{"ingest"})
-	c.Assert(diff.TransfersModified, qt.HasLen, 0)
-	c.Assert(diff.Replications, qt.DeepEquals, difftypes.ReplicationContext{
-		CurrentReplications:  []catalog.AsyncReplication{mirrorRead, stale},
-		CurrentTransfers:     []catalog.Transfer{ingestRead},
-		DeclaredReplications: []schemamodel.AsyncReplication{moved},
-		DeclaredTransfers:    []schemamodel.Transfer{added},
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: ydbreplication.ReplicationRef("", "mirror"), Value: ydbdiff.NewAsyncReplication(
+			&ydbreplication.ObservedReplication{Spec: mirrorRead, State: ydbreplication.StateRunning},
+			&ydbreplication.DesiredReplication{Spec: moved})},
+		{Subject: ydbreplication.ReplicationRef("dr", "old"), Value: ydbdiff.NewAsyncReplication(
+			&ydbreplication.ObservedReplication{Spec: mirrorRead, State: ydbreplication.StateDone}, nil)},
+		{Subject: ydbreplication.TransferRef("", "ingest"), Value: ydbdiff.NewTransfer(
+			&ydbreplication.ObservedTransfer{Spec: ingestRead, State: ydbreplication.StateRunning}, nil)},
+		{Subject: ydbreplication.TransferRef("dr", "archive"), Value: ydbdiff.NewTransfer(
+			nil, &ydbreplication.DesiredTransfer{Spec: added})},
 	})
+	c.Assert(diff.Features.DesiredObjects, qt.DeepEquals, desired.FeatureObjects)
+	c.Assert(diff.Features.CurrentObjects, qt.DeepEquals, current.FeatureObjects)
 }
 
 // TestCompare_YDBReplicationCoverage reads each side's silence through what it
-// says it does not describe: a replication the read could not describe, as
-// on a cluster serving no replication API, is neither created nor dropped,
-// and one the declaration does not describe is kept.
+// says it describes: a replication the read could not describe, as on a
+// cluster serving no replication API, is neither created nor dropped, and one
+// the declaration does not describe is kept.
 func TestCompare_YDBReplicationCoverage(t *testing.T) {
 	c := qt.New(t)
-	unread := replicationCatalog(nil)
-	unread.NotDescribed = coverage.Set{}.With(coverage.Object{Kind: coverage.Replication, Name: "mirror",
-		Reason: coverage.Unsupported, Provenance: coverage.Observed})
-	undeclared := replicationDeclaration(nil)
-	undeclared.NotDescribed = coverage.Set{}.WithKind(coverage.Replication).WithKind(coverage.Transfer)
+	unread := &catalog.Database{FeatureCoverage: must.Must(ydbreplication.ReplicationCoverage(schemaext.Observed,
+		schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+			Kind:      ydbreplication.ReplicationKind,
+			Subject:   ydbreplication.ReplicationRef("", "mirror"),
+			Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbreplication.UnsupportedReplicationReason},
+		}}))}
+	undeclared := &schemamodel.Database{}
 
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = platform.YDB
 
-	withheld, undecided, err := schemadiff.CompareReportingUndecidedAdditions(
-		t.Context(), replicationDeclaration([]schemamodel.AsyncReplication{mirrorDeclared}), unread, opts, must.Must(builtin.New()))
+	withheld, _, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(),
+		replicationDeclaration(ydbreplication.DesiredReplicationObject("", "mirror", "", mirrorDeclared)), unread, opts, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	kept := must.Must(schemadiff.CompareWithDialect(t.Context(), undeclared,
-		replicationCatalog([]catalog.AsyncReplication{mirrorRead}, ingestRead), platform.YDB, must.Must(builtin.New())))
+		replicationCatalog(ydbreplication.ObservedReplicationObject("", "mirror", mirrorRead, ydbreplication.StateRunning),
+			ydbreplication.ObservedTransferObject("", "ingest", ingestRead, ydbreplication.StateRunning)),
+		platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(withheld.HasChanges(), qt.IsFalse)
-	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{Kind: coverage.Replication, Name: "mirror",
-		Reason: coverage.Unsupported, Provenance: coverage.Observed}})
 	c.Assert(kept.HasChanges(), qt.IsFalse)
 }
 
@@ -144,8 +154,9 @@ var transferFeed = ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Forma
 // that reads it through no consumer it names.
 func transferDeclaration() *schemamodel.Database {
 	db := changefeedDeclaration(transferFeed)
-	db.Transfers = []schemamodel.Transfer{{Name: "ingest", Spec: ast.TransferSpec{Source: "events/feed",
-		Target: "events", Lambda: "($m) -> { return []; }"}}}
+	db.FeatureObjects = must.Must(db.FeatureObjects.With(ydbreplication.DesiredTransferObject("", "ingest", "",
+		ydbreplication.TransferSpec{Source: "events/feed", Target: "events", Lambda: "($m) -> { return []; }"})))
+	db.FeatureCoverage = must.Must(db.FeatureCoverage.Combine(replicationCoverage(schemaext.Desired)))
 	return db
 }
 
@@ -156,9 +167,9 @@ func transferCatalog(consumers ...ydbtopic.ConsumerSpec) *catalog.Database {
 	read := transferFeed
 	read.Consumers = consumers
 	db := changefeedCatalog(read)
-	db.Transfers = []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning,
-		Spec: ast.TransferSpec{Source: "events/feed", Target: "events", Lambda: "($m) -> { return []; }",
-			Consumer: "fbc17198"}}}
+	db.FeatureObjects = must.Must(db.FeatureObjects.With(ydbreplication.ObservedTransferObject("", "ingest",
+		ydbreplication.TransferSpec{Source: "events/feed", Target: "events", Lambda: "($m) -> { return []; }",
+			Consumer: "fbc17198"}, ydbreplication.StateRunning)))
 	return db
 }
 
@@ -192,9 +203,9 @@ func TestTransferConsumerAdoptionPreservesReplicationBinding(t *testing.T) {
 	retained := observed.Desired()
 	observed.Spec.Consumers = []ydbtopic.ConsumerSpec{generated}
 	var err error
-	desired.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: retained})
+	desired.FeatureObjects, err = desired.FeatureObjects.Replace(schemaext.Object{Ref: ref, Value: retained})
 	c.Assert(err, qt.IsNil)
-	current.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: observed})
+	current.FeatureObjects, err = current.FeatureObjects.Replace(schemaext.Object{Ref: ref, Value: observed})
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
@@ -245,19 +256,21 @@ func TestCompare_YDBTransferConsumerAdoptionKeepsOthersCompared(t *testing.T) {
 // does on a changefeed.
 func TestCompare_YDBTransferConsumerIsAdoptedOnATopic(t *testing.T) {
 	c := qt.New(t)
-	transfer := ast.TransferSpec{Source: "app/events", Target: "event_log", Lambda: "($m) -> { return []; }"}
-	desired := &schemamodel.Database{
-		FeatureObjects:  must.Must(schemaext.NewObjects(ydbtopic.DesiredObject("app", "events", "", ydbtopic.Spec{}))),
-		FeatureCoverage: must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
-		Transfers:       []schemamodel.Transfer{{Name: "ingest", Spec: transfer}},
-	}
+	transfer := ydbreplication.TransferSpec{Source: "app/events", Target: "event_log", Lambda: "($m) -> { return []; }"}
 	held := transfer
 	held.Consumer = "fbc17198"
+	desired := &schemamodel.Database{
+		FeatureObjects: must.Must(schemaext.NewObjects(ydbtopic.DesiredObject("app", "events", "", ydbtopic.Spec{}),
+			ydbreplication.DesiredTransferObject("", "ingest", "", transfer))),
+		FeatureCoverage: must.Must(must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)).
+			Combine(replicationCoverage(schemaext.Desired))),
+	}
 	current := &catalog.Database{
 		FeatureObjects: must.Must(schemaext.NewObjects(ydbtopic.ObservedObject("app", "events", ydbtopic.Spec{
-			Consumers: []ydbtopic.ConsumerSpec{generated}}))),
-		FeatureCoverage: must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
-		Transfers:       []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning, Spec: held}},
+			Consumers: []ydbtopic.ConsumerSpec{generated}}),
+			ydbreplication.ObservedTransferObject("", "ingest", held, ydbreplication.StateRunning))),
+		FeatureCoverage: must.Must(must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)).
+			Combine(replicationCoverage(schemaext.Observed))),
 	}
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New())))
@@ -267,6 +280,4 @@ func TestCompare_YDBTransferConsumerIsAdoptedOnATopic(t *testing.T) {
 	declared, _, err := desired.FeatureObjects.Get(ydbtopic.Ref("app", "events"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(declared.Value, qt.DeepEquals, &ydbtopic.Desired{}, qt.Commentf("the adoption must not write through to the declaration"))
-	c.Assert(diff.Replications.CurrentTopics, qt.DeepEquals, []string{"app/events"})
-	c.Assert(diff.Replications.DeclaredTopics, qt.DeepEquals, []string{"app/events"})
 }
