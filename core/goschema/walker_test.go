@@ -3,9 +3,11 @@ package goschema_test
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -1306,7 +1308,7 @@ type User struct {
 			// Check PostgreSQL features
 			c.Assert(result.Extensions, qt.HasLen, tt.expectedExtensions)
 			c.Assert(result.Functions, qt.HasLen, tt.expectedFunctions)
-			c.Assert(result.RLSPolicies, qt.HasLen, tt.expectedRLSPolicies)
+			c.Assert(ownerPolicies(c, result), qt.HasLen, tt.expectedRLSPolicies)
 			c.Assert(result.Roles, qt.HasLen, tt.expectedRoles)
 
 			// Verify specific content
@@ -1561,10 +1563,8 @@ func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 	c.Assert(result.Triggers, qt.HasLen, 1)
 	c.Assert(result.Triggers[0].Name, qt.Equals, "users_set_updated_at")
 
-	c.Assert(result.RLSPolicies, qt.HasLen, 1)
-	c.Assert(result.RLSPolicies[0].Name, qt.Equals, "users_tenant_policy")
-	c.Assert(result.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(result.RLSEnabledTables[0].Table, qt.Equals, "users")
+	c.Assert(slices.Collect(maps.Keys(ownerPolicies(c, result))), qt.DeepEquals, []string{"public.users.users_tenant_policy"})
+	c.Assert(slices.Collect(maps.Keys(ownerSwitches(c, result))), qt.DeepEquals, []string{"users"})
 
 	c.Assert(result.Grants, qt.HasLen, 4, qt.Commentf("table grant, grant-option table grant, schema grant, and sequence grant"))
 	c.Assert(result.Constraints, qt.HasLen, 1)
@@ -1608,7 +1608,9 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 //
 // skipped. A YDB topic, a YDB coordination node, a YDB async replication and
 // a transfer, secret, external data source and external table are refused by every target but YDB, so each has a fixture of
-// its own, and the guard reads every fixture.
+// its own, and the guard reads every fixture. Row-level security the shared
+// model keeps is scoped to SQL Server, which no PostgreSQL fixture declares,
+// so it has a test fixture of its own.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
@@ -1625,6 +1627,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		"../../integration/internal/fixtures/entities/050-ydb-replication",
 		"../../integration/internal/fixtures/entities/052-ydb-secrets",
 		"../../integration/internal/fixtures/entities/053-ydb-external-sources",
+		"testdata/shared-row-security",
 	}
 
 	merged := schemamodel.Database{}

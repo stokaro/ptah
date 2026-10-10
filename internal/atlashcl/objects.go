@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/pgpolicysource"
 	"slices"
 	"strconv"
 	"strings"
@@ -691,17 +693,30 @@ func (p *parser) parsePolicy(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.RLSPolicies = append(p.db.RLSPolicies, schemamodel.RLSPolicy{
-		Name:                name,
-		Table:               table,
-		PolicyFor:           p.optionalString(block.Body.Attributes["for"]),
-		ToRoles:             strings.Join(roles, ","),
-		UsingExpression:     p.optionalString(block.Body.Attributes["using"]),
-		WithCheckExpression: p.optionalString(block.Body.Attributes["check"]),
-		Comment:             p.optionalString(block.Body.Attributes["comment"]),
-		Restrictive:         restrictive,
-	})
+	selectors := make([]string, 0, len(roles))
+	for _, role := range roles {
+		selectors = append(selectors, rowSecurityRole(role))
+	}
+	policy, err := pgpolicysource.Attributes{
+		For: p.optionalString(block.Body.Attributes["for"]), To: strings.Join(selectors, ","),
+		Using: p.optionalString(block.Body.Attributes["using"]), WithCheck: p.optionalString(block.Body.Attributes["check"]),
+		Restrictive: restrictive, Comment: p.optionalString(block.Body.Attributes["comment"]),
+	}.Policy()
+	if err != nil {
+		return p.blockError(block, "policy %q: %w", name, err)
+	}
+	p.policies = append(p.policies, hclPolicy{origin: p.blockOrigin(block, "policy "+strconv.Quote(name)), name: name, table: table, policy: policy})
 	return nil
+}
+
+// rowSecurityRole spells one HCL role target in [pgpolicysource.ParseRoleList]'s
+// grammar. HCL writes a role by its exact name, so a name is quoted; a target
+// spelling a role keyword is that keyword, as the writer spells one.
+func rowSecurityRole(target string) string {
+	if pgpolicysource.SpellsKeyword(target) {
+		return target
+	}
+	return `"` + strings.ReplaceAll(target, `"`, `""`) + `"`
 }
 
 // policyRestrictive reads a policy's `as`, which selects how the policy
@@ -727,30 +742,30 @@ func (p *parser) policyRestrictive(block *hclsyntax.Block, name string) (bool, e
 	}
 }
 
-func (p *parser) parseRowSecurity(table *schemamodel.Table, block *hclsyntax.Block) (schemamodel.RLSEnabledTable, error) {
+func (p *parser) parseRowSecurity(table *schemamodel.Table, block *hclsyntax.Block) error {
 	if len(block.Labels) != 0 {
-		return schemamodel.RLSEnabledTable{}, p.blockError(block, "row_security block does not accept labels")
+		return p.blockError(block, "row_security block does not accept labels")
 	}
 	if err := p.rejectUnsupportedRowSecurityAttrs(block); err != nil {
-		return schemamodel.RLSEnabledTable{}, err
+		return err
 	}
 	enabled, err := p.boolAttr(block, "enabled", "row_security", false)
 	if err != nil {
-		return schemamodel.RLSEnabledTable{}, err
+		return err
 	}
 	if !enabled {
-		return schemamodel.RLSEnabledTable{}, p.blockError(block, "row_security requires enabled = true")
+		return p.blockError(block, "row_security requires enabled = true")
 	}
 	forced, err := p.boolAttr(block, "enforced", "row_security", false)
 	if err != nil {
-		return schemamodel.RLSEnabledTable{}, err
+		return err
 	}
-	return schemamodel.RLSEnabledTable{
-		StructName: table.StructName,
-		Table:      table.QualifiedName(),
-		Comment:    p.optionalString(block.Body.Attributes["comment"]),
-		Forced:     forced,
-	}, nil
+	p.switches = append(p.switches, hclSwitches{
+		origin: p.blockOrigin(block, fmt.Sprintf("row_security of table %q", table.Name)), schema: table.Schema, table: table.Name,
+		state: pgpolicy.DesiredTableState{Enabled: true, Forced: forced, Comment: p.optionalString(block.Body.Attributes["comment"]),
+			StructName: table.StructName},
+	})
+	return nil
 }
 
 func (p *parser) parseRole(block *hclsyntax.Block) error {

@@ -7,6 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ptaherr"
+
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
@@ -637,9 +639,10 @@ const shadowedPolicy = 0
 		Cleanup:    true,
 	})
 
-	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
-	c.Assert(err.Error(), qt.Contains, "did not produce a schema object")
-	c.Assert(err.Error(), qt.Contains, ":9:")
+	// Two annotations declaring one policy are refused when the source is
+	// read, naming both, so nothing is cleaned (stokaro/ptah#2440).
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*model\.go:6 and .*model\.go:9 both declare policy "users_policy".*`)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 	assertFileBytes(c, source, sourceData)
 	assertFileBytes(c, output, outputData)

@@ -98,7 +98,7 @@ type UsersTouch struct{}
 type AppRole struct{}
 
 //ptah:schema:rls:enable table="app.users" comment="Enable user isolation"
-//ptah:schema:rls:policy name="users_policy" table="app.users" for="SELECT" to="app_user,PUBLIC" using="id > 0" with_check="id > 0" comment="User isolation"
+//ptah:schema:rls:policy name="users_policy" table="app.users" for="ALL" to="app_user" using="id > 0" with_check="id > 0" comment="User isolation"
 type UserSecurity struct{}
 
 //ptah:schema:grant role="app_user" privilege="SELECT,INSERT" on_table="app.users" with_option="true" comment="Table access"

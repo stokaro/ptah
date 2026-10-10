@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -97,6 +98,14 @@ func commentsOf(database schemamodel.Database) map[string]string {
 	}
 	for _, policy := range database.RLSPolicies {
 		comments["policy "+policy.Name+" on "+policy.Table] = policy.Comment
+	}
+	// A PostgreSQL-family document hands its policies to the row-security
+	// owner, which keeps the comment on the policy.
+	objects, _ := database.FeatureObjects.All()
+	for _, object := range objects {
+		if policy, ok := object.Value.(*pgpolicy.DesiredPolicy); ok {
+			comments["policy "+object.Ref.Name.Source+" on "+schemamodel.QualifyTableName(object.Ref.Schema.Authored(), object.Ref.Parent.Source)] = policy.Comment
+		}
 	}
 	for _, constraint := range database.Constraints {
 		comments["constraint "+constraint.Name+" on "+constraint.Table] = constraint.Comment

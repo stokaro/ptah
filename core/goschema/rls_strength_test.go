@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/feature/pgpolicy"
 )
 
 // writeRLSStrengthPackage writes a one-file package declaring a table with the
@@ -31,7 +32,7 @@ type Doc struct {
 }
 
 // TestParseRLSStrengthAnnotations_HappyPath pins that the native annotations
-// reach the same two flags the Atlas HCL frontend sets.
+// reach the same two settings the Atlas HCL frontend sets.
 //
 // A capability the compatibility surface can express and the native one cannot
 // is a capability implemented in the adapter, which is the shape this
@@ -59,10 +60,8 @@ func TestParseRLSStrengthAnnotations_HappyPath(t *testing.T) {
 			db, err := goschema.ParseDir(dir)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-			c.Assert(db.RLSEnabledTables[0].Forced, qt.Equals, row.wantForced)
-			c.Assert(db.RLSPolicies, qt.HasLen, 1)
-			c.Assert(db.RLSPolicies[0].Restrictive, qt.Equals, row.wantStrict)
+			c.Assert(ownerSwitches(c, db)["docs"].Forced, qt.Equals, row.wantForced)
+			c.Assert(ownerPolicies(c, db)["public.docs.docs_tenant"].Composition == pgpolicy.Restrictive, qt.Equals, row.wantStrict)
 		})
 	}
 }

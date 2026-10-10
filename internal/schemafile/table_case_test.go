@@ -41,8 +41,7 @@ func recordedTableNames(c *qt.C, db *schemamodel.Database) relationNames {
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Grants, qt.HasLen, 1)
-	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(db.RLSPolicies, qt.HasLen, 1)
+	enabled, policy, policyTable := rowSecurityNames(c, db)
 	columns := make([]string, 0, len(db.Fields))
 	for _, field := range db.Fields {
 		columns = append(columns, field.Name)
@@ -60,9 +59,9 @@ func recordedTableNames(c *qt.C, db *schemamodel.Database) relationNames {
 		IndexFields:  strings.Join(db.Indexes[0].Fields, ", "),
 		Grant:        db.Grants[0].OnTable,
 		GrantColumns: strings.Join(db.Grants[0].Columns, ", "),
-		Enabled:      db.RLSEnabledTables[0].Table,
-		Policy:       db.RLSPolicies[0].Name,
-		PolicyTable:  db.RLSPolicies[0].Table,
+		Enabled:      enabled,
+		Policy:       policy,
+		PolicyTable:  policyTable,
 	}
 }
 

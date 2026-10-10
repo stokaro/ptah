@@ -19,7 +19,9 @@ import (
 // every table. Where a source describes the switches, a table without the
 // facet has both off: a description that declares no enablement for a table
 // the server secures asks for row security to be disabled. A source that
-// cannot describe them keeps the switches the server holds. A table's creation
+// cannot describe them, and a read that did not report them, keep the switches
+// the server holds, and so does a declaration that names the table's policies
+// and not its switches (stokaro/ptah#2048). A table's creation
 // carries its switches, and its removal takes them, so neither is a change
 // here.
 //
@@ -29,8 +31,9 @@ import (
 type TableStateService struct{}
 
 // CompareFacets returns a complete comparison that retains every declaration.
-// Unavailable current state for a surviving table the desired source describes
-// is undecided, never an empty successful diff. Inputs remain unchanged.
+// Unavailable current state for a surviving table whose switches the
+// declaration names is undecided, never an empty successful diff. Inputs remain
+// unchanged.
 func (TableStateService) CompareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -82,8 +85,23 @@ func compareTableState(request schemaext.FacetComparisonRequest, owner schemaext
 	}
 	desiredKnowledge := request.Desired.Coverage.Lookup(pgpolicy.TableStateKind, owner.Subject)
 	currentKnowledge := request.Current.Coverage.Lookup(pgpolicy.TableStateKind, owner.Subject)
+	// A declaration that names the table's policies and not its switches
+	// requests the owner's default, which keeps the switches the table has
+	// (stokaro/ptah#2048). A switch declared elsewhere takes precedence.
+	if desired == nil && desiredKnowledge.State == schemaext.Defaulted {
+		if stateLimited(request.Current.Coverage, owner.Subject) || current == nil && unknown(currentKnowledge) {
+			return nil
+		}
+		if current == nil {
+			current = &pgpolicy.ObservedTableState{}
+		}
+		return adoptTableState(result, owner.Subject, current)
+	}
+	// Switches nobody read are decided only where the declaration names
+	// them; a table it leaves without the facet keeps what it has, as an
+	// unread namespace plans no removal.
 	if stateLimited(request.Current.Coverage, owner.Subject) || current == nil && unknown(currentKnowledge) {
-		if desired != nil || !unknown(desiredKnowledge) {
+		if desired != nil {
 			undecidedState(result, owner.Subject, "this table's row-security switches were not read: "+currentKnowledge.Reason)
 		}
 		return nil

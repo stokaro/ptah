@@ -13,7 +13,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/convert/goschematogo"
-	"ptah.run/internal/pgpolicysource"
 )
 
 // rowSecuritySchema declares orders with both switches on, scoped to
@@ -128,7 +127,7 @@ func TestRender_WritesTheSwitchesASourceLeftUnmanaged(t *testing.T) {
 	policies := must.Must(pgpolicy.Coverage(pgpolicy.PolicyKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	db.FeatureCoverage = must.Must(policies.Combine(must.Must(pgpolicy.Coverage(pgpolicy.TableStateKind, schemaext.Desired,
 		schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{Kind: pgpolicy.TableStateKind,
-			Subject: pgpolicy.Table(pgpolicy.PolicyRef("", "orders", "x")), Knowledge: pgpolicysource.UnmanagedSwitches()}}))))
+			Subject: pgpolicy.Table(pgpolicy.PolicyRef("", "orders", "x")), Knowledge: pgpolicy.DefaultedSwitches()}}))))
 
 	source, err := renderOneFile(c, db)
 

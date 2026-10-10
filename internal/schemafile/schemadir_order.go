@@ -2,6 +2,8 @@ package schemafile
 
 import (
 	"fmt"
+	"ptah.run/core/objectidentity"
+	"ptah.run/feature/pgpolicy"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -138,6 +140,14 @@ func declaredObjects(db *schemamodel.Database, format schemaDirFormat) []declare
 	}
 	for _, policy := range db.RLSPolicies {
 		objects = append(objects, newDeclaredObject(kindPolicy, qualifyWithOwner(policy.Table, policy.Name)))
+	}
+	// An HCL document hands its policies to the row-security owner as it is
+	// read; a SQL file's are handed over once the whole directory is read.
+	for _, ref := range db.FeatureObjects.Refs() {
+		if ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) {
+			table := schemamodel.QualifyTableName(ref.Schema.Authored(), ref.Parent.Source)
+			objects = append(objects, newDeclaredObject(kindPolicy, qualifyWithOwner(table, ref.Name.Source)))
+		}
 	}
 	objects = append(objects, declaredTypes(db)...)
 	for _, sequence := range db.Sequences {

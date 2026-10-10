@@ -231,12 +231,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	keepColumnSequencesOnly(schema.Tables, schema.Sequences)
 
 	if r.caps.Has(capability.RowLevelSecurity) {
-		// Read RLS policies (PostgreSQL-specific)
-		rlsPolicies, err := r.readRLSPolicies(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read RLS policies: %w", err)
+		if err := r.readRowSecurity(ctx, schema); err != nil {
+			return nil, err
 		}
-		schema.RLSPolicies = rlsPolicies
+	} else {
+		clearRowSecuritySwitches(schema.Tables)
 	}
 
 	if err := r.readRoleManagedObjects(ctx, schema); err != nil {
@@ -3731,87 +3730,6 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 	return functions, nil
 }
 
-// readRLSPolicies reads all PostgreSQL RLS policies from the database
-func (r *Reader) readRLSPolicies(ctx context.Context) ([]catalog.RLSPolicy, error) {
-	var policies []catalog.RLSPolicy
-	for _, schemaName := range r.schemasToRead() {
-		schemaPolicies, err := r.readRLSPoliciesForSchema(ctx, schemaName)
-		if err != nil {
-			return nil, err
-		}
-		policies = append(policies, schemaPolicies...)
-	}
-	return policies, nil
-}
-
-func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string) ([]catalog.RLSPolicy, error) {
-	rlsPoliciesQuery := `
-		SELECT
-			n.nspname AS schema_name,
-			pol.polname AS policy_name,
-			c.relname AS table_name,
-			CASE pol.polcmd
-				WHEN 'r' THEN 'SELECT'
-				WHEN 'a' THEN 'INSERT'
-				WHEN 'w' THEN 'UPDATE'
-				WHEN 'd' THEN 'DELETE'
-				WHEN '*' THEN 'ALL'
-			END AS policy_for,
-			-- Role 0 is PUBLIC, which has no pg_roles row. A list that names it
-			-- applies to everyone whatever else it names. PostgreSQL stores
-			-- such a list as {0} alone; CockroachDB 26.3 keeps {0, app}, and
-			-- the join below would read that back as app alone.
-			CASE
-				WHEN 0 = ANY(pol.polroles) THEN 'PUBLIC'
-				ELSE array_to_string(ARRAY(
-					SELECT rolname FROM pg_roles WHERE oid = ANY(pol.polroles)
-				), ',')
-			END AS to_roles,
-			COALESCE(pg_get_expr(pol.polqual, pol.polrelid), '') AS using_expression,
-			COALESCE(pg_get_expr(pol.polwithcheck, pol.polrelid), '') AS with_check_expression,
-			COALESCE(obj_description(pol.oid, 'pg_policy'), '') AS comment,
-			NOT pol.polpermissive AS restrictive
-		FROM pg_policy pol
-		JOIN pg_class c ON c.oid = pol.polrelid
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = $1
-		ORDER BY c.relname, pol.polname`
-
-	rows, err := r.db.QueryContext(ctx, rlsPoliciesQuery, schemaName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query RLS policies: %w", err)
-	}
-	defer rows.Close()
-
-	var policies []catalog.RLSPolicy
-	for rows.Next() {
-		var policy catalog.RLSPolicy
-		var schemaName string
-		err := rows.Scan(
-			&schemaName,
-			&policy.Name,
-			&policy.Table,
-			&policy.PolicyFor,
-			&policy.ToRoles,
-			&policy.UsingExpression,
-			&policy.WithCheckExpression,
-			&policy.Comment,
-			&policy.Restrictive,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan RLS policy: %w", err)
-		}
-		policy.Table = catalog.QualifyTableName(r.outputSchema(schemaName), policy.Table)
-
-		policies = append(policies, policy)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read RLS policies for schema %s: %w", schemaName, err)
-	}
-
-	return policies, nil
-}
-
 // rolesInScopeClauses returns the branches of the role-scoping union, one per
 // reason a role counts as used by the inspected schemas. Each branch reads the
 // currentCatalog column that carries the reason, so the reason a role is reported is
@@ -3826,7 +3744,7 @@ func (r *Reader) rolesInScopeClauses(defaultACL defaultACLAccess, defaultPrivile
 	clauses := r.grantRolesInScopeClauses()
 	if r.caps.Has(capability.RowLevelSecurity) {
 		// Named by a row-level security policy on a table in scope
-		// (pg_policy.polroles), read in the same shape readRLSPolicies uses.
+		// (pg_policy.polroles), read in the same shape readRowSecurity uses.
 		clauses = append(clauses, `SELECT policyrole FROM pg_policy pol
 			JOIN pg_class c ON c.oid = pol.polrelid
 			JOIN scope s ON s.oid = c.relnamespace

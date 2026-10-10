@@ -1,10 +1,14 @@
 package atlashcl_test
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/internal/atlashcl"
 )
@@ -75,8 +79,9 @@ func TestParsePolicyAsSelectsHowItCombines_HappyPath(t *testing.T) {
 			db, err := atlashcl.Parse(policyDocument(row.as), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.RLSPolicies, qt.HasLen, 1)
-			c.Assert(db.RLSPolicies[0].Restrictive, qt.Equals, row.restrictive)
+			policies := ownerPolicies(c, db)
+			c.Assert(policies, qt.HasLen, 1)
+			c.Assert(slices.Collect(maps.Values(policies))[0].Composition == pgpolicy.Restrictive, qt.Equals, row.restrictive)
 			sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
 			c.Assert(sql, qt.Contains, row.wantSQL)
 		})
@@ -144,8 +149,9 @@ func TestParseRowSecurityEnforcedReachesTheOwner_HappyPath(t *testing.T) {
 	db, err := atlashcl.Parse(rowSecurityDocument(`enforced = true`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(db.RLSEnabledTables[0].Forced, qt.IsTrue)
+	switches := ownerSwitches(c, db)
+	c.Assert(switches, qt.HasLen, 1)
+	c.Assert(slices.Collect(maps.Values(switches))[0].Forced, qt.IsTrue)
 	sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
 	c.Assert(sql, qt.Contains, `ENABLE ROW LEVEL SECURITY`)
 	c.Assert(sql, qt.Contains, `FORCE ROW LEVEL SECURITY`)
@@ -169,8 +175,9 @@ func TestParseRowSecurityWithoutEnforcedStaysUnforced_HappyPath(t *testing.T) {
 			db, err := atlashcl.Parse(rowSecurityDocument(row.attrs), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-			c.Assert(db.RLSEnabledTables[0].Forced, qt.IsFalse)
+			switches := ownerSwitches(c, db)
+			c.Assert(switches, qt.HasLen, 1)
+			c.Assert(slices.Collect(maps.Values(switches))[0].Forced, qt.IsFalse)
 			sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
 			c.Assert(sql, qt.Contains, `ENABLE ROW LEVEL SECURITY`)
 			c.Assert(sql, qt.Not(qt.Contains), `FORCE ROW LEVEL SECURITY`)

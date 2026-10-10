@@ -26,6 +26,18 @@ type DesiredTableState struct {
 	StructName string `json:"struct_name,omitempty"`
 }
 
+// DefaultedSwitches is the knowledge a source records for the switches of a
+// table it declares policies for and no switches (stokaro/ptah#2048): the
+// declaration requests the owner's default. The owner keeps the switches of a
+// table that exists as they are, so a comparison plans neither ENABLE nor
+// DISABLE, and enables a table the plan creates, whose policies would
+// otherwise protect nothing. A switch value declared elsewhere for the same
+// table takes precedence.
+func DefaultedSwitches() schemaext.Knowledge {
+	return schemaext.Knowledge{State: schemaext.Defaulted,
+		Reason: "the declaration names the table's row-level security policies and not its switches"}
+}
+
 // ObservedTableState is a table's row-security switches as pg_class reports
 // them: relrowsecurity and relforcerowsecurity.
 type ObservedTableState struct {

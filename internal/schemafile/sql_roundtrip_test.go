@@ -3,6 +3,7 @@ package schemafile_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,7 +111,7 @@ trigger "users_set_updated_at" {
 policy "users_tenant_policy" {
   on    = table.users
   for   = SELECT
-  to    = [role.app_user, PUBLIC]
+  to    = [role.app_user, CURRENT_USER]
   using = "get_current_tenant() IS NOT NULL"
 }
 
@@ -140,17 +141,18 @@ func renderPostgres(c *qt.C, db *schemamodel.Database) []string {
 	return statements
 }
 
-// dropLeadingComments removes the leading `-- text` lines a statement carries.
-// Ptah renders an object's comment as a SQL line comment, and a SQL line
-// comment belongs to no object when it is read back, so those lines are the one
-// thing a rendered schema loses on its first trip through the SQL frontend.
-func dropLeadingComments(statements []string) []string {
+// dropLineComments removes the `-- text` lines a statement carries, wherever
+// they sit. Ptah renders an object's comment as a SQL line comment, ahead of
+// the object's statement or, for a table's row-level security switches, after
+// its CREATE TABLE, and a SQL line comment belongs to no object when it is
+// read back, so those lines are the one thing a rendered schema loses on its
+// first trip through the SQL frontend.
+func dropLineComments(statements []string) []string {
 	stripped := make([]string, 0, len(statements))
 	for _, statement := range statements {
-		lines := strings.Split(statement, "\n")
-		for len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "--") {
-			lines = lines[1:]
-		}
+		lines := slices.DeleteFunc(strings.Split(statement, "\n"), func(line string) bool {
+			return strings.HasPrefix(strings.TrimSpace(line), "--")
+		})
 		stripped = append(stripped, strings.Join(lines, "\n"))
 	}
 	return stripped
@@ -171,17 +173,17 @@ func TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint(t *testing.T) {
 	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	first := renderPostgres(c, fromHCL)
-	c.Assert(first, qt.HasLen, 16)
+	c.Assert(first, qt.HasLen, 15)
 
 	sqlPath := writeSchemaFile(c, dir, "first.sql", strings.Join(first, ";\n")+";\n")
 	fromSQL, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	second := renderPostgres(c, fromSQL)
-	c.Assert(second, qt.HasLen, 16)
+	c.Assert(second, qt.HasLen, 15)
 
 	// Every statement comes back identical apart from the object comments that
 	// were rendered as bare `--` lines.
-	c.Assert(dropLeadingComments(second), qt.DeepEquals, dropLeadingComments(first))
+	c.Assert(dropLineComments(second), qt.DeepEquals, dropLineComments(first))
 
 	// From the second render on, the SQL is a true fixed point: reading it and
 	// rendering it again reproduces it byte for byte.
@@ -219,8 +221,8 @@ func TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind(t *testing.T) {
 	c.Assert(got.Views, qt.HasLen, 1)
 	c.Assert(got.MaterializedViews, qt.HasLen, 1)
 	c.Assert(got.Triggers, qt.HasLen, 1)
-	c.Assert(got.RLSPolicies, qt.HasLen, 1)
-	c.Assert(got.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(ownerPolicies(c, got), qt.HasLen, 1)
+	c.Assert(ownerSwitches(c, got), qt.HasLen, 1)
 	c.Assert(got.Grants, qt.HasLen, 2)
 
 	// The role comment survives because PostgreSQL spells it as a separate

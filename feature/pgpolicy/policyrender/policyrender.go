@@ -11,6 +11,9 @@
 package policyrender
 
 import (
+	"fmt"
+	"ptah.run/internal/tableref"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -47,9 +50,27 @@ func ValidateTableFacets(facets schemaext.Facets) error {
 	return pgpolicy.ValidateDesiredTableState(declared)
 }
 
+// LowerCoverage interprets the row-security claims a whole-schema render
+// meets. A table whose declaration leaves its switches to the owner's default
+// (see [pgpolicy.DefaultedSwitches]) gets no switch statement: a render writes
+// what the schema declares, and a migration that creates the table enables it
+// in a step of its own. The claim is answered here and leaves the account;
+// every other claim stays.
+func LowerCoverage(coverage schemaext.Coverage) (schemaext.Coverage, error) {
+	subjects := coverage.SubjectRecords()
+	kept := slices.DeleteFunc(slices.Clone(subjects), func(record schemaext.SubjectCoverage) bool {
+		return record.Kind == pgpolicy.TableStateKind && record.Knowledge.State == schemaext.Defaulted
+	})
+	if len(kept) == len(subjects) {
+		return coverage, nil
+	}
+	return schemaext.NewCoverage(coverage.Representation(), coverage.KindRecords(), kept)
+}
+
 // LowerTableFacets returns the statements that give a new table its declared
 // row-security switches, to run after its CREATE TABLE, and the facets the
-// statement itself still carries. table is the name the CREATE TABLE writes. A
+// statement itself still carries. table is the name the CREATE TABLE writes,
+// qualified with its schema or not. A
 // table created by the plan had no rows anyone could read before it, so the
 // statements leave access unchanged.
 func LowerTableFacets(table string, facets schemaext.Facets) ([]ast.ExtensionPayload, schemaext.Facets, error) {
@@ -67,7 +88,11 @@ func LowerTableFacets(table string, facets schemaext.Facets) ([]ast.ExtensionPay
 	if !declared.Enabled && !declared.Forced {
 		return nil, rest, nil
 	}
-	operation := &pgpolicy.TableStateOperation{Table: table, Change: pgpolicy.TableStateChange{
+	ref, ok := tableref.Parse(table)
+	if !ok {
+		return nil, schemaext.Facets{}, fmt.Errorf("%w: row-security switches on %q, which is not a table name", schemaext.ErrInvalidValue, table)
+	}
+	operation := &pgpolicy.TableStateOperation{Schema: ref.Schema, Table: ref.Name, Change: pgpolicy.TableStateChange{
 		Before: &pgpolicy.ObservedTableState{}, After: new(*declared),
 		Access: pgpolicy.CreatedTableAccess(),
 	}}

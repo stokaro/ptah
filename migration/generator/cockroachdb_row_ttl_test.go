@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -170,23 +171,24 @@ type Session struct {
 }
 `))
 	current := liveRowTTLTable(nil)
+	// The read reported the table's row-level security, with both switches off.
+	current.FeatureCoverage = must.Must(current.FeatureCoverage.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Observed))))
 
 	diff, err := schemadiff.CompareWithDialect(t.Context(), &source, current, "cockroachdb", runtime)
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 1)
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 		Runtime: runtime, Diff: diff, DesiredSchema: &source, CurrentSchema: current, Dialect: "cockroachdb", Capabilities: capability.CockroachDB26(),
 	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(renderedStatements(c, plan.Forward.Nodes), qt.DeepEquals, []string{
-		`ALTER TABLE "sessions" ENABLE ROW LEVEL SECURITY;`,
 		"-- Row-level TTL on table: sessions",
 		`ALTER TABLE "sessions" SET (ttl_expire_after = '3 days');`,
+		`ALTER TABLE "sessions" ENABLE ROW LEVEL SECURITY;`,
 	})
 	c.Assert(renderedStatements(c, plan.Reverse.Nodes), qt.DeepEquals, []string{
-		`ALTER TABLE "sessions" DISABLE ROW LEVEL SECURITY;`,
 		"-- Row-level TTL on table: sessions",
 		`ALTER TABLE "sessions" RESET (ttl);`,
+		`ALTER TABLE "sessions" DISABLE ROW LEVEL SECURITY;`,
 	})
 }

@@ -3,6 +3,7 @@ package planner_test
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -10,8 +11,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -35,8 +39,13 @@ func TestRLSFixturePipeline(t *testing.T) {
 			fixtureDir := filepath.Join("..", "..", "integration", "internal", "fixtures", "entities", test.fixture)
 			desired, err := goschema.ParseDir(fixtureDir)
 			c.Assert(err, qt.IsNil)
-			c.Assert(desired.RLSPolicies, qt.HasLen, test.expectedPolicies)
-			c.Assert(desired.RLSEnabledTables, qt.HasLen, test.expectedEnabledTables)
+			// The annotations reach the row-security owner.
+			c.Assert(desired.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+				return ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind)
+			}).Len(), qt.Equals, test.expectedPolicies)
+			c.Assert(slices.DeleteFunc(slices.Clone(desired.Tables), func(table schemamodel.Table) bool {
+				return !slices.Contains(table.Facets.Kinds(), pgpolicy.TableStateKind)
+			}), qt.HasLen, test.expectedEnabledTables)
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
 			sql, err := planner.GenerateSchemaDiffSQL(
 				context.Background(), must.Must(builtin.New()),

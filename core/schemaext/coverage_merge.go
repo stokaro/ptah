@@ -47,12 +47,13 @@ func (c Coverage) Merge(other Coverage) (Coverage, error) {
 	}
 	maps.Copy(subjects, other.subjects)
 	overrides := make([]SubjectCoverage, 0, len(subjects))
-	for _, record := range subjects {
+	for key, record := range subjects {
 		knowledge, err := mergeKnowledge(c.Lookup(record.Kind, record.Subject), other.Lookup(record.Kind, record.Subject))
 		if err != nil {
 			return Coverage{}, err
 		}
 		record.Knowledge = knowledge
+		record.Targets = mergeTargets(c.subjects, other.subjects, key)
 		overrides = append(overrides, record)
 	}
 	return NewCoverage(direction, kinds, overrides)
@@ -83,4 +84,24 @@ func mergeKnowledge(a, b Knowledge) (Knowledge, error) {
 		return a, nil
 	}
 	return Knowledge{}, fmt.Errorf("%w: conflicting feature coverage claims %q and %q", ErrInvalidValue, a.State, b.State)
+}
+
+// mergeTargets is the scope of a claim both sources may make: every target
+// either source makes it for. A source that does not make the claim adds no
+// target, and a claim either source makes on every target applies on every
+// target.
+func mergeTargets(a, b map[subjectKey]SubjectCoverage, key subjectKey) []string {
+	var targets []string
+	for _, records := range []map[subjectKey]SubjectCoverage{a, b} {
+		record, found := records[key]
+		if !found {
+			continue
+		}
+		if len(record.Targets) == 0 {
+			return nil
+		}
+		targets = append(targets, record.Targets...)
+	}
+	slices.Sort(targets)
+	return slices.Compact(targets)
 }

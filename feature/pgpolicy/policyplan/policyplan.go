@@ -358,15 +358,51 @@ func planCreatedTable(roles objectidentity.Builder, index int, table featureplan
 		pgpolicy.PolicyKind:     "create the table's policies after the objects their expressions may name",
 		pgpolicy.TableStateKind: "set the table's declared row-security switches in the statements after its CREATE TABLE",
 	}
+	var switches []plangraph.StepID
+	if len(steps) > 0 && defaultedSwitches(table) {
+		step := enableCreatedTable(index, table.Subject)
+		created.steps = append(created.steps, step)
+		switches = []plangraph.StepID{step.ID}
+		strategies[pgpolicy.TableStateKind] = "enable row-level security, which the declaration leaves to the owner's default for a table with policies"
+	}
 	var receipts []featureplan.ParentPlan
 	for _, kind := range kinds {
 		receipt := featureplan.ParentPlan{Subject: table.Subject, Kind: kind, Action: table.Action, Strategy: strategies[kind]}
-		if kind == pgpolicy.PolicyKind {
+		switch kind {
+		case pgpolicy.PolicyKind:
 			receipt.Steps = steps
+		case pgpolicy.TableStateKind:
+			receipt.Steps = switches
 		}
 		receipts = append(receipts, receipt)
 	}
 	return created, receipts, nil
+}
+
+// defaultedSwitches reports a created table that declares no switches and
+// whose declaration requests the owner's default for them (see
+// [pgpolicy.DefaultedSwitches]).
+func defaultedSwitches(table featureplan.Table) bool {
+	if slices.Contains(table.Desired.Table.Facets.Kinds(), pgpolicy.TableStateKind) {
+		return false
+	}
+	return slices.ContainsFunc(table.Desired.FeatureCoverage.SubjectRecords(), func(record schemaext.SubjectCoverage) bool {
+		return record.Kind == pgpolicy.TableStateKind && record.Knowledge.State == schemaext.Defaulted
+	})
+}
+
+// enableCreatedTable is the step that enables row-level security on a table
+// the plan creates, in the dependent phase with the table's policies. The
+// table had no rows anyone could read, so access is unchanged.
+func enableCreatedTable(index int, subject objectidentity.ID) plangraph.Step[featureplan.Operation] {
+	change := pgpolicy.TableStateChange{Before: &pgpolicy.ObservedTableState{}, After: &pgpolicy.DesiredTableState{Enabled: true},
+		Access: pgpolicy.CreatedTableAccess()}
+	return plangraph.Step[featureplan.Operation]{ID: plangraph.StepID{Owner: pgpolicy.Owner, Name: fmt.Sprintf("created/%06d/switches", index)},
+		Payload: featureplan.Operation{Role: ast.StatementExtension, Phase: featureplan.PhaseDependent, Payload: &pgpolicy.TableStateOperation{
+			Schema: subject.Schema.Authored(), Table: subject.Name.Source, Change: change}},
+		Effects:     []plangraph.Effect{{Subject: pgpolicy.TableStateSubject(subject), Action: plangraph.Alter}, {Subject: subject, Action: plangraph.Read}},
+		Transaction: plangraph.TransactionAllowed, Impact: change.Effect(),
+	}
 }
 
 // assessParent accounts for a table's policies and switches through the

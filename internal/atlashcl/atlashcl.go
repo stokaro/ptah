@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"ptah.run/internal/pgpolicysource"
 	"slices"
 	"strconv"
 	"strings"
@@ -204,6 +205,12 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	if err := p.rejectRedeclarations(); err != nil {
 		return nil, err
 	}
+	// After the redeclaration check, which refuses a repeated policy block
+	// the way the pinned binary does, and before Finalize, which may reorder
+	// the tables the switches attach to.
+	if err := p.attachRowSecurity(); err != nil {
+		return nil, fmt.Errorf("parse HCL schema %s: %w", p.filename, err)
+	}
 	// After the redeclaration check, so a hypertable attaches to the one table
 	// block that declares its table. A caller assembling one schema from
 	// several documents attaches them itself once every document is read.
@@ -242,6 +249,10 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		return nil, err
 	}
 	p.db.FeatureCoverage, err = p.db.FeatureCoverage.Combine(timescale)
+	if err != nil {
+		return nil, err
+	}
+	p.db.FeatureCoverage, err = pgpolicysource.Claim(p.db.FeatureCoverage, p.db.FeatureObjects)
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +336,10 @@ type parser struct {
 	// only be read once every table block is known; see
 	// [parser.resolveDocumentTableRefs].
 	pendingForeignRefs []pendingForeignRef
+	// policies and switches hold the document's row-level security until
+	// every table block is read; see [parser.attachRowSecurity].
+	policies []hclPolicy
+	switches []hclSwitches
 	// tableSettings holds the blocks that declare a setting of a table they
 	// name, attached once every table block is known; see
 	// [AttachTableSettings].
@@ -694,11 +709,7 @@ func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabele
 		}
 		table.Partition = partition
 	case "row_security":
-		rlsEnabled, err := p.parseRowSecurity(table, block)
-		if err != nil {
-			return err
-		}
-		p.db.RLSEnabledTables = append(p.db.RLSEnabledTables, rlsEnabled)
+		return p.parseRowSecurity(table, block)
 	default:
 		return p.parseAdditionalTableBlock(table, block)
 	}

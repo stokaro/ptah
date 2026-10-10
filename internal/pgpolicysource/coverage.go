@@ -9,24 +9,11 @@ import (
 	"ptah.run/feature/pgpolicy"
 )
 
-// unmanagedSwitchesReason is why a source leaves a table's switches to the
-// database.
-const unmanagedSwitchesReason = "the declaration names the table's row-level security policies and not its switches"
-
-// UnmanagedSwitches is the knowledge a source records for the row-level
-// security switches of a table that declares policies and no switches
-// (stokaro/ptah#2048). The comparison then plans neither ENABLE nor DISABLE on
-// a table that exists, and a table the plan creates is enabled because it has
-// policies. A declaration that wants row-level security off says so by
-// declaring no policies for the table.
-func UnmanagedSwitches() schemaext.Knowledge {
-	return schemaext.Knowledge{State: schemaext.Uninspected, Reason: unmanagedSwitchesReason}
-}
-
 // RequireRepresentable refuses row-level security coverage a source format
 // cannot write back: either model, or one of its subjects, that the source
-// could not describe. The switches a source leaves unmanaged beside a table's
-// policies pass, because writing the policies records them again.
+// could not describe. The switches a source leaves to the owner's default
+// beside a table's policies (see [pgpolicy.DefaultedSwitches]) pass, because
+// writing the policies records them again.
 func RequireRepresentable(coverage schemaext.Coverage, objects schemaext.Objects) error {
 	for _, record := range coverage.KindRecords() {
 		kind := record.Model.Kind
@@ -47,7 +34,7 @@ func RequireRepresentable(coverage schemaext.Coverage, objects schemaext.Objects
 		}
 		state := record.Knowledge.State
 		if state == schemaext.Complete || state == schemaext.Absent ||
-			(record.Kind == pgpolicy.TableStateKind && record.Knowledge == UnmanagedSwitches() && policyTables[record.Subject.Key()]) {
+			(record.Kind == pgpolicy.TableStateKind && state == schemaext.Defaulted && policyTables[record.Subject.Key()]) {
 			continue
 		}
 		return fmt.Errorf("%w: %s cannot be exported without losing its coverage record: %s %s",

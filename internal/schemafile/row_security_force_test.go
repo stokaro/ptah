@@ -6,6 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/feature/pgpolicy"
+
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemafile"
@@ -44,8 +46,7 @@ func TestLoadAll_ForceRowLevelSecurity_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			db, err := loadPostgresSchema(c, tc.body)
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-			c.Assert(db.RLSEnabledTables[0].Forced, qt.IsTrue)
+			c.Assert(ownerSwitches(c, db)["t1"].Forced, qt.IsTrue)
 			rendered := strings.Join(renderPostgres(c, db), "\n")
 			c.Assert(rendered, qt.Contains, "ENABLE ROW LEVEL SECURITY;")
 			c.Assert(rendered, qt.Contains, "FORCE ROW LEVEL SECURITY;")
@@ -59,8 +60,7 @@ func TestLoadAll_EnableWithoutForceStaysUnforced(t *testing.T) {
 	c := qt.New(t)
 	db, err := loadPostgresSchema(c, "ALTER TABLE t1 ENABLE ROW LEVEL SECURITY;")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(db.RLSEnabledTables[0].Forced, qt.IsFalse)
+	c.Assert(ownerSwitches(c, db), qt.DeepEquals, map[string]pgpolicy.DesiredTableState{"t1": {Enabled: true}})
 	c.Assert(strings.Join(renderPostgres(c, db), "\n"), qt.Not(qt.Contains), "FORCE ROW LEVEL SECURITY")
 }
 
@@ -105,8 +105,7 @@ func TestLoadAll_PolicyKind_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			db, err := loadPostgresSchema(c, "ALTER TABLE t1 ENABLE ROW LEVEL SECURITY;\n"+tc.statement)
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.RLSPolicies, qt.HasLen, 1)
-			c.Assert(db.RLSPolicies[0].Restrictive, qt.Equals, tc.wantRestrictive)
+			c.Assert(ownerPolicies(c, db)["public.t1.p1"].Composition == pgpolicy.Restrictive, qt.Equals, tc.wantRestrictive)
 			c.Assert(strings.Join(renderPostgres(c, db), "\n"), qt.Contains, tc.wantRendered)
 		})
 	}

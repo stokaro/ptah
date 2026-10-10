@@ -1,6 +1,8 @@
 package goschema_test
 
 import (
+	"maps"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -40,13 +42,10 @@ func TestParseSource_KeepsOnePolicyNamePerTable(t *testing.T) {
 
 	database := mustParseSource(c, "fixture.go", sharedPolicyNameSource)
 
-	c.Assert(database.RLSPolicies, qt.HasLen, 2)
-	c.Assert(database.RLSPolicies[0].Name, qt.Equals, "tenant_isolation")
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "alpha_orders")
-	c.Assert(database.RLSPolicies[0].UsingExpression, qt.Equals, "tenant_id = 1")
-	c.Assert(database.RLSPolicies[1].Name, qt.Equals, "tenant_isolation")
-	c.Assert(database.RLSPolicies[1].Table, qt.Equals, "zeta_orders")
-	c.Assert(database.RLSPolicies[1].UsingExpression, qt.Equals, "tenant_id = 2")
+	policies := ownerPolicies(c, &database)
+	c.Assert(policies, qt.HasLen, 2)
+	c.Assert(*policies["public.alpha_orders.tenant_isolation"].Using, qt.Equals, "tenant_id = 1")
+	c.Assert(*policies["public.zeta_orders.tenant_isolation"].Using, qt.Equals, "tenant_id = 2")
 }
 
 // TestParseSource_RecordsAStructAttachedPolicyOnce is the control the
@@ -69,9 +68,7 @@ type AlphaOrder struct {
 
 	database := mustParseSource(c, "fixture.go", source)
 
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Name, qt.Equals, "tenant_isolation")
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "alpha_orders")
+	c.Assert(slices.Collect(maps.Keys(ownerPolicies(c, &database))), qt.DeepEquals, []string{"public.alpha_orders.tenant_isolation"})
 }
 
 func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {

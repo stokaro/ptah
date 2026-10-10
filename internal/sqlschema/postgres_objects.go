@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"fmt"
+	"ptah.run/internal/pgpolicysource"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -119,12 +120,42 @@ func toRLSPolicy(node *ast.CreatePolicyNode, sourcePlatform string) schemamodel.
 		Name:                normalizeSQLIdentifier(sourcePlatform, node.Name),
 		Table:               normalizeSQLTableReference(sourcePlatform, node.Table),
 		PolicyFor:           node.PolicyFor,
-		ToRoles:             normalizeRoleList(sourcePlatform, node.ToRoles),
+		ToRoles:             policyRoles(sourcePlatform, node.ToRoles),
 		UsingExpression:     node.UsingExpression,
 		WithCheckExpression: node.WithCheckExpression,
 		Restrictive:         node.Restrictive,
 		Comment:             node.Comment,
 	}
+}
+
+// policyRoles reads a policy's TO list. On the PostgreSQL family it is
+// written in the grammar [pgpolicysource.ParseRoleList] reads, which
+// [OwnRowSecurity] applies: a role keyword written bare stays the keyword,
+// and every other entry is the role [normalizeGrantee] resolves, quoted so the
+// owner keeps its exact name. Every other dialect reads the list through
+// [normalizeRoleList].
+func policyRoles(sourcePlatform, roles string) string {
+	if !platform.IsPostgresFamily(sourcePlatform) {
+		return normalizeRoleList(sourcePlatform, roles)
+	}
+	if strings.TrimSpace(roles) == "" {
+		return ""
+	}
+	parts := strings.Split(roles, ",")
+	for index, part := range parts {
+		part = strings.TrimSpace(part)
+		if !strings.HasPrefix(part, `"`) && pgpolicysource.SpellsKeyword(part) {
+			parts[index] = strings.ToUpper(part)
+			continue
+		}
+		name := normalizeGrantee(sourcePlatform, part)
+		if name == "PUBLIC" {
+			parts[index] = name
+			continue
+		}
+		parts[index] = `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	}
+	return strings.Join(parts, ", ")
 }
 
 // normalizeRoleList reads each role in a policy's TO list through
