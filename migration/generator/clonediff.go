@@ -52,12 +52,6 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.SynonymsAdded = slices.Clone(diff.SynonymsAdded)
 	clone.SynonymsRemoved = slices.Clone(diff.SynonymsRemoved)
 	clone.SynonymsModified = slices.Clone(diff.SynonymsModified)
-	clone.AsyncReplicationsAdded = cloneAsyncReplications(diff.AsyncReplicationsAdded)
-	clone.AsyncReplicationsRemoved = cloneAsyncReplications(diff.AsyncReplicationsRemoved)
-	clone.AsyncReplicationsModified = cloneAsyncReplicationDiffs(diff.AsyncReplicationsModified)
-	clone.TransfersAdded = slices.Clone(diff.TransfersAdded)
-	clone.TransfersRemoved = slices.Clone(diff.TransfersRemoved)
-	clone.TransfersModified = cloneTransferDiffs(diff.TransfersModified)
 	clone.ExtendedPropertiesAdded = slices.Clone(diff.ExtendedPropertiesAdded)
 	clone.ExtendedPropertiesRemoved = slices.Clone(diff.ExtendedPropertiesRemoved)
 	clone.ExtendedPropertiesModified = slices.Clone(diff.ExtendedPropertiesModified)
@@ -140,48 +134,6 @@ func cloneIndexPartitioningChanges(changes []difftypes.IndexPartitioningChange) 
 	for i, change := range changes {
 		change.Partitioning = change.Partitioning.Clone()
 		change.Previous = change.Previous.Clone()
-		clone[i] = change
-	}
-	return clone
-}
-
-// cloneAsyncReplications copies the replications and the items each carries,
-// so a reversal swapping them leaves the caller's diff alone.
-func cloneAsyncReplications(replications difftypes.AsyncReplicationChanges) difftypes.AsyncReplicationChanges {
-	if replications == nil {
-		return nil
-	}
-	clone := make(difftypes.AsyncReplicationChanges, len(replications))
-	for i, replication := range replications {
-		replication.Spec = replication.Spec.Clone()
-		clone[i] = replication
-	}
-	return clone
-}
-
-// cloneAsyncReplicationDiffs copies the changes, their lists and both specs.
-func cloneAsyncReplicationDiffs(changes []difftypes.AsyncReplicationDiff) []difftypes.AsyncReplicationDiff {
-	if changes == nil {
-		return nil
-	}
-	clone := make([]difftypes.AsyncReplicationDiff, len(changes))
-	for i, change := range changes {
-		change.CreateOnlyChanged = slices.Clone(change.CreateOnlyChanged)
-		change.Desired = change.Desired.Clone()
-		change.Current = change.Current.Clone()
-		clone[i] = change
-	}
-	return clone
-}
-
-// cloneTransferDiffs copies the changes and their lists.
-func cloneTransferDiffs(changes []difftypes.TransferDiff) []difftypes.TransferDiff {
-	if changes == nil {
-		return nil
-	}
-	clone := make([]difftypes.TransferDiff, len(changes))
-	for i, change := range changes {
-		change.CreateOnlyChanged = slices.Clone(change.CreateOnlyChanged)
 		clone[i] = change
 	}
 	return clone

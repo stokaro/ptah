@@ -33,16 +33,14 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// HCL has the synonym and extended_property blocks
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
 			// name a virtual table, a table's row deletion policy, a changefeed,
-			// or a YDB async replication, transfer, resource pool or classifier. A
-			// secret, a topic, an external object and a column family are
-			// owned features the format makes no claim about.
-			name: "HCL cannot name a virtual table, a TTL, a changefeed, a " +
-				"replication, transfer, resource pool or classifier",
+			// or a YDB resource pool or classifier. A secret, a topic, an
+			// external object, an async replication, a transfer and a column
+			// family are owned features the format makes no claim about.
+			name:     "HCL cannot name a virtual table, a TTL, a changefeed, a resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
 			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnTable,
-				coverage.Replication,
-				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
+				coverage.TTL, coverage.VirtualTable),
 		},
 		{
 			// The control on the virtual table. A `.sql` document CAN name one,
@@ -55,8 +53,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
-				coverage.ExtendedProperty,
-				coverage.Replication, coverage.Synonym, coverage.Transfer),
+				coverage.ExtendedProperty, coverage.Synonym),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -64,10 +61,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// longer records these kinds anywhere". It has keys for a row
 			// deletion policy, a changefeed and a column family, as `.sql` has
 			// Spanner's policy clause, so both rows are the control on the TTL,
-			// changefeed and column family records HCL and DBML carry. It is
-			// also the control on the replication and the transfer and
-			// external objects: YAML has a key for each, so a loader that
-			// recorded them for every format fails here.
+			// changefeed and column family records HCL and DBML carry.
 			name:     "YAML cannot name seven families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
@@ -89,8 +83,8 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.ColumnTable, coverage.Composite,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension,
-				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Sequence,
-				coverage.Synonym, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
+				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
+				coverage.Synonym, coverage.TTL, coverage.VirtualTable),
 		},
 	}
 

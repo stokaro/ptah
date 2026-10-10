@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/sqlschema"
@@ -95,10 +96,12 @@ func TestReadYQLSupportedFamilyCoverage(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
-	for _, kind := range []coverage.Kind{coverage.Replication, coverage.Transfer, coverage.Role, coverage.Grant, coverage.Changefeed, coverage.View, coverage.ColumnTable, coverage.TTL} {
+	for _, kind := range []coverage.Kind{coverage.Role, coverage.Grant, coverage.Changefeed, coverage.View, coverage.ColumnTable, coverage.TTL} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 	}
 	c.Assert(database.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)
+	c.Assert(database.FeatureCoverage.Lookup(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
+	c.Assert(database.FeatureCoverage.Lookup(ydbreplication.TransferKind, ydbreplication.TransferRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
 	c.Assert(database.FeatureCoverage.Lookup(ydbschema.ColumnFamiliesKind, objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "t")).State,
 		qt.Equals, schemaext.Complete)
 }

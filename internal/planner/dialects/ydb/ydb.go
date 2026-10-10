@@ -244,7 +244,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	}
 
 	var result []ast.Node
-	result = append(result, dropReplications(diff)...)
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
 	result = append(result, columnTTL.before...)
@@ -273,8 +272,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, tables.removed...)
 	result = append(result, tables.late...)
 	result = append(result, columnTTL.after...)
-	result = append(result, changeReplications(diff)...)
-	result = append(result, p.createViews(diff)...)
+	views := p.createViews(diff)
+	for _, view := range views {
+		columnTTL.reads.add(view, replicaReads(diff), false)
+	}
+	result = append(result, views...)
 	result = append(result, viewComments(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)

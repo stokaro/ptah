@@ -7,8 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/schemafile"
 )
 
@@ -21,10 +20,13 @@ func TestYQLReplicationChangesAcrossFiles(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(directory, "02.sql"), []byte(second), 0o600), qt.IsNil)
 	database, err := schemafile.LoadPath(directory, schemafile.Options{Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.AsyncReplications, qt.HasLen, 1)
-	c.Assert(database.AsyncReplications[0].Spec.Connection, qt.DeepEquals, ast.ReplicationConnectionSpec{ConnectionString: "grpc://moved:2136/?database=/remote"})
-	c.Assert(database.Transfers, qt.HasLen, 1)
-	c.Assert(database.Transfers[0].Spec.BatchSizeBytes, qt.Equals, uint64(4096))
-	c.Assert(database.NotDescribed.Describes(coverage.Replication), qt.IsTrue)
-	c.Assert(database.NotDescribed.Describes(coverage.Transfer), qt.IsTrue)
+	replication, found, err := database.FeatureObjects.Get(ydbreplication.ReplicationRef("archive", "mirror"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(replication.Value.(*ydbreplication.DesiredReplication).Spec.Connection, qt.DeepEquals,
+		ydbreplication.Connection{ConnectionString: "grpc://moved:2136/?database=/remote"})
+	transfer, found, err := database.FeatureObjects.Get(ydbreplication.TransferRef("archive", "ingest"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(transfer.Value.(*ydbreplication.DesiredTransfer).Spec.BatchSizeBytes, qt.Equals, uint64(4096))
 }

@@ -177,3 +177,20 @@ func TransferCoverage(representation schemaext.Representation, knowledge schemae
 // ownedCoverage builds this package's model registry once; see
 // [schemaext.OwnedCoverageSource].
 var ownedCoverage = schemaext.OwnedCoverageSource("ptah.run/ydb", Codecs)
+
+// The reasons a read records an async replication or a transfer it lists and
+// does not describe, which a source written from the read carries as a limit
+// rather than a declaration: a target without the kind's key, and a cluster
+// that does not serve the replication API, which local-ydb leaves out unless
+// YDB_GRPC_SERVICES names it.
+const (
+	// UnsupportedReplicationReason is why a replication is recorded on a
+	// target without the async_replication key.
+	UnsupportedReplicationReason = "target capability async_replication is unavailable, so Ptah leaves the replication unmanaged"
+	// UnsupportedTransferReason is why a transfer is recorded on a target
+	// without the transfers key.
+	UnsupportedTransferReason = "target capability transfers is unavailable, so Ptah leaves the transfer unmanaged"
+	// ServiceUnavailableReason is why either is recorded on a cluster that
+	// does not serve the replication API.
+	ServiceUnavailableReason = "the cluster does not serve the replication API, so Ptah leaves the object unmanaged"
+)

@@ -16,7 +16,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -24,6 +23,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -78,16 +78,67 @@ func replicationDeclaration(connection string, tables ...string) *schemamodel.Da
 			schemamodel.Field{StructName: name, Name: "id", Type: "BIGINT", Primary: true},
 			schemamodel.Field{StructName: name, Name: "note", Type: "TEXT", Nullable: true})
 	}
+	claimReplications(db)
 	if connection != "" {
-		db.AsyncReplications = []schemamodel.AsyncReplication{{Name: "mirror", Schema: replicationSchema,
-			Spec: ast.AsyncReplicationSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: connection},
-				Items: []ast.AsyncReplicationItem{{Source: "/local/" + replicationSchema + "/src",
-					Target: replicationSchema + "/rep"}},
-			}}}
+		db.FeatureObjects = must.Must(db.FeatureObjects.With(ydbreplication.DesiredReplicationObject(replicationSchema, "mirror", "",
+			mirrorSpec(connection))))
 	}
 	schemamodel.Finalize(db)
 	return db
+}
+
+// mirrorSpec is the replication mirror of src into rep through connection.
+func mirrorSpec(connection string) ydbreplication.ReplicationSpec {
+	return ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: connection},
+		Items: []ydbreplication.Item{{Source: "/local/" + replicationSchema + "/src",
+			Target: replicationSchema + "/rep"}},
+	}
+}
+
+// claimReplications claims the replication and transfer namespaces of db in
+// full, as a schema source does: what db leaves out is to be dropped.
+func claimReplications(db *schemamodel.Database) {
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	coverage := must.Must(db.FeatureCoverage.Combine(must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, complete, nil))))
+	db.FeatureCoverage = must.Must(coverage.Combine(must.Must(ydbreplication.TransferCoverage(schemaext.Desired, complete, nil))))
+}
+
+// declareTransfer adds transfer ingest of the replication directory to db.
+func declareTransfer(db *schemamodel.Database, spec ydbreplication.TransferSpec) {
+	db.FeatureObjects = must.Must(db.FeatureObjects.With(ydbreplication.DesiredTransferObject(replicationSchema, "ingest", "", spec)))
+}
+
+// liveReplications is every replication the read reports, in reference
+// order, and none for a read whose objects do not list.
+func liveReplications(live *catalog.Database) []*ydbreplication.ObservedReplication {
+	var found []*ydbreplication.ObservedReplication
+	for _, object := range liveObjects(live, ydbreplication.ReplicationKind) {
+		if value, ok := object.Value.(*ydbreplication.ObservedReplication); ok {
+			found = append(found, value)
+		}
+	}
+	return found
+}
+
+// liveTransfers is every transfer the read reports, in reference order.
+func liveTransfers(live *catalog.Database) []*ydbreplication.ObservedTransfer {
+	var found []*ydbreplication.ObservedTransfer
+	for _, object := range liveObjects(live, ydbreplication.TransferKind) {
+		if value, ok := object.Value.(*ydbreplication.ObservedTransfer); ok {
+			found = append(found, value)
+		}
+	}
+	return found
+}
+
+// liveObjects is every object of kind the read reports.
+func liveObjects(live *catalog.Database, kind schemaext.Kind) []schemaext.Object {
+	objects, err := live.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(kind) }).All()
+	if err != nil {
+		return nil
+	}
+	return objects
 }
 
 // dropReplications drops every transfer and replication in the replication
@@ -97,11 +148,11 @@ func dropReplications(c *qt.C, conn *dbschema.DatabaseConnection) {
 	ctx := context.Background()
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, replicationSchemas)
 	c.Assert(err, qt.IsNil)
-	for _, transfer := range live.Transfers {
-		c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP TRANSFER `"+replicationSchema+"/"+transfer.Name+"`"), qt.IsNil)
+	for _, transfer := range liveObjects(live, ydbreplication.TransferKind) {
+		c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP TRANSFER `"+replicationSchema+"/"+transfer.Ref.Name.Source+"`"), qt.IsNil)
 	}
-	for _, replication := range live.AsyncReplications {
-		c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP ASYNC REPLICATION `"+replicationSchema+"/"+replication.Name+
+	for _, replication := range liveObjects(live, ydbreplication.ReplicationKind) {
+		c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP ASYNC REPLICATION `"+replicationSchema+"/"+replication.Ref.Name.Source+
 			"` CASCADE"), qt.IsNil)
 	}
 	// CASCADE took the replica tables of the replications above; what is left
@@ -138,7 +189,7 @@ func settledRead(c *qt.C, conn *dbschema.DatabaseConnection, what string,
 		}
 		if time.Now().After(deadline) {
 			c.Fatalf("the read did not show %s within a minute: replications %+v, transfers %+v, not described %+v",
-				what, live.AsyncReplications, live.Transfers, live.NotDescribed.Objects)
+				what, liveReplications(live), liveTransfers(live), live.NotDescribed.Objects)
 		}
 		time.Sleep(time.Second)
 	}
@@ -147,15 +198,15 @@ func settledRead(c *qt.C, conn *dbschema.DatabaseConnection, what string,
 // replicaRecorded reports a read holding the running replication mirror with
 // its item resolved and its replica table recorded rather than described.
 func replicaRecorded(live *catalog.Database) bool {
-	return len(live.AsyncReplications) == 1 && live.AsyncReplications[0].State == catalog.ReplicationRunning &&
-		len(live.AsyncReplications[0].Spec.Items) == 1 &&
+	return len(liveReplications(live)) == 1 && liveReplications(live)[0].State == ydbreplication.StateRunning &&
+		len(liveReplications(live)[0].Spec.Items) == 1 &&
 		!live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
 }
 
 // replicationState reports a read holding the replication mirror in state.
 func replicationState(state string) func(*catalog.Database) bool {
 	return func(live *catalog.Database) bool {
-		return len(live.AsyncReplications) == 1 && live.AsyncReplications[0].State == state
+		return len(liveReplications(live)) == 1 && liveReplications(live)[0].State == state
 	}
 }
 
@@ -201,9 +252,9 @@ func TestYDBReplication_RoundTrip(t *testing.T) {
 			apply(c, conn, first)
 
 			live := settledRead(c, conn, "the replica recorded", replicaRecorded)
-			c.Assert(live.AsyncReplications[0].Spec, qt.DeepEquals, ast.AsyncReplicationSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: connection},
-				Items:      []ast.AsyncReplicationItem{{Source: "ptah_ydb_repl/src", Target: "ptah_ydb_repl/rep"}},
+			c.Assert(liveReplications(live)[0].Spec, qt.DeepEquals, ydbreplication.ReplicationSpec{
+				Connection: ydbreplication.Connection{ConnectionString: connection},
+				Items:      []ydbreplication.Item{{Source: "ptah_ydb_repl/src", Target: "ptah_ydb_repl/rep"}},
 			})
 			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_repl|src"})
 			assertReplicationBinding(c, live)
@@ -214,7 +265,7 @@ func TestYDBReplication_RoundTrip(t *testing.T) {
 			c.Assert(removed, qt.DeepEquals, []string{"DROP ASYNC REPLICATION `ptah_ydb_repl/mirror` CASCADE"})
 			apply(c, conn, removed)
 			settledRead(c, conn, "the replication and its replica gone", func(live *catalog.Database) bool {
-				return len(live.AsyncReplications) == 0 &&
+				return len(liveReplications(live)) == 0 &&
 					live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
 			})
 			waitForDirectory(c, line, []string{"src"}, replicationSchema)
@@ -292,7 +343,7 @@ func TestYDBReplication_FailedOver(t *testing.T) {
 
 			apply(c, conn, []string{"ALTER ASYNC REPLICATION `ptah_ydb_repl/mirror` SET (STATE = 'DONE', " +
 				"FAILOVER_MODE = 'FORCE')"})
-			live := settledRead(c, conn, "the replication failed over", replicationState(catalog.ReplicationDone))
+			live := settledRead(c, conn, "the replication failed over", replicationState(ydbreplication.StateDone))
 			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_repl|rep", "ptah_ydb_repl|src"})
 
 			kept := planError(c, conn, replicationDeclaration(connection))
@@ -334,15 +385,15 @@ func TestYDBReplication_ConnectionChangesWhilePaused(t *testing.T) {
 				`credential differs, and YDB changes them only while the replication is paused .*it is running.*`)
 
 			apply(c, conn, []string{"ALTER ASYNC REPLICATION `ptah_ydb_repl/mirror` SET (STATE = 'PAUSED')"})
-			settledRead(c, conn, "the replication paused", replicationState(catalog.ReplicationPaused))
+			settledRead(c, conn, "the replication paused", replicationState(ydbreplication.StatePaused))
 			paused := planAgainst(c, conn, replicationDeclaration(moved), replicationSchemas)
 			c.Assert(paused, qt.DeepEquals, []string{"ALTER ASYNC REPLICATION `ptah_ydb_repl/mirror` SET " +
 				"(CONNECTION_STRING = '" + moved + "')"})
 			apply(c, conn, paused)
 
 			settledRead(c, conn, "the paused replication on its new connection", func(live *catalog.Database) bool {
-				return replicationState(catalog.ReplicationPaused)(live) &&
-					live.AsyncReplications[0].Spec.Connection.ConnectionString == moved
+				return replicationState(ydbreplication.StatePaused)(live) &&
+					liveReplications(live)[0].Spec.Connection.ConnectionString == moved
 			})
 			c.Assert(planAgainst(c, conn, replicationDeclaration(moved), replicationSchemas), qt.HasLen, 0)
 		})
@@ -367,11 +418,12 @@ func transferDeclaration(lambda string) *schemamodel.Database {
 			{StructName: "Log", Name: "message", Type: "TEXT", Nullable: true},
 		},
 	}
+	claimReplications(db)
 	if lambda != "" {
-		db.Transfers = []schemamodel.Transfer{{Name: "ingest", Schema: replicationSchema, Spec: ast.TransferSpec{
+		declareTransfer(db, ydbreplication.TransferSpec{
 			Source: replicationSchema + "/orders/feed", Target: replicationSchema + "/order_log", Lambda: lambda,
 			FlushInterval: "PT1S",
-		}}}
+		})
 	}
 	schemamodel.Finalize(db)
 	return db
@@ -426,9 +478,9 @@ func runTransfer(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	apply(c, conn, first)
 	apply(c, conn, []string{"UPSERT INTO `ptah_ydb_repl/orders` (id) VALUES (1l)"})
 	live := settledRead(c, conn, "the transfer running", func(live *catalog.Database) bool {
-		return len(live.Transfers) == 1 && live.Transfers[0].State == catalog.ReplicationRunning
+		return len(liveTransfers(live)) == 1 && liveTransfers(live)[0].State == ydbreplication.StateRunning
 	})
-	c.Assert(live.Transfers[0].Spec.Consumer, qt.Not(qt.Equals), "")
+	c.Assert(liveTransfers(live)[0].Spec.Consumer, qt.Not(qt.Equals), "")
 	c.Assert(planAgainst(c, conn, declared, replicationSchemas), qt.HasLen, 0)
 	waitForRows(c, conn, "SELECT COUNT(*) FROM `ptah_ydb_repl/order_log` WHERE StartsWith(message, 'a:')", 1)
 
@@ -443,7 +495,7 @@ func runTransfer(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	removed := planAgainst(c, conn, transferDeclaration(""), replicationSchemas)
 	c.Assert(removed, qt.DeepEquals, []string{"DROP TRANSFER `ptah_ydb_repl/ingest`"})
 	apply(c, conn, removed)
-	settledRead(c, conn, "the transfer gone", func(live *catalog.Database) bool { return len(live.Transfers) == 0 })
+	settledRead(c, conn, "the transfer gone", func(live *catalog.Database) bool { return len(liveTransfers(live)) == 0 })
 	c.Assert(planAgainst(c, conn, transferDeclaration(""), replicationSchemas), qt.HasLen, 0)
 }
 
@@ -472,9 +524,9 @@ func TestYDBTransfer_FromATopic(t *testing.T) {
 	declared.FeatureObjects = must.Must(declared.FeatureObjects.With(ydbtopic.DesiredObject(replicationSchema, "events", "", ydbtopic.Spec{})))
 	declared.FeatureCoverage = must.Must(declared.FeatureCoverage.Combine(
 		must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))))
-	declared.Transfers = []schemamodel.Transfer{{Name: "ingest", Schema: replicationSchema, Spec: ast.TransferSpec{
+	declareTransfer(declared, ydbreplication.TransferSpec{
 		Source: replicationSchema + "/events", Target: replicationSchema + "/order_log", Lambda: lambdaWriting("t:"),
-	}}}
+	})
 
 	// The topic is created with the other standalone objects, ahead of the
 	// tables, and the transfer last of all.
@@ -511,11 +563,11 @@ func TestYDBTransfer_ASecretTakesTheTopicsPath(t *testing.T) {
 	held.FeatureObjects = must.Must(held.FeatureObjects.With(ydbtopic.DesiredObject(replicationSchema, "events", "", ydbtopic.Spec{})))
 	held.FeatureCoverage = must.Must(held.FeatureCoverage.Combine(
 		must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))))
-	held.Transfers = []schemamodel.Transfer{{Name: "ingest", Schema: replicationSchema, Spec: ast.TransferSpec{
+	declareTransfer(held, ydbreplication.TransferSpec{
 		Source: replicationSchema + "/events", Target: replicationSchema + "/order_log", Lambda: lambdaWriting("t:"),
-	}}}
+	})
 	apply(c, conn, planAgainst(c, conn, held, replicationSchemas))
-	settledRead(c, conn, "the transfer from the topic", func(live *catalog.Database) bool { return len(live.Transfers) == 1 })
+	settledRead(c, conn, "the transfer from the topic", func(live *catalog.Database) bool { return len(liveTransfers(live)) == 1 })
 	declared := transferDeclaration("")
 	declared.FeatureObjects = must.Must(declared.FeatureObjects.With(
 		ydbsecret.DesiredObject(replicationSchema, "events", "", "PTAH_SECRET_LIVE_REPL_EVENTS")))
@@ -561,7 +613,7 @@ func TestYDBWriter_DropAllTablesDropsReplicationsFirst(t *testing.T) {
 			c.Assert(conn.SchemaWriter().DropAllTables(c.Context()), qt.IsNil)
 
 			settledRead(c, conn, "only the orphaned replica left", func(live *catalog.Database) bool {
-				return len(live.AsyncReplications) == 0 && len(live.Tables) == 0 &&
+				return len(liveReplications(live)) == 0 && len(live.Tables) == 0 &&
 					!live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".orphan") &&
 					live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
 			})
@@ -669,14 +721,14 @@ func TestYDBReplication_ReadsWhileReplicasComeAndGo(t *testing.T) {
 				apply(c, conn, []string{"DROP ASYNC REPLICATION `ptah_ydb_repl/cycle` CASCADE"})
 				dropped := readScoped(c, conn, replicationSchemas)
 
-				c.Assert(created.AsyncReplications, qt.HasLen, 1)
+				c.Assert(liveReplications(created), qt.HasLen, 1)
 				c.Assert(tableNames(created), qt.DeepEquals, []string{"ptah_ydb_repl|src"})
-				c.Assert(dropped.AsyncReplications, qt.HasLen, 0)
+				c.Assert(liveReplications(dropped), qt.HasLen, 0)
 				c.Assert(tableNames(dropped), qt.DeepEquals, []string{"ptah_ydb_repl|src"})
 
 				waitForDirectory(c, line, []string{"src"}, replicationSchema)
 				settled := readScoped(c, conn, replicationSchemas)
-				c.Assert(settled.AsyncReplications, qt.HasLen, 0)
+				c.Assert(liveReplications(settled), qt.HasLen, 0)
 				c.Assert(settled.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".cycle_rep"),
 					qt.IsTrue)
 			}

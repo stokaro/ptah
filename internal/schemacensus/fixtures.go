@@ -178,9 +178,6 @@ func Fixtures() []Fixture {
 		{Name: "async-replication", Schema: asyncReplicationFixture()},
 		{Name: "async-replication-token", Schema: asyncReplicationTokenFixture()},
 		{Name: "transfer", Schema: transferFixture()},
-		{Name: "owned-async-replication", Schema: ownedAsyncReplicationFixture()},
-		{Name: "owned-async-replication-token", Schema: ownedAsyncReplicationTokenFixture()},
-		{Name: "owned-transfer", Schema: ownedTransferFixture()},
 		{Name: "owned-coordination-node", Schema: ownedCoordinationNodeFixture()},
 		{Name: "secret", Schema: secretFixture()},
 		{Name: "security-policy", Schema: securityPolicyFixture()},
@@ -1457,14 +1454,6 @@ func resourcePoolFixture() schemamodel.Database {
 // one naming its source by an absolute path.
 func asyncReplicationFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.AsyncReplications = []schemamodel.AsyncReplication{{StructName: "AR", Name: "mirror", Schema: "app", Spec: mirrorReplicationSpec()}}
-	return db
-}
-
-// ownedAsyncReplicationFixture declares the replication of
-// [asyncReplicationFixture] as an owned feature object.
-func ownedAsyncReplicationFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbreplication.DesiredReplicationObject("app", "mirror", "AR", mirrorReplicationSpec())))
 	db.FeatureCoverage = must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
@@ -1489,18 +1478,6 @@ func mirrorReplicationSpec() ydbreplication.ReplicationSpec {
 // asyncReplicationTokenFixture declares the two token credentials, one
 // replication each, since a connection takes one credential.
 func asyncReplicationTokenFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	byName, byPath := tokenReplicationSpecs()
-	db.AsyncReplications = []schemamodel.AsyncReplication{
-		{StructName: "AN", Name: "by_name", Spec: byName},
-		{StructName: "AP", Name: "by_path", Spec: byPath},
-	}
-	return db
-}
-
-// ownedAsyncReplicationTokenFixture declares the replications of
-// [asyncReplicationTokenFixture] as owned feature objects.
-func ownedAsyncReplicationTokenFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	byName, byPath := tokenReplicationSpecs()
 	db.FeatureObjects = must.Must(schemaext.NewObjects(
@@ -1528,14 +1505,6 @@ func tokenReplicationSpecs() (byName, byPath ydbreplication.ReplicationSpec) {
 // a declared table, setting every setting a transfer takes, its credential a
 // user with a password secret named by name.
 func transferFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Transfers = []schemamodel.Transfer{{StructName: "TF", Name: "ingest", Schema: "app", Spec: ingestTransferSpec()}}
-	return db
-}
-
-// ownedTransferFixture declares the transfer of [transferFixture] as an owned
-// feature object.
-func ownedTransferFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbreplication.DesiredTransferObject("app", "ingest", "TF", ingestTransferSpec())))
 	db.FeatureCoverage = must.Must(ydbreplication.TransferCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))

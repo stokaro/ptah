@@ -6,10 +6,11 @@ import (
 	"path"
 	"time"
 
-	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // withReplicationKeys adds the questions the YDB renderer, reader and planner
@@ -68,7 +69,7 @@ func ydbReplicationExperiments() []experiment {
 			ydbDescribedReplication("repl_key",
 				"the replication of repl_src into repl_replica at the global consistency level, committing every "+
 					"30 seconds",
-				func(namespace string, replication catalog.AsyncReplication) bool {
+				func(namespace string, replication ydbreplication.ObservedReplication) bool {
 					spec := replication.Spec
 					return len(spec.Items) == 1 && spec.Items[0].Source == path.Join(namespace, "repl_src") &&
 						spec.Items[0].Target == path.Join(namespace, "repl_replica") &&
@@ -91,7 +92,7 @@ func ydbReplicationExperiments() []experiment {
 			},
 			ydbDescribedReplication("repl_secret_key", "the replication naming its token secret by the path "+
 				"<namespace>/repl_secret",
-				func(namespace string, replication catalog.AsyncReplication) bool {
+				func(namespace string, replication ydbreplication.ObservedReplication) bool {
 					return replication.Spec.Connection.TokenSecretPath == path.Join(namespace, "repl_secret")
 				})),
 		{
@@ -116,7 +117,7 @@ func ydbReplicationExperiments() []experiment {
 				read, transfer, found := readTransfer(ctx, s, "xfer_key")
 				attempts = append(attempts, read)
 				spec := transfer.Spec
-				held := found && transfer.State == catalog.ReplicationRunning &&
+				held := found && transfer.State == ydbreplication.StateRunning &&
 					spec.Source == path.Join(s.namespace, "xfer_src/feed") &&
 					spec.Target == path.Join(s.namespace, "xfer_dst") && spec.Lambda == lambda &&
 					spec.BatchSizeBytes == 1048576
@@ -198,7 +199,7 @@ const replicationSettle = 30 * time.Second
 // the replication reads back as want says.
 func ydbDescribedReplication(
 	name, expectation string,
-	want func(namespace string, replication catalog.AsyncReplication) bool,
+	want func(namespace string, replication ydbreplication.ObservedReplication) bool,
 ) check {
 	return check{
 		describes: expectation,
@@ -213,7 +214,7 @@ func ydbDescribedReplication(
 					return attempt, false, "was refused"
 				}
 				attempt.Accepted = true
-				replication, found := replicationNamed(db.AsyncReplications, name)
+				replication, found := replicationNamed(db.FeatureObjects, s.namespace, name)
 				switch {
 				case found && want(s.namespace, replication):
 					return attempt, true, fmt.Sprintf("read %+v", replication)
@@ -233,31 +234,38 @@ func ydbDescribedReplication(
 	}
 }
 
-// replicationNamed finds a replication by name.
-func replicationNamed(replications []catalog.AsyncReplication, name string) (catalog.AsyncReplication, bool) {
-	for _, replication := range replications {
-		if replication.Name == name {
-			return replication, true
-		}
+// replicationNamed finds the replication name in the directory namespace of
+// a read.
+func replicationNamed(objects schemaext.Objects, namespace, name string) (ydbreplication.ObservedReplication, bool) {
+	object, found, err := objects.Get(ydbreplication.ReplicationRef(namespace, name))
+	if err != nil || !found {
+		return ydbreplication.ObservedReplication{}, false
 	}
-	return catalog.AsyncReplication{}, false
+	replication, ok := object.Value.(*ydbreplication.ObservedReplication)
+	if !ok {
+		return ydbreplication.ObservedReplication{}, false
+	}
+	return *replication, true
 }
 
 // readTransfer reads the namespace through Ptah's YDB reader and returns the
 // transfer name.
-func readTransfer(ctx context.Context, s *session, name string) (Attempt, catalog.Transfer, bool) {
+func readTransfer(ctx context.Context, s *session, name string) (Attempt, ydbreplication.ObservedTransfer, bool) {
 	attempt := Attempt{Statement: fmt.Sprintf("read transfer %s through Ptah's YDB reader",
 		path.Join(s.database, s.namespace, name))}
 	db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{s.namespace})
 	if err != nil {
 		attempt.ServerErr = err.Error()
-		return attempt, catalog.Transfer{}, false
+		return attempt, ydbreplication.ObservedTransfer{}, false
 	}
 	attempt.Accepted = true
-	for _, transfer := range db.Transfers {
-		if transfer.Name == name {
-			return attempt, transfer, true
-		}
+	object, found, err := db.FeatureObjects.Get(ydbreplication.TransferRef(s.namespace, name))
+	if err != nil || !found {
+		return attempt, ydbreplication.ObservedTransfer{}, false
 	}
-	return attempt, catalog.Transfer{}, false
+	transfer, ok := object.Value.(*ydbreplication.ObservedTransfer)
+	if !ok {
+		return attempt, ydbreplication.ObservedTransfer{}, false
+	}
+	return attempt, *transfer, true
 }

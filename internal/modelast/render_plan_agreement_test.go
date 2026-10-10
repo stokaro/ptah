@@ -128,10 +128,6 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
-	// Remove refused YDB families in the order shared validation checks them,
-	// then run the census over the rest of the fixture.
-	refused := assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
-
 	renderCensus := surfaceCensus(c, dialect, must.Must(modelast.CollectDatabase(desired, dialect, modelast.Lowering{Context: context.Background()})).Statements)
 
 	planNodes, err := planner.GenerateSchemaDiffAST(
@@ -148,12 +144,12 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// object of every kind in routedKinds, and each of those kinds is one
 	// AST node kind, so a surface that carried them all reports exactly
 	// that many rows, plus the kinds below that the fixture causes without
-	// declaring, less the kinds both surfaces refused above.
+	// declaring.
 	//
 	// Check rather than Assert so a surface that lost a kind still reaches
 	// the comparison below, which is the assertion that names which kind
 	// went missing on which side.
-	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds)-refused,
+	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds),
 		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
 
 	c.Assert(planCensus, qt.DeepEquals, renderCensus,
@@ -225,37 +221,4 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
 	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
 	return true
-}
-
-// assertBothSurfacesRefuseTheReplications checks that a target without the
-// async_replication and transfers keys refuses the fixture's replication and
-// transfer on both surfaces, through the one validation they share, and takes
-// each out of desired so the census can run over the rest. It returns how many
-// routed kinds it took out.
-func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *schemamodel.Database) int {
-	c.Helper()
-	caps := capability.ForDialect(dialect)
-	if caps.Has(capability.AsyncReplication) || caps.Has(capability.Transfers) {
-		return 0
-	}
-	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-	renderErr := builtin.ValidateSchema(desired, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "requires target capability async_replication")
-	c.Assert(renderErr.Error(), qt.Contains, "requires target capability async_replication")
-	desired.AsyncReplications = nil
-
-	_, planErr = schemadiff.CompareWithDatabaseInfo(
-		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-	renderErr = builtin.ValidateSchema(desired, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "requires target capability transfers")
-	c.Assert(renderErr.Error(), qt.Contains, "requires target capability transfers")
-	desired.Transfers = nil
-	return 2
 }

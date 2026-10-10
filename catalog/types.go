@@ -72,12 +72,6 @@ type Database struct {
 	Views       []View             `json:"views"`      // Database views
 	MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
 	Synonyms    []Synonym          `json:"synonyms"`   // SQL Server synonyms
-	// AsyncReplications are the YDB async replications this description
-	// covers, each with its connection, items and state. omitempty keeps the
-	// serialization of every dialect that has none byte-identical.
-	AsyncReplications []AsyncReplication `json:"async_replications,omitempty"`
-	// Transfers are the YDB transfers this description covers.
-	Transfers []Transfer `json:"transfers,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
 	// [ExtendedProperty] for what is deliberately not in it.
@@ -1403,65 +1397,6 @@ type Synonym struct {
 	TargetSchema   string `json:"target_schema,omitempty"`
 	TargetObject   string `json:"target_object"`
 	Comment        string `json:"comment,omitempty"` // Synonym comment/description
-}
-
-// The states a YDB async replication or transfer reports, as
-// [AsyncReplication.State] and [Transfer.State] carry them.
-const (
-	// ReplicationRunning is a replication or transfer that copies, YDB's
-	// StandBy.
-	ReplicationRunning = "running"
-	// ReplicationPaused is one paused with `SET (STATE = 'PAUSED')`, the only
-	// state in which YDB changes its connection and credentials.
-	ReplicationPaused = "paused"
-	// ReplicationDone is a replication failed over with `SET (STATE =
-	// 'DONE')`. It copies nothing more, and its replica tables are ordinary
-	// writable tables.
-	ReplicationDone = "done"
-	// ReplicationError is one that stopped on an error, such as a secret it
-	// cannot read.
-	ReplicationError = "error"
-)
-
-// AsyncReplication is a YDB async replication read from the database.
-//
-// Schema is the directory that holds it, "" for the database root, as it is
-// for a table. The reader fills Spec with what the server holds: the
-// connection in its canonical form, the credentials by the secret each names,
-// and one item per replicated table, a directory item read back as the tables
-// it replicates. State is what the replication reports and no declaration
-// sets; a plan reads it to decide what it may change.
-type AsyncReplication struct {
-	Name   string                   `json:"name"`
-	Schema string                   `json:"schema,omitempty"`
-	Spec   ast.AsyncReplicationSpec `json:"spec"`
-	State  string                   `json:"state,omitempty"`
-}
-
-// QualifiedName returns the replication's canonical reference: schema.name,
-// or the name alone at the database root.
-func (r AsyncReplication) QualifiedName() string {
-	return tableref.Canonical(r.Schema, r.Name)
-}
-
-// Transfer is a YDB transfer read from the database.
-//
-// Schema is the directory that holds it, "" for the database root. Spec
-// carries the lambda as YDB stores it, the source and the target relative to
-// the database root where they lie under it, and the consumer the transfer
-// reads through, whether a declaration named it or YDB created it. State is
-// what the transfer reports.
-type Transfer struct {
-	Name   string           `json:"name"`
-	Schema string           `json:"schema,omitempty"`
-	Spec   ast.TransferSpec `json:"spec"`
-	State  string           `json:"state,omitempty"`
-}
-
-// QualifiedName returns the transfer's canonical reference: schema.name, or
-// the name alone at the database root.
-func (t Transfer) QualifiedName() string {
-	return tableref.Canonical(t.Schema, t.Name)
 }
 
 // ExtendedProperty is one SQL Server extended property read from

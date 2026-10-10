@@ -6,7 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
@@ -25,7 +27,9 @@ func TestRead_ReplicationBindingDoesNotDependOnAStreamNameOrLocalOwner(t *testin
 	c.Assert(value.Spec.Name, qt.Equals, "ordinary_name")
 	c.Assert(value.Replication, qt.DeepEquals, &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "7"})
 	c.Assert(db.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, objects[0].Ref).State, qt.Equals, schemaext.Complete)
-	c.Assert(db.AsyncReplications, qt.HasLen, 0)
+	c.Assert(db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(ydbreplication.ReplicationKind)
+	}).Len(), qt.Equals, 0)
 }
 
 func TestRead_MalformedReplicationMetadataStaysUnrepresentable(t *testing.T) {

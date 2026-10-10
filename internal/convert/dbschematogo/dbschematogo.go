@@ -70,7 +70,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
 	convertSynonyms(database, dbSchema.Synonyms)
-	convertReplications(database, dbSchema.AsyncReplications, dbSchema.Transfers)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath
@@ -521,29 +520,6 @@ func convertSynonyms(database *schemamodel.Database, synonyms []catalog.Synonym)
 			Schema:  synonym.Schema,
 			Target:  synonym.DeclaredTarget(),
 			Comment: synonym.Comment,
-		})
-	}
-}
-
-// convertReplications carries the YDB async replications and transfers a read
-// found into the IR, each as the server holds it. The state stays behind: a
-// declaration names none, and a schema made from the read declares the
-// objects rather than what was done to them.
-func convertReplications(database *schemamodel.Database, replications []catalog.AsyncReplication,
-	transfers []catalog.Transfer,
-) {
-	for _, replication := range replications {
-		database.AsyncReplications = append(database.AsyncReplications, schemamodel.AsyncReplication{
-			Name:   replication.Name,
-			Schema: replication.Schema,
-			Spec:   replication.Spec.Clone(),
-		})
-	}
-	for _, transfer := range transfers {
-		database.Transfers = append(database.Transfers, schemamodel.Transfer{
-			Name:   transfer.Name,
-			Schema: transfer.Schema,
-			Spec:   transfer.Spec,
 		})
 	}
 }

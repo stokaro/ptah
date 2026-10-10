@@ -147,12 +147,6 @@ func declaredYDBDirectory(database *schemamodel.Database, name string) bool {
 	for _, ref := range database.FeatureObjects.Refs() {
 		directories = append(directories, ref.Schema.Source)
 	}
-	for _, object := range database.AsyncReplications {
-		directories = append(directories, object.Schema)
-	}
-	for _, object := range database.Transfers {
-		directories = append(directories, object.Schema)
-	}
 	return slices.ContainsFunc(directories, func(directory string) bool {
 		return directory == name || strings.HasPrefix(directory, name+"/")
 	})

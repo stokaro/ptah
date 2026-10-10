@@ -2,7 +2,6 @@ package yamlschema
 
 import (
 	"fmt"
-	"strings"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -102,11 +101,11 @@ func (d document) addAsyncReplications(db *schemamodel.Database) error {
 			}
 			replication.Items = append(replication.Items, item)
 		}
-		db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{
-			Name:   valueOrDefault(spec.Name, key),
-			Schema: strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"),
-			Spec:   replication,
-		})
+		objects, err := ydbreplication.DeclareReplication(db.FeatureObjects, string(spec.Schema), valueOrDefault(spec.Name, key), "", replication)
+		if err != nil {
+			return fmt.Errorf("async replication %q: %w", key, err)
+		}
+		db.FeatureObjects = objects
 	}
 	return nil
 }
@@ -133,11 +132,11 @@ func (d document) addTransfers(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("transfer %q: %w", key, err)
 		}
-		db.Transfers = append(db.Transfers, schemamodel.Transfer{
-			Name:   valueOrDefault(spec.Name, key),
-			Schema: strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"),
-			Spec:   transfer,
-		})
+		objects, err := ydbreplication.DeclareTransfer(db.FeatureObjects, string(spec.Schema), valueOrDefault(spec.Name, key), "", transfer)
+		if err != nil {
+			return fmt.Errorf("transfer %q: %w", key, err)
+		}
+		db.FeatureObjects = objects
 	}
 	return nil
 }

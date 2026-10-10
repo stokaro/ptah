@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -29,16 +30,13 @@ func TestSchemaInspectJSON_ReportsOmittedYDBFamilies(t *testing.T) {
 			c := qt.New(t)
 			var diagnostics bytes.Buffer
 			db := &schemamodel.Database{
-				AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
-				FeatureObjects: must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false), ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"), ydbtopic.DesiredObject("", "events", "", ydbtopic.Spec{}),
+				FeatureObjects: must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false), ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"), ydbtopic.DesiredObject("", "events", "", ydbtopic.Spec{}), ydbreplication.DesiredReplicationObject("", "mirror", "", ydbreplication.ReplicationSpec{Connection: ydbreplication.Connection{ConnectionString: "grpc://h:2136/?database=/prod"}, Items: []ydbreplication.Item{{Source: "t", Target: "r"}}}), ydbreplication.DesiredTransferObject("", "copy", "", ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }"}),
 					ydbexternal.DesiredSourceObject("", "bucket", "", ydbexternal.DataSource{SourceType: "ObjectStorage", AuthMethod: "NONE"}),
 					ydbexternal.DesiredTableObject("", "files", "", ydbexternal.Table{DataSource: "bucket", Location: "f/",
 						Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}}))),
-
-				Transfers: []schemamodel.Transfer{{Name: "copy"}},
-				Roles:     []schemamodel.Role{{Name: "user"}},
-				Grants:    []schemamodel.Grant{{}},
-				Views:     []schemamodel.View{{Name: "v"}},
+				Roles:  []schemamodel.Role{{Name: "user"}},
+				Grants: []schemamodel.Grant{{}},
+				Views:  []schemamodel.View{{Name: "v"}},
 			}
 			report := newInspectReport(c, db, &catalog.Database{},
 				catalog.ServerInfo{Dialect: "ydb"}, &diagnostics, atlasreport.SchemaInspectReportOptions{})

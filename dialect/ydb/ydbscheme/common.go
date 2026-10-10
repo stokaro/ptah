@@ -16,18 +16,15 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 )
 
-// CommonEffects describes scheme paths, principals, and the secret, topic and
-// external data source reads of a common AST node.
+// CommonEffects describes scheme paths, principals, and the external data
+// source reads of a column table's tiered TTL, for a common AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
 // batch, not the Go AST node or a per-node remote call.
 //
 // root is the absolute path of the database the statement runs in, such as
-// /local, or empty when it is not known. A secret path the statement writes
-// absolute is read relative to root, and one outside root is refused, since
-// no statement of the database can read it. With an empty root an absolute
-// secret path reads nothing.
+// /local, or empty when it is not known; see [TieredTTLReads].
 func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) ([]plangraph.Effect, error) {
 	if name, action := principalUse(node); action != "" {
 		ref := builder.Role(name)
@@ -53,12 +50,6 @@ func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) (
 	if use.table {
 		effects = append(effects, plangraph.Effect{Subject: ref, Action: use.action})
 	}
-	reads, err := secretReads(root, node)
-	if err != nil {
-		return nil, err
-	}
-	effects = append(effects, reads...)
-	effects = append(effects, topicReads(root, node)...)
 	if table, ok := node.(*ast.CreateTableNode); ok {
 		store, err := ydbschema.DeclaredColumnStore(table.Facets)
 		if err != nil {
@@ -94,24 +85,6 @@ func TieredTTLReads(root string, policy *ydbschema.TieredTTL) []plangraph.Effect
 	return effects
 }
 
-// secretReads names each YDB secret a statement reads by its path when it
-// runs: the credentials of an async replication or a transfer. See
-// [SecretPathReads].
-func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
-	var paths []string
-	switch n := node.(type) {
-	case *ast.CreateAsyncReplicationNode:
-		paths = connectionSecretPaths(n.Spec.Connection)
-	case *ast.AlterAsyncReplicationNode:
-		paths = connectionSecretPaths(n.Spec.Connection)
-	case *ast.CreateTransferNode:
-		paths = connectionSecretPaths(n.Spec.Connection)
-	case *ast.AlterTransferNode:
-		paths = connectionSecretPaths(n.Spec.Connection)
-	}
-	return SecretPathReads(root, paths...)
-}
-
 // SecretPathReads is a read of each YDB secret paths name, as a statement that
 // names a secret by its path reads it when it runs: YDB looks the secret up
 // when an async replication or a transfer is created or its connection
@@ -120,7 +93,8 @@ func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 // root, the absolute path of the database, names the same secret as the
 // relative one. A path outside root is refused; an empty path, one written
 // absolute where root is not known, and one that cannot name a secret read
-// nothing Ptah manages. Each secret is read once.
+// nothing Ptah manages. Each secret is read once. The async replication and
+// transfer owner names the reads of its statements through it.
 func SecretPathReads(root string, paths ...string) ([]plangraph.Effect, error) {
 	var effects []plangraph.Effect
 	seen := make(map[objectidentity.Key]bool)
@@ -145,25 +119,6 @@ func SecretPathReads(root string, paths ...string) ([]plangraph.Effect, error) {
 	return effects, nil
 }
 
-// topicReads names the topic of this database a transfer reads, by its path.
-// See [TopicPathReads].
-func topicReads(root string, node ast.Node) []plangraph.Effect {
-	var source string
-	switch n := node.(type) {
-	case *ast.CreateTransferNode:
-		if n.Spec.Connection.ConnectionString == "" {
-			source = n.Spec.Source
-		}
-	case *ast.AlterTransferNode:
-		if n.Spec.Connection.ConnectionString == "" {
-			source = n.Spec.Source
-		}
-	case *ast.DropTransferNode:
-		source = n.Topic
-	}
-	return TopicPathReads(root, source)
-}
-
 // TopicPathReads is a read of the standalone topic of this database at source,
 // as a transfer of a topic in its own database reads it: the topic's owner
 // creates or changes a topic before a statement that reads it, and drops one
@@ -179,10 +134,6 @@ func TopicPathReads(root, source string) []plangraph.Effect {
 		return nil
 	}
 	return []plangraph.Effect{{Subject: ref, Action: plangraph.Read}}
-}
-
-func connectionSecretPaths(connection ast.ReplicationConnectionSpec) []string {
-	return []string{connection.TokenSecretPath, connection.PasswordSecretPath}
 }
 
 func invalidCommonName(kind, name string) error {
@@ -231,25 +182,6 @@ func commonSchemeUse(node ast.Node) schemeUse {
 		}
 		return schemeUse{n.Name, plangraph.Create, false}
 	case *ast.DropViewNode:
-		return schemeUse{n.Name, plangraph.Drop, false}
-	default:
-		return externalSchemeUse(node)
-	}
-}
-
-func externalSchemeUse(node ast.Node) schemeUse {
-	switch n := node.(type) {
-	case *ast.CreateAsyncReplicationNode:
-		return schemeUse{n.Name, plangraph.Create, false}
-	case *ast.AlterAsyncReplicationNode:
-		return schemeUse{n.Name, plangraph.Alter, false}
-	case *ast.DropAsyncReplicationNode:
-		return schemeUse{n.Name, plangraph.Drop, false}
-	case *ast.CreateTransferNode:
-		return schemeUse{n.Name, plangraph.Create, false}
-	case *ast.AlterTransferNode:
-		return schemeUse{n.Name, plangraph.Alter, false}
-	case *ast.DropTransferNode:
 		return schemeUse{n.Name, plangraph.Drop, false}
 	default:
 		return schemeUse{}

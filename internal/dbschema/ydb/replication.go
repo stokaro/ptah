@@ -14,7 +14,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/tableref"
@@ -48,11 +47,11 @@ func replicaTable(schema, name string) coverage.Object {
 
 // replication adds one described async replication, or records it where the
 // cluster does not serve the replication API.
-func (r *Reader) replication(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+func (r *Reader) replication(ctx context.Context, source Source, schema, name string, db *catalog.Database, unread *unreadObjects) error {
 	objectPath := r.absolute(schema, name)
 	described, err := source.DescribeReplication(ctx, objectPath)
 	if errors.Is(err, ErrReplicationServiceUnavailable) {
-		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.Replication, schema, name))
+		unread.add(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef(schema, name), ydbreplication.ServiceUnavailableReason)
 		return nil
 	}
 	if err != nil {
@@ -62,19 +61,17 @@ func (r *Reader) replication(ctx context.Context, source Source, schema, name st
 	if err != nil {
 		return fmt.Errorf("YDB async replication %s: %w", objectPath, err)
 	}
-	db.AsyncReplications = append(db.AsyncReplications, catalog.AsyncReplication{
-		Name: name, Schema: schema, Spec: spec, State: state,
-	})
-	return nil
+	db.FeatureObjects, err = db.FeatureObjects.With(ydbreplication.ObservedReplicationObject(schema, name, spec, state))
+	return err
 }
 
 // transfer adds one described transfer, or records it where the cluster does
 // not serve the replication API.
-func (r *Reader) transfer(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+func (r *Reader) transfer(ctx context.Context, source Source, schema, name string, db *catalog.Database, unread *unreadObjects) error {
 	objectPath := r.absolute(schema, name)
 	described, err := source.DescribeTransfer(ctx, objectPath)
 	if errors.Is(err, ErrReplicationServiceUnavailable) {
-		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.Transfer, schema, name))
+		unread.add(ydbreplication.TransferKind, ydbreplication.TransferRef(schema, name), ydbreplication.ServiceUnavailableReason)
 		return nil
 	}
 	if err != nil {
@@ -84,8 +81,8 @@ func (r *Reader) transfer(ctx context.Context, source Source, schema, name strin
 	if err != nil {
 		return fmt.Errorf("YDB transfer %s: %w", objectPath, err)
 	}
-	db.Transfers = append(db.Transfers, catalog.Transfer{Name: name, Schema: schema, Spec: spec, State: state})
-	return nil
+	db.FeatureObjects, err = db.FeatureObjects.With(ydbreplication.ObservedTransferObject(schema, name, spec, state))
+	return err
 }
 
 // decodeReplication reads a replication's description as the connection,
@@ -98,22 +95,22 @@ func (r *Reader) transfer(ctx context.Context, source Source, schema, name strin
 // target relative to the root the reader reads, where each lies under it.
 func (r *Reader) decodeReplication(
 	described *Ydb_Replication.DescribeReplicationResult,
-) (ast.AsyncReplicationSpec, string, error) {
+) (ydbreplication.ReplicationSpec, string, error) {
 	if err := refuseUnknownReplicationFields(map[string]protoreflect.ProtoMessage{
 		"its description":     described,
 		"its connection":      described.GetConnectionParams(),
 		"its global settings": described.GetGlobalConsistency(),
 	}); err != nil {
-		return ast.AsyncReplicationSpec{}, "", err
+		return ydbreplication.ReplicationSpec{}, "", err
 	}
 	connection, err := r.decodeConnection(described.GetConnectionParams())
 	if err != nil {
-		return ast.AsyncReplicationSpec{}, "", err
+		return ydbreplication.ReplicationSpec{}, "", err
 	}
-	spec := ast.AsyncReplicationSpec{Connection: connection}
+	spec := ydbreplication.ReplicationSpec{Connection: connection}
 	database := described.GetConnectionParams().GetDatabase()
 	for _, item := range described.GetItems() {
-		spec.Items = append(spec.Items, ast.AsyncReplicationItem{
+		spec.Items = append(spec.Items, ydbreplication.Item{
 			Source: ydbreplication.SourceKey(item.GetSourcePath(), database),
 			Target: r.relative(item.GetDestinationPath()),
 		})
@@ -122,7 +119,7 @@ func (r *Reader) decodeReplication(
 		spec.ConsistencyLevel = ydbreplication.ConsistencyGlobal
 		millis, whole := durationMillis(global.GetCommitInterval())
 		if !whole {
-			return ast.AsyncReplicationSpec{}, "", errors.New("its commit interval holds a fraction of a millisecond, " +
+			return ydbreplication.ReplicationSpec{}, "", errors.New("its commit interval holds a fraction of a millisecond, " +
 				"which no declaration Ptah reads can name")
 		}
 		if millis != ydbreplication.DefaultCommitIntervalMillis {
@@ -141,19 +138,19 @@ func (r *Reader) decodeReplication(
 // other form -- written through a named lambda, or under a PRAGMA, each of
 // which YDB keeps in the text before it -- is read whole, so it compares
 // unequal to any inline declaration and a plan sets the declared one.
-func (r *Reader) decodeTransfer(described *Ydb_Replication.DescribeTransferResult) (ast.TransferSpec, string, error) {
+func (r *Reader) decodeTransfer(described *Ydb_Replication.DescribeTransferResult) (ydbreplication.TransferSpec, string, error) {
 	if err := refuseUnknownReplicationFields(map[string]protoreflect.ProtoMessage{
 		"its description":    described,
 		"its connection":     described.GetConnectionParams(),
 		"its batch settings": described.GetBatchSettings(),
 	}); err != nil {
-		return ast.TransferSpec{}, "", err
+		return ydbreplication.TransferSpec{}, "", err
 	}
 	connection, err := r.decodeConnection(described.GetConnectionParams())
 	if err != nil {
-		return ast.TransferSpec{}, "", err
+		return ydbreplication.TransferSpec{}, "", err
 	}
-	spec := ast.TransferSpec{
+	spec := ydbreplication.TransferSpec{
 		Connection: connection,
 		Target:     r.relative(described.GetDestinationPath()),
 		Lambda:     storedLambda(described.GetTransformationLambda()),
@@ -171,7 +168,7 @@ func (r *Reader) decodeTransfer(described *Ydb_Replication.DescribeTransferResul
 	if flush := batch.GetFlushInterval(); flush != nil {
 		millis, whole := durationMillis(flush)
 		if !whole || millis%1000 != 0 {
-			return ast.TransferSpec{}, "", errors.New("its flush interval holds a fraction of a second, which no " +
+			return ydbreplication.TransferSpec{}, "", errors.New("its flush interval holds a fraction of a second, which no " +
 				"declaration Ptah reads can name")
 		}
 		if seconds := millis / 1000; seconds != ydbreplication.DefaultFlushIntervalSeconds {
@@ -190,8 +187,8 @@ func (r *Reader) decodeTransfer(described *Ydb_Replication.DescribeTransferResul
 // secret named by name as written, so a leading slash tells the two apart: a
 // path under the root the reader reads is read relative to it, as a
 // declaration writes it.
-func (r *Reader) decodeConnection(params *Ydb_Replication.ConnectionParams) (ast.ReplicationConnectionSpec, error) {
-	var connection ast.ReplicationConnectionSpec
+func (r *Reader) decodeConnection(params *Ydb_Replication.ConnectionParams) (ydbreplication.Connection, error) {
+	var connection ydbreplication.Connection
 	if params.GetEndpoint() != "" {
 		connection.ConnectionString = ydbreplication.Endpoint{
 			Secure:   params.GetEnableSsl(),
@@ -201,7 +198,7 @@ func (r *Reader) decodeConnection(params *Ydb_Replication.ConnectionParams) (ast
 	}
 	for _, credential := range []protoreflect.ProtoMessage{params.GetStaticCredentials(), params.GetOauth()} {
 		if err := refuseUnknownReplicationFields(map[string]protoreflect.ProtoMessage{"its credential": credential}); err != nil {
-			return ast.ReplicationConnectionSpec{}, err
+			return ydbreplication.Connection{}, err
 		}
 	}
 	switch credentials := params.GetCredentials().(type) {
@@ -223,7 +220,7 @@ func (r *Reader) decodeConnection(params *Ydb_Replication.ConnectionParams) (ast
 			connection.PasswordSecretName = secret
 		}
 	default:
-		return ast.ReplicationConnectionSpec{}, fmt.Errorf("its connection signs in with %T, which Ptah does not read",
+		return ydbreplication.Connection{}, fmt.Errorf("its connection signs in with %T, which Ptah does not read",
 			credentials)
 	}
 	return connection, nil
@@ -270,13 +267,13 @@ func (r *Reader) relative(absolute string) string {
 func replicationState(described *Ydb_Replication.DescribeReplicationResult) string {
 	switch {
 	case described.GetDone() != nil:
-		return catalog.ReplicationDone
+		return ydbreplication.StateDone
 	case described.GetPaused() != nil:
-		return catalog.ReplicationPaused
+		return ydbreplication.StatePaused
 	case described.GetError() != nil:
-		return catalog.ReplicationError
+		return ydbreplication.StateError
 	case described.GetRunning() != nil:
-		return catalog.ReplicationRunning
+		return ydbreplication.StateRunning
 	default:
 		return ""
 	}
@@ -286,13 +283,13 @@ func replicationState(described *Ydb_Replication.DescribeReplicationResult) stri
 func transferState(described *Ydb_Replication.DescribeTransferResult) string {
 	switch {
 	case described.GetDone() != nil:
-		return catalog.ReplicationDone
+		return ydbreplication.StateDone
 	case described.GetPaused() != nil:
-		return catalog.ReplicationPaused
+		return ydbreplication.StatePaused
 	case described.GetError() != nil:
-		return catalog.ReplicationError
+		return ydbreplication.StateError
 	case described.GetRunning() != nil:
-		return catalog.ReplicationRunning
+		return ydbreplication.StateRunning
 	default:
 		return ""
 	}

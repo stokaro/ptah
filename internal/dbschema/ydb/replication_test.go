@@ -12,10 +12,11 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbreplication"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -128,34 +129,36 @@ func TestReader_DescribesReplications_HappyPath(t *testing.T) {
 
 	db := readFrom(c, replicationSource())
 
-	c.Assert(db.AsyncReplications, qt.DeepEquals, []catalog.AsyncReplication{
-		{Name: "failover", Schema: "dr", State: catalog.ReplicationDone, Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpcs://primary:2135/?database=/prod",
-				User: "replicator", PasswordSecretPath: "secrets/password"},
-			Items:            []ast.AsyncReplicationItem{{Source: "ledger", Target: "dr/ledger"}},
-			ConsistencyLevel: "global",
-		}},
-		{Name: "mirror", State: catalog.ReplicationRunning, Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+	replications, err := db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(ydbreplication.ReplicationKind) || ref.Kind == objectidentity.Kind(ydbreplication.TransferKind)
+	}).All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(replications, qt.DeepEquals, []schemaext.Object{
+		ydbreplication.ObservedReplicationObject("", "mirror", ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 				TokenSecretName: "token"},
-			Items:            []ast.AsyncReplicationItem{{Source: "accounts", Target: "replica/accounts"}},
+			Items:            []ydbreplication.Item{{Source: "accounts", Target: "replica/accounts"}},
 			ConsistencyLevel: "global",
 			CommitInterval:   "PT1.5S",
-		}},
-	})
-	c.Assert(db.Transfers, qt.DeepEquals, []catalog.Transfer{
-		{Name: "archive", Schema: "dr", State: catalog.ReplicationError, Spec: ast.TransferSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+		}, ydbreplication.StateRunning),
+		ydbreplication.ObservedReplicationObject("dr", "failover", ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpcs://primary:2135/?database=/prod",
+				User: "replicator", PasswordSecretPath: "secrets/password"},
+			Items:            []ydbreplication.Item{{Source: "ledger", Target: "dr/ledger"}},
+			ConsistencyLevel: "global",
+		}, ydbreplication.StateDone),
+		ydbreplication.ObservedTransferObject("", "ingest", ydbreplication.TransferSpec{
+			Source: "orders/feed", Target: "order_log", Lambda: "($m) -> {\n  return []; -- none\n}",
+			Consumer: "fbc17198-8229c5ec-37e45ba-fe47b6c1",
+		}, ydbreplication.StatePaused),
+		ydbreplication.ObservedTransferObject("dr", "archive", ydbreplication.TransferSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 				TokenSecretName: "token"},
 			Source: "events", Target: "dr/ledger",
 			Lambda:         "$l = ($m) -> { return []; };\n$__ydb_transfer_lambda = $l;\n",
 			Consumer:       "archive",
 			BatchSizeBytes: 1048576, FlushInterval: "PT10S",
-		}},
-		{Name: "ingest", State: catalog.ReplicationPaused, Spec: ast.TransferSpec{
-			Source: "orders/feed", Target: "order_log", Lambda: "($m) -> {\n  return []; -- none\n}",
-			Consumer: "fbc17198-8229c5ec-37e45ba-fe47b6c1",
-		}},
+		}, ydbreplication.StateError),
 	})
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
@@ -174,10 +177,16 @@ func TestReader_RecordsAFamilyTheLineLacks(t *testing.T) {
 		ReadSchemaContext(context.Background())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Transfers, qt.HasLen, 0)
-	c.Assert(db.AsyncReplications, qt.HasLen, 2)
-	c.Assert(db.NotDescribed.Describes(coverage.Transfer, "ingest"), qt.IsFalse)
-	c.Assert(db.NotDescribed.Describes(coverage.Transfer, "dr.archive"), qt.IsFalse)
+	c.Assert(db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(ydbreplication.ReplicationKind)
+	}).Len(), qt.Equals, 2)
+	c.Assert(db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(ydbreplication.TransferKind)
+	}).Len(), qt.Equals, 0)
+	for _, ref := range []objectidentity.ID{ydbreplication.TransferRef("", "ingest"), ydbreplication.TransferRef("dr", "archive")} {
+		c.Assert(db.FeatureCoverage.Lookup(ydbreplication.TransferKind, ref), qt.DeepEquals,
+			schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbreplication.UnsupportedTransferReason})
+	}
 }
 
 // A description Ptah cannot read whole fails the read, naming what it could

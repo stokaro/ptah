@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
@@ -411,23 +412,12 @@ func TestRoundTrip_TimescaleStateSurvives(t *testing.T) {
 	c.Assert(parsed.FeatureCoverage.Lookup(tsschema.ContinuousAggregateKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 }
 
-// hclUnwritableFields are the object families the HCL document has no block
-// for, and the coverage kind its header records each one under instead. A YDB
-// async replication and a transfer are such families: Atlas HCL has neither,
-// and Ptah does not invent a block the pinned binary would refuse. A topic
-// and an external object are feature objects an HCL document makes no claim
-// about, so they are not among them.
-var hclUnwritableFields = map[string]coverage.Kind{
-	"AsyncReplications": coverage.Replication,
-	"Transfers":         coverage.Transfer,
-}
-
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
-// a family the HCL document cannot carry: the document leaves the object out
-// and its header says so, so applying it back plans no removal -- for a
-// replication, no `DROP ASYNC REPLICATION ... CASCADE` of its replica tables.
-// The control is the same document's silence about a sequence, which it could
-// have named and so still removes.
+// the feature objects the HCL document cannot carry: the document leaves each
+// out and makes no claim about its namespace, so applying it back to a YDB
+// database plans no removal -- for a replication, no `DROP ASYNC REPLICATION
+// ... CASCADE` of its replica tables. The control is the same document's
+// silence about a sequence, which it could have named and so still removes.
 func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
@@ -436,16 +426,14 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 		ydbworkload.DesiredClassifierObject("batch_users", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}),
 		ydbsecret.DesiredObject("", "pg_password", "", "PTAH_SECRET_PG"),
 		ydbtopic.DesiredObject("public", "events", "", ydbtopic.Spec{}),
+		ydbreplication.DesiredReplicationObject("public", "mirror", "", mirrorRead),
+		ydbreplication.DesiredTransferObject("public", "ingest", "", ingestRead),
 	))
-	db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{Name: "mirror", Schema: "public"})
-	db.Transfers = append(db.Transfers, schemamodel.Transfer{Name: "ingest", Schema: "public"})
 	live := &catalog.Database{
-		Schemas:           []catalog.Schema{{Name: "public"}},
-		Tables:            []catalog.Table{{Schema: "public", Name: "users"}},
-		AsyncReplications: []catalog.AsyncReplication{{Schema: "public", Name: "mirror"}},
-		Transfers:         []catalog.Transfer{{Schema: "public", Name: "ingest"}},
-		Sequences:         []catalog.Sequence{{Schema: "public", Name: "s1"}},
-		FeatureCoverage:   must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
+		Schemas:         []catalog.Schema{{Name: "public"}},
+		Tables:          []catalog.Table{{Schema: "public", Name: "users"}},
+		Sequences:       []catalog.Sequence{{Schema: "public", Name: "s1"}},
+		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
@@ -459,12 +447,8 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.AsyncReplications, qt.HasLen, 0)
-	c.Assert(parsed.Transfers, qt.HasLen, 0)
-	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["AsyncReplications"]), qt.IsFalse)
-	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Transfers"]), qt.IsFalse)
-	c.Assert(diff.AsyncReplicationsRemoved, qt.HasLen, 0)
-	c.Assert(diff.TransfersRemoved, qt.HasLen, 0)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbreplication.ReplicationKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbreplication.TransferKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
 }
@@ -519,9 +503,6 @@ func TestRoundTrip_SweepCoversEveryObjectFamily(t *testing.T) {
 		covered = append(covered, row.field)
 	}
 	covered = append(covered, nonObjectDatabaseFields...)
-	for field := range hclUnwritableFields {
-		covered = append(covered, field)
-	}
 	slices.Sort(covered)
 
 	c.Assert(covered, qt.DeepEquals, databaseSliceFields())

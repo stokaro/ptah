@@ -1828,7 +1828,7 @@ statement outside any transaction. A plan therefore refuses what the server
 cannot do before it emits anything, and orders what it emits so that no
 statement needs one that has not run yet:
 
-1. Drop the transfers the plan removes, then the async replications, before
+1. Drop the async replications and the transfers the plan removes, before
    anything a transfer reads or writes goes and before a table is created at
    a path a replication held.
 2. Drop the views the plan removes or replaces, a view before the view it
@@ -1856,17 +1856,18 @@ statement needs one that has not run yet:
 12. Drop the removed tables.
 13. Create and change coordination nodes, so an object created at a dropped
     table's path finds it free.
-14. Create the added async replications and change the changed ones, then
-    the transfers, once the tables, changefeeds and topics a transfer uses
-    exist.
+14. Create the added async replications, which create their replica tables.
 15. Create the added and replaced views, a view after the view it reads. YDB
-    checks a view's query against the schema when it creates the view.
-16. Add memberships and grants, once the tables they name exist.
-17. Drop the classifiers and the resource pools a rollback removes, then
+    checks a view's query against the schema when it creates the view, so a
+    view waits for every replication the plan creates.
+16. Change the changed async replications, then create and change the
+    transfers, once the tables, changefeeds and topics a transfer uses exist.
+17. Add memberships and grants, once the tables they name exist.
+18. Drop the classifiers and the resource pools a rollback removes, then
     create and change pools, then change classifiers in place, then create
     classifiers. A classifier names a user or a group, so this comes after
     the principals are created and before they are dropped.
-18. Drop the removed users and groups, after revoking what they hold:
+19. Drop the removed users and groups, after revoking what they hold:
     `DROP USER` leaves its permissions behind, and a user created later under
     the name would hold them.
 

@@ -5,11 +5,33 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/sqlschema"
 )
+
+// declared lists the objects of kind database declares.
+func declared(c *qt.C, database schemamodel.Database, kind schemaext.Kind) []schemaext.Object {
+	c.Helper()
+	objects, err := database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(kind)
+	}).All()
+	c.Assert(err, qt.IsNil)
+	return objects
+}
+
+// declaredConnection is the connection of the one replication database
+// declares.
+func declaredConnection(c *qt.C, database schemamodel.Database) ydbreplication.Connection {
+	c.Helper()
+	replications := declared(c, database, ydbreplication.ReplicationKind)
+	c.Assert(replications, qt.HasLen, 1)
+	value, ok := replications[0].Value.(*ydbreplication.DesiredReplication)
+	c.Assert(ok, qt.IsTrue)
+	return value.Spec.Connection
+}
 
 const yqlReplication = "CREATE ASYNC REPLICATION `archive/mirror` FOR `/remote/source` AS `archive/copy` WITH (CONNECTION_STRING='grpc://source:2136/?database=/remote');"
 const yqlTransferLambda = "($msg) -> { $items = [<|id:$msg._offset|>]; RETURN $items; }"
@@ -20,11 +42,12 @@ func TestReadYQLReplication(t *testing.T) {
 	source := "CREATE ASYNC REPLICATION `archive/mirror` FOR `/remote/source` AS `archive/copy`, other AS `archive/other` WITH (ENDPOINT='grpcs://source:2135', DATABASE='/remote', CONSISTENCY_LEVEL='GLOBAL', COMMIT_INTERVAL=Interval('PT0.5S'), TOKEN_SECRET_NAME='token');"
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.AsyncReplications, qt.DeepEquals, []schemamodel.AsyncReplication{{Name: "mirror", Schema: "archive", Spec: ast.AsyncReplicationSpec{
-		Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpcs://source:2135/?database=/remote", TokenSecretName: "token"},
-		Items:      []ast.AsyncReplicationItem{{Source: "/remote/source", Target: "archive/copy"}, {Source: "other", Target: "archive/other"}}, ConsistencyLevel: "global", CommitInterval: "PT0.5S",
-	}}})
-	c.Assert(database.NotDescribed.Describes(coverage.Replication), qt.IsTrue)
+	c.Assert(declared(c, database, ydbreplication.ReplicationKind), qt.DeepEquals, []schemaext.Object{
+		ydbreplication.DesiredReplicationObject("archive", "mirror", "", ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpcs://source:2135/?database=/remote", TokenSecretName: "token"},
+			Items:      []ydbreplication.Item{{Source: "/remote/source", Target: "archive/copy"}, {Source: "other", Target: "archive/other"}}, ConsistencyLevel: "global", CommitInterval: "PT0.5S",
+		})})
+	c.Assert(database.FeatureCoverage.Lookup(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 func TestReadYQLTransfer(t *testing.T) {
@@ -32,10 +55,11 @@ func TestReadYQLTransfer(t *testing.T) {
 	source := "CREATE TRANSFER `archive/ingest` FROM `archive/events` TO `archive/rows` USING " + yqlTransferLambda + " WITH (BATCH_SIZE_BYTES=4096,FLUSH_INTERVAL=Interval('PT2S'),CONSUMER='events_reader');"
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Transfers, qt.DeepEquals, []schemamodel.Transfer{{Name: "ingest", Schema: "archive", Spec: ast.TransferSpec{
-		Source: "archive/events", Target: "archive/rows", Lambda: yqlTransferLambda, BatchSizeBytes: 4096, FlushInterval: "PT2S", Consumer: "events_reader",
-	}}})
-	c.Assert(database.NotDescribed.Describes(coverage.Transfer), qt.IsTrue)
+	c.Assert(declared(c, database, ydbreplication.TransferKind), qt.DeepEquals, []schemaext.Object{
+		ydbreplication.DesiredTransferObject("archive", "ingest", "", ydbreplication.TransferSpec{
+			Source: "archive/events", Target: "archive/rows", Lambda: yqlTransferLambda, BatchSizeBytes: 4096, FlushInterval: "PT2S", Consumer: "events_reader",
+		})})
+	c.Assert(database.FeatureCoverage.Lookup(ydbreplication.TransferKind, ydbreplication.TransferRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 func TestReadYQLReplicationChanges(t *testing.T) {
@@ -43,9 +67,11 @@ func TestReadYQLReplicationChanges(t *testing.T) {
 	source := yqlReplication + "ALTER ASYNC REPLICATION `archive/mirror` SET (ENDPOINT='grpcs://moved:2135'); ALTER ASYNC REPLICATION `archive/mirror` SET (DATABASE='/elsewhere', USER='reader', PASSWORD_SECRET_NAME='credential');"
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.AsyncReplications, qt.HasLen, 1)
-	c.Assert(database.AsyncReplications[0].Spec.Connection, qt.DeepEquals, ast.ReplicationConnectionSpec{ConnectionString: "grpcs://moved:2135/?database=/elsewhere", User: "reader", PasswordSecretName: "credential"})
-	c.Assert(database.AsyncReplications[0].Spec.Items, qt.DeepEquals, []ast.AsyncReplicationItem{{Source: "/remote/source", Target: "archive/copy"}})
+	c.Assert(declared(c, database, ydbreplication.ReplicationKind), qt.DeepEquals, []schemaext.Object{
+		ydbreplication.DesiredReplicationObject("archive", "mirror", "", ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpcs://moved:2135/?database=/elsewhere", User: "reader", PasswordSecretName: "credential"},
+			Items:      []ydbreplication.Item{{Source: "/remote/source", Target: "archive/copy"}},
+		})})
 }
 
 func TestReadYQLTransferChanges(t *testing.T) {
@@ -54,7 +80,8 @@ func TestReadYQLTransferChanges(t *testing.T) {
 	source := yqlTransfer + "ALTER TRANSFER `archive/ingest` SET USING " + changed + ", SET (BATCH_SIZE_BYTES=8192,FLUSH_INTERVAL=Interval('PT3S'));"
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Transfers, qt.DeepEquals, []schemamodel.Transfer{{Name: "ingest", Schema: "archive", Spec: ast.TransferSpec{Source: "archive/events", Target: "archive/rows", Lambda: changed, BatchSizeBytes: 8192, FlushInterval: "PT3S"}}})
+	c.Assert(declared(c, database, ydbreplication.TransferKind), qt.DeepEquals, []schemaext.Object{
+		ydbreplication.DesiredTransferObject("archive", "ingest", "", ydbreplication.TransferSpec{Source: "archive/events", Target: "archive/rows", Lambda: changed, BatchSizeBytes: 8192, FlushInterval: "PT3S"})})
 }
 
 func TestYQLReplicationRefusalsHideValues(t *testing.T) {
@@ -94,8 +121,7 @@ func TestYQLReplicationRefusalsHideValues(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "SENTINEL")
 			c.Assert(statements, qt.IsNil)
-			c.Assert(database.AsyncReplications, qt.HasLen, 0)
-			c.Assert(database.Transfers, qt.HasLen, 0)
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
 }
@@ -106,21 +132,20 @@ func TestReadYQLCredentialChanges(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		changes string
-		want    ast.ReplicationConnectionSpec
+		want    ydbreplication.Connection
 	}{
-		{name: "password rotation", changes: "USER='reader',PASSWORD_SECRET_NAME='first'); ALTER ASYNC REPLICATION `archive/mirror` SET (PASSWORD_SECRET_NAME='second'", want: ast.ReplicationConnectionSpec{User: "reader", PasswordSecretName: "second"}},
-		{name: "password to token", changes: "USER='reader',PASSWORD_SECRET_NAME='first'); ALTER ASYNC REPLICATION `archive/mirror` SET (TOKEN_SECRET_NAME='token'", want: ast.ReplicationConnectionSpec{TokenSecretName: "token"}},
-		{name: "token to password", changes: "TOKEN_SECRET_NAME='token'); ALTER ASYNC REPLICATION `archive/mirror` SET (USER='reader',PASSWORD_SECRET_NAME='password'", want: ast.ReplicationConnectionSpec{User: "reader", PasswordSecretName: "password"}},
-		{name: "secret name to path", changes: "TOKEN_SECRET_NAME='token'); ALTER ASYNC REPLICATION `archive/mirror` SET (TOKEN_SECRET_PATH='secrets/token'", want: ast.ReplicationConnectionSpec{TokenSecretPath: "secrets/token"}},
+		{name: "password rotation", changes: "USER='reader',PASSWORD_SECRET_NAME='first'); ALTER ASYNC REPLICATION `archive/mirror` SET (PASSWORD_SECRET_NAME='second'", want: ydbreplication.Connection{User: "reader", PasswordSecretName: "second"}},
+		{name: "password to token", changes: "USER='reader',PASSWORD_SECRET_NAME='first'); ALTER ASYNC REPLICATION `archive/mirror` SET (TOKEN_SECRET_NAME='token'", want: ydbreplication.Connection{TokenSecretName: "token"}},
+		{name: "token to password", changes: "TOKEN_SECRET_NAME='token'); ALTER ASYNC REPLICATION `archive/mirror` SET (USER='reader',PASSWORD_SECRET_NAME='password'", want: ydbreplication.Connection{User: "reader", PasswordSecretName: "password"}},
+		{name: "secret name to path", changes: "TOKEN_SECRET_NAME='token'); ALTER ASYNC REPLICATION `archive/mirror` SET (TOKEN_SECRET_PATH='secrets/token'", want: ydbreplication.Connection{TokenSecretPath: "secrets/token"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			source := yqlReplication + "ALTER ASYNC REPLICATION `archive/mirror` SET (" + tc.changes + ");"
 			database, _, err := sqlschema.Read([]byte(source), "ydb")
 			c.Assert(err, qt.IsNil)
-			c.Assert(database.AsyncReplications, qt.HasLen, 1)
 			tc.want.ConnectionString = "grpc://source:2136/?database=/remote"
-			c.Assert(database.AsyncReplications[0].Spec.Connection, qt.DeepEquals, tc.want)
+			c.Assert(declaredConnection(c, database), qt.DeepEquals, tc.want)
 		})
 	}
 }

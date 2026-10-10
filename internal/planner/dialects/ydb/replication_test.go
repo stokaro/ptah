@@ -9,7 +9,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -18,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
@@ -27,17 +27,78 @@ import (
 )
 
 // primary is a connection to the database a replication reads.
-var primary = ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"}
+var primary = ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod"}
 
 // replicationOf is a replication of /prod's table source into target.
-func replicationOf(source, target string) ast.AsyncReplicationSpec {
-	return ast.AsyncReplicationSpec{Connection: primary,
-		Items: []ast.AsyncReplicationItem{{Source: source, Target: target}}}
+func replicationOf(source, target string) ydbreplication.ReplicationSpec {
+	return ydbreplication.ReplicationSpec{Connection: primary,
+		Items: []ydbreplication.Item{{Source: source, Target: target}}}
 }
 
 // heldReplication is a replication the database holds, in state.
-func heldReplication(name, target, state string) catalog.AsyncReplication {
-	return catalog.AsyncReplication{Name: name, State: state, Spec: replicationOf(name, target)}
+func heldReplication(name, target, state string) schemaext.Object {
+	return ydbreplication.ObservedReplicationObject("", name, replicationOf(name, target), state)
+}
+
+// objects collects feature objects.
+func objects(values ...schemaext.Object) schemaext.Objects {
+	return must.Must(schemaext.NewObjects(values...))
+}
+
+// replicationCreated is the creation of replication name.
+func replicationCreated(name string, spec ydbreplication.ReplicationSpec) schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: ydbreplication.ReplicationRef("", name),
+		Value: ydbdiff.NewAsyncReplication(nil, &ydbreplication.DesiredReplication{Spec: spec})}
+}
+
+// replicationDropped is the drop of replication name, held in state.
+func replicationDropped(name string, spec ydbreplication.ReplicationSpec, state string) schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: ydbreplication.ReplicationRef("", name),
+		Value: ydbdiff.NewAsyncReplication(&ydbreplication.ObservedReplication{Spec: spec, State: state}, nil)}
+}
+
+// replicationChanged is the change of replication name, held in state, from
+// current to desired.
+func replicationChanged(name string, current, desired ydbreplication.ReplicationSpec, state string) schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: ydbreplication.ReplicationRef("", name),
+		Value: ydbdiff.NewAsyncReplication(&ydbreplication.ObservedReplication{Spec: current, State: state},
+			&ydbreplication.DesiredReplication{Spec: desired})}
+}
+
+// transferCreated is the creation of transfer name.
+func transferCreated(name string, spec ydbreplication.TransferSpec) schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: ydbreplication.TransferRef("", name),
+		Value: ydbdiff.NewTransfer(nil, &ydbreplication.DesiredTransfer{Spec: spec})}
+}
+
+// transferDropped is the drop of transfer name.
+func transferDropped(name string, spec ydbreplication.TransferSpec) schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: ydbreplication.TransferRef("", name),
+		Value: ydbdiff.NewTransfer(&ydbreplication.ObservedTransfer{Spec: spec, State: ydbreplication.StateRunning}, nil)}
+}
+
+// transferChanged is the change of transfer name from current to desired.
+func transferChanged(name string, current, desired ydbreplication.TransferSpec) schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: ydbreplication.TransferRef("", name),
+		Value: ydbdiff.NewTransfer(&ydbreplication.ObservedTransfer{Spec: current, State: ydbreplication.StateRunning},
+			&ydbreplication.DesiredTransfer{Spec: desired})}
+}
+
+// declaredTransfer is the declaration of transfer name.
+func declaredTransfer(name string, spec ydbreplication.TransferSpec) schemaext.Object {
+	return ydbreplication.DesiredTransferObject("", name, "", spec)
+}
+
+// heldTransfer is a running transfer the database holds.
+func heldTransfer(name string, spec ydbreplication.TransferSpec) schemaext.Object {
+	return ydbreplication.ObservedTransferObject("", name, spec, ydbreplication.StateRunning)
+}
+
+// replicationCoverage claims both namespaces in full.
+func replicationCoverage(representation schemaext.Representation) schemaext.Coverage {
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	replications := must.Must(ydbreplication.ReplicationCoverage(representation, complete, nil))
+	return must.Must(replications.Combine(must.Must(ydbreplication.TransferCoverage(representation, complete, nil))))
 }
 
 // table is a declared table with a key.
@@ -55,57 +116,54 @@ func replicaOf(name string) coverage.Object {
 }
 
 // TestGenerateMigrationAST_Replications_HappyPath pins where replications and
-// transfers go in a YDB plan: every transfer and then every replication the
-// plan removes goes first, a running one with CASCADE and a failed-over one
+// transfers go in a YDB plan: every replication and transfer the plan removes
+// goes first, a running replication with CASCADE and a failed-over one
 // without; every one the plan creates or changes comes after the tables are
-// created and dropped, the replications before the transfers, and before the
-// views.
+// created and dropped; and a view the plan creates waits for the replication
+// that creates the replica table it reads, because YDB checks a view's query
+// when it creates the view.
 func TestGenerateMigrationAST_Replications_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	feed := ydbschema.ChangefeedSpec{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}
 	moved := replicationOf("paused", "paused_copy")
 	moved.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
-	ingest := ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda}
-	relambda := ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: "($m) -> { return [1]; }"}
+	ingest := ydbreplication.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda}
+	relambda := ydbreplication.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: "($m) -> { return [1]; }"}
+	feeds := declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects
 	diff := &difftypes.SchemaDiff{
 		TablesAdded: difftypes.TableChanges{{Name: "orders", Table: table("orders"),
-			OwnedObjects: declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects,
+			OwnedObjects: feeds,
 			Fields:       []schemamodel.Field{keyField("id")}}},
 		TablesRemoved: difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
-		AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{
-			{Name: "mirror", Spec: replicationOf("accounts", "replica/accounts")},
+		FeatureChanges: []schemaext.ChangeRecord{
+			replicationCreated("mirror", replicationOf("accounts", "replica/accounts")),
+			replicationDropped("failed_over", replicationOf("failed_over", "failed_over_copy"), ydbreplication.StateDone),
+			replicationChanged("paused", replicationOf("paused", "paused_copy"), moved, ydbreplication.StatePaused),
+			replicationDropped("running", replicationOf("running", "running_copy"), ydbreplication.StateRunning),
+			transferCreated("ingest", ingest),
+			transferDropped("old_ingest", ingest),
+			transferChanged("reingest", ingest, relambda),
 		},
-		AsyncReplicationsRemoved: difftypes.AsyncReplicationChanges{
-			{Name: "failed_over", Spec: replicationOf("failed_over", "failed_over_copy")},
-			{Name: "running", Spec: replicationOf("running", "running_copy")},
-		},
-		AsyncReplicationsModified: []difftypes.AsyncReplicationDiff{{Name: "paused", ConnectionChanged: true,
-			Desired: moved, Current: replicationOf("paused", "paused_copy"), State: catalog.ReplicationPaused}},
-		TransfersAdded:   difftypes.TransferChanges{{Name: "ingest", Spec: ingest}},
-		TransfersRemoved: difftypes.TransferChanges{{Name: "old_ingest", Spec: ingest}},
-		TransfersModified: []difftypes.TransferDiff{{Name: "reingest", LambdaChanged: true, Desired: relambda,
-			Current: ingest, State: catalog.ReplicationRunning}},
-		ViewsAdded: difftypes.ViewChanges{{Name: "v", Body: "SELECT id FROM orders"}},
+		ViewsAdded: difftypes.ViewChanges{{Name: "v", Body: "SELECT id FROM `replica/accounts`"}},
 		DeclaredTables: []schemamodel.Table{
 			table("orders"), table("order_log"),
 		},
-		Replications: difftypes.ReplicationContext{
-			DesiredObjects: declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects,
-			CurrentReplications: []catalog.AsyncReplication{
-				heldReplication("failed_over", "failed_over_copy", catalog.ReplicationDone),
-				heldReplication("running", "running_copy", catalog.ReplicationRunning),
-				heldReplication("paused", "paused_copy", catalog.ReplicationPaused),
-			},
-			DeclaredTransfers: []schemamodel.Transfer{{Name: "ingest", Spec: ingest},
-				{Name: "reingest", Spec: relambda}},
+		Features: difftypes.FeatureContext{
+			DesiredObjects: must.Must(feeds.With(declaredTransfer("ingest", ingest))),
+			CurrentObjects: objects(
+				heldReplication("failed_over", "failed_over_copy", ydbreplication.StateDone),
+				heldReplication("running", "running_copy", ydbreplication.StateRunning),
+				heldReplication("paused", "paused_copy", ydbreplication.StatePaused),
+			),
 		},
 	}
+	diff.Features.DesiredObjects = must.Must(diff.Features.DesiredObjects.With(declaredTransfer("reingest", relambda)))
 
 	got := render(c, capability.YDB262(), diff)
 
-	c.Assert(got, qt.Equals, "DROP TRANSFER `old_ingest`;\n"+
-		"DROP ASYNC REPLICATION `failed_over`;\n"+
+	c.Assert(got, qt.Equals, "DROP ASYNC REPLICATION `failed_over`;\n"+
 		"DROP ASYNC REPLICATION `running` CASCADE;\n"+
+		"DROP TRANSFER `old_ingest`;\n"+
 		"CREATE TABLE `orders` (\n"+
 		"    `id` Int64 NOT NULL,\n"+
 		"    PRIMARY KEY (`id`)\n"+
@@ -114,12 +172,12 @@ func TestGenerateMigrationAST_Replications_HappyPath(t *testing.T) {
 		"DROP TABLE `legacy`;\n"+
 		"CREATE ASYNC REPLICATION `mirror` FOR `accounts` AS `replica/accounts` WITH ("+
 		"CONNECTION_STRING = 'grpc://primary:2136/?database=/prod');\n"+
+		"CREATE VIEW `v` WITH (security_invoker = TRUE) AS\n"+
+		"SELECT id FROM `replica/accounts`\n"+
+		";\n"+
 		"ALTER ASYNC REPLICATION `paused` SET (CONNECTION_STRING = 'grpc://standby:2136/?database=/prod');\n"+
 		"CREATE TRANSFER `ingest` FROM `orders/feed` TO `order_log` USING ($m) -> { return []; };\n"+
-		"ALTER TRANSFER `reingest` SET USING ($m) -> { return [1]; };\n"+
-		"CREATE VIEW `v` WITH (security_invoker = TRUE) AS\n"+
-		"SELECT id FROM orders\n"+
-		";\n")
+		"ALTER TRANSFER `reingest` SET USING ($m) -> { return [1]; };\n")
 }
 
 // TestGenerateMigrationAST_Replications_ProposeNothingForReplicaTables plans
@@ -132,28 +190,27 @@ func TestGenerateMigrationAST_Replications_ProposeNothingForReplicaTables(t *tes
 	spec := replicationOf("/local/src", "rep")
 	spec.Connection.ConnectionString = "grpc://localhost:2136/?database=/local"
 	declared := &schemamodel.Database{
-		Tables: []schemamodel.Table{table("src")},
-		Fields: []schemamodel.Field{keyField("id")},
-		AsyncReplications: []schemamodel.AsyncReplication{
-			{Name: "mirror", Spec: spec},
-		},
+		Tables:         []schemamodel.Table{table("src")},
+		Fields:         []schemamodel.Field{keyField("id")},
+		FeatureObjects: objects(ydbreplication.DesiredReplicationObject("", "mirror", "", spec)),
 	}
 	read := &catalog.Database{
 		Tables: []catalog.Table{{Name: "src", Type: "TABLE", Columns: []catalog.Column{{Name: "id",
 			DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1}}}},
 		Constraints: []catalog.Constraint{{Name: "src_pkey", TableName: "src", Type: "PRIMARY KEY",
 			ColumnName: "id", ColumnNames: []string{"id"}}},
-		AsyncReplications: []catalog.AsyncReplication{{Name: "mirror", State: catalog.ReplicationRunning,
-			Spec: ast.AsyncReplicationSpec{Connection: spec.Connection,
-				Items: []ast.AsyncReplicationItem{{Source: "src", Target: "rep"}}}}},
+		FeatureObjects: objects(ydbreplication.ObservedReplicationObject("", "mirror", ydbreplication.ReplicationSpec{
+			Connection: spec.Connection, Items: []ydbreplication.Item{{Source: "src", Target: "rep"}}},
+			ydbreplication.StateRunning)),
 		NotDescribed: coverage.Set{}.With(replicaOf("rep")),
 	}
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	declared.FeatureCoverage = feedCoverage(t, schemaext.Desired)
-	read.FeatureCoverage = feedCoverage(t, schemaext.Observed, schemaext.SubjectCoverage{
+	declared.FeatureCoverage = must.Must(feedCoverage(t, schemaext.Desired).Combine(replicationCoverage(schemaext.Desired)))
+	read.FeatureCoverage = must.Must(feedCoverage(t, schemaext.Observed, schemaext.SubjectCoverage{
 		Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("", "src", "2b1f0c5e-0d1c-4b1a-9c3e-5d6f7a8b9c0d"),
-		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "replication stream"}})
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "replication stream"}}).
+		Combine(replicationCoverage(schemaext.Observed)))
 	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), declared, read, &config.CompareOptions{Dialect: platform.YDB}, runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnostics.Features, qt.HasLen, 1)
@@ -187,14 +244,14 @@ func TestGenerateMigrationAST_Replications_TransferReadsARecordedTopic(t *testin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			spec := ast.TransferSpec{Source: test.source, Target: "order_log", Lambda: lambda}
+			spec := ydbreplication.TransferSpec{Source: test.source, Target: "order_log", Lambda: lambda}
 			diff := &difftypes.SchemaDiff{
-				TransfersAdded:      difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
+				FeatureChanges:      []schemaext.ChangeRecord{transferCreated("ingest", spec)},
 				DeclaredTables:      test.tables,
 				CurrentNotDescribed: test.limits,
-				Replications: difftypes.ReplicationContext{
-					CurrentCoverage:   test.featureCoverage,
-					DeclaredTransfers: []schemamodel.Transfer{{Name: "ingest", Spec: spec}},
+				Features: difftypes.FeatureContext{
+					CurrentCoverage: test.featureCoverage,
+					DesiredObjects:  objects(declaredTransfer("ingest", spec)),
 				},
 			}
 
@@ -210,17 +267,15 @@ func TestGenerateMigrationAST_Replications_TransferReadsARecordedTopic(t *testin
 // transfer of a topic the schema declares after the topic is created, and
 // refuses one whose topic the plan drops while the schema keeps the transfer.
 func TestGenerateMigrationAST_Replications_TransferReadsADeclaredTopic(t *testing.T) {
-	spec := ast.TransferSpec{Source: "app/events", Target: "order_log", Lambda: lambda}
-	transfer := schemamodel.Transfer{Name: "ingest", Spec: spec}
+	spec := ydbreplication.TransferSpec{Source: "app/events", Target: "order_log", Lambda: lambda}
 	t.Run("created after its topic", func(t *testing.T) {
 		c := qt.New(t)
 		diff := &difftypes.SchemaDiff{
-			FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("app", "events"), Value: &ydbdiff.Topic{After: &ydbtopic.Desired{}}}},
-			TransfersAdded: difftypes.TransferChanges{transfer},
+			FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("app", "events"), Value: &ydbdiff.Topic{After: &ydbtopic.Desired{}}},
+				transferCreated("ingest", spec)},
 			DeclaredTables: []schemamodel.Table{table("order_log")},
-			Replications: difftypes.ReplicationContext{
-				DeclaredTransfers: []schemamodel.Transfer{transfer},
-				DeclaredTopics:    []string{"app/events"},
+			Features: difftypes.FeatureContext{
+				DesiredObjects: objects(declaredTransfer("ingest", spec), ydbtopic.DesiredObject("app", "events", "", ydbtopic.Spec{})),
 			},
 		}
 
@@ -234,10 +289,9 @@ func TestGenerateMigrationAST_Replications_TransferReadsADeclaredTopic(t *testin
 		diff := &difftypes.SchemaDiff{
 			FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("app", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}},
 			DeclaredTables: []schemamodel.Table{table("order_log")},
-			Replications: difftypes.ReplicationContext{
-				CurrentTransfers:  []catalog.Transfer{{Name: "ingest", Spec: spec}},
-				DeclaredTransfers: []schemamodel.Transfer{transfer},
-				CurrentTopics:     []string{"app/events"},
+			Features: difftypes.FeatureContext{
+				CurrentObjects: objects(heldTransfer("ingest", spec), ydbtopic.ObservedObject("app", "events", ydbtopic.Spec{})),
+				DesiredObjects: objects(declaredTransfer("ingest", spec)),
 			},
 		}
 
@@ -256,13 +310,12 @@ func TestGenerateMigrationAST_Replications_TransferReadsADeclaredTopic(t *testin
 // transfer before the topic it reads, when the plan removes both.
 func TestGenerateMigrationAST_Replications_TransferDroppedBeforeItsTopic(t *testing.T) {
 	c := qt.New(t)
-	spec := ast.TransferSpec{Source: "events", Target: "order_log", Lambda: lambda}
+	spec := ydbreplication.TransferSpec{Source: "events", Target: "order_log", Lambda: lambda}
 	diff := &difftypes.SchemaDiff{
-		FeatureChanges:   []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}},
-		TransfersRemoved: difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
-		Replications: difftypes.ReplicationContext{
-			CurrentTransfers: []catalog.Transfer{{Name: "ingest", Spec: spec}},
-			CurrentTopics:    []string{"events"},
+		FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}},
+			transferDropped("ingest", spec)},
+		Features: difftypes.FeatureContext{
+			CurrentObjects: objects(heldTransfer("ingest", spec), ydbtopic.ObservedObject("", "events", ydbtopic.Spec{})),
 		},
 	}
 
@@ -278,16 +331,15 @@ func TestGenerateMigrationAST_Replications_TransferDroppedBeforeItsTopic(t *test
 // common statement made this plan a dependency cycle.
 func TestGenerateMigrationAST_Replications_SecretTakesTheTopicsPath(t *testing.T) {
 	c := qt.New(t)
-	spec := ast.TransferSpec{Source: "events", Target: "order_log", Lambda: lambda}
+	spec := ydbreplication.TransferSpec{Source: "events", Target: "order_log", Lambda: lambda}
 	diff := &difftypes.SchemaDiff{
 		FeatureChanges: []schemaext.ChangeRecord{
 			{Subject: ydbtopic.Ref("", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}},
 			secretCreated("", "events", "PTAH_SECRET_EVENTS"),
+			transferDropped("ingest", spec),
 		},
-		TransfersRemoved: difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
-		Replications: difftypes.ReplicationContext{
-			CurrentTransfers: []catalog.Transfer{{Name: "ingest", Spec: spec}},
-			CurrentTopics:    []string{"events"},
+		Features: difftypes.FeatureContext{
+			CurrentObjects: objects(heldTransfer("ingest", spec), ydbtopic.ObservedObject("", "events", ydbtopic.Spec{})),
 		},
 	}
 
@@ -300,16 +352,15 @@ func TestGenerateMigrationAST_Replications_SecretTakesTheTopicsPath(t *testing.T
 // statement, a plan YDB cannot run or one that would break what a replication
 // or a transfer owns or depends on.
 func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
-	ingest := ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda}
+	ingest := ydbreplication.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda}
 	feed := ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}
 	streams := declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects
-	withTransfer := func(spec ast.TransferSpec, objects schemaext.Objects, tables ...schemamodel.Table) *difftypes.SchemaDiff {
+	withTransfer := func(spec ydbreplication.TransferSpec, declared schemaext.Objects, tables ...schemamodel.Table) *difftypes.SchemaDiff {
 		return &difftypes.SchemaDiff{
-			TransfersAdded: difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
+			FeatureChanges: []schemaext.ChangeRecord{transferCreated("ingest", spec)},
 			DeclaredTables: tables,
-			Replications: difftypes.ReplicationContext{
-				DesiredObjects:    objects,
-				DeclaredTransfers: []schemamodel.Transfer{{Name: "ingest", Spec: spec}},
+			Features: difftypes.FeatureContext{
+				DesiredObjects: must.Must(declared.With(declaredTransfer("ingest", spec))),
 			},
 		}
 	}
@@ -334,17 +385,15 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 		{
 			name: "a replication's level changed",
 			caps: capability.YDB262(),
-			diff: &difftypes.SchemaDiff{AsyncReplicationsModified: []difftypes.AsyncReplicationDiff{{Name: "mirror",
-				CreateOnlyChanged: []string{"consistency_level"}, Desired: global, Current: replicationOf("a", "ra"),
-				State: catalog.ReplicationPaused}}},
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+				replicationChanged("mirror", replicationOf("a", "ra"), global, ydbreplication.StatePaused)}},
 			wantErr: `async replication mirror: its consistency_level differ from the database's, .*`,
 		},
 		{
 			name: "a running replication's connection changed",
 			caps: capability.YDB262(),
-			diff: &difftypes.SchemaDiff{AsyncReplicationsModified: []difftypes.AsyncReplicationDiff{{Name: "mirror",
-				ConnectionChanged: true, Desired: moved, Current: replicationOf("a", "ra"),
-				State: catalog.ReplicationRunning}}},
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+				replicationChanged("mirror", replicationOf("a", "ra"), moved, ydbreplication.StateRunning)}},
 			wantErr: `async replication mirror: its connection or credential differs, and YDB changes them only while ` +
 				`the replication is paused .*`,
 		},
@@ -352,10 +401,11 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 			name: "a running replication dropped while the schema declares its replica",
 			caps: capability.YDB262(),
 			diff: &difftypes.SchemaDiff{
-				AsyncReplicationsRemoved: difftypes.AsyncReplicationChanges{{Name: "mirror", Spec: replicationOf("a", "ra")}},
-				DeclaredTables:           []schemamodel.Table{table("ra")},
-				Replications: difftypes.ReplicationContext{CurrentReplications: []catalog.AsyncReplication{
-					heldReplication("mirror", "ra", catalog.ReplicationRunning)}},
+				FeatureChanges: []schemaext.ChangeRecord{
+					replicationDropped("mirror", replicationOf("a", "ra"), ydbreplication.StateRunning)},
+				DeclaredTables: []schemamodel.Table{table("ra")},
+				Features: difftypes.FeatureContext{CurrentObjects: objects(
+					heldReplication("mirror", "ra", ydbreplication.StateRunning))},
 			},
 			wantErr: "async replication mirror: the schema drops it and declares table ra, its replica, .*" +
 				"fail it over first with ALTER ASYNC REPLICATION `mirror` SET \\(STATE = 'DONE', " +
@@ -368,8 +418,8 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 				TablesAdded: difftypes.TableChanges{{Name: "ra", Table: table("ra"),
 					Fields: []schemamodel.Field{keyField("id")}}},
 				CurrentNotDescribed: coverage.Set{}.With(replicaOf("ra")),
-				Replications: difftypes.ReplicationContext{CurrentReplications: []catalog.AsyncReplication{
-					heldReplication("mirror", "ra", catalog.ReplicationRunning)}},
+				Features: difftypes.FeatureContext{CurrentObjects: objects(
+					heldReplication("mirror", "ra", ydbreplication.StateRunning))},
 			},
 			wantErr: `table ra: it is a replica table async replication mirror writes, read-only while the ` +
 				`replication runs .*`,
@@ -389,8 +439,7 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 			name: "a replication created over another's replica",
 			caps: capability.YDB262(),
 			diff: &difftypes.SchemaDiff{
-				AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{{Name: "second",
-					Spec: replicationOf("b", "replica")}},
+				FeatureChanges:      []schemaext.ChangeRecord{replicationCreated("second", replicationOf("b", "replica"))},
 				CurrentNotDescribed: coverage.Set{}.With(replicaOf("replica.accounts")),
 			},
 			wantErr: `async replication second: its target replica holds replica/accounts, a replica table of ` +
@@ -401,11 +450,9 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 			caps: capability.YDB262(),
 			diff: &difftypes.SchemaDiff{
 				TablesRemoved: difftypes.TableRemovals{{Name: "ra", Current: observedFeeds(t, "", "ra")}},
-				Replications: difftypes.ReplicationContext{
-					CurrentReplications: []catalog.AsyncReplication{
-						heldReplication("mirror", "ra", catalog.ReplicationDone)},
-					DeclaredReplications: []schemamodel.AsyncReplication{{Name: "mirror",
-						Spec: replicationOf("mirror", "ra")}},
+				Features: difftypes.FeatureContext{
+					CurrentObjects: objects(heldReplication("mirror", "ra", ydbreplication.StateDone)),
+					DesiredObjects: objects(ydbreplication.DesiredReplicationObject("", "mirror", "", replicationOf("mirror", "ra"))),
 				},
 			},
 			wantErr: `table ra: it is a table async replication mirror created and failed over, which the schema ` +
@@ -427,9 +474,8 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 		{
 			name: "a transfer's table changed",
 			caps: capability.YDB262(),
-			diff: &difftypes.SchemaDiff{TransfersModified: []difftypes.TransferDiff{{Name: "ingest",
-				CreateOnlyChanged: []string{"target"}, Desired: retargeted, Current: ingest,
-				State: catalog.ReplicationRunning}}},
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+				transferChanged("ingest", ingest, retargeted)}},
 			wantErr: `transfer ingest: its target differ from the database's, .*`,
 		},
 	}
@@ -455,13 +501,13 @@ func TestGenerateMigrationAST_Replications_RebuildRefusesATransfersTable(t *test
 	typeChange := []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}
 	tests := []struct {
 		name     string
-		transfer ast.TransferSpec
+		transfer ydbreplication.TransferSpec
 	}{
-		{name: "the table it writes", transfer: ast.TransferSpec{Source: "events", Target: "app/items",
+		{name: "the table it writes", transfer: ydbreplication.TransferSpec{Source: "events", Target: "app/items",
 			Lambda: lambda}},
-		{name: "a changefeed it reads", transfer: ast.TransferSpec{Source: "app/items/feed", Target: "log",
+		{name: "a changefeed it reads", transfer: ydbreplication.TransferSpec{Source: "app/items/feed", Target: "log",
 			Lambda: lambda}},
-		{name: "a changefeed it reads by its absolute path", transfer: ast.TransferSpec{Source: "/local/app/items/feed", Target: "log",
+		{name: "a changefeed it reads by its absolute path", transfer: ydbreplication.TransferSpec{Source: "/local/app/items/feed", Target: "log",
 			Lambda: lambda}},
 	}
 	for _, test := range tests {
@@ -470,8 +516,7 @@ func TestGenerateMigrationAST_Replications_RebuildRefusesATransfersTable(t *test
 			diff := modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired:         appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 				ColumnsModified: typeChange})
-			diff.Replications.CurrentTransfers = []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning,
-				Spec: test.transfer}}
+			diff.Features.CurrentObjects = objects(heldTransfer("ingest", test.transfer))
 			diff.CurrentDatabasePath = "/local"
 
 			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuild(true).GenerateMigrationAST(

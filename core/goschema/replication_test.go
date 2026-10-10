@@ -5,10 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // replicationSource is an entity file whose Replicas struct carries the given
@@ -32,26 +33,21 @@ func TestParseSource_AsyncReplication_HappyPath(t *testing.T) {
 //ptah:schema:async_replication:item replication="mirror" schema="replicas" source="accounts" target="replica/accounts"
 //ptah:schema:transfer name="ingest" source="orders/feed" target="order_log" using="($m) -> { return []; }" consumer="ptah" flush_interval="PT10S"`))
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.AsyncReplications, qt.DeepEquals, []schemamodel.AsyncReplication{{
-		StructName: "Replicas",
-		Name:       "mirror",
-		Schema:     "replicas",
-		Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbreplication.DesiredReplicationObject("replicas", "mirror", "Replicas", ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 				TokenSecretName: "token"},
-			Items: []ast.AsyncReplicationItem{
+			Items: []ydbreplication.Item{
 				{Source: "/prod/ledger", Target: "replica/ledger"},
 				{Source: "accounts", Target: "replica/accounts"},
 			},
 			ConsistencyLevel: "global",
-		},
-	}})
-	c.Assert(db.Transfers, qt.DeepEquals, []schemamodel.Transfer{{
-		StructName: "Replicas",
-		Name:       "ingest",
-		Spec: ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: "($m) -> { return []; }",
-			Consumer: "ptah", FlushInterval: "PT10S"},
-	}})
+		}),
+		ydbreplication.DesiredTransferObject("", "ingest", "Replicas", ydbreplication.TransferSpec{Source: "orders/feed",
+			Target: "order_log", Lambda: "($m) -> { return []; }", Consumer: "ptah", FlushInterval: "PT10S"}),
+	})
 }
 
 // TestParseSource_AsyncReplication_FailurePath refuses a declaration with no

@@ -9,6 +9,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/feature/pgpolicy"
@@ -16,8 +17,9 @@ import (
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out,
-// and every secret, topic or external object the source records as not
-// described without holding it, which HCL has no directive for. It reads
+// and every secret, topic, external object, async replication or transfer the
+// source records as not described without holding it, which HCL has no
+// directive for. It reads
 // identities without interpreting payloads, so an unrecognized provider cannot
 // turn export loss into a successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
@@ -73,7 +75,8 @@ func (r *renderer) reportFeatureObjects() {
 
 // unrecordableLimits are the kinds whose source limits HCL has no directive
 // for. Changefeeds, streaming queries and pools report their own losses.
-var unrecordableLimits = []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind}
+var unrecordableLimits = []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind,
+	ydbreplication.ReplicationKind, ydbreplication.TransferKind}
 
 func featurePath(ref objectidentity.ID) string {
 	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)

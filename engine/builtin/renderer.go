@@ -402,10 +402,6 @@ func prepareNode(
 		return prepareCreateMaterializedViewNode(dialect, typed)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
-	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
-		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
-		key, subject := replicationNodeSubject(typed)
-		return node, refuseReplicationFamily(dialect, caps, key, subject)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
 	}
@@ -1003,60 +999,23 @@ func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, da
 	return validateDeclaredTableSettings(dialect, caps, database)
 }
 
-// refuseReplicationFamily refuses subject, an async replication or a
-// transfer, on a target without key: both are YDB's, and a target that built
-// nothing for one would report the declaration applied.
-func refuseReplicationFamily(dialect string, caps capability.Capabilities, key capability.Capability, subject string) error {
-	if caps.Has(key) {
-		return nil
+// validateDeclaredReplications refuses a declared table at a target of a
+// declared async replication, before any statement is emitted: YDB creates
+// each replica table itself, and a replication whose target a table already
+// holds is accepted and then fails (measured: `Create dst error:
+// StatusSchemeError, Empty replication config`). The replication's own
+// checks are its owner's.
+func validateDeclaredReplications(dialect string, database *schemamodel.Database) error {
+	all, err := database.FeatureObjects.All()
+	if err != nil {
+		return err
 	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(key),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, key, normalized),
-	}
-}
-
-// replicationNodeSubject names an async replication or transfer node with the
-// capability it needs.
-func replicationNodeSubject(node ast.Node) (capability.Capability, string) {
-	switch typed := node.(type) {
-	case *ast.CreateAsyncReplicationNode:
-		return capability.AsyncReplication, "async replication " + typed.Name
-	case *ast.AlterAsyncReplicationNode:
-		return capability.AsyncReplication, "ALTER ASYNC REPLICATION " + typed.Name
-	case *ast.DropAsyncReplicationNode:
-		return capability.AsyncReplication, "DROP ASYNC REPLICATION " + typed.Name
-	case *ast.CreateTransferNode:
-		return capability.Transfers, "transfer " + typed.Name
-	case *ast.AlterTransferNode:
-		return capability.Transfers, "ALTER TRANSFER " + typed.Name
-	default:
-		return capability.Transfers, "DROP TRANSFER " + node.(*ast.DropTransferNode).Name
-	}
-}
-
-// validateDeclaredReplications refuses a declared async replication or
-// transfer the target cannot create, before any statement is emitted: on a
-// target without its key, and on YDB a declaration YDB would refuse or keep
-// differently. It also refuses a declared table at a replica's path: YDB
-// creates each replica table itself, and a replication whose target a table
-// already holds is accepted and then fails (measured: `Create dst error:
-// StatusSchemeError, Empty replication config`).
-func validateDeclaredReplications(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	for _, replication := range database.AsyncReplications {
-		name := replication.QualifiedName()
-		if err := refuseReplicationFamily(dialect, caps, capability.AsyncReplication,
-			"async replication "+name); err != nil {
-			return err
+	for _, object := range all {
+		replication, ok := object.Value.(*ydbreplication.DesiredReplication)
+		if !ok {
+			continue
 		}
-		if err := declaredReplicationRefusal(dialect,
-			ydbreplication.CheckReplication(name, replication.Spec, caps)); err != nil {
-			return err
-		}
+		name := ydbreplication.Reference(object.Ref.Schema.Source, object.Ref.Name.Source)
 		targets := ydbreplication.Targets(replication.Spec)
 		for _, table := range database.Tables {
 			if ydbreplication.UnderTarget(ydbreplication.TablePath(table.Schema, table.Name), targets) {
@@ -1069,34 +1028,7 @@ func validateDeclaredReplications(dialect string, caps capability.Capabilities, 
 			}
 		}
 	}
-	for _, transfer := range database.Transfers {
-		name := transfer.QualifiedName()
-		if err := refuseReplicationFamily(dialect, caps, capability.Transfers, "transfer "+name); err != nil {
-			return err
-		}
-		if err := declaredReplicationRefusal(dialect,
-			ydbreplication.CheckTransfer(name, transfer.Spec, caps)); err != nil {
-			return err
-		}
-	}
 	return nil
-}
-
-// declaredReplicationRefusal turns a replication or transfer refusal into the
-// render error a declaration gets.
-func declaredReplicationRefusal(dialect string, refusal *ydbreplication.Refusal) error {
-	switch {
-	case refusal == nil:
-		return nil
-	case refusal.Key != "":
-		return refuseReplicationFamily(dialect, capability.Capabilities{}, refusal.Key, refusal.Subject)
-	default:
-		return &ptaherr.RenderError{
-			Dialect: platform.NormalizeDialect(dialect),
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: refusal.Subject + ": " + refusal.Reason,
-		}
-	}
 }
 
 // validateDeclaredTableSettings refuses a declared table's column families,
@@ -2084,7 +2016,7 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredKeysAndConstraints(dialect, caps, database); err != nil {
 		return err
 	}
-	if err := validateDeclaredReplications(dialect, caps, database); err != nil {
+	if err := validateDeclaredReplications(dialect, database); err != nil {
 		return err
 	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)

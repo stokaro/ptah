@@ -4,78 +4,82 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbreplication"
+	"ptah.run/internal/yqlparse"
 )
 
-func appendYDBReplication(database *schemamodel.Database, document *Document, statement ast.Node, dialect string) (bool, error) {
-	switch node := statement.(type) {
-	case *ast.CreateAsyncReplicationNode:
-		schema, name := normalizeSQLTableIdentifier(dialect, node.Name)
-		if findYDBReplication(database, document.base, schema, name) != nil {
-			return true, fmt.Errorf("%w: duplicate async replication declaration", ErrUnmodeledStatement)
+// appendReplicationDeclaration declares the async replication or the transfer
+// a CREATE statement names. Every source format declares one through the
+// owner, so a repeated one is refused as it is in Go and YAML.
+func appendReplicationDeclaration(database *schemamodel.Database, payload ast.ExtensionPayload) (bool, error) {
+	var err error
+	switch value := payload.(type) {
+	case *ydbast.AsyncReplication:
+		if value.Change.Before != nil || value.Change.After == nil {
+			return false, nil
 		}
-		database.AsyncReplications = append(database.AsyncReplications, schemamodel.AsyncReplication{Schema: schema, Name: name, Spec: node.Spec.Clone()})
-	case *ast.CreateTransferNode:
-		schema, name := normalizeSQLTableIdentifier(dialect, node.Name)
-		if findYDBTransfer(database, document.base, schema, name) != nil {
-			return true, fmt.Errorf("%w: duplicate transfer declaration", ErrUnmodeledStatement)
+		database.FeatureObjects, err = ydbreplication.DeclareReplication(database.FeatureObjects, value.Schema, value.Name, "",
+			value.Change.After.Spec)
+	case *ydbast.Transfer:
+		if value.Change.Before != nil || value.Change.After == nil {
+			return false, nil
 		}
-		database.Transfers = append(database.Transfers, schemamodel.Transfer{Schema: schema, Name: name, Spec: node.Spec})
-	case *ast.AlterAsyncReplicationNode:
-		schema, name := normalizeSQLTableIdentifier(dialect, node.Name)
-		previous := findYDBReplication(database, document.base, schema, name)
-		if previous == nil {
-			return true, fmt.Errorf("%w: ALTER ASYNC REPLICATION needs an earlier declaration", ErrUnmodeledStatement)
-		}
-		spec, err := ydbreplication.ApplyReplicationSettings(previous.Spec, node.SourceSettings)
-		if err != nil {
-			return true, fmt.Errorf("%w: invalid async replication settings change", ErrUnmodeledStatement)
-		}
-		previous.Spec = spec
-	case *ast.AlterTransferNode:
-		schema, name := normalizeSQLTableIdentifier(dialect, node.Name)
-		previous := findYDBTransfer(database, document.base, schema, name)
-		if previous == nil {
-			return true, fmt.Errorf("%w: ALTER TRANSFER needs an earlier declaration", ErrUnmodeledStatement)
-		}
-		spec, err := ydbreplication.ApplyTransferSettings(previous.Spec, node.SourceSettings)
-		if err != nil {
-			return true, fmt.Errorf("%w: invalid transfer settings change", ErrUnmodeledStatement)
-		}
-		previous.Spec = spec
+		database.FeatureObjects, err = ydbreplication.DeclareTransfer(database.FeatureObjects, value.Schema, value.Name, "",
+			value.Change.After.Spec)
 	default:
 		return false, nil
 	}
-	return true, nil
+	return true, err
 }
 
-func findYDBReplication(current, earlier *schemamodel.Database, schema, name string) *schemamodel.AsyncReplication {
-	for _, database := range []*schemamodel.Database{current, earlier} {
-		if database == nil {
+// applyReplicationSettings folds an ALTER ASYNC REPLICATION or ALTER TRANSFER
+// into the object this schema, or the one it extends, declares at the path.
+func applyReplicationSettings(database, base *schemamodel.Database, node *yqlparse.ReplicationSettings) error {
+	for _, source := range []*schemamodel.Database{database, base} {
+		if source == nil {
 			continue
 		}
-		for i := range database.AsyncReplications {
-			object := &database.AsyncReplications[i]
-			if object.Schema == schema && object.Name == name {
-				return object
-			}
+		found, err := applyDeclaredReplicationSettings(source, node)
+		if err != nil || found {
+			return err
 		}
 	}
-	return nil
+	if node.Kind == ydbreplication.TransferSource {
+		return fmt.Errorf("%w: ALTER TRANSFER needs an earlier declaration", ErrUnmodeledStatement)
+	}
+	return fmt.Errorf("%w: ALTER ASYNC REPLICATION needs an earlier declaration", ErrUnmodeledStatement)
 }
 
-func findYDBTransfer(current, earlier *schemamodel.Database, schema, name string) *schemamodel.Transfer {
-	for _, database := range []*schemamodel.Database{current, earlier} {
-		if database == nil {
-			continue
-		}
-		for i := range database.Transfers {
-			object := &database.Transfers[i]
-			if object.Schema == schema && object.Name == name {
-				return object
-			}
-		}
+// applyDeclaredReplicationSettings folds node into the object database
+// declares at its path, and reports whether it declares one.
+func applyDeclaredReplicationSettings(database *schemamodel.Database, node *yqlparse.ReplicationSettings) (bool, error) {
+	ref := ydbreplication.ReplicationRef(node.Schema, node.Name)
+	if node.Kind == ydbreplication.TransferSource {
+		ref = ydbreplication.TransferRef(node.Schema, node.Name)
 	}
-	return nil
+	object, found, err := database.FeatureObjects.Get(ref)
+	if err != nil || !found {
+		return false, err
+	}
+	switch value := object.Value.(type) {
+	case *ydbreplication.DesiredReplication:
+		spec, err := ydbreplication.ApplyReplicationSettings(value.Spec, node.Settings)
+		if err != nil {
+			return true, fmt.Errorf("%w: invalid async replication settings change", ErrUnmodeledStatement)
+		}
+		value.Spec = spec
+	case *ydbreplication.DesiredTransfer:
+		spec, err := ydbreplication.ApplyTransferSettings(value.Spec, node.Settings)
+		if err != nil {
+			return true, fmt.Errorf("%w: invalid transfer settings change", ErrUnmodeledStatement)
+		}
+		value.Spec = spec
+	default:
+		return true, fmt.Errorf("%w: expected a desired %s, got %T", schemaext.ErrInvalidValue, ref.Kind, object.Value)
+	}
+	database.FeatureObjects, err = database.FeatureObjects.Replace(object)
+	return true, err
 }

@@ -147,20 +147,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
 
-	// Async replications and transfers.
-	case *ast.CreateAsyncReplicationNode:
-		return r.renderCreateAsyncReplication(n)
-	case *ast.AlterAsyncReplicationNode:
-		return r.renderAlterAsyncReplication(n)
-	case *ast.DropAsyncReplicationNode:
-		return r.renderDropAsyncReplication(n)
-	case *ast.CreateTransferNode:
-		return r.renderCreateTransfer(n)
-	case *ast.AlterTransferNode:
-		return r.renderAlterTransfer(n)
-	case *ast.DropTransferNode:
-		return r.renderDropTransfer(n)
-
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:
 		return refuseFact("synonym "+n.Name, "YDB has no synonyms")
