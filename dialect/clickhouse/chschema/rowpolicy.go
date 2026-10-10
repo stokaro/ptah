@@ -221,6 +221,24 @@ func RowPolicyRefWith(semantics identifier.Semantics, database, table, name stri
 	}
 }
 
+// RowPolicyDatabase returns the database a reference names as the source
+// wrote it: empty when the source left it to the connection.
+func RowPolicyDatabase(ref objectidentity.ID) string {
+	if ref.Schema.Defaulted {
+		return ""
+	}
+	return ref.Schema.Source
+}
+
+// ResolveRowPolicyRef rebuilds a captured reference under the identifier
+// rules of a comparison, so a database the source left out takes the target's
+// default rather than the one the source assumed. That is what joins an
+// unqualified declaration to the policy a read reported in the connection's
+// database.
+func ResolveRowPolicyRef(semantics identifier.Semantics, ref objectidentity.ID) objectidentity.ID {
+	return RowPolicyRefWith(semantics, RowPolicyDatabase(ref), ref.Parent.Source, ref.Name.Source)
+}
+
 // RowPolicyTable returns the identity of the table a row policy reference is
 // on.
 func RowPolicyTable(ref objectidentity.ID) objectidentity.ID {

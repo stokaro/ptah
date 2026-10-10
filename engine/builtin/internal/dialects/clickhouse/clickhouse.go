@@ -35,7 +35,9 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chresolve"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/defaultlit"
@@ -656,7 +658,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		r.w.WriteLine(strings.TrimSpace(node.SelectBody))
 		r.w.WriteLine(";")
 		r.w.WriteLine("")
-		return nil
+		return r.renderOwnedRowPolicies(node)
 	}
 
 	spec, err := r.resolveAndValidateTableEngine(node)
@@ -692,6 +694,29 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
+	return r.renderOwnedRowPolicies(node)
+}
+
+// renderOwnedRowPolicies writes the row policies a created table declares,
+// each as its owner's CREATE ROW POLICY after the CREATE TABLE. A policy names
+// its table, so it follows it; validation has already refused any other kind
+// of owned object.
+func (r *Renderer) renderOwnedRowPolicies(node *ast.CreateTableNode) error {
+	objects, err := node.OwnedObjects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		declared, ok := object.Value.(*chschema.DesiredRowPolicy)
+		if !ok {
+			return fmt.Errorf("%w: table %s owns %T, which ClickHouse does not create with a table", ptaherr.ErrUnsupportedFeature, node.Name, object.Value)
+		}
+		operation := &chast.RowPolicy{Database: chschema.RowPolicyDatabase(object.Ref), Table: object.Ref.Parent.Source,
+			Name: object.Ref.Name.Source, Change: *chdiff.NewRowPolicy(nil, declared)}
+		if err := r.renderOwnedExtension(nil, ast.StatementExtension, operation); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

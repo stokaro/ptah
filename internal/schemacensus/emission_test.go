@@ -198,6 +198,11 @@ func TestEmissionsOf_ReadsTheShapesTheRenderersWrite(t *testing.T) {
 			want:       []schemacensus.Emission{{Kind: "table", Name: "nodes"}},
 		},
 		{
+			name:       "a ClickHouse row policy",
+			statements: []string{"CREATE ROW POLICY `tenant_rows` ON `t` USING (tenant = 1) AS RESTRICTIVE TO `reader`;"},
+			want:       []schemacensus.Emission{{Kind: "row policy", Name: "tenant_rows"}},
+		},
+		{
 			name:       "a table and the constraint inside it",
 			statements: []string{"CREATE TABLE `t` (`s` VARCHAR(32), CONSTRAINT `t_s_uq` UNIQUE (`s`));"},
 			want: []schemacensus.Emission{

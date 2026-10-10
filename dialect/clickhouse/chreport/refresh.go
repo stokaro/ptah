@@ -2,7 +2,6 @@ package chreport
 
 import (
 	"context"
-	"fmt"
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
@@ -28,15 +27,5 @@ func (RefreshService) ReportValues(ctx context.Context, request schemaext.Report
 }
 
 func validateRefreshValue(value schemaext.Value, representation schemaext.Representation) error {
-	switch value := value.(type) {
-	case *chschema.DesiredRefresh:
-		if representation == schemaext.Desired {
-			return chschema.ValidateDesiredRefresh(value)
-		}
-	case *chschema.ObservedRefresh:
-		if representation == schemaext.Observed {
-			return chschema.ValidateObservedRefresh(value)
-		}
-	}
-	return fmt.Errorf("%w: ClickHouse refresh report has mismatched value %T for %q", schemaext.ErrInvalidValue, value, representation)
+	return validateRepresented(value, representation, "refresh", chschema.ValidateDesiredRefresh, chschema.ValidateObservedRefresh)
 }

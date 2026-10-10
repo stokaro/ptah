@@ -11,7 +11,10 @@ import (
 // BindCoverage resolves table claims with the same identifiers as table capture.
 // Comparison and reverse creation projection share this binding so ForParent
 // cannot discard a known claim when a connection supplies a default schema.
-// Explicit schemas and knowledge limits survive; collisions are refused.
+// Claims about table-owned feature objects are bound as [BindObjects] binds
+// the objects, and index claims are left to the caller, whose index namespace
+// decides their shape. Explicit schemas and knowledge limits survive;
+// collisions are refused.
 func BindCoverage(coverage schemaext.Coverage, target string, semantics identifier.Semantics) (schemaext.Coverage, error) {
 	if coverage.IsZero() {
 		return coverage, nil
@@ -19,7 +22,13 @@ func BindCoverage(coverage schemaext.Coverage, target string, semantics identifi
 	subjects := coverage.SubjectRecords()
 	for i, record := range subjects {
 		ref := record.Subject
+		if ref.Kind == objectidentity.KindIndex {
+			continue
+		}
 		if ref.Kind != objectidentity.KindTable {
+			// A claim about a table-owned feature object follows the
+			// object, which BindObjects binds the same way.
+			subjects[i].Subject = bindOwned(ref, target, semantics)
 			continue
 		}
 		if !ref.Catalog.Empty() || !ref.Parent.Empty() || ref.Signature != "" {

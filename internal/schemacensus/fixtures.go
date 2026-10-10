@@ -163,6 +163,8 @@ func Fixtures() []Fixture {
 		{Name: "view", Schema: viewFixture()},
 		{Name: "matview", Schema: matViewFixture()},
 		{Name: "matview-refresh", Schema: matViewRefreshFixture()},
+		{Name: "table-row-policy", Schema: tableRowPolicyFixture()},
+		{Name: "table-row-policy-all-except", Schema: tableRowPolicyAllExceptFixture()},
 		{Name: "function", Schema: functionFixture()},
 		{Name: "function-planner-properties", Schema: functionPlannerPropertiesFixture()},
 		{Name: "trigger", Schema: triggerFixture()},

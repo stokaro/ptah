@@ -180,6 +180,9 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		// The captured creation carries prepared storage facets alongside the
 		// common columns; the selected renderer owns their SQL spelling.
 		tableNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse, creation.Constraints)
+		// The table's row policies are created with it: the comparison leaves
+		// the children of a created table to the table's own transition.
+		tableNode.OwnedObjects = creation.OwnedObjects
 		result = append(result, tableNode)
 	}
 

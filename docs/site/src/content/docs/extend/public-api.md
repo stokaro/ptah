@@ -56,6 +56,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
+| `dialect/clickhouse/chprobe` | Server-normalized row policy filters. |
 | `dialect/clickhouse/chresolve` | Storage-setting resolution with retained intent and property origins. |
 | `dialect/clickhouse/chschema` | Desired and observed storage settings and row policies with versioned model codecs. |
 | `dialect/clickhouse/chsource` | Table and index property encoding and decoding that preserves setting intent. |

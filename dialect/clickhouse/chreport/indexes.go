@@ -59,15 +59,20 @@ func countValues(ctx context.Context, request schemaext.ReportingRequest, featur
 }
 
 func validateIndexValue(value schemaext.Value, representation schemaext.Representation) error {
-	switch value := value.(type) {
-	case *chschema.DesiredIndex:
-		if representation == schemaext.Desired {
-			return chschema.ValidateDesiredIndex(value)
-		}
-	case *chschema.ObservedIndex:
-		if representation == schemaext.Observed {
-			return chschema.ValidateObservedIndex(value)
-		}
+	return validateRepresented(value, representation, "index", chschema.ValidateDesiredIndex, chschema.ValidateObservedIndex)
+}
+
+// validateRepresented accepts a desired value only in the desired
+// representation and an observed value only in the observed one, each through
+// the model's own validation; feature names the values in errors.
+func validateRepresented[D, O schemaext.Value](value schemaext.Value, representation schemaext.Representation, feature string,
+	desired func(D) error, observed func(O) error,
+) error {
+	if typed, ok := value.(D); ok && representation == schemaext.Desired {
+		return desired(typed)
 	}
-	return fmt.Errorf("%w: ClickHouse index report has mismatched value %T for %q", schemaext.ErrInvalidValue, value, representation)
+	if typed, ok := value.(O); ok && representation == schemaext.Observed {
+		return observed(typed)
+	}
+	return fmt.Errorf("%w: ClickHouse %s report has mismatched value %T for %q", schemaext.ErrInvalidValue, feature, value, representation)
 }

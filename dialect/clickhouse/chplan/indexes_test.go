@@ -75,7 +75,8 @@ func TestIndexSettingsPlanReplacesTheIndexAroundColumnChanges(t *testing.T) {
 	result, err := must.Must(builtin.New()).PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Err(request), qt.IsNil)
-	c.Assert(result.Parents, qt.HasLen, 2)
+	// The table, index and row policy models each account for the table.
+	c.Assert(result.Parents, qt.HasLen, 3)
 	c.Assert(result.Changes, qt.HasLen, 1)
 	c.Assert(result.Changes[0].Steps, qt.HasLen, 2)
 	c.Assert(result.Contributions, qt.HasLen, 1)
