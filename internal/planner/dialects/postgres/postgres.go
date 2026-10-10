@@ -3872,6 +3872,10 @@ func (p *Planner) removeConstraints(
 		droppedForModify: make(map[constraintHostKey]struct{}),
 	}
 	replacedKeys := replacedPrimaryKeys(diff, state.semantics)
+	droppedTables := make(map[string]struct{}, len(diff.TablesRemoved))
+	for _, name := range diff.TablesRemoved.Names() {
+		droppedTables[state.semantics.QualifiedTableIdentityKey(name)] = struct{}{}
+	}
 
 	// A removed constraint is dropped from its exact owning table with a direct,
 	// table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>. The
@@ -3957,6 +3961,14 @@ func (p *Planner) removeConstraints(
 		if replaced, found := replacedKeys[state.semantics.QualifiedTableIdentityKey(info.TableName)]; found &&
 			replaced.Identity == key {
 			// Dropped ahead of the primary key that replaces it.
+			continue
+		}
+		if _, dropped := droppedTables[state.semantics.QualifiedTableIdentityKey(info.TableName)]; dropped &&
+			strings.EqualFold(info.Type, "PRIMARY KEY") {
+			// The DROP TABLE below removes the key with its table. Dropping the
+			// key first is refused by CockroachDB, which takes a primary key
+			// drop only beside the ADD of its replacement, and on v26 also by
+			// the schema_locked flag its tables carry (stokaro/ptah#4277).
 			continue
 		}
 		if _, dropped := released[key]; dropped {
