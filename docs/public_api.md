@@ -350,8 +350,9 @@ protocol schema instead of serializing Go AST structs.
 YDB changefeed changes contribute graph steps with table references and explicit
 drop-before-add dependencies. Surrounding target-planner phases participate in
 that order as batches; their object-level effects remain unspecified. Parent
-rebuilds still own their attached streams. This graph does not yet replace every
-target planner's internal ordering.
+rebuilds own their attached streams. A target planner orders the statements
+inside its own phases; the graph orders owner steps against those phases as
+whole batches.
 
 `core/renderer.Service` renders a complete batch with a context and explicit
 capabilities. `engine.New` freezes the caller's provider selection and rejects
@@ -1238,8 +1239,9 @@ exists and unknown otherwise. A server whose catalog table has no `type_full`
 column fails the read with an error that names the column.
 `chreport.Service` supplies the storage-settings count and omission label for
 formats that cannot retain facets.
-Planning changes to storage settings other than TTL remains part of
-[stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
+Planning changes to storage settings other than TTL is not supported; the
+owner refuses them. [stokaro/ptah#4355](https://github.com/stokaro/ptah/issues/4355)
+tracks that capability.
 
 A refreshable materialized view carries a `chschema.ObservedRefresh` read from
 its CREATE statement, for the views `system.view_refreshes` lists. Refresh
