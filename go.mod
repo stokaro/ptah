@@ -105,7 +105,7 @@ require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
-	github.com/go-extras/nolintguard v0.4.0 // indirect
+	github.com/go-extras/nolintguard v0.4.2 // indirect
 	github.com/go-extras/qtlint v1.15.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.8.0 // indirect
