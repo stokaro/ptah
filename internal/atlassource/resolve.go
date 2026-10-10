@@ -36,6 +36,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/migration/migrationfile"
+	"ptah.run/sourceformats"
 )
 
 // Runtime is what a resolution needs of the selected providers.
@@ -420,7 +421,7 @@ func (s Set) resolveRemoteSchema(ctx context.Context) (State, error) {
 func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (State, error) {
 	command := s.Sources[0].Command
 	command.Dialect = opts.Dialect
-	schema, err := schemasource.Run(ctx, opts.Runtime, command)
+	schema, err := schemasource.Run(ctx, sourceformats.New(opts.Runtime.YAML()), command)
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, s.Sources[0].Raw, err)
 	}

@@ -7,6 +7,8 @@ import (
 	"regexp"
 
 	"ptah.run/core/schemasource"
+	"ptah.run/engine/builtin"
+	"ptah.run/sourceformats"
 )
 
 // ExampleRun executes an external program that prints a desired schema to its
@@ -16,12 +18,19 @@ import (
 // binary re-executing itself as a fixture; in real use Args names an ORM's
 // schema exporter or any other loader that can print the schema.
 func ExampleRun() {
+	// The readers of each output format come from the caller: the bundled
+	// ones, reading YAML with the owners of the runtime the caller renders
+	// with.
+	runtime, err := builtin.Bundled()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	// The argv is executed directly, never through a shell, so each argument
 	// is one element and no quoting or expansion is applied. The first two
 	// environment entries select the fixture's behavior; GORACE keeps a
-	// race-instrumented run from sleeping at exit. A caller passes the runtime
-	// it renders with as the owners; noOwners selects none.
-	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
+	// race-instrumented run from sleeping at exit.
+	db, err := schemasource.Run(context.Background(), sourceformats.New(runtime.YAML()), schemasource.Command{
 		Args: []string{os.Args[0], "-test.run=TestHelperProcess"},
 		Env: []string{
 			"GO_WANT_HELPER_PROCESS=1",
@@ -54,7 +63,7 @@ func ExampleRun() {
 // database holds. The fixture is the test binary re-executing itself and
 // exiting successfully without output.
 func ExampleRun_emptyOutput() {
-	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners, schemasource.Command{
 		Args: []string{os.Args[0], "-test.run=TestHelperProcess"},
 		Env: []string{
 			"GO_WANT_HELPER_PROCESS=1",
@@ -79,7 +88,7 @@ func ExampleRun_emptyOutput() {
 // The same pre-spawn validation refuses a PWD override — Command.Dir is what
 // chooses the working directory — and any entry that is not KEY=VALUE.
 func ExampleRun_environment() {
-	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners, schemasource.Command{
 		Args: []string{"schema-exporter"},
 		Env:  []string{"PATH=/opt/tools/bin"},
 	})

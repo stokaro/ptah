@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/sourceformats"
 )
 
 const sqlServerDatabaseURL = "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable"
@@ -24,7 +25,7 @@ func TestCompare_UsesDatabaseURLDialectForExternalSQL(t *testing.T) {
 		Args: []string{"go", "run", "./testdata/sqlserver-schema-command"},
 	}
 
-	_, err := schemasource.Run(context.Background(), builtintest.Runtime(), command)
+	_, err := schemasource.Run(context.Background(), sourceformats.New(builtintest.Runtime().YAML()), command)
 	c.Assert(err, qt.ErrorMatches, `parse schema command "go" output: unsupported CREATE OR ALTER outside SQL Server dialect at position \d+`)
 
 	_, err = schemaops.Compare(t.Context(), schemaops.CompareOptions{Runtime: selectedRuntime(c),

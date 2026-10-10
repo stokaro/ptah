@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
+	"ptah.run/sourceformats"
 )
 
 // Owners selects the feature owners each source format reads.
@@ -335,7 +336,7 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if o.Owners == nil {
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
-	return schemasource.Run(ctx, o.Owners, command)
+	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML()), command)
 }
 
 func commandDisplay(command schemasource.Command) string {
