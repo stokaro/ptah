@@ -310,3 +310,47 @@ func TestYDBBinary_DevDatabaseOnAnotherServer(t *testing.T) {
 		})
 	}
 }
+
+// TestYDBBinary_ARehearsalRefusesAUserItsRealmCannotHold pins the baseline's
+// confinement on a dev realm of another server. The target holds a user the
+// other server does not, so recreating the target there would create a user
+// of the other server's whole database, which removing the realm leaves
+// behind. The rehearsal refuses before any statement runs, names the
+// statement, and the target is not changed.
+//
+// The line is shared, so another user or group left on it may be the first
+// statement refused; the assertion names the class rather than this user.
+func TestYDBBinary_ARehearsalRefusesAUserItsRealmCannotHold(t *testing.T) {
+	c := qt.New(t)
+	binary := buildBinary(c, c.Context())
+	for i, line := range ydbLines {
+		other := ydbLines[(i+1)%len(ydbLines)]
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			devURL := dbtarget.URL(t, other.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			const user = "ptahbaselineuser"
+			dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+			c.Assert(conn.Writer().ExecuteSQL(ctx, "CREATE USER "+user), qt.IsNil)
+			c.Cleanup(func() {
+				dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+				c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP USER IF EXISTS "+user), qt.IsNil)
+			})
+			entities := filepath.Join(c.TempDir(), "entities")
+			writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
+
+			refused, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
+				"--schemas", "ptah_ydb_devrealm", "--dev-url", devURL, "--auto-approve")
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(refused, qt.Matches, `(?s).*baseline statement \d+ \((CREATE|ALTER) (USER|GROUP) [^\n]*\) cannot be rehearsed: `+
+				`ydb rehearsal baseline refuses a (user|group) of the whole database because its effects cannot be confined to the dev database realm; `+
+				`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1.*`)
+			c.Assert(tableNames(readScoped(c, conn, []string{"ptah_ydb_devrealm"})), qt.HasLen, 0)
+			c.Assert(directoryNames(c, ctx, other), qt.Not(qt.Contains), ydburl.RealmDirectory)
+		})
+	}
+}

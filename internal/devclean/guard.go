@@ -115,10 +115,16 @@ func (g *ReplayGuard) WithServerRealmRemedy(remedy string) *ReplayGuard {
 // the replay database realm.
 func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	err := g.validate(stmt, g.realm)
-	if err == nil || g.remedy == "" {
-		return err
+	if err == nil {
+		return nil
 	}
-	if g.validate(stmt, ReplayRealmServer) != nil {
+	return g.withRemedy(stmt, err)
+}
+
+// withRemedy ends err, the refusal of stmt, with the guard's remedy when the
+// server realm would have accepted stmt.
+func (g *ReplayGuard) withRemedy(stmt string, err error) error {
+	if g.remedy == "" || g.validate(stmt, ReplayRealmServer) != nil {
 		return err
 	}
 	return fmt.Errorf("%w; %s", err, g.remedy)
@@ -297,9 +303,22 @@ func mutatesSQLiteRealm(first string) bool {
 }
 
 func unsafeReplayStatement(dialect, operation string) error {
-	return fmt.Errorf(
-		"%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
-		dialect,
-		operation,
-	)
+	return &unsafeStatementError{dialect: dialect, operation: operation}
+}
+
+// unsafeStatementError is the refusal of one statement: the dialect, and the
+// operation whose effects cannot be confined. The baseline guard words the
+// same refusal as its own; see [BaselineGuard.ValidateStatement].
+type unsafeStatementError struct {
+	dialect, operation string
+	baseline           bool
+}
+
+func (e *unsafeStatementError) Error() string {
+	if e.baseline {
+		return fmt.Sprintf("%s rehearsal baseline refuses %s because its effects cannot be confined to the dev database realm",
+			e.dialect, e.operation)
+	}
+	return fmt.Sprintf("%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
+		e.dialect, e.operation)
 }

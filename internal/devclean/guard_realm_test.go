@@ -38,6 +38,8 @@ var postgresServerWideStatements = []struct {
 	{name: "DROP OWNED", statement: `DROP OWNED BY app`},
 	{name: "REASSIGN OWNED", statement: `REASSIGN OWNED BY app TO reporter`},
 	{name: "COMMENT ON ROLE", statement: `COMMENT ON ROLE app IS 'the application role'`},
+	{name: "COMMENT ON EXTENSION", statement: `COMMENT ON EXTENSION pgcrypto IS 'hashing'`},
+	{name: "COMMENT ON SCHEMA", statement: `COMMENT ON SCHEMA app IS 'the application schema'`},
 }
 
 func postgresGuard(realm devclean.ReplayRealm) *devclean.ReplayGuard {
@@ -105,6 +107,9 @@ func TestReplayGuardServerRealm_PostgresFailurePath(t *testing.T) {
 		{name: "temporary table", statement: `CREATE TEMP TABLE scratch (id integer)`, wantErr: `.*rejects TEMP object .*`},
 		{name: "routine in a protected namespace", statement: `CREATE FUNCTION pg_catalog.add_one(i integer) RETURNS integer LANGUAGE sql AS $$ SELECT i + 1 $$`, wantErr: `.*rejects protected namespace "pg_catalog" mutation .*`},
 		{name: "privilege on a protected schema", statement: `GRANT USAGE ON SCHEMA pg_catalog TO app`, wantErr: `.*rejects protected namespace "pg_catalog" mutation .*`},
+		{name: "comment on a protected schema", statement: `COMMENT ON SCHEMA pg_catalog IS 'x'`, wantErr: `.*rejects protected namespace "pg_catalog" mutation .*`},
+		{name: "comment on a language", statement: `COMMENT ON LANGUAGE plpgsql IS 'x'`, wantErr: `.*rejects COMMENT ON global metadata .*`},
+		{name: "comment on a cast", statement: `COMMENT ON CAST (int AS text) IS 'x'`, wantErr: `.*rejects COMMENT ON global metadata .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -511,6 +511,11 @@ func recreateCurrentSchema(
 	}
 	devCurrent = baseline.WithoutEnvironment(devCurrent, catalogExtensionNames(current))
 	devCurrent = baseline.WithoutStartingPoint(devCurrent, current, defaultSchemaOf(devConn.Info()))
+	controlComments, err := extensionControlComments(ctx, devConn, current)
+	if err != nil {
+		return err
+	}
+	omitControlComments(target, devCurrent.Extensions, controlComments)
 	info := devConn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil, runtime)
 	if err != nil {
@@ -536,16 +541,49 @@ func recreateCurrentSchema(
 	return nameColumnSequencesAsTarget(ctx, devConn, current)
 }
 
-// Environment observations allow a no-op comparison, not writes beyond the
-// dev realm. Validate the whole baseline before any of its statements execute.
+// guardRehearsalBaseline holds the whole baseline to the dev database's realm
+// before any of its statements executes; see [devclean.BaselineGuard].
+//
+// The read the baseline is compared against includes environment the dev
+// database observes outside its realm, so that an equal environment plans
+// nothing. That grants no permission to write it, and neither does deriving a
+// statement from the target.
 func guardRehearsalBaseline(statements []string, info catalog.ServerInfo) error {
-	guard := devclean.NewDevReplayGuard(info)
+	guard := devclean.NewBaselineGuard(info)
 	for i, statement := range statements {
 		if err := guard.ValidateStatement(statement); err != nil {
-			return fmt.Errorf("baseline statement %d cannot be rehearsed: %w", i+1, err)
+			return fmt.Errorf("baseline statement %d (%s) cannot be rehearsed: %w", i+1, statementExcerpt(statement, info.Dialect), err)
 		}
 	}
 	return nil
+}
+
+// statementExcerpt is the first line of a statement that is not a comment,
+// cut to a length an error message can carry, so a refusal names what it
+// refused. A YDB `--!` line is a translation setting rather than a comment,
+// and the guard refuses it, so it is the excerpt. A statement holding only
+// comments is excerpted by its first line.
+func statementExcerpt(statement, dialect string) string {
+	const limit = 80
+	excerpt := ""
+	for line := range strings.SplitSeq(statement, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if excerpt == "" {
+			excerpt = line
+		}
+		setting := platform.NormalizeDialect(dialect) == platform.YDB && strings.HasPrefix(line, "--!")
+		if !strings.HasPrefix(line, "--") || setting {
+			excerpt = line
+			break
+		}
+	}
+	if runes := []rune(excerpt); len(runes) > limit {
+		return string(runes[:limit]) + "..."
+	}
+	return excerpt
 }
 
 // nameColumnSequencesAsTarget renames each sequence a dev column owns to the
