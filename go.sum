@@ -186,8 +186,8 @@ github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxv
 github.com/ghodss/yaml v1.0.0/go.mod h1:4dBDuWmgqj2HViK6kFavaiC9ZROes6MMH2rRYeMEF04=
 github.com/go-extras/go-kit v1.2.0 h1:Q0v8TIq8uEqTfAiE6VstKUhaiVrpiRLssQZA0qFE62o=
 github.com/go-extras/go-kit v1.2.0/go.mod h1:Fy+eKjteQ6nP6R3raMRXG9SuXQ67egS75OIMn0LgLUk=
-github.com/go-extras/nolintguard v0.4.0 h1:k8L8PgFG7toUmPhh1t3lXurLZVdZ47jQnXnNQeCp9LY=
-github.com/go-extras/nolintguard v0.4.0/go.mod h1:odEr8IYy0Rg9irxdkrRSaQY2aM/H0CGcNvGoN35wc2g=
+github.com/go-extras/nolintguard v0.4.2 h1:Y0+Y5PYuEAGYCdcmQesWTCvLXqVSbINJDy8+SoZD50I=
+github.com/go-extras/nolintguard v0.4.2/go.mod h1:nRqJ7rc4y9j7OXHetTlCbUwYZqMVSsohvRnz8v4Had4=
 github.com/go-extras/qtlint v1.15.0 h1:r2AqBqVilr1uONzv7oE1yPEhOMU5ul3e6eQwji41rWA=
 github.com/go-extras/qtlint v1.15.0/go.mod h1:fR+NpGY2oX5m5dEnkqUUih1GNYLEDJX8WVowPcKM3Cs=
 github.com/go-faster/city v1.0.1 h1:4WAxSZ3V2Ws4QRDrscLEDcibJY8uf41H6AhXDrNDcGw=
