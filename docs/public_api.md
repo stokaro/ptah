@@ -105,6 +105,9 @@ These packages are intended for application and tool embedders:
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/feature/pgpolicy`
+- `ptah.run/feature/pgpolicy/policycompare`
+- `ptah.run/feature/pgpolicy/policyconvert`
+- `ptah.run/feature/pgpolicy/policyprobe`
 - `ptah.run/feature/pgpolicy/policyrender`
 - `ptah.run/migration/datadiff`
 - `ptah.run/migration/dbtest`
@@ -1513,11 +1516,41 @@ CockroachDB holds policies and not their comments.
 `feature/pgpolicy/policyrender` renders the payloads for the PostgreSQL
 family. CREATE POLICY writes only what the declaration names, so PostgreSQL
 applies its own defaults; a change drops the policy and creates it again; and
-ENABLE precedes FORCE. The TO list is written in the canonical role order.
-`LowerTableFacets` turns a new table's declared switches into the statements
-that follow its CREATE TABLE. The builtin runtime registers the change and
-operation codecs and composes the handlers on every PostgreSQL-family target.
-No source, comparison or planner produces these payloads.
+ENABLE precedes FORCE. The TO list is written in the canonical role order, and
+`CreateStatement` is the one place the statement is written. `LowerTableFacets`
+turns a new table's declared switches into the statements that follow its
+CREATE TABLE. The builtin runtime registers the change and operation codecs and
+composes the handlers on every PostgreSQL-family target. No source or planner
+produces these payloads.
+
+A declaration can carry a connected server's spelling of itself,
+`DesiredPolicy.Normalized`: the role list and clauses as `pg_policy` would
+report them. PostgreSQL stores a clause as a parse tree whose casts depend on
+the column types, and it records the role CURRENT_USER and its siblings
+resolved to, so the declared text alone differs from the catalog for a policy
+nobody changed. `ComparedRoles` is the role list a comparison and the access
+assessment hold against an observation. `DesiredPolicy.Observed` and
+`ObservedPolicy.Desired` project between the representations; a policy TO a
+role keyword has no projection until a server resolves the keyword.
+
+`feature/pgpolicy/policycompare` compares policies by schema, table and name.
+`PolicyService` resolves PostgreSQL's defaults (an omitted FOR is ALL, an
+omitted TO is PUBLIC, an omitted AS is permissive), compares the role list as
+a set, and compares the clauses through the server's spelling where a probe
+attached one and through a textual fold otherwise. `TableStateService` compares
+ENABLE and FORCE on surviving tables; where a source describes the switches, a
+table without the facet has both off. Neither changes what a source could not
+describe: an observed policy or switch it could not describe is adopted into
+the effective declaration, and unread current state is undecided. A policy or
+switch on a table the plan creates or drops belongs to the table's lifecycle.
+
+`feature/pgpolicy/policyconvert` projects both models between representations.
+`feature/pgpolicy/policyprobe` attaches the spelling: inside a rolled-back
+transaction it copies the policy's table into `pg_temp` with `LIKE`, creates
+the declared policy on the copy and reads `pg_policy` back. A probe the server
+refuses, in a read-only transaction, for a role without SELECT on the table or
+for a role that does not exist yet, leaves the declaration unanswered and is
+not an error. The bundled runtime does not select these services yet.
 
 `dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
 0020. A policy is one feature object of `SecurityPolicyKind`, identified by its

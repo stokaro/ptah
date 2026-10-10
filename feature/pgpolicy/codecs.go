@@ -8,20 +8,24 @@ import (
 )
 
 const (
-	commandDefinition     = `{"enum":["ALL","SELECT","INSERT","UPDATE","DELETE"]}`
-	compositionDefinition = `{"enum":["permissive","restrictive"]}`
-	expressionDefinition  = `{"type":"string","minLength":1}`
+	commandDefinition       = `{"enum":["ALL","SELECT","INSERT","UPDATE","DELETE"]}`
+	compositionDefinition   = `{"enum":["permissive","restrictive"]}`
+	expressionDefinition    = `{"type":"string","minLength":1}`
+	observedRolesDefinition = `{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"minProperties":1,"maxProperties":1,"properties":{` +
+		`"keyword":{"enum":["PUBLIC"]},"name":{"type":"string","minLength":1}}}}`
+	normalizedDefinition = `{"type":"object","required":["roles"],"additionalProperties":false,"properties":{` +
+		`"roles":` + observedRolesDefinition + `,"using":` + expressionDefinition + `,"with_check":` + expressionDefinition + `}}`
 
 	desiredPolicyDefinition = `{"type":"object","additionalProperties":false,"properties":{` +
 		`"command":` + commandDefinition + `,` +
 		`"roles":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"minProperties":1,"maxProperties":1,"properties":{` +
 		`"keyword":{"enum":["PUBLIC","CURRENT_ROLE","CURRENT_USER","SESSION_USER"]},"name":{"type":"string","minLength":1}}}},` +
 		`"using":` + expressionDefinition + `,"with_check":` + expressionDefinition + `,` +
-		`"composition":` + compositionDefinition + `,"comment":{"type":"string"},"struct_name":{"type":"string"}}}`
+		`"composition":` + compositionDefinition + `,"comment":{"type":"string"},"struct_name":{"type":"string"},` +
+		`"normalized":` + normalizedDefinition + `}}`
 	observedPolicyDefinition = `{"type":"object","required":["command","roles","composition"],"additionalProperties":false,"properties":{` +
 		`"command":` + commandDefinition + `,` +
-		`"roles":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"minProperties":1,"maxProperties":1,"properties":{` +
-		`"keyword":{"enum":["PUBLIC"]},"name":{"type":"string","minLength":1}}}},` +
+		`"roles":` + observedRolesDefinition + `,` +
 		`"using":` + expressionDefinition + `,"with_check":` + expressionDefinition + `,` +
 		`"composition":` + compositionDefinition + `,"comment":{"type":"string"}}}`
 	desiredTableStateDefinition = `{"type":"object","required":["enabled","forced"],"additionalProperties":false,"properties":{` +
@@ -114,6 +118,9 @@ func identity[T any](value T) T { return value }
 func canonicalDesiredPolicy(value *DesiredPolicy) *DesiredPolicy {
 	canonical := value.Copy()
 	canonical.Roles = sortedRoles(canonical.Roles)
+	if canonical.Normalized != nil {
+		canonical.Normalized.Roles = sortedRoles(canonical.Normalized.Roles)
+	}
 	return canonical
 }
 
@@ -124,8 +131,20 @@ func canonicalObservedPolicy(value *ObservedPolicy) *ObservedPolicy {
 }
 
 func desiredPolicyShape(data json.RawMessage) error {
-	return policyShape(data, schemaext.ObjectShape{Name: "policy",
-		Allowed: []string{"command", "roles", "using", "with_check", "composition", "comment", "struct_name"}})
+	if err := policyShape(data, schemaext.ObjectShape{Name: "policy",
+		Allowed: []string{"command", "roles", "using", "with_check", "composition", "comment", "struct_name", "normalized"}}); err != nil {
+		return err
+	}
+	fields, err := schemaext.DecodeJSON[map[string]json.RawMessage](data)
+	if err != nil {
+		return err
+	}
+	normalized, found := fields["normalized"]
+	if !found {
+		return nil
+	}
+	return policyShape(normalized, schemaext.ObjectShape{Name: "normalized policy",
+		Allowed: []string{"roles", "using", "with_check"}, Required: []string{"roles"}})
 }
 
 func observedPolicyShape(data json.RawMessage) error {

@@ -117,15 +117,19 @@ func renderPolicy(_ renderer.ExtensionContext, value *pgpolicy.PolicyOperation) 
 		statements = append(statements, "DROP POLICY "+name+" ON "+table+";")
 	}
 	if value.Change.After != nil {
-		statements = append(statements, createStatement(name, table, value.Change.After))
+		statements = append(statements, CreateStatement(name, table, value.Change.After))
 	}
 	return statements, nil
 }
 
-// createStatement writes CREATE POLICY as PostgreSQL documents it. What the
+// CreateStatement writes CREATE POLICY as PostgreSQL documents it, for the
+// policy name and the table name given as rendered identifiers. What the
 // declaration left out is left out of the statement, so the server applies its
-// own default: PERMISSIVE, FOR ALL and TO PUBLIC.
-func createStatement(name, table string, policy *pgpolicy.DesiredPolicy) string {
+// own default: PERMISSIVE, FOR ALL and TO PUBLIC. It writes the declared roles
+// and clauses, never a server's normalized spelling of them, and the TO list in
+// canonical order. A probe that asks a server to normalize a declaration sends
+// this statement, so the server answers for the statement a plan would run.
+func CreateStatement(name, table string, policy *pgpolicy.DesiredPolicy) string {
 	head := []string{"CREATE POLICY", name, "ON", table}
 	if policy.Composition == pgpolicy.Restrictive {
 		head = append(head, "AS RESTRICTIVE")

@@ -119,6 +119,9 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `feature/pgpolicy` | PostgreSQL row-security policy and table-state models and codecs. |
+| `feature/pgpolicy/policycompare` | Comparison of PostgreSQL row-security policies and table switches. |
+| `feature/pgpolicy/policyconvert` | Projection of PostgreSQL row-security values between representations. |
+| `feature/pgpolicy/policyprobe` | A connected server's spelling of declared PostgreSQL row-security policies. |
 | `feature/pgpolicy/policyrender` | Rendering of the PostgreSQL row-security operations. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |

@@ -1174,6 +1174,24 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgpolicy-policycompare",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpolicy/policycompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpolicy-policyconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpolicy/policyconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpolicy-policyprobe",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpolicy/policyprobe",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgpolicy-policyrender",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgpolicy/policyrender",
