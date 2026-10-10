@@ -49,7 +49,7 @@ func TestServer_CodesAFailedCallForAProgramAndForAModel(t *testing.T) {
 	diagnostic := diagnosticOf(c, result)
 	c.Assert(diagnostic["code"], qt.Equals, "invalid_request")
 	c.Assert(diagnostic["actor"], qt.Equals, "caller")
-	c.Assert(diagnostic["retryable"], qt.Equals, false)
+	c.Assert(diagnostic["retryable"], qt.IsFalse)
 	c.Assert(diagnostic["message"], qt.Equals, `unknown dialect "orackle"`)
 	c.Assert(textOf(c, result), qt.Equals, `invalid_request: unknown dialect "orackle"`)
 }
@@ -69,7 +69,7 @@ func TestServer_CodesADatabaseItCannotReachAsRetryable(t *testing.T) {
 	diagnostic := diagnosticOf(c, result)
 	c.Assert(diagnostic["code"], qt.Equals, "database_unreachable")
 	c.Assert(diagnostic["actor"], qt.Equals, "environment")
-	c.Assert(diagnostic["retryable"], qt.Equals, true)
+	c.Assert(diagnostic["retryable"], qt.IsTrue)
 }
 
 // TestServer_CodesAReadThePolicyRefusesAsTheOperatorsToClear is the same call
@@ -85,7 +85,7 @@ func TestServer_CodesAReadThePolicyRefusesAsTheOperatorsToClear(t *testing.T) {
 	diagnostic := diagnosticOf(c, result)
 	c.Assert(diagnostic["code"], qt.Equals, "capability_denied")
 	c.Assert(diagnostic["actor"], qt.Equals, "operator")
-	c.Assert(diagnostic["retryable"], qt.Equals, false)
+	c.Assert(diagnostic["retryable"], qt.IsFalse)
 }
 
 // unreachableTargetConfig serves one database the operator named, at an address
@@ -145,7 +145,7 @@ func TestServer_CodesADeniedCapabilityAndNamesTheRemedy(t *testing.T) {
 	diagnostic := diagnosticOf(c, result)
 	c.Assert(diagnostic["code"], qt.Equals, "capability_denied")
 	c.Assert(diagnostic["actor"], qt.Equals, "operator")
-	c.Assert(diagnostic["retryable"], qt.Equals, false)
+	c.Assert(diagnostic["retryable"], qt.IsFalse)
 	c.Assert(diagnostic["hint"], qt.Contains, "describe_session reports what this session may do")
 }
 
@@ -180,7 +180,7 @@ func TestServer_AnswersAGateFailureWithBothTheErrorAndTheAnswer(t *testing.T) {
 	c.Assert(result.StructuredContent, qt.IsNotNil,
 		qt.Commentf("a rolled-back apply must still report what it found"))
 	answer := errorAnswer(c, result)
-	c.Assert(answer["rolled_back"], qt.Equals, true)
+	c.Assert(answer["rolled_back"], qt.IsTrue)
 	introduced, _ := answer["introduced"].([]any)
 	c.Assert(introduced, qt.HasLen, 1)
 	first, _ := introduced[0].(map[string]any)

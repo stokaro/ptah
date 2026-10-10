@@ -49,7 +49,7 @@ func TestSharedSession_ASecondConnectionSpendsTheFirstConnectionsPreviewToken(t 
 	applied := callTool(c, second, "apply_patch", map[string]any{
 		"preview_token": minted["preview_token"], "patch_id": minted["patch_id"]})
 
-	c.Assert(applied["rolled_back"], qt.Equals, false,
+	c.Assert(applied["rolled_back"], qt.IsFalse,
 		qt.Commentf("the second connection could not spend the first connection's token"))
 	after := callTool(c, second, "read_artifact", map[string]any{"artifact": "migrations"})
 	c.Assert(artifactPaths(c, after), qt.Contains, "17000001_a.up.sql")
@@ -75,7 +75,7 @@ func TestSharedSession_ASecondServerOverOneSessionSpendsTheSameToken(t *testing.
 	applied := callTool(c, second, "apply_patch", map[string]any{
 		"preview_token": minted["preview_token"], "patch_id": minted["patch_id"]})
 
-	c.Assert(applied["rolled_back"], qt.Equals, false,
+	c.Assert(applied["rolled_back"], qt.IsFalse,
 		qt.Commentf("a second server over the same session refused the token, so the scope is the server"))
 }
 

@@ -39,7 +39,7 @@ func TestSchemaPlanFormatRendersTheTemplate(t *testing.T) {
 	var payload map[string]any
 	c.Assert(json.Unmarshal([]byte(out), &payload), qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(payload["Dialect"], qt.Equals, "sqlite")
-	c.Assert(payload["Destructive"], qt.Equals, false)
+	c.Assert(payload["Destructive"], qt.IsFalse)
 	c.Assert(payload["From"], qt.Contains, "sha256:")
 	c.Assert(payload["To"], qt.Contains, "sha256:")
 	changes, ok := payload["Changes"].([]any)

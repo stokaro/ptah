@@ -505,7 +505,7 @@ func assertAtlasSumOK(c *qt.C, dir, sumFile string) {
 	c.Assert(filepath.Base(sumFile), qt.Equals, atlascompat.AtlasSumFileName)
 	result, err := atlascompat.VerifySumDir(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.OK(), qt.Equals, true)
+	c.Assert(result.OK(), qt.IsTrue)
 }
 
 // TestImportLiquibaseSerializedChangelogs is the destination half of

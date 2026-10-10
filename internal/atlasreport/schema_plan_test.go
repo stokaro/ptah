@@ -45,7 +45,7 @@ func TestWriteSchemaPlanRendersTheDocumentedPayload(t *testing.T) {
 	c.Assert(payload["Dialect"], qt.Equals, "postgres")
 	c.Assert(payload["From"], qt.Equals, "sha256:aa")
 	c.Assert(payload["To"], qt.Equals, "sha256:bb")
-	c.Assert(payload["Destructive"], qt.Equals, true)
+	c.Assert(payload["Destructive"], qt.IsTrue)
 	c.Assert(payload["Exclude"], qt.DeepEquals, []any{"audit_*"})
 	c.Assert(payload["MigrationBody"], qt.Contains, "-- atlas:txmode none")
 

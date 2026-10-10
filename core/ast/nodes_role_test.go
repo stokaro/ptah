@@ -14,13 +14,13 @@ func TestCreateRoleNode(t *testing.T) {
 		role := ast.NewCreateRole("test_role")
 
 		c.Assert(role.Name, qt.Equals, "test_role")
-		c.Assert(role.Login, qt.Equals, false)
+		c.Assert(role.Login, qt.IsFalse)
 		c.Assert(role.Password, qt.Equals, "")
-		c.Assert(role.Superuser, qt.Equals, false)
-		c.Assert(role.CreateDB, qt.Equals, false)
-		c.Assert(role.CreateRole, qt.Equals, false)
-		c.Assert(role.Inherit, qt.Equals, true) // Default to true
-		c.Assert(role.Replication, qt.Equals, false)
+		c.Assert(role.Superuser, qt.IsFalse)
+		c.Assert(role.CreateDB, qt.IsFalse)
+		c.Assert(role.CreateRole, qt.IsFalse)
+		c.Assert(role.Inherit, qt.IsTrue) // Default to true
+		c.Assert(role.Replication, qt.IsFalse)
 		c.Assert(role.Comment, qt.Equals, "")
 	})
 
@@ -37,13 +37,13 @@ func TestCreateRoleNode(t *testing.T) {
 			SetComment("Application user role")
 
 		c.Assert(role.Name, qt.Equals, "app_user")
-		c.Assert(role.Login, qt.Equals, true)
+		c.Assert(role.Login, qt.IsTrue)
 		c.Assert(role.Password, qt.Equals, "encrypted_password")
-		c.Assert(role.Superuser, qt.Equals, true)
-		c.Assert(role.CreateDB, qt.Equals, true)
-		c.Assert(role.CreateRole, qt.Equals, true)
-		c.Assert(role.Inherit, qt.Equals, false)
-		c.Assert(role.Replication, qt.Equals, true)
+		c.Assert(role.Superuser, qt.IsTrue)
+		c.Assert(role.CreateDB, qt.IsTrue)
+		c.Assert(role.CreateRole, qt.IsTrue)
+		c.Assert(role.Inherit, qt.IsFalse)
+		c.Assert(role.Replication, qt.IsTrue)
 		c.Assert(role.Comment, qt.Equals, "Application user role")
 	})
 
@@ -76,7 +76,7 @@ func TestDropRoleNode(t *testing.T) {
 		dropRole := ast.NewDropRole("test_role")
 
 		c.Assert(dropRole.Name, qt.Equals, "test_role")
-		c.Assert(dropRole.IfExists, qt.Equals, false)
+		c.Assert(dropRole.IfExists, qt.IsFalse)
 		c.Assert(dropRole.Comment, qt.Equals, "")
 	})
 
@@ -87,7 +87,7 @@ func TestDropRoleNode(t *testing.T) {
 			SetComment("Remove unused role")
 
 		c.Assert(dropRole.Name, qt.Equals, "old_role")
-		c.Assert(dropRole.IfExists, qt.Equals, true)
+		c.Assert(dropRole.IfExists, qt.IsTrue)
 		c.Assert(dropRole.Comment, qt.Equals, "Remove unused role")
 	})
 
@@ -253,7 +253,7 @@ func TestRoleOperations(t *testing.T) {
 		op := ast.NewSetLoginOperation(true)
 
 		c.Assert(op.GetOperationType(), qt.Equals, "SET_LOGIN")
-		c.Assert(op.Login, qt.Equals, true)
+		c.Assert(op.Login, qt.IsTrue)
 	})
 
 	t.Run("SetSuperuserOperation", func(t *testing.T) {
@@ -261,7 +261,7 @@ func TestRoleOperations(t *testing.T) {
 		op := ast.NewSetSuperuserOperation(true)
 
 		c.Assert(op.GetOperationType(), qt.Equals, "SET_SUPERUSER")
-		c.Assert(op.Superuser, qt.Equals, true)
+		c.Assert(op.Superuser, qt.IsTrue)
 	})
 
 	t.Run("SetCreateDBOperation", func(t *testing.T) {
@@ -269,7 +269,7 @@ func TestRoleOperations(t *testing.T) {
 		op := ast.NewSetCreateDBOperation(true)
 
 		c.Assert(op.GetOperationType(), qt.Equals, "SET_CREATEDB")
-		c.Assert(op.CreateDB, qt.Equals, true)
+		c.Assert(op.CreateDB, qt.IsTrue)
 	})
 
 	t.Run("SetCreateRoleOperation", func(t *testing.T) {
@@ -277,7 +277,7 @@ func TestRoleOperations(t *testing.T) {
 		op := ast.NewSetCreateRoleOperation(true)
 
 		c.Assert(op.GetOperationType(), qt.Equals, "SET_CREATEROLE")
-		c.Assert(op.CreateRole, qt.Equals, true)
+		c.Assert(op.CreateRole, qt.IsTrue)
 	})
 
 	t.Run("SetInheritOperation", func(t *testing.T) {
@@ -285,7 +285,7 @@ func TestRoleOperations(t *testing.T) {
 		op := ast.NewSetInheritOperation(false)
 
 		c.Assert(op.GetOperationType(), qt.Equals, "SET_INHERIT")
-		c.Assert(op.Inherit, qt.Equals, false)
+		c.Assert(op.Inherit, qt.IsFalse)
 	})
 
 	t.Run("SetReplicationOperation", func(t *testing.T) {
@@ -293,6 +293,6 @@ func TestRoleOperations(t *testing.T) {
 		op := ast.NewSetReplicationOperation(true)
 
 		c.Assert(op.GetOperationType(), qt.Equals, "SET_REPLICATION")
-		c.Assert(op.Replication, qt.Equals, true)
+		c.Assert(op.Replication, qt.IsTrue)
 	})
 }

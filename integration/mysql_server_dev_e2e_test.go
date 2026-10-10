@@ -125,8 +125,8 @@ func TestCompatMigrateVerbsReplayOnADevServerE2E(t *testing.T) {
 			c.Assert(planned, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+server.names["third"]+"`")
 			c.Assert(planned, qt.Contains, "DROP DATABASE `"+server.names["second"]+"`")
 			c.Assert(readMigrationNamed(c, fresh, "replayed"), qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+server.names["third"]+"`")
-			c.Assert(server.exists(c, "app"), qt.Equals, false)
-			c.Assert(server.exists(c, "second"), qt.Equals, false)
+			c.Assert(server.exists(c, "app"), qt.IsFalse)
+			c.Assert(server.exists(c, "second"), qt.IsFalse)
 		})
 	}
 }
@@ -178,8 +178,8 @@ func TestCompatMigrateVerbsRefuseADevServerThatIsNotCleanE2E(t *testing.T) {
 
 				c.Assert(err, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(fmt.Sprintf(test.wantErr, server.names["other"]))+`.*`,
 					qt.Commentf("%s", out))
-				c.Assert(server.exists(c, "other"), qt.Equals, true)
-				c.Assert(server.exists(c, "app"), qt.Equals, false)
+				c.Assert(server.exists(c, "other"), qt.IsTrue)
+				c.Assert(server.exists(c, "app"), qt.IsFalse)
 			})
 		}
 	}
@@ -206,8 +206,8 @@ func TestCompatMigrateDiffRefusesADevServerThatIsTheDesiredServerE2E(t *testing.
 			c.Assert(err, qt.ErrorMatches,
 				`(?s).*--to database must differ from --dev-url because the dev database is reset during planning.*`,
 				qt.Commentf("%s", out))
-			c.Assert(desired.exists(c, "want"), qt.Equals, true)
-			c.Assert(dev.exists(c, "app"), qt.Equals, false)
+			c.Assert(desired.exists(c, "want"), qt.IsTrue)
+			c.Assert(dev.exists(c, "app"), qt.IsFalse)
 		})
 	}
 }
@@ -251,7 +251,7 @@ func TestCompatMigrateValidateRefusesAUserOnADevServerE2E(t *testing.T) {
 			out, err := runCompatVerb("migrate", "validate", "--dir", "file://"+dir, "--dev-url", server.url)
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*migration replay rejects CREATE USER.*`, qt.Commentf("%s", out))
-			c.Assert(server.exists(c, "app"), qt.Equals, false)
+			c.Assert(server.exists(c, "app"), qt.IsFalse)
 		})
 	}
 }

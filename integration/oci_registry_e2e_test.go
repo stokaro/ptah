@@ -164,7 +164,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("lint output:\n%s", lintOutput))
-	c.Assert(readStatusField(c, lintOutput, "failed"), qt.Equals, false)
+	c.Assert(readStatusField(c, lintOutput, "failed"), qt.IsFalse)
 	standardLintReports := standardOCIReferrers(
 		c,
 		ctx,
@@ -476,7 +476,7 @@ func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("schema plan output:\n%s", planOutput))
-	c.Assert(readStatusField(c, planOutput, "destructive"), qt.Equals, false)
+	c.Assert(readStatusField(c, planOutput, "destructive"), qt.IsFalse)
 
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: true})
 	c.Assert(err, qt.IsNil)

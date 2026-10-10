@@ -76,7 +76,7 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	c.Assert(readStatusField(c, output, "current_version"), qt.Equals, float64(20260719010000))
 	c.Assert(readStatusField(c, output, "applied_migrations"), qt.DeepEquals, []any{float64(20260719010000)})
 	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{float64(20260719010101)})
-	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, true)
+	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.IsTrue)
 
 	applyStarted := time.Now()
 	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "up", "--env", "local", "--verify-sum")
@@ -93,7 +93,7 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 		float64(20260719010101),
 	})
 	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, make([]any, 0))
-	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, false)
+	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.IsFalse)
 
 	verifyAtlasProjectConfigDatabaseState(c, ctx, testDBURL, applyStarted, applyFinished)
 }

@@ -79,7 +79,7 @@ func TestRenderColumnMappings(t *testing.T) {
 	c.Assert(status["type"], qt.Equals, "string")
 	// A nullable enum must list null as an allowed value under OpenAPI 3.0.
 	c.Assert(status["enum"], qt.DeepEquals, []any{"active", "retired", nil})
-	c.Assert(status["nullable"], qt.Equals, true)
+	c.Assert(status["nullable"], qt.IsTrue)
 	c.Assert(contains(authors["required"], "status"), qt.IsFalse)
 
 	books := schemas["books"].(map[string]any)
@@ -87,7 +87,7 @@ func TestRenderColumnMappings(t *testing.T) {
 	c.Assert(bookProps["id"].(map[string]any)["format"], qt.Equals, "int64")
 	c.Assert(bookProps["price"].(map[string]any)["type"], qt.Equals, "number")
 	c.Assert(bookProps["published_at"].(map[string]any)["format"], qt.Equals, "date-time")
-	c.Assert(bookProps["published_at"].(map[string]any)["nullable"], qt.Equals, true)
+	c.Assert(bookProps["published_at"].(map[string]any)["nullable"], qt.IsTrue)
 	c.Assert(bookProps["in_print"].(map[string]any)["type"], qt.Equals, "boolean")
 }
 

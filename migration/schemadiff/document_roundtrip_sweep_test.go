@@ -364,7 +364,7 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 
 			parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 
-			c.Assert(row.count(parsed) > 0, qt.Equals, true,
+			c.Assert(row.count(parsed) > 0, qt.IsTrue,
 				qt.Commentf("%s did not survive the document Ptah itself wrote", row.field))
 		})
 	}

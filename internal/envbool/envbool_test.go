@@ -145,7 +145,7 @@ func TestResolveRefusesEveryInvalidValue(t *testing.T) {
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantMessage)
-			c.Assert(got, qt.Equals, false)
+			c.Assert(got, qt.IsFalse)
 		})
 	}
 }

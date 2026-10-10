@@ -35,8 +35,8 @@ func TestSchemaCleanFormatRendersJSONWithRedactedURL(t *testing.T) {
 	c.Assert(gotURL["Host"], qt.Equals, "db.sqlite")
 	c.Assert(gotURL["RawQuery"], qt.Equals, "password=xxxxx&token=xxxxx")
 	c.Assert(gotURL["Schema"], qt.Equals, "main")
-	c.Assert(got["DryRun"], qt.Equals, true)
-	c.Assert(got["Applied"], qt.Equals, false)
+	c.Assert(got["DryRun"], qt.IsTrue)
+	c.Assert(got["Applied"], qt.IsFalse)
 	c.Assert(got["Changes"].([]any)[0].(map[string]any)["Cmd"], qt.Equals, `DROP TABLE IF EXISTS "users"`)
 }
 

@@ -536,17 +536,17 @@ func TestForServerVersionResultReportsFallback(t *testing.T) {
 	c := qt.New(t)
 
 	caps, versionSpecific := capability.ForServerVersionResult("mysql", "8.0.17")
-	c.Assert(versionSpecific, qt.Equals, false)
-	c.Assert(caps.Has(capability.DropCheckClause), qt.Equals, true)
-	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.Equals, false)
+	c.Assert(versionSpecific, qt.IsFalse)
+	c.Assert(caps.Has(capability.DropCheckClause), qt.IsTrue)
+	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.IsFalse)
 
 	caps, versionSpecific = capability.ForServerVersionResult("mysql", "who knows")
-	c.Assert(versionSpecific, qt.Equals, false)
-	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.Equals, true)
+	c.Assert(versionSpecific, qt.IsFalse)
+	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.IsTrue)
 
 	caps, versionSpecific = capability.ForServerVersionResult("mariadb", "MariaDB something")
-	c.Assert(versionSpecific, qt.Equals, false)
-	c.Assert(caps.Has(capability.DropConstraintIfExists), qt.Equals, true)
+	c.Assert(versionSpecific, qt.IsFalse)
+	c.Assert(caps.Has(capability.DropConstraintIfExists), qt.IsTrue)
 }
 
 // TestResolveServerVersionReportsSaturation pins the version-saturation

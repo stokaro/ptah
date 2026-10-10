@@ -1783,15 +1783,15 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	sql = legacyRenderedSQL(sql)
 
 	// Verify table creation
-	c.Assert(strings.Contains(sql, "CREATE TABLE test_table"), qt.Equals, true)
+	c.Assert(sql, qt.Contains, "CREATE TABLE test_table")
 
 	// Verify regular field is included
-	c.Assert(strings.Contains(sql, "name TEXT"), qt.Equals, true)
-	c.Assert(strings.Contains(sql, "NOT NULL"), qt.Equals, true)
+	c.Assert(sql, qt.Contains, "name TEXT")
+	c.Assert(sql, qt.Contains, "NOT NULL")
 
 	// Verify embedded field is included (this was the bug)
-	c.Assert(strings.Contains(sql, "id TEXT"), qt.Equals, true)
-	c.Assert(strings.Contains(sql, "PRIMARY KEY"), qt.Equals, true)
+	c.Assert(sql, qt.Contains, "id TEXT")
+	c.Assert(sql, qt.Contains, "PRIMARY KEY")
 }
 
 // withDeclaredObjects fills a fixture diff's schema-wide carries from the

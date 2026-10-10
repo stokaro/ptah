@@ -240,7 +240,7 @@ func TestCompatMigrateApplyRefusesAServerThatIsNotCleanE2E(t *testing.T) {
 				c.Assert(err, qt.ErrorMatches, `(?s).*sql/migrate: connected database is not clean: `+
 					regexp.QuoteMeta(test.wantErr)+`\. baseline version or allow-dirty is required.*`,
 					qt.Commentf("%s", out))
-				c.Assert(server.exists(c, "app"), qt.Equals, false)
+				c.Assert(server.exists(c, "app"), qt.IsFalse)
 			})
 		}
 	}

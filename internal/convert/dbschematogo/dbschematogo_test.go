@@ -166,7 +166,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 	// Verify extensions are converted
 	c.Assert(result.Extensions, qt.HasLen, 1)
 	c.Assert(result.Extensions[0].Name, qt.Equals, "pg_trgm")
-	c.Assert(result.Extensions[0].IfNotExists, qt.Equals, true)
+	c.Assert(result.Extensions[0].IfNotExists, qt.IsTrue)
 	c.Assert(result.Extensions[0].Version, qt.Equals, "1.6")
 
 	// Verify other elements are also converted
@@ -1130,7 +1130,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	// Verify default values
 	c.Assert(ext.Name, qt.Equals, "test_extension")
 	c.Assert(ext.Schema, qt.Equals, "public")
-	c.Assert(ext.IfNotExists, qt.Equals, true) // Should default to true for safety
+	c.Assert(ext.IfNotExists, qt.IsTrue) // Should default to true for safety
 	c.Assert(ext.Version, qt.Equals, "1.0")
 	c.Assert(ext.Comment, qt.Equals, "") // Should be empty string when nil
 }

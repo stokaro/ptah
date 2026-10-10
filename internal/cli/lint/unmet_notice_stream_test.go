@@ -27,7 +27,7 @@ func TestRunLint_AFailingReportStaysOnStdout(t *testing.T) {
 	var report map[string]any
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil,
 		qt.Commentf("stdout is not a decodable document:\n%s", stdout))
-	c.Assert(report["failed"], qt.Equals, true)
+	c.Assert(report["failed"], qt.IsTrue)
 	c.Assert(stderr, qt.Contains, "DS110P",
 		qt.Commentf("the unmet-input notice is not on stderr"))
 	c.Assert(stderr, qt.Not(qt.Contains), `"findings"`)

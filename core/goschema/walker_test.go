@@ -75,10 +75,10 @@ type ProductIndexes struct {
 	// Verify extensions are merged correctly (sorted alphabetically)
 	c.Assert(result.Extensions, qt.HasLen, 2)
 	c.Assert(result.Extensions[0].Name, qt.Equals, "btree_gin")
-	c.Assert(result.Extensions[0].IfNotExists, qt.Equals, true)
+	c.Assert(result.Extensions[0].IfNotExists, qt.IsTrue)
 	c.Assert(result.Extensions[0].Comment, qt.Equals, "Enable GIN indexes on btree types")
 	c.Assert(result.Extensions[1].Name, qt.Equals, "pg_trgm")
-	c.Assert(result.Extensions[1].IfNotExists, qt.Equals, true)
+	c.Assert(result.Extensions[1].IfNotExists, qt.IsTrue)
 	c.Assert(result.Extensions[1].Comment, qt.Equals, "Enable trigram similarity search")
 
 	// Verify other entities are also merged

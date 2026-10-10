@@ -525,7 +525,7 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 	c.Assert(downSQL, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON TABLE users FROM app_role;")
-	c.Assert(strings.Contains(downSQL, "REVOKE SELECT ON TABLE users FROM app_role;"), qt.Equals, false)
+	c.Assert(downSQL, qt.Not(qt.Contains), "REVOKE SELECT ON TABLE users FROM app_role;")
 }
 
 func TestReverseSchemaDiff_TableModifications(t *testing.T) {

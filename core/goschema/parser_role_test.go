@@ -24,13 +24,13 @@ type UserRoles struct {
 		role := database.Roles[0]
 		c.Assert(role.StructName, qt.Equals, "UserRoles")
 		c.Assert(role.Name, qt.Equals, "app_user")
-		c.Assert(role.Login, qt.Equals, true)
+		c.Assert(role.Login, qt.IsTrue)
 		c.Assert(role.Password, qt.Equals, "")
-		c.Assert(role.Superuser, qt.Equals, false)
-		c.Assert(role.CreateDB, qt.Equals, false)
-		c.Assert(role.CreateRole, qt.Equals, false)
-		c.Assert(role.Inherit, qt.Equals, true) // Default to true
-		c.Assert(role.Replication, qt.Equals, false)
+		c.Assert(role.Superuser, qt.IsFalse)
+		c.Assert(role.CreateDB, qt.IsFalse)
+		c.Assert(role.CreateRole, qt.IsFalse)
+		c.Assert(role.Inherit, qt.IsTrue) // Default to true
+		c.Assert(role.Replication, qt.IsFalse)
 		c.Assert(role.Comment, qt.Equals, "Application user role")
 	})
 
@@ -49,13 +49,13 @@ type AdminRoles struct {
 		role := database.Roles[0]
 		c.Assert(role.StructName, qt.Equals, "AdminRoles")
 		c.Assert(role.Name, qt.Equals, "admin_user")
-		c.Assert(role.Login, qt.Equals, true)
+		c.Assert(role.Login, qt.IsTrue)
 		c.Assert(role.Password, qt.Equals, "encrypted_password")
-		c.Assert(role.Superuser, qt.Equals, true)
-		c.Assert(role.CreateDB, qt.Equals, true)
-		c.Assert(role.CreateRole, qt.Equals, true)
-		c.Assert(role.Inherit, qt.Equals, false)
-		c.Assert(role.Replication, qt.Equals, true)
+		c.Assert(role.Superuser, qt.IsTrue)
+		c.Assert(role.CreateDB, qt.IsTrue)
+		c.Assert(role.CreateRole, qt.IsTrue)
+		c.Assert(role.Inherit, qt.IsFalse)
+		c.Assert(role.Replication, qt.IsTrue)
 		c.Assert(role.Comment, qt.Equals, "Administrator role")
 	})
 
@@ -73,8 +73,8 @@ type ServiceRoles struct {
 		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
 		c.Assert(role.Name, qt.Equals, "service_user")
-		c.Assert(role.CreateDB, qt.Equals, true)
-		c.Assert(role.CreateRole, qt.Equals, true)
+		c.Assert(role.CreateDB, qt.IsTrue)
+		c.Assert(role.CreateRole, qt.IsTrue)
 	})
 
 	t.Run("multiple roles in single struct", func(t *testing.T) {
@@ -95,22 +95,22 @@ type UserRoles struct {
 		// Check app_user
 		appUser := findRoleByName(database.Roles, "app_user")
 		c.Assert(appUser, qt.IsNotNil)
-		c.Assert(appUser.Login, qt.Equals, true)
-		c.Assert(appUser.Superuser, qt.Equals, false)
+		c.Assert(appUser.Login, qt.IsTrue)
+		c.Assert(appUser.Superuser, qt.IsFalse)
 		c.Assert(appUser.Comment, qt.Equals, "Application user role")
 
 		// Check admin_user
 		adminUser := findRoleByName(database.Roles, "admin_user")
 		c.Assert(adminUser, qt.IsNotNil)
-		c.Assert(adminUser.Login, qt.Equals, true)
-		c.Assert(adminUser.Superuser, qt.Equals, true)
+		c.Assert(adminUser.Login, qt.IsTrue)
+		c.Assert(adminUser.Superuser, qt.IsTrue)
 		c.Assert(adminUser.Comment, qt.Equals, "Administrator role")
 
 		// Check readonly_user
 		readonlyUser := findRoleByName(database.Roles, "readonly_user")
 		c.Assert(readonlyUser, qt.IsNotNil)
-		c.Assert(readonlyUser.Login, qt.Equals, true)
-		c.Assert(readonlyUser.Superuser, qt.Equals, false)
+		c.Assert(readonlyUser.Login, qt.IsTrue)
+		c.Assert(readonlyUser.Superuser, qt.IsFalse)
 		c.Assert(readonlyUser.Comment, qt.Equals, "Read-only user role")
 	})
 
@@ -154,13 +154,13 @@ type MinimalRoles struct {
 		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
 		c.Assert(role.Name, qt.Equals, "minimal_role")
-		c.Assert(role.Login, qt.Equals, false)
+		c.Assert(role.Login, qt.IsFalse)
 		c.Assert(role.Password, qt.Equals, "")
-		c.Assert(role.Superuser, qt.Equals, false)
-		c.Assert(role.CreateDB, qt.Equals, false)
-		c.Assert(role.CreateRole, qt.Equals, false)
-		c.Assert(role.Inherit, qt.Equals, true) // Default to true
-		c.Assert(role.Replication, qt.Equals, false)
+		c.Assert(role.Superuser, qt.IsFalse)
+		c.Assert(role.CreateDB, qt.IsFalse)
+		c.Assert(role.CreateRole, qt.IsFalse)
+		c.Assert(role.Inherit, qt.IsTrue) // Default to true
+		c.Assert(role.Replication, qt.IsFalse)
 		c.Assert(role.Comment, qt.Equals, "")
 	})
 
@@ -180,13 +180,13 @@ type InheritRoles struct {
 		c.Assert(database.Roles, qt.HasLen, 3)
 
 		defaultRole := findRoleByName(database.Roles, "inherit_default")
-		c.Assert(defaultRole.Inherit, qt.Equals, true)
+		c.Assert(defaultRole.Inherit, qt.IsTrue)
 
 		explicitTrueRole := findRoleByName(database.Roles, "inherit_explicit_true")
-		c.Assert(explicitTrueRole.Inherit, qt.Equals, true)
+		c.Assert(explicitTrueRole.Inherit, qt.IsTrue)
 
 		explicitFalseRole := findRoleByName(database.Roles, "inherit_explicit_false")
-		c.Assert(explicitFalseRole.Inherit, qt.Equals, false)
+		c.Assert(explicitFalseRole.Inherit, qt.IsFalse)
 	})
 }
 

@@ -36,7 +36,7 @@ func TestApply_TheSecondOfTwoPreviewsAgainstOneDigestIsRefused(t *testing.T) {
 
 	applied := callTool(c, session, "apply_patch", map[string]any{
 		"preview_token": first["preview_token"], "patch_id": first["patch_id"]})
-	c.Assert(applied["rolled_back"], qt.Equals, false)
+	c.Assert(applied["rolled_back"], qt.IsFalse)
 	c.Assert(applied["result_digest"], qt.Not(qt.Equals), before["digest"])
 
 	refusal := callToolError(c, session, "apply_patch", map[string]any{
@@ -74,7 +74,7 @@ func TestApply_TheRefusedWriterComposesAgainAndSucceeds(t *testing.T) {
 	applied := callTool(c, session, "apply_patch", map[string]any{
 		"preview_token": retry["preview_token"], "patch_id": retry["patch_id"]})
 
-	c.Assert(applied["rolled_back"], qt.Equals, false)
+	c.Assert(applied["rolled_back"], qt.IsFalse)
 	after := callTool(c, session, "read_artifact", map[string]any{"artifact": "migrations"})
 	c.Assert(artifactPaths(c, after), qt.Contains, "17000001_a.up.sql")
 	c.Assert(artifactPaths(c, after), qt.Contains, "17000001_b.up.sql",
