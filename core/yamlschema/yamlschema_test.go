@@ -7,9 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 )
 
 func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []string {
@@ -247,8 +249,11 @@ rls_policies:
 		{Privilege: "INSERT", WithOption: true},
 	})
 	c.Assert(db.DefaultPrivileges[1].Dialects, qt.DeepEquals, []string{"postgres"})
-	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(db.RLSPolicies, qt.HasLen, 1)
+	// Row-level security reaches the PostgreSQL row-security owner.
+	c.Assert(db.Tables[1].Facets.Kinds(), qt.Contains, pgpolicy.TableStateKind)
+	c.Assert(db.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{pgpolicy.PolicyRef("", "users", "users_tenant_isolation")})
+	c.Assert(db.RLSEnabledTables, qt.HasLen, 0)
+	c.Assert(db.RLSPolicies, qt.HasLen, 0)
 	c.Assert(db.Constraints, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Condition, qt.Equals, "deleted_at IS NULL")
 	c.Assert(db.Dependencies["users"], qt.DeepEquals, []string{"tenants"})

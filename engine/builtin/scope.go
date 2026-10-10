@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy/policyrender"
 )
 
 // prepareScopedDatabase resolves scope before validating target declarations.
@@ -25,7 +26,18 @@ func prepareScopedDatabase(database *schemamodel.Database, dialect string, caps 
 	if err := validateDatabaseDeclarations(dialect, caps, scoped); err != nil {
 		return nil, err
 	}
-	return scoped, nil
+	if scoped == nil {
+		return nil, nil
+	}
+	// A render answers the row-security owner's default requests itself, on
+	// every target: it writes no switch statement the schema does not declare.
+	coverage, err := policyrender.LowerCoverage(scoped.FeatureCoverage)
+	if err != nil {
+		return nil, err
+	}
+	lowered := *scoped
+	lowered.FeatureCoverage = coverage
+	return &lowered, nil
 }
 
 // Both whole-schema and direct AST entry points resolve source bindings with

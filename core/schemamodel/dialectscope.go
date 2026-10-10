@@ -10,7 +10,8 @@ import (
 )
 
 // ScopeToTarget projects db onto an explicitly resolved target. Every declared
-// object whose `dialects=` scope excludes that target is absent from the result.
+// object whose `dialects=` scope excludes that target is absent from the result,
+// and so is a feature coverage claim scoped to other targets.
 // An unresolved target is an error, never an empty or unchanged declaration.
 //
 // An excluded declaration does not describe this target. Comparison must also
@@ -25,7 +26,7 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	if db == nil {
 		return nil, nil
 	}
-	if !hasDialectScope(db) && !db.FeatureObjects.HasTargetScopes() &&
+	if !hasDialectScope(db) && !db.FeatureObjects.HasTargetScopes() && !db.FeatureCoverage.HasTargetScopes() &&
 		!slices.ContainsFunc(db.FacetSlots(), func(f *schemaext.Facets) bool { return f.HasTargetScopes() }) {
 		// Nothing is scoped, so the projection is the identity. Returning the
 		// original pointer keeps an unscoped schema out of the clone-and-
@@ -55,6 +56,12 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 		return nil, err
 	}
 	scoped.FeatureObjects = objects
+	// A claim made for scoped declarations is scoped with them, so a target
+	// the declarations exclude does not read the claim either.
+	scoped.FeatureCoverage, err = db.FeatureCoverage.ForTarget(target)
+	if err != nil {
+		return nil, err
+	}
 
 	// Everything the projection does not filter is still shared with the
 	// caller's database by value, so the slices it can reorder are cloned

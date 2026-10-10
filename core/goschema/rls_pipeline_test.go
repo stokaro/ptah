@@ -8,7 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/engine/builtin"
 )
 
@@ -106,36 +108,22 @@ type Product struct {
 	c.Assert(getTenantFunc.Volatility, qt.Equals, "STABLE")
 	c.Assert(getTenantFunc.Comment, qt.Equals, "Gets the current tenant ID from session")
 
-	// Verify RLS enabled tables were parsed correctly
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 2)
-
-	usersRLS := findRLSEnabledTable(database.RLSEnabledTables, "users")
-	c.Assert(usersRLS, qt.IsNotNil)
-	c.Assert(usersRLS.Comment, qt.Equals, "Enable RLS for multi-tenant isolation")
-
-	productsRLS := findRLSEnabledTable(database.RLSEnabledTables, "products")
-	c.Assert(productsRLS, qt.IsNotNil)
-	c.Assert(productsRLS.Comment, qt.Equals, "Enable RLS for product isolation")
-
-	// Verify RLS policies were parsed correctly
-	c.Assert(database.RLSPolicies, qt.HasLen, 2)
-
-	userPolicy := findRLSPolicy(database.RLSPolicies, "user_tenant_isolation")
-	c.Assert(userPolicy, qt.IsNotNil)
-	c.Assert(userPolicy.Table, qt.Equals, "users")
-	c.Assert(userPolicy.PolicyFor, qt.Equals, "ALL")
-	c.Assert(userPolicy.ToRoles, qt.Equals, "inventario_app")
-	c.Assert(userPolicy.UsingExpression, qt.Equals, "tenant_id = get_current_tenant_id()")
-	c.Assert(userPolicy.Comment, qt.Equals, "Ensures users can only access their tenant's data")
-
-	productPolicy := findRLSPolicy(database.RLSPolicies, "product_tenant_isolation")
-	c.Assert(productPolicy, qt.IsNotNil)
-	c.Assert(productPolicy.Table, qt.Equals, "products")
-	c.Assert(productPolicy.PolicyFor, qt.Equals, "ALL")
-	c.Assert(productPolicy.ToRoles, qt.Equals, "inventario_app")
-	c.Assert(productPolicy.UsingExpression, qt.Equals, "tenant_id = get_current_tenant_id()")
-	c.Assert(productPolicy.WithCheckExpression, qt.Equals, "tenant_id = get_current_tenant_id()")
-	c.Assert(productPolicy.Comment, qt.Equals, "Ensures products are isolated by tenant")
+	// Verify the row-level security annotations reached the row-security owner.
+	c.Assert(ownerSwitches(c, &database), qt.DeepEquals, map[string]pgpolicy.DesiredTableState{
+		"users":    {Enabled: true, Comment: "Enable RLS for multi-tenant isolation", StructName: "User"},
+		"products": {Enabled: true, Comment: "Enable RLS for product isolation", StructName: "Product"},
+	})
+	c.Assert(ownerPolicies(c, &database), qt.DeepEquals, map[string]pgpolicy.DesiredPolicy{
+		"public.users.user_tenant_isolation": {
+			Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: "inventario_app"}},
+			Using: new("tenant_id = get_current_tenant_id()"), Comment: "Ensures users can only access their tenant's data", StructName: "User",
+		},
+		"public.products.product_tenant_isolation": {
+			Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: "inventario_app"}},
+			Using: new("tenant_id = get_current_tenant_id()"), WithCheck: new("tenant_id = get_current_tenant_id()"),
+			Comment: "Ensures products are isolated by tenant", StructName: "Product",
+		},
+	})
 
 	// Generate PostgreSQL SQL and verify it contains the expected statements
 	statements, err := builtin.GetOrderedCreateStatements(&database, "postgresql")
@@ -176,70 +164,64 @@ type Product struct {
 	c.Assert(sqlOutput, qt.Contains, "FOREIGN KEY (user_id) REFERENCES users(id)")
 }
 
-// TestRLSAndFunctionIntegration_MySQLNamesPostgreSQLFeaturesItSkips pins that a
-// MySQL target emits no DDL for the PostgreSQL-only objects and says so for
-// each one, while the objects MySQL does host are rendered as real statements.
-//
-// Asserting the objects are simply ABSENT would pass on a converter that
-// deletes the nodes before the renderer sees them: the function, the RLS
-// enablement and the policy vanish at exit 0 with nothing said about any of
-// them. Absence and a named skip are indistinguishable to a
-// `Not(Contains)` assertion, so this asserts both halves separately -- no
-// executable statement, and a diagnostic naming each object (stokaro/ptah#929
-// item 5).
-//
-// The function is not in the skipped set: row-level security really is a
-// PostgreSQL-only surface, but a stored function is not, and MySQL 26.7.0
-// accepts one. It is asserted here as executable DDL so that a
-// `-- CREATE FUNCTION ... not supported in MySQL` comment -- a claim about the
-// server that the server contradicts -- fails this test.
-func TestRLSAndFunctionIntegration_MySQLNamesPostgreSQLFeaturesItSkips(t *testing.T) {
-	c := qt.New(t)
-
-	// Test that MySQL correctly skips PostgreSQL-specific features
-	testGoContent := `package testpkg
+// mysqlRowSecuritySource declares a function, a table and the table's
+// row-level security, the last two with the given scope attribute.
+func mysqlRowSecuritySource(scope string) string {
+	return `package testpkg
 
 //ptah:schema:function name="test_func" returns="INTEGER" language="sql"
-//ptah:schema:rls:enable table="test_table"
-//ptah:schema:rls:policy name="test_policy" table="test_table" for="ALL" to="app_user" using="user_id = current_user_id()"
+//ptah:schema:rls:enable table="test_table" ` + scope + `
+//ptah:schema:rls:policy name="test_policy" table="test_table" for="ALL" to="app_user" using="user_id = current_user_id()" ` + scope + `
 //ptah:schema:table name="test_table"
 type TestTable struct {
 	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }
 `
+}
 
-	testFile := writeTestFile(c, "test_mysql_skip.go", testGoContent)
-
+// TestRLSAndFunctionIntegration_MySQLLeavesScopedRowSecurityOut pins that a
+// MySQL target renders the objects it hosts as real statements and leaves out
+// row-level security the declaration scoped to PostgreSQL.
+//
+// The function is real DDL: row-level security really is a PostgreSQL-only
+// surface, but a stored function is not, and MySQL 26.7.0 accepts one. It is
+// asserted here as executable DDL so that a `-- CREATE FUNCTION ... not
+// supported in MySQL` comment -- a claim about the server that the server
+// contradicts -- fails this test.
+func TestRLSAndFunctionIntegration_MySQLLeavesScopedRowSecurityOut(t *testing.T) {
+	c := qt.New(t)
+	testFile := writeTestFile(c, "test_mysql_skip.go", mysqlRowSecuritySource(`dialects="postgres"`))
 	database := mustParseFile(c, testFile)
 
-	// Verify that the functions and RLS policies were parsed
-	c.Assert(database.Functions, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
-
-	// Generate MySQL SQL - PostgreSQL-specific features should be skipped
 	statements, err := builtin.GetOrderedCreateStatements(&database, "mysql")
+
 	c.Assert(err, qt.IsNil)
 	sqlOutput := legacyRenderedSQL(strings.Join(statements, "\n"))
-
-	// No PostgreSQL-only statement is executable on this target.
-	executable := executableSQL(sqlOutput)
-	c.Assert(executable, qt.Not(qt.Contains), "CREATE POLICY")
-	c.Assert(executable, qt.Not(qt.Contains), "ENABLE ROW LEVEL SECURITY")
-
-	// And each one is named rather than dropped in silence.
-	c.Assert(sqlOutput, qt.Contains, "-- ALTER TABLE test_table ENABLE ROW LEVEL SECURITY not supported in MySQL")
-	c.Assert(sqlOutput, qt.Contains, "-- CREATE POLICY test_policy not supported in MySQL")
-
-	// The function is not in that set: MySQL hosts it, so it is real DDL.
+	c.Assert(sqlOutput, qt.Not(qt.Contains), "POLICY")
+	c.Assert(sqlOutput, qt.Not(qt.Contains), "ROW LEVEL SECURITY")
 	// legacyRenderedSQL strips the backtick quoting, hence the bare name.
+	executable := executableSQL(sqlOutput)
 	c.Assert(executable, qt.Contains, "CREATE FUNCTION test_func() RETURNS integer")
-	c.Assert(sqlOutput, qt.Not(qt.Contains), "CREATE FUNCTION test_func not supported in MySQL")
-
-	// But table creation should still work
 	c.Assert(sqlOutput, qt.Contains, "CREATE TABLE test_table")
 	c.Assert(sqlOutput, qt.Contains, "id INTEGER PRIMARY KEY")
+}
+
+// TestRLSAndFunctionIntegration_MySQLRefusesUnscopedRowSecurity_FailurePath
+// pins that a MySQL target refuses PostgreSQL row-level security declared
+// without a scope, and says how to scope it. A render that left it out would
+// report a table secured that the target leaves open.
+func TestRLSAndFunctionIntegration_MySQLRefusesUnscopedRowSecurity_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	testFile := writeTestFile(c, "test_mysql_skip.go", mysqlRowSecuritySource(""))
+	database := mustParseFile(c, testFile)
+
+	statements, err := builtin.GetOrderedCreateStatements(&database, "mysql")
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*PostgreSQL policy "test_policy" on table public.test_table cannot be planned on mysql; `+
+		`scope its declaration to the targets that host it, as dialects="postgres,cockroachdb,yugabytedb" does in a Go annotation`)
+	c.Assert(statements, qt.IsNil)
 }
 
 // Helper functions
@@ -247,24 +229,6 @@ func findFunction(functions []schemamodel.Function, name string) *schemamodel.Fu
 	for _, f := range functions {
 		if f.Name == name {
 			return &f
-		}
-	}
-	return nil
-}
-
-func findRLSEnabledTable(tables []schemamodel.RLSEnabledTable, tableName string) *schemamodel.RLSEnabledTable {
-	for _, t := range tables {
-		if t.Table == tableName {
-			return &t
-		}
-	}
-	return nil
-}
-
-func findRLSPolicy(policies []schemamodel.RLSPolicy, name string) *schemamodel.RLSPolicy {
-	for _, p := range policies {
-		if p.Name == name {
-			return &p
 		}
 	}
 	return nil

@@ -80,3 +80,30 @@ func (c Coverage) ForParent(parent objectidentity.ID) Coverage {
 	}
 	return result
 }
+
+// HasTargetScopes reports whether any subject claim is scoped to targets.
+func (c Coverage) HasTargetScopes() bool {
+	for _, record := range c.subjects {
+		if len(record.Targets) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// ForTarget projects the claims onto target: a subject claim scoped to other
+// targets is absent from the result, so a lookup falls back to the kind-wide
+// knowledge, and every other claim keeps its scope. An unresolved target is an
+// error. Project the declarations the claims describe the same way.
+func (c Coverage) ForTarget(target TargetSelection) (Coverage, error) {
+	if err := target.Validate(); err != nil {
+		return Coverage{}, err
+	}
+	result := Coverage{representation: c.representation, kinds: c.kinds, subjects: make(map[subjectKey]SubjectCoverage, len(c.subjects))}
+	for key, record := range c.subjects {
+		if target.Includes(record.Targets) {
+			result.subjects[key] = record
+		}
+	}
+	return result, nil
+}

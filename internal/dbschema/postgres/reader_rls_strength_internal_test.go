@@ -1,6 +1,6 @@
 package postgres
 
-// White-box testing required: readRLSPoliciesForSchema and readTablesForSchema
+// White-box testing required: readPolicies, readRowSecurity and readTablesForSchema
 // are unexported, and reaching them through ReadSchema would make a fake server
 // answer every query the whole read issues, so a failure would no longer name
 // the projection under test.
@@ -13,10 +13,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
-// rlsStrengthFakeServer answers the queries readRLSPoliciesForSchema and
+// rlsStrengthFakeServer answers the queries readPolicies and
 // readTablesForSchema issue, reporting the given strength flags.
 //
 // It records each of the two queries, because a fake server answers by column
@@ -38,12 +41,12 @@ func rlsStrengthFakeServer(
 			*policyQuery = query
 			return dbtest.QueryResult{
 				Columns: []string{
-					"schema_name", "policy_name", "table_name", "policy_for",
-					"to_roles", "using_expression", "with_check_expression",
-					"comment", "restrictive",
+					"table_name", "policy_name", "command", "roles",
+					"using_expression", "with_check_expression", "comment", "permissive",
 				},
 				Rows: [][]driver.Value{
-					{"public", "p", "docs", "ALL", "PUBLIC", "true", "", "", restrictive},
+					{"docs", "p", "*", nil, "true", nil, "", !restrictive},
+					{"docs", "q", "r", `["App", "reader"]`, nil, nil, "reads", true},
 				},
 			}, nil
 		case strings.Contains(query, "FROM information_schema.tables"):
@@ -101,14 +104,54 @@ func TestReadRLSPolicies_ReadsBackTheAsClause(t *testing.T) {
 			db := dbtest.Open(t, rlsStrengthFakeServer(row.restrictive, false, &policyQuery, &tablesQuery))
 			reader := NewPostgreSQLReader(db.SQL, "public")
 
-			policies, err := reader.readRLSPoliciesForSchema(t.Context(), "public")
+			var schema catalog.Database
+			err := reader.readPolicies(t.Context(), &schema, "public")
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(policies, qt.HasLen, 1)
-			c.Assert(policies[0].Restrictive, qt.Equals, row.restrictive)
+			composition := map[bool]pgpolicy.Composition{true: pgpolicy.Restrictive, false: pgpolicy.Permissive}[row.restrictive]
+			c.Assert(observedPolicies(c, schema), qt.DeepEquals, map[string]pgpolicy.ObservedPolicy{
+				"p": {Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}, Using: new("true"), Composition: composition},
+				"q": {Command: pgpolicy.CommandSelect, Roles: []pgpolicy.RoleSelector{{Name: "App"}, {Name: "reader"}}, Composition: pgpolicy.Permissive, Comment: "reads"},
+			})
 			c.Assert(policyQuery, qt.Contains, "pol.polpermissive")
 		})
 	}
+}
+
+// observedPolicies returns the policies a read reported, by name.
+func observedPolicies(c *qt.C, schema catalog.Database) map[string]pgpolicy.ObservedPolicy {
+	c.Helper()
+	objects, err := schema.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	policies := make(map[string]pgpolicy.ObservedPolicy, len(objects))
+	for _, object := range objects {
+		policies[object.Ref.Name.Source] = *object.Value.(*pgpolicy.ObservedPolicy)
+	}
+	return policies
+}
+
+// TestReadRowSecurity_ReportsSwitchesToTheOwner pins that a table's switches
+// leave the shared model and reach the row-security owner as a facet, with
+// complete knowledge claimed for both models: a table without the facet has
+// both switches off.
+func TestReadRowSecurity_ReportsSwitchesToTheOwner(t *testing.T) {
+	c := qt.New(t)
+	var policyQuery, tablesQuery string
+	db := dbtest.Open(t, rlsStrengthFakeServer(false, true, &policyQuery, &tablesQuery))
+	reader := NewPostgreSQLReader(db.SQL, "public")
+	schema := catalog.Database{Tables: []catalog.Table{{Name: "docs", RLSEnabled: true, RLSForced: true}, {Name: "plain"}}}
+
+	err := reader.readRowSecurity(t.Context(), &schema)
+
+	c.Assert(err, qt.IsNil)
+	value, found, err := schema.Tables[0].Facets.Get(pgpolicy.TableStateKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(value, qt.DeepEquals, &pgpolicy.ObservedTableState{Enabled: true, Forced: true})
+	c.Assert(schema.Tables[0].RLSEnabled || schema.Tables[0].RLSForced, qt.IsFalse)
+	c.Assert(schema.Tables[1].Facets.Kinds(), qt.HasLen, 0)
+	c.Assert(schema.FeatureCoverage.Lookup(pgpolicy.TableStateKind, pgpolicy.PolicyRef("", "plain", "x")).State, qt.Equals, schemaext.Complete)
+	c.Assert(observedPolicies(c, schema), qt.HasLen, 2)
 }
 
 // TestReadTables_ReadsBackWhetherTheOwnerIsBound pins that a table's FORCE flag

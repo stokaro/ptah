@@ -4,9 +4,17 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/schemamodel"
+
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
+
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/cli/schema"
@@ -189,9 +197,15 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 	c.Assert(parsed.Views, qt.HasLen, 1)
 	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)
 	c.Assert(parsed.Triggers, qt.HasLen, 1)
-	c.Assert(parsed.RLSPolicies, qt.HasLen, 1)
-	c.Assert(parsed.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(parsed.RLSEnabledTables[0].Comment, qt.Equals, "Enable RLS for fixture users")
+	// Row-level security reads back as the PostgreSQL row-security owner's.
+	c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind)
+	}).Len(), qt.Equals, 1)
+	switched := slices.IndexFunc(parsed.Tables, func(table schemamodel.Table) bool { return table.Name == "users" })
+	switches, found, err := schemaext.FacetAs[*pgpolicy.DesiredTableState](parsed.Tables[switched].Facets, pgpolicy.TableStateKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(switches.Comment, qt.Equals, "Enable RLS for fixture users")
 	c.Assert(parsed.Roles, qt.HasLen, 1)
 	c.Assert(parsed.Grants, qt.HasLen, 4)
 	c.Assert(parsed.Grants[1].OnSequence, qt.Equals, "fixture_order_seq")
@@ -332,8 +346,9 @@ type SecurityMarker struct{}
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
-	c.Assert(stderr.String(), qt.Contains, "RLS enablement cannot be rendered because the target table is absent")
+	// Row-level security beside no table is refused when the source is read,
+	// before anything is exported or cleaned.
+	c.Assert(err, qt.ErrorMatches, `.*table "users" is not declared in this file, and row-level security is declared beside its table.*`)
 	modelAfter, err := os.ReadFile(modelPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(modelAfter, qt.DeepEquals, modelData)

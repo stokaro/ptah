@@ -50,7 +50,7 @@ func TestRequireRepresentable_HappyPath(t *testing.T) {
 			return policyCoverage(schemaext.Knowledge{State: schemaext.Absent})
 		}},
 		{name: "switches left unmanaged beside the table's policies", table: "orders", coverage: func() schemaext.Coverage {
-			return switchCoverage(pgpolicysource.UnmanagedSwitches())
+			return switchCoverage(pgpolicy.DefaultedSwitches())
 		}},
 	}
 	for _, test := range tests {
@@ -74,7 +74,7 @@ func TestRequireRepresentable_FailurePath(t *testing.T) {
 			return policyCoverage(schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "partial"})
 		}},
 		{name: "switches left unmanaged on a table with no policy", table: "invoices", coverage: func() schemaext.Coverage {
-			return switchCoverage(pgpolicysource.UnmanagedSwitches())
+			return switchCoverage(pgpolicy.DefaultedSwitches())
 		}},
 		{name: "switches not read for another reason", table: "orders", coverage: func() schemaext.Coverage {
 			return switchCoverage(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "no access"})

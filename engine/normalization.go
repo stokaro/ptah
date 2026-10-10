@@ -127,8 +127,7 @@ func (r *Runtime) acceptNormalization(ctx context.Context, request schemaext.Nor
 	if !slices.Equal(returned.Objects.Refs(), request.Desired.Objects.Refs()) {
 		return nil, fmt.Errorf("%w: normalization changed the declared objects", schemaext.ErrInvalidValue)
 	}
-	if !slices.Equal(returned.Coverage.KindRecords(), request.Desired.Coverage.KindRecords()) ||
-		!slices.Equal(returned.Coverage.SubjectRecords(), request.Desired.Coverage.SubjectRecords()) {
+	if !returned.Coverage.Equal(request.Desired.Coverage) {
 		return nil, fmt.Errorf("%w: normalization changed source coverage", schemaext.ErrInvalidValue)
 	}
 	objects, err := returned.Objects.All()

@@ -1,10 +1,14 @@
 package atlashclrender_test
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
@@ -390,15 +394,14 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(parsed.Triggers[0].Event, qt.Equals, "UPDATE")
 	c.Assert(parsed.Triggers[0].ForEach, qt.Equals, "ROW")
 	c.Assert(parsed.Triggers[0].Body, qt.Equals, "NEW.updated_at = NOW(); RETURN NEW;")
-	c.Assert(parsed.RLSPolicies, qt.HasLen, 1)
-	c.Assert(parsed.RLSPolicies[0].Name, qt.Equals, "users_tenant_policy")
-	c.Assert(parsed.RLSPolicies[0].Table, qt.Equals, "users")
-	c.Assert(parsed.RLSPolicies[0].PolicyFor, qt.Equals, "SELECT")
-	c.Assert(parsed.RLSPolicies[0].ToRoles, qt.Equals, "fixture_app_user")
-	c.Assert(parsed.RLSPolicies[0].UsingExpression, qt.Equals, "get_fixture_tenant_id() IS NOT NULL")
-	c.Assert(parsed.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(parsed.RLSEnabledTables[0].Table, qt.Equals, "users")
-	c.Assert(parsed.RLSEnabledTables[0].Comment, qt.Equals, "Enable RLS for fixture users")
+	policies := ownerPolicies(c, parsed)
+	c.Assert(policies, qt.HasLen, 1)
+	policy := policies["public.users.users_tenant_policy"]
+	c.Assert(policy.Command, qt.Equals, pgpolicy.CommandSelect)
+	c.Assert(policy.Roles, qt.DeepEquals, []pgpolicy.RoleSelector{{Name: "fixture_app_user"}})
+	c.Assert(*policy.Using, qt.Equals, "get_fixture_tenant_id() IS NOT NULL")
+	c.Assert(slices.Collect(maps.Keys(ownerSwitches(c, parsed))), qt.DeepEquals, []string{"users"})
+	c.Assert(ownerSwitches(c, parsed)["users"].Comment, qt.Equals, "Enable RLS for fixture users")
 	c.Assert(parsed.Roles, qt.HasLen, 1)
 	c.Assert(parsed.Roles[0].Name, qt.Equals, "fixture_app_user")
 	c.Assert(parsed.Roles[0].Inherit, qt.IsTrue)
@@ -803,7 +806,7 @@ func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 	c.Assert(roleByName(parsed.Roles, "inheriting").Inherit, qt.IsTrue)
 	c.Assert(roleByName(parsed.Roles, "isolated").Inherit, qt.IsFalse)
 	c.Assert(parsed.Triggers[0].Table, qt.Equals, "auth.users")
-	c.Assert(parsed.RLSPolicies[0].Table, qt.Equals, "auth.users")
+	c.Assert(slices.Collect(maps.Keys(ownerPolicies(c, parsed))), qt.DeepEquals, []string{"auth.users.users_policy"})
 	c.Assert(parsed.Grants[0].OnTable, qt.Equals, "auth.users")
 }
 

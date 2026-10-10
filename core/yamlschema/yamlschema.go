@@ -65,6 +65,7 @@ package yamlschema
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -75,6 +76,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbsource"
@@ -82,8 +84,10 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/ydbchangefeed"
@@ -837,7 +841,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 	if err := d.addExternalObjects(db); err != nil {
 		return nil, err
 	}
-	d.addRLS(db)
+	if err := d.addRLS(db); err != nil {
+		return nil, err
+	}
 	d.addRoles(db)
 	if err := d.addGrants(db); err != nil {
 		return nil, err
@@ -940,12 +946,6 @@ func (d document) addTables(db *schemamodel.Database) error {
 		}
 		if err := addTableConstraints(db, structName, tableName, table.Constraints); err != nil {
 			return err
-		}
-		if table.RLSEnabled {
-			db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{
-				StructName: structName,
-				Table:      tableName,
-			})
 		}
 	}
 
@@ -1381,35 +1381,93 @@ func (d document) addTriggers(db *schemamodel.Database) error {
 	return nil
 }
 
-func (d document) addRLS(db *schemamodel.Database) {
-	for _, key := range sortedKeys(d.RLSEnabledTables) {
-		db.RLSEnabledTables = append(db.RLSEnabledTables, buildRLSEnabledTable(key, d.RLSEnabledTables[key]))
+// addRLS hands the document's row-level security to the PostgreSQL
+// row-security owner: a policy becomes an object, and an enablement the
+// switches facet of its table, which the document must declare. A YAML
+// document has no dialect scope for row-level security, so every declaration
+// is PostgreSQL's. Two entries that declare one policy, or one table's
+// switches, are refused, naming both (stokaro/ptah#2440).
+func (d document) addRLS(db *schemamodel.Database) error {
+	var collector pgpolicysource.Collector
+	for _, key := range sortedKeys(d.Tables) {
+		table := d.Tables[key]
+		if table.RLSEnabled {
+			origin := fmt.Sprintf("tables.%s.rls_enabled", key)
+			if err := addRLSSwitches(db, &collector, origin, valueOrDefault(table.StructName, key), "", ""); err != nil {
+				return err
+			}
+		}
 	}
-	for _, key := range sortedKeys(d.RLSEnabled) {
-		db.RLSEnabledTables = append(db.RLSEnabledTables, buildRLSEnabledTable(key, d.RLSEnabled[key]))
+	for _, group := range []struct {
+		name  string
+		specs map[string]rlsEnableSpec
+	}{{"rls_enabled_tables", d.RLSEnabledTables}, {"rls_enabled", d.RLSEnabled}} {
+		for _, key := range sortedKeys(group.specs) {
+			spec := group.specs[key]
+			origin := fmt.Sprintf("%s.%s", group.name, key)
+			if err := addRLSSwitches(db, &collector, origin, string(spec.StructName), valueOrDefault(spec.Table, key), string(spec.Comment)); err != nil {
+				return err
+			}
+		}
 	}
-
 	for _, key := range sortedKeys(d.RLSPolicies) {
-		spec := d.RLSPolicies[key]
-		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
-			StructName:          string(spec.StructName),
-			Name:                valueOrDefault(spec.Name, key),
-			Table:               string(spec.Table),
-			PolicyFor:           string(spec.PolicyFor),
-			ToRoles:             string(spec.ToRoles),
-			UsingExpression:     string(spec.UsingExpression),
-			WithCheckExpression: string(spec.WithCheckExpression),
-			Comment:             string(spec.Comment),
-		})
+		if err := addRLSPolicy(db, &collector, key, d.RLSPolicies[key]); err != nil {
+			return err
+		}
 	}
+	objects, err := db.FeatureObjects.Merge(collector.Objects())
+	if err != nil {
+		return err
+	}
+	db.FeatureObjects = objects
+	db.FeatureCoverage, err = pgpolicysource.Claim(db.FeatureCoverage, db.FeatureObjects)
+	return err
 }
 
-func buildRLSEnabledTable(key string, spec rlsEnableSpec) schemamodel.RLSEnabledTable {
-	return schemamodel.RLSEnabledTable{
-		StructName: string(spec.StructName),
-		Table:      valueOrDefault(spec.Table, key),
-		Comment:    string(spec.Comment),
+func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collector, origin, structName, tableName, comment string) error {
+	index, err := pgpolicysource.DeclaredTable(db.Tables, structName, tableName)
+	if err != nil {
+		return fmt.Errorf("%s: %w", origin, err)
 	}
+	if index < 0 {
+		return fmt.Errorf("%s: %w: row-level security names table %q, which the document does not declare",
+			origin, ptaherr.ErrInvalidAttributeValue, cmp.Or(tableName, structName))
+	}
+	table := &db.Tables[index]
+	state := pgpolicy.DesiredTableState{Enabled: true, Comment: comment, StructName: table.StructName}
+	facets, err := collector.AddSwitches(origin, pgpolicysource.TableRef(table.Schema, table.Name), table.Facets, state, nil)
+	if err != nil {
+		return err
+	}
+	table.Facets = facets
+	return nil
+}
+
+func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector, key string, spec rlsPolicySpec) error {
+	origin := "rls_policies." + key
+	index, err := pgpolicysource.DeclaredTable(db.Tables, string(spec.StructName), string(spec.Table))
+	if err != nil {
+		return fmt.Errorf("%s: %w", origin, err)
+	}
+	var schemaName, tableName string
+	switch {
+	case index >= 0:
+		schemaName, tableName = db.Tables[index].Schema, db.Tables[index].Name
+	case spec.Table == "":
+		return fmt.Errorf("%s: %w: a row-level security policy names its table", origin, ptaherr.ErrInvalidAttributeValue)
+	default:
+		if schemaName, tableName, err = pgpolicysource.TableParts(string(spec.Table)); err != nil {
+			return fmt.Errorf("%s: %w", origin, err)
+		}
+	}
+	policy, err := pgpolicysource.Attributes{
+		For: string(spec.PolicyFor), To: string(spec.ToRoles), Using: string(spec.UsingExpression),
+		WithCheck: string(spec.WithCheckExpression), Comment: string(spec.Comment), StructName: string(spec.StructName),
+	}.Policy()
+	if err != nil {
+		return fmt.Errorf("%s: %w", origin, err)
+	}
+	return collector.AddPolicy(origin, pgpolicysource.Ref(schemaName, tableName, valueOrDefault(spec.Name, key)), policy, nil)
 }
 
 func (d document) addRoles(db *schemamodel.Database) {

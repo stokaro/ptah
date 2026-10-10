@@ -1,8 +1,11 @@
 package goschema_test
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -143,36 +146,16 @@ type User struct {
 			// Parse the file
 			database := mustParseFile(c, tempFile)
 
-			// Check RLS policies
-			c.Assert(database.RLSPolicies, qt.HasLen, tt.expectedPolicies,
-				qt.Commentf("Expected %d RLS policies, got %d", tt.expectedPolicies, len(database.RLSPolicies)))
-
-			// Check RLS enabled tables
-			c.Assert(database.RLSEnabledTables, qt.HasLen, tt.expectedEnabledTables,
-				qt.Commentf("Expected %d RLS enabled tables, got %d", tt.expectedEnabledTables, len(database.RLSEnabledTables)))
-
-			// Check policy names
-			if len(tt.expectedPolicyNames) > 0 {
-				actualPolicyNames := make([]string, len(database.RLSPolicies))
-				for i, policy := range database.RLSPolicies {
-					actualPolicyNames[i] = policy.Name
-				}
-				for _, expectedName := range tt.expectedPolicyNames {
-					c.Assert(actualPolicyNames, qt.Contains, expectedName,
-						qt.Commentf("Expected policy %s not found", expectedName))
-				}
+			policies := ownerPolicies(c, &database)
+			switches := ownerSwitches(c, &database)
+			c.Assert(policies, qt.HasLen, tt.expectedPolicies)
+			c.Assert(switches, qt.HasLen, tt.expectedEnabledTables)
+			for _, expectedName := range tt.expectedPolicyNames {
+				found := slices.ContainsFunc(slices.Collect(maps.Keys(policies)), func(key string) bool { return strings.HasSuffix(key, "."+expectedName) })
+				c.Assert(found, qt.IsTrue, qt.Commentf("Expected policy %s not found", expectedName))
 			}
-
-			// Check table names
-			if len(tt.expectedTableNames) > 0 {
-				actualTableNames := make([]string, len(database.RLSEnabledTables))
-				for i, table := range database.RLSEnabledTables {
-					actualTableNames[i] = table.Table
-				}
-				for _, expectedName := range tt.expectedTableNames {
-					c.Assert(actualTableNames, qt.Contains, expectedName,
-						qt.Commentf("Expected RLS enabled table %s not found", expectedName))
-				}
+			for _, expectedName := range tt.expectedTableNames {
+				c.Assert(slices.Collect(maps.Keys(switches)), qt.Contains, expectedName)
 			}
 		})
 	}

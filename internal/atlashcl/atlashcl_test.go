@@ -2,10 +2,14 @@ package atlashcl_test
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -1366,8 +1370,8 @@ trigger "users_set_updated_at" {
 
 policy "users_tenant_policy" {
   on      = table.users
-  for     = SELECT
-  to      = [role.app_user, PUBLIC, "adhoc_role"]
+  for     = ALL
+  to      = [role.app_user, CURRENT_USER, "adhoc_role"]
   using   = "true"
   check   = "true"
   comment = "tenant policy"
@@ -1404,10 +1408,12 @@ permission {
 	c.Assert(db.MaterializedViews[0].Name, qt.Equals, "public.user_stats")
 	c.Assert(db.Triggers, qt.HasLen, 1)
 	c.Assert(db.Triggers[0].Event, qt.Equals, "UPDATE")
-	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(db.RLSEnabledTables[0].Table, qt.Equals, "public.users")
-	c.Assert(db.RLSPolicies, qt.HasLen, 1)
-	c.Assert(db.RLSPolicies[0].ToRoles, qt.Equals, "app_user,PUBLIC,adhoc_role")
+	c.Assert(slices.Collect(maps.Keys(ownerSwitches(c, db))), qt.DeepEquals, []string{"public.users"})
+	// A role reference and a string are names, kept exactly; a bare keyword is
+	// the keyword.
+	c.Assert(ownerPolicies(c, db)["public.users.users_tenant_policy"].Roles, qt.DeepEquals, []pgpolicy.RoleSelector{
+		{Name: "app_user"}, {Keyword: pgpolicy.CurrentUser}, {Name: "adhoc_role"},
+	})
 	c.Assert(db.Grants, qt.HasLen, 2)
 	tableGrant := grantByTable(db.Grants, "users")
 	c.Assert(tableGrant.Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})

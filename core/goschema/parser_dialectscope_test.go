@@ -5,9 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/go-extras/go-kit/must"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 )
 
 // TestParse_DialectsIsAcceptedOnEveryStandaloneObjectDirective walks every
@@ -82,13 +84,16 @@ type Trg struct{}`,
 			name: "rls policy",
 			code: `//ptah:schema:rls:policy name="isolation" table="tenants" for="ALL" using="true" dialects="postgresql"
 type Pol struct{}`,
-			scope: func(db schemamodel.Database) []string { return db.RLSPolicies[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return must.Must(db.FeatureObjects.All())[0].Targets },
 		},
 		{
 			name: "rls enable",
-			code: `//ptah:schema:rls:enable table="tenants" dialects="postgresql"
+			code: `//ptah:schema:table name="tenants"
+//ptah:schema:rls:enable table="tenants" dialects="postgresql"
 type Ena struct{}`,
-			scope: func(db schemamodel.Database) []string { return db.RLSEnabledTables[0].Dialects },
+			scope: func(db schemamodel.Database) []string {
+				return db.Tables[0].Facets.TargetScope(pgpolicy.TableStateKind)
+			},
 		},
 		{
 			name: "role",
@@ -144,10 +149,72 @@ type Tenant struct {
 }
 `)
 
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(database.RLSEnabledTables[0].Dialects, qt.DeepEquals, []string{"postgres"})
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Dialects, qt.DeepEquals, []string{"postgres"})
+	c.Assert(database.Tables[0].Facets.TargetScope(pgpolicy.TableStateKind), qt.DeepEquals, []string{"postgres"})
+	objects := must.Must(database.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 1)
+	c.Assert(objects[0].Targets, qt.DeepEquals, []string{"postgres"})
+}
+
+// TestParse_RowSecurityScopeSelectsTheModel pins which model holds a
+// row-level security annotation. PostgreSQL-family scopes and no scope at all
+// reach the row-security owner; a scope naming only SQL Server or ClickHouse
+// stays a shared declaration, which those targets plan as a security policy
+// or a row policy.
+func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
+	tests := []struct {
+		name         string
+		dialects     string
+		wantOwned    int
+		wantShared   int
+		wantSwitches int
+	}{
+		{name: "no scope", dialects: "", wantOwned: 1, wantSwitches: 1},
+		{name: "PostgreSQL family", dialects: `dialects="postgres,cockroachdb,yugabytedb"`, wantOwned: 1, wantSwitches: 1},
+		{name: "SQL Server", dialects: `dialects="mssql"`, wantShared: 1},
+		{name: "ClickHouse and SQL Server", dialects: `dialects="clickhouse,mssql"`, wantShared: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database := mustParseSource(c, "models.go", `package test
+
+//ptah:schema:table name="tenants"
+//ptah:schema:rls:enable table="tenants" `+test.dialects+`
+//ptah:schema:rls:policy name="isolation" table="tenants" for="ALL" using="true" `+test.dialects+`
+type Tenant struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+}
+`)
+
+			c.Assert(ownerPolicies(c, &database), qt.HasLen, test.wantOwned)
+			c.Assert(ownerSwitches(c, &database), qt.HasLen, test.wantSwitches)
+			c.Assert(database.RLSPolicies, qt.HasLen, test.wantShared)
+			c.Assert(database.RLSEnabledTables, qt.HasLen, test.wantShared)
+		})
+	}
+}
+
+// TestParse_RowSecurityScopeSelectsTheModel_FailurePath pins the refusal of a
+// scope naming PostgreSQL-family targets beside others: no one model holds
+// that declaration, and the refusal says how to split it.
+func TestParse_RowSecurityScopeSelectsTheModel_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	database, err := goschema.ParseSource("models.go", `package test
+
+//ptah:schema:table name="tenants"
+//ptah:schema:rls:policy name="isolation" table="tenants" for="ALL" using="true" dialects="postgres,mssql"
+type Tenant struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+}
+`)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*scoped to postgres,sqlserver mixes PostgreSQL-family targets with others.*declare one scoped to postgres and another scoped to sqlserver.*`)
+	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 }
 
 // TestParse_ADialectScopeThatNamesNothingIsRefused pins the fail-closed half.

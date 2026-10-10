@@ -3,10 +3,13 @@ package goschematogo_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
@@ -156,8 +159,11 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	c.Assert(parsed.Grants[0].Role, qt.Equals, "app_user")
 	c.Assert(parsed.Grants[0].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
 	c.Assert(parsed.Grants[0].OnTable, qt.Equals, "order_items")
-	c.Assert(parsed.RLSPolicies, qt.HasLen, 1)
-	c.Assert(parsed.RLSEnabledTables, qt.HasLen, 1)
+	// Row-level security reads back as the PostgreSQL row-security owner's.
+	c.Assert(parsed.FeatureObjects.Refs(), qt.HasLen, 1)
+	c.Assert(slices.ContainsFunc(parsed.Tables, func(table schemamodel.Table) bool {
+		return slices.Contains(table.Facets.Kinds(), pgpolicy.TableStateKind)
+	}), qt.IsTrue)
 }
 
 // TestRenderGrantsRoundTripThroughParser compares the whole grant the parser

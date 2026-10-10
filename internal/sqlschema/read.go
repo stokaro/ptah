@@ -59,7 +59,8 @@ func ReadOnto(
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
-	if document == nil {
+	alone := document == nil
+	if alone {
 		document = NewDocument(nil)
 	}
 	database, err := toDatabase(statements, dialect, document)
@@ -87,6 +88,11 @@ func ReadOnto(
 	}
 	if err != nil {
 		return schemamodel.Database{}, nil, err
+	}
+	if alone {
+		if err := OwnRowSecurity(&database, dialect); err != nil {
+			return schemamodel.Database{}, nil, err
+		}
 	}
 	schemamodel.Finalize(&database)
 	return database, statements, nil

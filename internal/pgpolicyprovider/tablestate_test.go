@@ -211,3 +211,73 @@ func TestCompareTableStates_OnlyOnRowSecurityTargets(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 	c.Assert(direct.Changes, qt.HasLen, 0)
 }
+
+// defaultedCoverage is complete desired coverage of the switches, with the
+// orders table's switches left to the owner's default.
+func defaultedCoverage(c *qt.C) schemaext.Coverage {
+	c.Helper()
+	return must.Must(pgpolicy.Coverage(pgpolicy.TableStateKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: pgpolicy.TableStateKind, Subject: tableRef("orders"), Knowledge: pgpolicy.DefaultedSwitches()}}))
+}
+
+// TestCompareTableStates_KeepsDefaultedSwitches pins stokaro/ptah#2048: a
+// declaration that names a table's policies and not its switches neither
+// enables nor disables the table, whatever the switches are, and a table whose
+// switches were not read is not left undecided.
+func TestCompareTableStates_KeepsDefaultedSwitches(t *testing.T) {
+	tests := []struct {
+		name     string
+		observed []schemaext.Value
+		adopted  []schemaext.Value
+	}{
+		{name: "row security on", observed: []schemaext.Value{&pgpolicy.ObservedTableState{Enabled: true, Forced: true}},
+			adopted: []schemaext.Value{&pgpolicy.DesiredTableState{Enabled: true, Forced: true}}},
+		{name: "row security off", adopted: []schemaext.Value{&pgpolicy.DesiredTableState{}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := facetComparison(c, nil, records(c, test.observed...), surviving("orders"))
+			request.Desired.Coverage = defaultedCoverage(c)
+
+			result, err := newRuntime(c).CompareFacets(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 0)
+			c.Assert(result.Undecided, qt.HasLen, 0)
+			c.Assert(result.Desired.Records, qt.DeepEquals, records(c, test.adopted...))
+		})
+	}
+}
+
+// TestCompareTableStates_KeepsDefaultedSwitchesNobodyRead pins a defaulted
+// table whose switches the read did not establish: there is nothing to keep
+// and nothing to decide.
+func TestCompareTableStates_KeepsDefaultedSwitchesNobodyRead(t *testing.T) {
+	c := qt.New(t)
+	request := facetComparison(c, nil, nil, surviving("orders"))
+	request.Desired.Coverage = defaultedCoverage(c)
+	request.Current.Coverage = must.Must(pgpolicy.Coverage(pgpolicy.TableStateKind, schemaext.Observed,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not read"}, nil))
+
+	result, err := newRuntime(c).CompareFacets(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 0)
+}
+
+// TestCompareTableStates_DeclaredSwitchesOverrideTheDefault pins that a switch
+// declared elsewhere for a table whose policies another declaration left
+// defaulted is compared as declared.
+func TestCompareTableStates_DeclaredSwitchesOverrideTheDefault(t *testing.T) {
+	c := qt.New(t)
+	request := facetComparison(c, records(c, &pgpolicy.DesiredTableState{}), records(c, &pgpolicy.ObservedTableState{Enabled: true}), surviving("orders"))
+	request.Desired.Coverage = defaultedCoverage(c)
+
+	result, err := newRuntime(c).CompareFacets(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 1)
+	c.Assert(result.Changes[0].Change.Value.(*pgpolicy.TableStateChange).After, qt.DeepEquals, &pgpolicy.DesiredTableState{})
+}

@@ -5,6 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/feature/pgpolicy"
+
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
@@ -259,9 +261,9 @@ func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
 
 		parsed := renderAndParse(c, db)
 
-		c.Assert(parsed.RLSPolicies, qt.HasLen, 1)
-		c.Assert(parsed.RLSPolicies[0].PolicyFor, qt.Equals, "ALL")
-		c.Assert(parsed.RLSPolicies[0].ToRoles, qt.Equals, "rdr")
+		policy := ownerPolicies(c, parsed)["public.users.users_read"]
+		c.Assert(policy.Command, qt.Equals, pgpolicy.CommandAll)
+		c.Assert(policy.Roles, qt.DeepEquals, []pgpolicy.RoleSelector{{Name: "rdr"}})
 	})
 
 	t.Run("an enum-typed column keeps its type and stops being raw SQL", func(t *testing.T) {

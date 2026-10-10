@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasreport"
 )
@@ -159,7 +160,7 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
 		parsed, err := atlashcl.Parse([]byte(data), path)
 		c.Assert(err, qt.IsNil)
-		c.Assert(parsed.FeatureCoverage.Equal(must.Must(tsschema.CompleteCoverage(schemaext.Desired))), qt.IsTrue)
+		c.Assert(parsed.FeatureCoverage.Equal(must.Must(must.Must(tsschema.CompleteCoverage(schemaext.Desired)).Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))))), qt.IsTrue)
 	}
 }
 
