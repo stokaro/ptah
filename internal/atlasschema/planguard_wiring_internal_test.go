@@ -18,6 +18,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -30,13 +31,14 @@ import (
 // the comparison that would read it.
 var goschemaDatabaseFixture = schemamodel.Database{}
 
-// withoutPlanLint neutralizes the escape lint for one test, so anything that
-// still refuses a statement is doing so for real.
+// withoutPlanLint neutralizes the escape lint and the dev replay guard for one
+// test, so anything that still refuses a statement is doing so for real.
 func withoutPlanLint(c *qt.C) {
 	c.Helper()
-	original := checkPlanStatements
+	lint, guard := checkPlanStatements, guardPlanRehearsal
 	checkPlanStatements = func([]string, string) error { return nil }
-	c.Cleanup(func() { checkPlanStatements = original })
+	guardPlanRehearsal = func([]string, catalog.ServerInfo) error { return nil }
+	c.Cleanup(func() { checkPlanStatements, guardPlanRehearsal = lint, guard })
 }
 
 func connectSQLiteForWiring(c *qt.C, dbPath string) *dbschema.DatabaseConnection {

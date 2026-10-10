@@ -407,23 +407,24 @@ func rehearseStatementsOnDev(
 		return errors.New("schema apply simulation requires target database connection")
 	}
 	// A plan for a whole server names each table by its database and runs as
-	// written on a whole dev server; the guard keeps it to what the reset of
-	// that server removes. A plan for one database is re-scoped onto the dev
-	// database.
-	var err error
-	if devConn.Info().WholeServer {
-		err = guardServerRehearsal(statements, devConn.Info())
-	} else {
+	// written on a whole dev server. A plan for one database is re-scoped onto
+	// the dev database. Either way the guard reads what the dev server will
+	// execute, and keeps it to what the cleanup of that server removes.
+	if !devConn.Info().WholeServer {
+		var err error
 		statements, err = rescopeStatementsForDevDatabase(
 			statements, devConn.Info().Dialect, targetConn.Info().Schema, devConn.Info().Schema,
 		)
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	// The lint reads exactly what the dev database will execute, so it runs on
 	// the re-scoped statements rather than on the plan they came from.
 	if err := checkPlanStatements(statements, devConn.Info().Dialect); err != nil {
+		return err
+	}
+	if err := guardPlanRehearsal(statements, devConn.Info()); err != nil {
 		return err
 	}
 	// The dev database executes these statements for real, and they came from
@@ -440,6 +441,12 @@ func rehearseStatementsOnDev(
 // a variable so a test can neutralize the lint and prove that the engine-level
 // restrictions — not the lint — are what stop an escape.
 var checkPlanStatements = CheckPlanStatementsSandboxable
+
+// guardPlanRehearsal is [guardRehearsedPlan] as used by the rehearsal core,
+// a variable for the reason [checkPlanStatements] is one: the replay guard
+// refuses an ATTACH too, and a test that proves the engine restriction holds
+// has to take both screens away.
+var guardPlanRehearsal = guardRehearsedPlan
 
 func rehearseOnPreparedDev(
 	ctx context.Context,

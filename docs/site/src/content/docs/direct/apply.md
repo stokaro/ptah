@@ -112,6 +112,11 @@ bounds the session advisory lock that serializes concurrent applies,
 `$VISUAL`/`$EDITOR`, and `--schemas`, `--include`, and `--exclude` scope both
 comparison sides.
 
+A plan statement whose effect reaches past the dev database, such as a role or
+a routine body, is refused before anything runs unless the dev server is the
+run's own; see
+[the baseline a rehearsal writes](../../concepts/database-urls-and-dev-databases/#the-baseline-a-rehearsal-writes).
+
 Saved-plan rehearsal and post-apply verification require complete comparison
 evidence. An empty diff with an unknown feature state does not establish that
 the plan reached its desired schema. If verification after apply lacks that

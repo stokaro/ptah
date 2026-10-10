@@ -1242,7 +1242,9 @@ a server runs; see
 [a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions).
 The refusal names both ways. Beside a URL
 naming one database the plan runs in a database of that name, created on the
-dev server and dropped after the rehearsal. The pairs Atlas refuses are
+dev server and dropped after the rehearsal, and it is held to that database's
+realm the same way; see
+[the baseline a rehearsal writes](../../concepts/database-urls-and-dev-databases/#the-baseline-a-rehearsal-writes). The pairs Atlas refuses are
 refused in its words:
 
 - a SQL file or a migration directory beside a URL naming one database:

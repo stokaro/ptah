@@ -105,20 +105,32 @@ func openRehearsalDatabase(
 	}, nil
 }
 
-// guardServerRehearsal refuses a statement of a plan rehearsed on a whole dev
-// server that the reset of that server would leave behind: a role, a user, a
-// privilege or a stored body. Databases, and everything in them, the reset
-// drops; see [devclean.ReplayRealmServerDatabases].
+// guardRehearsedPlan refuses a statement of a plan rehearsal whose effect the
+// cleanup of the dev server would leave behind, before any statement runs.
+//
+// On a dev database the operator named, that is anything past the database: a
+// role, a routine body that writes elsewhere, a comment the reset keeps. The
+// baseline is held to the same realm (see [guardRehearsalBaseline]), and the
+// plan comes from the less trusted desired schema, so before this the plan was
+// the weaker half: a CREATE ROLE ran for real on the shared server, outlived
+// the run, and failed the real apply on the role it had left
+// (stokaro/ptah#4294). On a whole MySQL or MariaDB dev server it is a role, a
+// user, a privilege or a stored body; databases, and everything in them, the
+// reset drops; see [devclean.ReplayRealmServerDatabases].
 //
 // On a server the run owns, started by a docker URL or declared disposable,
 // nothing outlives the run that matters, and the rehearsal runs what a
 // migration replay there runs; see [devclean.DevReplayRealm]. On any other
 // server a refusal that ownership would lift names the two ways to it.
-func guardServerRehearsal(statements []string, dev catalog.ServerInfo) error {
+func guardRehearsedPlan(statements []string, dev catalog.ServerInfo) error {
+	place := "the dev database"
+	if dev.WholeServer {
+		place = "a whole dev server"
+	}
 	guard := devclean.NewDevReplayGuard(dev)
 	for i, statement := range statements {
 		if err := guard.ValidateStatement(statement); err != nil {
-			return fmt.Errorf("statement %d cannot be rehearsed on a whole dev server: %w", i+1, err)
+			return fmt.Errorf("statement %d cannot be rehearsed on %s: %w", i+1, place, err)
 		}
 	}
 	return nil
