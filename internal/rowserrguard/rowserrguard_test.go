@@ -1,6 +1,7 @@
 package rowserrguard_test
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -79,7 +80,15 @@ func declaringPackages(c *qt.C) []string {
 	found := make(map[string]struct{})
 	fileSet := token.NewFileSet()
 	for _, relative := range trackedGoFiles(c, root) {
-		file, err := parser.ParseFile(fileSet, filepath.Join(root, relative), nil, parser.SkipObjectResolution)
+		source, err := os.ReadFile(filepath.Join(root, relative))
+		c.Assert(err, qt.IsNil)
+		// The result type is spelled Rows, and a file that never spells it
+		// declares no such Query. That is most of the tree, and only the rest
+		// is parsed.
+		if !bytes.Contains(source, []byte("Rows")) {
+			continue
+		}
+		file, err := parser.ParseFile(fileSet, filepath.Join(root, relative), source, parser.SkipObjectResolution)
 		c.Assert(err, qt.IsNil, qt.Commentf("parsing %s", relative))
 		for range declarationsIn(file) {
 			found[importPath(c, modules, relative)] = struct{}{}

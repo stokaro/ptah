@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -120,6 +122,19 @@ func TestGuardSeesPtahsOwnPastNarrated(t *testing.T) {
 		{
 			name: "the clause wraps onto the next comment line",
 			src:  "package p\n\n// The value is kept. It used\n// to be discarded here.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// The regexp folds case, and it folds the s of used to the long s,
+			// which is not ASCII. These two rows hold the shortcut that skips a
+			// file which cannot match to that folding rather than to English.
+			name: "in capitals",
+			src:  "package p\n\n// IT USED TO RENDER A COMMENT.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "with a long s",
+			src:  "package p\n\n// It u\u017fed to render a comment.\nconst x = 1\n",
 			want: 1,
 		},
 		{
@@ -282,16 +297,70 @@ func TestGuardSeesAStatementDatedToAPtahIssue(t *testing.T) {
 	}
 }
 
+// commentsOnly is how both rules parse a file. They read only its comments, so
+// the parse skips object resolution: across the whole tree that is two thirds
+// of the parse, and more under -race.
+const commentsOnly = parser.ParseComments | parser.SkipObjectResolution
+
+// narratedSpellings are what every narratedPast match spells on one comment
+// line once lowercased. The regexp folds case, and of the letters of "used"
+// only the s folds outside ASCII, to the long s.
+var narratedSpellings = []string{"used", "u\u017fed"}
+
+// datingSpellings are what every datedToAnIssue match holds: the # of an issue
+// reference.
+var datingSpellings = []string{"#"}
+
+// commentsIfAny parses one file for a rule, or answers nil without parsing
+// when the file's text cannot hold a match.
+//
+// Each rule names the spellings every one of its matches contains, and skips a
+// file, and then a comment group, that holds none of them. Turning quotes and
+// comment markers into spaces cannot add a letter, so the skip never hides a
+// match, and parsing and matching what cannot match is most of what a rule
+// costs under -race.
+func commentsIfAny(c *qt.C, root, rel string, spellings []string) (*token.FileSet, *ast.File) {
+	c.Helper()
+	source, err := os.ReadFile(filepath.Join(root, rel))
+	c.Assert(err, qt.IsNil)
+	lowered := bytes.ToLower(source)
+	if !slices.ContainsFunc(spellings, func(spelling string) bool {
+		return bytes.Contains(lowered, []byte(spelling))
+	}) {
+		return nil, nil
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join(root, rel), source, commentsOnly)
+	c.Assert(err, qt.IsNil, qt.Commentf("parse %s", rel))
+	return fset, file
+}
+
+// groupHolds reports whether any comment of group spells one of spellings once
+// lowercased. Both rules carry their quote state across a group and reset it
+// with the next one, so a group that holds none can be skipped whole.
+func groupHolds(group *ast.CommentGroup, spellings []string) bool {
+	return slices.ContainsFunc(group.List, func(comment *ast.Comment) bool {
+		lowered := strings.ToLower(comment.Text)
+		return slices.ContainsFunc(spellings, func(spelling string) bool {
+			return strings.Contains(lowered, spelling)
+		})
+	})
+}
+
 // narratedPastIn names every comment group in one file that says what Ptah did
 // before, as "path:line: phrase".
 func narratedPastIn(c *qt.C, root, rel string) []string {
 	c.Helper()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filepath.Join(root, rel), nil, parser.ParseComments)
-	c.Assert(err, qt.IsNil, qt.Commentf("parse %s", rel))
+	fset, file := commentsIfAny(c, root, rel, narratedSpellings)
+	if file == nil {
+		return nil
+	}
 
 	var found []string
 	for _, group := range file.Comments {
+		if !groupHolds(group, narratedSpellings) {
+			continue
+		}
 		var joined strings.Builder
 		open := ""
 		for _, comment := range group.List {
@@ -313,12 +382,16 @@ func narratedPastIn(c *qt.C, root, rel string) []string {
 // to a Ptah issue, as "path:line: phrase".
 func datingClausesIn(c *qt.C, root, rel string) []string {
 	c.Helper()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filepath.Join(root, rel), nil, parser.ParseComments)
-	c.Assert(err, qt.IsNil, qt.Commentf("parse %s", rel))
+	fset, file := commentsIfAny(c, root, rel, datingSpellings)
+	if file == nil {
+		return nil
+	}
 
 	var found []string
 	for _, group := range file.Comments {
+		if !groupHolds(group, datingSpellings) {
+			continue
+		}
 		// A quotation may wrap onto the next comment line. Blanking per line
 		// would leave such a quote open and read its contents as prose, so the
 		// delimiter parity carries across the group and resets with it -- the

@@ -449,10 +449,20 @@ func namesInBothClassifications() []string {
 
 // scanFile reports the guard violations in one Go source file, as
 // "path:line: reason" strings.
+//
+// The guard matches call shapes by name and never asks what an identifier
+// resolves to, so the parse skips object resolution, which is most of its
+// cost. Every violation reads the environment through os.Getenv or
+// os.LookupEnv, so a file whose text names neither function is not parsed.
 func scanFile(c *qt.C, root, path string) []string {
 	c.Helper()
+	source, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	if !bytes.Contains(source, []byte("Getenv")) && !bytes.Contains(source, []byte("LookupEnv")) {
+		return nil
+	}
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, 0)
+	file, err := parser.ParseFile(fset, path, source, parser.SkipObjectResolution)
 	c.Assert(err, qt.IsNil)
 
 	relative, err := filepath.Rel(root, path)
@@ -622,7 +632,7 @@ func ptahVarNames(c *qt.C, root string) []string {
 	var names []string
 	for _, path := range goSourceFiles(c, root) {
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, path, nil, 0)
+		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
 		c.Assert(err, qt.IsNil)
 		ast.Inspect(file, func(node ast.Node) bool {
 			literal, ok := node.(*ast.BasicLit)

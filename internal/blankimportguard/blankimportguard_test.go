@@ -95,10 +95,15 @@ func TestGuardSeesABareBlankImport(t *testing.T) {
 
 // bareBlankImports names every blank import in one file that carries no comment
 // of its own, as "path:line: import".
+//
+// The parse stops after the import declarations. Go puts every import before
+// the first other declaration, and a comment on or above an import is read
+// while the import is, so the rest of the file can say nothing about one; it
+// is most of what parsing the whole tree costs.
 func bareBlankImports(c *qt.C, root, rel string) []string {
 	c.Helper()
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filepath.Join(root, rel), nil, parser.ParseComments)
+	file, err := parser.ParseFile(fset, filepath.Join(root, rel), nil, parser.ImportsOnly|parser.ParseComments)
 	c.Assert(err, qt.IsNil, qt.Commentf("parse %s", rel))
 
 	var bare []string

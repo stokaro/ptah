@@ -370,7 +370,6 @@ func loadNodeTypes(c *qt.C) loadedNodeTypes {
 		packages.NeedFiles |
 		packages.NeedCompiledGoFiles |
 		packages.NeedImports |
-		packages.NeedDeps |
 		packages.NeedTypes |
 		packages.NeedSyntax |
 		packages.NeedTypesInfo}

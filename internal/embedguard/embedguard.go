@@ -76,24 +76,16 @@ func hatchedByInterface(
 // declaration entering it is a decision, the same shape the emission census
 // uses for the statement shapes it cannot classify.
 func HatchedByInterface(root string) ([]string, error) {
-	declared, err := Declarations(root)
-	if err != nil {
-		return nil, err
-	}
-	called, err := calledNames(root)
-	if err != nil {
-		return nil, err
-	}
-	viaInterface, err := interfaceMethods(root)
+	tree, err := read(root)
 	if err != nil {
 		return nil, err
 	}
 	hatched := make([]string, 0)
-	for _, declaration := range declared {
-		if called[declaration.Name][declaration.Package] {
+	for _, declaration := range tree.declared {
+		if tree.called[declaration.Name][declaration.Package] {
 			continue
 		}
-		if !hatchedByInterface(declaration, called, viaInterface) {
+		if !hatchedByInterface(declaration, tree.called, tree.viaInterface) {
 			continue
 		}
 		hatched = append(hatched, declaration.Package+"."+declaration.Name)
@@ -131,23 +123,14 @@ var Exempt = map[string]string{
 // Scan reports every exported declaration under root's internal/embed... that
 // no non-test file in root calls.
 func Scan(root string) ([]Finding, error) {
-	declared, err := Declarations(root)
-	if err != nil {
-		return nil, err
-	}
-	called, err := calledNames(root)
-	if err != nil {
-		return nil, err
-	}
-
-	viaInterface, err := interfaceMethods(root)
+	tree, err := read(root)
 	if err != nil {
 		return nil, err
 	}
 
 	findings := make([]Finding, 0)
-	for _, declaration := range declared {
-		if called[declaration.Name][declaration.Package] {
+	for _, declaration := range tree.declared {
+		if tree.called[declaration.Name][declaration.Package] {
 			continue
 		}
 		// A name an interface declares is reachable from a package that never
@@ -160,7 +143,7 @@ func Scan(root string) ([]Finding, error) {
 		// not import embedpg. Without this, the reach rule reported a method
 		// the product calls on every catch-up -- a false positive, which is the
 		// direction this package promises never to produce.
-		if hatchedByInterface(declaration, called, viaInterface) {
+		if hatchedByInterface(declaration, tree.called, tree.viaInterface) {
 			continue
 		}
 		if _, exempt := Exempt[declaration.Name]; exempt {
@@ -183,43 +166,80 @@ func Declarations(root string) ([]Finding, error) {
 	}
 	var declared []Finding
 	err = walkGoFiles(filepath.Join(root, "internal"), func(path string, file *ast.File, fset *token.FileSet) {
-		slashed := filepath.ToSlash(path)
-		if !strings.Contains(slashed, "/embed") {
-			return
-		}
-		// This package is not the vertical it guards. Its exported surface is
-		// the gate's own entry points, whose only caller a gate can have is the
-		// test that runs it, so scanning itself reports every one of them --
-		// which the name-only check hid behind some other `.Scan(` in the
-		// module until it learned to ask about reach (stokaro/ptah#2682).
-		if strings.Contains(slashed, "/internal/embedguard/") {
-			return
-		}
-		for _, decl := range file.Decls {
-			function, isFunction := decl.(*ast.FuncDecl)
-			if !isFunction || !function.Name.IsExported() {
-				continue
-			}
-			relative, relErr := filepath.Rel(root, path)
-			if relErr != nil {
-				relative = path
-			}
-			owner, pathErr := importPathOf(root, module, filepath.Dir(path))
-			if pathErr != nil {
-				continue
-			}
-			declared = append(declared, Finding{
-				Name:    function.Name.Name,
-				Package: owner,
-				File:    filepath.ToSlash(relative),
-				Line:    fset.Position(function.Name.Pos()).Line,
-			})
-		}
+		declared = append(declared, declarationsIn(root, module, path, file, fset)...)
 	})
 	return declared, err
 }
 
-// calledNames collects, for every name a non-test file uses, the packages that
+// reading is what one walk of the module answers: the inference packages'
+// declarations, and for the whole module the names each file uses and the
+// method names interfaces declare.
+type reading struct {
+	declared     []Finding
+	called       map[string]map[string]bool
+	viaInterface map[string]bool
+}
+
+// read walks the module once. [Scan] and [HatchedByInterface] ask three
+// questions of the same files, and parsing them is nearly all of what an
+// answer costs, so the three are answered from one parse of each file.
+func read(root string) (reading, error) {
+	module, err := modulePath(root)
+	if err != nil {
+		return reading{}, err
+	}
+	result := reading{called: make(map[string]map[string]bool), viaInterface: make(map[string]bool)}
+	inference := filepath.Join(root, "internal") + string(filepath.Separator)
+	err = walkGoFiles(root, func(path string, file *ast.File, fset *token.FileSet) {
+		if strings.HasPrefix(path, inference) {
+			result.declared = append(result.declared, declarationsIn(root, module, path, file, fset)...)
+		}
+		noteCalls(result.called, root, module, path, file)
+		noteInterfaceMethods(result.viaInterface, file)
+	})
+	return result, err
+}
+
+// declarationsIn is the exported functions and methods one file declares, when
+// the file belongs to the inference vertical.
+func declarationsIn(root, module, path string, file *ast.File, fset *token.FileSet) []Finding {
+	slashed := filepath.ToSlash(path)
+	if !strings.Contains(slashed, "/embed") {
+		return nil
+	}
+	// This package is not the vertical it guards. Its exported surface is
+	// the gate's own entry points, whose only caller a gate can have is the
+	// test that runs it, so scanning itself reports every one of them --
+	// which the name-only check hid behind some other `.Scan(` in the
+	// module until it learned to ask about reach (stokaro/ptah#2682).
+	if strings.Contains(slashed, "/internal/embedguard/") {
+		return nil
+	}
+	var declared []Finding
+	for _, decl := range file.Decls {
+		function, isFunction := decl.(*ast.FuncDecl)
+		if !isFunction || !function.Name.IsExported() {
+			continue
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			relative = path
+		}
+		owner, pathErr := importPathOf(root, module, filepath.Dir(path))
+		if pathErr != nil {
+			continue
+		}
+		declared = append(declared, Finding{
+			Name:    function.Name.Name,
+			Package: owner,
+			File:    filepath.ToSlash(relative),
+			Line:    fset.Position(function.Name.Pos()).Line,
+		})
+	}
+	return declared
+}
+
+// noteCalls records, for every name one non-test file uses, the packages that
 // file could have been naming.
 //
 // By name AND by reach, rather than by resolved symbol. The name alone was too
@@ -237,13 +257,9 @@ func Declarations(root string) ([]Finding, error) {
 // still masks the declaration. The direction is unchanged -- a false negative
 // stays possible and a false positive stays impossible -- and the set of
 // coincidences that produce one is much smaller.
-func calledNames(root string) (map[string]map[string]bool, error) {
-	module, err := modulePath(root)
-	if err != nil {
-		return nil, err
-	}
-	called := make(map[string]map[string]bool)
-	note := func(name string, reachable map[string]bool) {
+func noteCalls(called map[string]map[string]bool, root, module, path string, file *ast.File) {
+	reachable := reachableFrom(root, module, path, file)
+	note := func(name string) {
 		if called[name] == nil {
 			called[name] = make(map[string]bool, len(reachable))
 		}
@@ -251,27 +267,23 @@ func calledNames(root string) (map[string]map[string]bool, error) {
 			called[name][path] = true
 		}
 	}
-	err = walkGoFiles(root, func(path string, file *ast.File, _ *token.FileSet) {
-		reachable := reachableFrom(root, module, path, file)
-		declaredHere := make(map[*ast.Ident]bool)
-		for _, decl := range file.Decls {
-			if function, isFunction := decl.(*ast.FuncDecl); isFunction {
-				declaredHere[function.Name] = true
+	declaredHere := make(map[*ast.Ident]bool)
+	for _, decl := range file.Decls {
+		if function, isFunction := decl.(*ast.FuncDecl); isFunction {
+			declaredHere[function.Name] = true
+		}
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.SelectorExpr:
+			note(typed.Sel.Name)
+		case *ast.Ident:
+			if !declaredHere[typed] {
+				note(typed.Name)
 			}
 		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			switch typed := node.(type) {
-			case *ast.SelectorExpr:
-				note(typed.Sel.Name, reachable)
-			case *ast.Ident:
-				if !declaredHere[typed] {
-					note(typed.Name, reachable)
-				}
-			}
-			return true
-		})
+		return true
 	})
-	return called, err
 }
 
 // reachableFrom is every package one file can name: the ones it imports, and
@@ -351,28 +363,25 @@ func walkGoFiles(root string, visit func(string, *ast.File, *token.FileSet)) err
 	})
 }
 
-// interfaceMethods is every method name an interface in this module declares.
+// noteInterfaceMethods records every method name an interface in one file
+// declares.
 //
 // The module's own interfaces only. A dependency's interface is not scanned,
 // and an interface here that embeds one is not followed, so a method
 // implementing a third-party interface and named nowhere in this module is
 // still reported. That is the loud direction, and the reason has to be written
 // into Exempt rather than inferred.
-func interfaceMethods(root string) (map[string]bool, error) {
-	names := make(map[string]bool)
-	err := walkGoFiles(root, func(_ string, file *ast.File, _ *token.FileSet) {
-		ast.Inspect(file, func(node ast.Node) bool {
-			declared, isInterface := node.(*ast.InterfaceType)
-			if !isInterface {
-				return true
-			}
-			for _, method := range declared.Methods.List {
-				for _, name := range method.Names {
-					names[name.Name] = true
-				}
-			}
+func noteInterfaceMethods(names map[string]bool, file *ast.File) {
+	ast.Inspect(file, func(node ast.Node) bool {
+		declared, isInterface := node.(*ast.InterfaceType)
+		if !isInterface {
 			return true
-		})
+		}
+		for _, method := range declared.Methods.List {
+			for _, name := range method.Names {
+				names[name.Name] = true
+			}
+		}
+		return true
 	})
-	return names, err
 }
