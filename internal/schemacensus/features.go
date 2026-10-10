@@ -72,16 +72,17 @@ var (
 )
 
 // visitFeatures traverses cloned public values, then captures the changed
-// collection when the caller is ablating. It never reaches private maps or
-// mutates an interface-owned payload in its source container.
-func visitFeatures(value reflect.Value, walk func(reflect.Value)) bool {
+// collection when the walk writes. It never reaches private maps or mutates an
+// interface-owned payload in its source container.
+func visitFeatures(value reflect.Value, mode access, walk func(reflect.Value)) bool {
+	write := mode == readWrite && value.CanSet()
 	switch value.Type() {
 	case objectsType:
 		objects := must.Must(value.Interface().(schemaext.Objects).All())
 		for _, object := range objects {
 			walk(reflect.ValueOf(object.Value))
 		}
-		if value.CanSet() {
+		if write {
 			value.Set(reflect.ValueOf(must.Must(schemaext.NewObjects(objects...))))
 		}
 		return true
@@ -90,11 +91,11 @@ func visitFeatures(value reflect.Value, walk func(reflect.Value)) bool {
 		values := must.Must(facets.Values())
 		for _, feature := range values {
 			walk(reflect.ValueOf(feature))
-			if value.CanSet() {
+			if write {
 				facets = must.Must(facets.Replace(feature))
 			}
 		}
-		if value.CanSet() {
+		if write {
 			value.Set(reflect.ValueOf(facets))
 		}
 		return true

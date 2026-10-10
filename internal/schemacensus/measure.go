@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -90,43 +93,110 @@ func renderSurface(ctx context.Context, service renderer.SchemaService) surface 
 // The two surfaces are measured by one function on purpose: an agreement test
 // comparing two loops that had drifted apart would report the drift as a
 // disagreement between the surfaces.
+//
+// Every fixture and every field is an independent measurement, so they run
+// side by side; the result does not depend on the order they finish in. The
+// first fixture's baseline runs alone, before anything else starts: a surface
+// that cannot answer at all, or a context that is canceled, then fails once
+// rather than once per worker.
 func measure(surface surface) ([]Observation, error) {
 	fixtures := Fixtures()
 	cells := measuredCells()
+	fields := Fields()
 
 	baselines := make([]map[string]string, len(fixtures))
-	for index, fixture := range fixtures {
-		baseline, err := everyCell(surface, fixture.Schema, fixture.Cells(cells))
+	baseline := func(index int) error {
+		fixture := fixtures[index]
+		answers, err := everyCell(surface, fixture.Schema, fixture.Cells(cells))
 		if err != nil {
-			return nil, fmt.Errorf("baseline %s: %w", fixture.Name, err)
+			return fmt.Errorf("baseline %s: %w", fixture.Name, err)
 		}
-		baselines[index] = baseline
+		baselines[index] = answers
+		return nil
+	}
+	if len(fixtures) > 0 {
+		if err := baseline(0); err != nil {
+			return nil, err
+		}
+	}
+	if err := inParallel(len(fixtures)-1, func(index int) error { return baseline(index + 1) }); err != nil {
+		return nil, err
 	}
 
-	fields := Fields()
-	observations := make([]Observation, 0, len(fields))
-	for _, field := range fields {
-		observation := Observation{Field: field}
-		for index, fixture := range fixtures {
-			if !Populated(fixture.Schema, field) {
-				continue
-			}
-			observation.Covered = append(observation.Covered, fixture.Name)
-			ablated, err := everyCell(surface, Ablate(fixture.Schema, field), fixture.Cells(cells))
-			if err != nil {
-				return nil, fmt.Errorf("ablate %s from %s: %w", field, fixture.Name, err)
-			}
-			for name, rendered := range ablated {
-				if rendered != baselines[index][name] {
-					observation.Cells = append(observation.Cells, name)
-				}
-			}
-		}
-		slices.Sort(observation.Cells)
-		observation.Cells = slices.Compact(observation.Cells)
-		observations = append(observations, observation)
+	observations := make([]Observation, len(fields))
+	err := inParallel(len(fields), func(index int) error {
+		observation, err := observe(surface, fields[index], fixtures, baselines, cells)
+		observations[index] = observation
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 	return observations, nil
+}
+
+// observe ablates one field from every fixture that declares it and names the
+// cells whose answer moved.
+func observe(
+	surface surface,
+	field string,
+	fixtures []Fixture,
+	baselines []map[string]string,
+	cells []capabilityprobe.Cell,
+) (Observation, error) {
+	observation := Observation{Field: field}
+	for index, fixture := range fixtures {
+		if !Populated(fixture.Schema, field) {
+			continue
+		}
+		observation.Covered = append(observation.Covered, fixture.Name)
+		ablated, err := everyCell(surface, Ablate(fixture.Schema, field), fixture.Cells(cells))
+		if err != nil {
+			return Observation{}, fmt.Errorf("ablate %s from %s: %w", field, fixture.Name, err)
+		}
+		for name, rendered := range ablated {
+			if rendered != baselines[index][name] {
+				observation.Cells = append(observation.Cells, name)
+			}
+		}
+	}
+	slices.Sort(observation.Cells)
+	observation.Cells = slices.Compact(observation.Cells)
+	return observation, nil
+}
+
+// inParallel calls work once for every index below n, on as many goroutines as
+// GOMAXPROCS allows. After a failure no further index starts, and the calls
+// already running finish. The failure at the lowest index is returned.
+func inParallel(n int, work func(index int) error) error {
+	var (
+		next    atomic.Int64
+		stopped atomic.Bool
+		mu      sync.Mutex
+		failed  = -1
+		failure error
+		wg      sync.WaitGroup
+	)
+	for range min(runtime.GOMAXPROCS(0), n) {
+		wg.Go(func() {
+			for !stopped.Load() {
+				index := int(next.Add(1) - 1)
+				if index >= n {
+					return
+				}
+				if err := work(index); err != nil {
+					stopped.Store(true)
+					mu.Lock()
+					if failed < 0 || index < failed {
+						failed, failure = index, err
+					}
+					mu.Unlock()
+				}
+			}
+		})
+	}
+	wg.Wait()
+	return failure
 }
 
 // measuredCells are the declared release lines, and each YDB line again with
