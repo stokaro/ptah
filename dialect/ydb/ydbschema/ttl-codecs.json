@@ -1,0 +1,63 @@
+{
+  "$id": "ptah.run/ydb/ttl/v1",
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "required": [
+        "column",
+        "interval"
+      ],
+      "properties": {
+        "column": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\u0000]*$"
+        },
+        "interval": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "enum": [
+            "SECONDS",
+            "MILLISECONDS",
+            "MICROSECONDS",
+            "NANOSECONDS"
+          ]
+        }
+      },
+      "meaning": "column is the column a row's age is measured from. interval is an ISO 8601 duration of weeks, days, hours, minutes and seconds, such as P30D. unit is what an integer column counts since the Unix epoch, omitted for a date column."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/ydb/ttl": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/policy"
+          }
+        ],
+        "additionalProperties": false,
+        "constraint": "The interval is one YDB's Interval literal takes, in whole seconds, no longer than YDB's Interval type holds. The value requests exactly this TTL; its absence under complete source coverage requests none."
+      }
+    },
+    "observed": {
+      "ptah.run/ydb/ttl": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/policy"
+          }
+        ],
+        "properties": {
+          "run_interval_seconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The interval is written as YDB shows the seconds it keeps. run_interval_seconds is the deletion run interval the SDK or the CLI set, omitted for the server's default. Absence on a table under complete read coverage is an observed absence; incomplete inspection belongs in coverage."
+      }
+    }
+  },
+  "canonicalization": "Strings must be valid UTF-8 and are kept verbatim. A unit is written in capitals. Do not read the interval as a value; comparison owns that."
+}

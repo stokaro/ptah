@@ -2170,10 +2170,6 @@ type TableDiff struct {
 	// comment report `Schema is synced` forever (stokaro/ptah#2168).
 	CommentChange *CommentChange `json:"comment_change,omitzero"`
 
-	// RowDeletionPolicyChange carries a row deletion policy transition, and is
-	// nil when the declaration and the database agree (stokaro/ptah#2236).
-	RowDeletionPolicyChange *RowDeletionPolicyChange `json:"row_deletion_policy_change,omitzero"`
-
 	// YDBColumnFamiliesChange is YDB's, and only the YDB planner plans it: a
 	// YDB row table's column families, with the columns each holds, when the
 	// declaration and the database disagree about them, nil when they agree.
@@ -2226,17 +2222,6 @@ type YDBColumnFamiliesChange struct {
 	Desired []ast.YDBColumnFamilySpec `json:"desired,omitempty"`
 	// Current is the families the database holds.
 	Current []ast.YDBColumnFamilySpec `json:"current,omitempty"`
-}
-
-// RowDeletionPolicyChange is one table's row deletion policy transition.
-//
-// Both sides travel: adding a policy and changing one are different
-// statements, and only the pair says which of the two this is.
-type RowDeletionPolicyChange struct {
-	// Desired is the policy the declaration states, nil for none.
-	Desired *ast.RowDeletionPolicySpec `json:"desired,omitzero"`
-	// Current is the policy the database carries, nil for none.
-	Current *ast.RowDeletionPolicySpec `json:"current,omitzero"`
 }
 
 // YDBTablePartitioningChange is YDB's: one YDB row table's settings

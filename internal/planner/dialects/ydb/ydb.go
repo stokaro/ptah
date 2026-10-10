@@ -93,7 +93,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -201,7 +200,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	}
 
 	for _, tableDiff := range diff.TablesModified {
-		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
+		if err := p.refuseModification(tableDiff, rebuilds, semantics); err != nil {
 			return nil, err
 		}
 	}
@@ -253,7 +252,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
 	result = append(result, changeIndexPartitioning(diff.IndexPartitioningChanged, rebuilds, semantics)...)
-	rebuiltNodes, err := p.changeTables(diff, rebuilds, semantics)
+	facets, err := p.planTableFacets(ctx, runtime, diff, rebuilds, semantics)
+	if err != nil {
+		return nil, err
+	}
+	rebuiltNodes, err := p.changeTables(diff, rebuilds, facets, semantics)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +303,6 @@ func (p *Planner) refuseModification(
 	tableDiff difftypes.TableDiff,
 	rebuilds map[string]*tableRebuild,
 	semantics identifier.Semantics,
-	notDescribed coverage.Set,
 ) error {
 	if err := refuseColumnTTLShape(tableDiff.Desired); err != nil {
 		return err
@@ -309,15 +311,12 @@ func (p *Planner) refuseModification(
 		return err
 	}
 	if _, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]; rebuilt {
-		if err := p.refuseRebuiltTableChanges(tableDiff); err != nil {
-			return err
-		}
-		return p.refuseTTLKey(tableDiff)
+		return p.refuseRebuiltTableChanges(tableDiff)
 	}
 	if err := p.refuseTableChanges(tableDiff); err != nil {
 		return err
 	}
-	return p.refuseTTLChange(tableDiff, notDescribed)
+	return refuseDroppingTheTTLColumn(tableDiff)
 }
 
 // changeTables writes each modified table's changes, in place or as a
@@ -325,6 +324,7 @@ func (p *Planner) refuseModification(
 func (p *Planner) changeTables(
 	diff *difftypes.SchemaDiff,
 	rebuilds map[string]*tableRebuild,
+	facets map[string][]ast.Node,
 	semantics identifier.Semantics,
 ) ([]ast.Node, error) {
 	var nodes []ast.Node
@@ -341,7 +341,7 @@ func (p *Planner) changeTables(
 	for _, tableDiff := range diff.TablesModified {
 		key := semantics.TableIdentityKey(tableDiff.TableName)
 		if _, rebuilt := rebuilds[key]; !rebuilt {
-			nodes = append(nodes, p.changeTable(tableDiff, diff.DeclaredUserTypes.Enums)...)
+			nodes = append(nodes, p.changeTable(tableDiff, diff.DeclaredUserTypes.Enums, facets[key])...)
 			continue
 		}
 		if err := writeRebuild(key); err != nil {
@@ -509,7 +509,7 @@ func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, s
 // or covered column is free by then, and after the TTL, so the column the TTL
 // read is free too; the TTL and the families come after the additions, so a
 // column the TTL reads exists, and so does a column that moves into a family.
-func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel.Enum) []ast.Node {
+func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel.Enum, facets []ast.Node) []ast.Node {
 	var nodes []ast.Node
 	alter := func(operation ast.AlterOperation) {
 		nodes = append(nodes, &ast.AlterTableNode{Name: tableDiff.TableName, Operations: []ast.AlterOperation{operation}})
@@ -528,9 +528,8 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 			HasChanged: true,
 		})
 	}
-	if operation := ttlOperation(tableDiff.RowDeletionPolicyChange); operation != nil {
-		alter(operation)
-	}
+	// The owners' statements for the table's own facets, its TTL among them.
+	nodes = append(nodes, facets...)
 	if operation := familyOperation(tableDiff); operation != nil {
 		alter(operation)
 	}

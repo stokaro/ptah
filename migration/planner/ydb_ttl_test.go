@@ -8,7 +8,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -40,7 +39,8 @@ func TestGenerateSchemaDiff_YDBRebuildKeepsATTLTheDesiredStateDoesNotDescribe(t 
 	current := &catalog.Database{
 		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)),
 		Tables: []catalog.Table{{Name: "events", Type: "TABLE",
-			RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"},
+			Facets: must.Must(must.Must(schemaext.NewFacets(&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "P30D"}})).
+				WithTargetScope(ydbschema.TTLKind, platform.YDB)),
 			Columns: []catalog.Column{
 				{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 				{Name: "n", DataType: "Int32", ColumnType: "Int32", IsNullable: "YES", OrdinalPosition: 2},

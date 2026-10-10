@@ -5,15 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/spannerttl"
 )
-
-// spannerColumnKey is the rule the comparator passes in production: the
-// target's own column-name semantics, which for Spanner are exact.
-var spannerColumnKey = identifier.ForDialect(platform.Spanner).ColumnIdentityKey
 
 // TestParse_ReadsWhatTheCatalogPrints pins the shapes a live server produced.
 //
@@ -66,12 +59,11 @@ func TestParse_ReadsWhatTheCatalogPrints(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			spec, err := spannerttl.Parse(test.expression)
+			parsed, found, err := spannerttl.ParseExpression(test.expression)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(spec, qt.IsNotNil)
-			c.Assert(spec.Column, qt.Equals, test.column)
-			c.Assert(spec.Interval, qt.Equals, test.interval)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(parsed, qt.Equals, spannerttl.Expression{Column: test.column, Interval: test.interval})
 		})
 	}
 }
@@ -90,10 +82,11 @@ func TestParse_NoPolicyIsNotAnError(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			spec, err := spannerttl.Parse(test.expression)
+			parsed, found, err := spannerttl.ParseExpression(test.expression)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(spec.IsZero(), qt.IsTrue)
+			c.Assert(found, qt.IsFalse)
+			c.Assert(parsed, qt.Equals, spannerttl.Expression{})
 		})
 	}
 }
@@ -119,188 +112,106 @@ func TestParse_RefusesWhatItCannotRead(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := spannerttl.Parse(test.expression)
+			parsed, found, err := spannerttl.ParseExpression(test.expression)
 
 			c.Assert(err, qt.ErrorMatches, `row deletion policy .* cannot be read: .*`)
+			c.Assert(found, qt.IsFalse)
+			c.Assert(parsed, qt.Equals, spannerttl.Expression{})
 		})
 	}
 }
 
-// TestEqual_ComparesTheIntervalAsAValue is the property the whole package
-// exists for: the server rewrites the interval, so text comparison plans a
-// change forever.
-func TestEqual_ComparesTheIntervalAsAValue(t *testing.T) {
+// TestEqualIntervals_ComparesTheIntervalAsAValue is the property the whole
+// package exists for: the server rewrites the interval, so text comparison
+// plans a change forever. The column is the owner's comparison; see
+// spannerschema.Equivalent.
+func TestEqualIntervals_ComparesTheIntervalAsAValue(t *testing.T) {
 	tests := []struct {
 		name     string
-		declared *ast.RowDeletionPolicySpec
-		stored   *ast.RowDeletionPolicySpec
+		declared string
+		stored   string
 		want     bool
 	}{
-		{
-			name:     "the rewriting a live server did",
-			declared: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "4 WEEKS 2 DAYS"},
-			want:     true,
-		},
-		{
-			name:     "a week is seven days, which is the server's own rule",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "7 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "1 WEEKS"},
-			want:     true,
-		},
+		{name: "the rewriting a live server did", declared: "30 days", stored: "4 WEEKS 2 DAYS", want: true},
+		{name: "a week is seven days, which is the server's own rule", declared: "7 days", stored: "1 WEEKS", want: true},
 		{
 			// The row that decided the arithmetic. Under PostgreSQL's interval
 			// rules months and days do not convert, so a comparison built on
 			// them calls these different and plans the same ALTER forever --
 			// measured, immediately after applying it successfully.
-			name:     "a month is thirty days, which PostgreSQL would deny",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "60 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "2 MONTHS"},
-			want:     true,
+			name: "a month is thirty days, which PostgreSQL would deny", declared: "60 days", stored: "2 MONTHS", want: true,
 		},
-		{
-			name:     "a day is twenty-four hours",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "1 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "24 HOURS"},
-			want:     true,
-		},
-		{
-			name:     "the mixed form a year is stored as",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "365 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "12 MONTHS 5 DAYS"},
-			want:     true,
-		},
-		{
-			name:     "four weeks and a day",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "29 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "4 WEEKS 24 HOURS"},
-			want:     true,
-		},
+		{name: "a day is twenty-four hours", declared: "1 days", stored: "24 HOURS", want: true},
+		{name: "the mixed form a year is stored as", declared: "365 days", stored: "12 MONTHS 5 DAYS", want: true},
+		{name: "four weeks and a day", declared: "29 days", stored: "4 WEEKS 24 HOURS", want: true},
 		{
 			// The control for the arithmetic: one day apart must stay a
 			// difference, or the reduction has folded everything together.
-			name:     "one day apart is still a change",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "30 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "1 MONTHS 24 HOURS"},
-			want:     false,
-		},
-		{
-			// The control for the column: without it, a comparison that only
-			// read the interval would call these equal and leave rows expiring
-			// off the wrong timestamp.
-			name:     "the same interval on a different column is a different policy",
-			declared: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "updated_at", Interval: "30 days"},
-			want:     false,
-		},
-		{
-			// Case is part of the name on this target: identifier.ForDialect
-			// gives Spanner ComparisonExact for columns, so these are two
-			// columns and moving the policy between them is a real change.
-			// Folding them together would leave the deletion tied to the wrong
-			// timestamp with nothing planned.
-			name:     "two columns differing only in case are two columns",
-			declared: &ast.RowDeletionPolicySpec{Column: "CreatedAt", Interval: "30 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "createdat", Interval: "30 days"},
-			want:     false,
-		},
-		{
-			// And the same spelling is the same column, which is what keeps the
-			// row above from being satisfied by a comparison that answers false
-			// for everything.
-			name:     "the same name is the same column",
-			declared: &ast.RowDeletionPolicySpec{Column: "CreatedAt", Interval: "30 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "CreatedAt", Interval: "4 WEEKS 2 DAYS"},
-			want:     true,
+			name: "one day apart is still a change", declared: "30 days", stored: "1 MONTHS 24 HOURS", want: false,
 		},
 		{
 			// The control for the interval: without it, a comparison that
 			// folded every interval to equal would pass every row above.
-			name:     "a genuinely different interval is a change",
-			declared: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "60 days"},
-			want:     false,
-		},
-		{
-			name:     "no policy on either side",
-			declared: nil,
-			stored:   nil,
-			want:     true,
-		},
-		{
-			name:     "a policy added",
-			declared: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			stored:   nil,
-			want:     false,
-		},
-		{
-			name:     "a policy removed",
-			declared: nil,
-			stored:   &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			want:     false,
+			name: "a genuinely different interval is a change", declared: "30 days", stored: "60 days", want: false,
 		},
 		{
 			// An interval neither side can read falls back to text, which
 			// converges. Reporting a difference here would plan a change on
 			// every run and never reach agreement.
-			name:     "a spelling this package cannot read, identical on both sides",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "every other tuesday"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "every other tuesday"},
-			want:     true,
+			name: "a spelling this package cannot read, identical on both sides", declared: "every other tuesday", stored: "every other tuesday", want: true,
 		},
-		{
-			name:     "two unreadable spellings that differ are still a change",
-			declared: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "every other tuesday"},
-			stored:   &ast.RowDeletionPolicySpec{Column: "ts", Interval: "some fridays"},
-			want:     false,
-		},
+		{name: "two unreadable spellings that differ are still a change", declared: "every other tuesday", stored: "some fridays", want: false},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(spannerttl.Equal(test.declared, test.stored, spannerColumnKey), qt.Equals, test.want)
+			c.Assert(spannerttl.EqualIntervals(test.declared, test.stored), qt.Equals, test.want)
 		})
 	}
 }
 
-// TestRender_EmitsWhatTheAuthorWrote pins that rendering is verbatim.
-func TestRender_EmitsWhatTheAuthorWrote(t *testing.T) {
-	tests := []struct {
-		name string
-		spec *ast.RowDeletionPolicySpec
-		want string
-	}{
-		{
-			name: "the author's spelling survives, not the server's",
-			spec: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			want: ` TTL INTERVAL '30 days' ON "created_at"`,
-		},
-		{
-			name: "a table with no policy carries no clause",
-			spec: nil,
-			want: "",
-		},
-		{
-			name: "a spec missing its column is not a policy",
-			spec: &ast.RowDeletionPolicySpec{Interval: "30 days"},
-			want: "",
-		},
-		{
-			name: "a spec missing its interval is not a policy",
-			spec: &ast.RowDeletionPolicySpec{Column: "created_at"},
-			want: "",
-		},
-	}
+// TestClause_EmitsWhatTheAuthorWrote pins that rendering is verbatim: the
+// author's spelling survives, not the server's.
+func TestClause_EmitsWhatTheAuthorWrote(t *testing.T) {
+	c := qt.New(t)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	rendered := spannerttl.Clause("created_at", "30 days", func(name string) string { return `"` + name + `"` })
+
+	c.Assert(rendered, qt.Equals, `TTL INTERVAL '30 days' ON "created_at"`)
+}
+
+// TestValidateInterval_HappyPath accepts every spelling the server stored and
+// a declaration may use, a zero interval among them, which the server accepts.
+func TestValidateInterval_HappyPath(t *testing.T) {
+	for _, interval := range []string{"30 days", "4 WEEKS 2 DAYS", "2 MONTHS", "24 HOURS", "0 DAYS", "12 MONTHS 5 DAYS"} {
+		t.Run(interval, func(t *testing.T) {
 			c := qt.New(t)
+			c.Assert(spannerttl.ValidateInterval(interval), qt.IsNil)
+		})
+	}
+}
 
-			rendered := spannerttl.Render(test.spec, func(name string) string { return `"` + name + `"` })
-
-			c.Assert(rendered, qt.Equals, test.want)
+// TestValidateInterval_FailurePath refuses what the server refuses and what
+// this package cannot read, since an unread spelling compared as text plans a
+// change on every run.
+func TestValidateInterval_FailurePath(t *testing.T) {
+	tests := []struct {
+		interval string
+		wantErr  string
+	}{
+		{interval: "1 hour", wantErr: `interval "1 hour" is not a whole number of days, which Spanner refuses`},
+		{interval: "36 hours", wantErr: `interval "36 hours" is not a whole number of days, which Spanner refuses`},
+		{interval: "-1 days", wantErr: `interval "-1 days" is negative`},
+		{interval: "30d", wantErr: `interval "30d" is not a number of months, weeks, days or hours, such as 30 days`},
+		{interval: "P30D", wantErr: `interval "P30D" is not a number of months, weeks, days or hours, such as 30 days`},
+		{interval: "", wantErr: `interval "" is not a number of months, weeks, days or hours, such as 30 days`},
+	}
+	for _, test := range tests {
+		t.Run(test.interval, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(spannerttl.ValidateInterval(test.interval), qt.ErrorMatches, test.wantErr)
 		})
 	}
 }

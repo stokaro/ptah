@@ -1,5 +1,7 @@
-// Package spannerttl owns a table's row deletion policy: the clause that makes
-// an engine delete a row once an interval has passed since a timestamp column.
+// Package spannerttl reads and writes Spanner's row deletion policy clause, the
+// one that makes the engine delete a row once an interval has passed since a
+// timestamp column. The policy itself is the Spanner owner's facet,
+// ptah.run/dialect/spanner/spannerschema; this package is its spelling.
 //
 // Spanner is the engine that has it. It is spelled as a table clause,
 //
@@ -54,64 +56,76 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"ptah.run/core/ast"
 )
 
-// Parse reads the catalog's policy expression into the policy it denotes.
+// Expression is a policy as the catalog reports it: the column it reads, and
+// the interval in the spelling the server stored.
+type Expression struct {
+	Column   string
+	Interval string
+}
+
+// ParseExpression reads the catalog's policy expression.
 //
 // An empty expression is a table with no policy, which is not an error: it is
-// what every table that never declared one reports.
-func Parse(expression string) (*ast.RowDeletionPolicySpec, error) {
+// what every table that never declared one reports, and found is false.
+func ParseExpression(expression string) (parsed Expression, found bool, err error) {
 	trimmed := strings.TrimSpace(expression)
 	if trimmed == "" {
-		return nil, nil
+		return Expression{}, false, nil
 	}
 	rest, ok := cutFold(trimmed, "INTERVAL")
 	if !ok {
-		return nil, unreadable(expression, "it does not begin with INTERVAL")
+		return Expression{}, false, unreadable(expression, "it does not begin with INTERVAL")
 	}
 	interval, rest, ok := cutQuoted(strings.TrimSpace(rest))
 	if !ok {
-		return nil, unreadable(expression, "the interval is not a quoted literal")
+		return Expression{}, false, unreadable(expression, "the interval is not a quoted literal")
 	}
 	column, ok := cutFold(strings.TrimSpace(rest), "ON")
 	if !ok {
-		return nil, unreadable(expression, "the interval is not followed by ON")
+		return Expression{}, false, unreadable(expression, "the interval is not followed by ON")
 	}
 	column = strings.TrimSpace(column)
 	if column == "" {
-		return nil, unreadable(expression, "ON names no column")
+		return Expression{}, false, unreadable(expression, "ON names no column")
 	}
-	return &ast.RowDeletionPolicySpec{Column: unquoteIdentifier(column), Interval: interval}, nil
+	return Expression{Column: unquoteIdentifier(column), Interval: interval}, true, nil
 }
 
-// Render returns the clause a CREATE TABLE carries, with its leading space, and
-// the empty string for a table declaring no policy.
+// Clause is the policy as the text after a table's closing parenthesis or
+// after ADD or ALTER: `TTL INTERVAL '30 days' ON "created_at"`.
 //
 // The interval is emitted as the author wrote it. Rendering the parsed value
 // instead would write Ptah's spelling into the operator's DDL, which is what
 // the comparison exists to avoid having to do.
-func Render(spec *ast.RowDeletionPolicySpec, quoteIdentifier func(string) string) string {
-	if spec.IsZero() {
-		return ""
-	}
-	return fmt.Sprintf(" TTL INTERVAL '%s' ON %s", spec.Interval, quoteIdentifier(spec.Column))
+func Clause(column, interval string, quoteIdentifier func(string) string) string {
+	return fmt.Sprintf("TTL INTERVAL '%s' ON %s", interval, quoteIdentifier(column))
 }
 
-// Equal reports whether two policies delete the same rows on the same schedule.
+// ValidateInterval refuses an interval the server refuses or this package
+// cannot compare: one it cannot read, a negative one, and one that is not a
+// whole number of days (`TTL interval must be a whole number of days`,
+// measured on the emulator). Zero days is accepted, as the server accepts it.
 //
-// The column is compared with the TARGET's identifier semantics, not folded
-// case-insensitively here. Spanner distinguishes quoted names that differ only
-// in case, so `"CreatedAt"` and `"createdat"` are two columns; a policy moved
-// between them is a real change, and folding it away would leave the deletion
-// tied to the wrong timestamp with nothing planned. The caller passes
-// [ptah.run/core/platform/identifier.Semantics.ColumnIdentityKey], which
-// is the same rule every other column comparison in the comparator uses -- so
-// an unquoted name the server lower-cases still converges, and a quoted one
-// that genuinely differs does not.
-//
-// The interval is compared as the value it denotes.
+// An interval this package cannot read is refused rather than passed through,
+// although the server may accept it: the server stores its own spelling, and a
+// declaration compared with that as text would plan the same change on every
+// run.
+func ValidateInterval(interval string) error {
+	hours, ok := IntervalHours(interval)
+	switch {
+	case !ok:
+		return fmt.Errorf("interval %q is not a number of months, weeks, days or hours, such as 30 days", interval)
+	case hours < 0:
+		return fmt.Errorf("interval %q is negative", interval)
+	case hours%24 != 0:
+		return fmt.Errorf("interval %q is not a whole number of days, which Spanner refuses", interval)
+	}
+	return nil
+}
+
+// EqualIntervals reports whether two intervals are the same number of hours.
 //
 // An interval either side cannot parse falls back to comparing the two as text,
 // rather than reporting a difference. The fallback is the conservative
@@ -120,17 +134,11 @@ func Render(spec *ast.RowDeletionPolicySpec, quoteIdentifier func(string) string
 // makes them identical. Reporting "differs" for every unreadable spelling would
 // plan that change on every run forever, which is the failure this comparison
 // exists to prevent.
-func Equal(a, b *ast.RowDeletionPolicySpec, columnKey func(string) string) bool {
-	if a.IsZero() || b.IsZero() {
-		return a.IsZero() && b.IsZero()
-	}
-	if columnKey(a.Column) != columnKey(b.Column) {
-		return false
-	}
-	left, leftOK := intervalHours(a.Interval)
-	right, rightOK := intervalHours(b.Interval)
+func EqualIntervals(a, b string) bool {
+	left, leftOK := IntervalHours(a)
+	right, rightOK := IntervalHours(b)
 	if !leftOK || !rightOK {
-		return strings.EqualFold(strings.TrimSpace(a.Interval), strings.TrimSpace(b.Interval))
+		return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 	}
 	return left == right
 }
@@ -146,10 +154,10 @@ var unitHours = map[string]int64{
 	"hour": 1, "hours": 1,
 }
 
-// intervalHours reduces an interval literal to hours, and reports false for a
+// IntervalHours reduces an interval literal to hours, and reports false for a
 // spelling it does not recognize so the caller can fall back rather than
 // pretend a number.
-func intervalHours(interval string) (int64, bool) {
+func IntervalHours(interval string) (int64, bool) {
 	fields := strings.Fields(strings.TrimSpace(interval))
 	if len(fields) == 0 || len(fields)%2 != 0 {
 		return 0, false

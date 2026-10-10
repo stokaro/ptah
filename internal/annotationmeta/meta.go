@@ -12,7 +12,6 @@ import (
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
-	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbexternal"
@@ -581,11 +580,6 @@ var directives = []Directive{
 			attr("checks", "Comma-separated table-level check expressions.", valueList, false, false),
 			attr("depends_on", "Comma-separated tables this table must be created after.", valueList, false, false),
 			attr("custom", "Raw custom CREATE TABLE SQL.", valueSQL, false, false),
-			// The row deletion policy: Spanner's TTL clause and YDB's TTL
-			// setting. A policy needs both the column and the interval.
-			attr(rowdeletion.AttributeColumn, "Row deletion policy (Spanner and YDB TTL): the column a row's age is measured from. Needs row_deletion_interval.", valueString, false, false),
-			attr(rowdeletion.AttributeInterval, "Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner.", valueString, false, false),
-			attr(rowdeletion.AttributeUnit, "YDB TTL on an integer column: what the column counts since the Unix epoch, SECONDS, MILLISECONDS, MICROSECONDS or NANOSECONDS.", valueString, false, false),
 			// A YDB row table's settings, named for the settings they become,
 			// as an index's partitioning is.
 			attr(ydbcolumn.AttributeStore, "YDB table storage: ROW or COLUMN.", valueString, false, false),

@@ -7,6 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/parser"
 )
 
@@ -63,9 +65,10 @@ func TestParse_ARowDeletionPolicyIsReadBack(t *testing.T) {
 			c.Assert(statements.Statements, qt.HasLen, 1)
 			table, isTable := statements.Statements[0].(*ast.CreateTableNode)
 			c.Assert(isTable, qt.IsTrue)
-			c.Assert(table.RowDeletionPolicy, qt.IsNotNil)
-			c.Assert(table.RowDeletionPolicy.Column, qt.Equals, test.column)
-			c.Assert(table.RowDeletionPolicy.Interval, qt.Equals, test.interval)
+			policy, found, err := schemaext.FacetAs[*spannerschema.DesiredRowDeletion](table.Facets, spannerschema.RowDeletionKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(policy.Policy, qt.Equals, spannerschema.Policy{Column: test.column, Interval: test.interval})
 		})
 	}
 }
@@ -89,6 +92,18 @@ func TestParse_TTLStaysClickHousesOnEveryOtherDialect(t *testing.T) {
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	table, isTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(isTable, qt.IsTrue)
-	c.Assert(table.RowDeletionPolicy, qt.IsNil)
+	c.Assert(table.Facets.Len(), qt.Equals, 0)
 	c.Assert(table.Options["TTL"], qt.Contains, "created_at")
+}
+
+// TestParse_ARowDeletionPolicyTheServerRefusesIsRefused pins that a clause is
+// read as the Spanner owner reads a declaration: an interval that is not a
+// whole number of days is refused where it is written.
+func TestParse_ARowDeletionPolicyTheServerRefusesIsRefused(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser(`CREATE TABLE ttl_d (id bigint PRIMARY KEY, ts timestamptz) TTL INTERVAL '36 hours' ON ts;`,
+		parser.WithDialect(platform.Spanner)).Parse()
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*TTL at position \d+: .*interval "36 hours" is not a whole number of days, which Spanner refuses.*`)
 }

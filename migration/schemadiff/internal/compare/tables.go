@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
-	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbpartition"
@@ -248,18 +247,9 @@ func TablesAndColumnsWithTableContext(
 				spellings,
 				caps,
 			)
-			// The row deletion policy is compared here rather than inside
-			// tableColumnsWithSemantics because it is a property of the table
-			// and not of any column, and because a table whose only difference
-			// is its retention has to reach TablesModified -- the column-count
-			// condition below would otherwise drop it, and the schema would
-			// report synced while rows expire on a schedule nobody declared
-			// (stokaro/ptah#2236).
-			tableDiff.RowDeletionPolicyChange = rowDeletionPolicyChange(
-				genTable.RowDeletionPolicy, dbTable.RowDeletionPolicy, semantics)
-			// A comment is compared here for the same reason as that policy,
-			// and reaches TablesModified for the same reason: it belongs to the
-			// table rather than to any column, and a table whose only
+			// A comment is compared here rather than inside
+			// tableColumnsWithSemantics, and reaches TablesModified: it belongs
+			// to the table rather than to any column, and a table whose only
 			// difference is its comment has to arrive here or the schema
 			// reports synced while the declaration and the database say
 			// different things about what the table is for -- on every run,
@@ -330,33 +320,13 @@ func tableDiffName(schema, name, dialect string) string {
 	return catalog.QualifyTableName(schema, name)
 }
 
-// rowDeletionPolicyChange is the transition a table's row deletion policy makes,
-// and nil when there is none.
-//
-// Equality is NOT exact here. The server rewrites the interval it stores -- measured against the
-// Cloud Spanner emulator behind PGAdapter 0.55.2, `INTERVAL '30 days'` reads
-// back as `INTERVAL '4 WEEKS 2 DAYS'`, and YDB keeps a whole number of seconds,
-// so `PT720H` reads back as `P30D` -- so comparing the two as text would
-// report a difference between a database and its own description, forever.
-// [ptah.run/internal/rowdeletion] owns that comparison, and reads each
-// engine's spelling as that engine does (stokaro/ptah#2236).
-func rowDeletionPolicyChange(
-	desired, current *ast.RowDeletionPolicySpec,
-	semantics identifier.Semantics,
-) *difftypes.RowDeletionPolicyChange {
-	if rowdeletion.Equal(desired, current, semantics.ColumnIdentityKey) {
-		return nil
-	}
-	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}
-}
-
 // tableChanged reports whether a table's modification carries any change: a
 // column added, dropped or changed, or a change of one of the table's own
 // settings.
 func tableChanged(tableDiff difftypes.TableDiff) bool {
 	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 		len(tableDiff.ColumnsModified) > 0 ||
-		tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
+		tableDiff.CommentChange != nil ||
 		len(tableDiff.FeatureChanges) > 0 || tableDiff.YDBColumnFamiliesChange != nil ||
 		tableDiff.YDBPartitioningChange != nil || tableDiff.YDBColumnTableChange != nil
 }

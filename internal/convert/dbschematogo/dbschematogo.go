@@ -196,7 +196,6 @@ func convertTablesAndFields(
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
 			// other (stokaro/ptah#1027).
-			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
 			YDBColumnFamilies: ast.CloneYDBColumnFamilies(dbTable.YDBColumnFamilies),
 			YDBPartitioning:   dbTable.YDBPartitioning.Clone(),
 			YDBColumnTable:    dbTable.YDBColumnTable.Clone(),

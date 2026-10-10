@@ -22,11 +22,14 @@ func (p *Planner) planFeatureChanges(
 	names := make(map[objectidentity.Key]string)
 	request := featureplan.Request{Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: slices.Clone(diff.FeatureChanges), CommonSteps: common}
 	for _, table := range diff.TablesModified {
-		if len(table.FeatureChanges) == 0 {
+		// A table's own facets are planned at the table's place in the plan;
+		// see [Planner.planTableFacets].
+		_, children := splitFacetChanges(table.FeatureChanges)
+		if len(children) == 0 {
 			continue
 		}
 		_, rebuilt := rebuilds[semantics.TableIdentityKey(table.TableName)]
-		ref := table.FeatureChanges[0].Subject
+		ref := children[0].Subject
 		subject := featureParent(ref)
 		if objectidentity.NewBuilder(semantics).Table(table.TableName).Key() != subject.Key() {
 			return featurehost.Result{}, fmt.Errorf("%w: feature parent disagrees with the changed table", schemaext.ErrInvalidValue)
@@ -35,7 +38,7 @@ func (p *Planner) planFeatureChanges(
 			request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Desired: table.Desired, Current: table.Current})
 		}
 		names[subject.Key()] = table.TableName
-		request.Changes = append(request.Changes, table.FeatureChanges...)
+		request.Changes = append(request.Changes, children...)
 	}
 	builder := objectidentity.NewBuilder(semantics)
 	for _, key := range slices.Sorted(maps.Keys(rebuilds)) {

@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 const columnStoreSchema = "ptah_ydb_column_store"
@@ -79,7 +80,7 @@ func TestYDBColumnStore_TieredTTL(t *testing.T) {
 	apply(c, conn, planAgainst(c, conn, declared, schemas))
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 	declared.Tables[0].YDBColumnTable.TTL = nil
-	declared.Tables[0].RowDeletionPolicy = &ast.RowDeletionPolicySpec{Column: "id", Interval: "P7D", Unit: "SECONDS"}
+	declared.Tables[0].Facets = ttlFacets(&ydbschema.TTL{Column: "id", Interval: "P7D", Unit: "SECONDS"})
 	apply(c, conn, planAgainst(c, conn, declared, schemas))
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 }

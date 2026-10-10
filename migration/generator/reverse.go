@@ -491,17 +491,6 @@ func reverseCommentChange(change *difftypes.CommentChange) *difftypes.CommentCha
 	return &difftypes.CommentChange{Current: change.Desired, Desired: change.Current}
 }
 
-// reverseRowDeletionPolicyChange swaps the two sides of a row deletion policy
-// transition.
-func reverseRowDeletionPolicyChange(
-	change *difftypes.RowDeletionPolicyChange,
-) *difftypes.RowDeletionPolicyChange {
-	if change == nil {
-		return nil
-	}
-	return &difftypes.RowDeletionPolicyChange{Desired: change.Current, Current: change.Desired}
-}
-
 // reverseColumnFamiliesChange swaps the two sides of a table's YDB column
 // families, so a rollback moves each column back to the family it left and
 // gives back each setting the forward change wrote. Its current side is what

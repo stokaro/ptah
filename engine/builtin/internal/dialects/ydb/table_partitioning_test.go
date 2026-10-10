@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
@@ -80,7 +83,7 @@ func TestRender_TablePartitioning_HappyPath(t *testing.T) {
 			node: func() *ast.CreateTableNode {
 				table := partitionedTable("BIGINT", &ast.YDBTablePartitioningSpec{MinPartitions: 3})
 				table.Columns = append(table.Columns, ast.NewColumn("ts", "TIMESTAMP"))
-				table.RowDeletionPolicy = &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"}
+				table.Facets = must.Must(schemaext.NewFacets(&ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "P1D"}}))
 				return table
 			}(),
 			want: "CREATE TABLE `t` (\n" +

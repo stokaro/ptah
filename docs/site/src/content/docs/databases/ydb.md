@@ -699,18 +699,18 @@ its storage and tiered TTL. Use Go or YAML to create a column table.
 
 A table's TTL is its row deletion policy: YDB deletes a row once an interval
 has passed since the time one of its columns holds. A table declares it with
-three attributes:
+YDB platform properties:
 
-| Attribute | Value |
+| Property | Value |
 | --- | --- |
-| `row_deletion_column` | the column the interval is measured from |
-| `row_deletion_interval` | an ISO 8601 duration such as `P30D` or `PT1H30M` |
-| `row_deletion_unit` | for an integer column, the unit it counts since 1970 |
+| `platform.ydb.row_deletion_column` | the column the interval is measured from |
+| `platform.ydb.row_deletion_interval` | an ISO 8601 duration such as `P30D` or `PT1H30M` |
+| `platform.ydb.row_deletion_unit` | for an integer column, the unit it counts since 1970 |
 
 This table:
 
 ```go
-//ptah:schema:table name="events" row_deletion_column="created_at" row_deletion_interval="P30D"
+//ptah:schema:table name="events" platform.ydb.row_deletion_column="created_at" platform.ydb.row_deletion_interval="P30D"
 ```
 
 renders as:
@@ -723,7 +723,8 @@ CREATE TABLE `events` (
 ) WITH (TTL = Interval("P30D") ON `created_at`);
 ```
 
-The same keys work on a table in a YAML schema. The column is either a date or
+A YAML schema puts the same names, without the `platform.ydb.` prefix, in the
+table's `ydb` platform group. The column is either a date or
 time column (`Date`, `Datetime`, `Timestamp` or their 64-bit forms) and names
 no unit, or a `Uint32`, `Uint64` or `DyNumber` column that counts `SECONDS`,
 `MILLISECONDS`, `MICROSECONDS` or `NANOSECONDS` since the Unix epoch. YDB
@@ -747,14 +748,19 @@ tables only, and a row table refuses it. A run interval set with
 records its run interval as not described, and refuses a change to the TTL that
 would reset it. Removing the TTL removes the run interval with it.
 
-HCL and DBML have no spelling for a TTL. `schema inspect` warns about each TTL
-it leaves out of an HCL document, on `ptah` and `ptah-compat` alike. A desired
-state read from either format keeps every table's TTL as the database holds it,
-rather than reading its silence as a request to remove it, and a table it
-rebuilds gets that TTL on the new table.
+An HCL document carries a TTL as a `platform "ydb"` block of the same
+properties: `schema inspect` writes one on `ptah` and `ptah-compat` alike, in
+the form YDB shows, and a document read back declares that TTL. DBML has no
+spelling for a TTL, and `schema inspect --format dbml` warns about the TTL
+settings it leaves out. A desired state in HCL or DBML that names no TTL keeps
+every table's TTL as the database holds it, rather than reading its silence as
+a request to remove it, and a table it rebuilds gets that TTL on the new table.
 
-Spanner takes the same attributes, with its own interval spelling (`30 days`)
-and no unit. Every other dialect refuses a row deletion policy.
+Other targets ignore these properties, as they ignore every YDB platform
+property. Spanner has a row deletion policy of its own, declared with
+`platform.spanner` properties in its own interval spelling; see
+[Spanner row deletion policy](../distributed/#spanner-row-deletion-policy).
+Nothing turns a YDB TTL into a Spanner policy or back.
 
 ### Eviction tiers
 

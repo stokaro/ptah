@@ -39,7 +39,7 @@ func (p *Planner) refuseColumnTableChange(table difftypes.TableDiff) error {
 	}
 	if change.Desired.TTL != nil {
 		ttl := change.Desired.TTL
-		return p.refuseTTLColumn(subject, table.Desired, &ast.RowDeletionPolicySpec{Column: ttl.Column, Unit: ttl.Unit, Interval: ttl.Tiers[len(ttl.Tiers)-1].Interval})
+		return p.refuseTTLColumn(subject, table.Desired, ttl.Column, ttl.Unit)
 	}
 	return nil
 }
@@ -108,10 +108,14 @@ func refuseColumnTTLShape(table schemacapture.TableDeclaration) error {
 		return nil
 	}
 	column := ""
+	rowTTL, err := declaredTTL(table.Table.Facets)
+	if err != nil {
+		return err
+	}
 	if spec.TTL != nil {
 		column = spec.TTL.Column
-	} else if !table.Table.RowDeletionPolicy.IsZero() {
-		column = table.Table.RowDeletionPolicy.Column
+	} else if rowTTL != nil {
+		column = rowTTL.Policy.Column
 	}
 	key := table.Table.PrimaryKey
 	if len(key) == 0 {

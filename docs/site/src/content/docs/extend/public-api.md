@@ -78,6 +78,16 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/cockroachdb/crdbreverse` | Reverse row-level TTL changes with recovery limits. |
 | `dialect/cockroachdb/crdbconvert` | Conversion between row-level TTL declarations and observations. |
 | `dialect/cockroachdb/crdbreport` | Captured row-level TTL counts and export omission labels. |
+| `dialect/spanner/spannerschema` | Desired and observed row deletion policies with versioned model codecs. |
+| `dialect/spanner/spannersource` | The row deletion policy as `platform.spanner` table properties, and source coverage. |
+| `dialect/spanner/spannercompare` | Row deletion policy comparison that reads rewritten intervals as values. |
+| `dialect/spanner/spannerdiff` | Captured prior and desired row deletion policies for directional changes. |
+| `dialect/spanner/spannerast` | Typed row deletion policy operation with an explicit codec. |
+| `dialect/spanner/spannerrender` | Owner-selected row deletion policy rendering for CREATE and ALTER. |
+| `dialect/spanner/spannerplan` | Row deletion policy planning in place. |
+| `dialect/spanner/spannerreverse` | Reverse row deletion policy changes with recovery limits. |
+| `dialect/spanner/spannerconvert` | Conversion between row deletion policy declarations and observations. |
+| `dialect/spanner/spannerreport` | Captured row deletion policy counts and export omission labels. |
 | `dialect/timescaledb/tsast` | TimescaleDB operations and codecs. |
 | `dialect/timescaledb/tscompare` | TimescaleDB comparison. |
 | `dialect/timescaledb/tsconvert` | TimescaleDB conversion. |

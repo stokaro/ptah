@@ -200,9 +200,6 @@ Maps a Go struct to a database table.
 | `primary_key` | No | Comma-separated primary key columns. |
 | `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |
-| `row_deletion_column` | No | Row deletion policy (Spanner and YDB TTL): the column a row's age is measured from. Needs `row_deletion_interval`. |
-| `row_deletion_interval` | No | Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner. |
-| `row_deletion_unit` | No | YDB TTL on an integer column: what the column counts since the Unix epoch, `SECONDS`, `MILLISECONDS`, `MICROSECONDS` or `NANOSECONDS`. |
 | `schema` | No | Database schema name. |
 
 The table engine, character set, collation and `AUTO_INCREMENT` start are
@@ -218,10 +215,16 @@ parameter names are not attributes of the directive. Either
 rest are refused without one. A table that names none declares no TTL.
 See [CockroachDB row-level TTL](../../databases/distributed/#cockroachdb-row-level-ttl).
 
-The `row_deletion_` attributes declare a row deletion policy, which Spanner and
-YDB have and every other target refuses. A policy needs its column and its
-interval, and each engine reads the interval in its own spelling. See
-[YDB TTL](../../databases/ydb/#ttl).
+A Spanner row deletion policy and a YDB TTL are declared with the platform
+properties of their own engine: `platform.spanner.row_deletion_column` and
+`platform.spanner.row_deletion_interval`, or `platform.ydb.row_deletion_column`,
+`platform.ydb.row_deletion_interval` and, for an integer column,
+`platform.ydb.row_deletion_unit`. A policy needs its column and its interval,
+and each engine reads the interval in its own spelling. The bare names are not
+attributes of the directive, and nothing turns one engine's policy into the
+other's. See
+[Spanner row deletion policy](../../databases/distributed/#spanner-row-deletion-policy)
+and [YDB TTL](../../databases/ydb/#ttl).
 
 A YDB row table also takes its partitioning, its read replicas and its key bloom
 filter, in attributes spelled as YDB names the settings, in lower case. A

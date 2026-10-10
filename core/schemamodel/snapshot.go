@@ -19,7 +19,6 @@ func (t Table) Clone() Table {
 	if t.Partition != nil {
 		t.Partition = &PartitionSpec{Type: t.Partition.Type, Parts: slices.Clone(t.Partition.Parts)}
 	}
-	t.RowDeletionPolicy = t.RowDeletionPolicy.Clone()
 	t.YDBColumnFamilies = ast.CloneYDBColumnFamilies(t.YDBColumnFamilies)
 	t.YDBPartitioning = t.YDBPartitioning.Clone()
 	t.YDBColumnTable = t.YDBColumnTable.Clone()

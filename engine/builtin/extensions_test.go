@@ -21,6 +21,10 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbdiff"
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/cockroachdb/crdbschema"
+	"ptah.run/dialect/spanner/spannerast"
+	"ptah.run/dialect/spanner/spannerdiff"
+	"ptah.run/dialect/spanner/spannerrender"
+	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/timescaledb/tsast"
 	"ptah.run/dialect/timescaledb/tsdiff"
 	"ptah.run/dialect/timescaledb/tsrender"
@@ -57,6 +61,8 @@ func extensionFixtures() []extensionFixture {
 		{payload: &ydbast.AddChangefeed{Changefeed: feed}, wantSQL: "ALTER TABLE `items` ADD CHANGEFEED `updates` WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n"},
 		{payload: &ydbast.DropChangefeed{Name: "updates"}, wantSQL: "ALTER TABLE `items` DROP CHANGEFEED `updates`;\n"},
 		{payload: &ydbast.AlterChangefeedTopic{Changefeed: grown, Previous: feed}, wantSQL: "ALTER TOPIC `items/updates` SET (retention_period = Interval('PT2H'));\n"},
+		{payload: &ydbast.AlterTTL{Change: ydbdiff.TTL{After: &ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P30D"}}}},
+			wantSQL: "ALTER TABLE `items` SET (TTL = Interval(\"P30D\") ON `created_at`);\n"},
 	}
 }
 
@@ -79,6 +85,15 @@ func cockroachDBRowTTLFixture() extensionFixture {
 	return extensionFixture{payload: &crdbast.AlterRowTTL{Change: change},
 		wantSQL: "-- ALTER statements: --\nALTER TABLE \"items\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');\n" +
 			"ALTER TABLE \"items\" RESET (ttl_job_cron);\n\n"}
+}
+
+func spannerRowDeletionFixture() extensionFixture {
+	change := spannerdiff.RowDeletion{
+		Before: &spannerschema.ObservedRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "4 WEEKS 2 DAYS"}},
+		After:  &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "60 days"}},
+	}
+	return extensionFixture{payload: &spannerast.AlterRowDeletion{Change: change},
+		wantSQL: "-- ALTER statements: --\nALTER TABLE \"items\" ALTER TTL INTERVAL '60 days' ON \"created_at\";\n\n"}
 }
 
 func clickhouseIndexFixture() extensionFixture {
@@ -127,7 +142,7 @@ func continuousAggregateFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		hypertableFixture(), continuousAggregateFixture())
 }
 
@@ -157,8 +172,10 @@ func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	timescaleRegistry, err := tsrender.Registry()
 	c.Assert(err, qt.IsNil)
+	spannerRegistry, err := spannerrender.Registry()
+	c.Assert(err, qt.IsNil)
 	var registered, fixtures []string
-	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes(), timescaleRegistry.PayloadTypes()) {
+	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes(), timescaleRegistry.PayloadTypes(), spannerRegistry.PayloadTypes()) {
 		registered = append(registered, payloadType.Elem().PkgPath()+"."+payloadType.Elem().Name())
 	}
 	for _, fixture := range allExtensionFixtures() {
@@ -286,6 +303,31 @@ func TestTimescaleExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
 			}
+		})
+	}
+}
+
+// TestSpannerExtensionOwnerRendersAndNonownersRefuse renders the row deletion
+// policy operation on its owner and refuses it, without partial SQL, on every
+// other target, the PostgreSQL-wire ones that share its renderer included.
+func TestSpannerExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	fixture := spannerRowDeletionFixture()
+	parent := func() *ast.AlterTableNode {
+		return &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}}
+	}
+	t.Run("owner", func(t *testing.T) {
+		c := qt.New(t)
+		sql, err := builtin.RenderSQL("spanner", parent())
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, fixture.wantSQL)
+	})
+	for _, dialect := range []string{"postgres", "yugabytedb", "cockroachdb", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			sql, err := builtin.RenderSQL(dialect, parent())
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(fmt.Sprint(err), qt.Contains, string(spannerast.AlterRowDeletionKind))
+			c.Assert(sql, qt.Equals, "")
 		})
 	}
 }

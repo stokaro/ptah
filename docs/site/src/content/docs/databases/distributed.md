@@ -215,6 +215,56 @@ A CockroachDB dev database is required for dev-database workflows on a
 CockroachDB target; a mismatched `--dev-url` is refused with
 `--dev-url dialect "postgres" does not match --url dialect "cockroachdb"`.
 
+## Spanner row deletion policy
+
+Spanner deletes a row once an interval has passed since the time a timestamp
+column holds. Ptah manages that policy through the render, plan, apply,
+introspect, and diff cycle. Declare it as `platform.spanner` properties on the
+table:
+
+```go
+//ptah:schema:table name="sessions" platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="30 days"
+type Sessions struct {
+	//ptah:schema:field name="id" type="BIGINT" primary="true"
+	ID int64
+	//ptah:schema:field name="created_at" type="TIMESTAMPTZ"
+	CreatedAt time.Time
+}
+```
+
+A YAML schema puts `row_deletion_column` and `row_deletion_interval` in the
+table's `spanner` platform group. `ptah schema render --dialect spanner` emits:
+
+```sql
+CREATE TABLE "sessions" (
+  "id" BIGINT PRIMARY KEY NOT NULL,
+  "created_at" TIMESTAMPTZ
+) TTL INTERVAL '30 days' ON "created_at";
+```
+
+A policy needs both properties. The interval is a whole number of days, which
+is all Spanner accepts: `36 hours` is refused before anything runs. Spanner
+stores the interval in its own spelling, `30 days` as `4 WEEKS 2 DAYS`, so Ptah
+compares the days the two spellings denote, not their text. A stored interval
+Ptah cannot read is compared as written.
+
+On a table that exists, a plan emits `ALTER TABLE ... ADD TTL` for a new policy,
+`ALTER TABLE ... ALTER TTL` for a changed one, and `ALTER TABLE ... DROP TTL`
+when the declaration names none. Spanner refuses `ADD` and `ALTER` in each
+other's place, so the plan chooses by what the table holds. A policy that moves
+to a new column is changed after the column is added. A table in a Go or YAML
+schema that names no policy declares none, so a policy on the live table is
+removed. `ptah introspect` writes a read policy back as the same properties,
+with the interval in the spelling Spanner stores.
+
+The `platform.spanner` properties apply to Spanner only, so the same schema
+renders for PostgreSQL without the policy. A YDB TTL is a different policy with
+its own properties, and nothing turns one into the other; see
+[YDB TTL](../ydb/#ttl). `schema inspect` writes the policy into HCL as a
+`platform "spanner"` block of the same properties, and a document read back
+declares it. HCL that names no policy keeps the table's policy rather than
+removing it.
+
 ## Invisible indexes
 
 CockroachDB hides an index from the optimizer while it keeps the index up to

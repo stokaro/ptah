@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -797,45 +798,47 @@ func epochTTL(column string, unit Ydb_Table.ValueSinceUnixEpochModeSettings_Unit
 	}}
 }
 
-// A table's TTL is its row deletion policy: the column, the interval written
-// the way YDB shows it, and an integer column's unit. Reading it records
-// nothing as not described.
+// A table's TTL is the YDB owner's observed facet: the column, the interval
+// written the way YDB shows it, an integer column's unit, and the run interval
+// the SDK or the CLI set. Reading a TTL without a run interval records nothing
+// as not described, and the read records complete TTL knowledge for the table,
+// which makes a table without a facet one with no TTL.
 func TestReader_ReadsTheTTL(t *testing.T) {
 	tests := []struct {
 		name string
 		ttl  *Ydb_Table.TtlSettings
-		want *ast.RowDeletionPolicySpec
+		want *ydbschema.ObservedTTL
 	}{
 		{name: "no TTL"},
 		{
 			name: "a date column",
 			ttl:  dateTTL("ts", 2592000),
-			want: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"},
+			want: &ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "P30D"}},
 		},
 		{
 			name: "a date column with no interval",
 			ttl:  dateTTL("ts", 0),
-			want: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "PT0S"},
+			want: &ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "PT0S"}},
 		},
 		{
 			name: "seconds",
 			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_SECONDS, 95415),
-			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "P1DT2H30M15S", Unit: "SECONDS"},
+			want: &ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "e", Interval: "P1DT2H30M15S", Unit: "SECONDS"}},
 		},
 		{
 			name: "milliseconds",
 			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_MILLISECONDS, 3600),
-			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1H", Unit: "MILLISECONDS"},
+			want: &ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "e", Interval: "PT1H", Unit: "MILLISECONDS"}},
 		},
 		{
 			name: "microseconds",
 			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_MICROSECONDS, 60),
-			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1M", Unit: "MICROSECONDS"},
+			want: &ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "e", Interval: "PT1M", Unit: "MICROSECONDS"}},
 		},
 		{
 			name: "nanoseconds",
 			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_NANOSECONDS, 1),
-			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1S", Unit: "NANOSECONDS"},
+			want: &ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "e", Interval: "PT1S", Unit: "NANOSECONDS"}},
 		},
 	}
 
@@ -852,10 +855,33 @@ func TestReader_ReadsTheTTL(t *testing.T) {
 			db := readFrom(c, source)
 
 			c.Assert(db.Tables, qt.HasLen, 1)
-			c.Assert(db.Tables[0].RowDeletionPolicy, qt.DeepEquals, test.want)
+			read, _, err := schemaext.FacetAs[*ydbschema.ObservedTTL](db.Tables[0].Facets, ydbschema.TTLKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(read, qt.DeepEquals, test.want)
 			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsTrue)
+			c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "t")).State,
+				qt.Equals, schemaext.Complete)
 		})
 	}
+}
+
+// The run interval is part of the observed TTL, so a plan that would reset it
+// can refuse the change.
+func TestReader_ReadsTheTTLRunInterval(t *testing.T) {
+	c := qt.New(t)
+	described := plainTable()
+	described.TtlSettings = dateTTL("ts", 3600)
+	described.TtlSettings.RunIntervalSeconds = 1800
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+		tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
+	}
+
+	db := readFrom(c, source)
+
+	read, _, err := schemaext.FacetAs[*ydbschema.ObservedTTL](db.Tables[0].Facets, ydbschema.TTLKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(read, qt.DeepEquals, &ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "PT1H"}, RunIntervalSeconds: 1800})
 }
 
 // What YQL cannot write about a TTL is recorded: the run interval, which

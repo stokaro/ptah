@@ -12,6 +12,8 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
@@ -21,7 +23,6 @@ import (
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbsequence"
-	"ptah.run/internal/ydbttl"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -315,49 +316,26 @@ func (r *Renderer) withSettings(node *ast.CreateTableNode, keyColumns []string, 
 }
 
 // tableSettings writes the settings the table's WITH clause carries: its TTL,
-// from the row deletion policy. The policy's column has to be one the table
-// declares, of a type YDB reads a TTL from; see [ydbttl.ColumnRefusal].
+// from the YDB owner's facet. The TTL's column has to be one the table
+// declares, of a type YDB reads a TTL from; see
+// [ydbschema.TTLColumnRefusal].
 func (r *Renderer) tableSettings(node *ast.CreateTableNode, columnTypes map[string]string) ([]string, error) {
-	policy := node.RowDeletionPolicy
-	if policy.IsZero() {
-		return nil, nil
+	// A facet no YDB owner renders is refused rather than dropped.
+	if err := ydbrender.ValidateTableFacets(node.Facets); err != nil {
+		return nil, fmt.Errorf("table %q: %w", node.Name, err)
 	}
-	subject := fmt.Sprintf("the row deletion policy of table %q", node.Name)
-	setting, err := r.ttlSetting(subject, policy)
-	if err != nil {
+	setting, err := ydbrender.CreateTableTTL(DialectName, r.caps, node.Name, node.Facets, columnTypes)
+	if err != nil || setting == "" {
 		return nil, err
 	}
-	ydbType, declared := columnTypes[policy.Column]
-	if !declared {
-		return nil, refuseFact(subject, fmt.Sprintf("it reads column %q, which the table does not declare "+
-			"(`Cannot enable TTL on unknown column`)", policy.Column))
-	}
-	unit, err := ydbttl.Unit(policy.Unit)
-	if err != nil {
-		return nil, refuseFact(subject, err.Error())
-	}
-	if reason := ydbttl.ColumnRefusal(policy.Column, ydbType, unit); reason != "" {
-		return nil, refuseFact(subject, reason)
-	}
-	return []string{"TTL = " + setting}, nil
+	return []string{setting}, nil
 }
 
-// ttlSetting writes a row deletion policy as the value of YDB's TTL setting,
-// refusing an integer column's unit on a target without
-// [capability.RowDeletionPolicyEpochColumn], and an interval or unit YDB
-// would refuse or keep as something else.
-func (r *Renderer) ttlSetting(subject string, policy *ast.RowDeletionPolicySpec) (string, error) {
-	if !r.caps.Has(capability.RowDeletionPolicy) {
-		return "", refuseKey(capability.RowDeletionPolicy, subject)
-	}
-	if strings.TrimSpace(policy.Unit) != "" && !r.caps.Has(capability.RowDeletionPolicyEpochColumn) {
-		return "", refuseKey(capability.RowDeletionPolicyEpochColumn, subject+" reads an integer column counting "+policy.Unit)
-	}
-	setting, err := ydbttl.Setting(policy, quote)
-	if err != nil {
-		return "", refuseFact(subject, err.Error())
-	}
-	return setting, nil
+// declaredTTL is the TTL a table's facets declare, or nil for none. A column
+// table's tiered TTL is its own declaration and is not this value.
+func declaredTTL(facets schemaext.Facets) (*ydbschema.DesiredTTL, error) {
+	value, _, err := schemaext.FacetAs[*ydbschema.DesiredTTL](facets, ydbschema.TTLKind)
+	return value, err
 }
 
 // partitioningSettings writes the settings of a row table its WITH clause

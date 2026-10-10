@@ -75,15 +75,16 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbsource"
+	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
-	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbfamily"
@@ -195,12 +196,8 @@ type tableSpec struct {
 	// [columnFamilySpec].
 	ColumnFamilies orderedMap[columnFamilySpec] `yaml:"column_families"`
 
-	// The row deletion policy, keyed as the annotation keys it.
-	RowDeletionColumn   *stringScalar `yaml:"row_deletion_column"`
-	RowDeletionInterval *stringScalar `yaml:"row_deletion_interval"`
-	RowDeletionUnit     *stringScalar `yaml:"row_deletion_unit"`
-	Platform            platformSpec  `yaml:"platform"`
-	Overrides           platformSpec  `yaml:"overrides"`
+	Platform  platformSpec `yaml:"platform"`
+	Overrides platformSpec `yaml:"overrides"`
 
 	// The settings of a YDB row table, keyed as the annotation keys them;
 	// see [ydbpartition.ParseTableDeclaration].
@@ -213,23 +210,6 @@ type tableSpec struct {
 	KeyBloomFilter                  *stringScalar `yaml:"key_bloom_filter"`
 	UniformPartitions               *stringScalar `yaml:"uniform_partitions"`
 	PartitionAtKeys                 *stringScalar `yaml:"partition_at_keys"`
-}
-
-// rowDeletionValues are the row deletion attributes the table sets, keyed by
-// attribute name, the way the annotation parser hands them to
-// [rowdeletion.ParseDeclaration].
-func (spec tableSpec) rowDeletionValues() map[string]string {
-	values := make(map[string]string)
-	for attribute, value := range map[string]*stringScalar{
-		rowdeletion.AttributeColumn:   spec.RowDeletionColumn,
-		rowdeletion.AttributeInterval: spec.RowDeletionInterval,
-		rowdeletion.AttributeUnit:     spec.RowDeletionUnit,
-	} {
-		if value != nil {
-			values[attribute] = string(*value)
-		}
-	}
-	return values
 }
 
 // partitioningValues are the settings the table sets, keyed by attribute
@@ -885,25 +865,25 @@ func (d document) addTables(db *schemamodel.Database) error {
 	if err != nil {
 		return err
 	}
-	// A YAML table declares CockroachDB row-level TTL in its cockroachdb
-	// platform group, so a table without one requests no TTL.
-	ttlCoverage, err := crdbsource.Coverage()
-	if err != nil {
-		return err
+	// A YAML table declares CockroachDB row-level TTL and the Spanner row
+	// deletion policy in its cockroachdb and spanner platform groups, so a
+	// table without one requests none. ydbsource.Coverage enrolls the YDB TTL,
+	// declared in the ydb group, the same way.
+	for _, owned := range []func() (schemaext.Coverage, error){crdbsource.Coverage, spannersource.Coverage} {
+		known, err := owned()
+		if err != nil {
+			return err
+		}
+		if featureCoverage, err = featureCoverage.Combine(known); err != nil {
+			return err
+		}
 	}
-	if db.FeatureCoverage, err = featureCoverage.Combine(ttlCoverage); err != nil {
-		return err
-	}
+	db.FeatureCoverage = featureCoverage
 
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
 		tableName := valueOrDefault(table.Name, tableKey)
-		// The error names the table, as the annotation parser's does.
-		rowDeletionPolicy, err := rowdeletion.ParseDeclaration(tableName, table.rowDeletionValues())
-		if err != nil {
-			return err
-		}
 		partitioning, err := ydbpartition.ParseTableDeclaration(table.partitioningValues())
 		if err != nil {
 			return fmt.Errorf("table %q: %w", tableKey, err)
@@ -943,7 +923,6 @@ func (d document) addTables(db *schemamodel.Database) error {
 			CustomSQL:  string(table.CustomSQL),
 			Overrides:  mergePlatform(table.Platform, table.Overrides),
 
-			RowDeletionPolicy: rowDeletionPolicy,
 			YDBColumnFamilies: families,
 			YDBPartitioning:   partitioning,
 			YDBColumnTable:    table.ColumnStore.Clone(),

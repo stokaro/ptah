@@ -130,7 +130,6 @@ func compareReportingUndecidedAdditions(
 	}
 	desired = compare.AdoptUndescribedColumnTables(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
-	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
 	prepared, err := prepareComparisonTables(ctx, desired, database, opts.Dialect, identifierSemantics, caps, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err

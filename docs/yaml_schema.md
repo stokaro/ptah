@@ -192,8 +192,7 @@ Each entry under `tables` declares one table.
 | `column_families` | Ordered map of a YDB table's column families; see [Column families](#column-families). |
 | `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
 | `rls_enabled` | Adds row-level security enablement for this table. |
-| `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's row deletion policy: the column a row's age is measured from, the interval after which a row is deleted, and for a YDB integer column the unit it counts. The values are the `//ptah:schema:table` attributes of the same names. Spanner and YDB have one; every other dialect refuses it. |
-| `platform` / `overrides` | Dialect-specific override map, for example `platform.mysql.type`. |
+| `platform` / `overrides` | Dialect-specific override map, for example `platform.mysql.type`. A row deletion policy sits here too; see [Row Deletion Policies](#row-deletion-policies). |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's partitioning, read replicas, key bloom filter and starting partitions, with the values the `//ptah:schema:table` attributes of the same names take. Every other dialect refuses them. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML
@@ -301,6 +300,30 @@ indexes:
 | `platform` | Source properties grouped by target. ClickHouse reads `type` and `granularity` under `clickhouse` for a data-skipping index. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's partitioning and read replicas, with the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
 | `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB vector index's settings, with `type: vector_kmeans_tree` and the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
+
+## Row Deletion Policies
+
+A Spanner row deletion policy sits in the table's `spanner` platform group and a
+YDB TTL in its `ydb` group. `row_deletion_column` is the column a row's age is
+measured from, `row_deletion_interval` the interval after which a row is
+deleted, and `row_deletion_unit`, on YDB only, the unit an integer column
+counts. Each engine reads the interval in its own spelling, and another target
+ignores both groups.
+
+```yaml
+tables:
+  sessions:
+    platform:
+      spanner:
+        row_deletion_column: created_at
+        row_deletion_interval: 30 days
+      ydb:
+        row_deletion_column: created_at
+        row_deletion_interval: P30D
+    columns:
+      id: { type: bigint, primary: true }
+      created_at: { type: timestamptz }
+```
 
 ## Column families
 
@@ -530,7 +553,8 @@ A table's `schema` names its database schema or YDB directory. Its
 hash key, `partitions` sets its initial shard count, and `ttl` holds an optional
 eviction policy. Each TTL tier declares an `interval` and an absolute
 `external_source` path; omitting the source means deletion and is allowed only
-on the last tier. A deletion-only policy uses `row_deletion_policy` instead.
+on the last tier. A deletion-only policy is the table's TTL in its `ydb`
+platform group instead.
 
 Local indexes use `type: bloom_filter`, `bloom_ngram_filter`, or `min_max`.
 Bloom methods accept `false_positive_probability`; the n-gram method also

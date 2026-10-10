@@ -1,0 +1,41 @@
+{
+  "$id": "ptah.run/spanner/row-deletion-policy/v1",
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "column",
+        "interval"
+      ],
+      "properties": {
+        "column": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\u0000']*$"
+        },
+        "interval": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\u0000']*$"
+        }
+      },
+      "meaning": "column is the timestamp column a row's age is measured from. interval is the interval literal of the TTL clause without its quotes, such as 30 days."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/spanner/row-deletion-policy": {
+        "$ref": "#/$defs/policy",
+        "constraint": "The interval is a positive whole number of days in a spelling the owner reads. Neither string is blank. The value requests exactly this policy; its absence under complete source coverage requests none."
+      }
+    },
+    "observed": {
+      "ptah.run/spanner/row-deletion-policy": {
+        "$ref": "#/$defs/policy",
+        "constraint": "Values keep the spelling the server reports. Absence on a table under complete read coverage is an observed absence; incomplete inspection belongs in coverage."
+      }
+    }
+  },
+  "canonicalization": "Strings must be valid UTF-8 and are kept verbatim, including whitespace and case. Do not read the interval as a value; comparison owns that."
+}

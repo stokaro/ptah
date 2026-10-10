@@ -7,9 +7,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
@@ -34,7 +34,7 @@ func TestCompare_YQLOmittedTTLRequestsRemoval(t *testing.T) {
 	c := qt.New(t)
 	desired, _, err := sqlschema.Read([]byte("CREATE TABLE events (id Int64 NOT NULL, ts Timestamp64, expires Uint64, PRIMARY KEY (id));"), "ydb")
 	c.Assert(err, qt.IsNil)
-	held := ydbTTLCatalog(&ast.RowDeletionPolicySpec{Column: "ts", Interval: "PT1H"})
+	held := ydbTTLCatalog(&ydbschema.TTL{Column: "ts", Interval: "PT1H"})
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 }

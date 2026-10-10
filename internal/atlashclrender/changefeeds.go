@@ -44,18 +44,24 @@ func (r *renderer) reportFeatureObjects() {
 				record.Subject, record.Kind, record.Knowledge.Reason),
 		})
 	}
-	tables := make(map[*schemaext.Facets]bool, len(r.db.Tables))
+	// A table's facets name the table, so the reader knows which table's
+	// setting the document leaves out; any other slot names the kind alone.
+	tables := make(map[*schemaext.Facets]string, len(r.db.Tables))
 	for i := range r.db.Tables {
-		tables[&r.db.Tables[i].Facets] = true
+		tables[&r.db.Tables[i].Facets] = "table." + r.db.Tables[i].QualifiedName()
 	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
-			if tables[facets] && representsFacet(kind) {
+			path, held := tables[facets]
+			if held && representsFacet(kind) {
 				continue
+			}
+			if !held {
+				path = "feature." + string(kind)
 			}
 			r.diagnostics = append(r.diagnostics, Diagnostic{
 				Severity: SeverityWarning,
-				Path:     "feature." + string(kind),
+				Path:     path,
 				Message:  fmt.Sprintf("feature facet %s is not represented in HCL", kind),
 			})
 		}

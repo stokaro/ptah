@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -5424,10 +5425,19 @@ func (p *Parser) handleRowDeletionPolicy(table *ast.CreateTableNode) error {
 	if p.current.Type != lexer.TokenIdentifier && p.current.Type != lexer.TokenString {
 		return fmt.Errorf("expected a column name after TTL ... ON at position %d", p.current.Start)
 	}
-	table.RowDeletionPolicy = &ast.RowDeletionPolicySpec{
+	// The policy is the Spanner owner's, so it travels as its declaration.
+	policy := &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{
 		Column:   unquoteLiteral(p.current.Value, '"'),
 		Interval: interval,
+	}}
+	if err := spannerschema.ValidateDesired(policy); err != nil {
+		return fmt.Errorf("TTL at position %d: %w", p.current.Start, err)
 	}
+	facets, err := table.Facets.With(policy)
+	if err != nil {
+		return err
+	}
+	table.Facets = facets
 	p.advance()
 	return nil
 }

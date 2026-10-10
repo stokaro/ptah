@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -99,10 +100,7 @@ func TestGenerateMigrationAST_ColumnFamilies_HappyPath(t *testing.T) {
 			diff: func() *difftypes.SchemaDiff {
 				diff := familiesChanged(t, []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"note"}}}, nil)
 				diff.TablesModified[0].Desired.Fields = append(diff.TablesModified[0].Desired.Fields, field("ts", "TIMESTAMP", true))
-				diff.TablesModified[0].RowDeletionPolicyChange = &difftypes.RowDeletionPolicyChange{
-					Desired: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"},
-				}
-				return diff
+				return addTTLChange(diff, &ydbschema.TTL{Column: "ts", Interval: "P1D"}, nil)
 			}(),
 			want: "ALTER TABLE `items` ADD COLUMN `note` Utf8;\n" +
 				"ALTER TABLE `items` SET (TTL = Interval(\"P1D\") ON `ts`);\n" +

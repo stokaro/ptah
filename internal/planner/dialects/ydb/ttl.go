@@ -1,142 +1,145 @@
 package ydb
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
-	"ptah.run/core/platform/capability"
+	"ptah.run/core/featureplan"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbttl"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// How a YDB plan changes a table's TTL, its row deletion policy.
+// How a YDB plan changes a table's TTL.
 //
-// `ALTER TABLE t SET (TTL = ...)` puts a TTL on a table and replaces the one it
-// has, and `ALTER TABLE t RESET (TTL)` removes it, so a change is one
-// statement either way. The statement goes after the table's added columns,
-// because a TTL may read a column the plan adds, and before its dropped ones,
-// because YDB refuses to drop the column a TTL reads (`Can't drop TTL column:
-// 'ts', disable TTL first`, measured on 25.1.4.7 and 26.2.1.14) and drops it
-// once the TTL reads another column or none.
+// The TTL is the YDB owner's facet of the table, and the owner plans its
+// change: `ALTER TABLE t SET (TTL = ...)` or `ALTER TABLE t RESET (TTL)`, one
+// statement either way. Where that statement goes is this planner's: after the
+// table's added columns, because a TTL may read a column the plan adds, and
+// before its dropped ones, because YDB refuses to drop the column a TTL reads
+// (`Can't drop TTL column: 'ts', disable TTL first`, measured on 25.1.4.7 and
+// 26.2.1.14) and drops it once the TTL reads another column or none. The
+// shared feature graph places a table's owned operations after every common
+// step, column drops included, so the owner's statement is planned here, per
+// table, and written at its place in [Planner.changeTable].
 
-// ttlOperation is the operation that takes a table's TTL from change.Current
-// to change.Desired, or nil when the table's TTL does not change.
-func ttlOperation(change *difftypes.RowDeletionPolicyChange) ast.AlterOperation {
-	switch {
-	case change == nil:
-		return nil
-	case change.Desired.IsZero():
-		return &ast.DropRowDeletionPolicyOperation{}
-	default:
-		return &ast.SetRowDeletionPolicyOperation{
-			Column:   change.Desired.Column,
-			Interval: change.Desired.Interval,
-			Unit:     change.Desired.Unit,
-			Replace:  !change.Current.IsZero(),
+// planTableFacets plans the facet changes of every table the plan changes in
+// place, through the owners the runtime selects, and returns each table's
+// statements keyed by its identity. A rebuilt table writes its declared TTL
+// into its new CREATE TABLE, so its facet changes are not planned here.
+func (p *Planner) planTableFacets(
+	ctx context.Context,
+	runtime featureplan.Runtime,
+	diff *difftypes.SchemaDiff,
+	rebuilds map[string]*tableRebuild,
+	semantics identifier.Semantics,
+) (map[string][]ast.Node, error) {
+	nodes := make(map[string][]ast.Node)
+	builder := objectidentity.NewBuilder(semantics)
+	for _, table := range diff.TablesModified {
+		key := semantics.TableIdentityKey(table.TableName)
+		changes, _ := splitFacetChanges(table.FeatureChanges)
+		if _, rebuilt := rebuilds[key]; rebuilt || len(changes) == 0 {
+			continue
+		}
+		subject := builder.Table(table.TableName)
+		request := featureplan.Request{
+			Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: changes,
+			Tables: []featureplan.Table{{Subject: subject, Desired: table.Desired, Current: table.Current}},
+		}
+		features, err := featurehost.Plan(ctx, runtime, request, map[objectidentity.Key]string{subject.Key(): table.TableName})
+		if err != nil {
+			return nil, err
+		}
+		if len(features.Rewrites) != 0 {
+			return nil, fmt.Errorf("%w: a table facet has no common step to rewrite", schemaext.ErrInvalidValue)
+		}
+		plan, err := plangraph.Schedule(ctx, features.Contributions...)
+		if err != nil {
+			return nil, err
+		}
+		for _, step := range plan.Steps {
+			nodes[key] = append(nodes[key], step.Payload...)
 		}
 	}
+	return nodes, nil
 }
 
-// refuseTTLKey refuses a TTL change on a target without
-// [capability.RowDeletionPolicy]. A table the plan rebuilds needs no more: it
-// writes its TTL into the new CREATE TABLE, which the renderer checks whole.
-func (p *Planner) refuseTTLKey(tableDiff difftypes.TableDiff) error {
-	if tableDiff.RowDeletionPolicyChange == nil || p.caps.Has(capability.RowDeletionPolicy) {
-		return nil
+// splitFacetChanges separates the changes of a table's own facets, whose
+// subject is the table, from those of its named children, such as a
+// changefeed.
+func splitFacetChanges(changes []schemaext.ChangeRecord) (facets, children []schemaext.ChangeRecord) {
+	for _, change := range changes {
+		if change.Subject.Kind == objectidentity.KindTable {
+			facets = append(facets, change)
+			continue
+		}
+		children = append(children, change)
 	}
-	return refuseKey(capability.RowDeletionPolicy, ttlSubject(tableDiff))
+	return facets, children
 }
 
-// ttlSubject names a table's TTL in a refusal.
-func ttlSubject(tableDiff difftypes.TableDiff) string {
-	return fmt.Sprintf("the row deletion policy of table %q", tableDiff.TableName)
-}
-
-// refuseTTLChange refuses, before anything is emitted, a TTL change on a table
-// changed in place that this target cannot make or YDB would refuse when the
-// plan reaches it: a policy on a target without
-// [capability.RowDeletionPolicy], an integer column's unit without
-// [capability.RowDeletionPolicyEpochColumn], an interval or unit YDB refuses,
-// and a column of a type YDB reads no TTL from. The renderer writes SET (TTL =
-// ...) without seeing the column's type, so this is where the type is held
-// to [ydbttl.ColumnRefusal].
-//
-// The table keeps what its TTL carries beyond the policy, which SET (TTL =
-// ...) would reset, so a change is refused while the read recorded such a
-// setting.
-func (p *Planner) refuseTTLChange(tableDiff difftypes.TableDiff, notDescribed coverage.Set) error {
-	if err := p.refuseTTLKey(tableDiff); err != nil {
-		return err
-	}
-	change := tableDiff.RowDeletionPolicyChange
-	if change == nil {
-		return refuseDroppingTheTTLColumn(tableDiff)
-	}
-	if change.Desired.IsZero() {
-		return nil
-	}
-	subject, desired := ttlSubject(tableDiff), change.Desired
-	if strings.TrimSpace(desired.Unit) != "" && !p.caps.Has(capability.RowDeletionPolicyEpochColumn) {
-		return refuseKey(capability.RowDeletionPolicyEpochColumn, subject+" reads an integer column counting "+desired.Unit)
-	}
-	if err := ydbttl.Validate(desired); err != nil {
-		return refuseFact(subject, err.Error())
-	}
-	if !change.Current.IsZero() && tableDiff.Desired.HasTable() &&
-		recordsSetting(notDescribed, coverage.TTL, tableDiff.Desired.Table) {
-		return refuseFact(subject, "the table's TTL carries a run interval or a tiering policy Ptah does not model, "+
-			"and SET (TTL = ...) resets it to YDB's default. Change the TTL by hand with `ydb table ttl set`, "+
-			"or reset it first")
-	}
-	return p.refuseTTLColumn(subject, tableDiff.Desired, desired)
+// declaredTTL is the TTL a table's facets declare, or nil for none. A column
+// table's tiered TTL is its own declaration and is not this value.
+func declaredTTL(facets schemaext.Facets) (*ydbschema.DesiredTTL, error) {
+	value, _, err := schemaext.FacetAs[*ydbschema.DesiredTTL](facets, ydbschema.TTLKind)
+	return value, err
 }
 
 // refuseDroppingTheTTLColumn refuses dropping the column a table's TTL reads
-// while the TTL stays: YDB refuses it (`Can't drop TTL column: 'ts', disable
-// TTL first`). A declaration that names such a column is refused when it is
-// validated, so this is reached by a TTL the declaration does not describe and
-// keeps from the database, as an HCL document does.
+// while the TTL stays: YDB refuses it (`Can't drop TTL column`). A declaration
+// that names such a column is refused by the TTL's owner, so this is reached
+// by a TTL the declaration does not describe and keeps from the database, as an
+// HCL document does.
 func refuseDroppingTheTTLColumn(tableDiff difftypes.TableDiff) error {
-	policy := tableDiff.Desired.Table.RowDeletionPolicy
-	if policy.IsZero() {
+	policy, err := declaredTTL(tableDiff.Desired.Table.Facets)
+	if err != nil || policy == nil {
+		return err
+	}
+	column := policy.Policy.Column
+	if !slices.ContainsFunc(tableDiff.ColumnsRemoved, func(field schemamodel.Field) bool { return field.Name == column }) {
 		return nil
 	}
-	if !slices.ContainsFunc(tableDiff.ColumnsRemoved, func(column schemamodel.Field) bool { return column.Name == policy.Column }) {
-		return nil
-	}
-	return refuseFact(fmt.Sprintf("dropping column %q of table %q", policy.Column, tableDiff.TableName),
+	return refuseFact(fmt.Sprintf("dropping column %q of table %q", column, tableDiff.TableName),
 		"the table's TTL reads it, and YDB refuses to drop the column a TTL reads (`Can't drop TTL column`); "+
 			"remove the TTL, or move it to another column, first")
 }
 
-// refuseTTLColumn holds the column a policy reads to the types YDB reads a TTL
-// from, through the type map the renderer writes the column with. A
-// modification that carries no declaration of the table is left to the
-// server, which refuses the statement by itself.
-func (p *Planner) refuseTTLColumn(subject string, declaration schemacapture.TableDeclaration, policy *ast.RowDeletionPolicySpec) error {
+// refuseTTLColumn holds the column a column table's tiered TTL reads to the
+// types YDB reads a TTL from, through the type map the renderer writes the
+// column with. A modification that carries no declaration of the table is
+// left to the server, which refuses the statement by itself.
+func (p *Planner) refuseTTLColumn(subject string, declaration schemacapture.TableDeclaration, column, unit string) error {
 	if !declaration.HasTable() {
 		return nil
 	}
-	index := slices.IndexFunc(declaration.Fields, func(field schemamodel.Field) bool { return field.Name == policy.Column })
+	index := slices.IndexFunc(declaration.Fields, func(field schemamodel.Field) bool { return field.Name == column })
 	if index < 0 {
 		return refuseFact(subject, fmt.Sprintf("it reads column %q, which the table does not declare "+
-			"(`Cannot enable TTL on unknown column`)", policy.Column))
+			"(`Cannot enable TTL on unknown column`)", column))
 	}
-	unit, err := ydbttl.Unit(policy.Unit)
+	canonical, err := ydbttl.Unit(unit)
 	if err != nil {
 		return refuseFact(subject, err.Error())
 	}
 	// A type the map refuses is the column's refusal, which is reported where
 	// the column is written.
 	if mapping, mapErr := ydbtype.Map(declaration.Fields[index].Type, p.caps); mapErr == nil {
-		if reason := ydbttl.ColumnRefusal(policy.Column, mapping.Type, unit); reason != "" {
+		if reason := ydbttl.ColumnRefusal(column, mapping.Type, canonical); reason != "" {
 			return refuseFact(subject, reason)
 		}
 	}

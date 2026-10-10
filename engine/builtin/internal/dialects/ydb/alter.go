@@ -126,13 +126,6 @@ func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.Alte
 		// index's.
 		return nil, r.keyed(capability.ConstraintComments, "constraint comment",
 			fmt.Sprintf("the comment on constraint %q of %s", op.Constraint, subject))
-	case *ast.SetRowDeletionPolicyOperation:
-		return r.setRowDeletionPolicy(prefix, subject, op)
-	case *ast.DropRowDeletionPolicyOperation:
-		if !r.caps.Has(capability.RowDeletionPolicy) {
-			return nil, refuseKey(capability.RowDeletionPolicy, "removing the row deletion policy of "+subject)
-		}
-		return []string{prefix + "RESET (TTL);"}, nil
 	default:
 		return nil, refuseFact(subject, fmt.Sprintf("the YDB renderer has no ALTER TABLE spelling for %T", operation))
 	}
@@ -159,23 +152,6 @@ func (r *Renderer) setColumnFamilies(prefix, subject string, op *ast.SetYDBColum
 		return nil, nil
 	}
 	return []string{prefix + strings.Join(actions, ", ") + ";"}, nil
-}
-
-// setRowDeletionPolicy writes SET (TTL = ...), which puts a TTL on a table
-// that has none and replaces the one a table has, so Replace does not change
-// the statement. The renderer does not see the column's type here; the
-// planner holds the column to [ydbttl.ColumnRefusal] before it emits the
-// operation.
-func (r *Renderer) setRowDeletionPolicy(prefix, subject string, op *ast.SetRowDeletionPolicyOperation) ([]string, error) {
-	policy := &ast.RowDeletionPolicySpec{Column: op.Column, Interval: op.Interval, Unit: op.Unit}
-	if policy.IsZero() {
-		return nil, refuseFact(subject, "the row deletion policy it sets names no column or no interval")
-	}
-	setting, err := r.ttlSetting("the row deletion policy of "+subject, policy)
-	if err != nil {
-		return nil, err
-	}
-	return []string{prefix + "SET (TTL = " + setting + ");"}, nil
 }
 
 // addColumn writes ADD COLUMN, refusing the shapes YDB refuses on an existing

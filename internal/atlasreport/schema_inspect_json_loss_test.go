@@ -72,7 +72,7 @@ func jsonLossFixture(c *qt.C) (*schemamodel.Database, *catalog.Database) {
 		Tables: []schemamodel.Table{{
 			StructName: "AppEvents", Schema: "app", Name: "events",
 			YDBColumnFamilies: []ast.YDBColumnFamilySpec{{Name: "cold"}},
-			RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P1D"},
+			Facets:            ydbTTLFacets(c),
 			YDBPartitioning:   &ast.YDBTablePartitioningSpec{MinPartitions: 2},
 		}},
 		Fields: []schemamodel.Field{{
@@ -112,9 +112,9 @@ func TestSchemaInspectJSON_ReportsTablePropertiesWithoutChangingDocument(t *test
 		`"columns":[{"name":"id","type":"Int64"}],"indexes":[{"name":"idx","parts":[{"column":"id"}]}],`+
 		`"comment":"table comment"}]}]}`)
 	c.Assert(diagnostics.String(), qt.Equals,
-		"warning: JSON schema inspection leaves out changefeeds (1) from table \"app.events\"\n"+
+		"warning: JSON schema inspection leaves out TTL settings (1) from table \"app.events\"\n"+
+			"warning: JSON schema inspection leaves out changefeeds (1) from table \"app.events\"\n"+
 			"warning: JSON schema inspection leaves out column families (1) from table \"app.events\"\n"+
-			"warning: JSON schema inspection leaves out row deletion policies (1) from table \"app.events\"\n"+
 			"warning: JSON schema inspection leaves out table partitioning, read replicas and key bloom filters (1) from table \"app.events\"\n"+
 			"warning: JSON schema inspection leaves out automatic column generation (1) from column \"id\" of table \"app.events\"\n"+
 			"warning: JSON schema inspection leaves out column comments (1) from column \"id\" of table \"app.events\"\n"+
@@ -229,4 +229,11 @@ func TestSchemaInspectJSON_CatalogDefaultPresenceSurvivesModelConversion(t *test
 				"warning: JSON schema inspection leaves out column defaults (1) from column \"value\" of table \"t\"\n")
 		})
 	}
+}
+
+// ydbTTLFacets is a YDB TTL on created_at, bound to the YDB target.
+func ydbTTLFacets(c *qt.C) schemaext.Facets {
+	c.Helper()
+	facets := must.Must(schemaext.NewFacets(&ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P1D"}}))
+	return must.Must(facets.WithTargetScope(ydbschema.TTLKind, "ydb"))
 }

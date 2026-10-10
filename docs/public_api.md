@@ -64,6 +64,16 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/cockroachdb/crdbschema`
 - `ptah.run/dialect/cockroachdb/crdbsource`
 - `ptah.run/dialect/postgres/pgproject`
+- `ptah.run/dialect/spanner/spannerast`
+- `ptah.run/dialect/spanner/spannercompare`
+- `ptah.run/dialect/spanner/spannerconvert`
+- `ptah.run/dialect/spanner/spannerdiff`
+- `ptah.run/dialect/spanner/spannerplan`
+- `ptah.run/dialect/spanner/spannerrender`
+- `ptah.run/dialect/spanner/spannerreport`
+- `ptah.run/dialect/spanner/spannerreverse`
+- `ptah.run/dialect/spanner/spannerschema`
+- `ptah.run/dialect/spanner/spannersource`
 - `ptah.run/dialect/timescaledb/tsast`
 - `ptah.run/dialect/timescaledb/tscompare`
 - `ptah.run/dialect/timescaledb/tsconvert`
@@ -875,6 +885,57 @@ The former `ast.RowTTLSpec`, `ast.SetRowTTLOperation`,
 `schemamodel.Table` and `catalog.Table`, and `difftypes.RowTTLChange` are
 removed without aliases. This changes behavior; pre-v1, so no compatibility is
 owed.
+
+`dialect/spanner/spannerschema` owns Spanner's row deletion policy as a table
+facet under `RowDeletionKind`. `DesiredRowDeletion` and `ObservedRowDeletion`
+each hold a `Policy` of a column and an interval: a declaration keeps the
+interval as written, an observation as Spanner stored it. `ValidateDesired`
+refuses a policy without its column, a quote in either field, and an interval
+that is negative, is not a whole number of days, or is in a spelling the owner
+does not read. `ValidateObserved` accepts any stored spelling. `Equivalent`
+compares the column under the caller's identifier rule and the interval by the
+hours it denotes, at the server's arithmetic, and compares as text when either
+side cannot be read. `RowDeletionCoverage` builds coverage under the bundled
+provider identity `Owner`.
+
+`spannersource.Service` decodes and encodes the `platform.spanner` table
+properties `row_deletion_column` and `row_deletion_interval`, and claims every
+key that begins with `row_deletion`, so an unknown one is refused by name.
+`spannersource.Coverage` is the knowledge Go annotations, YAML and Spanner SQL
+enroll; HCL and hand-built schemas do not, and leave a live policy unmanaged.
+
+`spannercompare.Service` compares the facet with the same undecided cases as
+the CockroachDB owner, and `spannerdiff.RowDeletion` carries the change.
+`spannerast.AlterRowDeletion` carries it in `ast.ExtensionAlterOperation`, and
+`spannerrender` lowers it to `ADD TTL`, `ALTER TTL` or `DROP TTL` by which sides
+the change holds, since Spanner refuses each of the first two in the other's
+place. `spannerrender.CreateTableClause` renders the clause of a CREATE TABLE.
+`spannerplan.Service` plans changes in place, `spannerreverse.Service` restores
+the prior policy and reports that rows deleted under the forward policy cannot
+be recovered, and `spannerconvert.Service` and `spannerreport.Service` complete
+the provider.
+
+`dialect/ydb/ydbschema` owns a YDB table's TTL as a table facet under
+`TTLKind`. `DesiredTTL` and `ObservedTTL` hold a `TTL` of a column, an ISO 8601
+interval and, for an integer column, the unit it counts; `ObservedTTL` also
+records the run interval the SDK or CLI set, which YQL cannot write.
+`ValidateDesiredTTL` refuses a missing column, an interval YDB would not keep as
+written, and a unit outside the four YDB names. `EquivalentTTL` compares the
+interval by the seconds it denotes. `TTLCoverage` builds coverage under `Owner`.
+The TTL services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse` and
+`ydbreport` handle the facet, `ydbdiff.TTL` carries a change, and
+`ydbast.AlterTTL` lowers through `ydbrender.TTLHandler` to
+`SET (TTL = ...)` or `RESET (TTL)`. `ydbplan.TTLService` refuses a change that
+would reset a run interval and allows its removal. A column table's tiered TTL
+stays in `schemamodel.Table.YDBColumnTable`.
+
+The former `ast.RowDeletionPolicySpec`, `ast.SetRowDeletionPolicyOperation`,
+`ast.DropRowDeletionPolicyOperation`, the `RowDeletionPolicy` fields of
+`ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`, and
+`difftypes.RowDeletionPolicyChange` are removed without aliases, and so are the
+bare `row_deletion_*` table attributes and YAML keys: each engine's policy is a
+platform property of that engine. This changes behavior; pre-v1, so no
+compatibility is owed.
 
 An export refuses excluded facets, bindings outside the selected target, missing
 source codecs, and empty fragments that cannot preserve a facet's presence.

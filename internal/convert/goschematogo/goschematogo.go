@@ -26,7 +26,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dialectscope"
-	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
@@ -692,23 +691,9 @@ func tableAnnotation(table schemamodel.Table) string {
 		{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
 		{name: "comment", value: table.Comment, set: table.Comment != ""},
 	}
-	attrs = append(attrs, rowDeletionAttrs(table.RowDeletionPolicy)...)
 	attrs = append(attrs, columnStoreAttrs(table.YDBColumnTable)...)
 	attrs = append(attrs, propertyAttrs(table.Overrides)...)
 	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(table.YDBPartitioning)...)...)
-}
-
-// rowDeletionAttrs writes a table's row deletion policy as the attributes the
-// annotation parser reads it from, and nothing for a table with no policy.
-func rowDeletionAttrs(policy *ast.RowDeletionPolicySpec) []attr {
-	if policy.IsZero() {
-		return nil
-	}
-	return []attr{
-		{name: rowdeletion.AttributeColumn, value: policy.Column, set: true},
-		{name: rowdeletion.AttributeInterval, value: policy.Interval, set: true},
-		{name: rowdeletion.AttributeUnit, value: policy.Unit, set: policy.Unit != ""},
-	}
 }
 
 // columnFamilyAttrs writes a YDB column family as the attributes the

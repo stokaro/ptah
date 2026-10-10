@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/internal/ydbextensions"
@@ -25,6 +26,9 @@ var (
 	cockroachDBRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
 		return renderer.NewExtensions(append(tsrender.Handlers(), crdbrender.Handlers()...)...)
 	})
+	spannerRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
+		return renderer.NewExtensions(append(tsrender.Handlers(), spannerrender.Handlers()...)...)
+	})
 )
 
 // renderOwners is what a target's feature owners contribute to rendering it,
@@ -33,7 +37,8 @@ var (
 type renderOwners struct {
 	// extensions builds the owners' handler registry; nil means none.
 	extensions func() (renderer.Extensions, error)
-	// tableStorage renders owned CREATE TABLE facets; nil means none.
+	// tableStorage renders the clause owned facets add to a CREATE TABLE;
+	// nil means none.
 	tableStorage func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, error)
 	// lowerTableFacets turns the owned facets a CREATE TABLE cannot carry into
 	// the statements after it; nil means none.
@@ -43,7 +48,8 @@ type renderOwners struct {
 // ownersFor selects a target's feature owners. Neutral contracts and
 // non-owning backends know no payload types. TimescaleDB is an owner on every
 // PostgreSQL-family target, and its renderer refuses or skips what a target
-// without the extension cannot hold; row-level TTL is CockroachDB's alone.
+// without the extension cannot hold; row-level TTL is CockroachDB's alone and
+// the row deletion policy Spanner's.
 func ownersFor(dialect string) renderOwners {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.YDB:
@@ -53,7 +59,10 @@ func ownersFor(dialect string) renderOwners {
 	case platform.CockroachDB:
 		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause,
 			lowerTableFacets: tsrender.LowerTableFacets}
-	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
+	case platform.Spanner:
+		return renderOwners{extensions: spannerRegistry, tableStorage: spannerrender.CreateTableClause,
+			lowerTableFacets: tsrender.LowerTableFacets}
+	case platform.Postgres, platform.YugabyteDB:
 		return renderOwners{extensions: postgresFamilyRegistry, lowerTableFacets: tsrender.LowerTableFacets}
 	default:
 		return renderOwners{}
