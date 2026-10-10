@@ -270,6 +270,7 @@ func toView(node *ast.CreateViewNode, sourcePlatform string) schemamodel.View {
 
 func toMaterializedView(node *ast.CreateMaterializedViewNode, sourcePlatform string) schemamodel.MaterializedView {
 	view := schemamodel.MaterializedView{
+		Facets:  node.Facets,
 		Name:    normalizeSQLTableReference(sourcePlatform, node.Name),
 		Body:    strings.TrimSpace(node.Body),
 		Comment: node.Comment,

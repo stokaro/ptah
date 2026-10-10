@@ -8,7 +8,10 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/internal/lexer"
 )
 
@@ -1052,7 +1055,8 @@ func (p *Parser) parseParenthesizedExpression(label string) (string, error) {
 }
 
 // parseCreateMaterializedView parses
-// CREATE MATERIALIZED VIEW [IF NOT EXISTS] name AS <query>.
+// CREATE MATERIALIZED VIEW [IF NOT EXISTS] name AS <query>, and on ClickHouse
+// the REFRESH schedule and storage clause between the name and AS.
 func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "MATERIALIZED"); err != nil {
 		return nil, err
@@ -1072,6 +1076,12 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 		return nil, err
 	}
 	p.skipWhitespace()
+	node := ast.NewCreateMaterializedView(name)
+	if p.dialect == platform.ClickHouse {
+		if node.Facets, err = p.parseClickHouseMaterializedViewClauses(name); err != nil {
+			return nil, err
+		}
+	}
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
 		return nil, fmt.Errorf("expected AS after materialized view name: %w", err)
 	}
@@ -1080,7 +1090,96 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 	if strings.TrimSpace(body) == "" {
 		return nil, fmt.Errorf("expected materialized view body after AS at position %d", p.current.Start)
 	}
-	return ast.NewCreateMaterializedView(name).SetBody(body), nil
+	return node.SetBody(body), nil
+}
+
+// clickHouseViewStorage is the storage clause the ClickHouse renderer writes
+// for every materialized view, as the tokens a read of it yields. A view's
+// storage is not modeled, so this is the only one a schema file may state:
+// reading another as this one would create the view with a storage it did not
+// ask for. TestRead_ClickHouseRenderedMaterializedViewReadsBack holds the two
+// spellings together.
+var clickHouseViewStorage = []string{"ENGINE", "=", "MergeTree", "ORDER", "BY", "tuple", "(", ")"}
+
+// parseClickHouseMaterializedViewClauses reads what ClickHouse writes between a
+// materialized view's name and AS: an optional REFRESH schedule, then an
+// optional storage clause. The schedule becomes the ClickHouse owner's facet
+// through the grammar the Go source uses, so a SQL file and an annotation
+// declare the same schedule the same way (stokaro/ptah#4298).
+func (p *Parser) parseClickHouseMaterializedViewClauses(name string) (schemaext.Facets, error) {
+	var facets schemaext.Facets
+	if p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "REFRESH") {
+		p.advance()
+		var clause strings.Builder
+		for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon && !p.endsClickHouseRefreshClause() {
+			clause.WriteString(p.current.Value)
+			p.advance()
+		}
+		var err error
+		if facets, err = chsource.RefreshFacets(clause.String()); err != nil {
+			return schemaext.Facets{}, fmt.Errorf("materialized view %s: REFRESH: %w", name, err)
+		}
+		p.skipWhitespace()
+	}
+	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "ENGINE") {
+		return facets, nil
+	}
+	var storage []string
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon &&
+		(p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "AS")) {
+		if p.current.Type != lexer.TokenWhitespace && p.current.Type != lexer.TokenComment {
+			storage = append(storage, p.current.Value)
+		}
+		p.advance()
+	}
+	if !sameClickHouseViewStorage(storage) {
+		return schemaext.Facets{}, fmt.Errorf(
+			"%w: materialized view %s: storage %q is not modeled; a ClickHouse schema file may state only %q, the storage Ptah creates a materialized view with",
+			ptaherr.ErrUnsupportedFeature, name, strings.Join(storage, " "), strings.Join(clickHouseViewStorage, " "),
+		)
+	}
+	return facets, nil
+}
+
+// endsClickHouseRefreshClause reports whether the current token starts what
+// follows a REFRESH clause: a column list, the storage, EMPTY, the definer
+// clauses or AS. These are the boundaries [chrefresh.ParseCreateQuery] cuts a
+// stored statement at.
+func (p *Parser) endsClickHouseRefreshClause() bool {
+	if p.current.MatchOperatorValue("(") {
+		return true
+	}
+	if p.current.Type != lexer.TokenIdentifier {
+		return false
+	}
+	switch strings.ToUpper(p.current.Value) {
+	case "ENGINE", "EMPTY", "DEFINER", "SQL", "AS":
+		return true
+	}
+	return false
+}
+
+// sameClickHouseViewStorage compares a storage clause with the one the
+// renderer writes: keywords in either case, the engine and function names as
+// ClickHouse spells them.
+func sameClickHouseViewStorage(storage []string) bool {
+	if len(storage) != len(clickHouseViewStorage) {
+		return false
+	}
+	for i, token := range storage {
+		want := clickHouseViewStorage[i]
+		switch want {
+		case "ENGINE", "ORDER", "BY":
+			if !strings.EqualFold(token, want) {
+				return false
+			}
+		default:
+			if token != want {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // parseAlterTableRowLevelSecurity parses the ROW LEVEL SECURITY tail of an

@@ -317,15 +317,26 @@ before adopting them:
   has its schedule read up to the target table.
 
   The schedule is a ClickHouse setting of the view, not part of the shared
-  materialized view, and only Go annotations can declare it. A Go source states
-  every view's schedule, so a view declared without `refresh` is a plain view,
-  and a schedule the server holds for it is removed. A YAML, HCL or SQL source
-  cannot state one, so a schedule the server holds is kept as it is: Ptah plans
-  no change to it, and a view replaced for a changed query is created again
-  with it.
+  materialized view. Go annotations and ClickHouse SQL schema files declare it.
+  A SQL file states it the way the server prints it, between the view name and
+  `AS`:
 
-  A schedule Ptah could not read is never read as no schedule. A Go source
-  that declares one, or that declares the view plain, leaves the view
+  ```sql
+  CREATE MATERIALIZED VIEW user_stats REFRESH EVERY 1 HOUR
+  ENGINE = MergeTree ORDER BY tuple() AS SELECT count() AS c FROM users;
+  ```
+
+  The storage clause may be left out. When it is written, it has to be
+  `ENGINE = MergeTree ORDER BY tuple()`, the storage Ptah creates every view
+  with. Another storage is refused, because Ptah does not model it and would
+  create the view without it. Both sources state every view's schedule, so a
+  view declared without one is a plain view, and a schedule the server holds
+  for it is removed. A YAML or HCL source cannot state one, so a schedule the
+  server holds is kept as it is: Ptah plans no change to it, and a view
+  replaced for a changed query is created again with it.
+
+  A schedule Ptah could not read is never read as no schedule. A Go or SQL
+  source that declares one, or that declares the view plain, leaves the view
   undecided; a change to the view's query from any source is refused, because
   the replacement would recreate the view without the schedule; `ptah db read`
   and other renders of the database write the view with a comment saying its
