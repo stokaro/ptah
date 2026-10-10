@@ -135,6 +135,25 @@ func TestCompareTableStates_KeepsWhatNobodyDescribed(t *testing.T) {
 	c.Assert(adopted, qt.DeepEquals, &pgpolicy.DesiredTableState{Enabled: true, Forced: true})
 }
 
+// TestCompareTableStates_KeepsTheDefaultNobodyDescribed pins a source that
+// makes no claim about the switches against a read that found none set: the
+// table keeps the default with nothing declared for it. Adopting the default
+// declared a value neither side carried, which the runtime refuses as an
+// invented one, so every comparison of such a source with a live PostgreSQL
+// failed.
+func TestCompareTableStates_KeepsTheDefaultNobodyDescribed(t *testing.T) {
+	c := qt.New(t)
+	request := facetComparison(c, nil, nil, surviving("orders"))
+	request.Desired.Coverage = schemaext.Coverage{}
+
+	result, err := newRuntime(c).CompareFacets(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 0)
+	c.Assert(result.Desired.Records, qt.HasLen, 0)
+}
+
 // TestCompareTableStates_LeavesAnExcludedTableAlone pins a declaration scoped
 // to another target: on this one the table's switches are excluded from the
 // comparison, so a read that skipped the switches leaves only the other table

@@ -89,13 +89,7 @@ func compareTableState(request schemaext.FacetComparisonRequest, owner schemaext
 	// requests the owner's default, which keeps the switches the table has
 	// (stokaro/ptah#2048). A switch declared elsewhere takes precedence.
 	if desired == nil && desiredKnowledge.State == schemaext.Defaulted {
-		if stateLimited(request.Current.Coverage, owner.Subject) || current == nil && unknown(currentKnowledge) {
-			return nil
-		}
-		if current == nil {
-			current = &pgpolicy.ObservedTableState{}
-		}
-		return adoptTableState(result, owner.Subject, current)
+		return keepDefaultedState(request, owner.Subject, current, currentKnowledge, result)
 	}
 	// Switches nobody read are decided only where the declaration names
 	// them; a table it leaves without the facet keeps what it has, as an
@@ -106,13 +100,20 @@ func compareTableState(request schemaext.FacetComparisonRequest, owner schemaext
 		}
 		return nil
 	}
+	if desired == nil && unknown(desiredKnowledge) {
+		// A source that cannot describe the switches keeps what the server
+		// holds. A read that recorded none holds the default, which needs no
+		// declaration to keep; adopting it would declare a value neither
+		// side carried.
+		if current == nil {
+			return nil
+		}
+		return adoptTableState(result, owner.Subject, current)
+	}
 	if current == nil {
 		current = &pgpolicy.ObservedTableState{}
 	}
 	if desired == nil {
-		if unknown(desiredKnowledge) {
-			return adoptTableState(result, owner.Subject, current)
-		}
 		desired = &pgpolicy.DesiredTableState{}
 	}
 	if desired.Enabled == current.Enabled && desired.Forced == current.Forced {
@@ -122,6 +123,21 @@ func compareTableState(request schemaext.FacetComparisonRequest, owner schemaext
 		Change: schemaext.ChangeRecord{Subject: owner.Subject, Value: &pgpolicy.TableStateChange{
 			Before: current, After: desired, Access: pgpolicy.TableStateAccess(current, desired)}}})
 	return nil
+}
+
+// keepDefaultedState answers a declaration that requests the owner's default
+// for a table's switches: the table keeps the switches it has, where they
+// were read.
+func keepDefaultedState(request schemaext.FacetComparisonRequest, subject objectidentity.ID, current *pgpolicy.ObservedTableState,
+	currentKnowledge schemaext.Knowledge, result *schemaext.FacetComparisonResult,
+) error {
+	if stateLimited(request.Current.Coverage, subject) || current == nil && unknown(currentKnowledge) {
+		return nil
+	}
+	if current == nil {
+		current = &pgpolicy.ObservedTableState{}
+	}
+	return adoptTableState(result, subject, current)
 }
 
 // adoptTableState keeps the switches the server holds in the effective
