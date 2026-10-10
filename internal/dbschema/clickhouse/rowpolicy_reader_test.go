@@ -44,8 +44,8 @@ func answerRowPolicies(rows [][]driver.Value, refusal error) dbtest.QueryHandler
 func TestReaderReadSchema_ReadsRowPoliciesAsOwnerObjects(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answerRowPolicies([][]driver.Value{
-		{"tenant", "orders", "tenant_id = 1", uint8(1), uint8(1), []string{}, []string{"admin"}},
-		{"open", "orders", nil, uint8(0), uint8(0), []string{"alice", "bob"}, []string{}},
+		{"tenant", "orders", "tenant_id = 1", uint8(1), uint8(1), make([]string, 0), []string{"admin"}},
+		{"open", "orders", nil, uint8(0), uint8(0), []string{"alice", "bob"}, make([]string, 0)},
 	}, nil))
 
 	schema, err := clickhouse.NewClickHouseReader(db.SQL, "analytics").ReadSchemaContext(t.Context())
@@ -55,11 +55,11 @@ func TestReaderReadSchema_ReadsRowPoliciesAsOwnerObjects(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
 		{Ref: chschema.RowPolicyRef("", "orders", "open"), Value: &chschema.ObservedRowPolicy{
-			Composition: chschema.Permissive, Roles: chschema.RoleSelection{Names: []string{"alice", "bob"}, Except: []string{}},
+			Composition: chschema.Permissive, Roles: chschema.RoleSelection{Names: []string{"alice", "bob"}, Except: make([]string, 0)},
 		}},
 		{Ref: chschema.RowPolicyRef("", "orders", "tenant"), Value: &chschema.ObservedRowPolicy{
 			Filter: new("tenant_id = 1"), Composition: chschema.Restrictive,
-			Roles: chschema.RoleSelection{All: true, Names: []string{}, Except: []string{"admin"}},
+			Roles: chschema.RoleSelection{All: true, Names: make([]string, 0), Except: []string{"admin"}},
 		}},
 	})
 	c.Assert(schema.FeatureCoverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", "orders", "other")).State,

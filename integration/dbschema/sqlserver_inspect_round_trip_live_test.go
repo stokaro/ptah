@@ -4,7 +4,6 @@ package dbschema_test
 
 import (
 	"fmt"
-	"ptah.run/dialect/mssql/mssqlproperty"
 	"testing"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/dbschematogo"

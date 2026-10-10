@@ -282,10 +282,10 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		RolesAdded:            difftypes.RoleChanges{{Name: "reporting"}},
-		FunctionsAdded:        difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
-		GrantsAdded:   []difftypes.GrantRef{rbacGrant("SELECT")},
-		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
+		RolesAdded:     difftypes.RoleChanges{{Name: "reporting"}},
+		FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
+		GrantsAdded:    []difftypes.GrantRef{rbacGrant("SELECT")},
+		TriggersAdded:  []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
 	}
 
 	nodes := planClickHouse(c, diff, &schemamodel.Database{})

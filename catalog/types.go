@@ -1264,11 +1264,11 @@ type Function struct {
 	// ([capability.RoutineReplacementResetsDefiner]), recreating a routine of
 	// another definer silently changes the principal its body runs as, which
 	// the comparison refuses with [Database.CurrentAccount].
-	Definer string `json:"-"`
-	Returns        string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
-	Language       string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
-	Security       string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
-	Volatility     string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Definer    string `json:"-"`
+	Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
+	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
+	Security   string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
+	Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
 	// Settings are the routine's own configuration settings as the catalog
 	// reports them, each `name=value`. PostgreSQL keeps them in
 	// pg_proc.proconfig; a dialect without such a facility leaves this empty.

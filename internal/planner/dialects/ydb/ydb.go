@@ -179,10 +179,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if diff == nil {
 		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
 	}
-	if err := schemaprecondition.RefuseMaterializedViewFeatureChanges(platform.YDB, diff); err != nil {
-		return nil, err
-	}
-	if err := schemaprecondition.RefuseServerSchemas(platform.YDB, diff); err != nil {
+	if err := refuseUnsupportedChanges(diff); err != nil {
 		return nil, err
 	}
 	semantics := diff.EffectiveIdentifierSemantics(platform.YDB)
@@ -206,10 +203,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 
-	for _, tableDiff := range diff.TablesModified {
-		if err := p.refuseModification(tableDiff, rebuilds, semantics); err != nil {
-			return nil, err
-		}
+	if err := p.refuseModifications(diff, rebuilds, semantics); err != nil {
+		return nil, err
 	}
 	// The tables whose indexes go inside their CREATE TABLE: every added
 	// table, on a target without a CREATE INDEX statement. The render path
@@ -280,6 +275,26 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, access.after...)
 	result = append(result, access.last...)
 	return p.scheduleFeatureChanges(ctx, runtime, diff, rebuilds, semantics, columnTTL.reads, beforeChangefeeds, result)
+}
+
+// refuseUnsupportedChanges refuses the changes no YDB plan can carry, before
+// anything is planned.
+func refuseUnsupportedChanges(diff *difftypes.SchemaDiff) error {
+	if err := schemaprecondition.RefuseMaterializedViewFeatureChanges(platform.YDB, diff); err != nil {
+		return err
+	}
+	return schemaprecondition.RefuseServerSchemas(platform.YDB, diff)
+}
+
+// refuseModifications refuses every modified table the plan cannot change in
+// place or through a rebuild.
+func (p *Planner) refuseModifications(diff *difftypes.SchemaDiff, rebuilds map[string]*tableRebuild, semantics identifier.Semantics) error {
+	for _, tableDiff := range diff.TablesModified {
+		if err := p.refuseModification(tableDiff, rebuilds, semantics); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // refuseUnplannableObjectChanges refuses every index addition, in-place index

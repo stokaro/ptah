@@ -167,7 +167,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		if schema.FeatureObjects, err = schema.FeatureObjects.Merge(read); err != nil {
 			return nil, err
 		}
-		known, err := rowPolicyCoverage(readErr == nil)
+		known, err := rowPolicyCoverage(readErr)
 		if err != nil {
 			return nil, err
 		}

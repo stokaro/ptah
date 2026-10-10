@@ -251,6 +251,25 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 // It leaves out ydburl.RealmDirectory at the root for the same reason.
 const LockNode = ydbcoordination.LockNode
 
+// unreadKeyedEntry records an in-scope external object, replication or
+// transfer the keyed reader did not describe as unread, and reports whether
+// the entry was one of those kinds.
+func unreadKeyedEntry(entryType Ydb_Scheme.Entry_Type, schema, name string, unread *unreadObjects) bool {
+	switch entryType {
+	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
+		unread.add(ydbexternal.SourceKind, ydbexternal.SourceRef(schema, name), ydbexternal.UnsupportedReason)
+	case Ydb_Scheme.Entry_EXTERNAL_TABLE:
+		unread.add(ydbexternal.TableKind, ydbexternal.TableRef(schema, name), ydbexternal.UnsupportedReason)
+	case Ydb_Scheme.Entry_REPLICATION:
+		unread.add(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef(schema, name), ydbreplication.UnsupportedReplicationReason)
+	case Ydb_Scheme.Entry_TRANSFER:
+		unread.add(ydbreplication.TransferKind, ydbreplication.TransferRef(schema, name), ydbreplication.UnsupportedTransferReason)
+	default:
+		return false
+	}
+	return true
+}
+
 // entry reads one directory entry.
 func (r *Reader) entry(
 	ctx context.Context,
@@ -298,18 +317,7 @@ func (r *Reader) entry(
 		unread.add(ydbtopic.Kind, ydbtopic.Ref(schema, name), reason)
 		return nil
 	}
-	switch entry.GetType() {
-	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
-		unread.add(ydbexternal.SourceKind, ydbexternal.SourceRef(schema, name), ydbexternal.UnsupportedReason)
-		return nil
-	case Ydb_Scheme.Entry_EXTERNAL_TABLE:
-		unread.add(ydbexternal.TableKind, ydbexternal.TableRef(schema, name), ydbexternal.UnsupportedReason)
-		return nil
-	case Ydb_Scheme.Entry_REPLICATION:
-		unread.add(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef(schema, name), ydbreplication.UnsupportedReplicationReason)
-		return nil
-	case Ydb_Scheme.Entry_TRANSFER:
-		unread.add(ydbreplication.TransferKind, ydbreplication.TransferRef(schema, name), ydbreplication.UnsupportedTransferReason)
+	if unreadKeyedEntry(entry.GetType(), schema, name, unread) {
 		return nil
 	}
 	kind, known := unmodeledEntries[entry.GetType()]

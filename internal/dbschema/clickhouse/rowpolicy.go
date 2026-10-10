@@ -73,10 +73,10 @@ func (r *Reader) readRowPolicies(ctx context.Context, dbName string) ([]schemaex
 // rowPolicyCoverage is what a read knows about row policies: every one on a
 // table of the database when it read them, and none when the account could
 // not, in which case a declared policy is undecided rather than created and an
-// undeclared one is kept.
-func rowPolicyCoverage(read bool) (schemaext.Coverage, error) {
+// undeclared one is kept. readErr is the access refusal of the read, or nil.
+func rowPolicyCoverage(readErr error) (schemaext.Coverage, error) {
 	knowledge := schemaext.Knowledge{State: schemaext.Complete}
-	if !read {
+	if readErr != nil {
 		knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the account may not read system.row_policies"}
 	}
 	return chschema.RowPolicyCoverage(schemaext.Observed, knowledge, nil)

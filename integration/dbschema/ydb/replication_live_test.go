@@ -100,8 +100,8 @@ func mirrorSpec(connection string) ydbreplication.ReplicationSpec {
 // full, as a schema source does: what db leaves out is to be dropped.
 func claimReplications(db *schemamodel.Database) {
 	complete := schemaext.Knowledge{State: schemaext.Complete}
-	coverage := must.Must(db.FeatureCoverage.Combine(must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, complete, nil))))
-	db.FeatureCoverage = must.Must(coverage.Combine(must.Must(ydbreplication.TransferCoverage(schemaext.Desired, complete, nil))))
+	claimed := must.Must(db.FeatureCoverage.Combine(must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, complete, nil))))
+	db.FeatureCoverage = must.Must(claimed.Combine(must.Must(ydbreplication.TransferCoverage(schemaext.Desired, complete, nil))))
 }
 
 // declareTransfer adds transfer ingest of the replication directory to db.

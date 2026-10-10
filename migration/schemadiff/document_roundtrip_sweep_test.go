@@ -9,8 +9,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
-	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/builtintest"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -25,7 +23,9 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 )

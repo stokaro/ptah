@@ -8,11 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
-	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/builtintest"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 

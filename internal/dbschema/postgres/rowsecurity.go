@@ -37,6 +37,9 @@ const rowSecurityQuery = `
 	WHERE n.nspname = $1
 	ORDER BY c.relname, pol.polname`
 
+// compositions maps pg_policy.polpermissive to the composition it stands for.
+var compositions = map[bool]pgpolicy.Composition{true: pgpolicy.Permissive, false: pgpolicy.Restrictive}
+
 // policyCommands maps pg_policy.polcmd to the command it stands for.
 var policyCommands = map[string]pgpolicy.Command{
 	"*": pgpolicy.CommandAll, "r": pgpolicy.CommandSelect, "a": pgpolicy.CommandInsert,
@@ -86,7 +89,7 @@ func (r *Reader) readPolicies(ctx context.Context, schema *catalog.Database, sch
 		if err := rows.Scan(&table, &name, &command, &roles, &using, &withCheck, &comment, &permissive); err != nil {
 			return err
 		}
-		policy, err := scannedPolicy(command, roles, using, withCheck, comment, permissive)
+		policy, err := scannedPolicy(command, roles, using, withCheck, comment, compositions[permissive])
 		if err != nil {
 			return fmt.Errorf("policy %q on table %q: %w", name, table, err)
 		}
@@ -101,11 +104,8 @@ func (r *Reader) readPolicies(ctx context.Context, schema *catalog.Database, sch
 	return rows.Err()
 }
 
-func scannedPolicy(command string, roles, using, withCheck sql.NullString, comment string, permissive bool) (pgpolicy.ObservedPolicy, error) {
-	policy := pgpolicy.ObservedPolicy{Command: policyCommands[command], Comment: comment, Composition: pgpolicy.Restrictive}
-	if permissive {
-		policy.Composition = pgpolicy.Permissive
-	}
+func scannedPolicy(command string, roles, using, withCheck sql.NullString, comment string, composition pgpolicy.Composition) (pgpolicy.ObservedPolicy, error) {
+	policy := pgpolicy.ObservedPolicy{Command: policyCommands[command], Comment: comment, Composition: composition}
 	if using.Valid {
 		policy.Using = new(using.String)
 	}

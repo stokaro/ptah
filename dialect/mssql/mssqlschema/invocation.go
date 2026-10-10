@@ -2,6 +2,7 @@ package mssqlschema
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -160,10 +161,8 @@ func argumentList(text string) ([]string, bool) {
 		}
 	}
 	arguments = append(arguments, strings.TrimSpace(body[start:]))
-	for _, argument := range arguments {
-		if argument == "" {
-			return nil, false
-		}
+	if slices.Contains(arguments, "") {
+		return nil, false
 	}
 	return arguments, true
 }

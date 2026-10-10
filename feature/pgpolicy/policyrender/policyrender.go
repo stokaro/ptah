@@ -12,7 +12,6 @@ package policyrender
 
 import (
 	"fmt"
-	"ptah.run/internal/tableref"
 	"slices"
 	"strings"
 
@@ -23,6 +22,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/tableref"
 )
 
 // Handlers returns independent statement handlers for both payloads, for a
