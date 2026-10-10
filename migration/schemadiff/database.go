@@ -97,10 +97,6 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	policies, err := resolvePolicyExpressions(ctx, conn, desired, database, semantics)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
 	indexes, err := resolveIndexExpressions(ctx, conn, desired, database, semantics)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -132,7 +128,6 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	opts = withResolvedExpressions(opts, resolvedExpressions{
 		domains:   expressions,
 		checks:    checks,
-		policies:  policies,
 		indexes:   indexes,
 		excludes:  excludes,
 		columns:   columns,
@@ -151,7 +146,6 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 type resolvedExpressions struct {
 	domains   map[string]config.DomainExpression
 	checks    map[string]config.CheckExpression
-	policies  map[string]config.PolicyExpression
 	indexes   map[string]config.IndexExpression
 	excludes  map[string]config.ExcludeExpression
 	columns   map[string]config.ColumnSpelling
@@ -164,7 +158,7 @@ type resolvedExpressions struct {
 // comparison and every target whose engine rewrites nothing.
 func (r resolvedExpressions) empty() bool {
 	return len(r.domains) == 0 && len(r.checks) == 0 &&
-		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.excludes) == 0 && len(r.columns) == 0 &&
+		len(r.indexes) == 0 && len(r.excludes) == 0 && len(r.columns) == 0 &&
 		len(r.triggers) == 0 && len(r.arguments) == 0 && len(r.views) == 0
 }
 
@@ -189,9 +183,6 @@ func withResolvedExpressions(
 	}
 	if len(resolved.checks) > 0 {
 		merged.CheckExpressions = resolved.checks
-	}
-	if len(resolved.policies) > 0 {
-		merged.PolicyExpressions = resolved.policies
 	}
 	if len(resolved.indexes) > 0 {
 		merged.IndexExpressions = resolved.indexes
@@ -714,57 +705,6 @@ func resolveCheckExpressions(
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	return checks, nil
-}
-
-// resolvePolicyExpressions normalizes the declared clauses of every RLS policy
-// the database also holds.
-//
-// Only those, for the reason [resolveDomainExpressions] gives: a policy being
-// created carries its declaration into the CREATE statement unchanged, and one
-// being dropped has no declaration left to normalize.
-func resolvePolicyExpressions(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	desired *schemamodel.Database,
-	database *catalog.Database,
-	semantics identifier.Semantics,
-) (map[string]config.PolicyExpression, error) {
-	if desired == nil || database == nil {
-		return nil, nil
-	}
-	held := make(map[string]struct{}, len(database.RLSPolicies))
-	for _, policy := range database.RLSPolicies {
-		held[exprkey.Policy(semantics, policy.Table, policy.Name)] = struct{}{}
-	}
-	columns := liveTableColumns(database, semantics)
-
-	probes := make([]dbexprprobe.PolicyExpressionProbe, 0, len(desired.RLSPolicies))
-	for _, policy := range desired.RLSPolicies {
-		key := exprkey.Policy(semantics, policy.Table, policy.Name)
-		if _, exists := held[key]; !exists {
-			continue
-		}
-		live, known := columns[exprkey.Table(semantics, policy.Table)]
-		if !known {
-			continue
-		}
-		probes = append(probes, dbexprprobe.PolicyExpressionProbe{
-			Key:       key,
-			Table:     live.name,
-			Columns:   live.columns,
-			Using:     policy.UsingExpression,
-			WithCheck: policy.WithCheckExpression,
-		})
-	}
-	if len(probes) == 0 {
-		return nil, nil
-	}
-
-	policies, err := dbexprprobe.ResolvePolicyExpressions(ctx, conn, probes)
-	if err != nil {
-		return nil, fmt.Errorf("compare schemas: %w", err)
-	}
-	return policies, nil
 }
 
 // resolveExcludeExpressions normalizes the elements and WHERE clause of every

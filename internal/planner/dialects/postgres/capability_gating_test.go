@@ -15,7 +15,7 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
+func TestPlanner_CapabilityGatesRoleManagement(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
@@ -36,18 +36,6 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 		GrantsAdded: []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 		},
-		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-			{
-				PolicyName: "tenant_policy", TableName: "users",
-				Desired: schemamodel.RLSPolicy{
-					Name: "tenant_policy", Table: "users",
-					PolicyFor: "ALL", ToRoles: "app_role", UsingExpression: "true",
-				},
-			},
-		},
-		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
-			{PolicyName: "old_policy", TableName: "users"},
-		},
 	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
@@ -55,13 +43,6 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 			{Name: "app_role", Inherit: true},
 			{Name: "existing_role", Login: true, Inherit: true},
 		},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name:            "tenant_policy",
-			Table:           "users",
-			PolicyFor:       "SELECT",
-			ToRoles:         "app_role",
-			UsingExpression: "tenant_id = current_setting('app.tenant_id')::uuid",
-		}},
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(
@@ -77,7 +58,4 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "DROP ROLE")
 	c.Assert(sql, qt.Not(qt.Contains), "GRANT ")
 	c.Assert(sql, qt.Not(qt.Contains), "REVOKE ")
-	c.Assert(sql, qt.Not(qt.Contains), "ROW LEVEL SECURITY")
-	c.Assert(sql, qt.Not(qt.Contains), "CREATE POLICY")
-	c.Assert(sql, qt.Not(qt.Contains), "DROP POLICY")
 }

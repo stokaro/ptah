@@ -47,13 +47,6 @@ func hostedSchema(family, host string) schemamodel.Database {
 		schema.Indexes = []schemamodel.Index{{
 			StructName: host, Name: "idx", Fields: []string{"id"},
 		}}
-	case "rls enable":
-		schema.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: host}}
-	case "policy":
-		schema.RLSPolicies = []schemamodel.RLSPolicy{{
-			StructName: host, Name: "p", PolicyFor: "SELECT",
-			ToRoles: "reader", UsingExpression: "true",
-		}}
 	case "trigger":
 		schema.Triggers = []schemamodel.Trigger{{
 			StructName: host, Name: "tr", Timing: "BEFORE", Event: "UPDATE",
@@ -63,7 +56,9 @@ func hostedSchema(family, host string) schemamodel.Database {
 	return schema
 }
 
-// hostedFamilies is every family that reaches a target through a host it names.
+// hostedFamilies is every family that reaches a PostgreSQL target through a
+// host it names. Row-level security reaches it through its owner, whose
+// policies name their table in their identity.
 //
 // The wanted text is the kind the refusal has to name, so a refusal that fired
 // for the wrong declaration is a failure rather than a pass.
@@ -73,8 +68,6 @@ var hostedFamilies = []struct {
 }{
 	{name: "constraint", kind: `constraint "chk" names no table`},
 	{name: "index", kind: `index "idx" names no table`},
-	{name: "rls enable", kind: "a declared row-level security enablement names no table"},
-	{name: "policy", kind: `policy "p" names no table`},
 	{name: "trigger", kind: `trigger "tr" names no table`},
 }
 

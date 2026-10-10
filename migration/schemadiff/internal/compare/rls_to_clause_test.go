@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/config"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -42,11 +41,10 @@ func TestRLSPolicyDefinitions_AnOmittedToClauseEqualsPUBLIC(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compare.RLSPolicyDefinitionsWithExpressions(
+			diff := compare.RLSPolicyDefinitionsWithDialect(
 				schemamodel.RLSPolicy{Name: "p", Table: "t", ToRoles: test.declared, UsingExpression: "true"},
 				catalog.RLSPolicy{Name: "p", Table: "t", ToRoles: test.observed, UsingExpression: "true"},
 				"postgres",
-				config.PolicyExpression{},
 			)
 
 			_, changed := diff.Changes["to_roles"]
@@ -81,7 +79,7 @@ func TestRLSPoliciesWithSemantics_TheDialectReachesTheRoleFold(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			compare.RLSPoliciesWithSemantics(
-				desired, database, diff, identifier.ForDialect("postgres"), test.dialect, compare.Coverage{}, nil)
+				desired, database, diff, identifier.ForDialect("postgres"), test.dialect, compare.Coverage{})
 
 			c.Assert(diff.RLSPoliciesModified, qt.HasLen, test.wantModified)
 		})

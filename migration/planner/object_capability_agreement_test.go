@@ -97,18 +97,6 @@ func objectKindFixture() schemamodel.Database {
 			Grantee:    "app_user",
 			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 		}},
-		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
-			StructName: "SecurityMarker",
-			Table:      "users",
-		}},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			StructName:      "SecurityMarker",
-			Name:            "users_self",
-			Table:           "users",
-			PolicyFor:       "SELECT",
-			ToRoles:         "app_user",
-			UsingExpression: "true",
-		}},
 		Functions: []schemamodel.Function{{
 			StructName: "FunctionMarker",
 			Name:       "touch_updated",
@@ -221,8 +209,6 @@ var objectKindGates = []objectKindGate{
 		"on TABLES in schema public for role app_user to app_user",
 		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_user" IN SCHEMA "public" GRANT SELECT ON TABLES TO "app_user"`,
 	},
-	{"row-level security", capability.RowLevelSecurity, "row-level security", "on users", "ENABLE ROW LEVEL SECURITY"},
-	{"policy", capability.RowLevelSecurity, "policy", "users_self on users", `POLICY "users_self"`},
 }
 
 // skipComment is the line the renderer writes for a refused object, which both

@@ -107,14 +107,10 @@ func phaseOrder(nodes []ast.Node) []string {
 			order = append(order, "create view")
 		case *ast.DropViewNode:
 			order = append(order, "drop view")
-		case *ast.AlterTableEnableRLSNode:
-			order = append(order, "enable row security")
 		case *ast.AlterRoleNode:
 			order = append(order, "alter role")
 		case *ast.GrantPrivilegeNode:
 			order = append(order, "grant")
-		case *ast.AlterTableDisableRLSNode:
-			order = append(order, "disable row security")
 		case *ast.DropFunctionNode:
 			order = append(order, "drop function")
 		case *ast.DropRoleNode:
@@ -144,9 +140,8 @@ func phaseOrder(nodes []ast.Node) []string {
 // operation can join. A default one is created before the views that may read
 // it and dropped after them, which is where a TimescaleDB aggregate goes. A
 // dependent one names objects of every family and nothing common reads it, so
-// it is created after the views, the role changes and the row-security
-// switches, before the grants, and dropped before row security is disabled
-// and before any column, constraint, view, routine or role is. In the default
+// it is created after the views and the role changes, before the grants, and
+// dropped before any column, constraint, view, routine or role is. In the default
 // phase an object is created before another is dropped.
 func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 	created := &difftypes.SchemaDiff{
@@ -155,17 +150,15 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 		DeclaredViewLikes: difftypes.ViewLikeVocabulary{Views: []schemamodel.View{{Name: "recent", Body: "SELECT 1"}}},
 		RolesModified: []difftypes.RoleDiff{{RoleName: "reader", Changes: map[string]string{"login": "false -> true"},
 			Desired: schemamodel.Role{Name: "reader", Login: true}}},
-		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "orders"}},
-		GrantsAdded:           []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"}},
+		GrantsAdded: []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"}},
 	}
 	dropped := &difftypes.SchemaDiff{
-		FeatureChanges:          []schemaext.ChangeRecord{{Subject: phaseSubject("guarded"), Value: &phaseChange{Action: plangraph.Drop}}},
-		ViewsRemoved:            difftypes.ViewChanges{{Name: "recent"}},
-		TablesModified:          []difftypes.TableDiff{{TableName: "orders", ColumnsRemoved: difftypes.ColumnChanges{{Name: "tenant"}}}},
-		ConstraintsRemoved:      difftypes.ConstraintRemovals{{Name: "orders_tenant_check", TableName: "orders", Type: "CHECK"}},
-		RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "orders"}},
-		FunctionsRemoved:        difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "tenant_of"}, Signature: new("")}},
-		RolesRemoved:            difftypes.RoleChanges{{Name: "reader"}},
+		FeatureChanges:     []schemaext.ChangeRecord{{Subject: phaseSubject("guarded"), Value: &phaseChange{Action: plangraph.Drop}}},
+		ViewsRemoved:       difftypes.ViewChanges{{Name: "recent"}},
+		TablesModified:     []difftypes.TableDiff{{TableName: "orders", ColumnsRemoved: difftypes.ColumnChanges{{Name: "tenant"}}}},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "orders_tenant_check", TableName: "orders", Type: "CHECK"}},
+		FunctionsRemoved:   difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "tenant_of"}, Signature: new("")}},
+		RolesRemoved:       difftypes.RoleChanges{{Name: "reader"}},
 	}
 	// The drop is the first change, so only the windows order it after the
 	// creation.
@@ -177,13 +170,13 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 		want  []string
 	}{
 		{name: "a default creation", phase: featureplan.PhaseDefault, diff: created,
-			want: []string{"owner creates", "create view", "alter role", "enable row security", "grant"}},
+			want: []string{"owner creates", "create view", "alter role", "grant"}},
 		{name: "a dependent creation", phase: featureplan.PhaseDependent, diff: created,
-			want: []string{"create view", "alter role", "enable row security", "owner creates", "grant"}},
+			want: []string{"create view", "alter role", "owner creates", "grant"}},
 		{name: "a default removal", phase: featureplan.PhaseDefault, diff: dropped,
-			want: []string{"disable row security", "drop column", "drop constraint", "drop view", "owner drops", "drop function", "drop role"}},
+			want: []string{"drop column", "drop constraint", "drop view", "owner drops", "drop function", "drop role"}},
 		{name: "a dependent removal", phase: featureplan.PhaseDependent, diff: dropped,
-			want: []string{"owner drops", "disable row security", "drop column", "drop constraint", "drop view", "drop function", "drop role"}},
+			want: []string{"owner drops", "drop column", "drop constraint", "drop view", "drop function", "drop role"}},
 		{name: "a default exchange", phase: featureplan.PhaseDefault, diff: exchanged, want: []string{"owner creates", "owner drops"}},
 	}
 	for _, test := range tests {

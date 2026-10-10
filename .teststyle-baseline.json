@@ -727,12 +727,6 @@
       "count": 2
     },
     {
-      "path": "migration/planner/determinism_test.go",
-      "function": "TestGenerateSchemaDiffSQL_EnableRLSSorted",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "migration/planner/planner_test.go",
       "function": "TestGetPlanner",
       "kind": "if",

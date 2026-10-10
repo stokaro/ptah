@@ -2,8 +2,8 @@ package entities
 
 // Enable RLS and create policies for products table with INSERT/UPDATE checks
 //
-//ptah:schema:rls:enable table="products" comment="Enable RLS for product isolation"
-//ptah:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="PUBLIC" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Products isolated by tenant"
+//ptah:schema:rls:enable table="products" comment="Enable RLS for product isolation" dialects="postgres,cockroachdb,yugabytedb"
+//ptah:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="PUBLIC" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Products isolated by tenant" dialects="postgres,cockroachdb,yugabytedb"
 //ptah:schema:table name="products" comment="Product catalog table"
 type Product struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"

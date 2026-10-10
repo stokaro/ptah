@@ -76,7 +76,7 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `views` | View definitions. |
 | `materialized_views` | Materialized view definitions. |
 | `triggers` | Trigger definitions. |
-| `rls_policies` | Row-level security policies. |
+| `rls_policies` | Row-level security policies. An entry and an `rls_enabled_tables` entry take `dialects`: without it, or scoped to the PostgreSQL family, it is PostgreSQL row-level security and other targets refuse it. |
 | `roles` | Role declarations. On YDB `group: true` declares a group, and `member_of` lists the groups a role joins. |
 | `grants` | Permission grants on a table, schema, sequence, function or procedure, and on YDB on the database with `on_database: true`. A routine is `on_function` or `on_procedure` with its argument types, such as `purge(uuid)`. |
 | `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |

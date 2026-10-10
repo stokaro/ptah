@@ -226,26 +226,6 @@ type CompareOptions struct {
 	// two spellings with its own normalizer, as before.
 	ColumnSpellings map[string]ColumnSpelling
 
-	// PolicyExpressions carries each declared RLS policy's USING and WITH CHECK
-	// as the target server itself spells them, keyed by the policy's table and
-	// name.
-	//
-	// It is [CompareOptions.CheckExpressions] for a third object and the same
-	// rewrite. Measured on PostgreSQL 17.11:
-	//
-	//	declared        column          stored
-	//	level > 0       integer      -> (level > 0)
-	//	price >= 0      numeric      -> (price >= (0)::numeric)
-	//	owner = 'x'     varchar      -> ((owner)::text = 'x'::text)
-	//
-	// The cast depends on the column's type, so no rule over the declaration's
-	// text can decide it: the three rows differ only in the type of the column
-	// they name (stokaro/ptah#2049).
-	//
-	// A nil map means nobody could ask a server, and the comparison falls back
-	// to the textual normalizer it used before.
-	PolicyExpressions map[string]PolicyExpression
-
 	// IndexExpressions carries each declared index's expression and predicate
 	// as the target server itself spells them, keyed by the index's name.
 	//
@@ -337,7 +317,7 @@ type CompareOptions struct {
 // TriggerCondition is one trigger's WHEN condition in the target server's own
 // spelling. See [CompareOptions.TriggerConditions].
 //
-// The zero value carries the same meaning [PolicyExpression]'s does.
+// The zero value carries the same meaning [IndexExpression]'s does.
 type TriggerCondition struct {
 	// Condition is the condition as pg_get_triggerdef prints it, without the
 	// WHEN clause's own parentheses.
@@ -374,25 +354,13 @@ type RoutineArguments struct {
 	BodyResolved bool
 }
 
-// PolicyExpression is one RLS policy's expressions in the target server's own
-// spelling. See [CompareOptions.PolicyExpressions].
-//
-// The zero value is not an empty policy: it is what a resolver returns for a
-// declaration it could not put through the server, and a comparison must fall
-// back rather than read it as changed. Resolved reports which it is.
-type PolicyExpression struct {
-	// Using and WithCheck are the normalized clauses, empty where the policy
-	// declares none.
-	Using     string
-	WithCheck string
-	// Resolved reports that a server answered for this policy.
-	Resolved bool
-}
-
 // IndexExpression is one index's expression and predicate in the target
 // server's own spelling. See [CompareOptions.IndexExpressions].
 //
-// The zero value carries the same meaning [PolicyExpression]'s does.
+// The zero value is not an index without an expression: it is what a resolver
+// returns for a declaration it could not put through the server, and a
+// comparison must fall back rather than read it as changed. Resolved reports
+// which it is.
 type IndexExpression struct {
 	// Expression is the normalized index expression, empty for an index over
 	// plain columns.
@@ -406,7 +374,7 @@ type IndexExpression struct {
 // ExcludeExpression is one EXCLUDE constraint's elements and predicate in the
 // target server's own spelling. See [CompareOptions.ExcludeExpressions].
 //
-// The zero value carries the same meaning [PolicyExpression]'s does.
+// The zero value carries the same meaning [IndexExpression]'s does.
 type ExcludeExpression struct {
 	// Elements is the element list as pg_get_constraintdef prints it, without
 	// its enclosing parentheses.

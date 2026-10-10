@@ -10,24 +10,6 @@ import (
 	"ptah.run/dbschema"
 )
 
-// PolicyExpressionProbe is one declared RLS policy whose clauses need the
-// target server's own spelling before they can be compared.
-type PolicyExpressionProbe struct {
-	// Key identifies the policy to the caller and is never sent to the server.
-	Key string
-	// Table is the bare name of the table the policy is on, as the server stores
-	// it. The probe table takes that name, so a declaration naming its own
-	// table resolves; see [newProbeRelation]. Empty keeps a numbered name.
-	Table string
-	// Columns are the columns of the table the policy is on, from the LIVE
-	// read: the clauses have to parse against the table they will guard.
-	Columns []CheckProbeColumn
-	// Using and WithCheck are the declared clauses, either of which may be
-	// empty.
-	Using     string
-	WithCheck string
-}
-
 // IndexExpressionProbe is one declared index whose expression or predicate
 // needs the target server's own spelling.
 type IndexExpressionProbe struct {
@@ -45,89 +27,6 @@ type IndexExpressionProbe struct {
 	Parts      []string
 	// Predicate is the declared WHERE clause, empty for a full index.
 	Predicate string
-}
-
-// ResolvePolicyExpressions asks the connected server to normalize each declared
-// policy's USING and WITH CHECK.
-//
-// Same rewrite as [ResolveCheckExpressions] and the same reason it cannot be
-// folded textually: the cast PostgreSQL inserts depends on the type of the
-// column the clause names. Measured on 17.11, `owner = 'x'` is stored as
-// `((owner)::text = 'x'::text)` over a varchar column and unchanged over text,
-// so a policy nobody had touched was dropped and recreated on every run -- a
-// security control taken away and put back for no reason (stokaro/ptah#2049).
-//
-// The probe is a temporary table with row-level security enabled and the
-// declared policy on it, inside a transaction that is rolled back. A
-// connection pinned to a session with a transaction open returns nil, for the
-// reason the package documentation gives.
-func ResolvePolicyExpressions(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	probes []PolicyExpressionProbe,
-) (map[string]config.PolicyExpression, error) {
-	if conn == nil {
-		return nil, fmt.Errorf("resolve policy expressions: database connection is nil")
-	}
-	if len(probes) == 0 {
-		return nil, nil
-	}
-	if !isPostgresFamily(conn.Info().Dialect) {
-		return nil, nil
-	}
-	return resolveProbes(ctx, conn, "resolve policy expressions", probes,
-		func(probe PolicyExpressionProbe) string { return probe.Key },
-		resolveOnePolicyExpression)
-}
-
-func resolveOnePolicyExpression(
-	ctx context.Context,
-	tx *sql.Tx,
-	index int,
-	probe PolicyExpressionProbe,
-) (config.PolicyExpression, error) {
-	using := strings.TrimSpace(probe.Using)
-	withCheck := strings.TrimSpace(probe.WithCheck)
-	if (using == "" && withCheck == "") || len(probe.Columns) == 0 {
-		return config.PolicyExpression{}, nil
-	}
-
-	relation := newProbeRelation(probe.Table, "ptah_policy_probe", index)
-	statements := relation.statements(
-		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),
-		fmt.Sprintf("ALTER TABLE %s ENABLE ROW LEVEL SECURITY", relation.name),
-		fmt.Sprintf("CREATE POLICY ptah_policy_probe_pol ON %s%s", relation.name, policyClauses(using, withCheck)),
-	)
-
-	const query = `
-		SELECT COALESCE(pg_get_expr(p.polqual, p.polrelid), ''),
-		       COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')
-		FROM pg_policy p
-		WHERE p.polrelid = $1::regclass`
-
-	var answer config.PolicyExpression
-	ok, err := runProbe(ctx, tx, "resolve policy expressions", probe.Key, "ptah_policy_probe", postgresSavepoints,
-		statements, func(ctx context.Context, tx *sql.Tx) error {
-			return tx.QueryRowContext(ctx, query, relation.regclass).
-				Scan(&answer.Using, &answer.WithCheck)
-		})
-	if err != nil || !ok {
-		return config.PolicyExpression{}, err
-	}
-	answer.Resolved = true
-	return answer, nil
-}
-
-// policyClauses renders the two optional clauses of a CREATE POLICY.
-func policyClauses(using, withCheck string) string {
-	var clauses strings.Builder
-	if using != "" {
-		fmt.Fprintf(&clauses, " USING (%s)", using)
-	}
-	if withCheck != "" {
-		fmt.Fprintf(&clauses, " WITH CHECK (%s)", withCheck)
-	}
-	return clauses.String()
 }
 
 // ResolveIndexExpressions asks the connected server to normalize each declared

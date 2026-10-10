@@ -39,9 +39,6 @@ func TestResolversRefuseANilConnection(t *testing.T) {
 	_, err = dbexprprobe.ResolveDomainExpressions(ctx, nil, []dbexprprobe.DomainExpressionProbe{{Key: "k"}})
 	c.Assert(err, qt.ErrorMatches, `resolve domain expressions: database connection is nil`)
 
-	_, err = dbexprprobe.ResolvePolicyExpressions(ctx, nil, []dbexprprobe.PolicyExpressionProbe{{Key: "k"}})
-	c.Assert(err, qt.ErrorMatches, `resolve policy expressions: database connection is nil`)
-
 	_, err = dbexprprobe.ResolveIndexExpressions(ctx, nil, []dbexprprobe.IndexExpressionProbe{{Key: "k"}})
 	c.Assert(err, qt.ErrorMatches, `resolve index expressions: database connection is nil`)
 
@@ -96,12 +93,6 @@ func TestResolversAnswerNilForADialectThatStoresWhatItWasGiven(t *testing.T) {
 		[]dbexprprobe.DomainExpressionProbe{{Key: "d", BaseType: "text", Check: "VALUE <> ''"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(domains, qt.IsNil)
-
-	policies, err := dbexprprobe.ResolvePolicyExpressions(ctx, conn,
-		[]dbexprprobe.PolicyExpressionProbe{{Key: "t.pol", Using: "owner = 'x'",
-			Columns: []dbexprprobe.CheckProbeColumn{{Name: "owner", Type: "text"}}}})
-	c.Assert(err, qt.IsNil)
-	c.Assert(policies, qt.IsNil)
 
 	indexes, err := dbexprprobe.ResolveIndexExpressions(ctx, conn,
 		[]dbexprprobe.IndexExpressionProbe{{Key: "t_idx", Expression: "lower(code)",

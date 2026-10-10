@@ -133,7 +133,6 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// to a YDB group, a sequence, a table.
 		"ALTER GROUP `READERS`",
 		"ALTER SEQUENCE \"PUBLIC\".\"ORDER_SEQ\"",
-		"ALTER TABLE \"B\"",
 		"ALTER TABLE \"T\"",
 		"ALTER TABLE `B`",
 		"ALTER TABLE `T`",

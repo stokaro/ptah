@@ -683,12 +683,16 @@ type rlsPolicySpec struct {
 	UsingExpression     stringScalar `yaml:"using"`
 	WithCheckExpression stringScalar `yaml:"with_check"`
 	Comment             stringScalar `yaml:"comment"`
+	// Dialects scopes the policy, as it scopes a default privilege. A scope
+	// naming only SQL Server or ClickHouse keeps it a shared declaration.
+	Dialects yaml.Node `yaml:"dialects"`
 }
 
 type rlsEnableSpec struct {
 	StructName stringScalar `yaml:"struct_name"`
 	Table      stringScalar `yaml:"table"`
 	Comment    stringScalar `yaml:"comment"`
+	Dialects   yaml.Node    `yaml:"dialects"`
 }
 
 type roleSpec struct {
@@ -1396,7 +1400,7 @@ func (d document) addRLS(db *schemamodel.Database) error {
 		table := d.Tables[key]
 		if table.RLSEnabled {
 			origin := fmt.Sprintf("tables.%s.rls_enabled", key)
-			if err := addRLSSwitches(db, &collector, origin, valueOrDefault(table.StructName, key), "", ""); err != nil {
+			if err := addRLSSwitches(db, &collector, origin, valueOrDefault(table.StructName, key), "", "", nil); err != nil {
 				return err
 			}
 		}
@@ -1408,7 +1412,16 @@ func (d document) addRLS(db *schemamodel.Database) error {
 		for _, key := range sortedKeys(group.specs) {
 			spec := group.specs[key]
 			origin := fmt.Sprintf("%s.%s", group.name, key)
-			if err := addRLSSwitches(db, &collector, origin, string(spec.StructName), valueOrDefault(spec.Table, key), string(spec.Comment)); err != nil {
+			scope, owned, err := rowSecurityScope(origin, spec.Dialects)
+			if err != nil {
+				return err
+			}
+			if !owned {
+				db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{StructName: string(spec.StructName),
+					Table: valueOrDefault(spec.Table, key), Comment: string(spec.Comment), Dialects: scope})
+				continue
+			}
+			if err := addRLSSwitches(db, &collector, origin, string(spec.StructName), valueOrDefault(spec.Table, key), string(spec.Comment), scope); err != nil {
 				return err
 			}
 		}
@@ -1427,7 +1440,7 @@ func (d document) addRLS(db *schemamodel.Database) error {
 	return err
 }
 
-func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collector, origin, structName, tableName, comment string) error {
+func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collector, origin, structName, tableName, comment string, scope []string) error {
 	index, err := pgpolicysource.DeclaredTable(db.Tables, structName, tableName)
 	if err != nil {
 		return fmt.Errorf("%s: %w", origin, err)
@@ -1438,7 +1451,7 @@ func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collecto
 	}
 	table := &db.Tables[index]
 	state := pgpolicy.DesiredTableState{Enabled: true, Comment: comment, StructName: table.StructName}
-	facets, err := collector.AddSwitches(origin, pgpolicysource.TableRef(table.Schema, table.Name), table.Facets, state, nil)
+	facets, err := collector.AddSwitches(origin, pgpolicysource.TableRef(table.Schema, table.Name), table.Facets, state, scope)
 	if err != nil {
 		return err
 	}
@@ -1448,6 +1461,18 @@ func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collecto
 
 func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector, key string, spec rlsPolicySpec) error {
 	origin := "rls_policies." + key
+	scope, owned, err := rowSecurityScope(origin, spec.Dialects)
+	if err != nil {
+		return err
+	}
+	if !owned {
+		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
+			StructName: string(spec.StructName), Name: valueOrDefault(spec.Name, key), Table: string(spec.Table),
+			PolicyFor: string(spec.PolicyFor), ToRoles: string(spec.ToRoles), UsingExpression: string(spec.UsingExpression),
+			WithCheckExpression: string(spec.WithCheckExpression), Comment: string(spec.Comment), Dialects: scope,
+		})
+		return nil
+	}
 	index, err := pgpolicysource.DeclaredTable(db.Tables, string(spec.StructName), string(spec.Table))
 	if err != nil {
 		return fmt.Errorf("%s: %w", origin, err)
@@ -1470,7 +1495,29 @@ func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector,
 	if err != nil {
 		return fmt.Errorf("%s: %w", origin, err)
 	}
-	return collector.AddPolicy(origin, pgpolicysource.Ref(schemaName, tableName, valueOrDefault(spec.Name, key)), policy, nil)
+	return collector.AddPolicy(origin, pgpolicysource.Ref(schemaName, tableName, valueOrDefault(spec.Name, key)), policy, scope)
+}
+
+// rowSecurityScope reads a row-level security entry's `dialects` and reports
+// whether the PostgreSQL row-security owner holds the entry; see
+// [pgpolicysource.Owns].
+func rowSecurityScope(origin string, node yaml.Node) ([]string, bool, error) {
+	if node.Kind == 0 {
+		return nil, true, nil
+	}
+	var written stringList
+	if err := node.Decode(&written); err != nil {
+		return nil, false, fmt.Errorf("%s has an invalid dialects value: %w", origin, err)
+	}
+	scope, err := dialectscope.Parse(strings.Join(cleanStrings(written), ","))
+	if err != nil {
+		return nil, false, fmt.Errorf("%s dialects: %w", origin, err)
+	}
+	owned, err := pgpolicysource.Owns(scope)
+	if err != nil {
+		return nil, false, fmt.Errorf("%s: %w", origin, err)
+	}
+	return scope, owned, nil
 }
 
 func (d document) addRoles(db *schemamodel.Database) {
