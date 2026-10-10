@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dialectscope"
+	"ptah.run/internal/mssqlpolicysource"
 	"ptah.run/internal/pgpolicysource"
 )
 
@@ -33,56 +34,114 @@ type rlsSwitchDeclaration struct {
 //
 // A declaration with no dialect scope, or one scoped to PostgreSQL-family
 // targets only, is the row-security owner's: a policy becomes an object, and
-// an enablement the switches facet of its table. One scoped to other targets
-// only stays a shared declaration, which SQL Server and ClickHouse plan. A
-// scope naming both is refused (see [pgpolicysource.Owns]), and so are two
-// annotations that declare one policy, or one table's switches, naming both
-// (stokaro/ptah#2440).
+// an enablement the switches facet of its table. A policy scoped to SQL Server
+// only is a security policy of the SQL Server owner (see
+// [mssqlpolicysource.Attributes.Policy]); SQL Server has no table switch, so
+// an enablement scoped to it is refused. One scoped to other targets only
+// stays a shared declaration, which ClickHouse plans. A scope naming two of
+// these is refused, and so are two annotations that declare one policy, or
+// one table's switches, naming both (stokaro/ptah#2440).
 func (s *schemaParseState) attachRowSecurity() ([]schemamodel.RLSPolicy, []schemamodel.RLSEnabledTable, error) {
 	var collector pgpolicysource.Collector
+	var securityPolicies mssqlpolicysource.Collector
 	var policies []schemamodel.RLSPolicy
 	for _, declared := range s.rlsPolicies {
-		owned, err := s.ownedRowSecurity(declared.policy.Dialects, declared.ctx)
+		owner, err := s.rowSecurityOwner(declared.policy.Dialects, declared.ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		if !owned {
+		switch owner {
+		case postgresRowSecurity:
+			err = s.collectPolicy(&collector, declared)
+		case sqlServerRowSecurity:
+			err = s.collectSecurityPolicy(&securityPolicies, declared)
+		default:
 			policies = append(policies, declared.policy)
-			continue
 		}
-		if err := s.collectPolicy(&collector, declared); err != nil {
+		if err != nil {
 			return nil, nil, err
 		}
 	}
 	var switches []schemamodel.RLSEnabledTable
 	for _, declared := range s.rlsEnabledTables {
-		owned, err := s.ownedRowSecurity(declared.enabled.Dialects, declared.ctx)
+		owner, err := s.rowSecurityOwner(declared.enabled.Dialects, declared.ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		if !owned {
+		switch owner {
+		case postgresRowSecurity:
+			err = s.collectSwitches(&collector, declared)
+		case sqlServerRowSecurity:
+			err = s.rowSecurityError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: SQL Server has no row-level "+
+				"security switch on a table; a security policy carries its own state, so remove the enablement scoped to %s",
+				ptaherr.ErrInvalidAttributeValue, strings.Join(declared.enabled.Dialects, ",")))
+		default:
 			switches = append(switches, declared.enabled)
-			continue
 		}
-		if err := s.collectSwitches(&collector, declared); err != nil {
+		if err != nil {
 			return nil, nil, err
 		}
+	}
+	owned, err := securityPolicies.Objects()
+	if err != nil {
+		return nil, nil, err
 	}
 	objects, err := s.featureObjects.Merge(collector.Objects())
 	if err != nil {
 		return nil, nil, err
 	}
-	s.featureObjects = objects
+	if s.featureObjects, err = objects.Merge(owned); err != nil {
+		return nil, nil, err
+	}
 	s.featureCoverage, err = pgpolicysource.Claim(s.featureCoverage, s.featureObjects)
 	return policies, switches, err
 }
 
-func (s *schemaParseState) ownedRowSecurity(scope []string, ctx annotationErrorContext) (bool, error) {
-	owned, err := pgpolicysource.Owns(scope)
+// rowSecurityOwner names the model a row-level security declaration belongs
+// to.
+type rowSecurityOwner int
+
+const (
+	sharedRowSecurity rowSecurityOwner = iota
+	postgresRowSecurity
+	sqlServerRowSecurity
+)
+
+func (s *schemaParseState) rowSecurityOwner(scope []string, ctx annotationErrorContext) (rowSecurityOwner, error) {
+	postgres, err := pgpolicysource.Owns(scope)
 	if err != nil {
-		return false, s.rowSecurityError(ctx, dialectscope.Attribute, err)
+		return sharedRowSecurity, s.rowSecurityError(ctx, dialectscope.Attribute, err)
 	}
-	return owned, nil
+	if postgres {
+		return postgresRowSecurity, nil
+	}
+	sqlServer, err := mssqlpolicysource.Owns(scope)
+	if err != nil {
+		return sharedRowSecurity, s.rowSecurityError(ctx, dialectscope.Attribute, err)
+	}
+	if sqlServer {
+		return sqlServerRowSecurity, nil
+	}
+	return sharedRowSecurity, nil
+}
+
+// collectSecurityPolicy collects a policy scoped to SQL Server as a security
+// policy on its table.
+func (s *schemaParseState) collectSecurityPolicy(collector *mssqlpolicysource.Collector, declared rlsPolicyDeclaration) error {
+	schemaName, tableName, err := s.policyTable(declared)
+	if err != nil {
+		return err
+	}
+	written := declared.policy
+	err = collector.Add(rowSecurityOrigin(declared.ctx), mssqlpolicysource.Attributes{
+		Name: written.Name, TableSchema: schemaName, Table: tableName, For: written.PolicyFor, To: written.ToRoles,
+		Using: written.UsingExpression, WithCheck: written.WithCheckExpression, Restrictive: written.Restrictive,
+		Comment: written.Comment, StructName: written.StructName,
+	}, written.Dialects)
+	if err != nil {
+		return s.rowSecurityError(declared.ctx, "", err)
+	}
+	return nil
 }
 
 func (s *schemaParseState) collectPolicy(collector *pgpolicysource.Collector, declared rlsPolicyDeclaration) error {

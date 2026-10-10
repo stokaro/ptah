@@ -70,6 +70,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mssql/mssqlconvert`
 - `ptah.run/dialect/mssql/mssqldiff`
 - `ptah.run/dialect/mssql/mssqlplan`
+- `ptah.run/dialect/mssql/mssqlprobe`
 - `ptah.run/dialect/mssql/mssqlrelation`
 - `ptah.run/dialect/mssql/mssqlrender`
 - `ptah.run/dialect/mssql/mssqlreport`
@@ -2025,7 +2026,9 @@ schema and name through `SecurityPolicyRef`, with no table parent, because one
 policy may bind several tables. `DesiredSecurityPolicy` holds its predicates,
 its state, its schema binding, whether replication agents skip it, and the Go
 struct it was read from. A nil `Enabled` or `SchemaBinding` requests SQL
-Server's default, ON. `ObservedSecurityPolicy` holds what
+Server's default, ON. Its `Normalized` predicates are the connected server's
+spelling of the declared ones, attached by a probe before a live comparison
+and never rendered. `ObservedSecurityPolicy` holds what
 `sys.security_policies` and `sys.security_predicates` report, every value
 definite. Either may hold no predicate, as SQL Server allows.
 
@@ -2052,13 +2055,19 @@ reads a declared predicate argument and the catalog's spelling as T-SQL
 tokens, since SQL Server stores `tenant_id` as `[tenant_id]` and `CAST(t AS
 int)` as `CONVERT([int],[t])`. Two single identifiers or literals agree or
 differ, equal token sequences agree, and anything else is `Undecided`.
-`ComparePolicy` applies that to whole policies under identifier rules, and
+`ComparePolicy` applies that to whole policies under identifier rules,
+comparing a declaration by its `Normalized` spelling where it has one, and
 `EnabledTableConflicts` finds a table two enabled policies bind, which SQL
-Server refuses with Msg 33264.
+Server refuses with Msg 33264. `ParseInvocation` reads a predicate written as
+a call of a two-part function, in a declaration's spelling or the catalog's,
+and `CatalogPredicate` reads one row of `sys.security_predicates`.
 
-The owner's services are registered for SQL Server in the bundled runtime. No
-reader or source produces a policy yet, so the common row-level security path
-still handles what a declaration asks for.
+The owner's services are registered for SQL Server in the bundled runtime. The
+Go source declares a row-level security annotation scoped to SQL Server as a
+security policy, and the SQL Server reader reports the policies a database
+holds, recording one whose predicate it cannot read as uninspected. The shared
+row-level security model holds no SQL Server policy: a shared policy or switch
+node that reaches the SQL Server renderer is named and skipped.
 
 - `mssqlcompare` pairs policies by schema and name. It plans a creation, a drop
   or a change carrying `mssqldiff.Assess`'s access effect, and reports a pair
@@ -2078,6 +2087,12 @@ still handles what a declaration asks for.
   same, and the state is set around the predicate statements.
 - `mssqlconvert`, `mssqlreverse` and `mssqlreport` convert, reverse and count
   policies.
+- `mssqlprobe` attaches the server's spelling of a declared policy whose
+  comparison with the one the database holds is undecided. It creates the
+  declaration turned off, under a probe name, with
+  `mssqlrender.CreateStatement`, reads `sys.security_predicates` back, and
+  rolls the creation back. A probe the server refuses leaves the declaration
+  unanswered.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table

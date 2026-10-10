@@ -79,6 +79,10 @@ func TestCodecs_RoundTripEveryValue(t *testing.T) {
 		{name: "a declaration holding no predicate", representation: schemaext.Desired, value: &mssqlschema.DesiredSecurityPolicy{
 			Enabled: &off,
 		}},
+		{name: "a declaration the server spelled", representation: schemaext.Desired, value: &mssqlschema.DesiredSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id"), block(orders, mssqlschema.AfterInsert, "CAST(tenant AS int) + 0")},
+			Normalized: []mssqlschema.Predicate{filter(orders, "[tenant_id]"), block(orders, mssqlschema.AfterInsert, "CONVERT([int],[tenant])+(0)")},
+		}},
 	}
 
 	for _, test := range tests {
@@ -166,6 +170,9 @@ func TestEqual_TellsBindingsApart(t *testing.T) {
 			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "tenant_id")}, NotForReplication: true}},
 		{name: "a struct name", other: mssqlschema.DesiredSecurityPolicy{
 			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "tenant_id")}, StructName: "Tenancy"}},
+		{name: "the server's spelling", other: mssqlschema.DesiredSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "tenant_id")},
+			Normalized: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "[tenant_id]")}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -327,7 +334,8 @@ func TestCodecs_DefinitionsNameTheEncodedKeys(t *testing.T) {
 		full, bare schemaext.Payload
 	}{
 		{name: "desired", codec: mssqlschema.Codecs()[0],
-			full: &mssqlschema.DesiredSecurityPolicy{Predicates: full, Enabled: &on, SchemaBinding: &on, NotForReplication: true, StructName: "T"},
+			full: &mssqlschema.DesiredSecurityPolicy{Predicates: full, Enabled: &on, SchemaBinding: &on, NotForReplication: true, StructName: "T",
+				Normalized: full},
 			bare: &mssqlschema.DesiredSecurityPolicy{Predicates: bare}},
 		{name: "observed", codec: mssqlschema.Codecs()[1],
 			full: &mssqlschema.ObservedSecurityPolicy{Predicates: full, Enabled: true},
@@ -562,6 +570,15 @@ func TestValidateDesiredSecurityPolicy_FailurePath(t *testing.T) {
 			policy: &mssqlschema.DesiredSecurityPolicy{StructName: "Ten\x00ancy"}},
 		{name: "a struct name that is not UTF-8", wantErr: `.*security policy struct name is not valid UTF-8`,
 			policy: &mssqlschema.DesiredSecurityPolicy{StructName: "Ten\xffancy"}},
+		{name: "the server's spelling of another slot", wantErr: `.*a normalized security policy holds one predicate for each declared one, in its slot`,
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")},
+				Normalized: []mssqlschema.Predicate{filter(invoices, "[tenant_id]")}}},
+		{name: "the server's spelling of fewer predicates", wantErr: `.*a normalized security policy holds one predicate for each declared one, in its slot`,
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id"), filter(invoices, "tenant_id")},
+				Normalized: []mssqlschema.Predicate{filter(orders, "[tenant_id]")}}},
+		{name: "an invalid predicate in the server's spelling", wantErr: `.*a predicate argument cannot be empty`,
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")},
+				Normalized: []mssqlschema.Predicate{filter(orders, "")}}},
 		{name: "nil", wantErr: `.*nil security policy declaration`},
 	}
 	for _, test := range tests {

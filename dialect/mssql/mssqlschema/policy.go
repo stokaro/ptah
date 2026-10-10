@@ -78,6 +78,12 @@ type DesiredSecurityPolicy struct {
 	// StructName preserves the Go struct a declaration was read from. It has no
 	// server counterpart and does not change the policy.
 	StructName string `json:"struct_name,omitempty"`
+	// Normalized is the connected server's spelling of Predicates, one for
+	// each, as sys.security_predicates reports them for a policy created from
+	// this declaration. A normalization probe attaches it and a comparison
+	// reads it in place of the declared arguments; nothing renders it. Nil
+	// means no server answered.
+	Normalized []Predicate `json:"normalized,omitempty"`
 }
 
 // ObservedSecurityPolicy is a policy as sys.security_policies and
@@ -108,6 +114,7 @@ func (v *DesiredSecurityPolicy) Copy() *DesiredSecurityPolicy {
 	}
 	cloned := *v
 	cloned.Predicates = clonePredicates(v.Predicates)
+	cloned.Normalized = clonePredicates(v.Normalized)
 	cloned.Enabled, cloned.SchemaBinding = cloneFlag(v.Enabled), cloneFlag(v.SchemaBinding)
 	return &cloned
 }
@@ -136,7 +143,7 @@ func (v *DesiredSecurityPolicy) Equal(other schemaext.Value) bool {
 	}
 	return samePredicates(v.Predicates, right.Predicates) && equalFlag(v.Enabled, right.Enabled) &&
 		equalFlag(v.SchemaBinding, right.SchemaBinding) && v.NotForReplication == right.NotForReplication &&
-		v.StructName == right.StructName
+		v.StructName == right.StructName && samePredicates(v.Normalized, right.Normalized)
 }
 
 // Equal compares observations field by field, the predicates as a set.
@@ -227,7 +234,32 @@ func ValidateDesiredSecurityPolicy(v *DesiredSecurityPolicy) error {
 	if err := validText("struct name", v.StructName); err != nil {
 		return modelError(schemaext.Desired, err)
 	}
+	if v.Normalized != nil {
+		if err := validatePredicates(v.Normalized); err != nil {
+			return modelError(schemaext.Desired, err)
+		}
+		if !sameSlots(v.Predicates, v.Normalized) {
+			return modelError(schemaext.Desired, fmt.Errorf("%w: a normalized security policy holds one predicate for each declared one, in its slot",
+				schemaext.ErrInvalidValue))
+		}
+	}
 	return nil
+}
+
+// sameSlots reports whether two predicate lists hold the same slots, a type
+// and an operation on a table each, compared by their exact spelling.
+func sameSlots(left, right []Predicate) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for _, want := range left {
+		if !slices.ContainsFunc(right, func(got Predicate) bool {
+			return got.Type == want.Type && got.Operation == want.Operation && got.Table == want.Table
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidateObservedSecurityPolicy checks that each predicate of an observation

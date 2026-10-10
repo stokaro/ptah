@@ -109,8 +109,7 @@ type UserCountsMatView struct{}
 //ptah:schema:trigger name="users_touch" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;"
 type UsersTouchTrigger struct{}
 
-//ptah:schema:rls:enable table="users" dialects="mssql"
-//ptah:schema:rls:policy name="users_self" table="users" for="SELECT" to="app_user" using="true" dialects="mssql"
+//ptah:schema:rls:policy name="users_self" table="users" using="dbo.fn_users_self(id)" dialects="mssql"
 type SecurityMarker struct{}
 
 //ptah:schema:grant role="app_user" privilege="SELECT" on_table="users"

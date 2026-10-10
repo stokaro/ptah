@@ -3,6 +3,7 @@ package goschema
 import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/ydbsource"
 )
@@ -23,7 +24,10 @@ func sourceCoverage(limits ydbsource.Limits, annotations annotation.Set) (schema
 		return schemaext.Coverage{}, err
 	}
 	rowSecurity := func() (schemaext.Coverage, error) { return pgpolicy.CompleteCoverage(schemaext.Desired) }
-	owners := []func() (schemaext.Coverage, error){annotations.Coverage, rowSecurity}
+	securityPolicies := func() (schemaext.Coverage, error) {
+		return mssqlschema.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	}
+	owners := []func() (schemaext.Coverage, error){annotations.Coverage, rowSecurity, securityPolicies}
 	for _, owned := range owners {
 		coverage, err := owned()
 		if err != nil {

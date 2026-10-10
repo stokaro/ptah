@@ -129,11 +129,6 @@ func RLSPoliciesWithSemantics(
 		generatedPolicyMap[key] = rlsPolicy
 	}
 
-	// The schema each declared table is written under, for the one target that
-	// addresses a policy by it. Built once here rather than searched per policy
-	// in the planner, which is what let the planner keep the desired schema.
-	tableSchemas := declaredTableSchemas(desired)
-
 	databasePolicyMap := make(map[tableMemberKey]catalog.RLSPolicy, len(database.RLSPolicies))
 	for _, rlsPolicy := range database.RLSPolicies {
 		databasePolicyMap[newTableMemberKey(rlsPolicy.Table, rlsPolicy.Name, semantics)] = rlsPolicy
@@ -143,10 +138,9 @@ func RLSPoliciesWithSemantics(
 	for key, generatedPolicy := range generatedPolicyMap {
 		if _, exists := databasePolicyMap[key]; !exists {
 			diff.RLSPoliciesAdded = append(diff.RLSPoliciesAdded, difftypes.RLSPolicyRef{
-				PolicyName:  generatedPolicy.Name,
-				TableName:   generatedPolicy.Table,
-				Desired:     generatedPolicy,
-				TableSchema: tableSchemas[generatedPolicy.Table],
+				PolicyName: generatedPolicy.Name,
+				TableName:  generatedPolicy.Table,
+				Desired:    generatedPolicy,
 			})
 		}
 	}
@@ -168,7 +162,6 @@ func RLSPoliciesWithSemantics(
 			policyComparison := RLSPolicyDefinitionsWithDialect(generatedPolicy, databasePolicy, dialect)
 			if len(policyComparison.Changes) > 0 {
 				policyComparison.Desired = generatedPolicy
-				policyComparison.TableSchema = tableSchemas[generatedPolicy.Table]
 				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyComparison)
 			}
 		}
@@ -514,26 +507,6 @@ func RLSPolicyDefinitionsWithDialect(
 	}
 
 	return policyDiff
-}
-
-// declaredTableSchemas maps each declared table's name to the schema it is
-// written under.
-//
-// The key is the name as the DECLARATION spells it, and the match a caller
-// makes against it is string equality, which is what
-// [schemaprep.QualifyRLSPolicyForTarget] did with the same two values. Folding
-// the two through identifier semantics would qualify policies that are not
-// qualified today; that is a defect worth fixing on its own evidence rather
-// than as a side effect of moving the lookup (stokaro/ptah#2440).
-func declaredTableSchemas(desired *schemamodel.Database) map[string]string {
-	schemas := make(map[string]string, len(desired.Tables))
-	for _, table := range desired.Tables {
-		if _, seen := schemas[table.Name]; seen {
-			continue
-		}
-		schemas[table.Name] = table.Schema
-	}
-	return schemas
 }
 
 // sortRLSEnabledTables orders enablements by the table name the list was sorted

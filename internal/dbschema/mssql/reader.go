@@ -165,17 +165,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	schema.Functions = functions
 
-	policies, err := r.readRLSPolicies(ctx)
+	policies, coverage, err := r.readSecurityPolicies(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read rls policies: %w", err)
+		return nil, fmt.Errorf("sqlserver: read security policies: %w", err)
 	}
-	schema.RLSPolicies = policies
-
-	rlsEnabled, err := r.readRLSEnabledTables(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read rls enabled tables: %w", err)
-	}
-	applyRLSEnabled(schema, rlsEnabled)
+	schema.FeatureObjects, schema.FeatureCoverage = policies, coverage
 
 	reconcileColumnFlags(schema)
 	return schema, nil

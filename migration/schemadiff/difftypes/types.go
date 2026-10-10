@@ -2705,18 +2705,6 @@ type RLSPolicyRef struct {
 	//
 	// It stays off the wire. The names are the reference; this is the operand.
 	Desired schemamodel.RLSPolicy `json:"-"`
-
-	// TableSchema is the schema the owning table is declared under, or empty
-	// when the declaration does not say.
-	//
-	// SQL Server needs it: a policy there is addressed as `schema.name` on
-	// `schema.table`, and the schema is a property of the TABLE rather than of
-	// the policy, so it cannot be read off [RLSPolicyRef.Desired]. Resolving it
-	// where the declared tables are in hand is what lets the planner render the
-	// policy without being handed the schema (stokaro/ptah#2315).
-	//
-	// It stays off the wire for the reason Desired does: it is an operand.
-	TableSchema string `json:"-"`
 }
 
 // RLSPolicyDiff represents changes to Row-Level Security policy definitions.
@@ -2767,18 +2755,6 @@ type RLSPolicyDiff struct {
 	//
 	// It stays off the wire. The names are the reference; this is the operand.
 	Desired schemamodel.RLSPolicy `json:"-"`
-
-	// TableSchema is the schema the owning table is declared under, or empty
-	// when the declaration does not say.
-	//
-	// SQL Server needs it: a policy there is addressed as `schema.name` on
-	// `schema.table`, and the schema is a property of the TABLE rather than of
-	// the policy, so it cannot be read off [RLSPolicyRef.Desired]. Resolving it
-	// where the declared tables are in hand is what lets the planner render the
-	// policy without being handed the schema (stokaro/ptah#2315).
-	//
-	// It stays off the wire for the reason Desired does: it is an operand.
-	TableSchema string `json:"-"`
 }
 
 // RoleDiff represents changes to PostgreSQL role definitions.

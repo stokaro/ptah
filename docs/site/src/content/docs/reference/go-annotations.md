@@ -1194,6 +1194,18 @@ read as the default: permissive is the weaker of the two, so a misspelled
 `RESTRICTIVE` folded into it would grant the access the policy was written to
 withhold.
 
+A policy scoped to SQL Server alone, `dialects="sqlserver"`, is a SQL Server
+security policy. Its `using` is a filter predicate and its `with_check` a
+block predicate, each a call of a two-part inline table-valued function such
+as `dbo.fn_tenant(tenant_id)`. `for` names the block predicate's operation,
+`INSERT`, `UPDATE` or `DELETE`, and `ALL` or no `for` covers every write.
+Annotations that name one policy on several tables are its predicates on each
+table. SQL Server has no form for a `to` list, `as="RESTRICTIVE"`, a comment,
+`for="SELECT"` or an inline expression, so each is refused while the file is
+parsed, and so is an `rls:enable` scoped to SQL Server, which has no table
+switch, and a scope naming SQL Server beside another dialect. See
+[SQL Server](../../databases/sqlserver/#limitations).
+
 ### `//ptah:schema:secret`
 
 Declares a YDB secret: a scheme object whose value the server keeps and never

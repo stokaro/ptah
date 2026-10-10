@@ -190,18 +190,15 @@ func (p *Planner) reportUnsupportedDefaultPrivileges(result []ast.Node, diff *di
 	return result
 }
 
-// reportUnsupportedRowLevelSecurity names the row-level security no target in
-// this family hosts.
+// reportUnsupportedRowLevelSecurity names the shared row-level security no
+// target in this family plans.
 //
 // It is split from the grants above because the two moved apart: SQL Server
-// manages roles and grants now, and still has no RLS path, so a target that
-// plans one must keep reporting the other (stokaro/ptah#1699).
+// manages roles and grants (stokaro/ptah#1699). SQL Server's row-level
+// security is a security policy its owner plans from feature changes, so a
+// shared policy or switch change reaches this planner only from a diff built
+// by hand, and is reported like on every other target here.
 func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	if p.capabilities().Has(capability.RowLevelSecurity) {
-		// planRLS emits the real DDL for this target. Reporting here as well
-		// would put a skip comment beside the statement it says was skipped.
-		return result
-	}
 	for _, table := range diff.RLSEnabledTablesAdded.Names() {
 		result = append(result, ast.NewAlterTableEnableRLS(table))
 	}

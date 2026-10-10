@@ -992,13 +992,13 @@ func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 // SQL Server has had CREATE SEQUENCE since 2012, it has database roles,
 // it has scalar and table-valued functions, it has alias types (CREATE TYPE
 // <name> FROM <base>), and it has row-level security through security policies.
-// Ptah declines all of them for a reason that has nothing to do with the
-// engine: capability.SQLServer2022 leaves Sequences, RoleManagement and
-// RowLevelSecurity off because there is no SQL Server reader and no SQL Server
-// planner for those kinds, and a CREATE the reader never sees again and the
-// planner never plans is a schema that cannot converge -- the same reason
+// Ptah declines what it does not model for a reason that has nothing to do
+// with the engine: a CREATE the reader never sees again and the planner never
+// plans is a schema that cannot converge -- the same reason
 // capability.MariaDB1011 keeps Sequences off for an engine that has had them
-// since 10.3.
+// since 10.3. Row-level security is modeled, by the security policy owner, and
+// the shared policy nodes that describe PostgreSQL's model are skipped here
+// for that reason.
 //
 // Getting that sentence right became load-bearing when the converter stopped
 // gating emission by dialect name: before, these nodes were deleted before they

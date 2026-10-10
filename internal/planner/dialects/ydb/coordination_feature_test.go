@@ -78,4 +78,3 @@ func TestCoordinationFeaturesRefuseAPathClaimedByAnotherCreation(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*coordination create conflicts with create at scheme path.*`)
 	c.Assert(nodes, qt.IsNil)
 }
-

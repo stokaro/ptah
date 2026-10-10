@@ -167,7 +167,6 @@ func reverseColumnDiffs(
 	return reversed
 }
 
-// priorTableSchema is the schema the pre-change database declares a table under.
 // priorColumn answers with the named column of the named table as the
 // pre-change database held it, folded the same way the comparison folds a
 // declaration so an embedded column is found under the name it renders with.
