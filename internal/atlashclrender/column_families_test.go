@@ -4,17 +4,24 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashclrender"
 )
 
-// familyTable is a YDB table declaring the column families given.
-func familyTable(families ...ast.YDBColumnFamilySpec) *schemamodel.Database {
+// familyTable is a YDB table declaring the column families given, as the YDB
+// owner's facet, or none.
+func familyTable(families ...ydbschema.ColumnFamily) *schemamodel.Database {
+	var facets schemaext.Facets
+	if len(families) > 0 {
+		facets = must.Must(schemaext.NewFacets(&ydbschema.DesiredColumnFamilies{Families: families}))
+	}
 	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{Name: "events", StructName: "Events", YDBColumnFamilies: families}},
+		Tables: []schemamodel.Table{{Name: "events", StructName: "Events", Facets: facets}},
 		Fields: []schemamodel.Field{
 			{Name: "id", StructName: "Events", Type: "Int64", Primary: true},
 			{Name: "body", StructName: "Events", Type: "Utf8", Nullable: true},
@@ -29,20 +36,20 @@ func familyTable(families ...ast.YDBColumnFamilySpec) *schemamodel.Database {
 // none, as a read finds a table nobody gave families, lose nothing. A default
 // family a table profile compressed is named.
 func TestRender_ReportsTheColumnFamiliesItLeavesOut(t *testing.T) {
-	cold := ast.YDBColumnFamilySpec{Name: "cold", Compression: "lz4", Columns: []string{"body"}}
+	cold := ydbschema.ColumnFamily{Name: "cold", Compression: "lz4", Columns: []string{"body"}}
 	tests := []struct {
 		name string
 		db   *schemamodel.Database
 		want []atlashclrender.Diagnostic
 	}{
-		{name: "two families", db: familyTable(cold, ast.YDBColumnFamilySpec{Name: "default", Data: "ssd"}),
+		{name: "two families", db: familyTable(cold, ydbschema.ColumnFamily{Name: "default", Data: "ssd"}),
 			want: []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning, Path: "table.events",
 				Message: "column families cold, default are not represented in HCL"}}},
 		{name: "one family", db: familyTable(cold), want: []atlashclrender.Diagnostic{{
 			Severity: atlashclrender.SeverityWarning, Path: "table.events",
 			Message: "column family cold is not represented in HCL"}}},
-		{name: "the default family as YDB has it", db: familyTable(ast.YDBColumnFamilySpec{Name: "default", Compression: "off"})},
-		{name: "the default family a profile compressed", db: familyTable(ast.YDBColumnFamilySpec{Name: "default", Compression: "lz4"}),
+		{name: "the default family as YDB has it", db: familyTable(ydbschema.ColumnFamily{Name: "default", Compression: "off"})},
+		{name: "the default family a profile compressed", db: familyTable(ydbschema.ColumnFamily{Name: "default", Compression: "lz4"}),
 			want: []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning, Path: "table.events",
 				Message: "column family default is not represented in HCL"}}},
 		{name: "none", db: familyTable()},

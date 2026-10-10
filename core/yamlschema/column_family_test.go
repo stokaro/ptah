@@ -5,8 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // A YAML table declares its YDB column families under column_families, keyed
@@ -29,7 +30,10 @@ func TestParse_ColumnFamilies_HappyPath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].YDBColumnFamilies, qt.DeepEquals, []ast.YDBColumnFamilySpec{
+	declared, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](db.Tables[0].Facets, ydbschema.ColumnFamiliesKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(declared.Families, qt.DeepEquals, []ydbschema.ColumnFamily{
 		{Name: "default", Compression: "lz4"},
 		{Name: "cold", Data: "hdd", CacheMode: "in_memory", Columns: []string{"body"}},
 	})
@@ -51,6 +55,8 @@ func TestParse_ColumnFamilies_FailurePath(t *testing.T) {
 			wantErr: `table "items": column family "default": invalid fields "body": the default family holds .*`},
 		{name: "an unknown key", families: "cold: {compression_level: 3}",
 			wantErr: `(?s).*compression_level.*`},
+		{name: "a column in two families", families: "cold: {fields: [body]}\n      warm: {fields: [body]}",
+			wantErr: `table "items": column families: .*column "body" is in two column families, "cold" and "warm"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -425,17 +425,25 @@ func (spec columnFamilySpec) values(name string) map[string]string {
 	return values
 }
 
-// buildColumnFamilies reads a table's YDB column families.
-func buildColumnFamilies(table string, specs orderedMap[columnFamilySpec]) ([]ast.YDBColumnFamilySpec, error) {
-	var families []ast.YDBColumnFamilySpec
+// buildColumnFamilies reads a table's YDB column families into the YDB
+// owner's facet, or an empty collection for a table that declares none.
+func buildColumnFamilies(table string, specs orderedMap[columnFamilySpec]) (schemaext.Facets, error) {
+	if len(specs) == 0 {
+		return schemaext.Facets{}, nil
+	}
+	families := make([]ydbschema.ColumnFamily, 0, len(specs))
 	for _, entry := range specs {
 		family, err := ydbfamily.ParseDeclaration(entry.Value.values(entry.Name))
 		if err != nil {
-			return nil, fmt.Errorf("table %q: column family %q: %w", table, entry.Name, err)
+			return schemaext.Facets{}, fmt.Errorf("table %q: column family %q: %w", table, entry.Name, err)
 		}
 		families = append(families, family)
 	}
-	return families, nil
+	declared := &ydbschema.DesiredColumnFamilies{Families: families}
+	if err := ydbschema.ValidateDesiredColumnFamilies(declared); err != nil {
+		return schemaext.Facets{}, fmt.Errorf("table %q: column families: %w", table, err)
+	}
+	return schemaext.NewFacets(declared)
 }
 
 // changefeedSpec is a YDB changefeed of the table, keyed by its name, with
@@ -924,9 +932,9 @@ func (d document) addTables(db *schemamodel.Database) error {
 			CustomSQL:  string(table.CustomSQL),
 			Overrides:  mergePlatform(table.Platform, table.Overrides),
 
-			YDBColumnFamilies: families,
-			YDBPartitioning:   partitioning,
-			YDBColumnTable:    table.ColumnStore.Clone(),
+			Facets:          families,
+			YDBPartitioning: partitioning,
+			YDBColumnTable:  table.ColumnStore.Clone(),
 		})
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {

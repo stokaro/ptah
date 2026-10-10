@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -71,7 +71,7 @@ func TestYDBCompatBinary_KeepsColumnFamiliesHCLCannotWrite(t *testing.T) {
 			c.Assert(reapplyErr, qt.IsNil, qt.Commentf("schema apply of the inspected document:\n%s", reapplied))
 			c.Assert(reapplied, qt.Equals, "Schema is synced, no changes to be made\n")
 			c.Assert(familiesOf(c, conn), qt.DeepEquals,
-				[]ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}, {Name: "default", Compression: "off"}})
+				[]ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}, {Name: "default", Compression: "off"}})
 		})
 	}
 }
@@ -103,7 +103,7 @@ func TestYDBCompatBinary_RebuildKeepsColumnFamiliesHCLCannotWrite(t *testing.T) 
 			c.Assert(rebuilt, qt.Contains, "    FAMILY `cold` (COMPRESSION = 'lz4'),\n    FAMILY `default` (COMPRESSION = 'off')\n"+
 				") WITH (AUTO_PARTITIONING_BY_SIZE = ENABLED, ")
 			c.Assert(familiesOf(c, conn), qt.DeepEquals,
-				[]ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}, {Name: "default", Compression: "off"}})
+				[]ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}, {Name: "default", Compression: "off"}})
 			synced, _, syncedErr := runCompat(ctx, binary,
 				"schema", "apply", "--url", url, "--schema", familySchema, "--to", desired, "--dry-run")
 			c.Assert(syncedErr, qt.IsNil, qt.Commentf("schema apply again:\n%s", synced))

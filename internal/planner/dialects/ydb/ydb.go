@@ -503,8 +503,8 @@ func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, s
 }
 
 // changeTable writes one table's changes: added columns, then in-place
-// changes, then the TTL, then the column families, then the partitioning,
-// read replicas and key bloom filter, then dropped columns. The
+// changes, then the owners' facets (the TTL and the column families), then
+// the partitioning, read replicas and key bloom filter, then dropped columns. The
 // drops come after the index drops the plan emitted before it, so an indexed
 // or covered column is free by then, and after the TTL, so the column the TTL
 // read is free too; the TTL and the families come after the additions, so a
@@ -528,11 +528,9 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 			HasChanged: true,
 		})
 	}
-	// The owners' statements for the table's own facets, its TTL among them.
+	// The owners' statements for the table's own facets: its TTL and its
+	// column families.
 	nodes = append(nodes, facets...)
-	if operation := familyOperation(tableDiff); operation != nil {
-		alter(operation)
-	}
 	if operation := partitioningOperation(tableDiff.YDBPartitioningChange); operation != nil {
 		alter(operation)
 	}
@@ -677,9 +675,6 @@ func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 		return err
 	}
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
-		return err
-	}
-	if err := p.refuseFamilyChange(tableDiff); err != nil {
 		return err
 	}
 	if err := p.refusePartitioningChange(tableDiff); err != nil {

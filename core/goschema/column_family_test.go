@@ -5,11 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 )
+
+// declaredFamilies are the column families table declares, as the YDB owner's
+// facet holds them, or nil where it declares none.
+func declaredFamilies(c *qt.C, table schemamodel.Table) []ydbschema.ColumnFamily {
+	c.Helper()
+	value, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](table.Facets, ydbschema.ColumnFamiliesKind)
+	c.Assert(err, qt.IsNil)
+	if !found {
+		return nil
+	}
+	return value.Families
+}
 
 // columnFamilySource is an entity whose struct carries the given annotations
 // beside its table directive, and a holder struct that carries others. Each
@@ -47,15 +60,15 @@ func TestParseSource_ColumnFamily_HappyPath(t *testing.T) {
 		name      string
 		onStruct  string
 		onHolder  string
-		wantItems []ast.YDBColumnFamilySpec
-		wantShop  []ast.YDBColumnFamilySpec
+		wantItems []ydbschema.ColumnFamily
+		wantShop  []ydbschema.ColumnFamily
 	}{
 		{
 			name: "on the struct, settings folded as YDB folds them",
 			onStruct: `//ptah:schema:columnfamily name="default" compression="LZ4"
 //ptah:schema:columnfamily name="cold" data="hdd" cache_mode="IN_MEMORY" fields="body"
 `,
-			wantItems: []ast.YDBColumnFamilySpec{
+			wantItems: []ydbschema.ColumnFamily{
 				{Name: "default", Compression: "lz4"},
 				{Name: "cold", Data: "hdd", CacheMode: "in_memory", Columns: []string{"body"}},
 			},
@@ -63,7 +76,7 @@ func TestParseSource_ColumnFamily_HappyPath(t *testing.T) {
 		{
 			name:     "on a holder field, naming a table in a directory",
 			onHolder: `	//ptah:schema:columnfamily name="cold" table="shop.orders" compression="lz4"`,
-			wantShop: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4"}},
+			wantShop: []ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4"}},
 		},
 	}
 	for _, test := range tests {
@@ -72,8 +85,8 @@ func TestParseSource_ColumnFamily_HappyPath(t *testing.T) {
 			db, err := goschema.ParseSource("items.go", columnFamilySource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 2)
-			c.Assert(db.Tables[0].YDBColumnFamilies, qt.DeepEquals, test.wantItems)
-			c.Assert(db.Tables[1].YDBColumnFamilies, qt.DeepEquals, test.wantShop)
+			c.Assert(declaredFamilies(c, db.Tables[0]), qt.DeepEquals, test.wantItems)
+			c.Assert(declaredFamilies(c, db.Tables[1]), qt.DeepEquals, test.wantShop)
 		})
 	}
 }
@@ -104,6 +117,10 @@ func TestParseSource_ColumnFamily_FailurePath(t *testing.T) {
 //ptah:schema:columnfamily name="cold" compression="lz4"
 `,
 			wantErr: `table "items" declares column family "cold" twice on //ptah:schema:columnfamily at Item`},
+		{name: "a column in two families", onStruct: `//ptah:schema:columnfamily name="cold" fields="body"
+//ptah:schema:columnfamily name="warm" fields="body"
+`,
+			wantErr: `table "items": column "body" is in two column families, "cold" and "warm" on //ptah:schema:columnfamily at Item`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

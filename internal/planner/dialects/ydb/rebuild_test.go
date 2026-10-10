@@ -351,9 +351,8 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 		{
 			name: "column families and storage settings the read did not describe",
 			caps: capability.YDB262(),
-			diff: notDescribing(modified(t, difftypes.TableDiff{TableName: "app.items",
-				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
-				coverage.Object{Kind: coverage.ColumnFamily, Name: "app.items"},
+			diff: notDescribing(unreadFamilies(t, modified(t, difftypes.TableDiff{TableName: "app.items",
+				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange})),
 				coverage.Object{Kind: coverage.TableOption}),
 			wantErr: `rebuilding table "app.items": the table carries column families with settings Ptah does not ` +
 				`read, storage settings \(commit log pools, an external pool or external blobs\), which Ptah does not model .*`,

@@ -1,13 +1,19 @@
 package ydb
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"ptah.run/core/ast"
+	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbfamily"
 )
 
@@ -28,8 +34,9 @@ var cacheModes = map[uint64]string{
 // columnFamilies reads a row table's column families, each with the columns
 // DescribeTable gives its name, in the form [ydbfamily.Normalize] gives, and
 // reports false where a family holds something Ptah does not read. The caller
-// then records the table's families as not described and lists none, so a
-// plan neither changes nor drops them, and a table rebuild refuses the table.
+// then records the table's families as unrepresentable and attaches none, so
+// a plan neither changes nor drops them, and a table rebuild refuses the
+// table.
 //
 // Each setting is read as the table holds it, YDB's own values included
 // (`off`, `regular`), so a comparison sees what a table profile gave the
@@ -40,9 +47,9 @@ var cacheModes = map[uint64]string{
 // compression level; a storage pool or a family carrying a field the pinned
 // protocol buffers do not model, but the cache mode, which this reads from
 // field 6; and a column naming a family the table does not list.
-func (r *Reader) columnFamilies(described *Ydb_Table.DescribeTableResult) ([]ast.YDBColumnFamilySpec, bool) {
+func (r *Reader) columnFamilies(described *Ydb_Table.DescribeTableResult) ([]ydbschema.ColumnFamily, bool) {
 	held := described.GetColumnFamilies()
-	families := make([]ast.YDBColumnFamilySpec, 0, len(held))
+	families := make([]ydbschema.ColumnFamily, 0, len(held))
 	for _, family := range held {
 		spec, read := columnFamily(family)
 		if !read {
@@ -55,7 +62,7 @@ func (r *Reader) columnFamilies(described *Ydb_Table.DescribeTableResult) ([]ast
 		if name == "" || name == ydbfamily.Default {
 			continue
 		}
-		index := slices.IndexFunc(families, func(family ast.YDBColumnFamilySpec) bool { return family.Name == name })
+		index := slices.IndexFunc(families, func(family ydbschema.ColumnFamily) bool { return family.Name == name })
 		if index < 0 {
 			return nil, false
 		}
@@ -66,19 +73,19 @@ func (r *Reader) columnFamilies(described *Ydb_Table.DescribeTableResult) ([]ast
 
 // columnFamily reads one family's settings, and reports false where it holds
 // something Ptah does not read; see [Reader.columnFamilies].
-func columnFamily(family *Ydb_Table.ColumnFamily) (ast.YDBColumnFamilySpec, bool) {
-	spec := ast.YDBColumnFamilySpec{
+func columnFamily(family *Ydb_Table.ColumnFamily) (ydbschema.ColumnFamily, bool) {
+	spec := ydbschema.ColumnFamily{
 		Name:         family.GetName(),
 		KeepInMemory: family.GetKeepInMemory() == Ydb.FeatureFlag_ENABLED,
 	}
 	cacheMode, read := familyCacheMode(family)
 	if !read {
-		return ast.YDBColumnFamilySpec{}, false
+		return ydbschema.ColumnFamily{}, false
 	}
 	spec.CacheMode = cacheMode
 	if pool := family.GetData(); pool != nil {
 		if len(unknownFields(pool)) > 0 {
-			return ast.YDBColumnFamilySpec{}, false
+			return ydbschema.ColumnFamily{}, false
 		}
 		spec.Data = pool.GetMedia()
 	}
@@ -89,7 +96,7 @@ func columnFamily(family *Ydb_Table.ColumnFamily) (ast.YDBColumnFamilySpec, bool
 	case Ydb_Table.ColumnFamily_COMPRESSION_LZ4:
 		spec.Compression = ydbfamily.CompressionLZ4
 	default:
-		return ast.YDBColumnFamilySpec{}, false
+		return ydbschema.ColumnFamily{}, false
 	}
 	return spec, true
 }
@@ -118,4 +125,45 @@ func familyCacheMode(family *Ydb_Table.ColumnFamily) (string, bool) {
 		mode = named
 	}
 	return mode, true
+}
+
+// familyFacets adds the observed families to facets, bound to YDB.
+func familyFacets(facets schemaext.Facets, families []ydbschema.ColumnFamily) (schemaext.Facets, error) {
+	observed := &ydbschema.ObservedColumnFamilies{Families: families}
+	if err := ydbschema.ValidateObservedColumnFamilies(observed); err != nil {
+		return schemaext.Facets{}, err
+	}
+	facets, err := facets.With(observed)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return facets.WithTargetScope(ydbschema.ColumnFamiliesKind, platform.YDB)
+}
+
+// unreadFamiliesReason is what a table whose families hold a setting the
+// reader does not read is recorded with.
+const unreadFamiliesReason = "the table's column families hold a setting Ptah does not read"
+
+// familyCoverage records what the read knows about the families of the table
+// name in the directory schema: complete knowledge where it read them, and
+// unrepresentable where they hold a setting it does not read. A table the read
+// did not return is not known to have no families.
+func familyCoverage(db *catalog.Database, schema, name string, knowledge schemaext.Knowledge) error {
+	kinds := db.FeatureCoverage.KindRecords()
+	if !slices.ContainsFunc(kinds, func(record schemaext.KindCoverage) bool { return record.Model.Kind == ydbschema.ColumnFamiliesKind }) {
+		enrolled, err := ydbschema.ColumnFamiliesCoverage(schemaext.Observed,
+			schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables have inspected column families"}, nil)
+		if err != nil {
+			return err
+		}
+		kinds = append(kinds, enrolled.KindRecords()...)
+	}
+	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB)).TableParts(schema, name)
+	known, err := schemaext.NewCoverage(schemaext.Observed, kinds, append(db.FeatureCoverage.SubjectRecords(),
+		schemaext.SubjectCoverage{Kind: ydbschema.ColumnFamiliesKind, Subject: subject, Knowledge: knowledge}))
+	if err != nil {
+		return fmt.Errorf("failed to record column family coverage: %w", err)
+	}
+	db.FeatureCoverage = known
+	return nil
 }

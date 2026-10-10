@@ -11,8 +11,10 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbplan"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlident"
@@ -231,10 +233,12 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 				"so no statement can move it past the copied rows", field.Name))
 		}
 	}
-	if err := p.refuseRebuiltFamilies(declaration, subject); err != nil {
+	withFamilies, err := rebuiltFamilies(declaration, rebuild.observation)
+	if err != nil {
 		return err
 	}
-	if settings := undescribedSettings(diff.CurrentNotDescribed, declaration.Table); len(settings) > 0 {
+	rebuild.declaration = withFamilies
+	if settings := undescribedSettings(diff.CurrentNotDescribed, declaration.Table, rebuild.observation); len(settings) > 0 {
 		return refuseFact(subject, fmt.Sprintf("the table carries %s, which Ptah does not model and so cannot "+
 			"write on the new table: recreating it would drop them. Change the table by hand, or remove those "+
 			"settings first", strings.Join(settings, ", ")))
@@ -366,27 +370,62 @@ func rebuildObservation(diff *difftypes.SchemaDiff, rebuild *tableRebuild, seman
 	return schemacapture.TableObservation{}
 }
 
+// unreadFamilies is how a refusal names column families the read recorded
+// as unrepresentable: families holding a setting Ptah does not read.
+const unreadFamilies = "column families with settings Ptah does not read"
+
 // settingKinds are the table settings the YDB reader records as not described
-// and a recreation would drop, with the words a refusal names each with.
+// and a recreation would drop, with the words a refusal names each with. The
+// column families sit between them, as the YDB owner's coverage records them.
 var settingKinds = []struct {
 	kind  coverage.Kind
 	words string
 }{
 	{coverage.TTL, "a TTL run interval or tiering policy"},
-	{coverage.ColumnFamily, "column families with settings Ptah does not read"},
+	{"", unreadFamilies},
 	{coverage.TableOption, "storage settings (commit log pools, an external pool or external blobs)"},
 }
 
 // undescribedSettings names the settings of table that the read of the
-// database recorded as not described; see [recordsSetting].
-func undescribedSettings(set coverage.Set, table schemamodel.Table) []string {
+// database recorded as not described (see [recordsSetting]), and its column
+// families where the read recorded them as unrepresentable in observation's
+// coverage.
+func undescribedSettings(set coverage.Set, table schemamodel.Table, observation schemacapture.TableObservation) []string {
 	var settings []string
 	for _, setting := range settingKinds {
-		if recordsSetting(set, setting.kind, table) {
+		if setting.kind == "" && familiesUnread(observation) || setting.kind != "" && recordsSetting(set, setting.kind, table) {
 			settings = append(settings, setting.words)
 		}
 	}
 	return settings
+}
+
+// familiesUnread reports whether the read recorded the table's column families
+// as unrepresentable.
+func familiesUnread(observation schemacapture.TableObservation) bool {
+	for _, record := range observation.FeatureCoverage.SubjectRecords() {
+		if record.Kind == ydbschema.ColumnFamiliesKind && record.Knowledge.State == schemaext.Unrepresentable {
+			return true
+		}
+	}
+	return false
+}
+
+// rebuiltFamilies is the declaration of the table a rebuild writes, with the
+// column families [ydbplan.RebuiltFamilies] gives it from the old table.
+func rebuiltFamilies(declaration schemacapture.TableDeclaration, observation schemacapture.TableObservation) (schemacapture.TableDeclaration, error) {
+	families, err := ydbplan.RebuiltFamilies(declaration, observation)
+	if err != nil {
+		return declaration, err
+	}
+	facets := declaration.Table.Facets.Without(ydbschema.ColumnFamiliesKind)
+	if len(families) > 0 {
+		if facets, err = facets.With(&ydbschema.DesiredColumnFamilies{Families: families}); err != nil {
+			return declaration, err
+		}
+	}
+	declaration.Table.Facets = facets
+	return declaration, nil
 }
 
 // rebuildNameAttempts bounds the search for a free scratch name.

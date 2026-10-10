@@ -153,11 +153,6 @@ type CreateTableNode struct {
 	// A table nothing declared is logged, which is the server's default, so
 	// false and "unset" mean the same and the field needs no pointer.
 	Unlogged bool
-	// YDBColumnFamilies is YDB's, and every other renderer refuses it: the
-	// column families of a YDB row table, each with the columns it holds. Nil
-	// declares none, and every column then sits in YDB's default family. See
-	// [YDBColumnFamilySpec].
-	YDBColumnFamilies []YDBColumnFamilySpec
 	// YDBPartitioning is YDB's, and every other renderer refuses it: how a
 	// row table splits into partitions, its read replicas, its key bloom
 	// filter and the partitions it starts with; nil for a table declaring
@@ -166,67 +161,6 @@ type CreateTableNode struct {
 	// YDBColumnTable selects column-oriented storage and its hash partitioning.
 	// Nil selects row storage. Other dialects refuse this declaration.
 	YDBColumnTable *YDBColumnTableSpec
-}
-
-// YDBColumnFamilySpec is YDB's, and no other dialect has column families: one
-// column family of a YDB row table, a group of columns YDB stores together
-// with settings of their own, as `CREATE TABLE ... (c T FAMILY f, ...,
-// FAMILY f (DATA = ..., COMPRESSION = ..., CACHE_MODE = ...))` declares it.
-//
-// Every row table has the family named `default`, which holds the key columns
-// and every column no other family names. Declaring it changes its settings
-// and lists no columns.
-//
-// A setting left empty is one the declaration does not state, and a table
-// keeps the value it holds: a new table's family takes it from the cluster's
-// table profile or from YDB, and no change of an existing table writes it. A
-// family the table holds and the declaration leaves out stays as well, since
-// a table profile can add a family to every new table and YQL drops none. A
-// column the declaration places in no family sits in `default`.
-type YDBColumnFamilySpec struct {
-	// Name is the family's name, unique within its table and compared as
-	// written: YDB family names are case-sensitive.
-	Name string `json:"name"`
-	// Data is DATA, the kind of storage pool the family's columns are kept
-	// in, such as `ssd` or `hdd`. Which kinds exist is the database's own
-	// configuration. Empty states none.
-	Data string `json:"data,omitempty"`
-	// Compression is COMPRESSION, `off` or `lz4`. Empty states none.
-	Compression string `json:"compression,omitempty"`
-	// CacheMode is CACHE_MODE, `regular` or `in_memory`, which asks YDB to
-	// keep the family's columns in memory. Empty states none.
-	CacheMode string `json:"cache_mode,omitempty"`
-	// KeepInMemory is true when a read finds the family's keep_in_memory
-	// setting enabled, which a table profile's `column_cache` sets. A
-	// declaration cannot state it: YQL takes no such family setting, so no
-	// statement Ptah writes sets it, and a CREATE TABLE that would have to
-	// carry it is refused.
-	KeepInMemory bool `json:"keep_in_memory,omitempty"`
-	// Columns are the columns the family holds, in declaration order. The
-	// default family lists none.
-	Columns []string `json:"columns,omitempty"`
-}
-
-// Clone returns an independent copy, so a family handed to a comparator or a
-// planner cannot be changed through the column list it shares with the schema
-// it came from.
-func (s YDBColumnFamilySpec) Clone() YDBColumnFamilySpec {
-	out := s
-	out.Columns = slices.Clone(s.Columns)
-	return out
-}
-
-// CloneYDBColumnFamilies copies a list of column families with
-// [YDBColumnFamilySpec.Clone]. Nil stays nil.
-func CloneYDBColumnFamilies(families []YDBColumnFamilySpec) []YDBColumnFamilySpec {
-	if families == nil {
-		return nil
-	}
-	out := make([]YDBColumnFamilySpec, len(families))
-	for i, family := range families {
-		out[i] = family.Clone()
-	}
-	return out
 }
 
 // IndexPartitioningSpec is how a YDB global index's own table splits into

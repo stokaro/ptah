@@ -96,12 +96,6 @@ None.
 | `ast.VectorIndexSpec.Levels` | `ddl` | — |
 | `ast.VectorIndexSpec.Similarity` | `ddl` | — |
 | `ast.VectorIndexSpec.VectorType` | `ddl` | — |
-| `ast.YDBColumnFamilySpec.CacheMode` | `ddl` | — |
-| `ast.YDBColumnFamilySpec.Columns` | `ddl` | — |
-| `ast.YDBColumnFamilySpec.Compression` | `ddl` | — |
-| `ast.YDBColumnFamilySpec.Data` | `ddl` | — |
-| `ast.YDBColumnFamilySpec.KeepInMemory` | `comparison` | keep_in_memory as a read finds it on a YDB family; no YQL statement writes it, and it decides whether a change or a rebuild is refused |
-| `ast.YDBColumnFamilySpec.Name` | `ddl` | — |
 | `ast.YDBColumnTableSpec.HashColumns` | `ddl` | — |
 | `ast.YDBColumnTableSpec.Partitions` | `ddl` | — |
 | `ast.YDBColumnTableSpec.TTL` | `ddl` | — |
@@ -552,7 +546,6 @@ None.
 | `schemamodel.Table.VirtualArguments` | `ddl` | — |
 | `schemamodel.Table.VirtualModule` | `ddl` | — |
 | `schemamodel.Table.WithoutRowID` | `ddl` | — |
-| `schemamodel.Table.YDBColumnFamilies` | `ddl` | — |
 | `schemamodel.Table.YDBColumnTable` | `ddl` | — |
 | `schemamodel.Table.YDBPartitioning` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
@@ -633,8 +626,15 @@ None.
 | `ydbschema.ChangefeedSpec.TopicMinActivePartitions` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.UserSIDs` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
+| `ydbschema.ColumnFamily.CacheMode` | `ddl` | — |
+| `ydbschema.ColumnFamily.Columns` | `ddl` | — |
+| `ydbschema.ColumnFamily.Compression` | `ddl` | — |
+| `ydbschema.ColumnFamily.Data` | `ddl` | — |
+| `ydbschema.ColumnFamily.KeepInMemory` | `comparison` | keep_in_memory as a read finds it on a YDB family; no YQL statement writes it, and it decides whether a change or a rebuild is refused |
+| `ydbschema.ColumnFamily.Name` | `ddl` | — |
 | `ydbschema.DesiredChangefeed.RetainedReplication` | `planning` | retains an observed controller binding and refuses independent changefeed creation or mutation |
 | `ydbschema.DesiredChangefeed.Spec` | `ddl` | — |
+| `ydbschema.DesiredColumnFamilies.Families` | `ddl` | — |
 | `ydbschema.DesiredTTL.Policy` | `ddl` | — |
 | `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
 | `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |

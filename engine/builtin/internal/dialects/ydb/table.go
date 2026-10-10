@@ -19,7 +19,6 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbextensions"
-	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbsequence"
@@ -69,12 +68,12 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	if err != nil {
 		return err
 	}
-	lines := make([]string, 0, len(node.Columns)+len(node.Indexes)+len(families)+1)
+	lines := make([]string, 0, len(node.Columns)+len(node.Indexes)+len(families.Entries)+1)
 	columnTypes := make(map[string]string, len(node.Columns))
 	columns := make(map[string]ydbindex.Column, len(node.Columns))
 	for _, column := range node.Columns {
 		definition, mapping, err := r.columnDefinition(node.Name, column, slices.Contains(keyColumns, column.Name),
-			ydbfamily.FamilyOf(node.YDBColumnFamilies, column.Name))
+			families.ColumnClause(column.Name))
 		if err != nil {
 			return err
 		}
@@ -119,7 +118,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 			partitioning = append(partitioning, statement)
 		}
 	}
-	lines = append(lines, families...)
+	lines = append(lines, families.Entries...)
 
 	following, err := r.followingStatements(node, partitioning, slices.Collect(maps.Keys(named)),
 		columnTypes[keyColumns[0]], indexes)
@@ -223,32 +222,15 @@ func (r *Renderer) checkChangefeed(table string, changefeed ydbschema.Changefeed
 	}
 }
 
-// columnFamilies writes the FAMILY entries of a new table's CREATE TABLE,
-// refusing a family the target has no key for, a declaration YDB refuses
-// (two families of one name, a column in two families or in none the table
-// declares, a key column outside the default family; see [ydbfamily.Refusal])
-// and a keep_in_memory no CREATE TABLE writes (see [ydbfamily.CreateRefusal]).
-func (r *Renderer) columnFamilies(node *ast.CreateTableNode, keyColumns []string) ([]string, error) {
-	if len(node.YDBColumnFamilies) == 0 {
-		return nil, nil
-	}
-	subject := fmt.Sprintf("table %q", node.Name)
-	for _, requirement := range ydbfamily.Requirements(node.YDBColumnFamilies) {
-		if !r.caps.Has(requirement.Key) {
-			return nil, refuseKey(requirement.Key, fmt.Sprintf("the %s of %s", requirement.Settings, subject))
-		}
-	}
+// columnFamilies is what a new table's CREATE TABLE writes for its column
+// families, from the YDB owner's facet: where each column sits and the FAMILY
+// entries. See [ydbrender.CreateTableFamilies] for what it refuses.
+func (r *Renderer) columnFamilies(node *ast.CreateTableNode, keyColumns []string) (ydbrender.CreateFamilies, error) {
 	columns := make([]string, 0, len(node.Columns))
 	for _, column := range node.Columns {
 		columns = append(columns, column.Name)
 	}
-	if reason := ydbfamily.Refusal(node.YDBColumnFamilies, columns, keyColumns); reason != "" {
-		return nil, refuseFact(subject, reason)
-	}
-	if reason := ydbfamily.CreateRefusal(node.YDBColumnFamilies); reason != "" {
-		return nil, refuseFact(subject, reason)
-	}
-	return ydbfamily.CreateEntries(node.YDBColumnFamilies), nil
+	return ydbrender.CreateTableFamilies(r.caps, node.Name, node.Facets, columns, keyColumns)
 }
 
 // createGuard writes IF NOT EXISTS where the declaration asked for one.
@@ -545,14 +527,14 @@ func (r *Renderer) renderConstraintNode(constraint *ast.ConstraintNode) error {
 }
 
 // columnDefinition writes one column, and returns the YDB type it chose so the
-// caller can hold a key or an index to it. family is the column family the
-// column sits in, written right after the type, the only place YDB 25.1 takes
-// it; empty, or the default family, writes none.
+// caller can hold a key or an index to it. familyClause is the clause that
+// puts the column in its column family, written right after the type, the
+// only place YDB 25.1 takes it; empty for the default family.
 func (r *Renderer) columnDefinition(
 	table string,
 	column *ast.ColumnNode,
 	key bool,
-	family string,
+	familyClause string,
 ) (string, ydbtype.Mapping, error) {
 	subject := fmt.Sprintf("column %q", column.Name)
 	if table != "" {
@@ -576,7 +558,7 @@ func (r *Renderer) columnDefinition(
 			column.Type+": "+mapping.Dropped))
 	}
 
-	parts := []string{quote(column.Name), mapping.Type + ydbfamily.ColumnClause(family)}
+	parts := []string{quote(column.Name), mapping.Type + familyClause}
 	notNull := key || mapping.Serial || !column.Nullable
 	if notNull {
 		parts = append(parts, "NOT NULL")

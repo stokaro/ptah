@@ -364,11 +364,13 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     holding one would otherwise plan `DROP ASYNC REPLICATION ... CASCADE`,
 //     which drops the replica tables with it.
 //   - HCL and DBML have no spelling for a YDB column family either, so they
-//     cannot say where a column sits. Measured on YDB 26.2.1.14 and 25.1.4.7
-//     without this record, a table with a column in family cold, inspected
-//     through `ptah-compat schema inspect` and applied back from that HCL,
-//     planned `ALTER COLUMN body SET FAMILY default`, and a rebuild the same
-//     document asked for kept the family but moved the column out of it.
+//     cannot say where a column sits. They enroll no column family coverage,
+//     which leaves the families the database holds unmanaged: the comparison
+//     keeps them, columns included. Measured on YDB 26.2.1.14 and 25.1.4.7
+//     without that, a table with a column in family cold, inspected through
+//     `ptah-compat schema inspect` and applied back from that HCL, planned
+//     `ALTER COLUMN body SET FAMILY default`, and a rebuild the same document
+//     asked for kept the family but moved the column out of it.
 //   - Of the formats here, YAML and YQL declare a YDB secret, as a Go schema
 //     does; HCL, DBML and other SQL have no spelling for one. Those make no
 //     claim about the secret namespace, so applying one to a database that
@@ -384,7 +386,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	yql := extension == dirSQLExtension && platform.NormalizeDialect(dialect) == platform.YDB
 	if extension == dirHCLExtension || extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(
-			unsupportedByFormat(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.TTL)...)
+			unsupportedByFormat(coverage.Changefeed, coverage.ColumnTable, coverage.TTL)...)
 	}
 	if extension != dirSQLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)

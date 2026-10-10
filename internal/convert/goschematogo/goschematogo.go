@@ -256,6 +256,7 @@ type renderContext struct {
 	externalAnnotations  [2][]string
 	aggregateAnnotations []string
 	hypertablesByTable   map[string]*tsschema.DesiredHypertable
+	familiesByTable      map[string][]ydbschema.ColumnFamily
 	changefeedsByTable   map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                   *schemamodel.Database
 	opts                 Options
@@ -603,7 +604,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	if hypertable := ctx.hypertablesByTable[table.QualifiedName()]; hypertable != nil {
 		w.writeComment(hypertableAnnotation(table, hypertable))
 	}
-	for _, family := range ydbfamily.Stated(table.YDBColumnFamilies) {
+	for _, family := range ctx.familiesByTable[table.QualifiedName()] {
 		w.writeComment(annotation("ptah:schema:columnfamily", columnFamilyAttrs(family)...))
 	}
 	for _, changefeed := range ctx.changefeedsByTable[changefeedTableRef(table).Key()] {
@@ -711,7 +712,7 @@ func tableAnnotation(table schemamodel.Table) string {
 // (see [ydbfamily.Stated]), so a table nobody gave families exports none.
 // keep_in_memory has no attribute: no statement writes it, and a declaration
 // that leaves it out keeps what the table holds.
-func columnFamilyAttrs(family ast.YDBColumnFamilySpec) []attr {
+func columnFamilyAttrs(family ydbschema.ColumnFamily) []attr {
 	return []attr{
 		{name: ydbfamily.AttributeName, value: family.Name, set: true},
 		{name: ydbfamily.AttributeData, value: family.Data, set: family.Data != ""},

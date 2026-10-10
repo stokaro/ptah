@@ -196,14 +196,6 @@ const (
 	// kind, and the comparison then keeps the policy the database holds for
 	// each table, through a rebuild too.
 	TTL Kind = "ttl"
-	// ColumnFamily is a YDB row table's column families. A YDB read records,
-	// by the table's path, families holding a setting Ptah does not read -- a
-	// compression only a column table takes, or a field the pinned protocol
-	// buffers do not model -- and then lists none of the table's families. A document
-	// in a format with no spelling for a family, HCL or DBML, records the
-	// whole kind, and the comparison then keeps the families the database
-	// holds for each table, through a rebuild too.
-	ColumnFamily Kind = "column_family"
 	// TableOption is a YDB table's storage settings Ptah does not model,
 	// where they differ from what a new table is given: its tablet's commit
 	// log pools, an external pool, external blobs. A YDB read records them by
@@ -220,7 +212,7 @@ const (
 // [ParseKind]'s refusal message lists them. [ReplicaTable] is not in it; its
 // constant says what that costs a serialized [Set].
 var kinds = []Kind{
-	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
+	Changefeed, ChangeStream, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, Grant, Policy, Range, Replication,
 	Role, Schema, Sequence, Synonym, TableOption,
 	Transfer, TTL, View, VirtualTable,

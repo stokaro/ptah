@@ -1109,6 +1109,40 @@ The TTL services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse` and
 would reset a run interval and allows its removal. A column table's tiered TTL
 stays in `schemamodel.Table.YDBColumnTable`.
 
+`ydbschema` owns a YDB row table's column families as a table facet under
+`ColumnFamiliesKind`. `DesiredColumnFamilies` and `ObservedColumnFamilies` hold
+`ColumnFamily` values, each with a name, the settings DATA, COMPRESSION and
+CACHE_MODE, the columns it holds, and `KeepInMemory`, which only a read and a
+value adopted from one carry. A setting left empty is not stated, and a table
+keeps what it holds of it. `ValidateDesiredColumnFamilies` and
+`ValidateObservedColumnFamilies` refuse two families of one name, a column in
+two families, a default family listing columns, and a compression or a cache
+mode outside the values a row table takes. `ColumnFamiliesCodecs` write the
+families sorted, through the types' `MarshalJSON`, and `ColumnFamiliesCoverage`
+builds coverage under `Owner`.
+
+`ydbcompare.ColumnFamiliesService` compares what a table holds once the
+declaration is applied: every family it holds stays, and each setting the
+declaration leaves out keeps the held value. A source that cannot describe
+families, HCL or DBML, leaves them unmanaged, and the comparison adopts the
+families the table holds.
+
+`ydbdiff.ColumnFamilies` carries a change and
+`ydbast.AlterColumnFamilies` lowers through `ydbrender.ColumnFamiliesHandler` to
+one `ALTER TABLE` of `ADD FAMILY`, `ALTER FAMILY ... SET` and
+`ALTER COLUMN ... SET FAMILY` actions. `ydbrender.CreateTableFamilies` writes a
+new table's families. `ydbplan.ColumnFamiliesService` plans a change after the
+table's added columns and leaves a dropped column out of it, and
+`ydbplan.RebuiltFamilies` gives a rebuilt table the families the old one holds.
+`ydbreverse.ColumnFamiliesService` reports the families and settings a rollback
+cannot remove, and `ydbconvert` and `ydbreport` complete the provider.
+
+The former `ast.YDBColumnFamilySpec`, `ast.CloneYDBColumnFamilies`,
+`ast.SetYDBColumnFamiliesOperation`, the `YDBColumnFamilies` fields of
+`ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`,
+`difftypes.YDBColumnFamiliesChange` and `coverage.ColumnFamily` are removed
+without aliases. This changes behavior; pre-v1, so no compatibility is owed.
+
 The former `ast.RowDeletionPolicySpec`, `ast.SetRowDeletionPolicyOperation`,
 `ast.DropRowDeletionPolicyOperation`, the `RowDeletionPolicy` fields of
 `ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`, and

@@ -144,25 +144,6 @@ func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) err
 	return nil
 }
 
-// RefuseYDBColumnFamilyChanges refuses a diff that changes a table's YDB column
-// families, for a planner of dialect that plans none. Only a YDB catalog
-// reports column families, so another planner reaches such a change through a
-// declaration that names them, or a diff built by hand, and planning nothing
-// would leave every column where the server put it while the comparison kept
-// reporting the difference.
-func RefuseYDBColumnFamilyChanges(dialect string, diff *difftypes.SchemaDiff) error {
-	if diff == nil {
-		return nil
-	}
-	for _, tableDiff := range diff.TablesModified {
-		if tableDiff.YDBColumnFamiliesChange != nil {
-			return fmt.Errorf("%w: the diff changes the column families of table %q, which only a YDB plan does; "+
-				"the %s planner plans none", ptaherr.ErrUnsupportedFeature, tableDiff.TableName, dialect)
-		}
-	}
-	return nil
-}
-
 // RefuseRoleMemberships refuses a diff that adds or removes the membership of
 // a role in another, for a planner of dialect that plans none. The comparison
 // records memberships only on a target with capability.RoleMembership, which
@@ -223,14 +204,12 @@ func RefuseReplications(dialect string, diff *difftypes.SchemaDiff) error {
 }
 
 // RefuseYDBTableSettingChanges refuses a diff that changes a YDB row table's
-// own settings -- its column families, or its partitioning, read replicas or
-// key bloom filter -- for a planner of dialect that plans none; see
-// [RefuseYDBColumnFamilyChanges] and [RefuseYDBTablePartitioningChanges].
-// Every planner but YDB's asks it, once.
+// own settings -- its partitioning, read replicas or key bloom filter -- for a
+// planner of dialect that plans none; see [RefuseYDBTablePartitioningChanges].
+// Every planner but YDB's asks it, once. A change of a table's column families
+// is the YDB owner's, and a planner with no such owner refuses it as an owned
+// change it cannot plan.
 func RefuseYDBTableSettingChanges(dialect string, diff *difftypes.SchemaDiff) error {
-	if err := RefuseYDBColumnFamilyChanges(dialect, diff); err != nil {
-		return err
-	}
 	return RefuseYDBTablePartitioningChanges(dialect, diff)
 }
 

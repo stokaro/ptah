@@ -849,12 +849,12 @@ func tableOverrideFixture() schemamodel.Database {
 // tableColumnFamiliesFixture sets every setting of a YDB column family, on a
 // family holding a column, beside a default family with a setting of its own.
 func tableColumnFamiliesFixture() schemamodel.Database {
+	families := &ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{
+		{Name: "default", Compression: "lz4"},
+		{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"payload"}},
+	}}
 	return oneTable("T", schemamodel.Table{
-		Name: "t",
-		YDBColumnFamilies: []ast.YDBColumnFamilySpec{
-			{Name: "default", Compression: "lz4"},
-			{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"payload"}},
-		},
+		Name: "t", Facets: must.Must(schemaext.NewFacets(families)),
 	}, schemamodel.Field{StructName: "T", FieldName: "Payload", Name: "payload", Type: "TEXT", Nullable: true})
 }
 

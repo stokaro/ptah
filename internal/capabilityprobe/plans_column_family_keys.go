@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"path"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // withColumnFamilyKeys adds the questions the YDB renderer, reader and planner
@@ -66,18 +67,18 @@ func ydbColumnFamilyExperiments() []experiment {
 	t := ydbSpelling
 	wants := map[capability.Capability]struct {
 		expectation string
-		want        func(ast.YDBColumnFamilySpec) bool
+		want        func(ydbschema.ColumnFamily) bool
 	}{
 		capability.ColumnFamilies: {
 			expectation: "family cold to read back compressed with lz4 and holding column n",
-			want: func(family ast.YDBColumnFamilySpec) bool {
+			want: func(family ydbschema.ColumnFamily) bool {
 				return family.Name == "cold" && family.Compression == "lz4" &&
 					len(family.Columns) == 1 && family.Columns[0] == "n"
 			},
 		},
 		capability.ColumnFamilyCacheMode: {
 			expectation: "family hot to read back kept in memory",
-			want: func(family ast.YDBColumnFamilySpec) bool {
+			want: func(family ydbschema.ColumnFamily) bool {
 				return family.Name == "hot" && family.CacheMode == "in_memory"
 			},
 		},
@@ -97,7 +98,7 @@ func ydbColumnFamilyExperiments() []experiment {
 
 // ydbDescribedFamilies reads table through Ptah's YDB reader and holds when
 // one of its column families reads back as want says.
-func ydbDescribedFamilies(table, expectation string, want func(ast.YDBColumnFamilySpec) bool) check {
+func ydbDescribedFamilies(table, expectation string, want func(ydbschema.ColumnFamily) bool) check {
 	return check{
 		describes: expectation,
 		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
@@ -113,12 +114,16 @@ func ydbDescribedFamilies(table, expectation string, want func(ast.YDBColumnFami
 				if found.Name != table {
 					continue
 				}
-				for _, family := range found.YDBColumnFamilies {
+				observed, _, err := schemaext.FacetAs[*ydbschema.ObservedColumnFamilies](found.Facets, ydbschema.ColumnFamiliesKind)
+				if err != nil || observed == nil {
+					return attempt, false, fmt.Sprintf("read no column families (%v)", err)
+				}
+				for _, family := range observed.Families {
 					if want(family) {
 						return attempt, true, fmt.Sprintf("read %+v", family)
 					}
 				}
-				return attempt, false, fmt.Sprintf("read %+v", found.YDBColumnFamilies)
+				return attempt, false, fmt.Sprintf("read %+v", observed.Families)
 			}
 			return attempt, false, "found no such table"
 		},

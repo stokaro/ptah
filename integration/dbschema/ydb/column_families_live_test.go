@@ -15,11 +15,14 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
+	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/ydbfamily"
@@ -40,9 +43,12 @@ const familyPool = "hdd"
 // familyDocs is table docs with a key, a NOT NULL column with a default and
 // nullable columns, its columns in families. extra names nullable columns
 // added after them.
-func familyDocs(families []ast.YDBColumnFamilySpec, extra ...string) *schemamodel.Database {
+func familyDocs(families []ydbschema.ColumnFamily, extra ...string) *schemamodel.Database {
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs", Schema: familySchema, YDBColumnFamilies: families}},
+		Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs", Schema: familySchema, Facets: familyFacets(families)}},
+		// A Go annotation, YAML or YQL source records that it describes the
+		// families of every table, so a table declaring none asks for none.
+		FeatureCoverage: must.Must(ydbschema.ColumnFamiliesCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		Fields: []schemamodel.Field{
 			{StructName: "Doc", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "Doc", Name: "title", Type: "TEXT", Default: "untitled", DefaultSet: true},
@@ -61,9 +67,9 @@ func familyDocs(families []ast.YDBColumnFamilySpec, extra ...string) *schemamode
 // family compressed, a family on a named pool holding two columns, one stating
 // no setting holding the NOT NULL column, and one holding no column. Where the
 // line takes a cache mode, the third keeps its columns in memory.
-func lineFamilies(caps capability.Capabilities) []ast.YDBColumnFamilySpec {
+func lineFamilies(caps capability.Capabilities) []ydbschema.ColumnFamily {
 	cacheMode := map[bool]string{true: ydbfamily.CacheModeInMemory}[caps.Has(capability.ColumnFamilyCacheMode)]
-	return []ast.YDBColumnFamilySpec{
+	return []ydbschema.ColumnFamily{
 		{Name: "default", Compression: "lz4"},
 		{Name: "cold", Data: familyPool, Compression: "lz4", Columns: []string{"body", "blob"}},
 		{Name: "hot", CacheMode: cacheMode, Columns: []string{"title"}},
@@ -74,9 +80,9 @@ func lineFamilies(caps capability.Capabilities) []ast.YDBColumnFamilySpec {
 // lineFamiliesRead are [lineFamilies] as DescribeTable reports them: a family
 // stating no compression holds none (`off`), and a cache mode is reported only
 // where one was set.
-func lineFamiliesRead(caps capability.Capabilities) []ast.YDBColumnFamilySpec {
+func lineFamiliesRead(caps capability.Capabilities) []ydbschema.ColumnFamily {
 	cacheMode := map[bool]string{true: ydbfamily.CacheModeInMemory}[caps.Has(capability.ColumnFamilyCacheMode)]
-	return []ast.YDBColumnFamilySpec{
+	return []ydbschema.ColumnFamily{
 		{Name: "cold", Data: familyPool, Compression: "lz4", Columns: []string{"blob", "body"}},
 		{Name: "default", Compression: "lz4"},
 		{Name: "hot", Compression: "off", CacheMode: cacheMode, Columns: []string{"title"}},
@@ -84,10 +90,29 @@ func lineFamiliesRead(caps capability.Capabilities) []ast.YDBColumnFamilySpec {
 	}
 }
 
-// familiesOf reads table docs' column families back from the server.
-func familiesOf(c *qt.C, conn *dbschema.DatabaseConnection) []ast.YDBColumnFamilySpec {
+// familyFacets declares families as the YDB owner's facet, or none.
+func familyFacets(families []ydbschema.ColumnFamily) schemaext.Facets {
+	if len(families) == 0 {
+		return schemaext.Facets{}
+	}
+	return must.Must(schemaext.NewFacets(&ydbschema.DesiredColumnFamilies{Families: families}))
+}
+
+// heldFamilies are the column families a read attached to table, or nil.
+func heldFamilies(c *qt.C, table catalog.Table) []ydbschema.ColumnFamily {
 	c.Helper()
-	return tableNamed(c, readScoped(c, conn, familySchemas), familySchema, "docs").YDBColumnFamilies
+	observed, found, err := schemaext.FacetAs[*ydbschema.ObservedColumnFamilies](table.Facets, ydbschema.ColumnFamiliesKind)
+	c.Assert(err, qt.IsNil)
+	if !found {
+		return nil
+	}
+	return observed.Families
+}
+
+// familiesOf reads table docs' column families back from the server.
+func familiesOf(c *qt.C, conn *dbschema.DatabaseConnection) []ydbschema.ColumnFamily {
+	c.Helper()
+	return heldFamilies(c, tableNamed(c, readScoped(c, conn, familySchemas), familySchema, "docs"))
 }
 
 // TestYDBColumnFamilies_RoundTrip applies a table whose families use every
@@ -110,7 +135,8 @@ func TestYDBColumnFamilies_RoundTrip(t *testing.T) {
 
 			c.Assert(familiesOf(c, conn), qt.DeepEquals, lineFamiliesRead(line.preset()))
 			live := readScoped(c, conn, familySchemas)
-			c.Assert(live.NotDescribed.Describes(coverage.ColumnFamily, familySchema+".docs"), qt.IsTrue)
+			docs := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts(familySchema, "docs")
+			c.Assert(live.FeatureCoverage.Lookup(ydbschema.ColumnFamiliesKind, docs).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }
@@ -129,11 +155,11 @@ func TestYDBColumnFamilies_ChangesInPlace(t *testing.T) {
 		name     string
 		declared *schemamodel.Database
 		want     []string
-		wantRead []ast.YDBColumnFamilySpec
+		wantRead []ydbschema.ColumnFamily
 	}{
 		{
 			name: "a family added, holding a column added and one moved",
-			declared: familyDocs([]ast.YDBColumnFamilySpec{
+			declared: familyDocs([]ydbschema.ColumnFamily{
 				{Name: "cold", Compression: "lz4", Columns: []string{"body"}},
 				{Name: "warm", Columns: []string{"blob", "note"}},
 			}, "note"),
@@ -142,7 +168,7 @@ func TestYDBColumnFamilies_ChangesInPlace(t *testing.T) {
 				"ALTER TABLE " + table + " ADD FAMILY `warm` (), ALTER COLUMN `blob` SET FAMILY `warm`, " +
 					"ALTER COLUMN `note` SET FAMILY `warm`",
 			},
-			wantRead: []ast.YDBColumnFamilySpec{
+			wantRead: []ydbschema.ColumnFamily{
 				{Name: "cold", Compression: "lz4", Columns: []string{"body"}},
 				{Name: "default", Compression: "off"},
 				{Name: "warm", Compression: "off", Columns: []string{"blob", "note"}},
@@ -150,7 +176,7 @@ func TestYDBColumnFamilies_ChangesInPlace(t *testing.T) {
 		},
 		{
 			name: "settings changed, a pool given, a column back in the default family, another dropped",
-			declared: familyDocs([]ast.YDBColumnFamilySpec{
+			declared: familyDocs([]ydbschema.ColumnFamily{
 				{Name: "default", Compression: "lz4"},
 				{Name: "cold", Data: familyPool, Compression: "off", Columns: []string{"blob"}},
 				{Name: "warm", Compression: "lz4"},
@@ -161,7 +187,7 @@ func TestYDBColumnFamilies_ChangesInPlace(t *testing.T) {
 					"ALTER COLUMN `blob` SET FAMILY `cold`, ALTER COLUMN `body` SET FAMILY `default`",
 				"ALTER TABLE " + table + " DROP COLUMN `note`",
 			},
-			wantRead: []ast.YDBColumnFamilySpec{
+			wantRead: []ydbschema.ColumnFamily{
 				{Name: "cold", Data: familyPool, Compression: "off", Columns: []string{"blob"}},
 				{Name: "default", Compression: "lz4"},
 				{Name: "warm", Compression: "lz4"},
@@ -169,9 +195,9 @@ func TestYDBColumnFamilies_ChangesInPlace(t *testing.T) {
 		},
 		{
 			name:     "settings and families left out",
-			declared: familyDocs([]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"blob"}}}),
+			declared: familyDocs([]ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"blob"}}}),
 			want:     make([]string, 0),
-			wantRead: []ast.YDBColumnFamilySpec{
+			wantRead: []ydbschema.ColumnFamily{
 				{Name: "cold", Data: familyPool, Compression: "off", Columns: []string{"blob"}},
 				{Name: "default", Compression: "lz4"},
 				{Name: "warm", Compression: "lz4"},
@@ -185,7 +211,7 @@ func TestYDBColumnFamilies_ChangesInPlace(t *testing.T) {
 			dropTables(c, conn, familySchemas)
 			c.Cleanup(func() { dropTables(c, conn, familySchemas) })
 			apply(c, conn, planAgainst(c, conn,
-				familyDocs([]ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"body", "blob"}}}),
+				familyDocs([]ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4", Columns: []string{"body", "blob"}}}),
 				familySchemas))
 			apply(c, conn, []string{"UPSERT INTO " + table + " (id, title, body, blob) " +
 				"VALUES (1l, 'a'u, 'one'u, 'x'), (2l, 'b'u, NULL, NULL)"})
@@ -224,15 +250,15 @@ func TestYDBColumnFamilies_WhatTheDeclarationLeavesOutStays(t *testing.T) {
 	table := "`" + familySchema + "/docs`"
 	tests := []struct {
 		name     string
-		desired  []ast.YDBColumnFamilySpec
+		desired  []ydbschema.ColumnFamily
 		want     []string
-		wantRead []ast.YDBColumnFamilySpec
+		wantRead []ydbschema.ColumnFamily
 	}{
 		{
 			name:    "a family left out",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Data: familyPool, Columns: []string{"body"}}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Data: familyPool, Columns: []string{"body"}}},
 			want:    []string{"ALTER TABLE " + table + " ALTER COLUMN `blob` SET FAMILY `default`"},
-			wantRead: []ast.YDBColumnFamilySpec{
+			wantRead: []ydbschema.ColumnFamily{
 				{Name: "cold", Data: familyPool, Compression: "off", Columns: []string{"body"}},
 				{Name: "default", Compression: "off"},
 				{Name: "warm", Compression: "off"},
@@ -240,12 +266,12 @@ func TestYDBColumnFamilies_WhatTheDeclarationLeavesOutStays(t *testing.T) {
 		},
 		{
 			name: "a pool left out",
-			desired: []ast.YDBColumnFamilySpec{
+			desired: []ydbschema.ColumnFamily{
 				{Name: "cold", Columns: []string{"body"}},
 				{Name: "warm", Columns: []string{"blob"}},
 			},
 			want: make([]string, 0),
-			wantRead: []ast.YDBColumnFamilySpec{
+			wantRead: []ydbschema.ColumnFamily{
 				{Name: "cold", Data: familyPool, Compression: "off", Columns: []string{"body"}},
 				{Name: "default", Compression: "off"},
 				{Name: "warm", Compression: "off", Columns: []string{"blob"}},
@@ -260,7 +286,7 @@ func TestYDBColumnFamilies_WhatTheDeclarationLeavesOutStays(t *testing.T) {
 					conn := openYDB(c, line)
 					dropTables(c, conn, familySchemas)
 					c.Cleanup(func() { dropTables(c, conn, familySchemas) })
-					apply(c, conn, planAgainst(c, conn, familyDocs([]ast.YDBColumnFamilySpec{
+					apply(c, conn, planAgainst(c, conn, familyDocs([]ydbschema.ColumnFamily{
 						{Name: "cold", Data: familyPool, Columns: []string{"body"}},
 						{Name: "warm", Columns: []string{"blob"}},
 					}), familySchemas))
@@ -291,7 +317,7 @@ func TestYDBColumnFamilies_WhatTheDeclarationLeavesOutStays(t *testing.T) {
 func TestYDBColumnFamilies_ARebuildKeepsWhatTheTableHolds(t *testing.T) {
 	typeChange := withField("n", func(f *schemamodel.Field) { f.Type = "BIGINT" })
 	inCold := func(db *schemamodel.Database) {
-		db.Tables[0].YDBColumnFamilies = []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"label"}}}
+		db.Tables[0].Facets = familyFacets([]ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"label"}}})
 	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -312,8 +338,8 @@ func TestYDBColumnFamilies_ARebuildKeepsWhatTheTableHolds(t *testing.T) {
 			c.Assert(rebuildMigrator(c, conn, file, nil).MigrateUp(c.Context()), qt.IsNil)
 
 			c.Assert(planAgainst(c, conn, after, rebuildSchemas), qt.HasLen, 0)
-			c.Assert(tableNamed(c, readScoped(c, conn, rebuildSchemas), rebuildSchema, "items").YDBColumnFamilies, qt.DeepEquals,
-				[]ast.YDBColumnFamilySpec{
+			c.Assert(heldFamilies(c, tableNamed(c, readScoped(c, conn, rebuildSchemas), rebuildSchema, "items")), qt.DeepEquals,
+				[]ydbschema.ColumnFamily{
 					{Name: "cold", Data: familyPool, Compression: "off", Columns: []string{"label"}},
 					{Name: "default", Compression: "lz4"},
 					{Name: "extra", Compression: "lz4"},
@@ -364,14 +390,14 @@ func TestYDBColumnFamilies_KeepInMemoryIsRefusedWithDefaultFlags(t *testing.T) {
 			conn := openYDB(c, line)
 			dropTables(c, conn, familySchemas)
 			c.Cleanup(func() { dropTables(c, conn, familySchemas) })
-			apply(c, conn, planAgainst(c, conn, familyDocs([]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"body"}}}),
+			apply(c, conn, planAgainst(c, conn, familyDocs([]ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"body"}}}),
 				familySchemas))
 
 			status, issues := keepInMemory(c, line, familySchema+"/docs", "cold")
 
 			c.Assert(status, qt.Equals, Ydb.StatusIds_BAD_REQUEST)
 			c.Assert(issues, qt.Contains, "Setting keep_in_memory to ENABLED is not allowed")
-			c.Assert(familiesOf(c, conn), qt.DeepEquals, []ast.YDBColumnFamilySpec{
+			c.Assert(familiesOf(c, conn), qt.DeepEquals, []ydbschema.ColumnFamily{
 				{Name: "cold", Compression: "off", Columns: []string{"body"}},
 				{Name: "default", Compression: "off"},
 			})

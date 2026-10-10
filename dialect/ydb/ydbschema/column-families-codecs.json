@@ -1,0 +1,85 @@
+{
+  "$id": "ptah.run/ydb/column-families/v1",
+  "$defs": {
+    "family": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "data": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "compression": {
+          "enum": [
+            "off",
+            "lz4"
+          ]
+        },
+        "cache_mode": {
+          "enum": [
+            "regular",
+            "in_memory"
+          ]
+        },
+        "keep_in_memory": {
+          "const": true
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "meaning": "name is the family's name, compared as written. data is the kind of storage pool its columns are kept in. compression and cache_mode are the family's settings. keep_in_memory is a setting only a table profile gives, which no statement writes. columns are the columns the family holds; the default family lists none. A setting left out is not stated."
+    },
+    "families": {
+      "type": "object",
+      "required": [
+        "families"
+      ],
+      "properties": {
+        "families": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/family"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/ydb/column-families": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/families"
+          }
+        ],
+        "constraint": "Family names are unique, and a column is in one family at most. A setting the value leaves out keeps what the table holds, and so does a family the table holds and the value leaves out. A column the value places in no family sits in the default family. The value's absence under complete source coverage requests no family of the table's columns."
+      }
+    },
+    "observed": {
+      "ptah.run/ydb/column-families": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/families"
+          }
+        ],
+        "constraint": "Every family the table holds, with each setting as YDB reports it, YDB's own values included. A table whose families hold a setting the read does not model is recorded in coverage instead."
+      }
+    }
+  },
+  "canonicalization": "Families are written sorted by name, and each family's columns sorted. Strings must be valid UTF-8 and are kept verbatim; compression and cache_mode are in lower case."
+}

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbfamily"
 )
 
@@ -17,22 +17,22 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.YDBColumnFamilySpec
+		want   ydbschema.ColumnFamily
 	}{
 		{
 			name:   "every setting",
 			values: map[string]string{"name": "cold", "data": "hdd", "compression": "LZ4", "cache_mode": "IN_MEMORY", "fields": "b, a"},
-			want:   ast.YDBColumnFamilySpec{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"b", "a"}},
+			want:   ydbschema.ColumnFamily{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"b", "a"}},
 		},
 		{
 			name:   "a name alone",
 			values: map[string]string{"name": " cold ", "table": "events"},
-			want:   ast.YDBColumnFamilySpec{Name: "cold"},
+			want:   ydbschema.ColumnFamily{Name: "cold"},
 		},
 		{
 			name:   "the default family's settings",
 			values: map[string]string{"name": "default", "compression": "off", "cache_mode": "regular"},
-			want:   ast.YDBColumnFamilySpec{Name: "default", Compression: "off", CacheMode: "regular"},
+			want:   ydbschema.ColumnFamily{Name: "default", Compression: "off", CacheMode: "regular"},
 		},
 	}
 
@@ -81,7 +81,7 @@ func TestParseDeclaration_FailurePath(t *testing.T) {
 			var declared *ydbfamily.DeclarationError
 			c.Assert(err, qt.ErrorAs, &declared)
 			c.Assert(declared.Attribute, qt.Equals, test.wantAttribute)
-			c.Assert(got, qt.DeepEquals, ast.YDBColumnFamilySpec{})
+			c.Assert(got, qt.DeepEquals, ydbschema.ColumnFamily{})
 		})
 	}
 }
@@ -90,7 +90,7 @@ func TestParseDeclaration_FailurePath(t *testing.T) {
 // and families listing no column included.
 func TestRefusal_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	families := []ast.YDBColumnFamilySpec{
+	families := []ydbschema.ColumnFamily{
 		{Name: "default", Compression: "lz4"},
 		{Name: "cold", Columns: []string{"a", "b"}},
 		{Name: "empty"},
@@ -103,33 +103,33 @@ func TestRefusal_HappyPath(t *testing.T) {
 func TestRefusal_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
-		families []ast.YDBColumnFamilySpec
+		families []ydbschema.ColumnFamily
 		want     string
 	}{
 		{
 			name:     "a family twice",
-			families: []ast.YDBColumnFamilySpec{{Name: "cold"}, {Name: "cold"}},
+			families: []ydbschema.ColumnFamily{{Name: "cold"}, {Name: "cold"}},
 			want:     "it declares column family \"cold\" twice (`Family cold specified more than once`)",
 		},
 		{
 			name:     "a column in two families",
-			families: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}, {Name: "warm", Columns: []string{"a"}}},
+			families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}, {Name: "warm", Columns: []string{"a"}}},
 			want:     `column "a" is in two column families, "cold" and "warm"`,
 		},
 		{
 			name:     "a column the table does not declare",
-			families: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"z"}}},
+			families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"z"}}},
 			want:     `column family "cold" names column "z", which the table does not declare`,
 		},
 		{
 			name:     "a key column",
-			families: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"id"}}},
+			families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"id"}}},
 			want: "column family \"cold\" names key column \"id\", and YDB keeps every key column in the default " +
 				"family (`Key column 'id' must belong to the default family`)",
 		},
 		{
 			name:     "columns in the default family",
-			families: []ast.YDBColumnFamilySpec{{Name: "default", Columns: []string{"a"}}},
+			families: []ydbschema.ColumnFamily{{Name: "default", Columns: []string{"a"}}},
 			want: "its default column family lists columns, and the default family holds every column no other " +
 				"family names",
 		},
@@ -149,19 +149,19 @@ func TestRefusal_FailurePath(t *testing.T) {
 func TestRequirements(t *testing.T) {
 	tests := []struct {
 		name     string
-		families []ast.YDBColumnFamilySpec
+		families []ydbschema.ColumnFamily
 		want     []capability.Capability
 	}{
 		{name: "none", families: nil, want: nil},
-		{name: "the default family stating nothing", families: []ast.YDBColumnFamilySpec{{Name: "default"}}, want: nil},
+		{name: "the default family stating nothing", families: []ydbschema.ColumnFamily{{Name: "default"}}, want: nil},
 		{name: "the default family stating compression",
-			families: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "off"}},
+			families: []ydbschema.ColumnFamily{{Name: "default", Compression: "off"}},
 			want:     []capability.Capability{capability.ColumnFamilies}},
-		{name: "a family", families: []ast.YDBColumnFamilySpec{{Name: "cold"}},
+		{name: "a family", families: []ydbschema.ColumnFamily{{Name: "cold"}},
 			want: []capability.Capability{capability.ColumnFamilies}},
-		{name: "a regular cache", families: []ast.YDBColumnFamilySpec{{Name: "cold", CacheMode: "regular"}},
+		{name: "a regular cache", families: []ydbschema.ColumnFamily{{Name: "cold", CacheMode: "regular"}},
 			want: []capability.Capability{capability.ColumnFamilies, capability.ColumnFamilyCacheMode}},
-		{name: "a cache mode", families: []ast.YDBColumnFamilySpec{{Name: "default", CacheMode: "in_memory"}},
+		{name: "a cache mode", families: []ydbschema.ColumnFamily{{Name: "default", CacheMode: "in_memory"}},
 			want: []capability.Capability{capability.ColumnFamilies, capability.ColumnFamilyCacheMode}},
 	}
 
@@ -183,20 +183,20 @@ func TestRequirements(t *testing.T) {
 func TestChangeRequirements(t *testing.T) {
 	tests := []struct {
 		name             string
-		desired, current []ast.YDBColumnFamilySpec
+		desired, current []ydbschema.ColumnFamily
 		want             []capability.Capability
 	}{
-		{name: "nothing written", desired: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", CacheMode: "in_memory", Columns: []string{"a"}}}, want: nil},
+		{name: "nothing written", desired: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", CacheMode: "in_memory", Columns: []string{"a"}}}, want: nil},
 		{name: "a column moved, the held cache mode kept",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", CacheMode: "in_memory"}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", CacheMode: "in_memory"}},
 			want:    []capability.Capability{capability.ColumnFamilies}},
-		{name: "a cache mode set", desired: []ast.YDBColumnFamilySpec{{Name: "cold", CacheMode: "regular"}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", CacheMode: "in_memory"}},
+		{name: "a cache mode set", desired: []ydbschema.ColumnFamily{{Name: "cold", CacheMode: "regular"}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", CacheMode: "in_memory"}},
 			want:    []capability.Capability{capability.ColumnFamilies, capability.ColumnFamilyCacheMode}},
 		{name: "a family added with a cache mode",
-			desired: []ast.YDBColumnFamilySpec{{Name: "hot", CacheMode: "in_memory"}}, current: nil,
+			desired: []ydbschema.ColumnFamily{{Name: "hot", CacheMode: "in_memory"}}, current: nil,
 			want: []capability.Capability{capability.ColumnFamilies, capability.ColumnFamilyCacheMode}},
 	}
 
@@ -220,33 +220,33 @@ func TestChangeRequirements(t *testing.T) {
 func TestSatisfied_HappyPath(t *testing.T) {
 	tests := []struct {
 		name             string
-		desired, current []ast.YDBColumnFamilySpec
+		desired, current []ydbschema.ColumnFamily
 	}{
 		{
 			name:    "order and case",
-			desired: []ast.YDBColumnFamilySpec{{Name: "b", Columns: []string{"y", "x"}}, {Name: "a", Compression: "LZ4"}},
-			current: []ast.YDBColumnFamilySpec{{Name: "a", Compression: "lz4"}, {Name: "b", Columns: []string{"x", "y"}}},
+			desired: []ydbschema.ColumnFamily{{Name: "b", Columns: []string{"y", "x"}}, {Name: "a", Compression: "LZ4"}},
+			current: []ydbschema.ColumnFamily{{Name: "a", Compression: "lz4"}, {Name: "b", Columns: []string{"x", "y"}}},
 		},
 		{
 			name:    "settings the declaration does not state",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory",
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory",
 				Columns: []string{"a"}}},
 		},
 		{
 			name:    "the default family a profile compresses and keeps in memory",
 			desired: nil,
-			current: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "lz4", KeepInMemory: true}},
+			current: []ydbschema.ColumnFamily{{Name: "default", Compression: "lz4", KeepInMemory: true}},
 		},
 		{
 			name:    "a family a profile adds to every table",
-			desired: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "off"}},
-			current: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "off"}, {Name: "extra", Compression: "lz4"}},
+			desired: []ydbschema.ColumnFamily{{Name: "default", Compression: "off"}},
+			current: []ydbschema.ColumnFamily{{Name: "default", Compression: "off"}, {Name: "extra", Compression: "lz4"}},
 		},
 		{
 			name:    "keep_in_memory on both sides",
-			desired: []ast.YDBColumnFamilySpec{{Name: "default", KeepInMemory: true}},
-			current: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "off", KeepInMemory: true}},
+			desired: []ydbschema.ColumnFamily{{Name: "default", KeepInMemory: true}},
+			current: []ydbschema.ColumnFamily{{Name: "default", Compression: "off", KeepInMemory: true}},
 		},
 	}
 
@@ -262,26 +262,26 @@ func TestSatisfied_HappyPath(t *testing.T) {
 // a column's family, a family the table lacks, a pool's case and a family's
 // name, which YDB keeps as written.
 func TestSatisfied_FailurePath(t *testing.T) {
-	held := []ast.YDBColumnFamilySpec{
+	held := []ydbschema.ColumnFamily{
 		{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"a"}},
 		{Name: "default", Compression: "lz4"},
 	}
 	tests := []struct {
 		name    string
-		desired []ast.YDBColumnFamilySpec
+		desired []ydbschema.ColumnFamily
 	}{
-		{name: "the name's case", desired: []ast.YDBColumnFamilySpec{{Name: "Cold", Columns: []string{"a"}}}},
-		{name: "the pool", desired: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "HDD", Columns: []string{"a"}}}},
-		{name: "compression off", desired: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "off", Columns: []string{"a"}}}},
-		{name: "the regular cache", desired: []ast.YDBColumnFamilySpec{{Name: "cold", CacheMode: "regular", Columns: []string{"a"}}}},
-		{name: "a column moved out", desired: []ast.YDBColumnFamilySpec{{Name: "cold"}}},
-		{name: "a column moved in", desired: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a", "b"}}}},
+		{name: "the name's case", desired: []ydbschema.ColumnFamily{{Name: "Cold", Columns: []string{"a"}}}},
+		{name: "the pool", desired: []ydbschema.ColumnFamily{{Name: "cold", Data: "HDD", Columns: []string{"a"}}}},
+		{name: "compression off", desired: []ydbschema.ColumnFamily{{Name: "cold", Compression: "off", Columns: []string{"a"}}}},
+		{name: "the regular cache", desired: []ydbschema.ColumnFamily{{Name: "cold", CacheMode: "regular", Columns: []string{"a"}}}},
+		{name: "a column moved out", desired: []ydbschema.ColumnFamily{{Name: "cold"}}},
+		{name: "a column moved in", desired: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a", "b"}}}},
 		{name: "a column left in no family", desired: nil},
-		{name: "a family the table lacks", desired: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}, {Name: "warm"}}},
+		{name: "a family the table lacks", desired: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}, {Name: "warm"}}},
 		{name: "the default family's compression",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}, {Name: "default", Compression: "off"}}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}, {Name: "default", Compression: "off"}}},
 		{name: "keep_in_memory the table lacks",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", KeepInMemory: true, Columns: []string{"a"}}}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", KeepInMemory: true, Columns: []string{"a"}}}},
 	}
 
 	for _, test := range tests {
@@ -297,12 +297,12 @@ func TestSatisfied_FailurePath(t *testing.T) {
 // the declaration states, and puts each column where the declaration does.
 func TestApplied(t *testing.T) {
 	c := qt.New(t)
-	held := []ast.YDBColumnFamilySpec{
+	held := []ydbschema.ColumnFamily{
 		{Name: "default", Compression: "lz4", CacheMode: "in_memory", KeepInMemory: true},
 		{Name: "extra", Compression: "lz4"},
 		{Name: "cold", Data: "hdd", Compression: "off", Columns: []string{"a", "b"}},
 	}
-	desired := []ast.YDBColumnFamilySpec{
+	desired := []ydbschema.ColumnFamily{
 		{Name: "cold", Compression: "LZ4", Columns: []string{"b"}},
 		{Name: "default", Compression: "off"},
 		{Name: "hot", CacheMode: "in_memory", Columns: []string{"c"}},
@@ -310,7 +310,7 @@ func TestApplied(t *testing.T) {
 
 	got := ydbfamily.Applied(desired, held)
 
-	c.Assert(got, qt.DeepEquals, []ast.YDBColumnFamilySpec{
+	c.Assert(got, qt.DeepEquals, []ydbschema.ColumnFamily{
 		{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"b"}},
 		{Name: "default", Compression: "off", CacheMode: "in_memory", KeepInMemory: true},
 		{Name: "extra", Compression: "lz4"},
@@ -328,7 +328,7 @@ func TestApplied(t *testing.T) {
 // after its type, and joins the default family by naming none.
 func TestCreateEntries(t *testing.T) {
 	c := qt.New(t)
-	families := []ast.YDBColumnFamilySpec{
+	families := []ydbschema.ColumnFamily{
 		{Name: "warm", Columns: []string{"b"}},
 		{Name: "default"},
 		{Name: "cold", Data: "hdd", Compression: "LZ4", CacheMode: "in_memory", Columns: []string{"a"}},
@@ -342,7 +342,7 @@ func TestCreateEntries(t *testing.T) {
 		"FAMILY `plain` (COMPRESSION = 'off', CACHE_MODE = 'regular')",
 		"FAMILY `warm` ()",
 	})
-	c.Assert(ydbfamily.CreateEntries([]ast.YDBColumnFamilySpec{{Name: "default", Compression: "off"}}), qt.DeepEquals,
+	c.Assert(ydbfamily.CreateEntries([]ydbschema.ColumnFamily{{Name: "default", Compression: "off"}}), qt.DeepEquals,
 		[]string{"FAMILY `default` (COMPRESSION = 'off')"})
 	c.Assert(ydbfamily.FamilyOf(families, "a"), qt.Equals, "cold")
 	c.Assert(ydbfamily.FamilyOf(families, "id"), qt.Equals, "default")
@@ -354,7 +354,7 @@ func TestCreateEntries(t *testing.T) {
 // A CREATE TABLE writes every family stating no keep_in_memory.
 func TestCreateRefusal_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ydbfamily.CreateRefusal([]ast.YDBColumnFamilySpec{{Name: "default", Compression: "lz4"}, {Name: "cold"}}),
+	c.Assert(ydbfamily.CreateRefusal([]ydbschema.ColumnFamily{{Name: "default", Compression: "lz4"}, {Name: "cold"}}),
 		qt.Equals, "")
 }
 
@@ -362,7 +362,7 @@ func TestCreateRefusal_HappyPath(t *testing.T) {
 // to carry it is refused, the default family's too.
 func TestCreateRefusal_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ydbfamily.CreateRefusal([]ast.YDBColumnFamilySpec{{Name: "cold"}, {Name: "default", KeepInMemory: true}}),
+	c.Assert(ydbfamily.CreateRefusal([]ydbschema.ColumnFamily{{Name: "cold"}, {Name: "default", KeepInMemory: true}}),
 		qt.Equals, `column family "default" keeps its columns in memory (keep_in_memory), and YQL has no family `+
 			"setting for it (`Unknown table setting: KEEP_IN_MEMORY`), so the new table would not keep them there")
 }
@@ -375,12 +375,12 @@ func TestCreateRefusal_FailurePath(t *testing.T) {
 func TestAlterActions(t *testing.T) {
 	tests := []struct {
 		name             string
-		desired, current []ast.YDBColumnFamilySpec
+		desired, current []ydbschema.ColumnFamily
 		want             []string
 	}{
 		{
 			name:    "a new family and a column moved into it",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"b", "a"}}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"b", "a"}}},
 			current: nil,
 			want: []string{
 				"ADD FAMILY `cold` (DATA = 'hdd', COMPRESSION = 'lz4')",
@@ -390,14 +390,14 @@ func TestAlterActions(t *testing.T) {
 		},
 		{
 			name:    "one setting changed",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "ssd", Compression: "lz4", Columns: []string{"a"}}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"a"}}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Data: "ssd", Compression: "lz4", Columns: []string{"a"}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"a"}}},
 			want:    []string{"ALTER FAMILY `cold` SET DATA 'ssd'"},
 		},
 		{
 			name:    "settings stated as YDB's own",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "off", CacheMode: "regular"}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory"}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Compression: "off", CacheMode: "regular"}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory"}},
 			want: []string{
 				"ALTER FAMILY `cold` SET COMPRESSION 'off'",
 				"ALTER FAMILY `cold` SET CACHE_MODE 'regular'",
@@ -405,26 +405,26 @@ func TestAlterActions(t *testing.T) {
 		},
 		{
 			name:    "settings left out",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold"}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory"}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold"}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory"}},
 			want:    nil,
 		},
 		{
 			name:    "the default family declared for the first time",
-			desired: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "lz4"}},
+			desired: []ydbschema.ColumnFamily{{Name: "default", Compression: "lz4"}},
 			current: nil,
 			want:    []string{"ALTER FAMILY `default` SET COMPRESSION 'lz4'"},
 		},
 		{
 			name:    "the default family and another left out",
 			desired: nil,
-			current: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "lz4", CacheMode: "in_memory"}, {Name: "extra"}},
+			current: []ydbschema.ColumnFamily{{Name: "default", Compression: "lz4", CacheMode: "in_memory"}, {Name: "extra"}},
 			want:    nil,
 		},
 		{
 			name:    "columns moved between families and back to the default one",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"b"}}, {Name: "warm", Columns: []string{"c"}}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a", "c"}}, {Name: "warm", Columns: []string{"b"}}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"b"}}, {Name: "warm", Columns: []string{"c"}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a", "c"}}, {Name: "warm", Columns: []string{"b"}}},
 			want: []string{
 				"ALTER COLUMN `a` SET FAMILY `default`",
 				"ALTER COLUMN `b` SET FAMILY `cold`",
@@ -434,13 +434,13 @@ func TestAlterActions(t *testing.T) {
 		{
 			name:    "a column out of a family the declaration leaves out",
 			desired: nil,
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}},
 			want:    []string{"ALTER COLUMN `a` SET FAMILY `default`"},
 		},
 		{
 			name:    "nothing to do",
-			desired: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "LZ4", Columns: []string{"a"}}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"a"}}},
+			desired: []ydbschema.ColumnFamily{{Name: "cold", Compression: "LZ4", Columns: []string{"a"}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4", Columns: []string{"a"}}},
 			want:    nil,
 		},
 	}
@@ -458,17 +458,17 @@ func TestAlterActions(t *testing.T) {
 func TestChangeRefusal_HappyPath(t *testing.T) {
 	tests := []struct {
 		name             string
-		desired, current []ast.YDBColumnFamilySpec
+		desired, current []ydbschema.ColumnFamily
 	}{
-		{name: "a new family", desired: []ast.YDBColumnFamilySpec{{Name: "cold"}}, current: nil},
+		{name: "a new family", desired: []ydbschema.ColumnFamily{{Name: "cold"}}, current: nil},
 		{name: "a family left out", desired: nil,
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}}},
-		{name: "a pool left out", desired: []ast.YDBColumnFamilySpec{{Name: "cold"}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd"}}},
-		{name: "keep_in_memory held", desired: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "lz4"}},
-			current: []ast.YDBColumnFamilySpec{{Name: "default", KeepInMemory: true}}},
-		{name: "keep_in_memory on both sides", desired: []ast.YDBColumnFamilySpec{{Name: "cold", KeepInMemory: true}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", KeepInMemory: true}}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a"}}}},
+		{name: "a pool left out", desired: []ydbschema.ColumnFamily{{Name: "cold"}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Data: "hdd"}}},
+		{name: "keep_in_memory held", desired: []ydbschema.ColumnFamily{{Name: "default", Compression: "lz4"}},
+			current: []ydbschema.ColumnFamily{{Name: "default", KeepInMemory: true}}},
+		{name: "keep_in_memory on both sides", desired: []ydbschema.ColumnFamily{{Name: "cold", KeepInMemory: true}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", KeepInMemory: true}}},
 	}
 
 	for _, test := range tests {
@@ -485,11 +485,11 @@ func TestChangeRefusal_HappyPath(t *testing.T) {
 func TestChangeRefusal_FailurePath(t *testing.T) {
 	tests := []struct {
 		name             string
-		desired, current []ast.YDBColumnFamilySpec
+		desired, current []ydbschema.ColumnFamily
 	}{
-		{name: "a held family", desired: []ast.YDBColumnFamilySpec{{Name: "cold", KeepInMemory: true}},
-			current: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4"}}},
-		{name: "a new family", desired: []ast.YDBColumnFamilySpec{{Name: "cold", KeepInMemory: true}}, current: nil},
+		{name: "a held family", desired: []ydbschema.ColumnFamily{{Name: "cold", KeepInMemory: true}},
+			current: []ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4"}}},
+		{name: "a new family", desired: []ydbschema.ColumnFamily{{Name: "cold", KeepInMemory: true}}, current: nil},
 	}
 
 	for _, test := range tests {
@@ -506,12 +506,12 @@ func TestChangeRefusal_FailurePath(t *testing.T) {
 // nothing it was given.
 func TestWithoutColumns(t *testing.T) {
 	c := qt.New(t)
-	families := []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a", "b"}}, {Name: "warm", Columns: []string{"c"}}}
+	families := []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"a", "b"}}, {Name: "warm", Columns: []string{"c"}}}
 
 	c.Assert(ydbfamily.WithoutColumns(families, []string{"a", "c"}), qt.DeepEquals,
-		[]ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"b"}}, {Name: "warm"}})
+		[]ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"b"}}, {Name: "warm"}})
 	c.Assert(ydbfamily.OnlyColumns(families, func(column string) bool { return column == "c" }), qt.DeepEquals,
-		[]ast.YDBColumnFamilySpec{{Name: "cold"}, {Name: "warm", Columns: []string{"c"}}})
+		[]ydbschema.ColumnFamily{{Name: "cold"}, {Name: "warm", Columns: []string{"c"}}})
 	c.Assert(families[0].Columns, qt.DeepEquals, []string{"a", "b"})
 }
 
@@ -520,18 +520,18 @@ func TestWithoutColumns(t *testing.T) {
 // make it stated. Only the default family is left out for being plain.
 func TestStated(t *testing.T) {
 	c := qt.New(t)
-	families := []ast.YDBColumnFamilySpec{
+	families := []ydbschema.ColumnFamily{
 		{Name: "default", Compression: "OFF", CacheMode: "Regular"},
 		{Name: "spare", Compression: "off"},
 	}
-	c.Assert(ydbfamily.Stated(families), qt.DeepEquals, []ast.YDBColumnFamilySpec{{Name: "spare", Compression: "off"}})
-	for _, stated := range []ast.YDBColumnFamilySpec{
+	c.Assert(ydbfamily.Stated(families), qt.DeepEquals, []ydbschema.ColumnFamily{{Name: "spare", Compression: "off"}})
+	for _, stated := range []ydbschema.ColumnFamily{
 		{Name: "default", Data: "hdd"},
 		{Name: "default", Compression: "lz4"},
 		{Name: "default", CacheMode: "in_memory"},
 		{Name: "default", KeepInMemory: true},
 	} {
 		c.Assert(ydbfamily.Plain(stated), qt.IsFalse, qt.Commentf("%+v", stated))
-		c.Assert(ydbfamily.Stated([]ast.YDBColumnFamilySpec{stated}), qt.HasLen, 1, qt.Commentf("%+v", stated))
+		c.Assert(ydbfamily.Stated([]ydbschema.ColumnFamily{stated}), qt.HasLen, 1, qt.Commentf("%+v", stated))
 	}
 }

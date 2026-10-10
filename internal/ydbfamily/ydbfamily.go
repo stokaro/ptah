@@ -71,9 +71,9 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlident"
 )
 
@@ -91,15 +91,15 @@ const (
 
 // Default is the name of the family every YDB row table has: it holds the key
 // columns and every column no other family names.
-const Default = "default"
+const Default = ydbschema.DefaultColumnFamily
 
 // The values COMPRESSION and CACHE_MODE take on a row table, as Ptah writes
 // them. YDB takes them in any case.
 const (
-	CompressionOff    = "off"
-	CompressionLZ4    = "lz4"
-	CacheModeRegular  = "regular"
-	CacheModeInMemory = "in_memory"
+	CompressionOff    = ydbschema.CompressionOff
+	CompressionLZ4    = ydbschema.CompressionLZ4
+	CacheModeRegular  = ydbschema.CacheModeRegular
+	CacheModeInMemory = ydbschema.CacheModeInMemory
 )
 
 // Compressions lists the compressions a row table's family takes.
@@ -132,33 +132,33 @@ func (e *DeclarationError) Error() string {
 // kept in lower case; fields is a comma-separated list of column names, each
 // once, and the default family takes none, since it holds every column no
 // other family names.
-func ParseDeclaration(values map[string]string) (ast.YDBColumnFamilySpec, error) {
-	spec := ast.YDBColumnFamilySpec{Name: strings.TrimSpace(values[AttributeName])}
+func ParseDeclaration(values map[string]string) (ydbschema.ColumnFamily, error) {
+	spec := ydbschema.ColumnFamily{Name: strings.TrimSpace(values[AttributeName])}
 	if spec.Name == "" {
-		return ast.YDBColumnFamilySpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a column family needs a name"}
+		return ydbschema.ColumnFamily{}, &DeclarationError{Attribute: AttributeName, Reason: "a column family needs a name"}
 	}
 	if raw, ok := values[AttributeData]; ok {
 		spec.Data = strings.TrimSpace(raw)
 		if spec.Data == "" {
-			return ast.YDBColumnFamilySpec{}, &DeclarationError{Attribute: AttributeData, Value: raw,
+			return ydbschema.ColumnFamily{}, &DeclarationError{Attribute: AttributeData, Value: raw,
 				Reason: "names the kind of storage pool the family is kept in, such as ssd; leave it out to keep " +
 					"the database's own pool (YDB answers an empty one with `database doesn't have required storage pools`)"}
 		}
 	}
 	var err error
 	if spec.Compression, err = compression(values); err != nil {
-		return ast.YDBColumnFamilySpec{}, err
+		return ydbschema.ColumnFamily{}, err
 	}
 	if spec.CacheMode, err = choice(values, AttributeCacheMode, CacheModes()); err != nil {
-		return ast.YDBColumnFamilySpec{}, err
+		return ydbschema.ColumnFamily{}, err
 	}
 	if raw, ok := values[AttributeFields]; ok {
 		if spec.Columns, err = fields(raw); err != nil {
-			return ast.YDBColumnFamilySpec{}, err
+			return ydbschema.ColumnFamily{}, err
 		}
 	}
 	if spec.Name == Default && len(spec.Columns) > 0 {
-		return ast.YDBColumnFamilySpec{}, &DeclarationError{Attribute: AttributeFields, Value: values[AttributeFields],
+		return ydbschema.ColumnFamily{}, &DeclarationError{Attribute: AttributeFields, Value: values[AttributeFields],
 			Reason: "the default family holds the key and every column no other family names, so it lists none"}
 	}
 	return spec, nil
@@ -217,7 +217,7 @@ func fields(raw string) ([]string, error) {
 // a column the table does not declare, and a key column outside the default
 // family, which YDB refuses (`Key column 'id' must belong to the default
 // family`).
-func Refusal(families []ast.YDBColumnFamilySpec, columns, key []string) string {
+func Refusal(families []ydbschema.ColumnFamily, columns, key []string) string {
 	seen := make(map[string]bool, len(families))
 	holder := make(map[string]string)
 	for _, family := range families {
@@ -259,13 +259,13 @@ type Requirement struct {
 // setting, and one for a cache mode, `regular` included. A list holding only
 // the default family stating nothing needs none. A change of an existing
 // table needs what it writes; see [ChangeRequirements].
-func Requirements(families []ast.YDBColumnFamilySpec) []Requirement {
+func Requirements(families []ydbschema.ColumnFamily) []Requirement {
 	normalized := Normalize(families)
 	if len(normalized) == 0 {
 		return nil
 	}
 	requirements := []Requirement{{Key: capability.ColumnFamilies, Settings: "column families"}}
-	if slices.ContainsFunc(normalized, func(family ast.YDBColumnFamilySpec) bool { return family.CacheMode != "" }) {
+	if slices.ContainsFunc(normalized, func(family ydbschema.ColumnFamily) bool { return family.CacheMode != "" }) {
 		requirements = append(requirements, Requirement{Key: capability.ColumnFamilyCacheMode, Settings: "column family cache mode"})
 	}
 	return requirements
@@ -277,8 +277,8 @@ func Requirements(families []ast.YDBColumnFamilySpec) []Requirement {
 // columns, and the default family left out where it states no setting. A
 // setting stays as stated: `off` is a declaration, and so is `regular`.
 // families is not changed, and the result shares nothing with it.
-func Normalize(families []ast.YDBColumnFamilySpec) []ast.YDBColumnFamilySpec {
-	var normalized []ast.YDBColumnFamilySpec
+func Normalize(families []ydbschema.ColumnFamily) []ydbschema.ColumnFamily {
+	var normalized []ydbschema.ColumnFamily
 	for _, family := range families {
 		family = family.Clone()
 		family.Compression = strings.ToLower(strings.TrimSpace(family.Compression))
@@ -293,12 +293,12 @@ func Normalize(families []ast.YDBColumnFamilySpec) []ast.YDBColumnFamilySpec {
 		}
 		normalized = append(normalized, family)
 	}
-	slices.SortFunc(normalized, func(a, b ast.YDBColumnFamilySpec) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(normalized, func(a, b ydbschema.ColumnFamily) int { return strings.Compare(a.Name, b.Name) })
 	return normalized
 }
 
 // statesSettings reports whether family states any setting.
-func statesSettings(family ast.YDBColumnFamilySpec) bool {
+func statesSettings(family ydbschema.ColumnFamily) bool {
 	return family.Data != "" || family.Compression != "" || family.CacheMode != "" || family.KeepInMemory
 }
 
@@ -308,7 +308,7 @@ func statesSettings(family ast.YDBColumnFamilySpec) bool {
 // export reads it to leave out the default family of a table nobody gave
 // families; a comparison never does, since a profile can give a new table's
 // family settings of its own.
-func Plain(family ast.YDBColumnFamilySpec) bool {
+func Plain(family ydbschema.ColumnFamily) bool {
 	compression := strings.ToLower(strings.TrimSpace(family.Compression))
 	cacheMode := strings.ToLower(strings.TrimSpace(family.CacheMode))
 	return family.Data == "" && (compression == "" || compression == CompressionOff) &&
@@ -317,8 +317,8 @@ func Plain(family ast.YDBColumnFamilySpec) bool {
 
 // Stated returns families without a default family that is [Plain]: what an
 // export or a report says a table holds. families is not changed.
-func Stated(families []ast.YDBColumnFamilySpec) []ast.YDBColumnFamilySpec {
-	return slices.DeleteFunc(Normalize(families), func(family ast.YDBColumnFamilySpec) bool {
+func Stated(families []ydbschema.ColumnFamily) []ydbschema.ColumnFamily {
+	return slices.DeleteFunc(Normalize(families), func(family ydbschema.ColumnFamily) bool {
 		return family.Name == Default && Plain(family)
 	})
 }
@@ -328,7 +328,7 @@ func Stated(families []ast.YDBColumnFamilySpec) []ast.YDBColumnFamilySpec {
 // column either side places in a family in the family desired gives it. A
 // setting desired leaves out and a family it leaves out are not compared,
 // since the table keeps what it holds of them.
-func Satisfied(desired, current []ast.YDBColumnFamilySpec) bool {
+func Satisfied(desired, current []ydbschema.ColumnFamily) bool {
 	actions, _ := alterations(desired, current)
 	return len(actions) == 0 && ChangeRefusal(desired, current) == ""
 }
@@ -339,13 +339,13 @@ func Satisfied(desired, current []ast.YDBColumnFamilySpec) bool {
 // columns sit where desired places them. A CREATE TABLE that replaces the
 // table writes it, so the new table keeps each setting the declaration does
 // not state. Neither argument is changed.
-func Applied(desired, current []ast.YDBColumnFamilySpec) []ast.YDBColumnFamilySpec {
+func Applied(desired, current []ydbschema.ColumnFamily) []ydbschema.ColumnFamily {
 	applied := Normalize(current)
 	for i := range applied {
 		applied[i].Columns = nil
 	}
 	for _, family := range Normalize(desired) {
-		index := slices.IndexFunc(applied, func(held ast.YDBColumnFamilySpec) bool { return held.Name == family.Name })
+		index := slices.IndexFunc(applied, func(held ydbschema.ColumnFamily) bool { return held.Name == family.Name })
 		if index < 0 {
 			applied = append(applied, family)
 			continue
@@ -362,7 +362,7 @@ func Applied(desired, current []ast.YDBColumnFamilySpec) []ast.YDBColumnFamilySp
 
 // FamilyOf names the family families puts column in, or [Default] when no
 // family lists it.
-func FamilyOf(families []ast.YDBColumnFamilySpec, column string) string {
+func FamilyOf(families []ydbschema.ColumnFamily, column string) string {
 	for _, family := range families {
 		if slices.Contains(family.Columns, column) {
 			return family.Name
@@ -386,7 +386,7 @@ func ColumnClause(family string) string {
 // declare families, in the order [Normalize] gives, each with the settings it
 // states. A family stating none is written with an empty list, which YDB
 // takes, and the default family stating none is not written at all.
-func CreateEntries(families []ast.YDBColumnFamilySpec) []string {
+func CreateEntries(families []ydbschema.ColumnFamily) []string {
 	normalized := Normalize(families)
 	entries := make([]string, 0, len(normalized))
 	for _, family := range normalized {
@@ -397,7 +397,7 @@ func CreateEntries(families []ast.YDBColumnFamilySpec) []string {
 
 // CreateRefusal says why a CREATE TABLE cannot write families, or returns "":
 // a family that keeps its columns in memory, which no YQL family setting says.
-func CreateRefusal(families []ast.YDBColumnFamilySpec) string {
+func CreateRefusal(families []ydbschema.ColumnFamily) string {
 	for _, family := range Normalize(families) {
 		if family.KeepInMemory {
 			return fmt.Sprintf("column family %q keeps its columns in memory (keep_in_memory), and YQL has no family "+
@@ -409,7 +409,7 @@ func CreateRefusal(families []ast.YDBColumnFamilySpec) string {
 }
 
 // settings are the `SETTING = value` items of a family's declaration.
-func settings(family ast.YDBColumnFamilySpec) []string {
+func settings(family ydbschema.ColumnFamily) []string {
 	var items []string
 	if family.Data != "" {
 		items = append(items, "DATA = "+quoteString(family.Data))
@@ -434,7 +434,7 @@ func settings(family ast.YDBColumnFamilySpec) []string {
 // not touched; see the package documentation. Every column either side lists
 // must exist when the statement runs, so a caller leaves a column the plan
 // drops out of both.
-func AlterActions(desired, current []ast.YDBColumnFamilySpec) []string {
+func AlterActions(desired, current []ydbschema.ColumnFamily) []string {
 	actions, _ := alterations(desired, current)
 	return actions
 }
@@ -442,7 +442,7 @@ func AlterActions(desired, current []ast.YDBColumnFamilySpec) []string {
 // ChangeRequirements are the keys a target must hold to run the actions
 // [AlterActions] writes: none when it writes none, and the cache mode key
 // when one of them writes a cache mode.
-func ChangeRequirements(desired, current []ast.YDBColumnFamilySpec) []Requirement {
+func ChangeRequirements(desired, current []ydbschema.ColumnFamily) []Requirement {
 	actions, cacheMode := alterations(desired, current)
 	if len(actions) == 0 {
 		return nil
@@ -456,17 +456,17 @@ func ChangeRequirements(desired, current []ast.YDBColumnFamilySpec) []Requiremen
 
 // alterations are the actions [AlterActions] lists, and whether one of them
 // writes a cache mode.
-func alterations(desired, current []ast.YDBColumnFamilySpec) (actions []string, cacheMode bool) {
+func alterations(desired, current []ydbschema.ColumnFamily) (actions []string, cacheMode bool) {
 	want, have := Normalize(desired), Normalize(current)
 	var adds, changes []string
 	for _, family := range want {
-		index := slices.IndexFunc(have, func(held ast.YDBColumnFamilySpec) bool { return held.Name == family.Name })
+		index := slices.IndexFunc(have, func(held ydbschema.ColumnFamily) bool { return held.Name == family.Name })
 		if index < 0 && family.Name != Default {
 			adds = append(adds, "ADD FAMILY "+quote(family.Name)+" ("+strings.Join(settings(family), ", ")+")")
 			cacheMode = cacheMode || family.CacheMode != ""
 			continue
 		}
-		var held ast.YDBColumnFamilySpec
+		var held ydbschema.ColumnFamily
 		if index >= 0 {
 			held = have[index]
 		}
@@ -478,7 +478,7 @@ func alterations(desired, current []ast.YDBColumnFamilySpec) (actions []string, 
 
 // settingChanges are the ALTER FAMILY ... SET actions that give one family
 // each setting family states and held does not hold.
-func settingChanges(family, held ast.YDBColumnFamilySpec) []string {
+func settingChanges(family, held ydbschema.ColumnFamily) []string {
 	prefix := "ALTER FAMILY " + quote(family.Name) + " SET "
 	var changes []string
 	if family.Data != "" && family.Data != held.Data {
@@ -495,7 +495,7 @@ func settingChanges(family, held ast.YDBColumnFamilySpec) []string {
 
 // columnMoves are the ALTER COLUMN ... SET FAMILY actions for every column
 // either side lists whose family differs, in column order.
-func columnMoves(want, have []ast.YDBColumnFamilySpec) []string {
+func columnMoves(want, have []ydbschema.ColumnFamily) []string {
 	var columns []string
 	for _, family := range slices.Concat(want, have) {
 		columns = append(columns, family.Columns...)
@@ -517,10 +517,10 @@ func columnMoves(want, have []ast.YDBColumnFamilySpec) []string {
 // family's columns in memory where the table does not, and no YQL statement
 // says so (see [CreateRefusal]). Only a read states it, as when one database
 // is compared with another.
-func ChangeRefusal(desired, current []ast.YDBColumnFamilySpec) string {
+func ChangeRefusal(desired, current []ydbschema.ColumnFamily) string {
 	have := Normalize(current)
 	for _, family := range Normalize(desired) {
-		index := slices.IndexFunc(have, func(held ast.YDBColumnFamilySpec) bool { return held.Name == family.Name })
+		index := slices.IndexFunc(have, func(held ydbschema.ColumnFamily) bool { return held.Name == family.Name })
 		if family.KeepInMemory && (index < 0 || !have[index].KeepInMemory) {
 			return fmt.Sprintf("column family %q keeps its columns in memory (keep_in_memory) on one side only, and "+
 				"YQL has no family setting for it (`Unknown table setting: KEEP_IN_MEMORY`)", family.Name)
@@ -531,15 +531,15 @@ func ChangeRefusal(desired, current []ast.YDBColumnFamilySpec) string {
 
 // WithoutColumns returns families with each of columns left out of the family
 // that lists it. families is not changed.
-func WithoutColumns(families []ast.YDBColumnFamilySpec, columns []string) []ast.YDBColumnFamilySpec {
+func WithoutColumns(families []ydbschema.ColumnFamily, columns []string) []ydbschema.ColumnFamily {
 	return OnlyColumns(families, func(column string) bool { return !slices.Contains(columns, column) })
 }
 
 // OnlyColumns returns families with every column keep rejects left out of the
 // family that lists it, and a family left with none listing nil. families is
 // not changed.
-func OnlyColumns(families []ast.YDBColumnFamilySpec, keep func(column string) bool) []ast.YDBColumnFamilySpec {
-	out := ast.CloneYDBColumnFamilies(families)
+func OnlyColumns(families []ydbschema.ColumnFamily, keep func(column string) bool) []ydbschema.ColumnFamily {
+	out := ydbschema.CloneColumnFamilies(families)
 	for i := range out {
 		out[i].Columns = slices.DeleteFunc(out[i].Columns, func(column string) bool { return !keep(column) })
 		if len(out[i].Columns) == 0 {
