@@ -9,10 +9,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/clirun"
 	"ptah.run/internal/migratesum"
-	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrationfile"
 )
+
+// TestMain removes the binary the tests share once they have run.
+func TestMain(m *testing.M) {
+	clirun.Main(m)
+}
 
 // TestPtahAtlasNamespaceRemoved pins the removal of the ptah atlas command
 // tree (#850): the main binary is a purely native CLI, and Atlas-style
@@ -177,14 +182,12 @@ func capturePtahStdout(c *qt.C, binPath string, args ...string) string {
 	return stdout.String()
 }
 
+// buildPtahBinary is the ptah binary, compiled once for every test in this
+// package rather than once per test: linking it costs seconds, and more on
+// Windows.
 func buildPtahBinary(c *qt.C) string {
 	c.Helper()
-	binPath := filepath.Join(c.TempDir(), "ptah"+testutils.ExecutableSuffix)
-	build := exec.Command("go", "build", "-o", binPath, ".")
-	build.Env = append(os.Environ(), "GOWORK=off")
-	buildOut, err := build.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", buildOut))
-	return binPath
+	return clirun.Build(c, clirun.Ptah)
 }
 
 func newPtahProcess(binPath string, args ...string) *exec.Cmd {

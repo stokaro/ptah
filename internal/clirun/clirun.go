@@ -64,8 +64,10 @@ const (
 	Ptah Target = "ptah.run/cmd/ptah"
 	// Compat is the Atlas-shaped binary. It ships as `ptah-compat` and installs
 	// as `atlas`, and a test that cares about the name should say which it
-	// means through [Options.As].
+	// means through [BuildAs].
 	Compat Target = "ptah.run/cmd/ptah-compat"
+	// LanguageServer is the stdio language server, `ptah-ls`.
+	LanguageServer Target = "ptah.run/cmd/ptah-ls"
 )
 
 // Result is one invocation's whole observable outcome.
@@ -95,7 +97,8 @@ type Options struct {
 	Timeout time.Duration
 }
 
-// built memoizes one compilation per target for the life of the test binary.
+// built memoizes one compilation per target and file name for the life of the
+// test binary.
 //
 // The directory is deliberately not cleaned up per test: a t.Cleanup would
 // remove a binary other tests in the same package still hold, and the package
@@ -135,6 +138,13 @@ const (
 	// repository, so a build still in use is not taken.
 	unownedAge = 3 * time.Hour
 )
+
+// buildKey is what one compilation is memoized under: the program, and the
+// name its file is given.
+type buildKey struct {
+	target Target
+	name   string
+}
 
 type buildResult struct {
 	path string
@@ -184,7 +194,9 @@ func removeOwned() []error {
 	return failed
 }
 
-// Build compiles the target once per test binary and returns its path.
+// Build compiles the target once per test binary and returns its path. The
+// file is named after the last element of the target's import path, as `go
+// build` names it.
 //
 // Every caller of the same target in the same process gets the same file, and
 // parallel callers wait for the one compilation rather than starting their own.
@@ -200,20 +212,34 @@ func removeOwned() []error {
 // an id this process cannot see.
 func Build(c *qt.C, target Target) string {
 	c.Helper()
+	return BuildAs(c, target, filepath.Base(string(target)))
+}
+
+// BuildAs is [Build] for a program installed under another name. The file it
+// returns is called name, plus the platform's executable suffix, and name is a
+// file name rather than a path.
+//
+// The name is part of what a program does when it takes its command name from
+// argv[0]: ptah-compat installs as atlas, and then says atlas in its usage,
+// its errors and the completion scripts it writes. Each pair of target and
+// name compiles once per test binary.
+func BuildAs(c *qt.C, target Target, name string) string {
+	c.Helper()
 	c.Assert(mainRunning.Load(), qt.IsTrue, qt.Commentf(
 		"clirun.Build needs clirun.Main: call it from the package's TestMain, "+
 			"or the %s binary stays in the temp directory after the tests end", target))
 
-	memo, _ := built.LoadOrStore(target, sync.OnceValue(func() buildResult {
-		return compile(target)
+	key := buildKey{target: target, name: name}
+	memo, _ := built.LoadOrStore(key, sync.OnceValue(func() buildResult {
+		return compile(key)
 	}))
 	result := memo.(func() buildResult)()
 
-	c.Assert(result.err, qt.IsNil, qt.Commentf("build %s", target))
+	c.Assert(result.err, qt.IsNil, qt.Commentf("build %s as %s", target, name))
 	return result.path
 }
 
-func compile(target Target) buildResult {
+func compile(key buildKey) buildResult {
 	sweepOnce.Do(func() { sweep(os.TempDir(), time.Now()) })
 
 	dir, err := os.MkdirTemp("", dirPattern)
@@ -227,12 +253,12 @@ func compile(target Target) buildResult {
 	owned.Lock()
 	owned.dirs = append(owned.dirs, ownedDir{path: dir, owner: owner})
 	owned.Unlock()
-	path := filepath.Join(dir, filepath.Base(string(target))+exeext.Suffix)
+	path := filepath.Join(dir, key.name+exeext.Suffix)
 
 	// The build runs from the repository so `go build` resolves the module
 	// without depending on which package's directory the test happens to sit
 	// in.
-	cmd := exec.Command("go", "build", "-o", path, string(target))
+	cmd := exec.Command("go", "build", "-o", path, string(key.target))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return buildResult{err: errors.New(string(output))}

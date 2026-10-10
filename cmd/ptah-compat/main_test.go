@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/clirun"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrationfile"
@@ -22,6 +23,11 @@ import (
 // cached PASS here even though it changes the binary being built. Run
 // `go test ./cmd/ptah-compat/... -count=1` after touching the command tree, or
 // a mutation you expect to fail will silently report a stale PASS.
+
+// TestMain removes the binary the tests share once they have run.
+func TestMain(m *testing.M) {
+	clirun.Main(m)
+}
 
 func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 	c := qt.New(t)
@@ -540,14 +546,12 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	}
 }
 
+// buildCompatBinary is the compat binary installed as atlas, the name it takes
+// its command name from. It is compiled once for every test in this package
+// rather than once per test: linking it costs seconds, and more on Windows.
 func buildCompatBinary(c *qt.C) string {
 	c.Helper()
-	binPath := filepath.Join(c.TempDir(), "atlas"+testutils.ExecutableSuffix)
-	build := exec.Command("go", "build", "-o", binPath, ".")
-	build.Env = append(os.Environ(), "GOWORK=off")
-	buildOut, err := build.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", buildOut))
-	return binPath
+	return clirun.BuildAs(c, clirun.Compat, "atlas")
 }
 
 func newCompatProcess(binPath string, args ...string) *exec.Cmd {
