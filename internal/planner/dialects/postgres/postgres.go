@@ -1123,19 +1123,26 @@ func previousColumnNullable(change string) bool {
 }
 
 func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
+	// CASCADE drops the RLS policies that name the column. Spanner has no
+	// such policies and one drop mode: its PostgreSQL interface refuses the
+	// clause with "Only <RESTRICT> drop mode is supported", so the column
+	// removal could never run there (stokaro/ptah#4280).
+	cascade := p.targetDialect() != platform.Spanner
 	for _, column := range tableDiff.ColumnsRemoved {
-		// Generate DROP COLUMN statement using AST with CASCADE to handle dependencies
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
-			Cascade:    true, // Use CASCADE to automatically drop dependent RLS policies
+			Cascade:    cascade,
 		}
 		alterNode := &ast.AlterTableNode{
 			Name:       tableDiff.TableName,
 			Operations: []ast.AlterOperation{dropOp},
 		}
 		result = append(result, alterNode)
-		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s with CASCADE - This will delete data and dependent objects!", tableDiff.TableName, column.Name))
-		result = append(result, astCommentNode)
+		warning := fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, column.Name)
+		if cascade {
+			warning = fmt.Sprintf("WARNING: Dropping column %s.%s with CASCADE - This will delete data and dependent objects!", tableDiff.TableName, column.Name)
+		}
+		result = append(result, ast.NewComment(warning))
 	}
 	return result
 }
