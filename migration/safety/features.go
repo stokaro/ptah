@@ -1,6 +1,11 @@
 package safety
 
-import "ptah.run/core/schemaext"
+import (
+	"strings"
+
+	"ptah.run/core/schemaext"
+	"ptah.run/migration/schemadiff/difftypes"
+)
 
 // A diff report can precede planning. Use only consequences its owner has
 // already established; missing or invalid metadata requires the strongest
@@ -50,5 +55,24 @@ func accessCategory(access schemaext.Access) string {
 		return "feature_access_unchanged"
 	default:
 		return "feature_access_unknown"
+	}
+}
+
+// appendViewFeatureFindings reports the owner changes of a materialized view.
+// A view the plan replaces loses its rows whatever its settings' changes would
+// have done in place, so each change on it is as destructive as the
+// replacement; reported by its own effect, a schedule changed beside the
+// view's body read as one that keeps the rows (stokaro/ptah#4278). The
+// replacement says nothing about access, so an owner's access assessment is
+// reported as it is either way.
+func appendViewFeatureFindings(findings *[]Finding, view difftypes.MaterializedViewDiff) {
+	var own []Finding
+	appendFeatureFindings(&own, view.FeatureChanges)
+	replaced := view.Replaces()
+	for _, finding := range own {
+		if replaced && (finding.Category == "feature_changes" || strings.HasPrefix(finding.Category, "feature_changes:")) {
+			finding.Severity = Destructive
+		}
+		add(findings, finding.Category, finding.Count, finding.Severity)
 	}
 }

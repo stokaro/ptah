@@ -411,7 +411,11 @@ v0.13.0 ptah.run/core/renderer
 # IndexNode.Granularity is removed: a ClickHouse skipping index carries its
 # type and granularity in the owner's facet on IndexNode.Facets.
 # Callers wrap the owner payload in ExtensionAlterOperation. The common ALTER
-# interface remains sealed. This changes the Go API; pre-v1, so no compatibility
+# interface remains sealed. MatViewRefreshSpec, AlterMaterializedViewRefreshNode
+# and CreateMaterializedViewNode.Refresh are removed: a ClickHouse refresh
+# schedule is the owner's facet on CreateMaterializedViewNode.Facets, and a
+# changed schedule is chast.ModifyRefresh inside ExtensionAlterOperation.
+# This changes the Go API; pre-v1, so no compatibility
 # is owed. No aliases or legacy reader remain. The implementation follows the
 # user-authorized extraction and #4204's clean-break policy.
 v0.13.0 ptah.run/core/ast
@@ -470,6 +474,8 @@ v0.13.0 ptah.run/core/ast
 # Index.Granularity is removed. A ClickHouse skipping index declares its type
 # and granularity as platform properties that the selected owner decodes into
 # a facet; Index.Overrides carries those properties.
+# MaterializedView.Refresh is removed. A ClickHouse refresh schedule is the
+# owner's facet in MaterializedView.Facets.
 # This changes behavior; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.
 v0.13.0 ptah.run/core/schemamodel
@@ -478,9 +484,15 @@ v0.13.0 ptah.run/core/coverage
 # catalog no longer publishes a separate writable representation. Index.Type
 # and Index.Granularity, which only the ClickHouse reader filled, are removed
 # for the same reason: skipping-index settings are an observed index facet.
+# MaterializedView.Refresh is removed; the reader attaches the observed refresh
+# schedule as the owner's facet. Index.Expression is removed: it repeated
+# Columns[0] of a ClickHouse expression index, which carries the expression.
 v0.13.0 ptah.run/catalog
 # TableDeclarationFor moves to the neutral schemacapture.DeclareTable so
 # source projection and comparison share capture without a pipeline dependency.
+# MatViewRefreshChange and MaterializedViewDiff.RefreshChange are removed: a
+# changed refresh schedule is an owner change in
+# MaterializedViewDiff.FeatureChanges.
 v0.13.0 ptah.run/migration/schemadiff/difftypes
 # SchemaToAST takes a LoweringRuntime, which adds the target's source-property
 # owners to declaration planning, and decodes table and index properties before

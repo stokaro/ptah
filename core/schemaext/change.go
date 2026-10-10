@@ -16,6 +16,28 @@ type ChangeValue interface {
 	CloneChange() ChangeValue
 }
 
+// OwnerReplacement is implemented by a change value whose owner cannot apply it
+// while the common object the value is attached to survives. A host that
+// receives a change reporting true must replace that common object, dropping
+// and recreating it with its effective declaration, or refuse the change; it
+// must never plan the change as if the object could keep its state. A value
+// that does not implement the interface, or reports false, is applied in place
+// by its owner. The answer belongs to the change itself, so it survives
+// serialization and holds in the reverse direction as well.
+type OwnerReplacement interface {
+	ChangeValue
+	// ReplacesOwner reports whether applying the change requires replacing the
+	// common object it is attached to.
+	ReplacesOwner() bool
+}
+
+// ReplacesOwner reports whether value is an [OwnerReplacement] that requires
+// replacing its common object. Any other value, including nil, does not.
+func ReplacesOwner(value ChangeValue) bool {
+	replacement, ok := value.(OwnerReplacement)
+	return ok && replacement.ReplacesOwner()
+}
+
 // ChangeRecord associates a self-contained change with an individual subject.
 // A table-owned subject occurs in its table's changes, not also at database scope.
 type ChangeRecord struct {

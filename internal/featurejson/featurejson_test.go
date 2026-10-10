@@ -36,6 +36,16 @@ func ttlChange() schemaext.ChangeRecord {
 	return schemaext.ChangeRecord{Subject: subject, Value: &chdiff.Table{Before: before, After: after}}
 }
 
+// refreshChange is a ClickHouse refresh schedule change on materialized view
+// hourly, which a diff carries on the view rather than on a table.
+func refreshChange() schemaext.ChangeRecord {
+	subject := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "", "hourly")
+	return schemaext.ChangeRecord{Subject: subject, Value: &chdiff.Refresh{
+		Before: &chschema.ObservedRefresh{Schedule: chschema.Schedule{Mode: chschema.RefreshEvery, Interval: "1 HOUR"}},
+		After:  &chschema.DesiredRefresh{Schedule: chschema.Schedule{Mode: chschema.RefreshEvery, Interval: "2 HOUR", DependsOn: []string{"daily"}}},
+	}}
+}
+
 // coordinationChange is a YDB coordination node change, a standalone feature
 // object the diff carries at its own scope.
 func coordinationChange() schemaext.ChangeRecord {
@@ -49,6 +59,9 @@ func diffWithChanges() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		FeatureChanges: []schemaext.ChangeRecord{coordinationChange()},
 		TablesModified: []difftypes.TableDiff{{TableName: "events", FeatureChanges: []schemaext.ChangeRecord{ttlChange()}}},
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{
+			{ViewName: "hourly", Changes: make(map[string]string), FeatureChanges: []schemaext.ChangeRecord{refreshChange()}},
+		},
 	}
 }
 
@@ -61,6 +74,10 @@ type changesDocument struct {
 		TableName      string                   `json:"table_name"`
 		FeatureChanges []schemaext.ChangeRecord `json:"feature_changes"`
 	} `json:"tables_modified"`
+	MaterializedViewsModified []struct {
+		ViewName       string                   `json:"view_name"`
+		FeatureChanges []schemaext.ChangeRecord `json:"feature_changes"`
+	} `json:"materialized_views_modified"`
 }
 
 // Owner changes are written as envelopes naming the owner, the namespaced
@@ -78,6 +95,9 @@ func TestMarshal_EncodesOwnerChangesThroughTheirCodecs(t *testing.T) {
 		TablesModified []struct {
 			FeatureChanges []schemaext.EncodedChange `json:"feature_changes"`
 		} `json:"tables_modified"`
+		MaterializedViewsModified []struct {
+			FeatureChanges []schemaext.EncodedChange `json:"feature_changes"`
+		} `json:"materialized_views_modified"`
 	}
 	c.Assert(json.Unmarshal(data, &raw), qt.IsNil)
 	c.Assert(raw.FeatureChanges[0].Value.Kind, qt.Equals, ydbdiff.CoordinationNodeKind)
@@ -86,12 +106,17 @@ func TestMarshal_EncodesOwnerChangesThroughTheirCodecs(t *testing.T) {
 	c.Assert(raw.FeatureChanges[0].Subject, qt.DeepEquals, coordinationChange().Subject)
 	c.Assert(raw.TablesModified[0].FeatureChanges[0].Value.Kind, qt.Equals, chdiff.TableKind)
 	c.Assert(raw.TablesModified[0].FeatureChanges[0].Value.Representation, qt.Equals, schemaext.Change)
+	c.Assert(raw.MaterializedViewsModified[0].FeatureChanges[0].Value.Kind, qt.Equals, chdiff.RefreshKind)
+	c.Assert(raw.MaterializedViewsModified[0].FeatureChanges[0].Value.Owner, qt.Equals, "ptah.run/clickhouse")
+	c.Assert(raw.MaterializedViewsModified[0].FeatureChanges[0].Subject, qt.DeepEquals, refreshChange().Subject)
 
 	var read changesDocument
 	c.Assert(featurejson.Unmarshal(t.Context(), codecs(), schemaext.Desired, data, &read), qt.IsNil)
 	c.Assert(read.FeatureChanges, qt.DeepEquals, diff.FeatureChanges)
 	c.Assert(read.TablesModified[0].TableName, qt.Equals, "events")
 	c.Assert(read.TablesModified[0].FeatureChanges, qt.DeepEquals, diff.TablesModified[0].FeatureChanges)
+	c.Assert(read.MaterializedViewsModified[0].ViewName, qt.Equals, "hourly")
+	c.Assert(read.MaterializedViewsModified[0].FeatureChanges, qt.DeepEquals, diff.MaterializedViewsModified[0].FeatureChanges)
 }
 
 // Everything that is not feature data is written exactly as encoding/json

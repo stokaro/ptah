@@ -1519,7 +1519,9 @@ type View struct {
 // definition is reconciled as DROP and CREATE, and it goes stale only when its
 // source data changes -- which a schema comparison cannot observe. See
 // [ptah.run/internal/matviewrefresh] for the whole reasoning and the
-// refusal a declaration of the retired attribute gets (stokaro/ptah#1625).
+// refusal a declaration of the retired attribute gets (stokaro/ptah#1625). A
+// schedule an engine stores with the view, such as a ClickHouse REFRESH
+// EVERY|AFTER clause, is a setting of that engine's owner in Facets.
 type MaterializedView struct {
 	// Facets carries typed settings owned by feature providers.
 	Facets     schemaext.Facets `json:"facets,omitzero"`
@@ -1532,16 +1534,6 @@ type MaterializedView struct {
 	// its body mentions. See [ptah.run/internal/deporder.ViewLike] for what a
 	// declared edge answers that a scan of the body cannot.
 	DependsOn []string `json:",omitempty"`
-
-	// Refresh is the ClickHouse refresh schedule this view declares, nil for
-	// one declaring none -- which is every materialized view on every other
-	// dialect, and the ordinary ClickHouse one.
-	//
-	// It carries the ast type rather than a copy of it, for the reason
-	// [Table.YDBColumnFamilies] carries its own: the clauses are a closed,
-	// measured set, and a per-layer duplicate is a place for one of them to go
-	// missing between the declaration and the statement (stokaro/ptah#1802).
-	Refresh *ast.MatViewRefreshSpec
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].

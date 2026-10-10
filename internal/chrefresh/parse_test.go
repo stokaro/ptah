@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/chrefresh"
 )
 
@@ -93,7 +93,7 @@ var storedRefresh = regexp.MustCompile(` REFRESH (.*?) \(` + "`")
 // For each captured statement the parser must produce a schedule whose rendered
 // clause is byte-identical to the one the server printed. Rendering the parse
 // rather than comparing fields is deliberate: it exercises the parser and
-// [chrefresh.Clause] against each other, so a clause dropped by one and never
+// [chschema.Schedule.Clause] against each other, so a clause dropped by one and never
 // emitted by the other cannot pass.
 func TestParseCreateQuery_ReadsBackEveryStoredClause(t *testing.T) {
 	c := qt.New(t)
@@ -105,7 +105,7 @@ func TestParseCreateQuery_ReadsBackEveryStoredClause(t *testing.T) {
 			spec := chrefresh.ParseCreateQuery(view.statement)
 
 			c.Assert(spec, qt.IsNotNil)
-			c.Assert(chrefresh.Clause(spec), qt.Equals, view.clause)
+			c.Assert(spec.Clause(), qt.Equals, view.clause)
 		})
 	}
 }
@@ -168,31 +168,110 @@ func TestParseCreateQuery_SeparatesPlainFromRefreshable(t *testing.T) {
 	}
 }
 
-// TestParseClause_RefusesWhatItCannotRead is the fail-closed direction.
-//
-// A clause this parser only half understands must read as no schedule at all. A
-// partial one would be worse than none: the comparison would plan a change to
-// make the view match a schedule it already has, forever.
+// TestParseClause_RefusesWhatItCannotRead is the fail-closed direction for a
+// declaration: a clause this parser only half understands is refused with the
+// reason, never read as a different schedule. A partial one would plan a
+// change to a view that already has what was declared, forever, or drop a
+// clause the author wrote (stokaro/ptah#1802).
 func TestParseClause_RefusesWhatItCannotRead(t *testing.T) {
 	tests := []struct {
 		name   string
 		clause string
+		want   string
 	}{
-		{name: "empty", clause: ""},
-		{name: "mode alone", clause: "EVERY"},
-		{name: "mode Ptah does not know", clause: "SOMETIMES 1 HOUR"},
-		{name: "interval that is not one", clause: "EVERY soon"},
-		{name: "a clause added after this was written", clause: "EVERY 1 HOUR SETTINGS x = 1"},
-		{name: "unit Ptah does not know", clause: "EVERY 1 FORTNIGHT"},
+		{name: "empty", clause: "", want: `refresh clause is empty.*`},
+		{name: "mode alone", clause: "EVERY", want: `refresh EVERY needs an interval.*`},
+		{name: "mode Ptah does not know", clause: "SOMETIMES 1 HOUR", want: `refresh clause starts with "SOMETIMES".*`},
+		{name: "interval that is not one", clause: "EVERY soon", want: `refresh EVERY needs an interval.*`},
+		{name: "unit Ptah does not know", clause: "EVERY 1 FORTNIGHT", want: `refresh EVERY needs an interval.*`},
+		{name: "settings, which are not modeled", clause: "EVERY 1 HOUR SETTINGS refresh_retries = 3", want: `refresh "EVERY 1 HOUR SETTINGS refresh_retries = 3": refresh SETTINGS is not modeled`},
+		{name: "offset with no interval", clause: "every 1 hour offset", want: `refresh OFFSET needs an interval.*`},
+		{name: "randomize with no interval", clause: "every 1 hour randomize for", want: `refresh RANDOMIZE FOR needs an interval.*`},
+		{name: "depends on nothing", clause: "every 1 hour depends on", want: `refresh DEPENDS ON needs a view name`},
+		{name: "depends on a trailing comma", clause: "every 1 hour depends on a,", want: `refresh DEPENDS ON needs a view name`},
+		{name: "a repeated offset", clause: "every 1 day offset 1 hour offset 2 hour", want: `refresh OFFSET is repeated or out of order.*`},
+		{name: "clauses out of order", clause: "every 1 hour depends on a randomize for 5 minute", want: `refresh RANDOMIZE FOR is repeated or out of order.*`},
+		{name: "a repeated append", clause: "every 1 hour append append", want: `refresh APPEND is repeated or out of order.*`},
+		{name: "a target table", clause: "every 1 hour to db.t", want: `refresh TO names where a view writes, not when it refreshes`},
+		{name: "a word that opens no clause", clause: "every 1 hour hourly", want: `refresh clause has "hourly" where a clause was expected`},
+		{name: "an unterminated quote", clause: "every 1 hour depends on `a", want: `refresh clause has an unterminated .*`},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(chrefresh.ParseClause(test.clause), qt.IsNil)
+			spec, err := chrefresh.ParseClause(test.clause)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(spec, qt.IsNil)
 		})
 	}
+}
+
+// TestParseClause_ReadsEveryClauseOfTheGrammar is the acceptance control for
+// the refusals above: every clause, in either case, reads into the schedule.
+func TestParseClause_ReadsEveryClauseOfTheGrammar(t *testing.T) {
+	c := qt.New(t)
+
+	spec, err := chrefresh.ParseClause("every 1 day offset 2 hour randomize for 30 minute depends on a, db.`b c` append")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(spec, qt.DeepEquals, &chschema.Schedule{
+		Mode: "EVERY", Interval: "1 DAY", Offset: "2 HOUR", Randomize: "30 MINUTE",
+		DependsOn: []string{"a", "db.`b c`"}, Append: true,
+	})
+}
+
+// clauseShape is one statement of testdata/clause_shapes.tsv.
+type clauseShape struct {
+	version, clause, statement string
+}
+
+// clauseShapes reads the statements captured on each declared server line:
+// every clause the grammar allows, with a target table, refresh settings and
+// a quoted name among them.
+func clauseShapes(c *qt.C) []clauseShape {
+	c.Helper()
+	raw, err := os.ReadFile("testdata/clause_shapes.tsv")
+	c.Assert(err, qt.IsNil)
+	var shapes []clauseShape
+	for line := range strings.SplitSeq(strings.TrimSpace(string(raw)), "\n") {
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.SplitN(line, "\t", 3)
+		c.Assert(fields, qt.HasLen, 3)
+		shapes = append(shapes, clauseShape{version: fields[0], clause: fields[1], statement: fields[2]})
+	}
+	c.Assert(len(shapes) >= 24, qt.IsTrue, qt.Commentf("%d shapes", len(shapes)))
+	return shapes
+}
+
+// TestParseCreateQuery_ReadsEveryMeasuredShape reads each captured statement.
+// A clause stops where the server's grammar says it does, so a TO target,
+// refresh SETTINGS or APPEND are never read into a dependency name; a clause
+// with SETTINGS, which Ptah does not model, reads as no schedule, which the
+// reader reports as one it could not read (stokaro/ptah#4278).
+func TestParseCreateQuery_ReadsEveryMeasuredShape(t *testing.T) {
+	c := qt.New(t)
+	for _, shape := range clauseShapes(c) {
+		t.Run(shape.version+" "+shape.clause, func(t *testing.T) {
+			c := qt.New(t)
+
+			spec := chrefresh.ParseCreateQuery(shape.statement)
+
+			c.Assert(scheduleClause(spec), qt.Equals, shape.clause, qt.Commentf("%s", shape.statement))
+		})
+	}
+}
+
+// scheduleClause renders a parsed schedule, or - for none.
+func scheduleClause(spec *chschema.Schedule) string {
+	if spec == nil {
+		return "-"
+	}
+	return spec.Clause()
 }
 
 // TestCanonical_NormalizesADeclarationTheWayTheServerWouldStoreIt is the write
@@ -201,41 +280,41 @@ func TestParseClause_RefusesWhatItCannotRead(t *testing.T) {
 func TestCanonical_NormalizesADeclarationTheWayTheServerWouldStoreIt(t *testing.T) {
 	tests := []struct {
 		name     string
-		declared *ast.MatViewRefreshSpec
+		declared *chschema.Schedule
 		schema   string
 		want     string
 	}{
 		{
 			name:     "interval is canonicalized",
-			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "60 MINUTE"},
+			declared: &chschema.Schedule{Mode: "EVERY", Interval: "60 MINUTE"},
 			want:     "EVERY 1 HOUR",
 		},
 		{
 			name:     "mode is upper-cased",
-			declared: &ast.MatViewRefreshSpec{Mode: "every", Interval: "1 HOUR"},
+			declared: &chschema.Schedule{Mode: "every", Interval: "1 HOUR"},
 			want:     "EVERY 1 HOUR",
 		},
 		{
 			name:     "offset is canonicalized too",
-			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 DAY", Offset: "120 MINUTE"},
+			declared: &chschema.Schedule{Mode: "EVERY", Interval: "1 DAY", Offset: "120 MINUTE"},
 			want:     "EVERY 1 DAY OFFSET 2 HOUR",
 		},
 		{
 			name:     "randomize is canonicalized too",
-			declared: &ast.MatViewRefreshSpec{Mode: "AFTER", Interval: "1 HOUR", Randomize: "600 SECOND"},
+			declared: &chschema.Schedule{Mode: "AFTER", Interval: "1 HOUR", Randomize: "600 SECOND"},
 			want:     "AFTER 1 HOUR RANDOMIZE FOR 10 MINUTE",
 		},
 		{
 			// The server stores a dependency schema-qualified, so a comparison
 			// against what it stored has to start there.
 			name:     "dependencies are qualified",
-			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"mv_every"}},
+			declared: &chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"mv_every"}},
 			schema:   "ptah_test",
 			want:     "EVERY 1 HOUR DEPENDS ON ptah_test.mv_every",
 		},
 		{
 			name: "a dependency that already names a schema keeps it",
-			declared: &ast.MatViewRefreshSpec{
+			declared: &chschema.Schedule{
 				Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"other.mv"},
 			},
 			schema: "ptah_test",
@@ -243,7 +322,7 @@ func TestCanonical_NormalizesADeclarationTheWayTheServerWouldStoreIt(t *testing.
 		},
 		{
 			name: "every clause at once, in the order the server prints",
-			declared: &ast.MatViewRefreshSpec{
+			declared: &chschema.Schedule{
 				Mode: "EVERY", Interval: "1 DAY", Offset: "2 HOUR",
 				Randomize: "30 MINUTE", DependsOn: []string{"mv_every"}, Append: true,
 			},
@@ -259,7 +338,7 @@ func TestCanonical_NormalizesADeclarationTheWayTheServerWouldStoreIt(t *testing.
 			canonical, err := chrefresh.Canonical(test.declared, test.schema)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(chrefresh.Clause(canonical), qt.Equals, test.want)
+			c.Assert(canonical.Clause(), qt.Equals, test.want)
 		})
 	}
 }
@@ -270,7 +349,7 @@ func TestCanonical_RefusesOffsetOnAfter(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := chrefresh.Canonical(
-		&ast.MatViewRefreshSpec{Mode: "AFTER", Interval: "1 HOUR", Offset: "5 MINUTE"}, "")
+		&chschema.Schedule{Mode: "AFTER", Interval: "1 HOUR", Offset: "5 MINUTE"}, "")
 
 	c.Assert(err, qt.ErrorMatches, `refresh OFFSET belongs to EVERY and this schedule is AFTER`)
 }
@@ -292,65 +371,8 @@ func TestCanonical_RoundTripsThroughTheParser(t *testing.T) {
 			// two compare equal. Anything else means a view read back from the
 			// database would differ from itself.
 			c.Assert(err, qt.IsNil)
-			c.Assert(chrefresh.Clause(canonical), qt.Equals, view.clause)
-			c.Assert(chrefresh.Equal(parsed, canonical), qt.IsTrue)
-		})
-	}
-}
-
-func TestEqual(t *testing.T) {
-	tests := []struct {
-		name string
-		a    *ast.MatViewRefreshSpec
-		b    *ast.MatViewRefreshSpec
-		want bool
-	}{
-		{name: "both absent", want: true},
-		{
-			name: "one absent",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			want: false,
-		},
-		{
-			name: "same",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			want: true,
-		},
-		{
-			name: "different interval",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "2 HOUR"},
-			want: false,
-		},
-		{
-			// EVERY and AFTER with the same interval are different schedules:
-			// one is wall-clock, the other counts from the previous run.
-			name: "different mode",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			b:    &ast.MatViewRefreshSpec{Mode: "AFTER", Interval: "1 HOUR"},
-			want: false,
-		},
-		{
-			name: "different dependencies",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"a"}},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", DependsOn: []string{"b"}},
-			want: false,
-		},
-		{
-			name: "different append",
-			a:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR", Append: true},
-			b:    &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
-			want: false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(chrefresh.Equal(test.a, test.b), qt.Equals, test.want)
-			c.Assert(chrefresh.Equal(test.b, test.a), qt.Equals, test.want)
+			c.Assert(canonical.Clause(), qt.Equals, view.clause)
+			c.Assert(parsed.Equal(*canonical), qt.IsTrue)
 		})
 	}
 }

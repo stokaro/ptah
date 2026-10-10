@@ -88,8 +88,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.keyed(capability.MaterializedViews, "materialized view", "DROP MATERIALIZED VIEW "+n.Name)
 	case *ast.RefreshMaterializedViewNode:
 		return r.keyed(capability.MaterializedViews, "materialized view", "REFRESH MATERIALIZED VIEW "+n.Name)
-	case *ast.AlterMaterializedViewRefreshNode:
-		return r.keyed(capability.MaterializedViews, "materialized view", "the refresh schedule of "+n.Name)
 
 	// Routines and triggers do not exist.
 	case *ast.CreateFunctionNode:

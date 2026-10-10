@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/core/featureplan"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 )
@@ -21,7 +22,12 @@ func (r *Runtime) validateDeclarationReply(ctx context.Context, service int, req
 		return featureplan.DeclarationResult{}, fmt.Errorf("%w: declaration planning changed the result count", schemaext.ErrInvalidValue)
 	}
 	owner := r.declarationServices[service]
-	contributions, steps, err := r.snapshotPlanningContributions(ctx, owner.owner, owner.OperationKinds, declarationTables(request), reply.Contributions)
+	tables := declarationTables(request)
+	parents := make([]objectidentity.ID, 0, len(tables))
+	for _, table := range tables {
+		parents = append(parents, table.Subject)
+	}
+	contributions, steps, err := r.snapshotPlanningContributions(ctx, owner.owner, owner.OperationKinds, parents, reply.Contributions)
 	if err != nil {
 		return featureplan.DeclarationResult{}, err
 	}

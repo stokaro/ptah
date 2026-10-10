@@ -104,6 +104,24 @@ func TestCollectDatabase_PreservesTableFacetsOnEveryTarget(t *testing.T) {
 	}
 }
 
+// A materialized view's facets travel on its CREATE MATERIALIZED VIEW, where
+// the selected renderer interprets a setting the statement states inline, such
+// as a refresh schedule, or refuses it.
+func TestCollectDatabase_PreservesMaterializedViewFacets(t *testing.T) {
+	c := qt.New(t)
+	facets := must.Must(schemaext.NewFacets(&loweringValue{Name: "view settings"}))
+	database := schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
+		Name: "analytics.daily", StructName: "Daily", Body: "SELECT 1", Facets: must.Must(facets.WithTargetScope(loweringKind, "external")),
+	}}}
+	list, err := modelast.CollectDatabase(database, "clickhouse", modelast.Lowering{Context: context.Background()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(list.Statements, qt.HasLen, 1)
+	view, ok := list.Statements[0].(*ast.CreateMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(view.Facets, qt.DeepEquals, database.MaterializedViews[0].Facets)
+	c.Assert(view.Facets.TargetScope(loweringKind), qt.DeepEquals, []string{"external"})
+}
+
 func TestCollectDatabase_PreservesExcludedTableFacetBindings(t *testing.T) {
 	c := qt.New(t)
 	database := loweringFeatureFixture("postgres")
@@ -182,10 +200,11 @@ func TestCollectDatabase_RefusesUnloweredFacetsBeforeVisiting(t *testing.T) {
 	database := unloweredFacetsFixture()
 	slots := loweringFacetSlots(reflect.ValueOf(&database).Elem())
 	c.Assert(len(slots) >= 16, qt.IsTrue)
+	lowered := []uintptr{reflect.ValueOf(&database.Tables[0].Facets).Pointer(), reflect.ValueOf(&database.MaterializedViews[0].Facets).Pointer()}
 	unsupported := slices.DeleteFunc(slices.Clone(slots), func(slot reflect.Value) bool {
-		return slot.Addr().Pointer() == reflect.ValueOf(&database.Tables[0].Facets).Pointer()
+		return slices.Contains(lowered, slot.Addr().Pointer())
 	})
-	c.Assert(unsupported, qt.HasLen, len(slots)-1)
+	c.Assert(unsupported, qt.HasLen, len(slots)-len(lowered))
 	for i, chosen := range unsupported {
 		t.Run(fmt.Sprintf("slot-%d", i), func(t *testing.T) {
 			c := qt.New(t)

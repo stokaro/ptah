@@ -529,7 +529,13 @@ func prepareCreateMaterializedViewNode(
 			Message: "materialized view node is nil",
 		}
 	}
-	return new(*node), nil
+	facets, err := prepareMaterializedViewFacets(dialect, node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	cloned := *node
+	cloned.Facets = facets
+	return &cloned, nil
 }
 
 func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.ExtensionNode, error) {

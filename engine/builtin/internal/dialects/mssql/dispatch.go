@@ -104,8 +104,6 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderCreateMaterializedView(n)
 	case *ast.DropMaterializedViewNode:
 		return r.renderDropMaterializedView(n)
-	case *ast.AlterMaterializedViewRefreshNode:
-		return r.renderAlterMaterializedViewRefresh(n)
 	case *ast.RefreshMaterializedViewNode:
 		return r.renderRefreshMaterializedView(n)
 	case *ast.CreateTriggerNode:

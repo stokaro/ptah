@@ -1616,9 +1616,9 @@ func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterial
 	node := ast.NewCreateMaterializedView(view.Name).
 		SetBody(view.Body).
 		SetComment(view.Comment)
-	// Cloned rather than shared: a node handed to a renderer must not be a
-	// window onto the schema it came from (stokaro/ptah#1802).
-	node.Refresh = view.Refresh.Clone()
+	// Facets keep immutable value ownership, so the node holds the same
+	// collection; the selected renderer interprets or refuses it.
+	node.Facets = view.Facets
 	return node
 }
 
@@ -2071,7 +2071,8 @@ func WalkDatabase(
 	if visit == nil {
 		return fmt.Errorf("walk database schema: nil visitor")
 	}
-	if err := validateFeatureLowering(database, targetPlatform); err != nil {
+	notes, err := validateFeatureLowering(database, targetPlatform)
+	if err != nil {
 		return err
 	}
 	if lowering.Context == nil {
@@ -2079,6 +2080,11 @@ func WalkDatabase(
 	}
 	if err := lowering.Context.Err(); err != nil {
 		return err
+	}
+	for _, note := range notes {
+		if err := visit(note); err != nil {
+			return err
+		}
 	}
 	if err := walkDeclarations(database, targetPlatform, lowering, func(node ast.Node) error {
 		if err := lowering.Context.Err(); err != nil {

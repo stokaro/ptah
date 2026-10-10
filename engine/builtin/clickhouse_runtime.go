@@ -16,23 +16,25 @@ import (
 	"ptah.run/engine"
 )
 
-// registerClickHouseServices assembles the ClickHouse owner. Table storage and
-// skipping-index settings register their source, comparison, planning,
-// reversal and reporting services together, so no stage can accept a model
-// another stage would refuse or ignore.
+// registerClickHouseServices assembles the ClickHouse owner. Table storage,
+// skipping-index settings and materialized view refresh schedules register
+// their comparison, planning, reversal and reporting services together, so no
+// stage can accept a model another stage would refuse or ignore.
 func registerClickHouseServices(provider *engine.Provider, name string) {
 	provider.Targets[0].Preparation = chprepare.Service{}
 	provider.Targets[0].Creations = chprepare.Service{}
 	provider.Codecs = append(provider.Codecs, chschema.Codecs()...)
 	provider.Codecs = append(provider.Codecs, chschema.IndexCodecs()...)
+	provider.Codecs = append(provider.Codecs, chschema.RefreshCodecs()...)
 	provider.Codecs = append(provider.Codecs, chdiff.Codecs()...)
 	provider.Codecs = append(provider.Codecs, chdiff.IndexCodecs()...)
+	provider.Codecs = append(provider.Codecs, chdiff.RefreshCodecs()...)
 	provider.Codecs = append(provider.Codecs, chast.Codecs()...)
 	provider.Properties = []engine.PropertySource{
 		{Target: name, Format: schemaext.TablePlatformProperties, Definitions: chsource.Definitions(), Service: chsource.Service{}},
 		{Target: name, Format: schemaext.IndexPlatformProperties, Definitions: chsource.IndexDefinitions(), Service: chsource.IndexService{}},
 	}
-	provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{chschema.TableKind, chschema.IndexKind}, Service: chconvert.Service{}}}
+	provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{chschema.TableKind, chschema.IndexKind, chschema.RefreshKind}, Service: chconvert.Service{}}}
 	provider.FacetComparisons = []engine.FacetComparison{
 		{
 			Target: name, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable},
@@ -41,6 +43,10 @@ func registerClickHouseServices(provider *engine.Provider, name string) {
 		{
 			Target: name, OwnerKinds: []objectidentity.Kind{objectidentity.KindIndex},
 			Kinds: []schemaext.Kind{chschema.IndexKind}, ChangeKinds: []schemaext.Kind{chdiff.IndexKind}, Service: chcompare.IndexService{},
+		},
+		{
+			Target: name, OwnerKinds: []objectidentity.Kind{objectidentity.KindMatView},
+			Kinds: []schemaext.Kind{chschema.RefreshKind}, ChangeKinds: []schemaext.Kind{chdiff.RefreshKind}, Service: chcompare.RefreshService{},
 		},
 	}
 	provider.Planning = []engine.Planning{
@@ -52,15 +58,21 @@ func registerClickHouseServices(provider *engine.Provider, name string) {
 			Target: name, Kinds: []schemaext.Kind{chdiff.IndexKind}, ParentKinds: []schemaext.Kind{chschema.IndexKind},
 			OperationKinds: []schemaext.Kind{chast.DropSkippingIndexKind, chast.AddSkippingIndexKind}, Service: chplan.IndexService{},
 		},
+		{
+			Target: name, Kinds: []schemaext.Kind{chdiff.RefreshKind},
+			OperationKinds: []schemaext.Kind{chast.ModifyRefreshKind}, Service: chplan.RefreshService{},
+		},
 	}
 	provider.Reversals = []engine.Reversal{
 		{Target: name, Kinds: []schemaext.Kind{chdiff.TableKind}, Service: chreverse.Service{}},
 		{Target: name, Kinds: []schemaext.Kind{chdiff.IndexKind}, Service: chreverse.IndexService{}},
+		{Target: name, Kinds: []schemaext.Kind{chdiff.RefreshKind}, Service: chreverse.RefreshService{}},
 	}
 	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 		provider.Reporting = append(provider.Reporting,
 			engine.Reporting{Representation: representation, Definitions: chreport.Definitions(), Service: chreport.Service{}},
 			engine.Reporting{Representation: representation, Definitions: chreport.IndexDefinitions(), Service: chreport.IndexService{}},
+			engine.Reporting{Representation: representation, Definitions: chreport.RefreshDefinitions(), Service: chreport.RefreshService{}},
 		)
 	}
 }

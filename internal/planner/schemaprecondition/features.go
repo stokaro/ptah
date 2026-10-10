@@ -22,5 +22,20 @@ func RefuseFeatureChanges(dialect string, diff *difftypes.SchemaDiff) error {
 			return fmt.Errorf("%w: the %s planner has no feature handler for %s", ptaherr.ErrUnsupportedFeature, dialect, table.FeatureChanges[0].Subject)
 		}
 	}
+	return RefuseMaterializedViewFeatureChanges(dialect, diff)
+}
+
+// RefuseMaterializedViewFeatureChanges is the same boundary for the settings
+// attached to materialized views, for a planner that dispatches table and
+// standalone feature changes but has no owner for a view's.
+func RefuseMaterializedViewFeatureChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	for _, view := range diff.MaterializedViewsModified {
+		if len(view.FeatureChanges) > 0 {
+			return fmt.Errorf("%w: the %s planner has no feature handler for %s", ptaherr.ErrUnsupportedFeature, dialect, view.FeatureChanges[0].Subject)
+		}
+	}
 	return nil
 }

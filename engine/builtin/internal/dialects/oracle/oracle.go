@@ -646,10 +646,6 @@ func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 }
 
 func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	// Refreshing is an operation on this target rather than a property of the
-	// view: there is no clause here that could schedule one, so a declared
-	// schedule reaches the output nowhere and the view is populated once.
-	r.sink.RecordLostRefresh(node.Name, node.Refresh)
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -679,10 +675,6 @@ func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedVi
 	}
 	r.w.WriteLinef("BEGIN DBMS_MVIEW.REFRESH(%s); END;", escapeStringLiteral(node.Name))
 	return nil
-}
-
-func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
-	return unsupportedFeaturef("ALTER MATERIALIZED VIEW %s: changing a refresh policy is not rendered for Oracle", node.Name)
 }
 
 // renderCreateTrigger renders the trigger header; the body is PL/SQL the

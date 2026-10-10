@@ -52,6 +52,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/tableref"
 )
 
 // Kind names the object family an identity belongs to.
@@ -368,6 +369,17 @@ func (b Builder) SchemaScopedParts(kind Kind, schema, name string) ID {
 		Schema: b.schemaPart(strings.TrimSpace(schema)),
 		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
+}
+
+// SchemaScoped builds a schema-scoped identity from a declared name that may
+// carry its schema, such as `analytics.daily` for a materialized view. A name
+// that does not read as schema-qualified, including one whose own quoted text
+// contains a dot, is the object's name in the default schema.
+func (b Builder) SchemaScoped(kind Kind, qualified string) ID {
+	if ref, valid := tableref.Parse(qualified); valid {
+		return b.SchemaScopedParts(kind, ref.Schema, ref.Name)
+	}
+	return b.SchemaScopedParts(kind, "", qualified)
 }
 
 // Policy builds the identity of a row-level-security policy.

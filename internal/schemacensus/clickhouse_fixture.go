@@ -39,3 +39,18 @@ func indexClickHouseSettingsFixture() schemamodel.Database {
 	}}
 	return db
 }
+
+// matViewRefreshFixture declares a materialized view's refresh schedule as the
+// owner's typed facet, every clause set, so the census measures each one.
+func matViewRefreshFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	schedule := &chschema.DesiredRefresh{Schedule: chschema.Schedule{
+		Mode: chschema.RefreshEvery, Interval: "1 HOUR", Offset: "5 MINUTE",
+		Randomize: "1 MINUTE", Append: true, DependsOn: []string{"other"},
+	}}
+	db.MaterializedViews = []schemamodel.MaterializedView{{
+		StructName: "MV", Name: "daily", Body: "SELECT id FROM t",
+		Facets: must.Must(must.Must(schemaext.NewFacets(schedule)).WithTargetScope(chschema.RefreshKind, "clickhouse")),
+	}}
+	return db
+}

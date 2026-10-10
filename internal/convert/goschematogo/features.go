@@ -40,7 +40,16 @@ func (ctx *renderContext) captureFeatureObjects() error {
 	for i := range ctx.db.Tables {
 		tables[&ctx.db.Tables[i].Facets] = true
 	}
+	// A materialized view's refresh schedule is its `refresh` attribute, and
+	// Render has refused any other view setting already.
+	views := make(map[*schemaext.Facets]bool, len(ctx.db.MaterializedViews))
+	for i := range ctx.db.MaterializedViews {
+		views[&ctx.db.MaterializedViews[i].Facets] = true
+	}
 	for _, facets := range ctx.db.FacetSlots() {
+		if views[facets] {
+			continue
+		}
 		for _, kind := range facets.DeclaredKinds() {
 			if tables[facets] && isTimescaleFacet(kind) && slices.Contains(facets.Kinds(), kind) {
 				continue

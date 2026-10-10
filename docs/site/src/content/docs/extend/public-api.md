@@ -201,10 +201,15 @@ neither changes nor diagnostics, even with complete coverage.
 
 `Runtime.CompareFeatures` validates named objects and facets before dispatch,
 discarding output if either comparison fails. Replies set `Complete`. The
-migration comparator applies effective table/index facets before capturing common
-changes; index identity follows the target's table or schema namespace. Other
-attachment points refuse until identity capture exists. Registering providers
-never enrolls source coverage.
+migration comparator applies effective table, index and materialized view
+facets before capturing common changes; index identity follows the target's
+table or schema namespace. Other attachment points refuse until identity
+capture exists. Registering providers never enrolls source coverage.
+
+A change value implementing `schemaext.OwnerReplacement` says it needs its
+owner replaced. The comparator replaces a materialized view for it and refuses
+it on a table or an index. `MaterializedViewDiff.FeatureChanges` carries view
+changes, and `Replaces` reports whether the entry is a drop and a create.
 
 Comparison binds table and index coverage to connection identifiers and the default
 database; reverse CREATE projection binds table coverage. Binding preserves explicit
@@ -285,6 +290,13 @@ handlers outside transactions. Wrap them in `ast.ExtensionAlterOperation` under
 what they cannot recover: expired TTL data and materialized index data. Their
 state projections feed reverse planning without claiming new inspection.
 
+`chschema.DesiredRefresh` and `ObservedRefresh` hold a materialized view's
+refresh schedule. `chsource.RefreshFacets` reads a Go annotation's clause in
+the spelling the server stores. `chcompare.RefreshService` adopts a schedule an
+undescribing source leaves unmanaged; `chdiff.Refresh` replaces the view when a
+schedule or its `APPEND` is gained or lost. `chplan.RefreshService` plans any
+other change as `chast.ModifyRefresh` in the ALTER envelope naming the view.
+
 `chresolve.Table` and `chresolve.Index` retain declarations, resolved settings,
 and property origins. Existing objects require observations for omitted settings.
 On creation, a default primary key inherits the sorting key; skipping indexes
@@ -319,9 +331,10 @@ document's creation rules before projecting it into catalog form. This
 prediction preserves explicit knowledge limits and proves no inspection or
 execution.
 
-The ClickHouse reader supplies observed table and index facets; table coverage
-is limited to retained tables. `chreport.Service` and `IndexService` supply
-counts and omission labels. The bundled runtime registers every service above.
+The ClickHouse reader supplies observed table, index and refresh facets; table
+coverage is limited to retained tables. `chreport.Service`, `IndexService` and
+`RefreshService` supply counts and omission labels. The bundled runtime
+registers every service above.
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.

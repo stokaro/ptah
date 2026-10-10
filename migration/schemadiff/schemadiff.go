@@ -136,11 +136,7 @@ func compareReportingUndecidedAdditions(
 	}
 	desired, diff.TablePreparation = prepared.desired, prepared.capture
 
-	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, opts.FeatureRequests, runtime)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	desired, err = effectiveFeatureState(desired, featureResult.Desired, opts.Dialect, identifierSemantics)
+	featureResult, desired, err := compareEffectiveFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, opts.FeatureRequests, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -214,6 +210,9 @@ func compareReportingUndecidedAdditions(
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(desired, database, diff, cov)
 	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
+	if err := attachMaterializedViewChanges(diff, desired, database, comparisonChanges(featureResult), identifierSemantics); err != nil {
+		return nil, Diagnostics{}, err
+	}
 	compare.TriggersWithSemanticsAndConditions(desired, database, diff, identifierSemantics, opts.TriggerConditions, caps)
 
 	// Compare RLS policies (PostgreSQL-specific feature)

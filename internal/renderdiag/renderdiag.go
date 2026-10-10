@@ -517,25 +517,7 @@ const (
 	// ordinary table where the author declared a partitioned one, so every row
 	// lands in the same place and a partition-wise plan is not available.
 	PartitionProperty = "partition"
-	// RefreshProperty is a materialized view's refresh schedule. A target that
-	// drops it creates a view that is populated once and never again, which
-	// reads as stale data rather than as a missing clause.
-	RefreshProperty = "refresh schedule"
 )
-
-// RecordLostRefresh records a materialized view's refresh schedule the target
-// does not carry. A view declaring none records nothing.
-//
-// A view created without it is populated once and never again, which reaches
-// the reader as stale data rather than as a missing clause -- so the schedule is
-// worth naming even though the view itself was created.
-func (s *Sink) RecordLostRefresh(view string, spec *ast.MatViewRefreshSpec) {
-	if s == nil || spec == nil {
-		return
-	}
-	s.RecordLostProperty(MaterializedViewKind, view, RefreshProperty,
-		strings.TrimSpace(spec.Mode+" "+spec.Interval))
-}
 
 // RecordLostPartition records a table partitioning the target does not carry.
 // A table declaring none records nothing.

@@ -282,12 +282,6 @@ func mysqlRefusedKinds() []mysqlCensusRow {
 				"and this renderer does not write it",
 		},
 		{
-			kind: "AlterMaterializedViewRefreshNode",
-			node: ast.NewAlterMaterializedViewRefresh("mv1", &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"}),
-			want: "unsupported feature: mysql: ALTER MATERIALIZED VIEW REFRESH mv1: materialized views are not " +
-				"supported by MySQL or MariaDB; remove matview definitions for this target",
-		},
-		{
 			kind: "AlterRoleNode",
 			node: ast.NewAlterRole("app_role"),
 			want: `unsupported feature: mysql: role "app_role" declares an altered attribute, which a role does ` +
@@ -377,7 +371,7 @@ func TestMySQLDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 47
+const censusKindFloor = 46
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mysqlCensusRow {

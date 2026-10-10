@@ -147,13 +147,34 @@ func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (sch
 	return projected, nil
 }
 
+// prepareMaterializedViewFacets projects a materialized view's facets onto the
+// target. ClickHouse interprets a refresh schedule; any other active value, and
+// every value on another target, is refused rather than rendered without it.
+func prepareMaterializedViewFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
+	projected, err := projectFacets(dialect, facets)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
+		return refuseActiveFacets(dialect, projected)
+	}
+	if err := clickhouse.ValidateMaterializedViewFacets(projected); err != nil {
+		return schemaext.Facets{}, err
+	}
+	return projected, nil
+}
+
 func validateDeclaredFacets(dialect string, database *schemamodel.Database) error {
-	owners := make(map[*schemaext.Facets]func(string, schemaext.Facets) (schemaext.Facets, error), len(database.Tables)+len(database.Indexes))
+	owners := make(map[*schemaext.Facets]func(string, schemaext.Facets) (schemaext.Facets, error),
+		len(database.Tables)+len(database.Indexes)+len(database.MaterializedViews))
 	for i := range database.Tables {
 		owners[&database.Tables[i].Facets] = prepareTableFacets
 	}
 	for i := range database.Indexes {
 		owners[&database.Indexes[i].Facets] = prepareIndexFacets
+	}
+	for i := range database.MaterializedViews {
+		owners[&database.MaterializedViews[i].Facets] = prepareMaterializedViewFacets
 	}
 	for _, facets := range database.FacetSlots() {
 		prepare := prepareFacets

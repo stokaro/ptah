@@ -1314,18 +1314,6 @@ func matViewFixture() schemamodel.Database {
 	return db
 }
 
-func matViewRefreshFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.MaterializedViews = []schemamodel.MaterializedView{{
-		StructName: "MV", Name: "daily", Body: "SELECT id FROM t",
-		Refresh: &ast.MatViewRefreshSpec{
-			Mode: "scheduled", Interval: "1 hour", Offset: "5 minutes",
-			Randomize: "1 minute", Append: true, DependsOn: []string{"other"},
-		},
-	}}
-	return db
-}
-
 func functionFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Functions = []schemamodel.Function{{

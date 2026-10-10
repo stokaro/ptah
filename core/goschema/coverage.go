@@ -2,6 +2,7 @@ package goschema
 
 import (
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/cockroachdb/crdbsource"
 	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -12,17 +13,19 @@ import (
 // declare: the YDB objects its directives name and the YDB TTL, CockroachDB
 // row-level TTL and the Spanner row deletion policy, which a table declares
 // through its platform.ydb, platform.cockroachdb and platform.spanner
-// properties, and both TimescaleDB models, which have annotations of their
-// own. A table without those properties therefore requests none of the
-// policies, and a schema without a hypertable or aggregate annotation
-// describes a database without either.
+// properties, both TimescaleDB models, which have annotations of their own,
+// and the ClickHouse refresh schedule a materialized view declares with
+// `refresh=`. A table without those properties therefore requests none of the
+// policies, a schema without a hypertable or aggregate annotation describes a
+// database without either, and a materialized view without `refresh=`
+// requests no schedule.
 func sourceCoverage(limits ydbsource.Limits) (schemaext.Coverage, error) {
 	known, err := ydbsource.Coverage(limits)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
 	timescale := func() (schemaext.Coverage, error) { return tsschema.CompleteCoverage(schemaext.Desired) }
-	for _, owned := range []func() (schemaext.Coverage, error){crdbsource.Coverage, spannersource.Coverage, timescale} {
+	for _, owned := range []func() (schemaext.Coverage, error){crdbsource.Coverage, spannersource.Coverage, timescale, chsource.RefreshCoverage} {
 		coverage, err := owned()
 		if err != nil {
 			return schemaext.Coverage{}, err

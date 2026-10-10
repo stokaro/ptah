@@ -77,12 +77,6 @@ None.
 | `ast.IndexPartitioningSpec.MinPartitions` | `ddl` | — |
 | `ast.IndexPartitioningSpec.PartitionSizeMB` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ReadReplicas` | `ddl` | — |
-| `ast.MatViewRefreshSpec.Append` | `ddl` | — |
-| `ast.MatViewRefreshSpec.DependsOn` | `ddl` | — |
-| `ast.MatViewRefreshSpec.Interval` | `ddl` | — |
-| `ast.MatViewRefreshSpec.Mode` | `ddl` | — |
-| `ast.MatViewRefreshSpec.Offset` | `ddl` | — |
-| `ast.MatViewRefreshSpec.Randomize` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.ConnectionString` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.PasswordSecretName` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.PasswordSecretPath` | `ddl` | — |
@@ -127,6 +121,7 @@ None.
 | `ast.YDBTieredTTLSpec.Unit` | `ddl` | — |
 | `chschema.DesiredIndex.Granularity` | `ddl` | — |
 | `chschema.DesiredIndex.IndexType` | `ddl` | — |
+| `chschema.DesiredRefresh.Schedule` | `ddl` | — |
 | `chschema.DesiredTable.Engine` | `ddl` | — |
 | `chschema.DesiredTable.OrderBy` | `ddl` | — |
 | `chschema.DesiredTable.PartitionBy` | `ddl` | — |
@@ -136,6 +131,12 @@ None.
 | `chschema.DesiredTable.TTL` | `ddl` | — |
 | `chschema.GranularitySetting.State` | `ddl` | — |
 | `chschema.GranularitySetting.Value` | `ddl` | — |
+| `chschema.Schedule.Append` | `ddl` | — |
+| `chschema.Schedule.DependsOn` | `ddl` | — |
+| `chschema.Schedule.Interval` | `ddl` | — |
+| `chschema.Schedule.Mode` | `ddl` | — |
+| `chschema.Schedule.Offset` | `ddl` | — |
+| `chschema.Schedule.Randomize` | `ddl` | — |
 | `chschema.Setting.State` | `ddl` | — |
 | `chschema.Setting.Value` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
@@ -422,7 +423,6 @@ None.
 | `schemamodel.MaterializedView.Dialects` | `ddl` | — |
 | `schemamodel.MaterializedView.Facets` | `ddl` | — |
 | `schemamodel.MaterializedView.Name` | `ddl` | — |
-| `schemamodel.MaterializedView.Refresh` | `ddl` | — |
 | `schemamodel.MaterializedView.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.PartitionPart.Expr` | `ddl` | — |
 | `schemamodel.PartitionPart.Name` | `ddl` | — |

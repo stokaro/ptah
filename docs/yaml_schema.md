@@ -528,9 +528,10 @@ performs one. What that means per family:
   back no such policy.
 - ClickHouse: a materialized view maintains itself from inserts into its source.
   ClickHouse also has a scheduled form, `REFRESH EVERY|AFTER ...`, which the
-  server owns and records; modeling it is a ClickHouse capability tracked in
-  [#1802](https://github.com/stokaro/ptah/issues/1802), not a value of a shared
-  attribute.
+  server owns and records. It is a ClickHouse setting of the view, declared
+  with the Go annotation's `refresh` attribute. A YAML schema cannot state it,
+  so Ptah keeps whatever schedule the server holds for a view the YAML schema
+  declares, and plans no change to it.
 
 ## Validation
 

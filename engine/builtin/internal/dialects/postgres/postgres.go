@@ -510,8 +510,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropMaterializedView(n)
 	case *ast.RefreshMaterializedViewNode:
 		return r.renderRefreshMaterializedView(n)
-	case *ast.AlterMaterializedViewRefreshNode:
-		return r.renderAlterMaterializedViewRefresh(n)
 
 	// Functions and triggers.
 	case *ast.CreateFunctionNode:
@@ -3193,11 +3191,6 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 		return nil
 	}
 
-	// Refreshing is an operation on this target rather than a property of the
-	// view: there is no clause here that could schedule one, so a declared
-	// schedule reaches the output nowhere and the view is populated once.
-	r.sink.RecordLostRefresh(node.Name, node.Refresh)
-
 	target := r.escapeQualifiedIdentifier(node.Name)
 	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", target)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
@@ -3226,20 +3219,6 @@ func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode
 	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
-}
-
-// renderRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
-// renderAlterMaterializedViewRefresh refuses: a refresh SCHEDULE is a ClickHouse
-// property, and PostgreSQL has no statement that carries one. Refreshing a
-// PostgreSQL materialized view is an operation someone runs, which is
-// renderRefreshMaterializedView below (stokaro/ptah#1625, stokaro/ptah#1802).
-func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
-	return fmt.Errorf(
-		"%w: postgres: materialized view %q cannot carry a refresh schedule; "+
-			"a scheduled refresh is a ClickHouse feature",
-		ptaherr.ErrUnsupportedFeature,
-		node.Name,
-	)
 }
 
 func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {

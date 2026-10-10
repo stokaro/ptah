@@ -19,12 +19,14 @@ func IndexWireDefinition() json.RawMessage { return slices.Clone(indexDefinition
 // Registration understands the model but grants no target or server support.
 func IndexCodecs() []schemaext.Codec {
 	return []schemaext.Codec{
-		indexCodec(&DesiredIndex{}, schemaext.Desired, decodeDesiredIndex, validateDesiredIndexPayload),
-		indexCodec(&ObservedIndex{}, schemaext.Observed, decodeObservedIndex, validateObservedIndexPayload),
+		valueCodec(&DesiredIndex{}, schemaext.Desired, IndexWireDefinition(), decodeDesiredIndex, validateDesiredIndexPayload),
+		valueCodec(&ObservedIndex{}, schemaext.Observed, IndexWireDefinition(), decodeObservedIndex, validateObservedIndexPayload),
 	}
 }
 
-func indexCodec(prototype schemaext.Value, representation schemaext.Representation,
+// valueCodec is the strict codec of one attached model value: validate guards
+// every encoding and clone, and decode refuses what the model would not hold.
+func valueCodec(prototype schemaext.Value, representation schemaext.Representation, definition json.RawMessage,
 	decode func(json.RawMessage) (schemaext.Payload, error), validate func(schemaext.Payload) error,
 ) schemaext.Codec {
 	encode := func(value schemaext.Payload) (json.RawMessage, error) {
@@ -33,7 +35,7 @@ func indexCodec(prototype schemaext.Value, representation schemaext.Representati
 		}
 		return json.Marshal(value)
 	}
-	return schemaext.Codec{Prototype: prototype, Representation: representation, Version: 1, Definition: IndexWireDefinition(),
+	return schemaext.Codec{Prototype: prototype, Representation: representation, Version: 1, Definition: definition,
 		Clone: func(value schemaext.Payload) (schemaext.Payload, error) {
 			if err := validate(value); err != nil {
 				return nil, err

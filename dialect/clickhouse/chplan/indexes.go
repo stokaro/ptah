@@ -227,9 +227,10 @@ func (c capturedIndex) matches(change *chdiff.Index) error {
 	return nil
 }
 
-// commonReplacement reports whether host operations drop and create the index.
-// A host operation that only drops or only creates a surviving index
-// contradicts the comparison that produced the settings change.
+// commonReplacement reports whether host operations drop and create the
+// subject, an index or a materialized view. A host operation that only drops or
+// only creates a surviving subject contradicts the comparison that produced
+// the settings change.
 func commonReplacement(request featureplan.Request, subject objectidentity.ID) (bool, error) {
 	var dropped, created bool
 	for _, step := range request.CommonSteps {
@@ -243,12 +244,12 @@ func commonReplacement(request featureplan.Request, subject objectidentity.ID) (
 			case plangraph.Create:
 				created = true
 			case plangraph.Alter:
-				return false, fmt.Errorf("%w: a common operation alters index %s whose settings change", schemaext.ErrInvalidValue, subject)
+				return false, fmt.Errorf("%w: a common operation alters %s, whose settings change", schemaext.ErrInvalidValue, subject)
 			}
 		}
 	}
 	if dropped != created {
-		return false, fmt.Errorf("%w: the common plan removes or adds index %s whose settings change", schemaext.ErrInvalidValue, subject)
+		return false, fmt.Errorf("%w: the common plan removes or adds %s, whose settings change", schemaext.ErrInvalidValue, subject)
 	}
 	return dropped, nil
 }

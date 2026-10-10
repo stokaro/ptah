@@ -104,6 +104,10 @@ func clickhouseDropIndexFixture() extensionFixture {
 	return extensionFixture{payload: &chast.DropSkippingIndex{Name: "idx_c"}, wantSQL: "ALTER TABLE `items` DROP INDEX `idx_c`;\n"}
 }
 
+func clickhouseRefreshFixture() extensionFixture {
+	return extensionFixture{payload: &chast.ModifyRefresh{Schedule: chschema.Schedule{Mode: "EVERY", Interval: "1 HOUR"}}, wantSQL: "ALTER TABLE `items` MODIFY REFRESH EVERY 1 HOUR;\n"}
+}
+
 func coordinationFixture() extensionFixture {
 	return extensionFixture{payload: &ydbast.CoordinationNode{Schema: "app", Name: "locks", Change: ydbdiff.CoordinationNode{After: &ydbcoordination.Desired{}}}, wantSQL: "CREATE COORDINATION NODE `app/locks`;\n"}
 }
@@ -142,7 +146,7 @@ func continuousAggregateFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		hypertableFixture(), continuousAggregateFixture())
 }
 

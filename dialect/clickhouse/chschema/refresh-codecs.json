@@ -1,0 +1,87 @@
+{
+  "$id": "ptah.run/clickhouse/refresh/v1",
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\u0000]*$"
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/clickhouse/refresh": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "interval"
+        ],
+        "properties": {
+          "mode": {
+            "enum": [
+              "EVERY",
+              "AFTER"
+            ]
+          },
+          "interval": {
+            "$ref": "#/$defs/text"
+          },
+          "offset": {
+            "$ref": "#/$defs/text"
+          },
+          "randomize": {
+            "$ref": "#/$defs/text"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "append": {
+            "type": "boolean"
+          }
+        },
+        "constraint": "A declared schedule. OFFSET belongs to EVERY. A view without this value declares no schedule only where its source's coverage is complete for this kind; otherwise its schedule is unmanaged. Null is invalid."
+      }
+    },
+    "observed": {
+      "ptah.run/clickhouse/refresh": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "interval"
+        ],
+        "properties": {
+          "mode": {
+            "enum": [
+              "EVERY",
+              "AFTER"
+            ]
+          },
+          "interval": {
+            "$ref": "#/$defs/text"
+          },
+          "offset": {
+            "$ref": "#/$defs/text"
+          },
+          "randomize": {
+            "$ref": "#/$defs/text"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "append": {
+            "type": "boolean"
+          }
+        },
+        "constraint": "The schedule the server reports. A refreshable view whose schedule could not be read carries no value and a coverage limit instead. Null is invalid."
+      }
+    }
+  },
+  "canonicalization": "Preserve every clause as written, including interval spelling and dependency order. Strings must be valid UTF-8. An omitted OFFSET, RANDOMIZE FOR, dependency list or APPEND means the schedule has none. Comparison reads intervals in the server's spelling; the codec does not."
+}

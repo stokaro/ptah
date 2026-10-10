@@ -232,8 +232,10 @@ func reverseSchemaDiffWithPrior(
 		ExtendedPropertiesRemoved:  slices.Clone(diff.ExtendedPropertiesAdded),
 		ExtendedPropertiesModified: reverseExtendedPropertyDiffs(diff.ExtendedPropertiesModified),
 
-		MaterializedViewsAdded:    diff.MaterializedViewsRemoved, // Materialized views to remove become materialized views to add
-		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
+		// Materialized views to remove become materialized views to add, each
+		// as the pre-change database held it, settings included.
+		MaterializedViewsAdded:    priorMaterializedViews(diff.MaterializedViewsRemoved, prior, semantics),
+		MaterializedViewsRemoved:  diff.MaterializedViewsAdded, // Materialized views to add become materialized views to remove
 		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified, prior, semantics),
 
 		// Exchanged, but not carried across untouched. An addition renders from
@@ -543,15 +545,6 @@ func reverseIndexPartitioning(change difftypes.IndexPartitioningChange) (partiti
 		return change.Previous.Clone(), change.Partitioning.Clone()
 	}
 	return ydbindex.Explicit(held), ydbindex.Explicit(after)
-}
-
-// reverseRefreshChange swaps the two sides of a materialized view's refresh
-// schedule transition.
-func reverseRefreshChange(change *difftypes.MatViewRefreshChange) *difftypes.MatViewRefreshChange {
-	if change == nil {
-		return nil
-	}
-	return &difftypes.MatViewRefreshChange{Desired: change.Current, Current: change.Desired}
 }
 
 // priorTableDependencies is the dependency graph of the pre-change database.

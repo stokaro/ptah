@@ -25,8 +25,9 @@ type Result struct {
 
 // Plan dispatches one contextual batch and converts complete operation replies
 // into AST contributions without scheduling them independently. Names binds
-// captured table identities to the host's source-spelled emission names. A
-// parent without a binding cannot receive an ALTER operation. The caller must
+// captured table identities, and the materialized views whose attached
+// settings the request changes, to the host's source-spelled emission names.
+// A parent without a binding cannot receive an ALTER operation. The caller must
 // join these contributions to its common graph before returning any nodes.
 func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.Request, names map[objectidentity.Key]string) (Result, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
@@ -75,9 +76,17 @@ func validateNames(request featureplan.Request, names map[objectidentity.Key]str
 	for _, table := range request.Tables {
 		captured[table.Subject.Key()] = true
 	}
+	views := make(map[objectidentity.Key]bool)
+	for _, change := range request.Changes {
+		if change.Subject.Kind == objectidentity.KindMatView {
+			views[change.Subject.Key()] = true
+		}
+	}
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for key, name := range names {
-		if name == "" || !captured[key] || builder.Table(name).Key() != key {
+		table := captured[key] && builder.Table(name).Key() == key
+		view := views[key] && builder.SchemaScoped(objectidentity.KindMatView, name).Key() == key
+		if name == "" || !table && !view {
 			return fmt.Errorf("%w: feature table name disagrees with its captured identity", schemaext.ErrInvalidValue)
 		}
 	}

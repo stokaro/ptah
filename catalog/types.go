@@ -866,13 +866,6 @@ type Index struct {
 	// methods index. Readers with no catalog to ask leave it unset.
 	RequiresExtensions []string `json:"requires_extensions,omitempty"`
 
-	// Expression is the full ClickHouse skipping-index expression
-	// (column reference, function call, tuple, etc.). The reader also writes
-	// the expression into Columns[0] for back-compat with the existing diff
-	// layer; Expression is the canonical field for richer diffing once
-	// that's wired up. Empty on non-ClickHouse readers.
-	Expression string `json:"expression,omitempty"`
-
 	// PartitionAttached reports that this index is a partition's copy of an
 	// index on its partitioned parent, attached to that parent index rather
 	// than standing on its own.
@@ -1676,7 +1669,9 @@ func (s Synonym) TargetQualifiedName() string {
 	return QualifyTableName(s.TargetSchema, s.TargetObject)
 }
 
-// MaterializedView represents a PostgreSQL materialized view read from the database.
+// MaterializedView represents a materialized view read from the database.
+// Settings an engine attaches to one, such as a ClickHouse refresh schedule,
+// are observations in Facets.
 type MaterializedView struct {
 	// Facets carries typed settings owned by feature providers.
 	Facets  schemaext.Facets `json:"facets,omitzero"`
@@ -1684,19 +1679,6 @@ type MaterializedView struct {
 	Schema  string           `json:"schema"`  // Schema where the materialized view is defined
 	Body    string           `json:"body"`    // SELECT query used as the materialized view definition
 	Comment string           `json:"comment"` // Materialized view comment/description
-
-	// Refresh is the ClickHouse refresh schedule read back from the server,
-	// nil for a view that has none.
-	//
-	// It is read from create_table_query, which is the only place the schedule
-	// survives: system.tables.as_select is byte-identical for a plain view and
-	// a refreshable one (stokaro/ptah#1802).
-	// Tagged like every other field here, and like the two ast specs Table
-	// embeds: this is a serialized document, and an untagged field puts a Go
-	// identifier into it. It rendered `"Refresh":{"Mode":...}` among lowercase
-	// keys, which no reader following the document's own convention could
-	// reach (stokaro/ptah#2760).
-	Refresh *ast.MatViewRefreshSpec `json:"refresh,omitzero"`
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.

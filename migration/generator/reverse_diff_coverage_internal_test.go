@@ -415,6 +415,11 @@ func reverseCoverageDiff() *difftypes.SchemaDiff {
 		// common-field fixture cannot invent a valid owner payload.
 		diff.TablesModified[i].FeatureChanges = nil
 	}
+	for i := range diff.MaterializedViewsModified {
+		// The same for the settings attached to a materialized view, whose
+		// real control is the ClickHouse refresh schedule.
+		diff.MaterializedViewsModified[i].FeatureChanges = nil
+	}
 
 	// ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose object
 	// is a UNIQUE constraint of the same name on the same table, and

@@ -2805,48 +2805,43 @@ type ViewDiff struct {
 }
 
 // MaterializedViewDiff represents changes to a materialized view definition.
+//
+// Changes holds the common definition's changes, and any of them replaces the
+// view. FeatureChanges holds owner-defined changes to settings attached to the
+// view; a view whose only changes are attached settings keeps its rows unless
+// one of those changes reports [schemaext.OwnerReplacement], in which case it
+// is replaced like any other modified view. [MaterializedViewDiff.Replaces]
+// answers which.
 type MaterializedViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`
 
-	// RefreshChange carries a ClickHouse refresh-schedule transition, and is
-	// nil when the schedule is unchanged.
-	//
-	// It is a pair rather than a text entry in Changes because the planner
-	// needs BOTH sides to choose a statement: a schedule changing to another
-	// schedule is an ALTER that keeps the view's rows, while a view gaining or
-	// losing one has to be dropped and recreated -- measured, the server
-	// answers MODIFY REFRESH on a plain view with `Alter of type
-	// 'MODIFY_REFRESH' is not supported by storage MaterializedView`
-	// (stokaro/ptah#1802).
-	RefreshChange *MatViewRefreshChange `json:"refresh_change,omitzero"`
+	// FeatureChanges carries owner-defined changes to settings attached to
+	// this view, in the order the comparison reported them.
+	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 
 	// Desired is the materialized view this change asks the database to hold.
 	//
 	// No engine has an in-place replacement for one that keeps its rows, so a
-	// modification other than a schedule change is a drop and a create, and the
-	// create needs the whole declaration. Carrying it is what lets the planner
-	// render the pair without being handed the schema it came out of
-	// (stokaro/ptah#2315).
-	//
-	// It is the view, where [MatViewRefreshChange.Desired] on the field above
-	// is one schedule; the two are named alike because both answer "what is
-	// being asked for", at different scales.
+	// modification [MaterializedViewDiff.Replaces] answers true for is a drop
+	// and a create, and the create needs the whole declaration, including the
+	// settings attached to it. Carrying it is what lets the planner render the
+	// pair without being handed the schema it came out of (stokaro/ptah#2315).
 	//
 	// It stays off the wire. The change map is the change; this is the operand.
 	Desired schemamodel.MaterializedView `json:"-"`
 }
 
-// MatViewRefreshChange is one materialized view's refresh-schedule transition.
-//
-// Either side may be nil: a nil Current is a schedule being added, a nil
-// Desired is one being removed, and both non-nil is a change of schedule. Both
-// nil never reaches here, because that is not a change.
-type MatViewRefreshChange struct {
-	// Desired is the schedule the declaration asks for, nil to remove it.
-	Desired *ast.MatViewRefreshSpec `json:"desired,omitzero"`
-	// Current is the schedule the target carries, nil when it has none.
-	Current *ast.MatViewRefreshSpec `json:"current,omitzero"`
+// Replaces reports whether planning this change drops and recreates the view.
+// Every modification does, except one whose only changes are attached settings
+// their owner applies in place.
+func (d MaterializedViewDiff) Replaces() bool {
+	if len(d.Changes) > 0 || len(d.FeatureChanges) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(d.FeatureChanges, func(change schemaext.ChangeRecord) bool {
+		return schemaext.ReplacesOwner(change.Value)
+	})
 }
 
 // TriggerRef identifies a trigger by table and trigger name.
