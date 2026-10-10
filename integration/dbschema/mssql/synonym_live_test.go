@@ -8,9 +8,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/dbschema/mssql"
 	"ptah.run/migration/schemadiff"
 )
@@ -45,31 +49,12 @@ func TestReadSynonyms_Live(t *testing.T) {
 	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	byName := make(map[string]int)
-	for i, synonym := range schema.Synonyms {
-		byName[synonym.QualifiedName()] = i
-	}
-	c.Assert(byName, qt.HasLen, 3)
-
-	local := schema.Synonyms[byName["dbo.orders_alias"]]
-	c.Assert(local.TargetSchema, qt.Equals, "dbo")
-	c.Assert(local.TargetObject, qt.Equals, "orders")
-	c.Assert(local.IsExternal(), qt.IsFalse)
-	c.Assert(local.TargetQualifiedName(), qt.Equals, "dbo.orders")
-
-	crossSchema := schema.Synonyms[byName["app.invoices_alias"]]
-	c.Assert(crossSchema.TargetSchema, qt.Equals, "sales")
-	c.Assert(crossSchema.TargetObject, qt.Equals, "invoices")
-	c.Assert(crossSchema.IsExternal(), qt.IsFalse)
-	c.Assert(crossSchema.TargetQualifiedName(), qt.Equals, "sales.invoices")
-
-	external := schema.Synonyms[byName["app.remote_alias"]]
-	c.Assert(external.TargetDatabase, qt.Equals, "other_db")
-	c.Assert(external.TargetSchema, qt.Equals, "dbo")
-	c.Assert(external.TargetObject, qt.Equals, "orders")
-	c.Assert(external.IsExternal(), qt.IsTrue)
-	c.Assert(external.TargetQualifiedName(), qt.Equals, "",
-		qt.Commentf("an external target is not a local dependency this plan can order against"))
+	synonyms := readSynonyms(c, schema)
+	c.Assert(synonyms, qt.HasLen, 3)
+	c.Assert(synonyms["dbo.orders_alias"], qt.Equals, "dbo.orders")
+	c.Assert(synonyms["app.invoices_alias"], qt.Equals, "sales.invoices")
+	c.Assert(synonyms["app.remote_alias"], qt.Equals, "other_db.dbo.orders",
+		qt.Commentf("the server's bracket quoting is read into the spelling a declaration uses"))
 }
 
 // TestSynonymsDiffToZero_Live is the convergence check the whole object exists
@@ -96,16 +81,14 @@ func TestSynonymsDiffToZero_Live(t *testing.T) {
 	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	declared := &schemamodel.Database{Synonyms: []schemamodel.Synonym{
-		{StructName: "OrdersAlias", Name: "orders_alias", Schema: "app", Target: "dbo.orders"},
-		{StructName: "RemoteAlias", Name: "remote_alias", Schema: "app", Target: "other_db.dbo.orders"},
-	}}
+	declared := declaredSynonyms(
+		synonym.DesiredSynonym{StructName: "OrdersAlias", Synonym: synonym.Synonym{Name: "orders_alias", Schema: "app", Target: "dbo.orders"}},
+		synonym.DesiredSynonym{StructName: "RemoteAlias", Synonym: synonym.Synonym{Name: "remote_alias", Schema: "app", Target: "other_db.dbo.orders"}},
+	)
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, schema, platform.SQLServer, must.Must(builtin.New())))
 
-	c.Assert(diff.SynonymsAdded, qt.HasLen, 0)
-	c.Assert(diff.SynonymsRemoved, qt.HasLen, 0)
-	c.Assert(diff.SynonymsModified, qt.HasLen, 0,
+	c.Assert(diff.FeatureChanges, qt.HasLen, 0,
 		qt.Commentf("declared and stored targets differ only in the server's bracket quoting"))
 }
 
@@ -140,6 +123,47 @@ func TestSynonymRetarget_Live(t *testing.T) {
 	reader := mssql.NewSQLServerReader(db, "dbo")
 	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(schema.Synonyms, qt.HasLen, 1)
-	c.Assert(schema.Synonyms[0].TargetObject, qt.Equals, "archived_orders")
+	c.Assert(readSynonyms(c, schema), qt.DeepEquals, map[string]string{"orders_alias": "dbo.archived_orders"},
+		qt.Commentf("a read with no schema list reports the default schema as no schema"))
+
+	// Pointing the declaration back is one change -- the alias written with
+	// the default schema is the one read without it -- and the owner's
+	// statements for it are the same ordered pair, which the server accepts.
+	declared := declaredSynonyms(synonym.DesiredSynonym{Synonym: synonym.Synonym{Name: "orders_alias", Schema: "dbo", Target: "dbo.orders"}})
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, schema, platform.SQLServer, must.Must(builtin.New())))
+	c.Assert(diff.FeatureChanges, qt.HasLen, 1)
+	change := diff.FeatureChanges[0].Value.(*synonym.Change)
+	statements := must.Must(builtin.RenderSQL(platform.SQLServer, &ast.ExtensionStatement{
+		Payload: &synonym.Operation{Action: synonym.Retarget, Synonym: *change.After},
+	}))
+	_, err = db.ExecContext(t.Context(), statements)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", statements))
+	schema, err = reader.ReadSchemaContext(t.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(readSynonyms(c, schema), qt.DeepEquals, map[string]string{"orders_alias": "dbo.orders"})
+}
+
+// readSynonyms maps each synonym a read found, as schema.name, to its target.
+func readSynonyms(c *qt.C, schema *catalog.Database) map[string]string {
+	c.Helper()
+	objects, err := schema.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	targets := make(map[string]string)
+	for _, object := range objects {
+		if observed, ok := object.Value.(*synonym.ObservedSynonym); ok {
+			targets[observed.QualifiedName()] = observed.Target
+		}
+	}
+	return targets
+}
+
+// declaredSynonyms is a declaration of exactly these synonyms, from a source
+// that can declare them, so a synonym it leaves out is one to drop.
+func declaredSynonyms(synonyms ...synonym.DesiredSynonym) *schemamodel.Database {
+	objects := schemaext.Objects{}
+	for _, declared := range synonyms {
+		objects = must.Must(objects.With(synonym.DeclaredObject(declared)))
+	}
+	return &schemamodel.Database{FeatureObjects: objects,
+		FeatureCoverage: must.Must(synonym.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))}
 }

@@ -22,6 +22,7 @@ import (
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/schemaprep"
@@ -208,6 +209,9 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if err := r.captureExtendedProperties(); err != nil {
 		return Result{}, err
 	}
+	if err := r.captureSynonyms(); err != nil {
+		return Result{}, err
+	}
 	if err := r.captureTimescale(); err != nil {
 		return Result{}, err
 	}
@@ -225,6 +229,7 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 type renderer struct {
 	coordinationNodes      []coordinationNode
 	extendedProperties     []mssqlproperty.DesiredProperty
+	synonyms               []synonym.DesiredSynonym
 	coordinationDirectives []string
 	hypertables            []hypertableBlock
 	aggregates             []aggregateBlock
@@ -521,12 +526,12 @@ func (r *renderer) render() {
 // cleanup would remove the only place the scope was ever written down and the
 // schema would silently go back to reaching every dialect.
 //
-// A SQL Server extended property is bound to SQL Server by its kind rather
-// than by anything the declaration wrote, and reading the block back binds it
-// again, so its scope is not a loss.
+// A SQL Server extended property and a synonym are bound to their targets by
+// their kind rather than by anything the declaration wrote, and reading the
+// block back binds them again, so their scope is not a loss.
 func (r *renderer) reportDialectScopes() {
 	for _, scoped := range schemamodel.ScopedObjects(r.db) {
-		if scoped.Kind == string(mssqlproperty.Kind) && slices.Equal(scoped.Dialects, []string{platform.SQLServer}) {
+		if boundByKind(scoped) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
@@ -538,6 +543,24 @@ func (r *renderer) reportDialectScopes() {
 			),
 		})
 	}
+}
+
+// boundByKind reports whether an object's scope is the one its kind binds it
+// to, which reading the block back restores.
+func boundByKind(scoped schemamodel.ScopedObject) bool {
+	var bound []string
+	switch scoped.Kind {
+	case string(mssqlproperty.Kind):
+		bound = []string{platform.SQLServer}
+	case string(synonym.Kind):
+		bound = synonym.Targets()
+	default:
+		return false
+	}
+	dialects := slices.Clone(scoped.Dialects)
+	slices.Sort(dialects)
+	slices.Sort(bound)
+	return slices.Equal(dialects, bound)
 }
 
 // reportExportMetadata names every export-only attribute this document carries

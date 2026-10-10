@@ -132,11 +132,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			want: "CREATE SEQUENCE `seq1`;\n",
 		},
 		{
-			kind: "CreateSynonymNode",
-			node: &ast.CreateSynonymNode{Name: "s1", Target: "users"},
-			want: "-- Synonym s1 not supported in mariadb\n",
-		},
-		{
 			kind: "CreateTableNode",
 			node: mariadbCensusTable(),
 			want: "-- MARIADB TABLE: users --\nCREATE TABLE `users` (\n  `id` INT\n);\n\n",
@@ -193,11 +188,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			kind: "DropSequenceNode",
 			node: ast.NewDropSequence("seq1"),
 			want: "DROP SEQUENCE `seq1`;\n",
-		},
-		{
-			kind: "DropSynonymNode",
-			node: ast.NewDropSynonym("s1"),
-			want: "-- DROP SYNONYM s1 not supported in mariadb\n",
 		},
 		{
 			kind: "DropTableNode",
@@ -368,7 +358,7 @@ func TestMariaDBDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 45
+const censusKindFloor = 43
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mariadbCensusRow {

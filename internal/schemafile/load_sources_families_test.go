@@ -7,8 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
@@ -40,10 +42,9 @@ func TestLoadSources_CarriesTheFamiliesLoadCarries(t *testing.T) {
 
 	// Non-vacuity: the document really does declare one of each, so two empty
 	// descriptions cannot pass as agreement.
-	c.Assert(direct.Synonyms, qt.HasLen, 1)
-	c.Assert(direct.FeatureObjects.Len(), qt.Equals, 1)
+	c.Assert(synonymNames(direct), qt.DeepEquals, []string{"s_gauge"})
+	c.Assert(direct.FeatureObjects.Len(), qt.Equals, 2)
 
-	c.Assert(merged.Synonyms, qt.DeepEquals, direct.Synonyms)
 	c.Assert(merged.FeatureObjects.Refs(), qt.DeepEquals, direct.FeatureObjects.Refs())
 }
 
@@ -109,10 +110,14 @@ func writeDocument(c *qt.C, name, document string) string {
 	return path
 }
 
+// synonymNames is the name of every synonym the description declares, in
+// identity order.
 func synonymNames(database *schemamodel.Database) []string {
-	names := make([]string, 0, len(database.Synonyms))
-	for _, synonym := range database.Synonyms {
-		names = append(names, synonym.Name)
+	var names []string
+	for _, ref := range database.FeatureObjects.Refs() {
+		if ref.Kind == objectidentity.Kind(synonym.Kind) {
+			names = append(names, ref.Name.Source)
+		}
 	}
 	return names
 }

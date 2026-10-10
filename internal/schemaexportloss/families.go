@@ -36,7 +36,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 		{"roles", len(db.Roles)},
 		{"row-level security policies", len(db.RLSPolicies)},
 		{"sequences", len(db.Sequences)},
-		{"synonyms", len(db.Synonyms)},
 		{"triggers", len(db.Triggers)},
 		{"views", len(db.Views)},
 	}

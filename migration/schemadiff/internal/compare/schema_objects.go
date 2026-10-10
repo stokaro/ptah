@@ -9,7 +9,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
@@ -563,95 +562,6 @@ func findDatabaseFunction(
 	return candidates[0], true
 }
 
-// Synonyms compares declared synonyms against the ones the database reports.
-//
-// The comparison is on the qualified name, and a changed target is reported as
-// a modification rather than as a removal plus an addition. T-SQL has no ALTER
-// SYNONYM, so both shapes end up as a drop and a create -- but only the
-// modification says the two belong together, which is what lets a plan order
-// them as one operation and a reader tell a retarget from a coincidence.
-func Synonyms(
-	desired *schemamodel.Database,
-	database *catalog.Database,
-	diff *difftypes.SchemaDiff,
-	cov Coverage,
-) {
-	generatedSynonyms := make(map[string]schemamodel.Synonym, len(desired.Synonyms))
-	for _, synonym := range desired.Synonyms {
-		generatedSynonyms[synonym.QualifiedName()] = synonym
-	}
-	databaseSynonyms := make(map[string]catalog.Synonym, len(database.Synonyms))
-	for _, synonym := range database.Synonyms {
-		databaseSynonyms[synonym.QualifiedName()] = synonym
-	}
-
-	for name, generatedSynonym := range generatedSynonyms {
-		databaseSynonym, exists := databaseSynonyms[name]
-		if !exists {
-			diff.SynonymsAdded = append(diff.SynonymsAdded, generatedSynonym)
-			continue
-		}
-		if !sameSynonymTarget(generatedSynonym.Target, databaseSynonym) {
-			diff.SynonymsModified = append(diff.SynonymsModified, difftypes.SynonymDiff{
-				SynonymName: name,
-				OldTarget:   databaseSynonym.Target,
-				NewTarget:   generatedSynonym.Target,
-				Desired:     generatedSynonym,
-			})
-		}
-	}
-
-	for name, databaseSynonym := range databaseSynonyms {
-		if _, ok := generatedSynonyms[name]; ok {
-			continue
-		}
-		// A desired state that could not have named this synonym has not
-		// withheld it, and no document format Ptah reads can name one: HCL has
-		// no block, YAML has no key, and the SQL parser's conversion produces
-		// none even for a `CREATE SYNONYM` it parses. So `schema inspect` into
-		// a file and `schema apply --to` that file planned DROP SYNONYM for
-		// every synonym on the server, through Ptah's own output
-		// (stokaro/ptah#1031). A Go schema CAN declare one, records nothing
-		// here, and still removes.
-		if !cov.PlansRemoval(coverage.Synonym, databaseSynonym.Schema, databaseSynonym.Name, name) {
-			continue
-		}
-		diff.SynonymsRemoved = append(diff.SynonymsRemoved, synonymFromCatalog(databaseSynonym))
-	}
-
-	sortSynonyms(diff.SynonymsAdded)
-	sortSynonyms(diff.SynonymsRemoved)
-	sort.Slice(diff.SynonymsModified, func(i, j int) bool {
-		return diff.SynonymsModified[i].SynonymName < diff.SynonymsModified[j].SynonymName
-	})
-}
-
-// sameSynonymTarget compares a declared target against the catalog's own
-// spelling of one.
-//
-// SQL Server records base_object_name with its own bracket quoting, so the
-// declared `dbo.orders` and the stored `[dbo].[orders]` are the same target
-// written two ways. Comparing the raw strings would report a modification on
-// every run and make the plan churn forever, which is the false-convergence
-// failure this object was added to remove rather than to introduce.
-func sameSynonymTarget(declared string, stored catalog.Synonym) bool {
-	return synonymTargetParts(declared) == synonymTargetParts(stored.Target)
-}
-
-// synonymTargetParts normalizes a one-to-four part name for comparison by
-// stripping bracket quoting and folding case, which is what SQL Server's
-// default collation does for identifiers.
-func synonymTargetParts(name string) string {
-	parts := strings.Split(name, ".")
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.TrimPrefix(part, "[")
-		part = strings.TrimSuffix(part, "]")
-		parts[i] = strings.ToLower(part)
-	}
-	return strings.Join(parts, ".")
-}
-
 // FunctionDefinitions performs detailed comparison between generated and database function definitions.
 //
 // This function compares all aspects of a PostgreSQL function definition to determine
@@ -1187,28 +1097,6 @@ func stripDefaultColumnAliases(body string) string {
 
 func stripSimpleComparisonParentheses(body string) string {
 	return simpleComparisonParenthesesPattern.ReplaceAllString(body, "$1")
-}
-
-// synonymFromCatalog carries a synonym the database reported into the shape the
-// diff holds.
-//
-// Only the target needs a rule, and it is catalog.Synonym.DeclaredTarget --
-// shared with the conversion path rather than spelled a second time here,
-// because the two are answering the same question about the same row.
-func synonymFromCatalog(reported catalog.Synonym) schemamodel.Synonym {
-	return schemamodel.Synonym{
-		Name:    reported.Name,
-		Schema:  reported.Schema,
-		Target:  reported.DeclaredTarget(),
-		Comment: reported.Comment,
-	}
-}
-
-// sortSynonyms orders by the key the name list was sorted on.
-func sortSynonyms(synonyms difftypes.SynonymChanges) {
-	sort.Slice(synonyms, func(i, j int) bool {
-		return synonyms[i].QualifiedName() < synonyms[j].QualifiedName()
-	})
 }
 
 // declaredRoutine carries a routine the desired schema declares.

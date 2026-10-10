@@ -1976,8 +1976,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// creates are ordered with the views, since either may read the other.
 	result = p.addNewViewLikeObjects(result, diff, relationPlaced)
 	result = p.modifyExistingViews(result, diff)
-	result = p.retargetSynonyms(result, diff)
-	result = p.addNewSynonyms(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
@@ -2080,7 +2078,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// and materialized views that may read them are dropped, and before the
 	// tables they may read.
 	windows.Removal = len(result)
-	result = p.removeSynonyms(result, diff)
 
 	// 13. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
@@ -2939,46 +2936,6 @@ func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difft
 func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, view := range diff.MaterializedViewsRemoved {
 		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
-	}
-	return result
-}
-
-// addNewSynonyms emits the declared synonyms a diff adds.
-//
-// This planner backs PostgreSQL, CockroachDB, YugabyteDB and Spanner, none of
-// which has a synonym object. The node is emitted anyway and the renderer names
-// it as skipped, which is the same contract every other kind this family lacks
-// follows: the plan and the render have to agree about which objects exist, and
-// a planner that dropped the node instead would make a declared object vanish
-// from the plan while the render still reported it.
-func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The target travels WITH the change, so this renders what it was handed
-	// rather than looking the name back up in the desired schema.
-	for _, synonym := range diff.SynonymsAdded {
-		result = append(result, modelast.FromSynonym(synonym))
-	}
-	return result
-}
-
-// retargetSynonyms drops and recreates a synonym whose target changed, in that
-// order, because no dialect has an ALTER SYNONYM to do it in one statement.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The synonym travels WITH the change (stokaro/ptah#2315). The two target
-	// strings are the change; the create needs the object.
-	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := synonymDiff.Desired
-		if synonym.Name == "" {
-			continue
-		}
-		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, modelast.FromSynonym(synonym))
-	}
-	return result
-}
-
-func (p *Planner) removeSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, synonym := range diff.SynonymsRemoved {
-		result = append(result, ast.NewDropSynonym(synonym.QualifiedName()).SetIfExists())
 	}
 	return result
 }

@@ -97,6 +97,9 @@ ptah_schema_row_security_forced_tables{dialect="sqlite"} 0
 # HELP ptah_schema_spanner_row_deletion_policy_tables Tables with a captured Spanner row deletion policy.
 # TYPE ptah_schema_spanner_row_deletion_policy_tables gauge
 ptah_schema_spanner_row_deletion_policy_tables{dialect="sqlite"} 0
+# HELP ptah_schema_synonyms Synonyms.
+# TYPE ptah_schema_synonyms gauge
+ptah_schema_synonyms{dialect="sqlite"} 0
 # HELP ptah_schema_continuous_aggregates TimescaleDB continuous aggregates.
 # TYPE ptah_schema_continuous_aggregates gauge
 ptah_schema_continuous_aggregates{dialect="sqlite"} 0

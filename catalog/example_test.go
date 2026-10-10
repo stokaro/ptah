@@ -84,39 +84,6 @@ func ExampleConstraint_ColumnNamesOrDefault() {
 	// [order_id sku]
 }
 
-// ExampleSynonym_DeclaredTarget shows the two spellings of a SQL Server
-// synonym's target. Target is base_object_name exactly as the catalog
-// records it, brackets included; DeclaredTarget rebuilds the dot-separated
-// declaration spelling from the parsed parts. A three-part target names an
-// object in another database, so IsExternal reports true and
-// TargetQualifiedName declines to produce a local join key for it.
-func ExampleSynonym_DeclaredTarget() {
-	local := catalog.Synonym{
-		Name:         "orders_alias",
-		Schema:       "dbo",
-		Target:       "[app].[orders]",
-		TargetSchema: "app",
-		TargetObject: "orders",
-	}
-	remote := catalog.Synonym{
-		Name:           "gauge",
-		Schema:         "dbo",
-		Target:         "[other].[dbo].[gauge]",
-		TargetDatabase: "other",
-		TargetSchema:   "dbo",
-		TargetObject:   "gauge",
-	}
-
-	for _, synonym := range []catalog.Synonym{local, remote} {
-		fmt.Printf("%s -> %s external=%t local-key=%q\n",
-			synonym.Name, synonym.DeclaredTarget(), synonym.IsExternal(), synonym.TargetQualifiedName())
-	}
-
-	// Output:
-	// orders_alias -> app.orders external=false local-key="app.orders"
-	// gauge -> other.dbo.gauge external=true local-key=""
-}
-
 // ExampleSchemaReader reads a live database into the catalog model, which is
 // the CURRENT side of a schema comparison. The reader comes from dbschema,
 // which picks the dialect implementation from the URL scheme; an in-memory

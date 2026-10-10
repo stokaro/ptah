@@ -91,10 +91,6 @@ func mockNodeName(node ast.Node) string {
 		return n.Name
 	case *ast.CreatePolicyNode:
 		return n.Name
-	case *ast.CreateSynonymNode:
-		return n.Name
-	case *ast.DropSynonymNode:
-		return n.Name
 	case *ast.DropTableNode:
 		return n.Name
 	case *ast.DropTypeNode:

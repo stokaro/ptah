@@ -145,12 +145,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.renderAlterTableForceRLS(n)
 
-	// A synonym is a native Oracle object and renders; the rest of this group
-	// belongs to another engine and is named and skipped.
-	case *ast.CreateSynonymNode:
-		return r.renderCreateSynonym(n)
-	case *ast.DropSynonymNode:
-		return r.renderDropSynonym(n)
+	// This group belongs to another engine and is named and skipped.
 	case *ast.ExtensionNode:
 		return r.renderExtension(n)
 	case *ast.DropExtensionNode:
@@ -175,7 +170,11 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.SQLServerRoutineNode:
 		return r.renderRawSQL(&ast.RawSQLNode{SQL: n.SQL})
 
-	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+	// An owner statement renders through the Oracle owners; an owned
+	// operation inside ALTER TABLE has no Oracle owner.
+	case *ast.ExtensionStatement:
+		return r.renderExtensionNode(n)
+	case *ast.ExtensionAlterOperation:
 		return nodedispatch.RefuseExtension(r.GetDialect(), node)
 	case *ast.StatementList:
 		return r.renderStatementList(n)

@@ -48,6 +48,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/astrouteguard"
 )
 
@@ -198,7 +199,14 @@ func continuousAggregateFixture() extensionFixture {
 
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture())
+		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture())
+}
+
+// synonymFixture creates a synonym for a table in another database.
+func synonymFixture() extensionFixture {
+	return extensionFixture{payload: &synonym.Operation{Action: synonym.Create, Synonym: synonym.DesiredSynonym{
+		Synonym: synonym.Synonym{Schema: "app", Name: "orders", Target: "sales.dbo.orders"},
+	}}, wantSQL: "CREATE SYNONYM [app].[orders] FOR [sales].[dbo].[orders];\n"}
 }
 
 // extendedPropertyFixture adds a property to a column.

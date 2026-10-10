@@ -19,6 +19,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/capabilityprobe"
 )
 
@@ -1418,9 +1419,10 @@ func continuousAggregateFixture() schemamodel.Database {
 
 func synonymFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Synonyms = []schemamodel.Synonym{{
-		StructName: "SY", Name: "tt", Schema: "dbo", Target: "dbo.t", Comment: "alias",
-	}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(synonym.DeclaredObject(synonym.DesiredSynonym{
+		StructName: "SY", Comment: "alias", Synonym: synonym.Synonym{Name: "tt", Schema: "dbo", Target: "dbo.t"},
+	})))
+	db.FeatureCoverage = must.Must(synonym.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
 

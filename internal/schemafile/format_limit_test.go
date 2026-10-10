@@ -32,7 +32,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 	}{
 		{
 			// HCL has the synonym and extended_property blocks
-			// (stokaro/ptah#1031), so it records neither -- and it still cannot
+			// (stokaro/ptah#1031), and their owners' coverage says so -- and it still cannot
 			// name a virtual table, a table's row deletion policy, a changefeed,
 			// or a YDB resource pool or classifier. A secret, a topic, an
 			// external object, an async replication, a transfer and a column
@@ -47,13 +47,12 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// The control on the virtual table. A `.sql` document CAN name one,
 			// so it carries no record for that kind -- without this row a
 			// loader that recorded the limit for every format would pass the
-			// row above. It is also the control on the two SQL Server kinds
-			// going the other way: `.sql` still expresses neither, so a loader
-			// that dropped the record along with HCL's would fail here.
+			// row above. Synonyms and extended properties are owned features
+			// the format makes no claim about, so it records nothing at all.
 			name:     "SQL can",
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
-			want:     unsupportedRecords(coverage.Synonym),
+			want:     nil,
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -62,12 +61,12 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// deletion policy, a changefeed and a column family, as `.sql` has
 			// Spanner's policy clause, so both rows are the control on the TTL,
 			// changefeed and column family records HCL and DBML carry.
-			name:     "YAML cannot name seven families",
+			name:     "YAML cannot name five families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
 			want: unsupportedRecords(
 				coverage.Composite, coverage.Domain,
-				coverage.Range, coverage.Sequence, coverage.Synonym, coverage.VirtualTable),
+				coverage.Range, coverage.Sequence, coverage.VirtualTable),
 		},
 		{
 			// DBML declares the widest boundary of any format here, and that is
@@ -84,7 +83,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 				coverage.Changefeed, coverage.ColumnTable, coverage.Composite,
 				coverage.Domain, coverage.Extension,
 				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
-				coverage.Synonym, coverage.TTL, coverage.VirtualTable),
+				coverage.TTL, coverage.VirtualTable),
 		},
 	}
 

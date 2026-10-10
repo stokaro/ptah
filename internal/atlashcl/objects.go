@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/tableref"
@@ -1941,7 +1942,8 @@ func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int
 	return &result, nil
 }
 
-// parseSynonym parses a top-level synonym block into a schemamodel.Synonym.
+// parseSynonym parses a top-level synonym block into a declared synonym of
+// the synonym owner.
 //
 // `target` is required: a synonym that stands for nothing is not one, and the
 // server has no default. The name and optional schema come from the block
@@ -1964,12 +1966,16 @@ func (p *parser) parseSynonym(block *hclsyntax.Block) error {
 	if strings.TrimSpace(target) == "" {
 		return p.blockError(block, "synonym %q requires a target", name)
 	}
-	p.db.Synonyms = append(p.db.Synonyms, schemamodel.Synonym{
-		Name:    name,
-		Schema:  schema,
-		Target:  target,
-		Comment: p.optionalString(block.Body.Attributes["comment"]),
-	})
+	declared := synonym.DesiredSynonym{Comment: p.optionalString(block.Body.Attributes["comment"]),
+		Synonym: synonym.Synonym{Schema: schema, Name: name, Target: target}}
+	if err := synonym.ValidateDesired(&declared); err != nil {
+		return p.blockError(block, "%v", err)
+	}
+	objects, err := p.db.FeatureObjects.With(synonym.DeclaredObject(declared))
+	if err != nil {
+		return p.blockError(block, "synonym %s is declared twice: %v", declared.QualifiedName(), err)
+	}
+	p.db.FeatureObjects = objects
 	return nil
 }
 

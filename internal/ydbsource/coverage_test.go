@@ -20,6 +20,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -213,15 +214,17 @@ func TestExportsPreserveOrRefuseCompleteSubjectsInUnmanagedNamespaces(t *testing
 }
 
 // withHCLBlockCoverage adds the claims every HCL document makes by its
-// format: it has a block for each TimescaleDB model and for each SQL Server
-// extended property, so a document without one describes a database without
-// one. The YDB account must survive beside them unchanged.
+// format: it has a block for each TimescaleDB model, each SQL Server extended
+// property and each synonym, so a document without one describes a database
+// without one. The YDB account must survive beside them unchanged.
 func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage {
 	c.Helper()
 	combined, err := known.Combine(must.Must(tsschema.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	properties := must.Must(mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	combined, err = combined.Combine(properties)
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(synonym.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
 	c.Assert(err, qt.IsNil)
 	// An HCL document also describes PostgreSQL row-level security.
 	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))

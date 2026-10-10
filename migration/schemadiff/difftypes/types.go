@@ -96,44 +96,6 @@ func (m MaterializedViewChanges) Names() []string {
 	return names
 }
 
-// SynonymChanges is a set of synonyms one change applies to, carrying each
-// one's target and not only its name.
-//
-// A synonym IS its target -- there is nothing else to it -- so the target is
-// what the change has to carry: a name alone does not say what the statement
-// should do.
-//
-// Its rule is that target's spelling. A catalog records base_object_name with
-// the server's own bracket quoting and the parsed parts beside it, and a
-// declaration writes one to four unquoted dot-separated parts;
-// [catalog.Synonym.DeclaredTarget] is the one answer both the conversion and
-// this comparison take.
-//
-// See [RangeChanges] for why both sides carry the operand and why the wire
-// shape does not change.
-type SynonymChanges []schemamodel.Synonym
-
-// MarshalJSON writes the names alone, the shape `synonyms_added` and
-// `synonyms_removed` have always had.
-func (s SynonymChanges) MarshalJSON() ([]byte, error) {
-	if s == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(s.Names())
-}
-
-// Names is the synonym names this change applies to.
-func (s SynonymChanges) Names() []string {
-	if s == nil {
-		return nil
-	}
-	names := make([]string, 0, len(s))
-	for _, synonym := range s {
-		names = append(names, synonym.QualifiedName())
-	}
-	return names
-}
-
 // ColumnChanges is a set of columns one table change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -1114,23 +1076,6 @@ type SchemaDiff struct {
 	// the target schema, each carrying its body; see [ViewChanges].
 	ViewsRemoved ViewChanges `json:"views_removed"`
 
-	// SynonymsAdded is the synonyms that exist in the target schema and not in
-	// the database, each carrying its target; see [SynonymChanges].
-	SynonymsAdded SynonymChanges `json:"synonyms_added"`
-
-	// SynonymsRemoved is the synonyms that exist in the database and not in
-	// the target schema, each carrying its target; see [SynonymChanges].
-	SynonymsRemoved SynonymChanges `json:"synonyms_removed"`
-
-	// SynonymsModified contains synonyms whose target changed.
-	//
-	// A changed target is its own case rather than a removal plus an addition,
-	// because T-SQL has no ALTER SYNONYM: the plan has to drop and recreate,
-	// and a reader who sees the same name in both the removed and added lists
-	// cannot tell a retarget from an unrelated drop that happens to share a
-	// name with an unrelated create.
-	SynonymsModified []SynonymDiff `json:"synonyms_modified"`
-
 	// ViewsModified contains detailed information about views with changed definitions.
 	ViewsModified []ViewDiff `json:"views_modified"`
 
@@ -1580,7 +1525,6 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasSequenceChanges() ||
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
-		d.hasSynonymChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
 		d.hasRLSChanges() ||
@@ -1822,12 +1766,6 @@ func (d *SchemaDiff) hasViewChanges() bool {
 	return len(d.ViewsAdded) > 0 ||
 		len(d.ViewsRemoved) > 0 ||
 		len(d.ViewsModified) > 0
-}
-
-func (d *SchemaDiff) hasSynonymChanges() bool {
-	return len(d.SynonymsAdded) > 0 ||
-		len(d.SynonymsRemoved) > 0 ||
-		len(d.SynonymsModified) > 0
 }
 
 func (d *SchemaDiff) hasMaterializedViewChanges() bool {
@@ -2453,25 +2391,6 @@ type ExtensionDiff struct {
 	// `extension "plpgsql" does not support SET SCHEMA`, measured on
 	// PostgreSQL 18.
 	Relocatable bool `json:"relocatable"`
-}
-
-// SynonymDiff describes a synonym whose target changed.
-type SynonymDiff struct {
-	SynonymName string `json:"synonym_name"`
-	OldTarget   string `json:"old_target"`
-	NewTarget   string `json:"new_target"`
-
-	// Desired is the synonym this change asks the database to hold.
-	//
-	// No dialect has an ALTER SYNONYM, so a retarget is a drop and a create,
-	// and the create needs what the two target strings do not carry: the
-	// schema, and whether the synonym is public. Carrying the declaration is
-	// what lets the planner render it without being handed the schema
-	// (stokaro/ptah#2315).
-	//
-	// It stays off the wire. The two targets are the change; this is the
-	// operand.
-	Desired schemamodel.Synonym `json:"-"`
 }
 
 // ViewDiff represents changes to a view definition.

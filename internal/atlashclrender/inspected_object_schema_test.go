@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -122,7 +123,9 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 			// measures.
 			name: "a synonym",
 			declare: func(db *schemamodel.Database) {
-				db.Synonyms = []schemamodel.Synonym{{Name: "s_users", Target: "other.dbo.users"}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(synonym.DeclaredObject(synonym.DesiredSynonym{
+					Synonym: synonym.Synonym{Name: "s_users", Target: "other.dbo.users"},
+				})))
 			},
 			want: "synonym \"s_users\" {\n  schema = schema.public\n",
 		},
@@ -235,9 +238,9 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		{
 			name: "a synonym",
 			declare: func(db *schemamodel.Database) {
-				db.Synonyms = []schemamodel.Synonym{{
-					Name: "s_users", Schema: "reporting", Target: "other.dbo.users",
-				}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(synonym.DeclaredObject(synonym.DesiredSynonym{
+					Synonym: synonym.Synonym{Name: "s_users", Schema: "reporting", Target: "other.dbo.users"},
+				})))
 			},
 			want: "synonym \"s_users\" {\n  schema = schema.reporting\n",
 		},

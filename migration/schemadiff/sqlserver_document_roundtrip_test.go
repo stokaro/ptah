@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
@@ -52,10 +53,9 @@ func TestCompare_ARoundTripThroughPtahsOwnOutputKeepsThem(t *testing.T) {
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "sqlserver"}, nil, must.Must(builtin.New())))
 
 	c.Assert(droppedProperties(diff), qt.Equals, 0)
-	c.Assert(diff.SynonymsRemoved, qt.HasLen, 0)
-	// Non-vacuity: the two empty lists above are the objects surviving rather
+	c.Assert(droppedSynonyms(diff), qt.HasLen, 0)
+	// Non-vacuity: the two empty counts above are the objects surviving rather
 	// than a comparison of two empty sets.
-	c.Assert(parsed.Synonyms, qt.DeepEquals, describedSQLServerSchema().Synonyms)
 	c.Assert(parsed.FeatureObjects.Refs(), qt.DeepEquals, describedSQLServerSchema().FeatureObjects.Refs())
 	c.Assert(string(document), qt.Contains, "s_users")
 }
@@ -76,13 +76,12 @@ func TestCompare_AnHCLDocumentThatOmitsThemDropsThem(t *testing.T) {
 	// a document whose author does not want them.
 	declared := describedSQLServerSchema()
 	declared.FeatureObjects = schemaext.Objects{}
-	declared.Synonyms = nil
 	parsed := loadDocument(c, renderInspectedDocument(c, declared))
 
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "sqlserver"}, nil, must.Must(builtin.New())))
 
 	c.Assert(droppedProperties(diff), qt.Equals, 1)
-	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
+	c.Assert(droppedSynonyms(diff), qt.DeepEquals, []string{"dbo.s_users"})
 }
 
 // TestCompare_AGoSchemaThatCouldNameThemStillDropsThem is the control.
@@ -99,12 +98,11 @@ func TestCompare_AGoSchemaThatCouldNameThemStillDropsThem(t *testing.T) {
 	// source that does not want them looks like.
 	declared := describedSQLServerSchema()
 	declared.FeatureObjects = schemaext.Objects{}
-	declared.Synonyms = nil
 
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), declared, live, catalog.ServerInfo{Dialect: "sqlserver"}, nil, must.Must(builtin.New())))
 
 	c.Assert(droppedProperties(diff), qt.Equals, 1)
-	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
+	c.Assert(droppedSynonyms(diff), qt.DeepEquals, []string{"dbo.s_users"})
 }
 
 // sqlServerDatabaseWithUnwritableObjects is a database holding one of each of
@@ -113,32 +111,35 @@ func sqlServerDatabaseWithUnwritableObjects() *catalog.Database {
 	return &catalog.Database{
 		Schemas: []catalog.Schema{{Name: "dbo"}},
 		Tables:  []catalog.Table{{Schema: "dbo", Name: "users"}},
-		FeatureObjects: must.Must(schemaext.NewObjects(mssqlproperty.ObservedObject(mssqlproperty.ObservedProperty{
-			Property: mssqlproperty.Property{Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users"}, ValueType: "nvarchar",
-		}))),
-		FeatureCoverage: must.Must(mssqlproperty.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
-		Synonyms: []catalog.Synonym{{
-			Schema: "dbo", Name: "s_users", Target: "other.dbo.users",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			mssqlproperty.ObservedObject(mssqlproperty.ObservedProperty{
+				Property: mssqlproperty.Property{Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users"}, ValueType: "nvarchar",
+			}),
+			synonym.ObservedObject(synonym.ObservedSynonym{Synonym: synonym.Synonym{Schema: "dbo", Name: "s_users", Target: "other.dbo.users"}}),
+		)),
+		FeatureCoverage: must.Must(must.Must(mssqlproperty.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)).
+			Combine(must.Must(synonym.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)))),
 	}
 }
 
 // describedSQLServerSchema is what a read of that database produces: the table,
 // and both objects the HCL render has to carry.
 func describedSQLServerSchema() *schemamodel.Database {
+	complete := schemaext.Knowledge{State: schemaext.Complete}
 	return &schemamodel.Database{
 		Schemas: []schemamodel.Schema{{Name: "dbo"}},
 		Tables:  []schemamodel.Table{{StructName: "T", Name: "users", Schema: "dbo"}},
 		Fields:  []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
-		FeatureObjects: must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
-			Property: mssqlproperty.Property{Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users"},
-		}))),
-		// A Go schema has an annotation for an extended property, so it
-		// records that it describes them.
-		FeatureCoverage: must.Must(mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
-		Synonyms: []schemamodel.Synonym{{
-			Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+				Property: mssqlproperty.Property{Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users"},
+			}),
+			synonym.DeclaredObject(synonym.DesiredSynonym{Synonym: synonym.Synonym{Name: "s_users", Schema: "dbo", Target: "other.dbo.users"}}),
+		)),
+		// A Go schema has an annotation for an extended property and for a
+		// synonym, so it records that it describes them.
+		FeatureCoverage: must.Must(must.Must(mssqlproperty.Coverage(schemaext.Desired, complete, nil)).
+			Combine(must.Must(synonym.Coverage(schemaext.Desired, complete, nil)))),
 	}
 }
 
@@ -170,6 +171,17 @@ func droppedProperties(diff *difftypes.SchemaDiff) int {
 	for _, record := range records {
 		if change, ok := record.Value.(*mssqlproperty.Change); ok && change.After == nil {
 			dropped++
+		}
+	}
+	return dropped
+}
+
+// droppedSynonyms names the synonyms a comparison drops, as schema.name.
+func droppedSynonyms(diff *difftypes.SchemaDiff) []string {
+	var dropped []string
+	for _, record := range diff.FeatureChanges {
+		if change, ok := record.Value.(*synonym.Change); ok && change.After == nil {
+			dropped = append(dropped, change.Before.QualifiedName())
 		}
 	}
 	return dropped

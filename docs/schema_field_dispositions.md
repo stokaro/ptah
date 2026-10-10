@@ -217,7 +217,6 @@ None.
 | `schemamodel.Database.Schemas` | `ddl` | — |
 | `schemamodel.Database.SelfReferencingForeignKeys` | `derived` | derived by Finalize from the declared foreign keys, so the planner can create the table before the reference to itself |
 | `schemamodel.Database.Sequences` | `ddl` | — |
-| `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
 | `schemamodel.Database.Triggers` | `ddl` | — |
 | `schemamodel.Database.Views` | `ddl` | — |
@@ -459,11 +458,6 @@ None.
 | `schemamodel.Sequence.Schema` | `ddl` | — |
 | `schemamodel.Sequence.Start` | `ddl` | — |
 | `schemamodel.Sequence.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.Synonym.Comment` | `ddl` | — |
-| `schemamodel.Synonym.Name` | `ddl` | — |
-| `schemamodel.Synonym.Schema` | `ddl` | — |
-| `schemamodel.Synonym.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.Synonym.Target` | `ddl` | — |
 | `schemamodel.Table.APIName` | `export` | the name an exported API document carries when it differs from the database name |
 | `schemamodel.Table.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |
 | `schemamodel.Table.Checks` | `ddl` | — |
@@ -521,6 +515,12 @@ None.
 | `spannerschema.DesiredRowDeletion.Policy` | `ddl` | — |
 | `spannerschema.Policy.Column` | `ddl` | — |
 | `spannerschema.Policy.Interval` | `ddl` | — |
+| `synonym.DesiredSynonym.Comment` | `ddl` | — |
+| `synonym.DesiredSynonym.StructName` | `source` | the Go struct the declaration was read from; the alias is its identity |
+| `synonym.DesiredSynonym.Synonym` | `ddl` | — |
+| `synonym.Synonym.Name` | `ddl` | — |
+| `synonym.Synonym.Schema` | `ddl` | — |
+| `synonym.Synonym.Target` | `ddl` | — |
 | `tsschema.DesiredContinuousAggregate.Body` | `ddl` | — |
 | `tsschema.DesiredContinuousAggregate.Comment` | `ddl` | — |
 | `tsschema.DesiredContinuousAggregate.MaterializedOnly` | `ddl` | — |

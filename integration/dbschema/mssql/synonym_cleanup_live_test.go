@@ -48,7 +48,7 @@ func TestDropDatabaseRealm_SynonymsDoNotBlockSchemaDrop(t *testing.T) {
 	reader.SetSchemas([]string{"dbo", "aaa", "zzz"})
 	schema, readErr := reader.ReadSchemaContext(t.Context())
 	c.Assert(readErr, qt.IsNil)
-	c.Assert(schema.Synonyms, qt.HasLen, 0)
+	c.Assert(readSynonyms(c, schema), qt.HasLen, 0)
 	c.Assert(schema.Views, qt.HasLen, 0)
 	c.Assert(schema.Tables, qt.HasLen, 0)
 }

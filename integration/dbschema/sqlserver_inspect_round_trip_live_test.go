@@ -28,7 +28,7 @@ import (
 //
 // The int-valued property is the control, and it is a decision rather than a
 // gap: a value SQL Server stores under a base type Ptah cannot write back must
-// not become a declaration, because the renderer emits an N” literal and the
+// not become a declaration, because the renderer emits an N'...' literal and the
 // next apply would change its type.
 func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
@@ -68,8 +68,7 @@ func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 	// Non-vacuity: the read really found all three, so an empty document below
 	// cannot pass as agreement about what is describable. The property held
 	// as an int is recorded in coverage rather than as a value.
-	c.Assert(live.Synonyms, qt.HasLen, 1)
-	c.Assert(live.FeatureObjects.Len(), qt.Equals, 1)
+	c.Assert(live.FeatureObjects.Len(), qt.Equals, 2)
 	unwritable, recorded := live.FeatureCoverage.SubjectKnowledge(mssqlproperty.Kind,
 		mssqlproperty.Property{Name: "ptah_int", Schema: schemaName, Table: "gauge"}.Ref())
 	c.Assert(recorded, qt.IsTrue)

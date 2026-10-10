@@ -392,20 +392,6 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{Views: []schemamodel.View{{Name: "v", Body: "SELECT 2"}}},
 		},
 		{
-			"SynonymsAdded",
-			&difftypes.SchemaDiff{SynonymsAdded: difftypes.SynonymChanges{{Name: "s"}}},
-			&schemamodel.Database{Synonyms: []schemamodel.Synonym{{Name: "s", Target: "dbo.t"}}},
-		},
-		{"SynonymsRemoved", &difftypes.SchemaDiff{SynonymsRemoved: difftypes.SynonymChanges{{Name: "s"}}}, &schemamodel.Database{}},
-		{
-			"SynonymsModified",
-			&difftypes.SchemaDiff{SynonymsModified: []difftypes.SynonymDiff{{
-				SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new",
-				Desired: schemamodel.Synonym{Name: "s", Target: "dbo.new"},
-			}}},
-			&schemamodel.Database{},
-		},
-		{
 			"MaterializedViewsAdded",
 			&difftypes.SchemaDiff{
 				MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv"}},

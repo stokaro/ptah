@@ -145,7 +145,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read synonyms: %w", err)
 	}
-	schema.Synonyms = synonyms
+	if err := recordSynonyms(schema, synonyms); err != nil {
+		return nil, fmt.Errorf("sqlserver: record synonyms: %w", err)
+	}
 
 	extendedProperties, err := r.readExtendedProperties(ctx)
 	if err != nil {
@@ -976,75 +978,6 @@ func grantObjectTypeFor(class string) string {
 	default:
 		return strings.ToUpper(strings.TrimSpace(class))
 	}
-}
-
-// readSynonyms reads the synonyms the connected database declares.
-//
-// base_object_name is the target exactly as the server stored it, brackets and
-// all, and it is kept unchanged: it is what the server will resolve, and
-// rewriting it would change which object the alias names. The parsed parts are
-// derived from it so that ordering can tell a local target from one in another
-// database without parsing the string again at every call site.
-func (r *Reader) readSynonyms(ctx context.Context) ([]catalog.Synonym, error) {
-	query := `
-		SELECT s.name, sy.name, sy.base_object_name
-		FROM sys.synonyms AS sy
-		JOIN sys.schemas AS s ON s.schema_id = sy.schema_id
-		WHERE sy.is_ms_shipped = 0
-			  AND (` + schemaPredicatePlaceholder + `)
-		ORDER BY s.name, sy.name`
-	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var synonyms []catalog.Synonym
-	for rows.Next() {
-		var synonym catalog.Synonym
-		if err := rows.Scan(&synonym.Schema, &synonym.Name, &synonym.Target); err != nil {
-			return nil, err
-		}
-		synonym.Schema = r.outputSchema(synonym.Schema)
-		applySynonymTargetParts(&synonym)
-		synonyms = append(synonyms, synonym)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return synonyms, nil
-}
-
-// applySynonymTargetParts fills the parsed target parts from the raw catalog
-// value.
-//
-// SQL Server writes base_object_name right-aligned: the last part is always the
-// object, and the parts before it are schema, database and server in that order
-// going left. A missing middle part is written as an empty pair of brackets, so
-// `[srv]..[dbo].[t]` names a server and no database, and reading positionally
-// from the left would take the server for a database.
-func applySynonymTargetParts(synonym *catalog.Synonym) {
-	parts := strings.Split(synonym.Target, ".")
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.TrimPrefix(part, "[")
-		part = strings.TrimSuffix(part, "]")
-		parts[i] = part
-	}
-	synonym.TargetObject = partFromRight(parts, 0)
-	synonym.TargetSchema = partFromRight(parts, 1)
-	synonym.TargetDatabase = partFromRight(parts, 2)
-	synonym.TargetServer = partFromRight(parts, 3)
-}
-
-// partFromRight returns the nth part counting from the last one, or the empty
-// string when the name has fewer parts than that.
-func partFromRight(parts []string, n int) string {
-	index := len(parts) - 1 - n
-	if index < 0 {
-		return ""
-	}
-	return parts[index]
 }
 
 func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {

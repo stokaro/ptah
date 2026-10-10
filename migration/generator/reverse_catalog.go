@@ -1,8 +1,7 @@
 package generator
 
-// Reversing the catalog-level families: extensions, sequences, synonyms,
-// coordination nodes, extended properties, row-level-security policies and
-// roles.
+// Reversing the catalog-level families: extensions, sequences,
+// row-level-security policies, roles and object comments.
 
 import (
 	"strings"
@@ -69,50 +68,6 @@ func reverseSequenceDiffs(
 	return reversed
 }
 
-// reverseViewDiffs carries modified views into the down direction.
-//
-// The entry is carried across rather than swapped with anything: the planner
-// renders a modified view from the schema it is given (the pre-change database
-// schema, in the down direction), so the entry itself is what selects the prior
-// definition.
-//
-// PreviousBody is different in kind: it names the body the view HAS when the
-// statement runs, not a change. When the rollback runs, the database holds what
-// the up migration wrote, which is the generated schema's body -- so that is
-// what the reversed entry must carry. Getting this wrong is not cosmetic: the
-// PostgreSQL planner reads it to decide whether CREATE OR REPLACE VIEW is legal
-// for the rollback, and PostgreSQL refuses the replace for every column-list
-// change except a trailing append.
-//
-// A nil schema (the deprecated reverseSchemaDiff entry point) leaves it empty,
-// which planners read as "not known" and answer with drop-and-recreate. That is
-// the safe direction: it always applies.
-//
-// Rollback is set for the same reason and is the other half of it. Where a
-// planner can neither prove the replace legal nor prove it refused, the answer
-// it should give differs by direction, and this is the only place that knows
-// which direction is being built.
-// reverseSynonymDiffs swaps each retarget so the down direction restores the
-// target the database had before the up migration ran.
-func reverseSynonymDiffs(
-	diffs []difftypes.SynonymDiff,
-	prior *schemamodel.Database,
-) []difftypes.SynonymDiff {
-	if len(diffs) == 0 {
-		return nil
-	}
-	reversed := make([]difftypes.SynonymDiff, 0, len(diffs))
-	for _, diff := range diffs {
-		reversed = append(reversed, difftypes.SynonymDiff{
-			SynonymName: diff.SynonymName,
-			OldTarget:   diff.NewTarget,
-			NewTarget:   diff.OldTarget,
-			Desired:     priorSynonym(prior, diff.SynonymName),
-		})
-	}
-	return reversed
-}
-
 // priorSequence is the sequence the pre-change database held, resolved on the
 // three identity tiers, because the diff spells a name the declaration produced
 // and a read reports the schema the server puts the sequence under.
@@ -128,23 +83,6 @@ func priorSequence(
 		return *sequence
 	}
 	return schemamodel.Sequence{}
-}
-
-// priorSynonym is the synonym the pre-change database held.
-//
-// The qualified name is the key on both sides, which is the one the comparison
-// that produced the change already used: it maps declared synonyms by
-// QualifiedName and pairs them with the reported ones under the same key.
-func priorSynonym(prior *schemamodel.Database, name string) schemamodel.Synonym {
-	if prior == nil {
-		return schemamodel.Synonym{}
-	}
-	for _, synonym := range prior.Synonyms {
-		if synonym.QualifiedName() == name {
-			return synonym
-		}
-	}
-	return schemamodel.Synonym{}
 }
 
 // reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations

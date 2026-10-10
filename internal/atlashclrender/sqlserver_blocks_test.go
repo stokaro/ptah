@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -76,11 +77,13 @@ func sqlServerObjects() *schemamodel.Database {
 			{StructName: "T", Name: "id", Type: "INT", Primary: true},
 			{StructName: "T", Name: "title", Type: "NVARCHAR(50)"},
 		},
-		Synonyms: []schemamodel.Synonym{{
-			Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
-		}},
-		FeatureObjects: must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
-			Property: mssqlproperty.Property{Name: "MS_Description", Schema: "dbo", Table: "users", Column: "title", Value: "the title"},
-		}))),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			synonym.DeclaredObject(synonym.DesiredSynonym{
+				Synonym: synonym.Synonym{Name: "s_users", Schema: "dbo", Target: "other.dbo.users"},
+			}),
+			mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+				Property: mssqlproperty.Property{Name: "MS_Description", Schema: "dbo", Table: "users", Column: "title", Value: "the title"},
+			}),
+		)),
 	}
 }

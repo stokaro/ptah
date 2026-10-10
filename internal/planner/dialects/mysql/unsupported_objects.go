@@ -287,7 +287,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
 		result = append(result, node)
 	}
-	if p.hostsFeatures() {
+	if p.dropsRoutinesLate() {
 		// Removed after the tables and the feature objects that may call them;
 		// see [Planner.removeRoutines].
 		return result

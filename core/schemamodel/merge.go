@@ -18,7 +18,6 @@ func NewDatabase() *Database {
 		CompositeTypes:    make([]CompositeType, 0),
 		Ranges:            make([]Range, 0),
 		Views:             make([]View, 0),
-		Synonyms:          make([]Synonym, 0),
 		MaterializedViews: make([]MaterializedView, 0),
 		Triggers:          make([]Trigger, 0),
 		RLSPolicies:       make([]RLSPolicy, 0),
@@ -78,7 +77,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.CompositeTypes = append(dst.CompositeTypes, src.CompositeTypes...)
 	dst.Ranges = append(dst.Ranges, src.Ranges...)
 	dst.Views = append(dst.Views, src.Views...)
-	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)
 	dst.RLSPolicies = append(dst.RLSPolicies, src.RLSPolicies...)

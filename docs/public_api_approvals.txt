@@ -600,3 +600,15 @@ v0.13.0 ptah.run/migration/schemadiff
 # owed under the authorized #4140/#4204 clean-break policy.
 v0.13.0 ptah.run/core/yamlschema
 v0.13.0 ptah.run/core/schemasource
+
+# #4140 moves synonyms to the owner ptah.run/feature/synonym, bound to SQL
+# Server and Oracle. catalog.Synonym, schemamodel.Synonym, the CreateSynonymNode
+# and DropSynonymNode AST nodes, the coverage.Synonym kind and the difftypes
+# synonym lists and SynonymDiff are removed without aliases; a caller declares a
+# synonym as the owner's feature object. This changes the Go API; pre-v1, so no
+# compatibility is owed under the authorized #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/catalog
+v0.13.0 ptah.run/core/ast
+v0.13.0 ptah.run/core/coverage
+v0.13.0 ptah.run/core/schemamodel
+v0.13.0 ptah.run/migration/schemadiff/difftypes

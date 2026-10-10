@@ -269,6 +269,11 @@ func planPolicies(c *qt.C, changes ...schemaext.ChangeRecord) []string {
 	return statements
 }
 
+// rlsSchemaGuard is the guard a SQL Server plan puts in front of every
+// creation of a schema-level object, a policy included: the schema may not
+// exist yet, and CREATE answers Msg 2760 when it does not.
+const rlsSchemaGuard = "IF SCHEMA_ID('rls') IS NULL\n    EXEC('CREATE SCHEMA [rls]')\n"
+
 // TestSecurityPolicyPlan_HandsATableOver pins the order of a plan that moves
 // a table from one enabled policy to another, which SQL Server refuses while
 // both are enabled (Msg 33264): the policy that releases the table is dropped
@@ -284,7 +289,7 @@ func TestSecurityPolicyPlan_HandsATableOver(t *testing.T) {
 		schemaext.ChangeRecord{Subject: mssqlschema.SecurityPolicyRef("rls", "old"), Value: &mssqldiff.SecurityPolicy{Before: before,
 			Access: mssqldiff.Assess(sqlServerNames, before, nil)}})
 
-	c.Assert(strings.Join(statements, "\n"), qt.Equals, "DROP SECURITY POLICY [rls].[old]\n"+
+	c.Assert(strings.Join(statements, "\n"), qt.Equals, rlsSchemaGuard+"DROP SECURITY POLICY [rls].[old]\n"+
 		"CREATE SECURITY POLICY [rls].[new]\n    ADD FILTER PREDICATE [rls].[fn_tenant](owner_id) ON [app].[orders]\n    WITH (STATE = ON, SCHEMABINDING = ON)")
 }
 
@@ -302,7 +307,7 @@ func TestSecurityPolicyRender(t *testing.T) {
 	}{
 		{name: "a new disabled policy left out of replication", after: &mssqlschema.DesiredSecurityPolicy{
 			Predicates: []mssqlschema.Predicate{policyFilter(policyOrders, "tenant_id")}, Enabled: new(false), SchemaBinding: new(false), NotForReplication: true},
-			want: "CREATE SECURITY POLICY [rls].[tenancy]\n    ADD FILTER PREDICATE [rls].[fn_tenant](tenant_id) ON [app].[orders]\n" +
+			want: rlsSchemaGuard + "CREATE SECURITY POLICY [rls].[tenancy]\n    ADD FILTER PREDICATE [rls].[fn_tenant](tenant_id) ON [app].[orders]\n" +
 				"    WITH (STATE = OFF, SCHEMABINDING = OFF)\n    NOT FOR REPLICATION"},
 		{name: "a dropped policy", before: enabled(policyFilter(policyOrders, "[tenant_id]")), want: "DROP SECURITY POLICY [rls].[tenancy]"},
 		{name: "schema binding turned off", before: enabled(policyFilter(policyOrders, "[tenant_id]")), after: &mssqlschema.DesiredSecurityPolicy{

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/synonym"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -213,9 +214,10 @@ func TestGenerateSchemaDiffSQLStatements_EveryAddedFamilyNamesItsSchema(t *testi
 		{
 			name: "a synonym",
 			declare: func(d *schemamodel.Database) {
-				d.Synonyms = append(d.Synonyms, schemamodel.Synonym{
-					Name: "s1", Schema: "extra", Target: "other.dbo.widget",
-				})
+				d.FeatureObjects = must.Must(d.FeatureObjects.With(synonym.DeclaredObject(synonym.DesiredSynonym{
+					Synonym: synonym.Synonym{Name: "s1", Schema: "extra", Target: "other.dbo.widget"},
+				})))
+				d.FeatureCoverage = must.Must(synonym.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 			},
 		},
 		{

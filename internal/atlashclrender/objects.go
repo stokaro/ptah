@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tableref"
@@ -1274,7 +1275,7 @@ func containsFold(values []string, target string) bool {
 	return false
 }
 
-// renderSynonyms writes the SQL Server synonym blocks.
+// renderSynonyms writes the synonym blocks.
 //
 // The block exists because HCL had no way to say one, and a document that
 // cannot name an object cannot ask for it to be kept: `schema inspect` into a
@@ -1287,20 +1288,43 @@ func containsFold(values []string, target string) bool {
 // speak, a top-level block it does not model is dropped at exit 0 exactly like
 // the `wibble "x" {}` control in [atlasRefusedBlockTypes]'s own measurement.
 func (r *renderer) renderSynonyms() {
-	synonyms := append([]schemamodel.Synonym(nil), r.db.Synonyms...)
-	slices.SortFunc(synonyms, func(a, b schemamodel.Synonym) int {
+	synonyms := slices.Clone(r.synonyms)
+	slices.SortFunc(synonyms, func(a, b synonym.DesiredSynonym) int {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
-	for _, synonym := range synonyms {
-		r.linef(`synonym %s {`, quote(synonym.Name))
-		if schema := r.schemaFor(synonym.Schema); schema != "" {
+	for _, declared := range synonyms {
+		r.linef(`synonym %s {`, quote(declared.Name))
+		if schema := r.schemaFor(declared.Schema); schema != "" {
 			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
-		r.stringAttr(1, "target", synonym.Target)
-		r.stringAttr(1, "comment", synonym.Comment)
+		r.stringAttr(1, "target", declared.Target)
+		r.stringAttr(1, "comment", declared.Comment)
 		r.line("}")
 		r.line("")
 	}
+}
+
+// captureSynonyms validates every synonym before rendering, so a malformed
+// value fails the export rather than becoming a warning.
+func (r *renderer) captureSynonyms() error {
+	objects, err := r.db.FeatureObjects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		if object.Ref.Kind != objectidentity.Kind(synonym.Kind) {
+			continue
+		}
+		declared, ok := object.Value.(*synonym.DesiredSynonym)
+		if !ok {
+			return fmt.Errorf("%w: HCL requires desired synonym values", schemaext.ErrInvalidValue)
+		}
+		if err := synonym.ValidateDesired(declared); err != nil {
+			return err
+		}
+		r.synonyms = append(r.synonyms, *declared)
+	}
+	return nil
 }
 
 // renderCoordinationNodes writes the YDB coordination node blocks, a Ptah

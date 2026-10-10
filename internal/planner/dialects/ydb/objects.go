@@ -80,8 +80,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 		{len(diff.RLSPoliciesAdded)+len(diff.RLSPoliciesRemoved)+len(diff.RLSPoliciesModified)+
 			len(diff.RLSEnabledTablesAdded)+len(diff.RLSEnabledTablesRemoved)+len(diff.RLSForceChanged) > 0,
 			keyed(capability.RowLevelSecurity, "row-level security", "the plan changes row-level security")},
-		{len(diff.SynonymsAdded)+len(diff.SynonymsRemoved)+len(diff.SynonymsModified) > 0,
-			func() error { return refuseFact("the plan changes a synonym", "YDB has no synonyms") }},
 		{len(diff.IndexVisibilityChanged) > 0,
 			keyed(capability.InvisibleIndexes, "invisible index", "the plan changes whether an index is visible")},
 		{len(diff.ConstraintsValidated) > 0,

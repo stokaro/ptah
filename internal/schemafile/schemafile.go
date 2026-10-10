@@ -401,9 +401,6 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Sequence, coverage.Domain, coverage.Composite, coverage.Range)...)
 	}
-	if extension != dirHCLExtension {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Synonym)...)
-	}
 	if extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
 	}
@@ -435,7 +432,6 @@ func dbmlCannotExpress() []coverage.Kind {
 		coverage.Range,
 		coverage.Role,
 		coverage.Sequence,
-		coverage.Synonym,
 		coverage.VirtualTable,
 	}
 }
@@ -891,7 +887,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	// takes back an earlier file's GRANT, as it would in one file.
 	privilegefold.Merge(dst, src)
 	dst.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(dst.DefaultPrivileges, src.DefaultPrivileges)
-	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only
 	// what all of them together describe. Union, never intersection: a limit

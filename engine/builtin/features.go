@@ -23,6 +23,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyrender"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/pgpolicyprovider"
 	"ptah.run/internal/ydbextensions"
 )
@@ -45,12 +46,34 @@ func validateNamedFeatures(dialect string, caps capability.Capabilities, objects
 	if platform.NormalizeDialect(dialect) == platform.SQLServer {
 		return validateSecurityPolicies(dialect, objects)
 	}
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return validateSynonyms(dialect, objects)
+	}
 	return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
 }
 
-// validateSecurityPolicies accepts the security policies and the extended
-// properties the SQL Server owners plan, and refuses every other named
-// object.
+// validateSynonyms accepts the synonyms the synonym owner plans, Oracle's
+// only owner, and refuses every other named object.
+func validateSynonyms(dialect string, objects schemaext.Objects) error {
+	all, err := objects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range all {
+		value, ok := object.Value.(*synonym.DesiredSynonym)
+		if !ok {
+			return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+		}
+		if err := synonym.ValidateDesired(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateSecurityPolicies accepts the security policies, the extended
+// properties and the synonyms the SQL Server owners plan, and refuses every
+// other named object.
 func validateSecurityPolicies(dialect string, objects schemaext.Objects) error {
 	all, err := objects.All()
 	if err != nil {
@@ -64,6 +87,10 @@ func validateSecurityPolicies(dialect string, objects schemaext.Objects) error {
 			}
 		case *mssqlproperty.DesiredProperty:
 			if err := mssqlproperty.ValidateDesired(value); err != nil {
+				return err
+			}
+		case *synonym.DesiredSynonym:
+			if err := synonym.ValidateDesired(value); err != nil {
 				return err
 			}
 		default:
