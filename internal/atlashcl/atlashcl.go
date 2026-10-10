@@ -572,23 +572,22 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 
 	table := schemamodel.Table{
-		StructName:    hclTableStructName(labels.schema, labels.name),
-		Name:          labels.name,
-		Schema:        labels.schema,
-		APIName:       apiName,
-		APINames:      apiNames,
-		Engine:        p.optionalString(block.Body.Attributes["engine"]),
-		AutoIncrement: p.optionalString(block.Body.Attributes["auto_increment"]),
-		Charset:       p.optionalString(block.Body.Attributes["charset"]),
-		Collate:       p.optionalString(block.Body.Attributes["collate"]),
-		Strict:        strict,
-		WithoutRowID:  withoutRowID,
-		Unlogged:      unlogged,
-		Comment:       p.optionalString(block.Body.Attributes["comment"]),
-		Checks:        checks,
-		CustomSQL:     customSQL,
-		Overrides:     overrides,
-		DependsOn:     p.objectRefListAttr(block, "depends_on"),
+		StructName:   hclTableStructName(labels.schema, labels.name),
+		Name:         labels.name,
+		Schema:       labels.schema,
+		APIName:      apiName,
+		APINames:     apiNames,
+		Engine:       p.optionalString(block.Body.Attributes["engine"]),
+		Collate:      p.optionalString(block.Body.Attributes["collate"]),
+		Strict:       strict,
+		WithoutRowID: withoutRowID,
+		Unlogged:     unlogged,
+		Comment:      p.optionalString(block.Body.Attributes["comment"]),
+		Checks:       checks,
+		CustomSQL:    customSQL,
+		Overrides: mysqlTableOptions(overrides,
+			p.optionalString(block.Body.Attributes["auto_increment"]), p.optionalString(block.Body.Attributes["charset"])),
+		DependsOn: p.objectRefListAttr(block, "depends_on"),
 	}
 
 	fieldsStart := len(p.db.Fields)
@@ -2556,4 +2555,32 @@ func (p *parser) printLine(line string) {
 // goes.
 func writePrintLine(line string) {
 	fmt.Fprintln(printDestination, line)
+}
+
+// mysqlTableOptions states a table's auto_increment and charset, which only
+// the MySQL family has, as the platform properties of the mysql and mariadb
+// targets, where the MySQL owner reads them. A target group that states one
+// already keeps its own. overrides is not changed.
+func mysqlTableOptions(overrides map[string]map[string]string, autoIncrement, charset string) map[string]map[string]string {
+	if autoIncrement == "" && charset == "" {
+		return overrides
+	}
+	result := make(map[string]map[string]string, len(overrides)+2)
+	for target, group := range overrides {
+		result[target] = maps.Clone(group)
+	}
+	for _, target := range []string{"mysql", "mariadb"} {
+		for _, option := range []struct{ key, value string }{{"auto_increment", autoIncrement}, {"charset", charset}} {
+			if option.value == "" {
+				continue
+			}
+			if result[target] == nil {
+				result[target] = make(map[string]string)
+			}
+			if _, stated := result[target][option.key]; !stated {
+				result[target][option.key] = option.value
+			}
+		}
+	}
+	return result
 }

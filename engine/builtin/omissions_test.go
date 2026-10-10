@@ -15,7 +15,7 @@ import (
 
 // tableWithMySQLOptions is the schema every target below is asked to render.
 //
-// The four options are the ones the MySQL family owns, and they are what
+// The four options are the ones the MySQL family renders, and they are what
 // stokaro/ptah#2969 measured a PostgreSQL server rejecting outright. A schema
 // carrying them is the ordinary case for an author who wrote for MySQL first
 // and added a second target later.
@@ -30,12 +30,17 @@ func tableWithMySQLOptions() *schemamodel.Database {
 func tableWithEngine(engine string) *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{
-			StructName:    "User",
-			Name:          "users",
-			Engine:        engine,
-			AutoIncrement: "100",
-			Charset:       "utf8mb4",
-			Collate:       "utf8mb4_bin",
+			StructName: "User",
+			Name:       "users",
+			Engine:     engine,
+			Collate:    "utf8mb4_bin",
+			// The auto-increment start and the character set are the MySQL
+			// family's own options. Another target leaves them out as it
+			// leaves out any other target's properties.
+			Overrides: map[string]map[string]string{
+				"mysql":   {"auto_increment": "100", "charset": "utf8mb4"},
+				"mariadb": {"auto_increment": "100", "charset": "utf8mb4"},
+			},
 		}},
 		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INT", Primary: true},
@@ -77,8 +82,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 			engine:  "InnoDB",
 			dialect: platform.Postgres,
 			want: []string{
-				"table option AUTO_INCREMENT",
-				"table option CHARSET",
 				"table option COLLATE",
 				"table option ENGINE",
 			},
@@ -88,8 +91,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 			engine:  "InnoDB",
 			dialect: platform.SQLite,
 			want: []string{
-				"table option AUTO_INCREMENT",
-				"table option CHARSET",
 				"table option COLLATE",
 				"table option ENGINE",
 			},
@@ -99,8 +100,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 			engine:  "InnoDB",
 			dialect: platform.SQLServer,
 			want: []string{
-				"table option AUTO_INCREMENT",
-				"table option CHARSET",
 				"table option COLLATE",
 				"table option ENGINE",
 			},
@@ -110,8 +109,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 			engine:  "InnoDB",
 			dialect: platform.Oracle,
 			want: []string{
-				"table option AUTO_INCREMENT",
-				"table option CHARSET",
 				"table option COLLATE",
 				"table option ENGINE",
 			},
@@ -124,8 +121,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 			engine:  "MergeTree",
 			dialect: platform.ClickHouse,
 			want: []string{
-				"table option AUTO_INCREMENT",
-				"table option CHARSET",
 				"table option COLLATE",
 			},
 		},
@@ -188,12 +183,16 @@ func TestGetOrderedCreateStatementsReportingOmissions_TheMySQLFamilyLosesNothing
 // A property name alone does not say what was lost: an author who declared
 // AUTO_INCREMENT=100 needs the 100 back to put it anywhere else. The remedy is
 // asserted on the one option that has one, because a remedy printed where it
-// does not work is worse than none.
+// does not work is worse than none. The option is stated for PostgreSQL here,
+// since the MySQL family's own options are left out of another target's
+// render without a report, as any other target's properties are.
 func TestGetOrderedCreateStatementsReportingOmissions_CarriesTheDeclaredValue(t *testing.T) {
 	c := qt.New(t)
+	database := tableWithMySQLOptions()
+	database.Tables[0].Overrides["postgres"] = map[string]string{"auto_increment": "100"}
 
 	_, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(
-		tableWithMySQLOptions(),
+		database,
 		platform.Postgres,
 		capability.Postgres17(),
 	)
@@ -209,7 +208,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_CarriesTheDeclaredValue(t 
 		Remedy:   "declare the start on the key column with identity_start",
 	})
 	c.Assert(omissions[0].Message(), qt.Equals, "table option AUTO_INCREMENT=100 would be skipped")
-	c.Assert(omissions[3].Remedy, qt.Equals, "",
+	c.Assert(omissions[2].Remedy, qt.Equals, "",
 		qt.Commentf("ENGINE has no PostgreSQL equivalent to point the author at"))
 }
 

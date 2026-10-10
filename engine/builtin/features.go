@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/mssql/mssqlschema"
+	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -161,6 +162,8 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 		validate = clickhouse.ValidateTableFacets
 	case platform.YDB:
 		validate = ydbrender.ValidateTableFacets
+	case platform.MySQL, platform.MariaDB:
+		validate = mysqlrender.ValidateTableFacets
 	default:
 		return refuseActiveFacets(dialect, projected)
 	}

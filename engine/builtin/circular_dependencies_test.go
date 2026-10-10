@@ -956,9 +956,9 @@ func TestGetOrderedCreateStatements_MySQLSignednessMismatch_FailurePath(t *testi
 func TestGetOrderedCreateStatements_MySQLCollationMismatch_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	database := simpleForeignKeyDatabase("VARCHAR(64)", "VARCHAR(64)")
-	database.Tables[0].Charset = "utf8mb4"
+	database.Tables[0].Overrides = map[string]map[string]string{"mysql": {"charset": "utf8mb4"}}
 	database.Tables[0].Collate = "utf8mb4_bin"
-	database.Tables[1].Charset = "utf8mb4"
+	database.Tables[1].Overrides = map[string]map[string]string{"mysql": {"charset": "utf8mb4"}}
 	database.Tables[1].Collate = "utf8mb4_unicode_ci"
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "mysql")
@@ -971,8 +971,8 @@ func TestGetOrderedCreateStatements_MySQLCollationMismatch_FailurePath(t *testin
 func TestGetOrderedCreateStatements_MySQLIntegerForeignKeyIgnoresTableCharset(t *testing.T) {
 	c := qt.New(t)
 	database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
-	database.Tables[0].Charset = "latin1"
-	database.Tables[1].Charset = "utf8mb4"
+	database.Tables[0].Overrides = map[string]map[string]string{"mysql": {"charset": "latin1"}}
+	database.Tables[1].Overrides = map[string]map[string]string{"mysql": {"charset": "utf8mb4"}}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "mysql")
 
@@ -1035,8 +1035,8 @@ func TestGetOrderedCreateStatements_MySQLStoredGeneratedForeignKeyAction_Failure
 func TestGetOrderedCreateStatements_MySQLStringLengthsMayDiffer(t *testing.T) {
 	c := qt.New(t)
 	database := simpleForeignKeyDatabase("VARCHAR(64)", "VARCHAR(128)")
-	database.Tables[0].Charset = "utf8mb4"
-	database.Tables[1].Charset = "utf8mb4"
+	database.Tables[0].Overrides = map[string]map[string]string{"mysql": {"charset": "utf8mb4"}}
+	database.Tables[1].Overrides = map[string]map[string]string{"mysql": {"charset": "utf8mb4"}}
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "mysql")
 

@@ -57,6 +57,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -2989,7 +2990,16 @@ func makeMySQLForeignKeyTableEnginesExplicit(database *schemamodel.Database, dia
 			table.Overrides[normalizedDialect]["engine"] = "InnoDB"
 			continue
 		}
-		table.Engine = "InnoDB"
+		options, _, err := schemaext.FacetAs[*mysqlschema.DesiredTable](table.Facets, mysqlschema.TableKind)
+		if err != nil || options == nil {
+			table.Engine = "InnoDB"
+			continue
+		}
+		explicit := *options
+		explicit.Engine = "InnoDB"
+		if facets, err := table.Facets.Replace(&explicit); err == nil {
+			table.Facets = facets
+		}
 	}
 }
 
@@ -3031,7 +3041,13 @@ func mysqlForeignKeyTableParticipants(database schemamodel.Database) map[string]
 	return participants
 }
 
+// configuredTableEngine is the engine a table declares for dialect: the MySQL
+// owner's options once the declaration's properties are decoded, its platform
+// override, or the common engine. It reports whether the override states it.
 func configuredTableEngine(table schemamodel.Table, dialect string) (string, bool) {
+	if options, _, err := schemaext.FacetAs[*mysqlschema.DesiredTable](table.Facets, mysqlschema.TableKind); err == nil && options != nil && options.Engine != "" {
+		return options.Engine, false
+	}
 	if overrides := table.Overrides[dialect]; overrides != nil {
 		if engine, found := overrides["engine"]; found {
 			return engine, true
@@ -3658,7 +3674,10 @@ func validateMySQLForeignKeyTextMetadata(
 }
 
 func effectiveTableMetadata(table schemamodel.Table, dialect, key string) string {
-	value := table.Charset
+	value := ""
+	if options, _, err := schemaext.FacetAs[*mysqlschema.DesiredTable](table.Facets, mysqlschema.TableKind); err == nil && options != nil {
+		value = options.Charset
+	}
 	if key == "collate" {
 		value = table.Collate
 	}

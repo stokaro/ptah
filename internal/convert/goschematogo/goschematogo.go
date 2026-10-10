@@ -714,7 +714,6 @@ func tableAnnotation(table schemamodel.Table, partitioning *ydbschema.TableParti
 		{name: "name", value: table.Name, set: true},
 		{name: "schema", value: table.Schema, set: table.Schema != ""},
 		{name: "engine", value: table.Engine, set: table.Engine != ""},
-		{name: "charset", value: table.Charset, set: table.Charset != ""},
 		{name: "collate", value: table.Collate, set: table.Collate != ""},
 		{name: "primary_key_comment", value: table.PrimaryKeyComment, set: table.PrimaryKeyComment != ""},
 		{name: "primary_key_block_size", value: strconv.FormatUint(table.PrimaryKeyBlockSize, 10), set: table.PrimaryKeyBlockSize != 0},

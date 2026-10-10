@@ -73,6 +73,9 @@ ptah_schema_security_policies{dialect="sqlite"} 0
 # HELP ptah_schema_security_predicates Predicates SQL Server security policies bind to tables.
 # TYPE ptah_schema_security_predicates gauge
 ptah_schema_security_predicates{dialect="sqlite"} 0
+# HELP ptah_schema_mysql_table_options MySQL and MariaDB table options a table states.
+# TYPE ptah_schema_mysql_table_options gauge
+ptah_schema_mysql_table_options{dialect="sqlite"} 0
 # HELP ptah_schema_row_security_policies PostgreSQL row-level security policies.
 # TYPE ptah_schema_row_security_policies gauge
 ptah_schema_row_security_policies{dialect="sqlite"} 0
@@ -121,6 +124,9 @@ ptah_schema_external_tables{dialect="sqlite"} 0
 # HELP ptah_schema_external_columns Columns across external tables.
 # TYPE ptah_schema_external_columns gauge
 ptah_schema_external_columns{dialect="sqlite"} 0
+# HELP ptah_schema_ydb_index_partitioning YDB global indexes stating partitioning or read replicas.
+# TYPE ptah_schema_ydb_index_partitioning gauge
+ptah_schema_ydb_index_partitioning{dialect="sqlite"} 0
 # HELP ptah_schema_resource_pools Resource pools.
 # TYPE ptah_schema_resource_pools gauge
 ptah_schema_resource_pools{dialect="sqlite"} 0

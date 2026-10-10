@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
@@ -109,6 +110,7 @@ func Fixtures() []Fixture {
 		{Name: "table-pk-parts", Schema: tablePrimaryKeyPartsFixture()},
 		{Name: "table-partition", Schema: tablePartitionFixture()},
 		{Name: "table-mysql", Schema: tableMySQLFixture()},
+		{Name: "table-engine", Schema: tableEngineFixture()},
 		{Name: "table-sqlite", Schema: tableSQLiteFixture()},
 		{Name: "table-unlogged", Schema: tableUnloggedFixture()},
 		{Name: "table-virtual", Schema: tableVirtualFixture()},
@@ -807,9 +809,15 @@ func tablePartitionFixture() schemamodel.Database {
 
 func tableMySQLFixture() schemamodel.Database {
 	return oneTable("T", schemamodel.Table{
-		Name: "t", Engine: "InnoDB", AutoIncrement: "100",
-		Charset: "utf8mb4", Collate: "utf8mb4_bin",
+		Name: "t", Collate: "utf8mb4_bin",
+		Facets: must.Must(schemaext.NewFacets(&mysqlschema.DesiredTable{Engine: "InnoDB", AutoIncrement: "100", Charset: "utf8mb4"})),
 	})
+}
+
+// tableEngineFixture declares a table's engine with the common attribute,
+// which the MySQL family's owner absorbs.
+func tableEngineFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{Name: "t", Engine: "InnoDB"})
 }
 
 func tableSQLiteFixture() schemamodel.Database {

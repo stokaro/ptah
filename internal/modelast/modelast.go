@@ -492,8 +492,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	}
 	tableComment := table.Comment
 	tableEngine := table.Engine
-	tableAutoIncrement := table.AutoIncrement
-	tableCharset := table.Charset
 	tableCollate := table.Collate
 	tableStrict := table.Strict
 	tableWithoutRowID := table.WithoutRowID
@@ -506,8 +504,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 
 	tableComment = overrideString(platformOverrides, "comment", tableComment)
 	tableEngine = overrideString(platformOverrides, "engine", tableEngine)
-	tableAutoIncrement = overrideString(platformOverrides, "auto_increment", tableAutoIncrement)
-	tableCharset = overrideString(platformOverrides, "charset", tableCharset)
 	tableCollate = overrideString(platformOverrides, "collate", tableCollate)
 	tableStrict = overrideBool(platformOverrides, "strict", tableStrict)
 	tableWithoutRowID = overrideBool(platformOverrides, "without_rowid", tableWithoutRowID)
@@ -523,8 +519,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	newTable := table
 	newTable.Comment = tableComment
 	newTable.Engine = tableEngine
-	newTable.AutoIncrement = tableAutoIncrement
-	newTable.Charset = tableCharset
 	newTable.Collate = tableCollate
 	newTable.Strict = tableStrict
 	newTable.WithoutRowID = tableWithoutRowID
@@ -555,8 +549,6 @@ func isKnownTablePlatformOverride(key string) bool {
 	knownKeys := []string{
 		"comment",
 		"engine",
-		"auto_increment",
-		"charset",
 		"collate",
 		"strict",
 		"without_rowid",
@@ -694,12 +686,6 @@ func fromTableWithFieldConverter(
 	// Set database-specific options (using potentially overridden value)
 	if tableEngine != "" {
 		createTable.SetOption("ENGINE", tableEngine)
-	}
-	if newTable.AutoIncrement != "" {
-		createTable.SetOption("AUTO_INCREMENT", newTable.AutoIncrement)
-	}
-	if newTable.Charset != "" {
-		createTable.SetOption("CHARSET", newTable.Charset)
 	}
 	if newTable.Collate != "" {
 		createTable.SetOption("COLLATE", newTable.Collate)

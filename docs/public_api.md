@@ -75,6 +75,14 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mssql/mssqlreport`
 - `ptah.run/dialect/mssql/mssqlreverse`
 - `ptah.run/dialect/mssql/mssqlschema`
+- `ptah.run/dialect/mysql/mysqlcompare`
+- `ptah.run/dialect/mysql/mysqlconvert`
+- `ptah.run/dialect/mysql/mysqldiff`
+- `ptah.run/dialect/mysql/mysqlplan`
+- `ptah.run/dialect/mysql/mysqlrender`
+- `ptah.run/dialect/mysql/mysqlreport`
+- `ptah.run/dialect/mysql/mysqlschema`
+- `ptah.run/dialect/mysql/mysqlsource`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/spanner/spannerast`
 - `ptah.run/dialect/spanner/spannercompare`
@@ -1047,6 +1055,29 @@ declarations, even when a property's value is empty. They copy the selected
 owners, also when there is nothing to decode or export, and leave other schema
 data shared and read-only. Errors and cancellation return no schema. They
 establish no inspection coverage and do not resolve omitted settings.
+
+`dialect/mysql/mysqlschema` owns the options a MySQL or MariaDB table is
+created with as a table facet under `TableKind`. `DesiredTable` holds the
+engine, the first auto-increment value and the default character set a
+declaration states; `ObservedTable` holds the character set a table created
+from one reports, since the engine and the next auto-increment value are not
+read.
+`ValidateDesiredTable` refuses an engine or a character set that is not a name
+and an auto-increment value that is not a whole number. `TableCodecs` and
+`TableCoverage` complete the model under `Owner`.
+
+`mysqlsource.Service` reads
+the options from the `engine`, `auto_increment` and `charset` platform
+properties of the mysql and mariadb targets; an engine stated there is written
+over the table's common engine. `mysqlcompare.TableService` plans no change of an existing
+table's options, `mysqlplan.TableService` accounts for them through table
+creation and removal, and `mysqlrender.CreateTableOptions` writes them into
+CREATE TABLE; `mysqldiff`, `mysqlconvert` and `mysqlreport` complete the
+provider.
+
+The former `AutoIncrement` and `Charset` fields of `schemamodel.Table` are
+removed without aliases; `schemamodel.Table.Engine` stays a common declaration
+attribute. This changes behavior; pre-v1, so no compatibility is owed.
 
 `dialect/cockroachdb/crdbschema` owns CockroachDB row-level TTL as a table
 facet under `RowTTLKind`. `DesiredRowTTL` and `ObservedRowTTL` each hold a
