@@ -20,7 +20,7 @@ func annotationProvider(owner string, kinds []schemaext.Kind, directive string) 
 			Decode: func(annotation.Declaration) ([]annotation.Contribution, error) {
 				return []annotation.Contribution{{Facet: &conversionValue{ID: conversionFirst, Number: 1}}}, nil
 			},
-			Coverage: func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil },
+			Coverage: annotation.Unlimited(func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil }),
 		}},
 	}
 }
@@ -53,7 +53,7 @@ func TestAnnotations_FailurePath(t *testing.T) {
 	second := engine.Provider{ID: "example.org/second", Annotations: []annotation.Extension{{
 		Owner: "example.org/second", Directives: []annotation.Directive{{Name: "ptah:schema:widget"}},
 		Decode:   func(annotation.Declaration) ([]annotation.Contribution, error) { return nil, nil },
-		Coverage: func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil },
+		Coverage: annotation.Unlimited(func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil }),
 	}}}
 	tests := []struct {
 		name      string

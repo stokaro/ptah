@@ -1,5 +1,8 @@
 // Package ydbsource records feature knowledge for schema source adapters. Each
-// format explicitly enrolls the declaration namespaces it supports.
+// format explicitly enrolls the declaration namespaces it supports. The
+// package is also the YDB owner's side of the Go annotation frontend:
+// [Annotations] declares and decodes the YDB directives, which the frontend
+// reads only when a caller selects the owner.
 package ydbsource
 
 import (
@@ -159,15 +162,48 @@ func HCLCoverage(limits Limits) (schemaext.Coverage, error) {
 // keeps the ones it holds. Runtime registration never expands a source's
 // vocabulary.
 func Coverage(limits Limits) (schemaext.Coverage, error) {
+	objects, err := objectCoverage(limits)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	attributes, err := AttributeCoverage()
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	return objects.Combine(attributes)
+}
+
+// AttributeCoverage enrolls the settings a table and an index declare in
+// their own directives: a table's partitioning and column storage, and a
+// global index's partitioning and vector settings. A Go annotation source
+// claims them apart from [Annotations], since the frontend still reads the
+// attributes that declare them.
+func AttributeCoverage() (schemaext.Coverage, error) {
+	var combined schemaext.Coverage
+	for _, facet := range []func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error){
+		ydbschema.TablePartitioningCoverage, ydbschema.ColumnStoreCoverage, ydbschema.IndexPartitioningCoverage,
+		ydbschema.VectorIndexCoverage,
+	} {
+		known, err := facet(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
+		if combined, err = combined.Combine(known); err != nil {
+			return schemaext.Coverage{}, err
+		}
+	}
+	return combined, nil
+}
+
+// objectCoverage enrolls the standalone objects, a table's changefeeds,
+// column families and TTL, less what limits leave unmanaged.
+func objectCoverage(limits Limits) (schemaext.Coverage, error) {
 	feeds, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	// A table's own facets, and a global index's settings, which every one
-	// of these formats can write.
 	for _, facet := range []func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error){
-		ydbschema.TTLCoverage, ydbschema.ColumnFamiliesCoverage, ydbschema.TablePartitioningCoverage, ydbschema.ColumnStoreCoverage,
-		ydbschema.IndexPartitioningCoverage,
+		ydbschema.TTLCoverage, ydbschema.ColumnFamiliesCoverage,
 	} {
 		known, err := facet(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		if err != nil {
@@ -176,13 +212,6 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 		if feeds, err = feeds.Combine(known); err != nil {
 			return schemaext.Coverage{}, err
 		}
-	}
-	vectors, err := ydbschema.VectorIndexCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	if feeds, err = feeds.Combine(vectors); err != nil {
-		return schemaext.Coverage{}, err
 	}
 	nodes, err := namespaceCoverage(limits.Coordination, ydbcoordination.Kind, schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
 	if err != nil {

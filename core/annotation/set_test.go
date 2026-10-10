@@ -50,7 +50,7 @@ func widget(owner, directive string) annotation.Extension {
 		Decode: func(declaration annotation.Declaration) ([]annotation.Contribution, error) {
 			return []annotation.Contribution{{Facet: &level{Value: declaration.Attributes["level"]}, Label: "a level"}}, nil
 		},
-		Coverage: levelCoverage,
+		Coverage: annotation.Unlimited(levelCoverage),
 	}
 }
 
@@ -61,7 +61,7 @@ func TestNewSet_HappyPath(t *testing.T) {
 	set, err := annotation.NewSet(extension)
 	c.Assert(err, qt.IsNil)
 	extension.Directives[0].Name = "changed after registration"
-	contributions, err := set.Decode(annotation.Declaration{Directive: "ptah:schema:widget", Attributes: map[string]string{"level": "high"}})
+	contributions, err := set.Reader().Decode(annotation.Declaration{Directive: "ptah:schema:widget", Attributes: map[string]string{"level": "high"}})
 	c.Assert(err, qt.IsNil)
 	owner, found := set.Owner("ptah:schema:widget")
 	coverage, coverageErr := set.Coverage()
@@ -106,7 +106,7 @@ func TestNewSet_FailurePath(t *testing.T) {
 		{name: "a directive without a name", extensions: []annotation.Extension{unnamed}, wantErr: `.* declares a directive without a name`},
 		{name: "a directive two owners declare", extensions: []annotation.Extension{
 			widget("example.org/first", "ptah:schema:widget"),
-			{Owner: "example.org/second", Directives: []annotation.Directive{{Name: "ptah:schema:widget"}}, Decode: noContributions, Coverage: levelCoverage},
+			{Owner: "example.org/second", Directives: []annotation.Directive{{Name: "ptah:schema:widget"}}, Decode: noContributions, Coverage: annotation.Unlimited(levelCoverage)},
 		}, wantErr: `duplicate.*directive "ptah:schema:widget" is declared by example.org/first and example.org/second`},
 		{name: "a model two owners produce", extensions: []annotation.Extension{
 			widget("example.org/first", "ptah:schema:widget"), widget("example.org/second", "ptah:schema:other"),
@@ -126,7 +126,7 @@ func TestNewSet_FailurePath(t *testing.T) {
 
 func noContributions(annotation.Declaration) ([]annotation.Contribution, error) { return nil, nil }
 
-func TestSet_Decode_FailurePath(t *testing.T) {
+func TestReader_Decode_FailurePath(t *testing.T) {
 	both := widget("example.org/widget", "ptah:schema:widget")
 	both.Decode = func(annotation.Declaration) ([]annotation.Contribution, error) {
 		object := schemaext.Object{Value: &level{}}
@@ -153,7 +153,7 @@ func TestSet_Decode_FailurePath(t *testing.T) {
 			set, err := annotation.NewSet(test.extension)
 			c.Assert(err, qt.IsNil)
 
-			contributions, err := set.Decode(annotation.Declaration{Directive: test.directive})
+			contributions, err := set.Reader().Decode(annotation.Declaration{Directive: test.directive})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(contributions, qt.IsNil)
@@ -182,7 +182,7 @@ func TestQualifiedName(t *testing.T) {
 
 func shading(owner, attribute string, decode func(map[string]string) (schemaext.Facets, error)) annotation.Extension {
 	return annotation.Extension{
-		Owner: owner, Kinds: []schemaext.Kind{levelKind}, Coverage: levelCoverage,
+		Owner: owner, Kinds: []schemaext.Kind{levelKind}, Coverage: annotation.Unlimited(levelCoverage),
 		Attributes: []annotation.DirectiveAttributes{{
 			Directive:  "ptah:schema:matview",
 			Attributes: []annotation.Attribute{{Name: attribute, Value: "string"}},
@@ -257,7 +257,7 @@ func TestNewSet_AttributesFailurePath(t *testing.T) {
 		{name: "an attribute without a name", extensions: []annotation.Extension{unnamed}, wantErr: `.* declares an attribute of "ptah:schema:matview" without a name`},
 		{name: "an attribute two owners add", extensions: []annotation.Extension{
 			shading("example.org/paint", "shade", decodeLevel),
-			{Owner: "example.org/other", Coverage: levelCoverage, Attributes: []annotation.DirectiveAttributes{{
+			{Owner: "example.org/other", Coverage: annotation.Unlimited(levelCoverage), Attributes: []annotation.DirectiveAttributes{{
 				Directive: "ptah:schema:matview", Attributes: []annotation.Attribute{{Name: "shade"}}, Decode: decodeLevel}}},
 		}, wantErr: `duplicate.*attribute "shade" of "ptah:schema:matview" is declared by example.org/paint and example.org/other`},
 	}

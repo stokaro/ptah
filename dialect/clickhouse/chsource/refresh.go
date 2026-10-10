@@ -81,7 +81,7 @@ func Annotations() annotation.Extension {
 				return RefreshFacets(attributes["refresh"])
 			},
 		}},
-		Coverage: ownedCoverage,
+		Coverage: annotation.Unlimited(ownedCoverage),
 	}
 }
 

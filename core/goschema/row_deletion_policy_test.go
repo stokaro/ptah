@@ -6,11 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemaext"
-	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // TestParse_RowDeletionPolicyIsAPlatformProperty pins the Go annotation
@@ -43,8 +39,6 @@ type Plain struct {
 		"ydb":     {"row_deletion_column": "expires", "row_deletion_interval": "PT1H", "row_deletion_unit": "seconds"},
 	})
 	c.Assert(database.Tables[0].Facets.IsZero(), qt.IsTrue)
-	ydb := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "plain")
-	c.Assert(database.FeatureCoverage.Lookup(ydbschema.TTLKind, ydb).State, qt.Equals, schemaext.Complete)
 }
 
 // TestParse_RowDeletionPolicyHasNoBareAttribute pins that the policy's

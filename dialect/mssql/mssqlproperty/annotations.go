@@ -24,9 +24,9 @@ func Annotations() annotation.Extension {
 		Directives: []annotation.Directive{directive()},
 		Kinds:      []schemaext.Kind{Kind},
 		Decode:     decode,
-		Coverage: func() (schemaext.Coverage, error) {
+		Coverage: annotation.Unlimited(func() (schemaext.Coverage, error) {
 			return Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
-		},
+		}),
 	}
 }
 

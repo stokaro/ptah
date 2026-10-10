@@ -1,4 +1,4 @@
-package goschema_test
+package ydbsource_test
 
 import (
 	"errors"
@@ -78,7 +78,7 @@ func TestParseSource_Changefeed_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "items.go", changefeedSource(test.onStruct, test.onHolder))
+			db, err := goschema.ParseSource(ydbOwners, "items.go", changefeedSource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 2)
 			c.Assert(must.Must(ydbschema.DesiredChangefeeds(db.FeatureObjects, db.Tables[0].Schema, db.Tables[0].Name)), qt.DeepEquals, test.wantItems)
@@ -121,7 +121,7 @@ func TestParseSource_Changefeed_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "items.go", changefeedSource(test.onStruct, test.onHolder))
+			db, err := goschema.ParseSource(ydbOwners, "items.go", changefeedSource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 		})
@@ -132,7 +132,7 @@ func TestParseSource_Changefeed_FailurePath(t *testing.T) {
 // value the declaration cannot carry is reported with.
 func TestParseSource_Changefeed_RefusesAnInvalidValueAsSuch(t *testing.T) {
 	c := qt.New(t)
-	_, err := goschema.ParseSource(noOwners, "items.go",
+	_, err := goschema.ParseSource(ydbOwners, "items.go",
 		changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON" retention_period="1 day"
 `, ""))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
@@ -143,7 +143,7 @@ func TestParseSource_Changefeed_RefusesAnInvalidValueAsSuch(t *testing.T) {
 // both are read by one consumer grammar.
 func TestParseSource_ChangefeedConsumer_NamesTheAttribute(t *testing.T) {
 	c := qt.New(t)
-	_, err := goschema.ParseSource(noOwners, "items.go", changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON"
+	_, err := goschema.ParseSource(ydbOwners, "items.go", changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON"
 //ptah:schema:changefeed:consumer changefeed="f" name="c" important="maybe"
 `, ""))
 
@@ -151,4 +151,22 @@ func TestParseSource_ChangefeedConsumer_NamesTheAttribute(t *testing.T) {
 	parseErr, ok := errors.AsType[*ptaherr.ParseError](err)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(parseErr.Attribute, qt.Equals, "important")
+}
+
+// TestParseSource_AnUnqualifiedChangefeedTableTwoSchemasDeclareIsRefused pins
+// the refusal for a changefeed that names its table without the schema when
+// the file declares the name in two schemas. The frontend places owner facets by the
+// same rule, and tssource holds a hypertable to it.
+func TestParseSource_AnUnqualifiedChangefeedTableTwoSchemasDeclareIsRefused(t *testing.T) {
+	c := qt.New(t)
+	source := "package models\n\n" +
+		"//ptah:schema:table name=\"readings\" schema=\"public\"\ntype Reading struct {\n\t//ptah:schema:field name=\"time\" type=\"TIMESTAMPTZ\"\n\tTime string\n}\n\n" +
+		"//ptah:schema:table name=\"readings\" schema=\"archive\"\ntype ArchivedReading struct {\n\t//ptah:schema:field name=\"time\" type=\"TIMESTAMPTZ\"\n\tTime string\n}\n\n" +
+		"type H struct {\n\t//ptah:schema:changefeed name=\"feed\" table=\"readings\" mode=\"UPDATES\" format=\"JSON\"\n\t_ int\n}\n"
+
+	db, err := goschema.ParseSource(ydbOwners, "readings.go", source)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*table "readings" is declared in schemas "public" and "archive"; name the schema in the table attribute.*changefeed.*`)
+	c.Assert(db.Tables, qt.HasLen, 0)
 }

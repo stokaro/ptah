@@ -133,7 +133,7 @@ func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner:    spannerschema.Owner,
 		Kinds:    []schemaext.Kind{spannerschema.RowDeletionKind},
-		Coverage: Coverage,
+		Coverage: annotation.Unlimited(Coverage),
 	}
 }
 

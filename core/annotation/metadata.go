@@ -7,8 +7,13 @@
 // owner describes the directive's grammar in a [Directive], turns one parsed
 // [Declaration] into the feature objects and table facets it declares, and
 // states the knowledge a Go annotation source holds about the models it
-// produces. A [Set] freezes the owners one parse selects. The frontend imports
-// no owner; whoever assembles the providers hands it the set.
+// produces. An owner whose declarations refer to each other or to the file's
+// tables reads a whole file through a [FileDecoder] and places a part on its
+// table by [Tables.Owning], the rule the frontend uses too. An owner may also
+// read the ptah:schema:notdescribed declarations of its own kinds, which
+// narrow its claim. A [Set] freezes the owners one parse selects, and a
+// [Reader] reads one file for the frontend. The frontend imports no owner;
+// whoever assembles the providers hands it the set.
 package annotation
 
 import (

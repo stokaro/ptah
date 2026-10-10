@@ -2284,6 +2284,11 @@
               "description": "Directory that holds the secret, relative to the database root.",
               "type": "string"
             },
+            "value": {
+              "description": "Refused when the annotation is parsed: a secret's value is never written in a schema file; name the environment variable that holds it with value_env.",
+              "not": {},
+              "x-ptah-retired": "a secret's value is never written in a schema file; name the environment variable that holds it with value_env"
+            },
             "value_env": {
               "description": "Environment variable that holds the value; its name starts with PTAH_SECRET_.",
               "type": "string"
@@ -2970,24 +2975,6 @@
       "$ref": "#/$defs/ptah.schema.index"
     },
     {
-      "$ref": "#/$defs/ptah.schema.changefeed"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.changefeed.consumer"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.async_replication"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.async_replication.item"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.transfer"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.columnfamily"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.table"
     },
     {
@@ -3033,33 +3020,6 @@
       "$ref": "#/$defs/ptah.schema.synonym"
     },
     {
-      "$ref": "#/$defs/ptah.schema.coordinationnode"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.topic"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.topic.consumer"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.resourcepool"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.resourcepool.classifier"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.secret"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.streamingquery"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.externaldatasource"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.externaltable"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.trigger"
     },
     {
@@ -3084,16 +3044,61 @@
       "$ref": "#/$defs/ptah.schema.data"
     },
     {
+      "$ref": "#/$defs/ptah.schema.async_replication"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.async_replication.item"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.changefeed"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.changefeed.consumer"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.columnfamily"
+    },
+    {
       "$ref": "#/$defs/ptah.schema.continuousaggregate"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.coordinationnode"
     },
     {
       "$ref": "#/$defs/ptah.schema.extendedproperty"
     },
     {
+      "$ref": "#/$defs/ptah.schema.externaldatasource"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.externaltable"
+    },
+    {
       "$ref": "#/$defs/ptah.schema.hypertable"
     },
     {
+      "$ref": "#/$defs/ptah.schema.resourcepool"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.resourcepool.classifier"
+    },
+    {
       "$ref": "#/$defs/ptah.schema.rowpolicy"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.secret"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.streamingquery"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.topic"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.topic.consumer"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.transfer"
     }
   ],
   "title": "Ptah Go Annotation Directives"

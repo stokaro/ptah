@@ -231,19 +231,31 @@ do not import a parser to carry a declaration.
 - an owner's directives and their decoder;
 - the attributes it adds to the frontend's own directives, and their decoder;
 - the models it produces;
-- the coverage a Go annotation source holds about those models.
+- the `ptah:schema:notdescribed` kinds it reads;
+- the coverage a Go annotation source holds about those models, given the
+  not-described declarations of those kinds the source wrote.
+
+A decoder reads one declaration at a time. An owner whose declarations refer
+to each other or to the file's tables, such as a consumer of a changefeed
+declared later in the file, sets `File` instead, and its `FileDecoder` reads
+every declaration of one file before `Finish` contributes what they declare
+together. `Tables.Owning` places a part on its table by the rule the frontend
+applies to owner facets. A `DeclarationError` names the attribute a refusal is
+about and, from `Finish`, the declaration it refuses; the frontend reports the
+refusal there as a `ptaherr.ParseError` that wraps the owner's error.
 
 `NewSet` freezes the extensions one parse selects and refuses a directive, an
-attribute of one directive, or a model that two owners claim.
+attribute of one directive, a not-described kind, or a model that two owners
+claim. `Set.Reader` reads one file's owner declarations for the frontend.
 `engine.Provider.Annotations` registers extensions, and
 `engine.Runtime.Annotations` returns the frozen set.
 
 Every goschema entry point takes the set first. The zero set is refused with
 `ErrUnselected`, and `None` reads the frontend's own directives only. A parse
 that does not select an owner ignores the owner's directives, as it ignores a
-directive it does not know. It refuses the owner's attributes as unknown, and
-it does not enroll the owner's models in coverage, so they stay unknown
-rather than absent.
+directive it does not know. It refuses the owner's attributes and
+not-described kinds as unknown, and it does not enroll the owner's models in
+coverage, so they stay unknown rather than absent.
 
 `core/schemacapture` holds complete table declarations and observations for
 contextual services. Both include common children, named feature objects, and

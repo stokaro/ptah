@@ -33,7 +33,7 @@ func Annotations() annotation.Extension {
 		Directives: []annotation.Directive{continuousAggregateDirective(), hypertableDirective()},
 		Kinds:      []schemaext.Kind{tsschema.ContinuousAggregateKind, tsschema.HypertableKind},
 		Decode:     decode,
-		Coverage:   func() (schemaext.Coverage, error) { return tsschema.CompleteCoverage(schemaext.Desired) },
+		Coverage:   annotation.Unlimited(func() (schemaext.Coverage, error) { return tsschema.CompleteCoverage(schemaext.Desired) }),
 	}
 }
 

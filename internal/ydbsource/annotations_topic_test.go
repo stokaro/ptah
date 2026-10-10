@@ -1,4 +1,4 @@
-package goschema_test
+package ydbsource_test
 
 import (
 	"errors"
@@ -34,7 +34,7 @@ type Events struct{}
 type Plain struct{}
 `
 
-	db, err := goschema.ParseSource(noOwners, "topics.go", source)
+	db, err := goschema.ParseSource(ydbOwners, "topics.go", source)
 
 	c.Assert(err, qt.IsNil)
 	objects, err := db.FeatureObjects.All()
@@ -109,7 +109,7 @@ func TestParseSource_Topic_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "topics.go", "package entities\n\n"+test.annotations+"\ntype Events struct{}\n")
+			db, err := goschema.ParseSource(ydbOwners, "topics.go", "package entities\n\n"+test.annotations+"\ntype Events struct{}\n")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
@@ -122,7 +122,7 @@ func TestParseSource_Topic_FailurePath(t *testing.T) {
 // name attribute.
 func TestParse_Topics_DeclaredTwiceInOneFile(t *testing.T) {
 	c := qt.New(t)
-	db, err := goschema.ParseSource(noOwners, "topics.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\n"+
+	db, err := goschema.ParseSource(ydbOwners, "topics.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\n"+
 		"//ptah:schema:topic name=\"events\" schema=\"app\"\ntype Events struct{}\n")
 
 	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
@@ -137,9 +137,9 @@ func TestParse_Topics_DeclaredTwiceInOneFile(t *testing.T) {
 // even the same way: a topic has one declaration.
 func TestMerge_Topics_DeclaredTwice(t *testing.T) {
 	c := qt.New(t)
-	first, err := goschema.ParseSource(noOwners, "a.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\ntype A struct{}\n")
+	first, err := goschema.ParseSource(ydbOwners, "a.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\ntype A struct{}\n")
 	c.Assert(err, qt.IsNil)
-	second, err := goschema.ParseSource(noOwners, "b.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\ntype B struct{}\n")
+	second, err := goschema.ParseSource(ydbOwners, "b.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\ntype B struct{}\n")
 	c.Assert(err, qt.IsNil)
 
 	merged, err := schemamodel.Merge(&first, &second)

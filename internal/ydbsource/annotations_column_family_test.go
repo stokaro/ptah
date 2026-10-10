@@ -1,4 +1,4 @@
-package goschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -82,7 +82,7 @@ func TestParseSource_ColumnFamily_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "items.go", columnFamilySource(test.onStruct, test.onHolder))
+			db, err := goschema.ParseSource(ydbOwners, "items.go", columnFamilySource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 2)
 			c.Assert(declaredFamilies(c, db.Tables[0]), qt.DeepEquals, test.wantItems)
@@ -125,7 +125,7 @@ func TestParseSource_ColumnFamily_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "items.go", columnFamilySource(test.onStruct, test.onHolder))
+			db, err := goschema.ParseSource(ydbOwners, "items.go", columnFamilySource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 		})
@@ -136,7 +136,7 @@ func TestParseSource_ColumnFamily_FailurePath(t *testing.T) {
 // and the attribute a value the declaration cannot carry is reported with.
 func TestParseSource_ColumnFamily_RefusesAnInvalidValueAsSuch(t *testing.T) {
 	c := qt.New(t)
-	_, err := goschema.ParseSource(noOwners, "items.go",
+	_, err := goschema.ParseSource(ydbOwners, "items.go",
 		columnFamilySource(`//ptah:schema:columnfamily name="cold" cache_mode="hot"
 `, ""))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
