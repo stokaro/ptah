@@ -66,6 +66,8 @@ func TestAssessExtensionPreservesScopedSubject(t *testing.T) {
 	ref := objectidentity.NewBuilder(identifier.ForDialect("ydb")).SchemaScopedParts("example.org/scoped", "jobs", "route.daily")
 	assessments := safety.Assess([]ast.Node{&ast.ExtensionStatement{Payload: &scopedPayload{subject: ref}}})
 	c.Assert(assessments, qt.HasLen, 1)
-	c.Assert(assessments[0].Subject, qt.Equals, "jobs.route.daily")
+	// The dotted name is quoted, so it cannot read as a third component
+	// (stokaro/ptah#4276).
+	c.Assert(assessments[0].Subject, qt.Equals, `jobs."route.daily"`)
 	c.Assert(assessments[0].Severity, qt.Equals, safety.Warning)
 }
