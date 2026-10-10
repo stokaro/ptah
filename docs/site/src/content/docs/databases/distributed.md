@@ -82,6 +82,17 @@ It stays best-effort for a reason that no amount of coverage changes: an
 emulator is evidence about the PostgreSQL interface, not about the managed
 service. Review generated SQL before relying on it.
 
+One difference between the emulator and the documented service is known. For
+a foreign key, Spanner documents `key_column_usage.position_in_unique_constraint`
+as the column's position in the referenced key, and Ptah reads it that way. The
+emulator behind PGAdapter 0.56.1 reports the position in the order the foreign
+key lists its referenced columns. On the emulator, a composite foreign key that
+lists them in another order than the referenced key, such as
+`FOREIGN KEY (y, x) REFERENCES parent (b, a)` against `PRIMARY KEY (a, b)`,
+therefore reads back with `y` paired to `a`, and every plan drops and adds it.
+The server still enforces the key as declared. A foreign key that lists its
+referenced columns in the referenced key's order reads back as declared.
+
 PostgreSQL and YugabyteDB keep the database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
 foreign-data objects a dev database held when the command started, and reject
