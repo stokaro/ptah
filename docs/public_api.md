@@ -64,6 +64,15 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/cockroachdb/crdbreverse`
 - `ptah.run/dialect/cockroachdb/crdbschema`
 - `ptah.run/dialect/cockroachdb/crdbsource`
+- `ptah.run/dialect/mssql/mssqlast`
+- `ptah.run/dialect/mssql/mssqlcompare`
+- `ptah.run/dialect/mssql/mssqlconvert`
+- `ptah.run/dialect/mssql/mssqldiff`
+- `ptah.run/dialect/mssql/mssqlplan`
+- `ptah.run/dialect/mssql/mssqlrelation`
+- `ptah.run/dialect/mssql/mssqlrender`
+- `ptah.run/dialect/mssql/mssqlreport`
+- `ptah.run/dialect/mssql/mssqlreverse`
 - `ptah.run/dialect/mssql/mssqlschema`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/spanner/spannerast`
@@ -597,11 +606,13 @@ duplicate key, and a value that is not an object. A refusal wraps
 `ValidText` refuses invalid UTF-8 and a NUL byte, which a statement or a
 catalog cannot carry faithfully.
 
-`ModelCodec` builds the codec of a model whose wire form is its Go value as
+`ModelCodec` builds the codec of a payload whose wire form is its Go value as
 `encoding/json` writes it, from the owner's shape check, validator and
-canonical form. Cloning, encoding and decoding validate first, and every
-refusal is an `InvalidModelError` of the codec's kind and representation; one
-the validator already typed is returned unchanged.
+canonical form: a model value, a change or an operation. A model value clones
+itself; another payload names its clone function. Cloning, encoding and
+decoding validate first, and every refusal is an `InvalidModelError` of the
+codec's kind and representation; one the validator already typed is returned
+unchanged.
 
 `engine.Provider.Relations` assigns dependency discovery by target, model kind,
 and source representation. `runtime.CaptureRelations` validates a complete
@@ -1667,8 +1678,39 @@ The decoders accept only what the encoders write, so an omitted value spelled
 out, such as an empty struct name or argument list, is refused. Every refusal
 of a value, from a validator, a codec or an object constructor, is a
 `schemaext.InvalidModelError`; `ValidateSecurityPolicyRef` refuses an identity
-with `schemaext.ErrInvalidValue`. The package defines the model, its codecs and
-its coverage, and reads, compares and plans nothing.
+with `schemaext.ErrInvalidValue`.
+
+The package also holds the offline comparison the services share: `CompareArgument`
+reads a declared predicate argument and the catalog's spelling as T-SQL
+tokens, since SQL Server stores `tenant_id` as `[tenant_id]` and `CAST(t AS
+int)` as `CONVERT([int],[t])`. Two single identifiers or literals agree or
+differ, equal token sequences agree, and anything else is `Undecided`.
+`ComparePolicy` applies that to whole policies under identifier rules, and
+`EnabledTableConflicts` finds a table two enabled policies bind, which SQL
+Server refuses with Msg 33264.
+
+The owner's services are registered for SQL Server in the bundled runtime. No
+reader or source produces a policy yet, so the common row-level security path
+still handles what a declaration asks for.
+
+- `mssqlcompare` pairs policies by schema and name. It plans a creation, a drop
+  or a change carrying `mssqldiff.Assess`'s access effect, and reports a pair
+  that differs only in arguments the server may have rewritten as undecided.
+  It keeps an observed policy a description could not express, and refuses a
+  desired schema in which two enabled policies bind one table.
+- `mssqlrelation` names the tables and predicate functions a policy binds,
+  complete only when every argument is a column or a literal.
+- `mssqlplan` places a change in the dependent phase. Its step reads every
+  table, function and argument column the policy binds before and after. When
+  a table moves from one enabled policy to another, the step that releases it
+  runs before the step that takes it, and both need the plan's transaction. A
+  whole-schema render creates each policy after the common statements.
+- `mssqldiff.SecurityPolicy.Edit` is the statement plan the renderer writes
+  and the planner sizes its transaction by. Schema binding and replication are
+  changed by drop and create, a slot is altered where both sides spell it the
+  same, and the state is set around the predicate statements.
+- `mssqlconvert`, `mssqlreverse` and `mssqlreport` convert, reverse and count
+  policies.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table

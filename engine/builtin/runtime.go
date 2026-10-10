@@ -109,7 +109,7 @@ func New() (*engine.Runtime, error) {
 		}
 		providers = append(providers, provider)
 	}
-	providers = append(providers, timescaleProvider(), pgpolicyProvider())
+	providers = append(providers, timescaleProvider(), pgpolicyProvider(), mssqlProvider())
 	return assembleSchemaServices(providers)
 }
 

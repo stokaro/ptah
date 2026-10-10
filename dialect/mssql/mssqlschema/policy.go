@@ -252,10 +252,11 @@ func ValidateObservedSecurityPolicy(v *ObservedSecurityPolicy) error {
 // covers them all. Measured on SQL Server 2025, either second predicate is
 // refused with Msg 33262.
 //
-// Tables are told apart by [conflictName], since the collation that decides
-// which names are one table is not known offline. On a case-insensitive
-// database `app.orders`, `APP.Orders` and `app.orders  ` are one table, and
-// SQL Server refuses a second filter on any of them with the same Msg 33262.
+// Tables are told apart by [ObjectName.ConflictKey], since the collation that
+// decides which names are one table is not known offline. On a
+// case-insensitive database `app.orders`, `APP.Orders` and `app.orders  ` are
+// one table, and SQL Server refuses a second filter on any of them with the
+// same Msg 33262.
 func validatePredicates(predicates []Predicate) error {
 	type slot struct {
 		table     ObjectName
@@ -271,7 +272,7 @@ func validatePredicates(predicates []Predicate) error {
 		if err := validatePredicate(predicate); err != nil {
 			return err
 		}
-		table := ObjectName{Schema: conflictName(predicate.Table.Schema), Name: conflictName(predicate.Table.Name)}
+		table := predicate.Table.ConflictKey()
 		key := slot{table: table, kind: predicate.Type, operation: predicate.Operation}
 		if seen[key] {
 			return fmt.Errorf("%w: table %s has two %s predicates", schemaext.ErrInvalidValue, predicate.Table, describe(predicate))
@@ -296,14 +297,17 @@ func validatePredicates(predicates []Predicate) error {
 	return nil
 }
 
-// conflictName is the key under which two spellings of a name may be one
-// object on some SQL Server database: trailing spaces removed, since SQL
-// Server compares names without them, and letter case folded, as every
-// case-insensitive collation does. It is deliberately broad. A case-sensitive
-// database holds `Orders` and `orders` as two tables, and a policy binding
-// both through one slot is refused here although that server would accept
-// it; the narrower key let a case-insensitive server refuse the policy at
-// apply instead.
+// ConflictKey returns the key under which two spellings of a name may be one
+// object on some SQL Server database: each part with its trailing spaces
+// removed, since SQL Server compares names without them, and its letter case
+// folded, as every case-insensitive collation does. It is deliberately broad.
+// A case-sensitive database holds `Orders` and `orders` as two tables, and a
+// rule keyed by this treats them as one, although that server would not; the
+// narrower key let a case-insensitive server refuse at apply instead.
+func (n ObjectName) ConflictKey() ObjectName {
+	return ObjectName{Schema: conflictName(n.Schema), Name: conflictName(n.Name)}
+}
+
 func conflictName(name string) string {
 	return strings.ToLower(strings.TrimRight(name, " "))
 }

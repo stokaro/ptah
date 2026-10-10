@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -100,6 +101,15 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 		// A PostgreSQL-family read records TimescaleDB knowledge whether or not
 		// the extension is installed; an empty database holds neither model.
 		known, err := tsschema.CompleteCoverage(schemaext.Observed)
+		if err != nil {
+			return nil, err
+		}
+		current.FeatureCoverage = known
+	}
+	if cell.Dialect == platform.SQLServer {
+		// A SQL Server read describes security policies; an empty database
+		// holds none.
+		known, err := mssqlschema.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		if err != nil {
 			return nil, err
 		}

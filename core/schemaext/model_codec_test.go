@@ -141,3 +141,45 @@ func TestModelCodec_FailurePath_KeepsATypedRefusal(t *testing.T) {
 	c.Assert(err, qt.Equals, error(typedNoteRefusal))
 	c.Assert(encoded, qt.IsNil)
 }
+
+const noteChangeKind schemaext.Kind = "example.org/note-change"
+
+// noteChange is a payload that is not a [schemaext.Value]: it has no Clone
+// method, so its codec names one.
+type noteChange struct {
+	Title string `json:"title"`
+}
+
+func (*noteChange) Kind() schemaext.Kind { return noteChangeKind }
+
+func noteChangeCodec(clone func(*noteChange) *noteChange) schemaext.Codec {
+	return schemaext.ModelCodec[*noteChange]{
+		Prototype: &noteChange{}, Representation: schemaext.Change, Version: 1, Definition: json.RawMessage(`{"type":"object"}`),
+		Clone: clone,
+	}.Codec()
+}
+
+// TestModelCodec_ClonesAPayloadThatIsNotAValue pins that a change or an
+// operation codec clones through the function it names.
+func TestModelCodec_ClonesAPayloadThatIsNotAValue(t *testing.T) {
+	c := qt.New(t)
+	value := &noteChange{Title: "t"}
+
+	cloned, err := noteChangeCodec(func(v *noteChange) *noteChange { return &noteChange{Title: v.Title} }).Clone(value)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cloned, qt.DeepEquals, schemaext.Payload(&noteChange{Title: "t"}))
+	c.Assert(cloned, qt.Not(qt.Equals), schemaext.Payload(value))
+}
+
+// TestModelCodec_FailurePath_RefusesToCloneWithoutAFunction pins that a codec
+// for a payload with no Clone method, and no function named, refuses rather
+// than returning the value it was given.
+func TestModelCodec_FailurePath_RefusesToCloneWithoutAFunction(t *testing.T) {
+	c := qt.New(t)
+
+	cloned, err := noteChangeCodec(nil).Clone(&noteChange{Title: "t"})
+
+	c.Assert(err, qt.ErrorMatches, `the change codec of "example.org/note-change" has no clone function`)
+	c.Assert(cloned, qt.IsNil)
+}

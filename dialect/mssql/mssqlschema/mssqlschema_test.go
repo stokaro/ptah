@@ -298,7 +298,7 @@ func TestCodecs_RefuseWhatTheModelCannotHold(t *testing.T) {
 }
 
 // TestCodecs_DecodeTheEncodersSpelling pins the controls of the refusals
-// above: a desired state or schema binding written as false is a value, not
+// above: a declared state or schema binding written as false is a value, not
 // an omission, and a spelled-out operation, argument list and struct name
 // decode.
 func TestCodecs_DecodeTheEncodersSpelling(t *testing.T) {
