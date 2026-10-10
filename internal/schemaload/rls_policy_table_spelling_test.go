@@ -147,8 +147,7 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
 	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
-	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: .*the document declares no such table.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: relation "orders" does not exist in the document.*`)
 	c.Assert(database, qt.IsNil)
 }
 
