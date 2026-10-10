@@ -584,3 +584,10 @@ v0.13.0 ptah.run/core/goschema
 # API; pre-v1, so no compatibility is owed under the authorized #4140/#4204
 # clean-break policy.
 v0.13.0 ptah.run/core/astbuilder
+
+# #4140 stops migration/schemadiff from linking every schema reader.
+# CompareWithDatabase and CompareWithDatabaseReportingUndecidedAdditions take
+# the schemadiff.Connection interface in place of *dbschema.DatabaseConnection.
+# The connection type implements the interface, so a caller that passes one
+# compiles unchanged; apidiff still reports the parameter type change.
+v0.13.0 ptah.run/migration/schemadiff

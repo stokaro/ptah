@@ -7,8 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
-	"ptah.run/dbschema"
-	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/internal/pgexclude"
 )
 
 // ExcludeExpressionProbe is one declared EXCLUDE constraint whose elements and
@@ -45,7 +44,7 @@ type ExcludeExpressionProbe struct {
 // The probe is a temporary table carrying the live table's columns and the
 // declared constraint, inside a transaction that is rolled back. Its definition
 // is read back with pg_get_constraintdef and split by
-// [postgres.ParseExcludeConstraintDefinition], which is what the reader asks of
+// [pgexclude.Parse], which is what the reader asks of
 // a live constraint and how it splits it, so both sides of the comparison are
 // printed and cut by the same code.
 //
@@ -55,7 +54,7 @@ type ExcludeExpressionProbe struct {
 // gives.
 func ResolveExcludeExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []ExcludeExpressionProbe,
 ) (map[string]config.ExcludeExpression, error) {
 	if conn == nil {
@@ -105,7 +104,7 @@ func resolveOneExcludeExpression(
 	if err != nil || !ok {
 		return config.ExcludeExpression{}, err
 	}
-	parsed, err := postgres.ParseExcludeConstraintDefinition(definition)
+	parsed, err := pgexclude.Parse(definition)
 	if err != nil {
 		// The server printed a definition the reader's own parser cannot
 		// split. The reader skips such a constraint too, so there is nothing

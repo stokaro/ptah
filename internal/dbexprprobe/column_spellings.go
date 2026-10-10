@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/config"
-	"ptah.run/dbschema"
 )
 
 // ColumnSpellingProbe is one declared table whose column types and defaults
@@ -54,7 +53,7 @@ type ColumnSpellingColumn struct {
 // [ResolveCheckExpressions] gives.
 func ResolveColumnSpellings(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []ColumnSpellingProbe,
 ) (map[string]config.ColumnSpelling, error) {
 	if conn == nil {

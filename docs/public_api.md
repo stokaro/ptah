@@ -1746,6 +1746,10 @@ whatever the body does. It answers `ran == false` with a nil error when no
 isolated transaction is available; the body did not run, and an owner treats
 every probe as unanswered. A nil session is a request error the owner refuses.
 A `dbschema.DatabaseConnection` is a probe session.
+`schemadiff.Connection` is what a database-aware comparison takes: a probe
+session that also reports the server's `Info` and resolves identifier
+semantics. A `dbschema.DatabaseConnection` implements it, and the comparison
+does not link the schema readers through it. A nil `Connection` is refused.
 
 `schemaext.ComparisonRequest.DeclaredRelations` and
 `schemaext.ObjectComparisonRequest.DeclaredRelations` name the views and

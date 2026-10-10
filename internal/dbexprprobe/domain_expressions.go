@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/config"
-	"ptah.run/dbschema"
 )
 
 // DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need the
@@ -58,7 +57,7 @@ type DomainExpressionProbe struct {
 // so nothing is asked and the domain stays uncompared.
 func ResolveDomainExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []DomainExpressionProbe,
 ) (map[string]config.DomainExpression, error) {
 	if conn == nil {

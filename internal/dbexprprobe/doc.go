@@ -15,15 +15,15 @@
 //
 // The probes are a comparator implementation detail, not connection API: the
 // comparison in migration/schemadiff and the `ptah compare` command are their
-// consumers. What they need from a [dbschema.DatabaseConnection] is exactly
-// [dbschema.DatabaseConnection.WithRolledBackTransaction] -- one throwaway
-// session, one transaction that never commits -- plus plain statement
-// execution for the Oracle probe, whose DDL no transaction can take back.
+// consumers. What they need from a connection is exactly
+// [Session.WithRolledBackTransaction] -- one throwaway session, one
+// transaction that never commits -- plus plain statement execution through
+// [Executor] for the Oracle probe, whose DDL no transaction can take back.
 //
 // # Pinned connections
 //
 // Comparisons run on connections pinned to a session
-// ([dbschema.DatabaseConnection.WithSession] and its wrappers): `schema apply`
+// (ptah.run/dbschema's WithSession and its wrappers): `schema apply`
 // compares on the session that holds its apply lock, `migrate diff` on the
 // session its migration replay ran on, and a plan rehearsal on its dev
 // session. On such a connection the probes run on the pinned session itself,

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
-	"ptah.run/dbschema"
 )
 
 // resolveProbes runs every probe through one rolled-back transaction and
@@ -18,11 +17,11 @@ import (
 // type parameters, and the two types that vary between resolvers are exactly
 // the probe and the answer. What does not vary -- the session, the transaction,
 // the rollback, and returning nil for a pinned session with a transaction open
-// -- lives in [dbschema.DatabaseConnection.WithRolledBackTransaction] beneath
+// -- lives in [Session.WithRolledBackTransaction] beneath
 // it.
 func resolveProbes[Probe any, Answer any](
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	label string,
 	probes []Probe,
 	key func(Probe) string,

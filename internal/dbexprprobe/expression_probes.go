@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/config"
-	"ptah.run/dbschema"
 )
 
 // IndexExpressionProbe is one declared index whose expression or predicate
@@ -40,7 +39,7 @@ type IndexExpressionProbe struct {
 // reason the package documentation gives.
 func ResolveIndexExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []IndexExpressionProbe,
 ) (map[string]config.IndexExpression, error) {
 	if conn == nil {
