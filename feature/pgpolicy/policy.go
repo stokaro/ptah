@@ -296,7 +296,7 @@ func ValidateObservedPolicy(v *ObservedPolicy) error {
 	if err := validateClauses(v.Command, v.Using, v.WithCheck); err != nil {
 		return modelError(PolicyKind, schemaext.Observed, err)
 	}
-	if err := validText("comment", v.Comment); err != nil {
+	if err := validTexts("comment", v.Comment); err != nil {
 		return modelError(PolicyKind, schemaext.Observed, err)
 	}
 	return nil
@@ -323,7 +323,7 @@ func validateRoles(roles []RoleSelector, keywords []RoleKeyword) error {
 		case role.Name == "public" || role.Name == "none":
 			return fmt.Errorf("%w: PostgreSQL reserves the role name %q; use the PUBLIC keyword for every role", schemaext.ErrInvalidValue, role.Name)
 		}
-		if err := validText("role name", role.Name); err != nil {
+		if err := validTexts("role name", role.Name); err != nil {
 			return err
 		}
 		if seen[role] {
@@ -350,7 +350,7 @@ func validateClauses(command Command, using, withCheck *string) error {
 		if strings.TrimSpace(*clause.value) == "" {
 			return fmt.Errorf("%w: a policy %s cannot be empty; omit it instead", schemaext.ErrInvalidValue, clause.name)
 		}
-		if err := validText(clause.name, *clause.value); err != nil {
+		if err := validTexts(clause.name, *clause.value); err != nil {
 			return err
 		}
 	}

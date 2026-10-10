@@ -107,8 +107,10 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgpolicy`
 - `ptah.run/feature/pgpolicy/policycompare`
 - `ptah.run/feature/pgpolicy/policyconvert`
+- `ptah.run/feature/pgpolicy/policyplan`
 - `ptah.run/feature/pgpolicy/policyprobe`
 - `ptah.run/feature/pgpolicy/policyrender`
+- `ptah.run/feature/pgpolicy/policyreverse`
 - `ptah.run/migration/datadiff`
 - `ptah.run/migration/dbtest`
 - `ptah.run/migration/diffpolicy`
@@ -1589,7 +1591,25 @@ transaction it copies the policy's table into `pg_temp` with `LIKE`, creates
 the declared policy on the copy and reads `pg_policy` back. A probe the server
 refuses, in a read-only transaction, for a role without SELECT on the table or
 for a role that does not exist yet, leaves the declaration unanswered and is
-not an error. The bundled runtime does not select these services yet.
+not an error.
+
+`feature/pgpolicy/policyplan` plans the changes of surviving tables. Every
+operation asks for the dependent phase. A policy that changes is dropped and
+created again in one step that requires a transaction, a declared comment is
+set after the policy is created, and a table's switches are written under
+`TableStateSubject`, apart from the table the host alters. The steps of one
+table run in access order: what can only narrow access first, what can widen
+it last, and a change of unknown effect between, so a plan without a
+transaction never admits more than its start or its end. A table the host
+drops takes its policies and switches with it, and one it alters keeps them;
+a rebuild is refused.
+
+`feature/pgpolicy/policyreverse` swaps a change's
+operands, projects the forward declaration as the server reports it, and
+assesses the access of each inverse again. Every inverse states that it does
+not undo access the forward plan granted or withheld, and a policy TO a role
+keyword nobody resolved is irreversible. The bundled runtime does not select
+these services yet.
 
 `dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
 0020. A policy is one feature object of `SecurityPolicyKind`, identified by its

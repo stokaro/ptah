@@ -3,6 +3,7 @@ package pgpolicy
 import (
 	"fmt"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -89,4 +90,14 @@ func ValidateObservedTableState(v *ObservedTableState) error {
 		return modelError(TableStateKind, schemaext.Observed, fmt.Errorf("%w: nil row-security table observation", schemaext.ErrInvalidValue))
 	}
 	return nil
+}
+
+// TableStateSubject is the identity of a table's row-security switches in a
+// plan's effects: the table's own identity under the switches' kind. The table
+// belongs to the host, which alters it in steps of its own, so a switch change
+// and a change to the table's definition stay separate writers of separate
+// subjects.
+func TableStateSubject(table objectidentity.ID) objectidentity.ID {
+	table.Kind = objectidentity.Kind(TableStateKind)
+	return table
 }
