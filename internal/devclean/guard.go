@@ -1,6 +1,7 @@
 package devclean
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -18,6 +19,9 @@ type ReplayGuard struct {
 	// remedy ends a refusal that [ReplayRealmServer] lifts; see
 	// [ReplayGuard.WithServerRealmRemedy].
 	remedy string
+	// baseline words a refusal as the rehearsal baseline's; see
+	// [BaselineGuard].
+	baseline bool
 }
 
 // ReplayRealm is how much of the dev server a replay may change.
@@ -30,9 +34,10 @@ const (
 	// the cleanup, which empties the dev database and nothing else.
 	ReplayRealmDatabase ReplayRealm = iota
 	// ReplayRealmServer lets a replay change the whole server. It is the realm
-	// of a server this run provisioned and removes afterwards, where a role,
-	// another database or a routine body cannot reach anything the run does
-	// not own.
+	// of a server the run owns as a whole, where a role, another database or a
+	// routine body cannot reach anything the run does not own: one the
+	// operator declared disposable, and, as [ReplayRealmProvisionedServer],
+	// one this process provisioned.
 	//
 	// It lifts only the refusals whose reason is the realm. A statement that
 	// changes the replay session, the server's catalogs or its configuration,
@@ -47,7 +52,19 @@ const (
 	// user, a privilege or a stored body outlives that cleanup, and is refused
 	// as it is in [ReplayRealmDatabase].
 	ReplayRealmServerDatabases
+	// ReplayRealmProvisionedServer is [ReplayRealmServer] on a server this
+	// process provisioned and removes afterwards. It also lifts a comment on
+	// an extension or a schema of the dev database. A server the operator
+	// declared disposable outlives the run, and its reset keeps the extensions
+	// and schemas it found, so a comment written there would reach the next
+	// run's reading of the dev database.
+	ReplayRealmProvisionedServer
 )
+
+// ownsServer reports a realm that lets a replay change the whole server.
+func (r ReplayRealm) ownsServer() bool {
+	return r == ReplayRealmServer || r == ReplayRealmProvisionedServer
+}
 
 // NewReplayGuard creates a dialect-aware migration replay guard for a replay
 // confined to realm.
@@ -80,6 +97,9 @@ func NewDevReplayGuard(info catalog.ServerInfo) *ReplayGuard {
 // URL is left to read. [Claim] reads the same record to decide whether the
 // server's default database may be reset.
 func DevReplayRealm(info catalog.ServerInfo) ReplayRealm {
+	if devdocker.Provisioned(info.URL) {
+		return ReplayRealmProvisionedServer
+	}
 	if devdocker.RunOwned(info.URL) {
 		return ReplayRealmServer
 	}
@@ -101,10 +121,12 @@ func DevReplayRealm(info catalog.ServerInfo) ReplayRealm {
 // keeps, such as ALTER SYSTEM, ends as it did, because reaching that realm
 // would not lift it.
 //
-// Only a caller whose realm the operator can raise to the server passes a
-// remedy; a guard built for a fixed realm has nothing to suggest. A guard for
-// [ReplayRealmServer] never appends it, since the server realm keeps every
-// refusal it makes.
+// A statement that only [ReplayRealmProvisionedServer] accepts ends with
+// [devdocker.ProvisionedServerRemedy] instead, since declaring the server
+// disposable would not lift it. Only a caller whose realm the operator can
+// raise to the server passes a remedy; a guard built for a fixed realm has
+// nothing to suggest. A guard for [ReplayRealmProvisionedServer] appends
+// neither, since it keeps every refusal it makes.
 func (g *ReplayGuard) WithServerRealmRemedy(remedy string) *ReplayGuard {
 	guard := *g
 	guard.remedy = remedy
@@ -118,16 +140,27 @@ func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	if err == nil {
 		return nil
 	}
+	if unsafe, ok := errors.AsType[*unsafeStatementError](err); ok && g.baseline {
+		refusal := *unsafe
+		refusal.baseline = true
+		err = &refusal
+	}
 	return g.withRemedy(stmt, err)
 }
 
 // withRemedy ends err, the refusal of stmt, with the guard's remedy when the
-// server realm would have accepted stmt.
+// server realm would have accepted stmt, and with
+// [devdocker.ProvisionedServerRemedy] when only a provisioned server would.
 func (g *ReplayGuard) withRemedy(stmt string, err error) error {
-	if g.remedy == "" || g.validate(stmt, ReplayRealmServer) != nil {
+	switch {
+	case g.remedy == "" || g.realm == ReplayRealmProvisionedServer:
 		return err
+	case g.realm != ReplayRealmServer && g.validate(stmt, ReplayRealmServer) == nil:
+		return fmt.Errorf("%w; %s", err, g.remedy)
+	case g.validate(stmt, ReplayRealmProvisionedServer) == nil:
+		return fmt.Errorf("%w; %s", err, devdocker.ProvisionedServerRemedy)
 	}
-	return fmt.Errorf("%w; %s", err, g.remedy)
+	return err
 }
 
 // validate is [ReplayGuard.ValidateStatement] for one realm.
@@ -143,12 +176,12 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 	case platform.SQLite:
 		return validateSQLiteReplayStatement(tokens)
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		if realm == ReplayRealmServer && postgresServerWideOperation(tokens) != "" {
+		if realm.ownsServer() && postgresServerWideOperation(tokens, realm) != "" {
 			return validatePostgresServerWideStatement(dialect, tokens)
 		}
 		return validatePostgresReplayStatement(dialect, tokens)
 	case platform.MySQL, platform.MariaDB:
-		if realm == ReplayRealmServer && mysqlServerWideOperation(tokens) != "" {
+		if realm.ownsServer() && mysqlServerWideOperation(tokens) != "" {
 			return nil
 		}
 		if realm == ReplayRealmServerDatabases && mysqlDatabaseOperation(tokens) {

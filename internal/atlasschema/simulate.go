@@ -516,6 +516,7 @@ func recreateCurrentSchema(
 		return err
 	}
 	omitControlComments(target, devCurrent.Extensions, controlComments)
+	omitRealmRootGrants(devConn.Info(), target, devCurrent)
 	info := devConn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil, runtime)
 	if err != nil {

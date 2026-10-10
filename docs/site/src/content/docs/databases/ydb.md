@@ -1034,10 +1034,10 @@ separately from the directory's ordinary schema. Matching observed settings need
 no recreation. Unread settings still stop a comparison that needs them.
 Reading this environment grants no wider write scope: before any baseline
 statement runs, a workload change, a user, a group, a `GRANT` or a `REVOKE` is
-refused unless the run owns the server, as in a replay. The one exception is a
-single `GRANT` or `REVOKE` whose every path is the dev realm's absolute path or
-a path under it, which the baseline writes to recreate the permissions the
-target holds on its database root; removing the realm removes it.
+refused unless the run owns the server, as in a replay. A baseline in a dev
+realm leaves out the permissions the target holds on its database root, because
+the realm's root survives a reset in the middle of a run and would carry them
+to the next target rehearsed there.
 
 An uninspected workload namespace does not block migrations that only change
 tables. An observed pool such as `default` remains untouched without requiring

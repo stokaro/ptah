@@ -14,6 +14,10 @@ import (
 // /local, whose absolute path is /local/ptah_dev/abc.
 var baselineRealm = catalog.ServerInfo{Dialect: platform.YDB, URL: "ydb://localhost:2136/local?dev_realm=abc"}
 
+// provisionedServerRemedy is the end of a refusal that only a server the run
+// provisions lifts.
+const provisionedServerRemedy = `; use a docker:// or docker\+<driver>:// dev URL, since a server declared disposable keeps this after the run`
+
 // ownedServerRemedy is the end of a refusal that owning the server lifts.
 const ownedServerRemedy = `; if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, ` +
 	`or use a docker:// or docker\+<driver>:// dev URL`
@@ -23,8 +27,10 @@ const ownedServerRemedy = `; if nothing else uses this server, declare it dispos
 // server the run does not own, each is refused as a migration replay refuses
 // it, in the baseline's own words. A routine or a trigger body can write
 // outside the dev database when it runs, a comment on an extension or a schema
-// is not restored by the cleanup, and a role, a user and a grant outlive it.
-// Owning the server lifts each, so each refusal names the remedy.
+// is not restored by the cleanup, and a role, a user, a grant and a resource
+// pool or classifier of the whole database outlive it. Owning the server lifts
+// each, so each refusal names the remedy; for a comment, the server has to be
+// one the run provisions.
 func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 	postgres := catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@shared-dev:5432/ptah_dev"}
 	mysql := catalog.ServerInfo{Dialect: platform.MySQL, Schema: "ptah_dev", URL: "mysql://dev@shared-dev:3306/ptah_dev"}
@@ -56,13 +62,13 @@ func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 			name:      "a comment on an extension",
 			info:      postgres,
 			statement: "COMMENT ON EXTENSION pgcrypto IS 'hashing'",
-			wantErr:   `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+			wantErr:   `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm` + provisionedServerRemedy,
 		},
 		{
 			name:      "a comment on a schema",
 			info:      postgres,
 			statement: `COMMENT ON SCHEMA "app" IS 'application'`,
-			wantErr:   `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+			wantErr:   `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm` + provisionedServerRemedy,
 		},
 		{
 			name:      "a PostgreSQL role",
@@ -75,6 +81,32 @@ func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 			info:      baselineRealm,
 			statement: "CREATE USER `reader`;",
 			wantErr:   `ydb rehearsal baseline refuses a user of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+		},
+		{
+			name:      "a YDB resource pool",
+			info:      baselineRealm,
+			statement: "CREATE RESOURCE POOL batch WITH (concurrent_query_limit = 10);",
+			wantErr:   `ydb rehearsal baseline refuses a resource pool of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+		},
+		{
+			name:      "a YDB resource pool change",
+			info:      baselineRealm,
+			statement: "ALTER RESOURCE POOL default WITH (resource_weight = 50);",
+			wantErr:   `ydb rehearsal baseline refuses a resource pool of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+		},
+		{
+			name:      "a YDB resource pool classifier",
+			info:      baselineRealm,
+			statement: "CREATE RESOURCE POOL CLASSIFIER etl WITH (resource_pool = 'batch', rank = 1);",
+			wantErr:   `ydb rehearsal baseline refuses a resource pool of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+		},
+		{
+			// The realm's root survives a reset in the middle of a run, so a
+			// permission on it would reach the next target rehearsed there.
+			name:      "a YDB grant on the realm's root",
+			info:      baselineRealm,
+			statement: "GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;",
+			wantErr:   `ydb rehearsal baseline refuses GRANT permission change because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
 		},
 		{
 			name:      "a YDB grant on a relative path",
@@ -106,10 +138,6 @@ func TestBaselineGuard_OwnedServer(t *testing.T) {
 			"CREATE FUNCTION item_count() RETURNS bigint LANGUAGE sql AS $$ SELECT count(*) FROM items $$"},
 		{"a MySQL trigger", catalog.ServerInfo{Dialect: platform.MySQL, Schema: "ptah_dev", URL: "mysql://dev@owned-baseline-mysql:3306/ptah_dev"},
 			"CREATE TRIGGER items_touch BEFORE INSERT ON items FOR EACH ROW SET NEW.n = 1"},
-		{"a comment on an extension", catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@owned-baseline-pg-extension:5432/ptah_dev"},
-			"COMMENT ON EXTENSION pgcrypto IS 'hashing'"},
-		{"a comment on a schema", catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@owned-baseline-pg-schema:5432/ptah_dev"},
-			`COMMENT ON SCHEMA "app" IS 'application'`},
 		{"a YDB user", catalog.ServerInfo{Dialect: platform.YDB, URL: "ydb://owned-baseline-ydb:2136/local"}, "CREATE USER `reader`;"},
 	}
 	for _, test := range tests {
@@ -117,6 +145,33 @@ func TestBaselineGuard_OwnedServer(t *testing.T) {
 			c := qt.New(t)
 			declareDisposable(c, test.info.URL)
 			c.Assert(devclean.NewBaselineGuard(test.info).ValidateStatement(test.statement), qt.IsNil)
+		})
+	}
+}
+
+// TestBaselineGuard_DeclaredServerKeepsDevDatabaseComments pins that a comment
+// on an extension or a schema of the dev database is refused on a server the
+// operator declared disposable. That server outlives the run, and its reset
+// keeps the extensions and schemas it found, so the comment would reach the
+// next run. The refusal names the one remedy that lifts it.
+func TestBaselineGuard_DeclaredServerKeepsDevDatabaseComments(t *testing.T) {
+	tests := []struct {
+		name      string
+		info      catalog.ServerInfo
+		statement string
+	}{
+		{"a comment on an extension", catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@owned-baseline-pg-extension:5432/ptah_dev"},
+			"COMMENT ON EXTENSION pgcrypto IS 'hashing'"},
+		{"a comment on a schema", catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@owned-baseline-pg-schema:5432/ptah_dev"},
+			`COMMENT ON SCHEMA "app" IS 'application'`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declareDisposable(c, test.info.URL)
+			c.Assert(devclean.NewBaselineGuard(test.info).ValidateStatement(test.statement), qt.ErrorMatches,
+				`postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm`+
+					provisionedServerRemedy)
 		})
 	}
 }
@@ -164,78 +219,6 @@ func TestBaselineGuard_OwnedServerKeepsWhatReachesPastIt(t *testing.T) {
 		"CREATE ASYNC REPLICATION `r` FOR `items` AS `copy` WITH (CONNECTION_STRING = 'grpcs://prod.example:2135/?database=/prod');")
 
 	c.Assert(err, qt.ErrorMatches, `ydb rehearsal baseline refuses async replication because its effects cannot be confined to the dev database realm`)
-}
-
-// TestBaselineGuard_AcceptsAGrantInsideTheRealm pins the one statement a
-// baseline writes that a replay refuses: in a YDB dev realm, a single GRANT or
-// REVOKE whose every path is the realm's root or under it, by absolute path.
-// The realm's root stands in for the target's database, so the permissions the
-// target holds on its root are granted there, and the realm's removal takes
-// them with it.
-func TestBaselineGuard_AcceptsAGrantInsideTheRealm(t *testing.T) {
-	for _, statement := range []string{
-		"GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;",
-		"-- Recreates the permission the target holds on its root.\nGRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;",
-		"GRANT 'ydb.generic.read', 'ydb.generic.list' ON `/local/ptah_dev/abc/items`, `/local/ptah_dev/abc/app/orders` TO `reader`, writers",
-		"REVOKE 'ydb.generic.read' ON `/local/ptah_dev/abc/items` FROM `reader`;",
-	} {
-		t.Run(statement, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(devclean.NewBaselineGuard(baselineRealm).ValidateStatement(statement), qt.IsNil)
-		})
-	}
-}
-
-// TestBaselineGuard_RefusesAGrantOutsideTheRealm is the control on the test
-// above. The statement is read whole: a path that is not absolute, not inside
-// the realm, or not in its cleaned form, a second statement after the grant,
-// a grant option, a `$` name, a permission that is not a quoted name, a
-// translation setting, and a connection that names no realm each leave the
-// grant to the replay guard, which refuses every grant in a realm.
-func TestBaselineGuard_RefusesAGrantOutsideTheRealm(t *testing.T) {
-	noRealm := catalog.ServerInfo{Dialect: platform.YDB, URL: "ydb://localhost:2136/local"}
-	tests := []struct {
-		name      string
-		info      catalog.ServerInfo
-		statement string
-		wantErr   string
-	}{
-		{"a relative path", baselineRealm, "GRANT 'ydb.generic.read' ON `items` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"the database root", baselineRealm, "GRANT 'ydb.generic.read' ON `/local` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a realm whose name extends this one", baselineRealm, "GRANT 'ydb.generic.read' ON `/local/ptah_dev/abcd` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a path that climbs out", baselineRealm, "GRANT 'ydb.generic.read' ON `/local/ptah_dev/abc/../x` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a path with a trailing slash", baselineRealm, "GRANT 'ydb.generic.read' ON `/local/ptah_dev/abc/` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"one path inside and one outside", baselineRealm, "GRANT 'ydb.generic.read' ON `/local/ptah_dev/abc/items`, `/local/items` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a second statement", baselineRealm, "GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `x`; CREATE USER `y`",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a second grant", baselineRealm, "GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `x`; GRANT 'ydb.access.grant' ON `/local` TO `x`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a grant option", baselineRealm, "GRANT 'ydb.generic.read' ON `/local/ptah_dev/abc` TO `reader` WITH GRANT OPTION;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a path named through a $ name", baselineRealm, "GRANT 'ydb.generic.read' ON $path TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a principal named through a $ name", baselineRealm, "GRANT 'ydb.generic.read' ON `/local/ptah_dev/abc` TO $who;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a permission keyword", baselineRealm, "GRANT SELECT ON `/local/ptah_dev/abc` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-		{"a translation setting", baselineRealm, "--!syntax_v1\nGRANT 'ydb.generic.read' ON `/local/ptah_dev/abc` TO `reader`;",
-			`ydb rehearsal baseline refuses translation setting --!syntax_v1 .*`},
-		{"a connection naming no realm", noRealm, "GRANT 'ydb.generic.read' ON `/local/ptah_dev/abc` TO `reader`;",
-			`ydb rehearsal baseline refuses GRANT permission change .*`},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			err := devclean.NewBaselineGuard(test.info).ValidateStatement(test.statement)
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-		})
-	}
 }
 
 // TestReplayGuard_RefusesAGrantInsideTheRealm pins that the realm grant is the

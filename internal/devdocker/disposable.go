@@ -21,6 +21,11 @@ const DisposableServerEnvVar = "PTAH_DEV_SERVER_DISPOSABLE"
 const OwnedServerRemedy = "if nothing else uses this server, declare it disposable with " +
 	DisposableServerEnvVar + "=1, or use a " + Scheme + ":// or " + Scheme + "+<driver>:// dev URL"
 
+// ProvisionedServerRemedy names the one way to a server the run discards, for
+// the end of a refusal that a server declared disposable does not lift either.
+const ProvisionedServerRemedy = "use a " + Scheme + ":// or " + Scheme + "+<driver>:// dev URL, " +
+	"since a server declared disposable keeps this after the run"
+
 // disposableServer is the declaration of the variable, made once, in the
 // package that owns the record it feeds. See [ptah.run/internal/envbool].
 //

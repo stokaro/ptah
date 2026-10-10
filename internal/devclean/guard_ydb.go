@@ -67,7 +67,7 @@ func validateYDBReplayStatement(tokens []lexer.Token, realm ReplayRealm) error {
 	if operation := ydbBeyondTheServer(tokens); operation != "" {
 		return unsafeReplayStatement(platform.YDB, operation)
 	}
-	if realm == ReplayRealmServer {
+	if realm.ownsServer() {
 		return nil
 	}
 	return validateYDBRealmStatement(tokens)

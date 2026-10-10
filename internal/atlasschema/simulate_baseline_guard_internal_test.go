@@ -38,7 +38,7 @@ func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
 			info: catalog.ServerInfo{Dialect: "postgres", Capabilities: capability.Postgres18()},
 			wantErr: `baseline statement 2 \(COMMENT ON EXTENSION "pg_trgm" IS 'trigram matching'\) cannot be rehearsed: ` +
 				`postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm; ` +
-				`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1.*`,
+				`use a docker:// or docker\+<driver>:// dev URL, since a server declared disposable keeps this after the run`,
 		},
 		{
 			name: "a PostgreSQL routine",
@@ -75,20 +75,20 @@ func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
 	}
 }
 
-// TestRehearsalBaselineAcceptsTheRealmGrant drives the guard with the
-// baseline a YDB dev realm receives for a target that holds a permission on
-// its root: the grant is recreated on the realm's root, by absolute path.
-func TestRehearsalBaselineAcceptsTheRealmGrant(t *testing.T) {
+// TestRehearsalBaselineRefusesARealmRootGrant drives the guard with a grant on
+// a YDB dev realm's root, which a baseline never writes: the rebuild leaves
+// the database root's permissions out, because the realm's root survives a
+// reset in the middle of a run and would carry them to the next target.
+func TestRehearsalBaselineRefusesARealmRootGrant(t *testing.T) {
 	c := qt.New(t)
 	realm := catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local?dev_realm=abc"}
 
 	err := guardRehearsalBaseline([]string{
 		ydbTable,
-		"CREATE TOPIC `events`;",
 		"GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;",
 	}, realm)
 
-	c.Assert(err, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `baseline statement 2 \(GRANT .*\) cannot be rehearsed: ydb rehearsal baseline refuses GRANT permission change .*`)
 }
 
 // TestStatementExcerpt pins what a refusal quotes: the first line that is not
