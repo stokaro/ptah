@@ -6,6 +6,7 @@ package crdbcompare
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	"ptah.run/core/objectidentity"
@@ -43,8 +44,15 @@ func (Service) CompareFacets(ctx context.Context, request schemaext.FacetCompari
 	if !slices.Equal(request.Kinds, []schemaext.Kind{crdbschema.RowTTLKind}) {
 		return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: unsupported CockroachDB facet comparison kinds", schemaext.ErrInvalidValue)
 	}
-	result := schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired}
-	result.Desired.Records = slices.Clone(result.Desired.Records)
+	c := comparison{
+		request:  request,
+		result:   schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired},
+		desired:  recordIndex(request.Desired),
+		current:  recordIndex(request.Current),
+		declared: make(map[objectidentity.Key]int),
+	}
+	c.result.Desired.Records = slices.Clone(c.result.Desired.Records)
+	maps.Copy(c.declared, c.desired)
 	seen := make(map[objectidentity.Key]bool)
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind != objectidentity.KindTable || owner.Subject.Name.Empty() || seen[owner.Subject.Key()] || (!owner.Desired && !owner.Current) {
@@ -54,18 +62,38 @@ func (Service) CompareFacets(ctx context.Context, request schemaext.FacetCompari
 		if !request.Includes(crdbschema.RowTTLKind, owner.Subject) {
 			continue
 		}
-		if err := compareTable(request, owner, &result); err != nil {
+		if err := c.table(owner); err != nil {
 			return schemaext.FacetComparisonResult{}, err
 		}
 	}
+	result := c.result
 	if err := ctx.Err(); err != nil {
 		return schemaext.FacetComparisonResult{}, err
 	}
 	return result, nil
 }
 
-func compareTable(request schemaext.FacetComparisonRequest, owner schemaext.ParentState, result *schemaext.FacetComparisonResult) error {
-	desired, current, err := tableValues(request, owner.Subject)
+// comparison holds one request's records indexed by subject, so each owner is
+// a lookup rather than a scan of every record.
+type comparison struct {
+	request schemaext.FacetComparisonRequest
+	result  schemaext.FacetComparisonResult
+	// desired and current index the request's records; declared indexes the
+	// result's desired records, which adopt extends.
+	desired, current, declared map[objectidentity.Key]int
+}
+
+func recordIndex(state schemaext.FacetState) map[objectidentity.Key]int {
+	index := make(map[objectidentity.Key]int, len(state.Records))
+	for i, record := range state.Records {
+		index[record.Subject.Key()] = i
+	}
+	return index
+}
+
+func (c *comparison) table(owner schemaext.ParentState) error {
+	request := c.request
+	desired, current, err := c.values(owner.Subject)
 	if err != nil {
 		return err
 	}
@@ -73,21 +101,41 @@ func compareTable(request schemaext.FacetComparisonRequest, owner schemaext.Pare
 		return &ptaherr.CapabilityError{Dialect: platform.CockroachDB, Feature: string(capability.RowLevelTTL), Err: ptaherr.ErrUnsupportedFeature,
 			Message: fmt.Sprintf("%s declares row-level TTL, which requires target capability %s", owner.Subject, capability.RowLevelTTL)}
 	}
+	// A table the plan creates carries its declaration with it, so a source
+	// that could not describe the policy is undecided there too: creating the
+	// table without it would turn a knowledge limit into a silent omission.
+	if knowledge, found := request.Desired.Coverage.SubjectKnowledge(crdbschema.RowTTLKind, owner.Subject); owner.Desired && found && knowledge.State == schemaext.Unrepresentable {
+		undecided(&c.result, owner.Subject, "the desired source could not describe CockroachDB row-level TTL")
+		return nil
+	}
 	if !owner.Desired || !owner.Current {
 		return nil
 	}
-	if knowledge, found := request.Desired.Coverage.SubjectKnowledge(crdbschema.RowTTLKind, owner.Subject); found && knowledge.State == schemaext.Unrepresentable {
-		undecided(result, owner.Subject, "the desired source could not describe CockroachDB row-level TTL")
-		return nil
-	}
-	if desired == nil && !known(request.Desired.Coverage, owner.Subject, true) {
+	return c.held(owner.Subject, desired, current)
+}
+
+// held compares the policy of a table both sides hold.
+func (c *comparison) held(subject objectidentity.ID, desired *crdbschema.DesiredRowTTL, current *crdbschema.ObservedRowTTL) error {
+	request := c.request
+	if desired == nil && !known(request.Desired.Coverage, subject, true) {
 		if current != nil {
-			return adopt(result, owner.Subject, current)
+			return c.adopt(subject, current)
 		}
 		return nil
 	}
-	if (current == nil && !known(request.Current.Coverage, owner.Subject, false)) || limited(request.Current.Coverage, owner.Subject) {
-		undecided(result, owner.Subject, "CockroachDB row-level TTL was not inspected")
+	// A target established to lack row-level TTL holds no policy, so a
+	// declaration of none is met whatever the read asked. Without that fact an
+	// uninspected table may hold one, and declaring none is managed intent the
+	// comparison cannot decide.
+	if desired == nil && current == nil && cannotHoldRowTTL(request.Capabilities) {
+		return nil
+	}
+	if knowledge, found := request.Current.Coverage.SubjectKnowledge(crdbschema.RowTTLKind, subject); found && knowledge.State == schemaext.Unrepresentable {
+		undecided(&c.result, subject, "the read found a CockroachDB row-level TTL it could not describe")
+		return nil
+	}
+	if (current == nil && !known(request.Current.Coverage, subject, false)) || limited(request.Current.Coverage, subject) {
+		undecided(&c.result, subject, "CockroachDB row-level TTL was not inspected")
 		return nil
 	}
 	if desired == nil && current == nil {
@@ -97,18 +145,25 @@ func compareTable(request schemaext.FacetComparisonRequest, owner schemaext.Pare
 		return nil
 	}
 	change := &crdbdiff.RowTTL{Before: current, After: desired}
-	result.Changes = append(result.Changes, schemaext.FacetChange{
-		Kind: crdbschema.RowTTLKind, Change: schemaext.ChangeRecord{Subject: owner.Subject, Value: change.CloneChange()},
+	c.result.Changes = append(c.result.Changes, schemaext.FacetChange{
+		Kind: crdbschema.RowTTLKind, Change: schemaext.ChangeRecord{Subject: subject, Value: change.CloneChange()},
 	})
 	return nil
 }
 
-func tableValues(request schemaext.FacetComparisonRequest, subject objectidentity.ID) (*crdbschema.DesiredRowTTL, *crdbschema.ObservedRowTTL, error) {
-	desired, _, err := schemaext.FacetAs[*crdbschema.DesiredRowTTL](values(request.Desired, subject), crdbschema.RowTTLKind)
+func (c *comparison) values(subject objectidentity.ID) (*crdbschema.DesiredRowTTL, *crdbschema.ObservedRowTTL, error) {
+	var desiredFacets, currentFacets schemaext.Facets
+	if i, found := c.desired[subject.Key()]; found {
+		desiredFacets = c.request.Desired.Records[i].Values
+	}
+	if i, found := c.current[subject.Key()]; found {
+		currentFacets = c.request.Current.Records[i].Values
+	}
+	desired, _, err := schemaext.FacetAs[*crdbschema.DesiredRowTTL](desiredFacets, crdbschema.RowTTLKind)
 	if err != nil {
 		return nil, nil, err
 	}
-	current, _, err := schemaext.FacetAs[*crdbschema.ObservedRowTTL](values(request.Current, subject), crdbschema.RowTTLKind)
+	current, _, err := schemaext.FacetAs[*crdbschema.ObservedRowTTL](currentFacets, crdbschema.RowTTLKind)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,33 +182,22 @@ func tableValues(request schemaext.FacetComparisonRequest, subject objectidentit
 
 // An unmanaged policy is retained in the effective declaration, so a planner
 // that rebuilds the table restores it rather than dropping it.
-func adopt(result *schemaext.FacetComparisonResult, subject objectidentity.ID, current *crdbschema.ObservedRowTTL) error {
-	for i, record := range result.Desired.Records {
-		if record.Subject.Key() != subject.Key() {
-			continue
-		}
-		values, err := record.Values.With(current.Desired())
+func (c *comparison) adopt(subject objectidentity.ID, current *crdbschema.ObservedRowTTL) error {
+	if i, found := c.declared[subject.Key()]; found {
+		values, err := c.result.Desired.Records[i].Values.With(current.Desired())
 		if err != nil {
 			return err
 		}
-		result.Desired.Records[i].Values = values
+		c.result.Desired.Records[i].Values = values
 		return nil
 	}
 	facets, err := schemaext.NewFacets(current.Desired())
 	if err != nil {
 		return err
 	}
-	result.Desired.Records = append(result.Desired.Records, schemaext.FacetRecord{Subject: subject, Values: facets})
+	c.declared[subject.Key()] = len(c.result.Desired.Records)
+	c.result.Desired.Records = append(c.result.Desired.Records, schemaext.FacetRecord{Subject: subject, Values: facets})
 	return nil
-}
-
-func values(state schemaext.FacetState, subject objectidentity.ID) schemaext.Facets {
-	for _, record := range state.Records {
-		if record.Subject.Key() == subject.Key() {
-			return record.Values
-		}
-	}
-	return schemaext.Facets{}
 }
 
 // known reports knowledge that makes a missing value an absence. A desired
@@ -176,4 +220,10 @@ func limited(coverage schemaext.Coverage, subject objectidentity.ID) bool {
 
 func undecided(result *schemaext.FacetComparisonResult, subject objectidentity.ID, reason string) {
 	result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: crdbschema.RowTTLKind, Subject: subject, Reason: reason})
+}
+
+// cannotHoldRowTTL reports a capability set that establishes the target has no
+// row-level TTL. An unanswered key establishes nothing.
+func cannotHoldRowTTL(caps capability.Capabilities) bool {
+	return caps.Established(capability.RowLevelTTL) && !caps.Has(capability.RowLevelTTL)
 }

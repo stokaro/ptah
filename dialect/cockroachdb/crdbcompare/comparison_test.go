@@ -200,7 +200,7 @@ func TestCompareFacets_UnknownStateIsUndecided(t *testing.T) {
 			mutate: func(r *schemaext.FacetComparisonRequest) {
 				r.Current.Coverage = readCoverage(schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "an unknown parameter"})
 			},
-			wantReason: "CockroachDB row-level TTL was not inspected",
+			wantReason: "the read found a CockroachDB row-level TTL it could not describe",
 		},
 		{
 			name: "the source could not represent the declaration",
@@ -224,6 +224,99 @@ func TestCompareFacets_UnknownStateIsUndecided(t *testing.T) {
 			c.Assert(result.Undecided[0].Reason, qt.Equals, test.wantReason)
 		})
 	}
+}
+
+// TestCompareFacets_ACreatedTableWithAnUndescribedDeclarationIsUndecided pins
+// that a table the plan creates is no exception: creating it without the
+// policy its source could not describe would make the limit a silent omission.
+func TestCompareFacets_ACreatedTableWithAnUndescribedDeclarationIsUndecided(t *testing.T) {
+	c := qt.New(t)
+	input := request(nil, nil)
+	input.Owners = []schemaext.ParentState{{Subject: sessions(), Desired: true}}
+	input.Desired.Coverage = must.Must(crdbschema.RowTTLCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: crdbschema.RowTTLKind, Subject: sessions(), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "x"}}}))
+
+	result, err := comparisonRuntime().CompareFacets(t.Context(), input)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Equals, "the desired source could not describe CockroachDB row-level TTL")
+}
+
+// TestCompareFacets_NothingDeclaredOnATargetWithoutTTLIsNoChange pins the one
+// case where a declaration of no policy is met without a read of it: a target
+// established to lack row-level TTL holds none.
+func TestCompareFacets_NothingDeclaredOnATargetWithoutTTLIsNoChange(t *testing.T) {
+	tests := []struct {
+		name     string
+		coverage schemaext.Coverage
+	}{
+		{name: "a catalog with no row-level TTL coverage", coverage: schemaext.Coverage{}},
+		{name: "a read that left the table uninspected", coverage: readCoverage(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not asked"})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			input := request(nil, nil)
+			input.Capabilities = capability.CockroachDB26().With(capability.RowLevelTTL, false)
+			input.Current.Coverage = test.coverage
+			result, err := comparisonRuntime().CompareFacets(t.Context(), input)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 0)
+			c.Assert(result.Undecided, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCompareFacets_NothingDeclaredAgainstAnUninspectedReadIsUndecided is the
+// control on the test above. A source that declares no policy manages the
+// policy, so where the target may hold one -- a catalog from a file, a read
+// that left the table uninspected, a capability set that does not answer the
+// key -- the comparison cannot call the two sides equal.
+func TestCompareFacets_NothingDeclaredAgainstAnUninspectedReadIsUndecided(t *testing.T) {
+	tests := []struct {
+		name         string
+		capabilities capability.Capabilities
+		coverage     schemaext.Coverage
+	}{
+		{name: "a catalog with no row-level TTL coverage", capabilities: capability.CockroachDB26(), coverage: schemaext.Coverage{}},
+		{
+			name:         "a read that left the table uninspected",
+			capabilities: capability.CockroachDB26(),
+			coverage:     readCoverage(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not asked"}),
+		},
+		{name: "a capability set that does not answer the key", capabilities: capability.Capabilities{}, coverage: schemaext.Coverage{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			input := request(nil, nil)
+			input.Capabilities = test.capabilities
+			input.Current.Coverage = test.coverage
+			result, err := comparisonRuntime().CompareFacets(t.Context(), input)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 0)
+			c.Assert(result.Undecided, qt.HasLen, 1)
+			c.Assert(result.Undecided[0].Reason, qt.Equals, "CockroachDB row-level TTL was not inspected")
+		})
+	}
+}
+
+// TestCompareFacets_NothingDeclaredAgainstAnUndescribedPolicyIsUndecided pins
+// a read that inspected the table and saw a policy it could not describe: it
+// has seen something, and the reason says so.
+func TestCompareFacets_NothingDeclaredAgainstAnUndescribedPolicyIsUndecided(t *testing.T) {
+	c := qt.New(t)
+	input := request(nil, nil)
+	input.Current.Coverage = readCoverage(schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "an unknown parameter"})
+
+	result, err := comparisonRuntime().CompareFacets(t.Context(), input)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Equals, "the read found a CockroachDB row-level TTL it could not describe")
 }
 
 // TestCompareFacets_FailurePath pins the refusals that end the comparison.

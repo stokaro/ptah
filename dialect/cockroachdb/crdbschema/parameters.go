@@ -161,13 +161,22 @@ func DecodeDeclared(parameters map[string]string) (*DesiredRowTTL, error) {
 }
 
 func assignDeclared(p *Policy, name, value string) error {
-	if name == MarkerParameter {
+	// The marker is refused in any case: naming its lower-case spelling would
+	// point at a name refused in turn.
+	if strings.EqualFold(name, MarkerParameter) {
 		return fmt.Errorf("%w: %s is derived from the other parameters and is refused by the server when it arrives "+
 			"alone; declare %s to turn a TTL on, and remove that to turn it off",
 			schemaext.ErrInvalidValue, MarkerParameter, ExpirationExpressionParameter)
 	}
 	for _, text := range p.texts() {
 		if text.name == name {
+			// An empty text is how a policy says "unset", so storing it would
+			// read a declared parameter as one never written. Refused like the
+			// blank text ValidateDesired refuses and the wire codec's empty
+			// string.
+			if value == "" {
+				return fmt.Errorf("%w: %s is empty; remove the parameter to leave it unset", schemaext.ErrInvalidValue, name)
+			}
 			*text.value = value
 			return nil
 		}
@@ -191,6 +200,10 @@ func assignDeclared(p *Policy, name, value string) error {
 			*flag.value = parsed
 			return nil
 		}
+	}
+	if lower := strings.ToLower(name); lower != name && slices.Contains(ManagedParameters(), lower) {
+		return fmt.Errorf("%w: unknown row-level TTL parameter %q: parameter names are lower case, as %q",
+			schemaext.ErrInvalidValue, name, lower)
 	}
 	return fmt.Errorf("%w: unknown row-level TTL parameter %q: Ptah manages %s",
 		schemaext.ErrInvalidValue, name, strings.Join(ManagedParameters(), ", "))

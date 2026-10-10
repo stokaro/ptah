@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbast"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/dialect/cockroachdb/internal/ttlsql"
+	"ptah.run/internal/sqlident"
 )
 
 // Handlers returns independent descriptors for the supported operation roles.
@@ -38,7 +39,7 @@ func validateRowTTL(ctx renderer.ExtensionContext, op *crdbast.AlterRowTTL) erro
 }
 
 func renderRowTTL(ctx renderer.ExtensionContext, op *crdbast.AlterRowTTL) ([]string, error) {
-	return ttlsql.Statements(quoteQualified(ctx.Parent.Name), &op.Change), nil
+	return ttlsql.Statements(sqlident.QuotePostgresQualified(ctx.Parent.Name), &op.Change), nil
 }
 
 func tableName(parent *ast.AlterTableNode) string {
@@ -107,31 +108,4 @@ func requireRowTTL(target string, caps capability.Capabilities, table string) er
 		Message: fmt.Sprintf("%s: %s declares row-level TTL, which requires target capability %s; Ptah refuses the "+
 			"declaration rather than emitting a statement whose retention policy the server may drop",
 			platform.CockroachDB, subject, capability.RowLevelTTL)}
-}
-
-// quoteQualified spells a table name the way the PostgreSQL-family renderer
-// does: every dot-separated part double-quoted, an already quoted part kept as
-// one part, and an embedded quote doubled. engine/builtin pins the agreement.
-func quoteQualified(identifier string) string {
-	var parts []string
-	start, inQuotes := 0, false
-	for i := 0; i < len(identifier); i++ {
-		switch {
-		case identifier[i] == '"' && inQuotes && i+1 < len(identifier) && identifier[i+1] == '"':
-			i++
-		case identifier[i] == '"':
-			inQuotes = !inQuotes
-		case identifier[i] == '.' && !inQuotes:
-			parts = append(parts, identifier[start:i])
-			start = i + 1
-		}
-	}
-	parts = append(parts, identifier[start:])
-	for i, part := range parts {
-		if len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' {
-			part = strings.ReplaceAll(part[1:len(part)-1], `""`, `"`)
-		}
-		parts[i] = `"` + strings.ReplaceAll(part, `"`, `""`) + `"`
-	}
-	return strings.Join(parts, ".")
 }

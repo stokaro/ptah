@@ -106,10 +106,14 @@ func reverseFeatureTableState(
 		return schemacapture.TableObservation{}, fmt.Errorf("cannot reverse features of %q without a captured table", table.TableName)
 	}
 	semantics := forward.EffectiveIdentifierSemantics(dialect)
+	// A transition this host cannot project leaves the reverse without a
+	// capture of the table, which is not the same as an unchanged one. The
+	// reversed feature changes still go to their owners: an owner whose
+	// reverse plan reads the captured table refuses one that has none, and
+	// one that plans from the change alone, as a row-level TTL does, plans.
+	// Refusing here instead lost the whole plan, forward included, for every
+	// table feature change beside an RLS toggle or a trigger.
 	if pendingTableProjection(forward, table, semantics) {
-		if len(recovery) > 0 {
-			return schemacapture.TableObservation{}, fmt.Errorf("cannot reverse feature changes of %q without a projected common table state", table.TableName)
-		}
 		return schemacapture.TableObservation{}, nil
 	}
 	current := table.Current.Clone()

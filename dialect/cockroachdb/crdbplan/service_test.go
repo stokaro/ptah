@@ -173,3 +173,33 @@ func TestPlanFeatures_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// cancelAfter is a context canceled once its Err has answered nil allowed
+// times, so a test can cancel a plan at a chosen check rather than before the
+// first one.
+type cancelAfter struct {
+	context.Context
+	allowed int
+}
+
+func (c *cancelAfter) Err() error {
+	if c.allowed == 0 {
+		return context.Canceled
+	}
+	c.allowed--
+	return nil
+}
+
+// TestPlanFeatures_CanceledAfterTheChangesReturnsNoPrefix covers the last
+// check: a request without parent kinds canceled after its changes were
+// planned returns the error and no partial receipt.
+func TestPlanFeatures_CanceledAfterTheChangesReturnsNoPrefix(t *testing.T) {
+	c := qt.New(t)
+	request := requestFixture()
+	ctx := &cancelAfter{Context: t.Context(), allowed: 1 + len(request.Changes)}
+
+	result, err := crdbplan.Service{}.PlanFeatures(ctx, request)
+
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+	c.Assert(result, qt.DeepEquals, featureplan.Result{})
+}

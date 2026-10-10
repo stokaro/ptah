@@ -259,11 +259,11 @@ func takeProperties(owner propertyOwner, target schemaext.TargetSelection, defin
 		if !target.Includes([]string{name}) {
 			continue
 		}
-		for _, key := range definition.Keys {
-			value, found := (*owner.properties)[name][key]
-			if !found {
+		for _, key := range slices.Sorted(maps.Keys((*owner.properties)[name])) {
+			if !definition.Claims(key) {
 				continue
 			}
+			value := (*owner.properties)[name][key]
 			if _, duplicate := properties[key]; duplicate {
 				return nil, fmt.Errorf("%w: %s %q repeats source property %q", schemaext.ErrDuplicate, owner.label, owner.name, key)
 			}

@@ -33,14 +33,12 @@ func (r *Runtime) registerPropertySource(owner string, declaration PropertySourc
 		len(declaration.Definitions) == 0 || declaration.Service == nil || nilService(declaration.Service) {
 		return fmt.Errorf("%w: incomplete property source registration for %q", ErrInvalidRegistration, declaration.Target)
 	}
-	keys := make(map[string]bool)
+	claimed := propertyClaims{keys: make(map[string]bool)}
 	absorbed := make(map[schemaext.CommonAttribute]bool)
 	for _, registered := range r.propertyServices {
 		if registered.Target == declaration.Target && registered.Format == declaration.Format {
 			for _, definition := range registered.Definitions {
-				for _, key := range definition.Keys {
-					keys[key] = true
-				}
+				claimed.add(definition)
 				for _, absorption := range definition.Absorbs {
 					absorbed[absorption.Attribute] = true
 				}
@@ -48,12 +46,13 @@ func (r *Runtime) registerPropertySource(owner string, declaration PropertySourc
 		}
 	}
 	for _, definition := range declaration.Definitions {
-		if err := r.validatePropertyDefinition(owner, definition, keys); err != nil {
+		if err := r.validatePropertyDefinition(owner, definition, claimed); err != nil {
 			return err
 		}
 		if err := validateAbsorptions(declaration.Format, definition, absorbed); err != nil {
 			return err
 		}
+		claimed.add(definition)
 		key := propertyKey{declaration.Target, declaration.Format, definition.Kind}
 		if _, duplicate := r.properties[key]; duplicate {
 			return fmt.Errorf("%w: duplicate property source for %q/%q/%q", ErrInvalidRegistration, key.target, key.format, key.kind)
@@ -65,18 +64,57 @@ func (r *Runtime) registerPropertySource(owner string, declaration PropertySourc
 	return nil
 }
 
-func (r *Runtime) validatePropertyDefinition(owner string, definition schemaext.PropertyDefinition, keys map[string]bool) error {
+// propertyClaims is what the definitions already registered for one target
+// and format claim, so a new definition cannot claim any of it again.
+type propertyClaims struct {
+	keys     map[string]bool
+	prefixes []string
+}
+
+func (c *propertyClaims) add(definition schemaext.PropertyDefinition) {
+	for _, key := range definition.Keys {
+		c.keys[key] = true
+	}
+	c.prefixes = append(c.prefixes, definition.Prefixes...)
+}
+
+// covers reports whether a registered prefix claims key, by the reading a
+// definition's own claim uses.
+func (c *propertyClaims) covers(key string) bool {
+	return schemaext.PropertyDefinition{Prefixes: c.prefixes}.Claims(key)
+}
+
+// coversAny reports whether prefix claims a registered key.
+func (c *propertyClaims) coversAny(prefix string) bool {
+	claim := schemaext.PropertyDefinition{Prefixes: []string{prefix}}
+	for key := range c.keys {
+		if claim.Claims(key) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Runtime) validatePropertyDefinition(owner string, definition schemaext.PropertyDefinition, claimed propertyClaims) error {
 	owned := slices.ContainsFunc(r.codecs.Definitions(), func(model schemaext.CodecIdentity) bool {
 		return model.Kind == definition.Kind && model.Representation == schemaext.Desired && model.Owner == owner
 	})
 	if !owned || len(definition.Keys) == 0 {
 		return fmt.Errorf("%w: missing owned desired codec or property keys for %q", ErrInvalidRegistration, definition.Kind)
 	}
+	seen := make(map[string]bool)
 	for _, key := range definition.Keys {
-		if !propertyName(key) || keys[key] {
+		if !propertyName(key) || claimed.keys[key] || claimed.covers(key) || seen[key] {
 			return fmt.Errorf("%w: invalid or duplicate source property %q", ErrInvalidRegistration, key)
 		}
-		keys[key] = true
+		seen[key] = true
+	}
+	for i, prefix := range definition.Prefixes {
+		overlaps := func(other string) bool { return strings.HasPrefix(other, prefix) || strings.HasPrefix(prefix, other) }
+		if !propertyName(prefix) || slices.ContainsFunc(claimed.prefixes, overlaps) || slices.ContainsFunc(definition.Prefixes[:i], overlaps) ||
+			claimed.coversAny(prefix) {
+			return fmt.Errorf("%w: invalid or overlapping source property prefix %q", ErrInvalidRegistration, prefix)
+		}
 	}
 	return nil
 }
@@ -115,6 +153,7 @@ func clonePropertyDefinitions(definitions []schemaext.PropertyDefinition) []sche
 	for i := range result {
 		result[i].Keys = slices.Clone(result[i].Keys)
 		result[i].Absorbs = slices.Clone(result[i].Absorbs)
+		result[i].Prefixes = slices.Clone(result[i].Prefixes)
 	}
 	return result
 }
@@ -183,7 +222,20 @@ func (r *Runtime) propertyBatches(ctx context.Context, targetName string, format
 	return selected.name, batches, nil
 }
 
-func (r *Runtime) snapshotPropertyFragment(target string, format schemaext.PropertyFormat, fragment schemaext.PropertyFragment) (schemaext.PropertyFragment, error) {
+// exactKey reports a key a definition names, the only keys an encoder may
+// write: what it writes is what a source then declares.
+func exactKey(definition schemaext.PropertyDefinition, key string) bool {
+	return slices.Contains(definition.Keys, key)
+}
+
+// snapshotPropertyFragment validates and copies one fragment whose every key
+// owns accepts. A decoder input may carry any key its definition claims, a
+// prefix included, so the owner can refuse a misspelled one by name
+// ([schemaext.PropertyDefinition.Claims]); an encoder's output must use the
+// definition's exact keys ([exactKey]).
+func (r *Runtime) snapshotPropertyFragment(target string, format schemaext.PropertyFormat, fragment schemaext.PropertyFragment,
+	owns func(schemaext.PropertyDefinition, string) bool,
+) (schemaext.PropertyFragment, error) {
 	service, found := r.properties[propertyKey{target, format, fragment.Kind}]
 	if !found {
 		return schemaext.PropertyFragment{}, fmt.Errorf("%w: unregistered property fragment kind %q", schemaext.ErrInvalidValue, fragment.Kind)
@@ -191,7 +243,7 @@ func (r *Runtime) snapshotPropertyFragment(target string, format schemaext.Prope
 	definitions := r.propertyServices[service].Definitions
 	index := slices.IndexFunc(definitions, func(definition schemaext.PropertyDefinition) bool { return definition.Kind == fragment.Kind })
 	for key, value := range fragment.Properties {
-		if !slices.Contains(definitions[index].Keys, key) || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+		if !owns(definitions[index], key) || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
 			return schemaext.PropertyFragment{}, fmt.Errorf("%w: invalid or unowned property %q for %q", schemaext.ErrInvalidValue, key, fragment.Kind)
 		}
 	}

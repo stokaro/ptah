@@ -216,3 +216,62 @@ func TestQualifiedIdent(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitQualified(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{name: "one part", in: "users", want: []string{"users"}},
+		{name: "schema and table", in: "app.users", want: []string{"app", "users"}},
+		{name: "a dot inside quotes", in: `"a.b"."c"`, want: []string{`"a.b"`, `"c"`}},
+		{name: "a doubled quote does not end the part", in: `"a"".b".c`, want: []string{`"a"".b"`, "c"}},
+		{name: "non-ASCII bytes come back as they arrived", in: "Größe.Maß", want: []string{"Größe", "Maß"}},
+		{name: "bytes that are not UTF-8 come back as they arrived", in: "caf\xe9.t", want: []string{"caf\xe9", "t"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(sqlident.SplitQualified(test.in), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestUnquoteDoubleQuoted(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "a bare part", in: "users", want: "users"},
+		{name: "a quoted part", in: `"Users"`, want: "Users"},
+		{name: "a doubled quote inside", in: `"odd""name"`, want: `odd"name`},
+		{name: "one quote is not a quoted part", in: `"`, want: `"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(sqlident.UnquoteDoubleQuoted(test.in), qt.Equals, test.want)
+		})
+	}
+}
+
+func TestQuotePostgresQualified(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "schema and table", in: "app.users", want: `"app"."users"`},
+		{name: "an already quoted part is not quoted twice", in: `"a.b"."c"`, want: `"a.b"."c"`},
+		{name: "an embedded quote is doubled", in: `odd"name`, want: `"odd""name"`},
+		{name: "a non-ASCII name", in: "Größe", want: `"Größe"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(sqlident.QuotePostgresQualified(test.in), qt.Equals, test.want)
+		})
+	}
+}

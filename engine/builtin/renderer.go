@@ -138,8 +138,12 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	var raw renderer.RenderVisitor
 
 	switch normalizedDialect {
-	case platform.Postgres:
-		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		owners, err := postgresOwners(normalizedDialect)
+		if err != nil {
+			return nil, err
+		}
+		raw = postgres.NewWithCapabilities(caps, normalizedDialect).WithOwners(owners)
 	case platform.MySQL:
 		raw = mysql.NewWithCapabilities(caps)
 	case platform.MariaDB:
@@ -152,8 +156,6 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 		raw = mssql.NewWithCapabilities(caps)
 	case platform.Oracle:
 		raw = oracle.NewWithCapabilities(caps)
-	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
 	case platform.YDB:
 		raw = ydb.NewWithCapabilities(caps)
 	default:

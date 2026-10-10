@@ -230,3 +230,62 @@ func Qualified(dialect, schema, name string) string {
 	}
 	return Quote(dialect, schema) + "." + Quote(dialect, name)
 }
+
+// SplitQualified splits a dotted name whose parts may be double-quoted, as the
+// PostgreSQL family writes one, into its parts. It reads no other quote style:
+// a backticked part is split at its dots. A dot inside a quoted part is
+// part of the name, and a doubled quote inside a quoted part is SQL's escape for
+// a literal quote and does not end the part. Each part keeps its quotes.
+//
+// Each part is a SLICE of the input, never a character-by-character copy. The
+// two delimiters this scan recognizes are ASCII, and UTF-8 is self
+// synchronizing -- no byte of a multi-byte sequence is ever below 0x80 -- so a
+// byte scan can find them without decoding, and slicing hands every other byte
+// back exactly as it arrived. A form that accumulated `string(character)` from
+// a byte re-encoded each byte as its own code point: `Ä` (C3 84) came back out
+// as `Ã` plus U+0084, renaming every non-ASCII object (stokaro/ptah#1352).
+//
+// Decoding to runes would fix that case and introduce another: text that is not
+// valid UTF-8 -- a Latin-1 schema file, say -- decodes to U+FFFD per bad byte
+// and would be rewritten just as silently. A splitter owes its caller the bytes
+// it was given.
+func SplitQualified(name string) []string {
+	var parts []string
+	start := 0
+	inQuotes := false
+	for i := 0; i < len(name); i++ {
+		switch {
+		case name[i] == '"' && inQuotes && i+1 < len(name) && name[i+1] == '"':
+			i++
+		case name[i] == '"':
+			inQuotes = !inQuotes
+		case name[i] == '.' && !inQuotes:
+			parts = append(parts, name[start:i])
+			start = i + 1
+		}
+	}
+	return append(parts, name[start:])
+}
+
+// UnquoteDoubleQuoted removes one level of double quoting from one name part,
+// as the PostgreSQL family quotes one, and undoubles the quotes inside it. A
+// part that is not wrapped in double quotes is returned as it is.
+func UnquoteDoubleQuoted(part string) string {
+	if len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' {
+		return strings.ReplaceAll(part[1:len(part)-1], `""`, `"`)
+	}
+	return part
+}
+
+// QuotePostgresQualified quotes every part of a dotted PostgreSQL-family name,
+// split by [SplitQualified], in double quotes. Each part loses one level of
+// double quoting first, so a part that arrives quoted is not quoted twice. It
+// is the PostgreSQL family's spelling alone: another dialect quotes and
+// qualifies differently, and a YDB name is one path.
+func QuotePostgresQualified(name string) string {
+	parts := SplitQualified(name)
+	for i, part := range parts {
+		parts[i] = Quote(platform.Postgres, UnquoteDoubleQuoted(part))
+	}
+	return strings.Join(parts, ".")
+}

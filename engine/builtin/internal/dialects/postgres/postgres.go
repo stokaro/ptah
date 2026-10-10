@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/sqlident"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -36,6 +37,8 @@ type Renderer struct {
 	// It is nil unless a caller asked for the report, and a nil sink drops
 	// what it is given, so rendering costs nothing when nobody is listening.
 	sink *renderdiag.Sink
+	// owners is what this target's feature owners render; see [Owners].
+	owners Owners
 }
 
 // ReportOmissionsTo directs this renderer's omission records to sink.
@@ -110,7 +113,7 @@ func (r *Renderer) qualifiedIndexTarget(table, name string) string {
 	if r.dialect == platform.CockroachDB && table != "" {
 		return r.escapeQualifiedIdentifier(table) + "@" + r.escapeIdentifier(name)
 	}
-	tableParts := splitQualifiedIdentifier(table)
+	tableParts := sqlident.SplitQualified(table)
 	if len(tableParts) < 2 {
 		// No table namespace to borrow, so the index name is the only place a
 		// qualifier can be, and `DROP INDEX app.idx` puts one there. Escaping
@@ -801,18 +804,14 @@ var (
 
 // escapeIdentifier safely escapes SQL identifiers (table/column names) for PostgreSQL
 func (r *Renderer) escapeIdentifier(identifier string) string {
-	// Escape double quotes by doubling them and wrap in double quotes
-	unquoted := unquoteIdentifier(identifier)
-	escaped := strings.ReplaceAll(unquoted, `"`, `""`)
-	return `"` + escaped + `"`
+	return sqlident.Quote(r.dialect, sqlident.UnquoteDoubleQuoted(identifier))
 }
 
+// escapeQualifiedIdentifier is [sqlident.QuotePostgresQualified], which an
+// owner rendering a statement about the same table calls too, so the two
+// cannot spell one name two ways.
 func (r *Renderer) escapeQualifiedIdentifier(identifier string) string {
-	parts := splitQualifiedIdentifier(identifier)
-	for i, part := range parts {
-		parts[i] = r.escapeIdentifier(part)
-	}
-	return strings.Join(parts, ".")
+	return sqlident.QuotePostgresQualified(identifier)
 }
 
 func (r *Renderer) escapeIdentifierList(identifiers []string) []string {
@@ -862,48 +861,6 @@ func isPostgreSQLRoleKeyword(role string) bool {
 	default:
 		return false
 	}
-}
-
-func unquoteIdentifier(identifier string) string {
-	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
-		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
-	}
-	return identifier
-}
-
-// splitQualifiedIdentifier splits on the dots that separate name parts while
-// leaving dots inside a double-quoted part alone. A doubled quote is SQL's
-// escape for a literal quote and does not end the quoted part.
-//
-// Each part is a SLICE of the input, never a character-by-character copy. The
-// two delimiters this scan recognizes are ASCII, and UTF-8 is self
-// synchronizing -- no byte of a multi-byte sequence is ever below 0x80 -- so a
-// byte scan can find them without decoding, and slicing hands every other byte
-// back exactly as it arrived. The previous form accumulated `string(character)`
-// from a byte, which re-encodes each byte as its own code point: `Ä` (C3 84)
-// came back out as `Ã` plus U+0084, renaming every non-ASCII object. See
-// stokaro/ptah#1352.
-//
-// Decoding to runes would fix that case and introduce another: text that is not
-// valid UTF-8 -- a Latin-1 schema file, say -- decodes to U+FFFD per bad byte
-// and would be rewritten just as silently. A splitter owes its caller the bytes
-// it was given.
-func splitQualifiedIdentifier(identifier string) []string {
-	var parts []string
-	start := 0
-	inQuotes := false
-	for i := 0; i < len(identifier); i++ {
-		switch {
-		case identifier[i] == '"' && inQuotes && i+1 < len(identifier) && identifier[i+1] == '"':
-			i++
-		case identifier[i] == '"':
-			inQuotes = !inQuotes
-		case identifier[i] == '.' && !inQuotes:
-			parts = append(parts, identifier[start:i])
-			start = i + 1
-		}
-	}
-	return append(parts, identifier[start:])
 }
 
 // GetDialect returns the database dialect (alias for Dialect for compatibility)

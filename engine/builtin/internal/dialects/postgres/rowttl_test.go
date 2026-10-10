@@ -14,9 +14,16 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/cockroachdb/crdbast"
 	"ptah.run/dialect/cockroachdb/crdbdiff"
+	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 )
+
+// cockroachOwners is what the builtin composition hands the shared renderer for
+// CockroachDB: the row-level TTL owner's handlers and CREATE TABLE clause.
+func cockroachOwners() postgres.Owners {
+	return postgres.Owners{Extensions: must.Must(crdbrender.Registry()), TableStorage: crdbrender.CreateTableClause}
+}
 
 // ttlTable is the smallest table a TTL can hang off: one key column and the
 // timestamp an expiry expression refers to. A nil policy declares none.
@@ -96,7 +103,7 @@ func TestRender_RowTTLClause(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.CockroachDB26(), platform.CockroachDB)
+			renderer := postgres.NewWithCapabilities(capability.CockroachDB26(), platform.CockroachDB).WithOwners(cockroachOwners())
 			sql, err := renderer.Render(ttlTable(test.policy))
 
 			c.Assert(err, qt.IsNil)
@@ -146,7 +153,7 @@ func TestRender_RowTTLIsRefusedWithoutTheCapability(t *testing.T) {
 	c := qt.New(t)
 
 	caps := capability.CockroachDB26().With(capability.RowLevelTTL, false)
-	renderer := postgres.NewWithCapabilities(caps, platform.CockroachDB)
+	renderer := postgres.NewWithCapabilities(caps, platform.CockroachDB).WithOwners(cockroachOwners())
 	sql, err := renderer.Render(ttlTable(&crdbschema.Policy{ExpirationExpression: "expires_at"}))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -238,7 +245,7 @@ func TestRender_RowTTLAlterOperations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.CockroachDB26(), platform.CockroachDB)
+			renderer := postgres.NewWithCapabilities(capability.CockroachDB26(), platform.CockroachDB).WithOwners(cockroachOwners())
 			sql, err := renderer.Render(&ast.AlterTableNode{
 				Name:       "sessions",
 				Operations: []ast.AlterOperation{test.operation},
@@ -259,6 +266,7 @@ func TestRender_RowTTLAlterFailurePath(t *testing.T) {
 		name      string
 		dialect   string
 		caps      capability.Capabilities
+		owners    postgres.Owners
 		operation ast.AlterOperation
 		wantErr   error
 	}{
@@ -268,11 +276,11 @@ func TestRender_RowTTLAlterFailurePath(t *testing.T) {
 		},
 		{
 			name: "a CockroachDB set without the capability", dialect: platform.CockroachDB,
-			caps:      capability.CockroachDB26().With(capability.RowLevelTTL, false),
+			caps: capability.CockroachDB26().With(capability.RowLevelTTL, false), owners: cockroachOwners(),
 			operation: alterRowTTL(&crdbschema.Policy{ExpirationExpression: "expires_at"}, nil), wantErr: ptaherr.ErrUnsupportedFeature,
 		},
 		{
-			name: "two spellings of one interval are not a change", dialect: platform.CockroachDB, caps: capability.CockroachDB26(),
+			name: "two spellings of one interval are not a change", dialect: platform.CockroachDB, caps: capability.CockroachDB26(), owners: cockroachOwners(),
 			operation: alterRowTTL(&crdbschema.Policy{ExpireAfter: "72:00:00"}, &crdbschema.Policy{ExpireAfter: "72 hours"}),
 			wantErr:   schemaext.ErrInvalidValue,
 		},
@@ -282,7 +290,7 @@ func TestRender_RowTTLAlterFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(test.caps, test.dialect)
+			renderer := postgres.NewWithCapabilities(test.caps, test.dialect).WithOwners(test.owners)
 			sql, err := renderer.Render(&ast.AlterTableNode{
 				Name:       "sessions",
 				Operations: []ast.AlterOperation{test.operation},
@@ -300,10 +308,34 @@ func TestRender_RowTTLAlterFailurePath(t *testing.T) {
 func TestRender_RowTTLStandaloneOperationNeedsItsTable(t *testing.T) {
 	c := qt.New(t)
 
-	renderer := postgres.NewWithCapabilities(capability.CockroachDB26(), platform.CockroachDB)
+	renderer := postgres.NewWithCapabilities(capability.CockroachDB26(), platform.CockroachDB).WithOwners(cockroachOwners())
 	sql, err := renderer.Render(alterRowTTL(nil, &crdbschema.Policy{ExpirationExpression: "expires_at"}))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `(?s).*requires an ALTER TABLE parent.*`)
 	c.Assert(sql, qt.Equals, "")
+}
+
+// TestRender_TheRendererRendersOnlyWhatItsOwnersGiveIt pins that the shared
+// renderer names no owner: a CockroachDB renderer built without owners refuses
+// the policy in both places it could appear, as any other target does. What
+// renders it is what the composition hands over.
+func TestRender_TheRendererRendersOnlyWhatItsOwnersGiveIt(t *testing.T) {
+	tests := []struct {
+		name string
+		node ast.Node
+	}{
+		{name: "a CREATE TABLE facet", node: ttlTable(&crdbschema.Policy{ExpirationExpression: "expires_at"})},
+		{name: "an ALTER operation", node: &ast.AlterTableNode{Name: "sessions", Operations: []ast.AlterOperation{
+			alterRowTTL(nil, &crdbschema.Policy{ExpirationExpression: "expires_at"}),
+		}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			sql, err := postgres.NewWithCapabilities(capability.CockroachDB26(), platform.CockroachDB).Render(test.node)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(sql, qt.Not(qt.Contains), "ttl_expiration_expression")
+		})
+	}
 }
