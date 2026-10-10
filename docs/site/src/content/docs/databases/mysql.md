@@ -140,9 +140,11 @@ SQL:
   operation. When the key, the uniqueness or the comment changes too, the one
   rebuild writes the new hint without a copy: measured on MySQL 8.4.11, an
   in-place rebuild that changes the definition stores it. MariaDB 11.8.9
-  stores a new hint in place in every case. An index a YAML or HCL source
-  declares has no hint, so applying one removes a stored hint. Other dialects
-  refuse the hint.
+  stores a new hint in place in every case. A primary key behaves the same
+  way: replacing it for its hint alone asks MySQL for `ALGORITHM=COPY`, and a
+  replacement that also changes the columns or the comment does not. An index
+  a YAML or HCL source declares has no hint, so applying one removes a stored
+  hint. Other dialects refuse the hint.
 - Go index annotations use `key_block_size="8"`. A table annotation can use
   `primary_key="id" primary_key_block_size="8" primary_key_comment="lookup"`;
   a `PRIMARY KEY` constraint annotation uses `key_block_size` and `comment`.
