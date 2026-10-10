@@ -58,6 +58,14 @@ is refused. CockroachDB and YugabyteDB take the transactional path, where a
 failed body leaves nothing behind. See
 [Apply migrations](../../versioned/apply/) for what each target records.
 
+Spanner also has one drop mode, and it refuses `CASCADE` on `DROP TABLE`,
+`DROP VIEW` and `ALTER TABLE ... DROP COLUMN`. A plan for Spanner writes those
+statements without it and drops what depends on an object first: a removed
+table's indexes go before the table, and a removed view goes before the tables
+it reads. Spanner refuses the drop when something the plan keeps still depends
+on the object, such as a kept view that reads a removed table. PostgreSQL would
+drop that view with the table instead.
+
 ## Coverage in continuous integration
 
 CockroachDB and YugabyteDB run in integration coverage against live
@@ -253,10 +261,8 @@ On a table that exists, a plan emits `ALTER TABLE ... ADD TTL` for a new policy,
 when the declaration names none. Spanner refuses `ADD` and `ALTER` in each
 other's place, so the plan chooses by what the table holds. A policy that moves
 to a new column is changed after the column is added and before the column it
-named is dropped. A column drop on Spanner carries no `CASCADE`, which Spanner
-refuses. A table in a Go or YAML
-schema that names no policy declares none, so a policy on the live table is
-removed. `ptah introspect` writes a read policy back as the same properties,
+named is dropped. A table in a Go or YAML schema that names no policy declares
+none, so a policy on the live table is removed. `ptah introspect` writes a read policy back as the same properties,
 with the interval in the spelling Spanner stores.
 
 The `platform.spanner` properties apply to Spanner only, so the same schema

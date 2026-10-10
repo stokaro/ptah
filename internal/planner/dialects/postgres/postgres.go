@@ -1121,12 +1121,24 @@ func previousColumnNullable(change string) bool {
 	return ok && strings.TrimSpace(before) == "true"
 }
 
+// dropsWithCascade reports whether a planned removal may carry CASCADE, which
+// on PostgreSQL takes the objects that depend on the removed one with it, such
+// as the RLS policies that name a column.
+//
+// Spanner has one drop mode. Its PostgreSQL interface refuses the clause on
+// ALTER TABLE ... DROP COLUMN ("Only <RESTRICT> drop mode is supported in
+// <ALTER> statement operations") and on DROP TABLE and DROP VIEW ("Only
+// <RESTRICT> behavior is supported by <DROP> statement"), so every planned
+// removal carrying it failed there (stokaro/ptah#4280, stokaro/ptah#4362). A
+// plan on Spanner removes what depends on an object before the object: the
+// indexes of a removed table are dropped ahead of it, and the views ahead of
+// the tables they read.
+func (p *Planner) dropsWithCascade() bool {
+	return p.targetDialect() != platform.Spanner
+}
+
 func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
-	// CASCADE drops the RLS policies that name the column. Spanner has no
-	// such policies and one drop mode: its PostgreSQL interface refuses the
-	// clause with "Only <RESTRICT> drop mode is supported", so the column
-	// removal could never run there (stokaro/ptah#4280).
-	cascade := p.targetDialect() != platform.Spanner
+	cascade := p.dropsWithCascade()
 	for _, column := range tableDiff.ColumnsRemoved {
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
@@ -1395,8 +1407,10 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
-			SetCascade().
 			SetComment("WARNING: This will delete all data!")
+		if p.dropsWithCascade() {
+			dropTableNode.SetCascade()
+		}
 
 		result = append(result, dropTableNode)
 	}
@@ -2763,7 +2777,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 	}
 
 	for _, name := range dropped {
-		result = append(result, ast.NewDropView(name).SetIfExists().SetCascade())
+		result = append(result, p.dropViewNode(name))
 	}
 
 	// A view on the replace path can also be a dependent of one on the drop
@@ -2896,9 +2910,19 @@ func viewLikesLostToCascade(
 
 func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, view := range diff.ViewsRemoved {
-		result = append(result, ast.NewDropView(view.Name).SetIfExists().SetCascade())
+		result = append(result, p.dropViewNode(view.Name))
 	}
 	return result
+}
+
+// dropViewNode is the statement that drops the view name, with CASCADE where
+// [Planner.dropsWithCascade] allows it.
+func (p *Planner) dropViewNode(name string) *ast.DropViewNode {
+	drop := ast.NewDropView(name).SetIfExists()
+	if p.dropsWithCascade() {
+		drop.SetCascade()
+	}
+	return drop
 }
 
 func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
