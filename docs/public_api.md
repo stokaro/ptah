@@ -581,6 +581,15 @@ record has no payload and needs no model codec. `SnapshotFacets` and common
 schema conversion preserve bindings; ordinary value replacement does too.
 Changing a value's target scope does not change its local semantic equality.
 
+`EncodeChanges` and `DecodeChanges` carry `ChangeRecord` values as
+`EncodedChange` records: the structured subject beside an envelope that names
+the owner, the namespaced change kind, the change representation and the codec
+version. A kind without a change codec in the registry returns an
+`UnknownCodecError` naming it; an envelope recorded under another
+representation wraps `ErrInvalidValue`, and a different owner, version or
+definition wraps `ErrIncompatibleCodec`. Either direction returns no partial
+batch. Ptah's own diff and drift JSON documents write owner changes this way.
+
 `Coverage` records the model definitions a source actually describes. Its zero
 value is uninspected. Registering another provider cannot make an older source
 authoritative over that provider's objects. Subject claims distinguish explicit
