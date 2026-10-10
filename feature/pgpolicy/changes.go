@@ -175,140 +175,88 @@ func ChangeCodecs() []schemaext.Codec {
 	return []schemaext.Codec{PolicyChangeCodec(), TableStateChangeCodec()}
 }
 
+// The change wires. Every key is required, and an operand is null where the
+// change has none.
+var (
+	policyChangeShape = schemaext.ObjectShape{Name: "policy change",
+		Allowed:  []string{"before", "after", "access", "comment_only"},
+		Required: []string{"before", "after", "access", "comment_only"}, Nullable: []string{"before", "after"}}
+	tableStateChangeShape = schemaext.ObjectShape{Name: "table state change",
+		Allowed:  []string{"before", "after", "access"},
+		Required: []string{"before", "after", "access"}, Nullable: []string{"before", "after"}}
+)
+
 // PolicyChangeCodec describes the complete wire of a policy change: both
-// operands, the comment-only finding and the access assessment.
+// operands, the comment-only finding and the access assessment. Each operand
+// takes its model's own wire form, checked by the model's codec and encoded
+// in the model's canonical order, and null when it is absent. Every refusal
+// is a [schemaext.InvalidModelError].
 func PolicyChangeCodec() schemaext.Codec {
-	desired, observed := PolicyCodecs()[0], PolicyCodecs()[1]
-	return changeCodec(&PolicyChange{}, desired, observed, "policy", `,"comment_only":{"type":"boolean"}`, []string{"comment_only"},
-		func(before, after schemaext.Value, access schemaext.AccessEffect, fields map[string]json.RawMessage) (schemaext.ChangeValue, error) {
-			value := &PolicyChange{Access: access}
-			var ok bool
-			if value.Before, ok = operand[*ObservedPolicy](before); !ok {
-				return nil, fmt.Errorf("%w: unexpected policy operand %T", schemaext.ErrInvalidValue, before)
-			}
-			if value.After, ok = operand[*DesiredPolicy](after); !ok {
-				return nil, fmt.Errorf("%w: unexpected policy operand %T", schemaext.ErrInvalidValue, after)
-			}
-			commentOnly, err := schemaext.DecodeJSON[bool](fields["comment_only"])
-			if err != nil {
-				return nil, err
-			}
-			value.CommentOnly = commentOnly
-			return value, value.Validate()
-		}, func(payload schemaext.Payload) (json.RawMessage, error) {
-			value, ok := payload.(*PolicyChange)
-			if !ok {
-				return nil, fmt.Errorf("%w: expected a policy change, got %T", schemaext.ErrInvalidValue, payload)
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			canonical := value.Copy()
-			if canonical.Before != nil {
-				canonical.Before.Roles = sortedRoles(canonical.Before.Roles)
-			}
-			if canonical.After != nil {
-				canonical.After.Roles = sortedRoles(canonical.After.Roles)
-			}
-			return json.Marshal(canonical)
-		})
+	models := PolicyCodecs()
+	desired, observed := models[0], models[1]
+	return schemaext.ModelCodec[*PolicyChange]{
+		Prototype: &PolicyChange{}, Representation: schemaext.Change, Version: 1,
+		Definition: changeDefinition(policyChangeShape, observed, desired, `,"comment_only":{"type":"boolean"}`),
+		Shape:      operandsShape(policyChangeShape, observed, desired),
+		Validate:   (*PolicyChange).Validate, Canonical: canonicalPolicyChange, Clone: (*PolicyChange).Copy,
+	}.Codec()
 }
 
-// TableStateChangeCodec describes the complete wire of a table-state change.
+// TableStateChangeCodec describes the complete wire of a table-state change,
+// whose operands are checked as [PolicyChangeCodec]'s are.
 func TableStateChangeCodec() schemaext.Codec {
-	desired, observed := TableStateCodecs()[0], TableStateCodecs()[1]
-	return changeCodec(&TableStateChange{}, desired, observed, "table state", "", nil,
-		func(before, after schemaext.Value, access schemaext.AccessEffect, _ map[string]json.RawMessage) (schemaext.ChangeValue, error) {
-			value := &TableStateChange{Access: access}
-			var ok bool
-			if value.Before, ok = operand[*ObservedTableState](before); !ok {
-				return nil, fmt.Errorf("%w: unexpected table state operand %T", schemaext.ErrInvalidValue, before)
-			}
-			if value.After, ok = operand[*DesiredTableState](after); !ok {
-				return nil, fmt.Errorf("%w: unexpected table state operand %T", schemaext.ErrInvalidValue, after)
-			}
-			return value, value.Validate()
-		}, func(payload schemaext.Payload) (json.RawMessage, error) {
-			value, ok := payload.(*TableStateChange)
-			if !ok {
-				return nil, fmt.Errorf("%w: expected a row-security table change, got %T", schemaext.ErrInvalidValue, payload)
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			return json.Marshal(value)
-		})
+	models := TableStateCodecs()
+	desired, observed := models[0], models[1]
+	return schemaext.ModelCodec[*TableStateChange]{
+		Prototype: &TableStateChange{}, Representation: schemaext.Change, Version: 1,
+		Definition: changeDefinition(tableStateChangeShape, observed, desired, ""),
+		Shape:      operandsShape(tableStateChangeShape, observed, desired),
+		Validate:   (*TableStateChange).Validate, Clone: (*TableStateChange).Copy,
+	}.Codec()
 }
 
-// changeCodec builds a change codec whose wire holds the two operands, the
-// access assessment and the family's extra keys, all required.
-func changeCodec(prototype schemaext.ChangeValue, desired, observed schemaext.Codec, family, extraDefinition string, extraKeys []string,
-	build func(before, after schemaext.Value, access schemaext.AccessEffect, fields map[string]json.RawMessage) (schemaext.ChangeValue, error),
-	encode func(schemaext.Payload) (json.RawMessage, error),
-) schemaext.Codec {
-	keys := append([]string{"before", "after", "access"}, extraKeys...)
-	required := `"` + strings.Join(keys, `","`) + `"`
-	definition := fmt.Sprintf(`{"type":"object","required":[%s],"additionalProperties":false,"properties":{`+
+// changeDefinition is the schema of a change wire: the shape's required keys,
+// each operand as null or its model's definition, the access assessment, and
+// the family's extra properties.
+func changeDefinition(shape schemaext.ObjectShape, observed, desired schemaext.Codec, extra string) json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{"type":"object","required":["%s"],"additionalProperties":false,"properties":{`+
 		`"before":{"anyOf":[{"type":"null"},%s]},"after":{"anyOf":[{"type":"null"},%s]},"access":%s%s}}`,
-		required, observed.Definition, desired.Definition, schemaext.AccessEffectSchema(), extraDefinition)
-	return schemaext.Codec{
-		Prototype: prototype, Representation: schemaext.Change, Version: 1, Definition: json.RawMessage(definition),
-		Encode: encode, Canonical: encode,
-		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			if _, err := encode(payload); err != nil {
-				return nil, err
+		strings.Join(shape.Required, `","`), observed.Definition, desired.Definition, schemaext.AccessEffectSchema(), extra))
+}
+
+// operandsShape checks a change's keys, then each operand it holds with the
+// model's codec. A struct decoder alone would accept an operand key in
+// another letter case or an omitted value spelled out.
+func operandsShape(shape schemaext.ObjectShape, observed, desired schemaext.Codec) func(json.RawMessage) error {
+	return func(data json.RawMessage) error {
+		fields, err := schemaext.DecodeObject(data, shape)
+		if err != nil {
+			return err
+		}
+		for _, operand := range []struct {
+			key   string
+			codec schemaext.Codec
+		}{{"before", observed}, {"after", desired}} {
+			if string(fields[operand.key]) == "null" {
+				continue
 			}
-			return payload.(schemaext.ChangeValue).CloneChange(), nil
-		},
-		Decode: func(data json.RawMessage) (schemaext.Payload, error) {
-			fields, err := schemaext.DecodeObject(data, schemaext.ObjectShape{Name: family + " change",
-				Allowed: keys, Required: keys, Nullable: []string{"before", "after"}})
-			if err != nil {
-				return nil, err
+			if _, err := operand.codec.Decode(fields[operand.key]); err != nil {
+				return err
 			}
-			before, err := decodeOperand(observed, fields["before"])
-			if err != nil {
-				return nil, err
-			}
-			after, err := decodeOperand(desired, fields["after"])
-			if err != nil {
-				return nil, err
-			}
-			var access schemaext.AccessEffect
-			if err := access.UnmarshalJSON(fields["access"]); err != nil {
-				return nil, err
-			}
-			value, err := build(before, after, access, fields)
-			if err != nil {
-				return nil, err
-			}
-			return value, nil
-		},
+		}
+		return nil
 	}
 }
 
-// operand converts a decoded side to its model type. An absent side is nil
-// and acceptable; a value of another type is not.
-func operand[T schemaext.Value](value schemaext.Value) (T, bool) {
-	var zero T
-	if value == nil {
-		return zero, true
+// canonicalPolicyChange orders each operand as its model's codec does, so an
+// operand encodes to the same bytes inside a change as on its own.
+func canonicalPolicyChange(value *PolicyChange) *PolicyChange {
+	canonical := &PolicyChange{CommentOnly: value.CommentOnly, Access: value.Access}
+	if value.Before != nil {
+		canonical.Before = canonicalObservedPolicy(value.Before)
 	}
-	typed, ok := value.(T)
-	return typed, ok
-}
-
-func decodeOperand(codec schemaext.Codec, data json.RawMessage) (schemaext.Value, error) {
-	if strings.TrimSpace(string(data)) == "null" {
-		return nil, nil
+	if value.After != nil {
+		canonical.After = canonicalDesiredPolicy(value.After)
 	}
-	payload, err := codec.Decode(data)
-	if err != nil {
-		return nil, err
-	}
-	value, ok := payload.(schemaext.Value)
-	if !ok {
-		return nil, fmt.Errorf("%w: unexpected row-security operand %T", schemaext.ErrInvalidValue, payload)
-	}
-	return value, nil
+	return canonical
 }

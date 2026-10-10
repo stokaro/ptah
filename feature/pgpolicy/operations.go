@@ -41,10 +41,15 @@ type PolicyOperation struct {
 // Kind returns the stable operation identity.
 func (*PolicyOperation) Kind() schemaext.Kind { return PolicyOperationKind }
 
-// CloneExtension returns an independent operation and both operands.
-func (v *PolicyOperation) CloneExtension() ast.ExtensionPayload {
+// CloneExtension returns an independent operation and both operands. A nil
+// receiver remains typed nil.
+func (v *PolicyOperation) CloneExtension() ast.ExtensionPayload { return v.Copy() }
+
+// Copy is [PolicyOperation.CloneExtension] without the interface: it shares no
+// operand with v, and a nil receiver returns nil.
+func (v *PolicyOperation) Copy() *PolicyOperation {
 	if v == nil {
-		return (*PolicyOperation)(nil)
+		return nil
 	}
 	return &PolicyOperation{Schema: v.Schema, Table: v.Table, Name: v.Name, Change: *v.Change.Copy()}
 }
@@ -122,10 +127,15 @@ type PolicyCommentOperation struct {
 // Kind returns the stable operation identity.
 func (*PolicyCommentOperation) Kind() schemaext.Kind { return PolicyCommentOperationKind }
 
-// CloneExtension returns an independent operation.
-func (v *PolicyCommentOperation) CloneExtension() ast.ExtensionPayload {
+// CloneExtension returns an independent operation. A nil receiver remains
+// typed nil.
+func (v *PolicyCommentOperation) CloneExtension() ast.ExtensionPayload { return v.Copy() }
+
+// Copy is [PolicyCommentOperation.CloneExtension] without the interface, and a
+// nil receiver returns nil.
+func (v *PolicyCommentOperation) Copy() *PolicyCommentOperation {
 	if v == nil {
-		return (*PolicyCommentOperation)(nil)
+		return nil
 	}
 	return new(*v)
 }
@@ -181,10 +191,15 @@ type TableStateOperation struct {
 // Kind returns the stable operation identity.
 func (*TableStateOperation) Kind() schemaext.Kind { return TableStateOperationKind }
 
-// CloneExtension returns an independent operation and both operands.
-func (v *TableStateOperation) CloneExtension() ast.ExtensionPayload {
+// CloneExtension returns an independent operation and both operands. A nil
+// receiver remains typed nil.
+func (v *TableStateOperation) CloneExtension() ast.ExtensionPayload { return v.Copy() }
+
+// Copy is [TableStateOperation.CloneExtension] without the interface: it
+// shares no operand with v, and a nil receiver returns nil.
+func (v *TableStateOperation) Copy() *TableStateOperation {
 	if v == nil {
-		return (*TableStateOperation)(nil)
+		return nil
 	}
 	return &TableStateOperation{Schema: v.Schema, Table: v.Table, Change: *v.Change.Copy()}
 }
@@ -239,148 +254,76 @@ func qualified(schema, name string) string {
 	return schema + "." + name
 }
 
-// OperationCodecs returns the version-one operation codecs.
+// OperationCodecs returns the version-one operation codecs. An operation's
+// change takes its own codec's wire form, checked by that codec. Every refusal
+// is a [schemaext.InvalidModelError].
 func OperationCodecs() []schemaext.Codec {
 	return []schemaext.Codec{policyOperationCodec(), policyCommentOperationCodec(), tableStateOperationCodec()}
 }
 
+// The operation wires. Every key is required.
+var (
+	policyOperationShape = schemaext.ObjectShape{Name: "policy operation",
+		Allowed: []string{"schema", "table", "name", "change"}, Required: []string{"schema", "table", "name", "change"}}
+	policyCommentOperationShape = schemaext.ObjectShape{Name: "policy comment operation",
+		Allowed: []string{"schema", "table", "name", "comment"}, Required: []string{"schema", "table", "name", "comment"}}
+	tableStateOperationShape = schemaext.ObjectShape{Name: "row-security table operation",
+		Allowed: []string{"schema", "table", "change"}, Required: []string{"schema", "table", "change"}}
+)
+
 func policyOperationCodec() schemaext.Codec {
-	policyChange := PolicyChangeCodec()
-	return operationCodec(&PolicyOperation{},
-		fmt.Sprintf(`{"type":"object","required":["schema","table","name","change"],"additionalProperties":false,`+
+	change := PolicyChangeCodec()
+	return schemaext.ModelCodec[*PolicyOperation]{
+		Prototype: &PolicyOperation{}, Representation: schemaext.Operation, Version: 1,
+		Definition: json.RawMessage(fmt.Sprintf(`{"type":"object","required":["schema","table","name","change"],"additionalProperties":false,`+
 			`"properties":{"schema":{"type":"string"},"table":{"type":"string","minLength":1},"name":{"type":"string","minLength":1},"change":%s}}`,
-			policyChange.Definition),
-		func(payload schemaext.Payload) (json.RawMessage, error) {
-			value, ok := payload.(*PolicyOperation)
-			if !ok {
-				return nil, fmt.Errorf("%w: expected a policy operation, got %T", schemaext.ErrInvalidValue, payload)
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			change, err := policyChange.Encode(&value.Change)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(struct {
-				Schema string          `json:"schema"`
-				Table  string          `json:"table"`
-				Name   string          `json:"name"`
-				Change json.RawMessage `json:"change"`
-			}{value.Schema, value.Table, value.Name, change})
-		},
-		func(data json.RawMessage) (schemaext.Payload, error) {
-			fields, err := operationFields(data, []string{"schema", "table", "name", "change"})
-			if err != nil {
-				return nil, err
-			}
-			change, err := policyChange.Decode(fields["change"])
-			if err != nil {
-				return nil, err
-			}
-			value := &PolicyOperation{Change: *change.(*PolicyChange)}
-			if err := decodeNames(fields, map[string]*string{"schema": &value.Schema, "table": &value.Table, "name": &value.Name}); err != nil {
-				return nil, err
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			return value, nil
-		})
+			change.Definition)),
+		Shape:     changeShape(policyOperationShape, change),
+		Validate:  (*PolicyOperation).Validate,
+		Canonical: canonicalPolicyOperation,
+		Clone:     (*PolicyOperation).Copy,
+	}.Codec()
 }
 
 func policyCommentOperationCodec() schemaext.Codec {
-	return operationCodec(&PolicyCommentOperation{},
-		`{"type":"object","required":["schema","table","name","comment"],"additionalProperties":false,`+
-			`"properties":{"schema":{"type":"string"},"table":{"type":"string","minLength":1},"name":{"type":"string","minLength":1},"comment":{"type":"string"}}}`,
-		func(payload schemaext.Payload) (json.RawMessage, error) {
-			value, ok := payload.(*PolicyCommentOperation)
-			if !ok {
-				return nil, fmt.Errorf("%w: expected a policy comment operation, got %T", schemaext.ErrInvalidValue, payload)
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			return json.Marshal(value)
-		},
-		func(data json.RawMessage) (schemaext.Payload, error) {
-			fields, err := operationFields(data, []string{"schema", "table", "name", "comment"})
-			if err != nil {
-				return nil, err
-			}
-			value := &PolicyCommentOperation{}
-			if err := decodeNames(fields, map[string]*string{"schema": &value.Schema, "table": &value.Table, "name": &value.Name, "comment": &value.Comment}); err != nil {
-				return nil, err
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			return value, nil
-		})
+	return schemaext.ModelCodec[*PolicyCommentOperation]{
+		Prototype: &PolicyCommentOperation{}, Representation: schemaext.Operation, Version: 1,
+		Definition: json.RawMessage(`{"type":"object","required":["schema","table","name","comment"],"additionalProperties":false,` +
+			`"properties":{"schema":{"type":"string"},"table":{"type":"string","minLength":1},"name":{"type":"string","minLength":1},"comment":{"type":"string"}}}`),
+		Shape:    objectShape(policyCommentOperationShape),
+		Validate: (*PolicyCommentOperation).Validate,
+		Clone:    (*PolicyCommentOperation).Copy,
+	}.Codec()
 }
 
 func tableStateOperationCodec() schemaext.Codec {
-	tableChange := TableStateChangeCodec()
-	return operationCodec(&TableStateOperation{},
-		fmt.Sprintf(`{"type":"object","required":["schema","table","change"],"additionalProperties":false,`+
-			`"properties":{"schema":{"type":"string"},"table":{"type":"string","minLength":1},"change":%s}}`, tableChange.Definition),
-		func(payload schemaext.Payload) (json.RawMessage, error) {
-			value, ok := payload.(*TableStateOperation)
-			if !ok {
-				return nil, fmt.Errorf("%w: expected a row-security table operation, got %T", schemaext.ErrInvalidValue, payload)
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			return json.Marshal(value)
-		},
-		func(data json.RawMessage) (schemaext.Payload, error) {
-			fields, err := operationFields(data, []string{"schema", "table", "change"})
-			if err != nil {
-				return nil, err
-			}
-			change, err := tableChange.Decode(fields["change"])
-			if err != nil {
-				return nil, err
-			}
-			value := &TableStateOperation{Change: *change.(*TableStateChange)}
-			if err := decodeNames(fields, map[string]*string{"schema": &value.Schema, "table": &value.Table}); err != nil {
-				return nil, err
-			}
-			if err := value.Validate(); err != nil {
-				return nil, err
-			}
-			return value, nil
-		})
+	change := TableStateChangeCodec()
+	return schemaext.ModelCodec[*TableStateOperation]{
+		Prototype: &TableStateOperation{}, Representation: schemaext.Operation, Version: 1,
+		Definition: json.RawMessage(fmt.Sprintf(`{"type":"object","required":["schema","table","change"],"additionalProperties":false,`+
+			`"properties":{"schema":{"type":"string"},"table":{"type":"string","minLength":1},"change":%s}}`, change.Definition)),
+		Shape:    changeShape(tableStateOperationShape, change),
+		Validate: (*TableStateOperation).Validate,
+		Clone:    (*TableStateOperation).Copy,
+	}.Codec()
 }
 
-func operationCodec(prototype ast.ExtensionPayload, definition string, encode func(schemaext.Payload) (json.RawMessage, error),
-	decode func(json.RawMessage) (schemaext.Payload, error),
-) schemaext.Codec {
-	return schemaext.Codec{
-		Prototype: prototype, Representation: schemaext.Operation, Version: 1, Definition: json.RawMessage(definition),
-		Encode: encode, Canonical: encode, Decode: decode,
-		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			if _, err := encode(payload); err != nil {
-				return nil, err
-			}
-			return payload.(ast.ExtensionPayload).CloneExtension(), nil
-		},
-	}
-}
-
-// operationFields decodes an operation object and requires exactly keys.
-func operationFields(data json.RawMessage, keys []string) (map[string]json.RawMessage, error) {
-	return schemaext.DecodeObject(data, schemaext.ObjectShape{Name: "row-security operation", Allowed: keys, Required: keys})
-}
-
-func decodeNames(fields map[string]json.RawMessage, names map[string]*string) error {
-	for key, target := range names {
-		value, err := schemaext.DecodeJSON[string](fields[key])
+// changeShape checks an operation's keys, then its change with the change's
+// codec, which checks the operands as their models' codecs do.
+func changeShape(shape schemaext.ObjectShape, change schemaext.Codec) func(json.RawMessage) error {
+	return func(data json.RawMessage) error {
+		fields, err := schemaext.DecodeObject(data, shape)
 		if err != nil {
 			return err
 		}
-		*target = value
+		_, err = change.Decode(fields["change"])
+		return err
 	}
-	return nil
+}
+
+// canonicalPolicyOperation orders the change's operands as
+// [PolicyChangeCodec] does, so a change encodes to the same bytes inside an
+// operation as on its own.
+func canonicalPolicyOperation(value *PolicyOperation) *PolicyOperation {
+	return &PolicyOperation{Schema: value.Schema, Table: value.Table, Name: value.Name, Change: *canonicalPolicyChange(&value.Change)}
 }

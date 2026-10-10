@@ -1619,6 +1619,11 @@ neither before nor after the change. `PolicyOperation`,
 A comment is its own operation, gated by `capability.PolicyComments`, because
 CockroachDB holds policies and not their comments.
 
+The change and operation codecs check each operand, and each change inside an
+operation, with its own codec. The model's wire rules hold there too, and a
+value encodes to the same bytes nested as alone. A refused value is a
+`schemaext.InvalidModelError`.
+
 `feature/pgpolicy/policyrender` renders the payloads for the PostgreSQL
 family. CREATE POLICY writes only what the declaration names, so PostgreSQL
 applies its own defaults; a change drops the policy and creates it again; and

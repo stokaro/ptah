@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
@@ -145,10 +146,48 @@ func TestChanges_RoundTripThroughTheCodecs(t *testing.T) {
 	c.Assert(decoded, qt.DeepEquals, changes)
 }
 
-// TestChanges_RefuseWhatTheyCannotHold pins the change invariants and wire.
+// The wires the refusal tables vary, one key at a time.
+// TestCodecs_AcceptTheWiresTheRefusalsVary pins that each is accepted, so a
+// refusal row is refused for the key it changes.
+const (
+	accessWire       = `{"access":"widens","reason":"r"}`
+	policyChangeWire = `{"before":null,"after":{},"comment_only":false,"access":` + accessWire + `}`
+	tableChangeWire  = `{"before":{"enabled":false,"forced":false},"after":{"enabled":true,"forced":false},"access":` + accessWire + `}`
+)
+
+// TestCodecs_AcceptTheWiresTheRefusalsVary is the acceptance control of the
+// refusal tables below.
+func TestCodecs_AcceptTheWiresTheRefusalsVary(t *testing.T) {
+	operations := pgpolicy.OperationCodecs()
+	tests := []struct {
+		name  string
+		codec schemaext.Codec
+		input string
+	}{
+		{name: "a policy change", codec: pgpolicy.PolicyChangeCodec(), input: policyChangeWire},
+		{name: "a table change", codec: pgpolicy.TableStateChangeCodec(), input: tableChangeWire},
+		{name: "a policy operation", codec: operations[0], input: `{"schema":"","table":"t","name":"p","change":` + policyChangeWire + `}`},
+		{name: "a policy comment operation", codec: operations[1], input: `{"schema":"","table":"t","name":"p","comment":""}`},
+		{name: "a table operation", codec: operations[2], input: `{"schema":"","table":"t","change":` + tableChangeWire + `}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			value, err := test.codec.Decode(json.RawMessage(test.input))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(value, qt.IsNotNil)
+		})
+	}
+}
+
+// TestChanges_RefuseWhatTheyCannotHold pins the change invariants and wire,
+// each operand's included: the model's codec checks it, so a key in another
+// letter case or an omitted value spelled out is refused inside a change too.
 func TestChanges_RefuseWhatTheyCannotHold(t *testing.T) {
 	policy, table := pgpolicy.PolicyChangeCodec(), pgpolicy.TableStateChangeCodec()
-	access := `{"access":"widens","reason":"r"}`
+	access := accessWire
 	tests := []struct {
 		name  string
 		codec schemaext.Codec
@@ -163,6 +202,17 @@ func TestChanges_RefuseWhatTheyCannotHold(t *testing.T) {
 		{name: "a table change without a before", codec: table, input: `{"before":null,"after":{"enabled":true,"forced":false},"access":` + access + `}`},
 		{name: "a table change that moves no switch", codec: table,
 			input: `{"before":{"enabled":true,"forced":false},"after":{"enabled":true,"forced":false},"access":` + access + `}`},
+		{name: "a policy change with a null comment-only finding", codec: policy, input: `{"before":null,"after":{},"comment_only":null,"access":` + access + `}`},
+		{name: "a policy change whose declaration has a key in another letter case", codec: policy,
+			input: `{"before":null,"after":{"Comment":"c"},"comment_only":false,"access":` + access + `}`},
+		{name: "a policy change whose declaration spells out an empty comment", codec: policy,
+			input: `{"before":null,"after":{"comment":""},"comment_only":false,"access":` + access + `}`},
+		{name: "a policy change whose observation has a key in another letter case", codec: policy,
+			input: `{"before":{"Command":"ALL","roles":[{"name":"r"}],"composition":"permissive"},"after":null,"comment_only":false,"access":` + access + `}`},
+		{name: "a table change whose observation has a key in another letter case", codec: table,
+			input: `{"before":{"Enabled":true,"forced":false},"after":{"enabled":false,"forced":false},"access":` + access + `}`},
+		{name: "a table change whose declaration has a key in another letter case", codec: table,
+			input: `{"before":{"enabled":false,"forced":false},"after":{"Enabled":true,"forced":false},"access":` + access + `}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -225,6 +275,108 @@ func TestOperations_RoundTripThroughTheCodecs(t *testing.T) {
 	c.Assert(decoded, qt.DeepEquals, operations)
 	c.Assert(operations[1].(*pgpolicy.PolicyCommentOperation).Subject(), qt.Equals, pgpolicy.PolicyRef("", "orders", "tenant"))
 	c.Assert(operations[1].(*pgpolicy.PolicyCommentOperation).AccessEffect().Access, qt.Equals, schemaext.AccessUnchanged)
+}
+
+// TestChanges_EncodeOperandsAsTheirModelsDo pins that an operand encodes to
+// the same bytes inside a change as on its own, and a change to the same bytes
+// inside an operation: each role list in its canonical order, the server's
+// spelling of the roles included, and the value left alone.
+func TestChanges_EncodeOperandsAsTheirModelsDo(t *testing.T) {
+	c := qt.New(t)
+	models := pgpolicy.PolicyCodecs()
+	after := &pgpolicy.DesiredPolicy{Roles: []pgpolicy.RoleSelector{{Name: "writer"}, {Name: "app"}},
+		Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "writer"}, {Name: "app"}}}}
+	before := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: "writer"}, {Name: "app"}},
+		Composition: pgpolicy.Permissive}
+	change := &pgpolicy.PolicyChange{Before: before, After: after, Access: unchanged}
+
+	encoded, err := pgpolicy.PolicyChangeCodec().Encode(change)
+	c.Assert(err, qt.IsNil)
+	operation, err := pgpolicy.OperationCodecs()[0].Encode(&pgpolicy.PolicyOperation{Table: "orders", Name: "tenant", Change: *change})
+	c.Assert(err, qt.IsNil)
+
+	var changeFields, operationFields map[string]json.RawMessage
+	c.Assert(json.Unmarshal(encoded, &changeFields), qt.IsNil)
+	c.Assert(json.Unmarshal(operation, &operationFields), qt.IsNil)
+	c.Assert(string(changeFields["after"]), qt.Equals, `{"roles":[{"name":"app"},{"name":"writer"}],"normalized":{"roles":[{"name":"app"},{"name":"writer"}]}}`)
+	c.Assert(string(changeFields["after"]), qt.Equals, string(must.Must(models[0].Encode(after))))
+	c.Assert(string(changeFields["before"]), qt.Equals, string(must.Must(models[1].Encode(before))))
+	c.Assert(string(operationFields["change"]), qt.Equals, string(encoded))
+	c.Assert(after.Roles[0], qt.Equals, pgpolicy.RoleSelector{Name: "writer"}, qt.Commentf("encoding leaves the value alone"))
+	c.Assert(after.Normalized.Roles[0], qt.Equals, pgpolicy.RoleSelector{Name: "writer"}, qt.Commentf("encoding leaves the value alone"))
+	c.Assert(before.Roles[0], qt.Equals, pgpolicy.RoleSelector{Name: "writer"}, qt.Commentf("encoding leaves the value alone"))
+}
+
+// TestPayloads_SnapshotSharesNothing pins that a snapshot of each change and
+// operation is independent of the value it was taken from.
+func TestPayloads_SnapshotSharesNothing(t *testing.T) {
+	c := qt.New(t)
+	codecs := allCodecs(c)
+	policyChange := func() *pgpolicy.PolicyChange {
+		return &pgpolicy.PolicyChange{
+			Before: &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: "reader"}}, Using: new(tenant), Composition: pgpolicy.Permissive},
+			After:  &pgpolicy.DesiredPolicy{Roles: []pgpolicy.RoleSelector{{Name: "reader"}}, Using: new(tenant), Comment: "c"}, CommentOnly: true, Access: unchanged}
+	}
+	tableChange := func() *pgpolicy.TableStateChange {
+		return &pgpolicy.TableStateChange{Before: &pgpolicy.ObservedTableState{}, After: &pgpolicy.DesiredTableState{Enabled: true}, Access: unchanged}
+	}
+	policy, table := policyChange(), tableChange()
+	policyOperation := &pgpolicy.PolicyOperation{Table: "orders", Name: "tenant", Change: *policyChange()}
+	comment := &pgpolicy.PolicyCommentOperation{Table: "orders", Name: "tenant", Comment: "c"}
+	tableOperation := &pgpolicy.TableStateOperation{Table: "orders", Change: *tableChange()}
+
+	changes, err := codecs.SnapshotPayloads(t.Context(), schemaext.Change, []schemaext.Payload{policy, table})
+	c.Assert(err, qt.IsNil)
+	operations, err := codecs.SnapshotPayloads(t.Context(), schemaext.Operation, []schemaext.Payload{policyOperation, comment, tableOperation})
+	c.Assert(err, qt.IsNil)
+	policy.Before.Roles[0].Name, *policy.After.Using = "writer", "false"
+	table.After.Forced = true
+	policyOperation.Change.After.Roles[0].Name, *policyOperation.Change.Before.Using = "writer", "false"
+	comment.Comment = "other"
+	tableOperation.Change.Before.Forced = true
+
+	c.Assert(changes, qt.DeepEquals, []schemaext.Payload{policyChange(), tableChange()})
+	c.Assert(operations, qt.DeepEquals, []schemaext.Payload{
+		&pgpolicy.PolicyOperation{Table: "orders", Name: "tenant", Change: *policyChange()},
+		&pgpolicy.PolicyCommentOperation{Table: "orders", Name: "tenant", Comment: "c"},
+		&pgpolicy.TableStateOperation{Table: "orders", Change: *tableChange()},
+	})
+}
+
+// TestOperations_RefuseWhatTheyCannotHold pins the operation invariants and
+// wire, the change's included: its codec checks it, operands and all.
+func TestOperations_RefuseWhatTheyCannotHold(t *testing.T) {
+	codecs := pgpolicy.OperationCodecs()
+	policy, comment, table := codecs[0], codecs[1], codecs[2]
+	tests := []struct {
+		name  string
+		codec schemaext.Codec
+		input string
+	}{
+		{name: "a policy operation with a key in another letter case", codec: policy,
+			input: `{"schema":"","Table":"t","name":"p","change":` + policyChangeWire + `}`},
+		{name: "a policy operation with a null schema", codec: policy, input: `{"schema":null,"table":"t","name":"p","change":` + policyChangeWire + `}`},
+		{name: "a policy operation on no table", codec: policy, input: `{"schema":"","table":"","name":"p","change":` + policyChangeWire + `}`},
+		{name: "a policy operation whose declaration has a key in another letter case", codec: policy,
+			input: `{"schema":"","table":"t","name":"p","change":{"before":null,"after":{"Comment":"c"},"comment_only":false,"access":` + accessWire + `}}`},
+		{name: "a comment operation with a key in another letter case", codec: comment, input: `{"schema":"","table":"t","Name":"p","comment":""}`},
+		{name: "a comment operation without its comment", codec: comment, input: `{"schema":"","table":"t","name":"p"}`},
+		{name: "a comment operation on no policy", codec: comment, input: `{"schema":"","table":"t","name":"","comment":""}`},
+		{name: "a table operation with a key in another letter case", codec: table, input: `{"schema":"","Table":"t","change":` + tableChangeWire + `}`},
+		{name: "a table operation on no table", codec: table, input: `{"schema":"","table":" ","change":` + tableChangeWire + `}`},
+		{name: "a table operation whose observation has a key in another letter case", codec: table,
+			input: `{"schema":"","table":"t","change":{"before":{"Enabled":false,"forced":false},"after":{"enabled":true,"forced":false},"access":` + accessWire + `}}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			value, err := test.codec.Decode(json.RawMessage(test.input))
+
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(value, qt.IsNil)
+		})
+	}
 }
 
 func TestOperations_FailurePath(t *testing.T) {
