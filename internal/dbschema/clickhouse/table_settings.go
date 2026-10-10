@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"sync"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
@@ -44,15 +45,22 @@ func observedIndexSettings(indexType string, granularity uint64) (schemaext.Face
 	return facets.WithTargetScope(chschema.IndexKind, platform.ClickHouse)
 }
 
-// The table query excludes unsupported engines and materialized-view storage.
-// Only returned, retained tables establish complete settings observations.
-// Index knowledge applies to the whole database; readSkippingIndexes says why.
-func observedCoverage(tables []catalog.Table, index schemaext.Knowledge) (schemaext.Coverage, error) {
+// storageRegistry builds the model registry observed coverage names once.
+// Building one validates and hashes every codec definition, and coverage is
+// built on every read.
+var storageRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
 	var codecs []schemaext.OwnedCodec
 	for _, codec := range append(chschema.Codecs(), chschema.IndexCodecs()...) {
 		codecs = append(codecs, schemaext.OwnedCodec{Owner: "ptah.run/clickhouse", Codec: codec})
 	}
-	registry, err := schemaext.NewRegistry(codecs...)
+	return schemaext.NewRegistry(codecs...)
+})
+
+// The table query excludes unsupported engines and materialized-view storage.
+// Only returned, retained tables establish complete settings observations.
+// Index knowledge applies to the whole database; readSkippingIndexes says why.
+func observedCoverage(tables []catalog.Table, index schemaext.Knowledge) (schemaext.Coverage, error) {
+	registry, err := storageRegistry()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}

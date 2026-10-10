@@ -234,15 +234,23 @@ type Flags map[string]bool
 // TIMESTAMP becomes the narrow Timestamp. On the seven measured pages both
 // readings give the same set.
 func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
+	// One clone, then writes into it: With clones the whole set on every call.
+	// A nil set stays nil until a gate writes to it.
 	refined := caps.Clone()
+	set := func(key capability.Capability, enabled bool) {
+		if refined == nil {
+			refined = make(capability.Capabilities, len(gates))
+		}
+		refined[key] = enabled
+	}
 	for _, gate := range gates {
 		if value, listed := f[gate.Flag]; listed {
-			refined = refined.With(gate.Key, value)
+			set(gate.Key, value)
 		}
 	}
 	for _, gate := range gates {
 		if gate.Requires != "" && !refined.Has(gate.Requires) {
-			refined = refined.With(gate.Key, false)
+			set(gate.Key, false)
 		}
 	}
 	return refined

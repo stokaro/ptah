@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 
 	"ptah.run/core/schemaext"
 )
@@ -201,17 +202,24 @@ func decodeField[T any](raw json.RawMessage, name string) (T, error) {
 // codecs under another identity must build its own coverage.
 const Owner = "ptah.run/cockroachdb"
 
+// rowTTLRegistry builds the model registry coverage names once. Building one
+// validates and hashes every codec definition, and coverage is asked for on
+// every read and every comparison.
+var rowTTLRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
+	owned := make([]schemaext.OwnedCodec, 0, 2)
+	for _, codec := range Codecs() {
+		owned = append(owned, schemaext.OwnedCodec{Owner: Owner, Codec: codec})
+	}
+	return schemaext.NewRegistry(owned...)
+})
+
 // RowTTLCoverage records what one source knows about row-level TTL. knowledge
 // is the claim for every table the source describes; subjects override it for
 // individual tables. A desired source that can declare the policy records
 // complete knowledge, which makes a table without a value a request for no TTL.
 // A read records complete knowledge only for the tables it returned.
 func RowTTLCoverage(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
-	owned := make([]schemaext.OwnedCodec, 0, 2)
-	for _, codec := range Codecs() {
-		owned = append(owned, schemaext.OwnedCodec{Owner: Owner, Codec: codec})
-	}
-	registry, err := schemaext.NewRegistry(owned...)
+	registry, err := rowTTLRegistry()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}

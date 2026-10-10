@@ -150,5 +150,9 @@ func schemaSpec(payload schemaext.Payload, representation schemaext.Representati
 // Coverage records this source's streaming-query namespace claim. Enrollment
 // is limited to this model's precise definition, independent of runtime growth.
 func Coverage(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
-	return schemaext.OwnedCoverage("ptah.run/ydb", Codecs(), Kind, representation, knowledge, subjects)
+	return ownedCoverage(Kind, representation, knowledge, subjects)
 }
+
+// ownedCoverage builds this package's model registry once; see
+// [schemaext.OwnedCoverageSource].
+var ownedCoverage = schemaext.OwnedCoverageSource("ptah.run/ydb", Codecs)

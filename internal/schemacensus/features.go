@@ -46,15 +46,23 @@ func featureCodecs() []schemaext.OwnedCodec {
 }
 
 func immutableFeatures(t reflect.Type) bool {
-	return t == reflect.TypeFor[schemaext.Objects]() || t == reflect.TypeFor[schemaext.Facets]() || t == reflect.TypeFor[schemaext.Coverage]()
+	return t == objectsType || t == facetsType || t == coverageType
 }
+
+// The feature container types visitFeatures recognizes, resolved once: the
+// walk asks for them at every value it visits.
+var (
+	objectsType  = reflect.TypeFor[schemaext.Objects]()
+	facetsType   = reflect.TypeFor[schemaext.Facets]()
+	coverageType = reflect.TypeFor[schemaext.Coverage]()
+)
 
 // visitFeatures traverses cloned public values, then captures the changed
 // collection when the caller is ablating. It never reaches private maps or
 // mutates an interface-owned payload in its source container.
 func visitFeatures(value reflect.Value, walk func(reflect.Value)) bool {
 	switch value.Type() {
-	case reflect.TypeFor[schemaext.Objects]():
+	case objectsType:
 		objects := must.Must(value.Interface().(schemaext.Objects).All())
 		for _, object := range objects {
 			walk(reflect.ValueOf(object.Value))
@@ -63,7 +71,7 @@ func visitFeatures(value reflect.Value, walk func(reflect.Value)) bool {
 			value.Set(reflect.ValueOf(must.Must(schemaext.NewObjects(objects...))))
 		}
 		return true
-	case reflect.TypeFor[schemaext.Facets]():
+	case facetsType:
 		facets, _ := reflect.TypeAssert[schemaext.Facets](value) // The type switch above established the concrete type.
 		values := must.Must(facets.Values())
 		for _, feature := range values {
@@ -76,7 +84,7 @@ func visitFeatures(value reflect.Value, walk func(reflect.Value)) bool {
 			value.Set(reflect.ValueOf(facets))
 		}
 		return true
-	case reflect.TypeFor[schemaext.Coverage]():
+	case coverageType:
 		return true
 	default:
 		return false

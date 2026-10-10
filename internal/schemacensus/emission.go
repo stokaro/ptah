@@ -2,6 +2,7 @@ package schemacensus
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -333,8 +334,9 @@ func MeasureEmissions(ctx context.Context, service renderer.SchemaService) (Corp
 		byFixture[fixture.Name] = 0
 	}
 	for _, fixture := range Fixtures() {
+		render := newFinalizedRender(ctx, service, fixture.Schema)
 		for _, cell := range fixture.Cells(capabilityprobe.Cells) {
-			statements, err := RenderStatements(ctx, service, fixture.Schema, cell)
+			statements, err := render.statements(cell)
 			if err != nil {
 				if !completedSchemaRefusal(err) {
 					return CorpusEmissions{}, err
@@ -353,6 +355,9 @@ func MeasureEmissions(ctx context.Context, service renderer.SchemaService) (Corp
 			for _, shape := range emitted.Unclassified {
 				shapes[shape] = true
 			}
+		}
+		if err := render.verify(); err != nil {
+			return CorpusEmissions{}, fmt.Errorf("fixture %s: %w", fixture.Name, err)
 		}
 	}
 	measured.DarkCells = silent(byCell)

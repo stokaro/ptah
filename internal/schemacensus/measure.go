@@ -2,7 +2,9 @@ package schemacensus
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -50,9 +52,7 @@ func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation
 	if err := schemaext.RequireRuntime(ctx, service); err != nil {
 		return nil, err
 	}
-	measured, err := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-		return renderOne(ctx, service, schema, cell)
-	})
+	measured, err := measure(renderSurface(ctx, service))
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +62,35 @@ func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation
 	return measured, nil
 }
 
+// surface is one way to answer for a schema. The answer function it returns
+// answers for one declared release line at a time, and done reports anything
+// the answers broke, once every cell has been asked. A surface may prepare the
+// schema once rather than once per cell, which is most of a fixture's cost on a
+// matrix of many cells.
+type surface func(schemamodel.Database) (answer func(capabilityprobe.Cell) (string, error), done func() error)
+
+// renderSurface answers with the shipping render, from one finalized copy of
+// the schema rendered on every cell; see [finalizedRender].
+func renderSurface(ctx context.Context, service renderer.SchemaService) surface {
+	return func(schema schemamodel.Database) (func(capabilityprobe.Cell) (string, error), func() error) {
+		render := newFinalizedRender(ctx, service, schema)
+		answer := func(cell capabilityprobe.Cell) (string, error) {
+			statements, err := render.statements(cell)
+			if err != nil {
+				return measuredRefusal(err)
+			}
+			return strings.Join(statements, "\n"), nil
+		}
+		return answer, render.verify
+	}
+}
+
 // measure is the shared body of [Measure] and [MeasurePlan].
 //
 // The two surfaces are measured by one function on purpose: an agreement test
 // comparing two loops that had drifted apart would report the drift as a
 // disagreement between the surfaces.
-func measure(surface func(schemamodel.Database, capabilityprobe.Cell) (string, error)) ([]Observation, error) {
+func measure(surface surface) ([]Observation, error) {
 	fixtures := Fixtures()
 	cells := measuredCells()
 
@@ -139,46 +162,70 @@ func measuredCells() []capabilityprobe.Cell {
 // line, keyed by cell name. A refusal is kept as its own text so an ablation
 // that changes WHICH refusal answers still counts as a change.
 func everyCell(
-	surface func(schemamodel.Database, capabilityprobe.Cell) (string, error),
+	surface surface,
 	schema schemamodel.Database,
 	cells []capabilityprobe.Cell,
 ) (map[string]string, error) {
 	answers := make(map[string]string, len(cells))
+	answerFor, done := surface(schema)
 	for _, cell := range cells {
-		answer, err := surface(schema, cell)
+		answer, err := answerFor(cell)
 		if err != nil {
 			return nil, fmt.Errorf("cell %s: %w", CellName(cell), err)
 		}
 		answers[CellName(cell)] = answer
 	}
+	if err := done(); err != nil {
+		return nil, err
+	}
 	return answers, nil
 }
 
-// renderOne is the shipping render path for one cell.
-func renderOne(ctx context.Context, service renderer.SchemaService, schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
-	statements, err := RenderStatements(ctx, service, schema, cell)
-	if err != nil {
-		return measuredRefusal(err)
-	}
-	return strings.Join(statements, "\n"), nil
+// finalizedRender renders one schema on many cells from a single finalized
+// copy. Rendering reads a schema and never changes it, which is the
+// [renderer.SchemaService] contract, so one copy serves every cell; verify
+// fails the measurement when a render broke that contract, because every later
+// cell would then measure a schema the fixture never declared.
+type finalizedRender struct {
+	ctx       context.Context
+	service   renderer.SchemaService
+	schema    schemamodel.Database
+	finalized schemamodel.Database
 }
 
-// RenderStatements is the same render, answering with the statements rather
-// than with their text.
-//
-// Exported because the emission guard reasons about statements and the
-// observability census reasons about bytes, and they have to be the same
-// render: two call sites building their own would let the guard measure a
-// schema the census never renders.
-func RenderStatements(
-	ctx context.Context,
-	service renderer.SchemaService,
-	schema schemamodel.Database, cell capabilityprobe.Cell,
-) ([]string, error) {
+func newFinalizedRender(ctx context.Context, service renderer.SchemaService, schema schemamodel.Database) *finalizedRender {
+	return &finalizedRender{ctx: ctx, service: service, schema: schema, finalized: finalizedCopy(schema)}
+}
+
+// statements is the shipping render for one cell.
+func (r *finalizedRender) statements(cell capabilityprobe.Cell) ([]string, error) {
+	return renderFinalized(r.ctx, r.service, &r.finalized, cell)
+}
+
+// verify reports a render that changed the shared finalized copy.
+func (r *finalizedRender) verify() error {
+	if !reflect.DeepEqual(r.finalized, finalizedCopy(r.schema)) {
+		return errors.New("rendering changed the schema it was given; the census renders one copy on every cell")
+	}
+	return nil
+}
+
+// finalizedCopy is the schema a render reads: a copy, so the fixture is left
+// alone, finalized the way a loaded schema is.
+func finalizedCopy(schema schemamodel.Database) schemamodel.Database {
 	finalized := deepCopyDatabase(schema)
 	schemamodel.Finalize(&finalized)
+	return finalized
+}
+
+// renderFinalized renders a finalized schema on one cell without changing it.
+func renderFinalized(
+	ctx context.Context,
+	service renderer.SchemaService,
+	finalized *schemamodel.Database, cell capabilityprobe.Cell,
+) ([]string, error) {
 	rendered, err := renderer.RenderSchema(ctx, service, renderer.SchemaRequest{
-		Target: cell.Dialect, Schema: &finalized, Capabilities: cell.Preset(), Identifiers: identifiers.ForDialect(cell.Dialect),
+		Target: cell.Dialect, Schema: finalized, Capabilities: cell.Preset(), Identifiers: identifiers.ForDialect(cell.Dialect),
 	})
 	return rendered.Statements, err
 }
