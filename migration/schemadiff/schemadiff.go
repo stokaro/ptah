@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -27,6 +28,15 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
+
+// optionIdentifiers returns the identifier snapshot the options carry, or the
+// zero value, which a projection normalizes to the target's static rules.
+func optionIdentifiers(opts *config.CompareOptions) identifier.Semantics {
+	if opts.IdentifierSemantics == nil {
+		return identifier.Semantics{}
+	}
+	return *opts.IdentifierSemantics
+}
 
 // CompareWithOptions compares schema snapshots using the selected services and
 // options. A nil options value selects config.DefaultCompareOptions. Inputs are
@@ -94,7 +104,7 @@ func compareReportingUndecidedAdditions(
 		// the database still holding a scoped-away object, which reads as
 		// present in the target and absent from the declaration -- the shape of
 		// a drop. See suppressScopedAway.
-		desired, database, err = scopeComparison(desired, database, selected)
+		desired, database, err = scopeComparison(desired, database, selected, optionIdentifiers(opts))
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}

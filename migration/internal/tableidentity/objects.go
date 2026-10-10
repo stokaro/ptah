@@ -24,10 +24,19 @@ func BindObjects(objects schemaext.Objects, target string, semantics identifier.
 	if err != nil {
 		return schemaext.Objects{}, err
 	}
+	// Each object keeps its target binding: All returns it with the object.
 	for i, object := range all {
 		all[i].Ref = bindOwned(object.Ref, target, semantics)
 	}
 	return schemaext.NewObjects(all...)
+}
+
+// BindRef is [BindObjects] for one identity: it rebinds the table part of a
+// table-owned identity and returns any other identity as it is. A caller that
+// matches a declared object with an observed one binds both first, as the
+// comparison will.
+func BindRef(ref objectidentity.ID, target string, semantics identifier.Semantics) objectidentity.ID {
+	return bindOwned(ref, target, semantics)
 }
 
 // bindOwned rebinds the table part of a table-owned identity and returns any

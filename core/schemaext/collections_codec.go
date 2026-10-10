@@ -66,7 +66,7 @@ func (r Registry) DecodeFacets(ctx context.Context, representation Representatio
 			return Facets{}, fmt.Errorf("%w: encoded facet %q", ErrDuplicate, record.Kind)
 		}
 		seen[record.Kind] = true
-		scope, err := normalizeFacetScope(record.Targets)
+		scope, err := normalizeTargetScope(record.Targets)
 		if err != nil {
 			return Facets{}, err
 		}
@@ -137,9 +137,12 @@ func (r Registry) SnapshotFacets(ctx context.Context, representation Representat
 
 // EncodedObject retains structured source and comparison identity beside its
 // explicitly encoded value. It contains no interface requiring inferred types.
+// Targets carries the object's source binding, [Object.Targets]; empty means
+// unrestricted.
 type EncodedObject struct {
-	Ref   objectidentity.ID `json:"ref"`
-	Value Envelope          `json:"value"`
+	Ref     objectidentity.ID `json:"ref"`
+	Targets []string          `json:"targets,omitempty"`
+	Value   Envelope          `json:"value"`
 }
 
 // EncodeObjects serializes individual objects in structured identity order.
@@ -161,7 +164,7 @@ func (r Registry) EncodeObjects(ctx context.Context, representation Representati
 	}
 	result := make([]EncodedObject, len(values))
 	for i, object := range values {
-		result[i] = EncodedObject{Ref: object.Ref, Value: envelopes[i]}
+		result[i] = EncodedObject{Ref: object.Ref, Targets: object.Targets, Value: envelopes[i]}
 	}
 	return result, nil
 }
@@ -186,7 +189,7 @@ func (r Registry) DecodeObjects(ctx context.Context, representation Representati
 		if !ok {
 			return Objects{}, fmt.Errorf("%w: %q is not a schema value", ErrInvalidValue, payload.Kind())
 		}
-		objects[i] = Object{Ref: encoded[i].Ref, Value: value}
+		objects[i] = Object{Ref: encoded[i].Ref, Value: value, Targets: encoded[i].Targets}
 	}
 	return NewObjects(objects...)
 }

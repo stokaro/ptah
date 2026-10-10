@@ -13,7 +13,7 @@ func (f Facets) WithTargetScope(kind Kind, targets ...string) (Facets, error) {
 	if _, found := f.values[kind]; !found {
 		return Facets{}, fmt.Errorf("%w: target scope requires a concrete facet %q", ErrInvalidValue, kind)
 	}
-	scope, err := normalizeFacetScope(targets)
+	scope, err := normalizeTargetScope(targets)
 	if err != nil {
 		return Facets{}, err
 	}
@@ -77,7 +77,9 @@ func (f Facets) declares(kind Kind) bool {
 	return present || scoped
 }
 
-func normalizeFacetScope(targets []string) ([]string, error) {
+// normalizeTargetScope normalizes and sorts a facet's or an object's target
+// names and refuses a name given twice.
+func normalizeTargetScope(targets []string) ([]string, error) {
 	result := make([]string, len(targets))
 	for i, name := range targets {
 		normalized, err := NormalizeTargetSpelling(name)
@@ -88,7 +90,7 @@ func normalizeFacetScope(targets []string) ([]string, error) {
 	}
 	slices.Sort(result)
 	if len(slices.Compact(slices.Clone(result))) != len(result) {
-		return nil, fmt.Errorf("%w: duplicate facet target name", ErrDuplicate)
+		return nil, fmt.Errorf("%w: duplicate target name", ErrDuplicate)
 	}
 	return result, nil
 }

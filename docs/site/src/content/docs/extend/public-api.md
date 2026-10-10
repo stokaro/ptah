@@ -373,6 +373,12 @@ conversion preserve the binding. `EncodedFacet` carries it separately from the
 owner's payload. An excluded payload needs no codec. Select from the original
 source when another target needs a value already excluded from a capture.
 
+An object carries its source binding in `Object.Targets`, and the binding
+travels with the object through collections and codecs. `Objects.ForTarget`
+leaves out an object bound to other targets and keeps no record of it, so a
+caller that must not read its absence as deletion intent asks
+`schemamodel.OmissionsForTarget` first, as the comparison does.
+
 `Registry.EncodeChanges` writes change records as `EncodedChange`: the subject
 beside an envelope naming the owner, the change kind and the codec version.
 `DecodeChanges` reads them back with the same codecs and refuses a kind the

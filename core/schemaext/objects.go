@@ -12,9 +12,18 @@ import (
 // Object is one independently addressable feature-owned schema object. Ref
 // carries the existing structured identity, including any owning table. Its
 // kind equals Value.Kind; state is never hidden in a namespace-sized facet.
+//
+// Targets binds a declaration to source-declared target names, as
+// [Facets.WithTargetScope] binds a facet. Empty means unrestricted. A
+// collection normalizes the names and sorts them; only a selected runtime
+// resolves their meaning, and [Objects.ForTarget] projects the collection onto
+// one target. The binding belongs to the declaration, so it travels with the
+// object through every collection the object is copied into. A reader never
+// sets it.
 type Object struct {
-	Ref   objectidentity.ID
-	Value Value
+	Ref     objectidentity.ID
+	Value   Value
+	Targets []string
 }
 
 // MarshalJSON refuses implicit serialization of the concrete value. Encode the
@@ -55,7 +64,14 @@ func cloneObject(object Object) (Object, error) {
 	if object.Ref.Kind != objectidentity.Kind(value.Kind()) || object.Ref.Name.Source == "" || object.Ref.Name.Normalized == "" {
 		return Object{}, fmt.Errorf("%w: object identity does not name value kind %q", ErrInvalidValue, value.Kind())
 	}
-	return Object{Ref: object.Ref, Value: value}, nil
+	targets, err := normalizeTargetScope(object.Targets)
+	if err != nil {
+		return Object{}, err
+	}
+	if len(targets) == 0 {
+		targets = nil
+	}
+	return Object{Ref: object.Ref, Value: value, Targets: targets}, nil
 }
 
 // With returns a new collection containing object, refusing an existing identity.

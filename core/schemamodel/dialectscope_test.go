@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
@@ -24,8 +25,31 @@ type scopedKind struct {
 	count func(db *schemamodel.Database) int
 }
 
+// policyValue is a feature object's value for the scope tests.
+type policyValue struct{}
+
+func (*policyValue) Kind() schemaext.Kind             { return "example.org/policy" }
+func (*policyValue) Clone() schemaext.Value           { return &policyValue{} }
+func (*policyValue) Equal(other schemaext.Value) bool { _, ok := other.(*policyValue); return ok }
+
+// policyRef is the identity of the policy name on table orders in schema
+// public.
+func policyRef(name string) objectidentity.ID {
+	return objectidentity.ID{Kind: "example.org/policy",
+		Schema: objectidentity.Part{Source: "public", Normalized: "public"},
+		Parent: objectidentity.Part{Source: "orders", Normalized: "orders"},
+		Name:   objectidentity.Part{Source: name, Normalized: name}}
+}
+
 func scopedKinds() []scopedKind {
 	return []scopedKind{
+		{
+			name: "FeatureObjects",
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: policyRef("tenant"), Value: &policyValue{}, Targets: scope}))
+			},
+			count: func(db *schemamodel.Database) int { return db.FeatureObjects.Len() },
+		},
 		{
 			name: "Extensions",
 			declare: func(db *schemamodel.Database, scope []string) {
@@ -272,6 +296,10 @@ func TestScopeToTarget_DoesNotMutateTheCallersSchema(t *testing.T) {
 // declared, so the projection alone cannot tell an operator anything.
 func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 	db := &schemamodel.Database{
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: policyRef("tenant"), Value: &policyValue{}, Targets: []string{"cockroachdb", "postgres"}},
+			schemaext.Object{Ref: policyRef("everyone"), Value: &policyValue{}},
+		)),
 		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Dialects: []string{"postgres"}}},
 		Functions: []schemamodel.Function{
 			{StructName: "Scoped", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
@@ -288,6 +316,7 @@ func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 			name:    "the excluded target is told what it is not getting",
 			dialect: "mysql",
 			want: []schemamodel.ScopedObject{
+				{Kind: "example.org/policy", Name: "public.orders.tenant", Dialects: []string{"cockroachdb", "postgres"}, Ref: policyRef("tenant")},
 				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
 				{Kind: "function", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
 			},
@@ -308,6 +337,7 @@ func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 			name:    "an explicitly selected custom target excludes other targets",
 			dialect: "custom",
 			want: []schemamodel.ScopedObject{
+				{Kind: "example.org/policy", Name: "public.orders.tenant", Dialects: []string{"cockroachdb", "postgres"}, Ref: policyRef("tenant")},
 				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
 				{Kind: "function", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
 			},
@@ -324,11 +354,19 @@ func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 }
 
 // TestScopedObjects_ReportsEveryScopeRegardlessOfTarget covers the exporter's
-// question, which has no dialect in it: what scopes exist at all.
+// question, which has no dialect in it: what scopes exist at all. A feature
+// object is named as its source spelled it, so a schema the source left to
+// the default is not written out.
 func TestScopedObjects_ReportsEveryScopeRegardlessOfTarget(t *testing.T) {
 	c := qt.New(t)
+	defaulted := policyRef("tenant")
+	defaulted.Schema.Defaulted = true
 
 	db := &schemamodel.Database{
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			schemaext.Object{Ref: defaulted, Value: &policyValue{}, Targets: []string{"postgres"}},
+			schemaext.Object{Ref: policyRef("everyone"), Value: &policyValue{}},
+		)),
 		Roles: []schemamodel.Role{
 			{StructName: "R", Name: "app_reader", Dialects: []string{"postgres"}},
 			{StructName: "S", Name: "unscoped"},
@@ -336,6 +374,7 @@ func TestScopedObjects_ReportsEveryScopeRegardlessOfTarget(t *testing.T) {
 	}
 
 	c.Assert(schemamodel.ScopedObjects(db), qt.DeepEquals, []schemamodel.ScopedObject{
+		{Kind: "example.org/policy", Name: "orders.tenant", Dialects: []string{"postgres"}, Ref: defaulted},
 		{Kind: "role", Name: "app_reader", Dialects: []string{"postgres"}},
 	})
 }
@@ -352,7 +391,8 @@ func databaseFieldsDeclaringScope() []string {
 }
 
 // declaresScope reports whether fieldType is a slice of structs carrying the
-// Dialects scope field.
+// Dialects scope field, or the feature object collection, whose objects carry
+// a target binding.
 func declaresScope(fieldType reflect.Type) bool {
 	sliceOfStruct := fieldType.Kind() == reflect.Slice && fieldType.Elem().Kind() == reflect.Struct
 	probe := map[bool]func() bool{
@@ -362,7 +402,7 @@ func declaresScope(fieldType reflect.Type) bool {
 		},
 		false: func() bool { return false },
 	}
-	return probe[sliceOfStruct]()
+	return fieldType == reflect.TypeFor[schemaext.Objects]() || probe[sliceOfStruct]()
 }
 
 // scopeTarget supplies explicit target metadata to the model-only tests.

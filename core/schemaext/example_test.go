@@ -229,3 +229,45 @@ func ExampleRegistry_EncodeChanges() {
 	// {"after":90,"before":30}
 	// events 30 -> 90
 }
+
+// ExampleObjects_ForTarget shows a declaration bound to one target. Projected
+// onto that target, the object stays with its binding; projected onto
+// another, it is absent, and the unrestricted object stays in both.
+func ExampleObjects_ForTarget() {
+	ref := func(name string) objectidentity.ID {
+		return objectidentity.ID{Kind: "example.org/retention", Name: objectidentity.Part{Source: name, Normalized: name}}
+	}
+	objects, err := schemaext.NewObjects(
+		schemaext.Object{Ref: ref("everywhere"), Value: &retention{Days: 30}},
+		schemaext.Object{Ref: ref("postgres_only"), Value: &retention{Days: 7}, Targets: []string{"Postgres"}},
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, name := range []string{"postgres", "mysql"} {
+		target, err := schemaext.NewTargetSelection(name)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		projected, err := objects.ForTarget(target)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		all, err := projected.All()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Print(name, ":")
+		for _, object := range all {
+			fmt.Print(" ", object.Ref.Name.Source, object.Targets)
+		}
+		fmt.Println()
+	}
+	// Output:
+	// postgres: everywhere[] postgres_only[postgres]
+	// mysql: everywhere[]
+}
