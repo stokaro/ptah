@@ -1,9 +1,10 @@
-// Package pgeffects describes what a PostgreSQL-family common statement does
-// to the relations, columns, routines and roles it names: which ones it
-// creates, changes or drops. Feature owners order their operations against
-// these effects, both in a migration plan and in a whole-schema render. A
-// statement it does not know keeps an unknown footprint; nothing here is
-// invented.
+// Package pgeffects describes what a common statement does to the relations,
+// columns, routines and roles it names: which ones it creates, changes or
+// drops. Feature owners order their operations against these effects, both
+// in a migration plan and in a whole-schema render. The PostgreSQL-family
+// hosts and the SQL Server host read it, since the nodes it reads are the
+// common ones both plan. A statement it does not know keeps an unknown
+// footprint; nothing here is invented.
 package pgeffects
 
 import (
