@@ -96,9 +96,14 @@ func (r *Reader) table(
 	}
 
 	for _, described := range described.GetIndexes() {
-		index, err := r.index(ctx, source, schema, name, described)
+		index, settingsRead, err := r.index(ctx, source, schema, name, described)
 		if err != nil {
 			return fmt.Errorf("%s: %w", subject, err)
+		}
+		if settingsRead {
+			if err := indexPartitioningCoverage(db, schema, name, index.Name); err != nil {
+				return err
+			}
 		}
 		index.Comment = comments.Indexes[index.Name]
 		db.Indexes = append(db.Indexes, index)
@@ -291,12 +296,14 @@ func decimalOf(t *Ydb.Type) (precision, scale int, ok bool) {
 // description of the table leaves out: measured on 25.1.4.7 and 26.2.1.14, a
 // global index whose minimum partition count was set to 4 describes itself as
 // `globalIndex: {}`, and `<table>/<index>/indexImplTable` describes the 4.
+// The settings that differ from YDB's defaults become the index's observed
+// partitioning facet, and index reports whether it read them.
 func (r *Reader) index(
 	ctx context.Context,
 	source Source,
 	schema, table string,
 	described *Ydb_Table.TableIndexDescription,
-) (catalog.Index, error) {
+) (catalog.Index, bool, error) {
 	index := catalog.Index{
 		Name:           described.GetName(),
 		TableName:      table,
@@ -316,44 +323,72 @@ func (r *Reader) index(
 	case nil:
 		fullTextKind, options, err := fullTextIndex(described)
 		if err != nil {
-			return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+			return catalog.Index{}, false, fmt.Errorf("index %q: %w", described.GetName(), err)
 		}
 		if fullTextKind.IsFullText() {
 			index.Method = fullTextKind.Clause(false)
 			index.StorageParams = options
 			index.Definition = indexClause(index, fullTextKind) + " " + ydbindex.FullTextClause(options)
-			return index, nil
+			return index, false, nil
 		}
 		vector, isVector, err := vectorIndex(described)
 		switch {
 		case err != nil:
-			return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+			return catalog.Index{}, false, fmt.Errorf("index %q: %w", described.GetName(), err)
 		case !isVector:
-			return catalog.Index{}, fmt.Errorf("index %q is a %s, which this build of Ptah does not read",
+			return catalog.Index{}, false, fmt.Errorf("index %q is a %s, which this build of Ptah does not read",
 				described.GetName(), unreadIndexKind(described))
 		}
 		if index.Facets, err = vectorFacets(*vector); err != nil {
-			return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+			return catalog.Index{}, false, fmt.Errorf("index %q: %w", described.GetName(), err)
 		}
 		index.Method = ydbindex.Vector.Clause(false)
 		index.Definition = indexClause(index, ydbindex.Vector) + " " + ydbindex.VectorClause(*vector)
-		return index, nil
+		return index, false, nil
 	default:
-		return catalog.Index{}, fmt.Errorf("index %q is a %s, which this build of Ptah does not read",
+		return catalog.Index{}, false, fmt.Errorf("index %q is a %s, which this build of Ptah does not read",
 			described.GetName(), unreadIndexKind(described))
 	}
 	implementation, err := source.DescribeTable(ctx, r.absolute(schema, path.Join(table, described.GetName(), indexImplTable)))
 	if err != nil {
-		return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+		return catalog.Index{}, false, fmt.Errorf("index %q: %w", described.GetName(), err)
 	}
 	settings, err := partitionSettings(implementation)
 	if err != nil {
-		return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+		return catalog.Index{}, false, fmt.Errorf("index %q: %w", described.GetName(), err)
 	}
 	index.Method = kind.Clause(false)
-	index.Partitioning = ydbindex.Spec(settings)
+	if spec := ydbindex.Spec(settings); spec != nil {
+		if index.Facets, err = indexPartitioningFacets(index.Facets, spec); err != nil {
+			return catalog.Index{}, false, fmt.Errorf("index %q: %w", described.GetName(), err)
+		}
+	}
 	index.Definition = indexClause(index, kind)
-	return index, nil
+	return index, true, nil
+}
+
+// indexPartitioningFacets adds a global index's settings to facets as the YDB
+// owner's observed value, written as the settings that differ from YDB's
+// documented defaults, bound to YDB.
+func indexPartitioningFacets(facets schemaext.Facets, spec *ydbschema.IndexPartitioning) (schemaext.Facets, error) {
+	observed := &ydbschema.ObservedIndexPartitioning{IndexPartitioning: *spec}
+	if err := ydbschema.ValidateObservedIndexPartitioning(observed); err != nil {
+		return schemaext.Facets{}, err
+	}
+	facets, err := facets.With(observed)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return facets.WithTargetScope(ydbschema.IndexPartitioningKind, platform.YDB)
+}
+
+// indexPartitioningCoverage records that the read knows the settings of the
+// global index name on table in the directory schema: an index holding YDB's
+// defaults has no value. Any other index is not known to hold them.
+func indexPartitioningCoverage(db *catalog.Database, schema, table, name string) error {
+	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB)).IndexParts(schema, table, name)
+	return subjectCoverage(db, ydbschema.IndexPartitioningKind, ydbschema.IndexPartitioningCoverage,
+		"only returned global indexes have inspected settings", subject, schemaext.Knowledge{State: schemaext.Complete})
 }
 
 // indexImplTable is the table YDB keeps a global index in, under the index's

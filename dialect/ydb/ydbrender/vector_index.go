@@ -17,19 +17,25 @@ import (
 )
 
 // ValidateIndexFacets checks the index values the YDB renderer consumes: a
-// vector index's declared settings. An empty collection is valid. Any other
-// active kind wraps ptaherr.ErrUnsupportedFeature, and a malformed
-// declaration wraps schemaext.ErrInvalidValue.
+// vector index's declared settings and an index's declared partitioning. An
+// empty collection is valid. Any other active kind wraps
+// ptaherr.ErrUnsupportedFeature, and a malformed declaration wraps
+// schemaext.ErrInvalidValue.
 func ValidateIndexFacets(facets schemaext.Facets) error {
-	_, err := VectorIndexDeclaration(facets)
+	if _, err := VectorIndexDeclaration(facets); err != nil {
+		return err
+	}
+	_, err := DeclaredIndexPartitioning(facets)
 	return err
 }
 
 // VectorIndexDeclaration returns the vector settings an index declares, or
-// nil for an index that declares none. Any other active kind is refused.
+// nil for an index that declares none. An active kind other than the two the
+// renderer writes for an index, the vector settings and the partitioning, is
+// refused.
 func VectorIndexDeclaration(facets schemaext.Facets) (*ydbschema.DesiredVectorIndex, error) {
 	for _, kind := range facets.Kinds() {
-		if kind != ydbschema.VectorIndexKind {
+		if kind != ydbschema.VectorIndexKind && kind != ydbschema.IndexPartitioningKind {
 			return nil, fmt.Errorf("%w: YDB index facet %q is not supported", ptaherr.ErrUnsupportedFeature, kind)
 		}
 	}

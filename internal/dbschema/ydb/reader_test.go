@@ -18,7 +18,6 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -683,6 +682,19 @@ func readSettings(c *qt.C, table catalog.Table) *ydbschema.TablePartitioning {
 	}
 	c.Assert(table.Facets.TargetScope(ydbschema.TablePartitioningKind), qt.DeepEquals, []string{"ydb"})
 	return &value.TablePartitioning
+}
+
+// readIndexSettings is the settings the reader attached to index as the YDB
+// owner's observed facet, bound to YDB, or nil where it attached none.
+func readIndexSettings(c *qt.C, index catalog.Index) *ydbschema.IndexPartitioning {
+	c.Helper()
+	value, found, err := schemaext.FacetAs[*ydbschema.ObservedIndexPartitioning](index.Facets, ydbschema.IndexPartitioningKind)
+	c.Assert(err, qt.IsNil)
+	if !found {
+		return nil
+	}
+	c.Assert(index.Facets.TargetScope(ydbschema.IndexPartitioningKind), qt.DeepEquals, []string{"ydb"})
+	return &value.IndexPartitioning
 }
 
 // A row table's partitioning, read replicas and key bloom filter are read as
@@ -1516,18 +1528,18 @@ func TestReader_IndexPartitioning(t *testing.T) {
 	tests := []struct {
 		name           string
 		implementation *Ydb_Table.DescribeTableResult
-		want           *ast.IndexPartitioningSpec
+		want           *ydbschema.IndexPartitioning
 	}{
 		{name: "an index nobody tuned", implementation: implementationTable(), want: nil},
 		{name: "unspecified settings are the defaults", implementation: unspecified, want: nil},
 		{
 			name: "every setting changed", implementation: tuned,
-			want: &ast.IndexPartitioningSpec{
+			want: &ydbschema.IndexPartitioning{
 				PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6, MaxPartitions: 9, ReadReplicas: "ANY_AZ:2",
 			},
 		},
 		{name: "not splitting by size, replicas cleared", implementation: unsplit,
-			want: &ast.IndexPartitioningSpec{BySize: new(false)}},
+			want: &ydbschema.IndexPartitioning{BySize: new(false)}},
 	}
 
 	for _, test := range tests {
@@ -1549,7 +1561,9 @@ func TestReader_IndexPartitioning(t *testing.T) {
 			db := readFrom(c, source)
 
 			c.Assert(db.Indexes, qt.HasLen, 1)
-			c.Assert(db.Indexes[0].Partitioning, qt.DeepEquals, test.want)
+			c.Assert(readIndexSettings(c, db.Indexes[0]), qt.DeepEquals, test.want)
+			subject := objectidentity.NewBuilder(identifier.ForDialect("ydb")).IndexParts("", "t", "by_a")
+			c.Assert(db.FeatureCoverage.Lookup(ydbschema.IndexPartitioningKind, subject).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }

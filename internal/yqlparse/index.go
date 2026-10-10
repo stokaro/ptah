@@ -52,8 +52,11 @@ func (p *parser) indexSettings(index *ast.IndexNode, raw map[string]string) {
 		}
 		values[name] = scalar(value)
 	}
-	var err error
-	if index.Partitioning, err = ydbindex.ParseDeclaration(values); err != nil {
+	partitioning, err := ydbindex.ParseDeclaration(values)
+	if err != nil {
+		p.failf("%v", err)
+	}
+	if index.Facets, err = ydbindex.WithPartitioning(index.Facets, partitioning); err != nil {
 		p.failf("%v", err)
 	}
 	vector, err := ydbindex.DeclareVector(values, index.Type, index.Operator)

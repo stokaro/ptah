@@ -317,7 +317,6 @@ func toDBIndexes(
 			Method:             indexAccessMethod(index.Type, dialect),
 			IncludeColumns:     append([]string(nil), index.IncludeColumns...),
 			StorageParams:      maps.Clone(index.StorageParams),
-			Partitioning:       index.Partitioning.Clone(),
 			RequiresExtensions: slices.Clone(index.RequiresExtensions),
 		})
 	}

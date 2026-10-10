@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
@@ -19,7 +20,6 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbchangefeed"
-	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -94,12 +94,11 @@ type tableRebuild struct {
 	// scratch is the name the new table is created under, and replaced the
 	// name the old one is moved to before it is dropped.
 	scratch, replaced string
-	// heldIndexes is the partitioning each of the old table's indexes holds,
-	// by the name the declaration gives the index. The new table's indexes
-	// take these for every setting the declaration leaves out; the table's
-	// own settings travel as the YDB owner's facet (see
-	// [ydbplan.RebuiltTablePartitioning]).
-	heldIndexes map[string]*ast.IndexPartitioningSpec
+	// heldIndexes is each of the old table's indexes as the read found it, by
+	// the name the declaration gives the index. The new table's indexes take
+	// the settings these hold for every setting the declaration leaves out
+	// (see [ydbplan.RebuiltIndexPartitioning]).
+	heldIndexes map[string]catalog.Index
 }
 
 // rebuildSubject names the table in a refusal.
@@ -260,60 +259,51 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 		return err
 	}
 	rebuild.scratch, rebuild.replaced = scratch, replaced
-	rebuild.heldIndexes = heldSettings(diff, rebuild, semantics)
+	rebuild.heldIndexes = heldIndexes(diff, rebuild, semantics)
 	return nil
 }
 
-// heldSettings finds what each index the declaration names holds of its
-// partitioning: under the declaration's name, or under the name the plan
-// renames it from, since a rebuilt table takes its indexes under their new
-// names.
-func heldSettings(
+// heldIndexes finds each index the declaration names among the old table's,
+// under the declaration's name or under the name the plan renames it from,
+// since a rebuilt table takes its indexes under their new names.
+func heldIndexes(
 	diff *difftypes.SchemaDiff,
 	rebuild *tableRebuild,
 	semantics identifierSemantics,
-) map[string]*ast.IndexPartitioningSpec {
+) map[string]catalog.Index {
 	key := semantics.TableIdentityKey(rebuild.name)
-	index := slices.IndexFunc(diff.CurrentYDBSettings, func(held difftypes.YDBHeldSettings) bool {
-		return semantics.TableIdentityKey(held.TableName) == key
-	})
-	if index < 0 {
-		return nil
-	}
-	held := diff.CurrentYDBSettings[index]
 	formerName := make(map[string]string)
 	for _, rename := range diff.IndexesRenamed {
 		if semantics.TableIdentityKey(rename.TableName) == key {
 			formerName[rename.To] = rename.From
 		}
 	}
-	indexes := make(map[string]*ast.IndexPartitioningSpec)
+	held := make(map[string]catalog.Index, len(rebuild.observation.Indexes))
+	for _, index := range rebuild.observation.Indexes {
+		held[index.Name] = index
+	}
+	indexes := make(map[string]catalog.Index)
 	for _, declared := range rebuild.declaration.Indexes {
 		name := declared.Name
 		if former, renamed := formerName[name]; renamed {
 			name = former
 		}
-		if spec, ok := held.Indexes[name]; ok {
-			indexes[declared.Name] = spec
+		if index, ok := held[name]; ok {
+			indexes[declared.Name] = index
 		}
 	}
 	return indexes
 }
 
-// rebuiltIndexPartitioning is the partitioning an index of the new table is
-// given, for the reason [ydbplan.RebuiltTablePartitioning] gives for the
-// table: each setting the declaration names, and the held value of every
-// other one, all named.
-func rebuiltIndexPartitioning(subject string, declared, held *ast.IndexPartitioningSpec) (*ast.IndexPartitioningSpec, error) {
-	current, err := ydbindex.Held(held)
+// rebuiltIndexFacets is the facets of an index of the new table, with the
+// partitioning [ydbplan.RebuiltIndexPartitioning] gives it from the index the
+// old table holds. subject names the index in a refusal.
+func rebuiltIndexFacets(subject string, declared schemamodel.Index, held catalog.Index) (schemaext.Facets, error) {
+	partitioning, err := ydbplan.RebuiltIndexPartitioning(declared, held)
 	if err != nil {
-		return nil, refuseFact(subject, "the settings it holds: "+err.Error())
+		return schemaext.Facets{}, refuseFact(subject, err.Error())
 	}
-	settings, err := ydbindex.Resolve(declared, current)
-	if err != nil {
-		return nil, refuseFact(subject, err.Error())
-	}
-	return ydbindex.Explicit(settings), nil
+	return declared.Facets.Without(ydbschema.IndexPartitioningKind).With(&ydbschema.DesiredIndexPartitioning{IndexPartitioning: *partitioning})
 }
 
 // rebuildDeclaration is the desired table a rebuild writes: the
@@ -513,7 +503,7 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	for _, index := range rebuild.declaration.Indexes {
 		index.TableName = scratchName
 		subject := fmt.Sprintf("index %q of %s", index.Name, rebuildSubject(rebuild.name))
-		if index.Partitioning, err = rebuiltIndexPartitioning(subject, index.Partitioning, rebuild.heldIndexes[index.Name]); err != nil {
+		if index.Facets, err = rebuiltIndexFacets(subject, index, rebuild.heldIndexes[index.Name]); err != nil {
 			return nil, err
 		}
 		create.AddIndex(modelast.FromIndex(index))

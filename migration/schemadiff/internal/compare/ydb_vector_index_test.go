@@ -48,7 +48,6 @@ func TestIndexes_YDBKeepsAVectorIndexWhoseSettingsChange(t *testing.T) {
 
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
-	c.Assert(diff.IndexPartitioningChanged, qt.HasLen, 0)
 }
 
 // TestIndexes_YDBRebuildsAChangedVectorIndex rebuilds a vector index whose

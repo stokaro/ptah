@@ -73,3 +73,29 @@ func (f facetConversion[D, O]) one(from schemaext.Representation, value schemaex
 	}
 	return f.declare(observed), nil
 }
+
+// observeSettings projects a declaration of settings S as what an object
+// created from it holds where no profile changes it: the declaration read over
+// YDB's documented defaults, through held, and written back through spec as
+// the settings that differ from them, nil for none. validate refuses an
+// invalid declaration first; settings and observed reach into and build the
+// two representations.
+func observeSettings[D, O any, S any, H any](
+	validate func(D) error, settings func(D) *S, held func(*S) (H, error), spec func(H) *S, observed func(S) O,
+) func(D) (O, error) {
+	return func(desired D) (O, error) {
+		var zero O
+		if err := validate(desired); err != nil {
+			return zero, err
+		}
+		holds, err := held(settings(desired))
+		if err != nil {
+			return zero, fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
+		}
+		var differ S
+		if found := spec(holds); found != nil {
+			differ = *found
+		}
+		return observed(differ), nil
+	}
+}

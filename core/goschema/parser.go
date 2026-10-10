@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 
-	ptahast "ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
@@ -357,7 +356,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
-	partitioning, err := s.indexPartitioning(kv, comment, structName)
+	facets, err := s.indexPartitioning(kv, comment, structName)
 	if err != nil {
 		return err
 	}
@@ -365,7 +364,6 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
-	var facets schemaext.Facets
 	if vector != nil {
 		if facets, err = facets.With(vector); err != nil {
 			return err
@@ -391,24 +389,27 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		IncludeColumns: includeColumns,
 		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
 		TableName:      tableName, // Target table name
-		Partitioning:   partitioning,
 		StorageParams:  fullText,
 	})
 	return nil
 }
 
 // indexPartitioning reads the partitioning attributes of an index directive,
-// which YDB's global indexes carry; see [ydbindex.ParseDeclaration].
-func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.IndexPartitioningSpec, error) {
+// which YDB's global indexes carry (see [ydbindex.ParseDeclaration]), as the
+// YDB owner's facet, or no facet where the directive states none.
+func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.Comment, structName string) (schemaext.Facets, error) {
 	partitioning, err := ydbindex.ParseDeclaration(kv)
 	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
-		return nil, &ptaherr.ParseError{
+		return schemaext.Facets{}, &ptaherr.ParseError{
 			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
 			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
 			Message: fmt.Sprintf("%s on //ptah:schema:index at %s", declaration.Error(), structName),
 		}
 	}
-	return partitioning, err
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return ydbindex.WithPartitioning(schemaext.Facets{}, partitioning)
 }
 
 // indexVector reads the settings of a YDB vector index from an index

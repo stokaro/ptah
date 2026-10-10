@@ -54,6 +54,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: ydbschema.Owner, codecs: ydbschema.TablePartitioningCodecs()},
 		{owner: ydbschema.Owner, codecs: ydbschema.ColumnStoreCodecs()},
 		{owner: ydbschema.Owner, codecs: ydbschema.VectorIndexCodecs()},
+		{owner: ydbschema.Owner, codecs: ydbschema.IndexPartitioningCodecs()},
 	} {
 		for _, codec := range provider.codecs {
 			if codec.Representation == schemaext.Desired {

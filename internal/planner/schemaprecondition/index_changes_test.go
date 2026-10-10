@@ -10,11 +10,10 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// TestRefuseIndexChangesInPlace_FailurePath refuses an index rename, a change
-// of an index's partitioning and an index comment written apart from the index
-// for a planner that plans none of them, naming the index and the planner:
-// planning nothing would report the database synced while the index kept its
-// name, its settings or its comment.
+// TestRefuseIndexChangesInPlace_FailurePath refuses an index rename and an
+// index comment written apart from the index for a planner that plans
+// neither, naming the index and the planner: planning nothing would report the
+// database synced while the index kept its name or its comment.
 func TestRefuseIndexChangesInPlace_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -25,12 +24,6 @@ func TestRefuseIndexChangesInPlace_FailurePath(t *testing.T) {
 			name:    "a rename",
 			diff:    &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "users", From: "a", To: "b"}}},
 			wantErr: `unsupported feature: the diff renames index "a" of table "users" to "b", and the postgres planner plans no index rename`,
-		},
-		{
-			name: "a change of partitioning",
-			diff: &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{TableName: "users", Name: "a"}}},
-			wantErr: `unsupported feature: the diff changes the partitioning of index "a" of table "users", which only a YDB plan does; ` +
-				`the postgres planner plans none`,
 		},
 		{
 			name: "an index comment",

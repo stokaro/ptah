@@ -37,7 +37,7 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.FeatureChanges = nil
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
-	rest.IndexesRenamed, rest.IndexPartitioningChanged, rest.IndexCommentsChanged = nil, nil, nil
+	rest.IndexesRenamed, rest.IndexCommentsChanged = nil, nil
 	rest.ObjectCommentsChanged = withoutPlannedComments(diff)
 	rest.ViewsAdded, rest.ViewsRemoved, rest.ViewsModified = nil, nil, nil
 	rest.RolesAdded, rest.RolesRemoved, rest.RolesModified = nil, nil, nil

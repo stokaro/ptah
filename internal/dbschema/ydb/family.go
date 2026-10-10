@@ -160,6 +160,17 @@ func tableCoverage(db *catalog.Database, kind schemaext.Kind,
 	enroll func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error),
 	uninspected, schema, name string, knowledge schemaext.Knowledge,
 ) error {
+	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB)).TableParts(schema, name)
+	return subjectCoverage(db, kind, enroll, uninspected, subject, knowledge)
+}
+
+// subjectCoverage records knowledge of a facet of kind for subject, enrolling
+// the kind first, through enroll, with uninspected knowledge for every subject
+// the read did not record.
+func subjectCoverage(db *catalog.Database, kind schemaext.Kind,
+	enroll func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error),
+	uninspected string, subject objectidentity.ID, knowledge schemaext.Knowledge,
+) error {
 	kinds := db.FeatureCoverage.KindRecords()
 	if !slices.ContainsFunc(kinds, func(record schemaext.KindCoverage) bool { return record.Model.Kind == kind }) {
 		enrolled, err := enroll(schemaext.Observed, schemaext.Knowledge{State: schemaext.Uninspected, Reason: uninspected}, nil)
@@ -168,7 +179,6 @@ func tableCoverage(db *catalog.Database, kind schemaext.Kind,
 		}
 		kinds = append(kinds, enrolled.KindRecords()...)
 	}
-	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB)).TableParts(schema, name)
 	known, err := schemaext.NewCoverage(schemaext.Observed, kinds, append(db.FeatureCoverage.SubjectRecords(),
 		schemaext.SubjectCoverage{Kind: kind, Subject: subject, Knowledge: knowledge}))
 	if err != nil {

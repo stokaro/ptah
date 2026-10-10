@@ -1201,6 +1201,18 @@ and `ydbrender.TablePartitioningHandler` to one `ALTER TABLE ... SET (...)`.
 old one holds, and `ydbplan.TablePartitioningRebuildReason` says which change
 only a rebuild makes.
 
+A YDB global index's partitioning and read replicas are an index facet under
+`ydbschema.IndexPartitioningKind`: `DesiredIndexPartitioning` and
+`ObservedIndexPartitioning` hold an `IndexPartitioning`, and a read names only
+the settings that differ from YDB's documented defaults.
+`IndexPartitioningCodecs` and `IndexPartitioningCoverage` complete the model.
+`ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse` and `ydbreport` carry
+`IndexPartitioningService`. `ydbdiff.IndexPartitioning` lowers through
+`ydbast.AlterIndexPartitioning` and `ydbrender.IndexPartitioningHandler` to
+one `ALTER TABLE ... ALTER INDEX ... SET (...)`, and
+`ydbplan.RebuiltIndexPartitioning` gives an index of a rebuilt table every
+setting the old index holds. A renamed index is compared under its new name.
+
 The former `ast.YDBColumnFamilySpec`, `ast.CloneYDBColumnFamilies`,
 `ast.SetYDBColumnFamiliesOperation`, the `YDBColumnFamilies` fields of
 `ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`,
@@ -1209,8 +1221,12 @@ without aliases, and so are `ast.YDBTablePartitioningSpec`,
 `ast.SetYDBTablePartitioningOperation`, the `YDBPartitioning` fields of
 `ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`,
 `difftypes.YDBTablePartitioningChange`, `TableDiff.YDBPartitioningChange`
-and `YDBHeldSettings.Partitioning`. This changes behavior; pre-v1, so no
-compatibility is owed.
+and `YDBHeldSettings.Partitioning`, and so are `ast.IndexPartitioningSpec`,
+`ast.SetIndexPartitioningOperation`, the `Partitioning` fields of
+`ast.IndexNode`, `schemamodel.Index` and `catalog.Index`,
+`SchemaDiff.IndexPartitioningChanged`, `difftypes.IndexPartitioningChange`,
+`SchemaDiff.CurrentYDBSettings` and `difftypes.YDBHeldSettings`. This changes
+behavior; pre-v1, so no compatibility is owed.
 
 `ydbschema` owns a YDB vector index's settings as an index facet under
 `VectorIndexKind`. `DesiredVectorIndex` and `ObservedVectorIndex` hold the
@@ -1231,7 +1247,9 @@ because YDB changes no setting of a built vector index. A common replacement or
 a table rebuild carries the settings itself. `ydbrender.ValidateIndexFacets`
 and `ydbrender.VectorIndexDeclaration` serve the YDB renderer, and
 `ydbconvert`, `ydbreverse` and `ydbreport` complete the provider. An index
-carrying an owner's facet is never paired as a rename.
+carrying an owner's facet a rename cannot carry, such as a vector index's
+settings, is never paired as a rename. An index's partitioning is carried, and
+the owner compares it under the new name.
 
 The former `ast.VectorIndexSpec` and the `Vector` fields of `ast.IndexNode`,
 `schemamodel.Index` and `catalog.Index` are removed without aliases. This
@@ -2693,19 +2711,17 @@ planning use one source of truth.
 The index changes a plan makes in place each have a `SchemaDiff` list:
 
 - `IndexesRenamed`, as `IndexRename` entries naming the table and both names;
-- `IndexPartitioningChanged`, a change of a YDB global index's partitioning,
-  as `IndexPartitioningChange` entries carrying the declared settings and the
-  ones the database holds;
 - `IndexCommentsChanged`, an index comment a plan writes apart from the
   index, as `IndexCommentChange` entries naming the table, the index, the
   name a renamed index had, and both comments. An entry is a comment that
   differs, a renamed index's comment, which moves to the new name, or a
   dropped index's comment, which its table keeps until a plan removes it.
 
-An index renamed or repartitioned is in neither `IndexesAdded` nor
-`IndexesRemoved`. The comparison fills these lists only on a target whose
-capability set holds `index_rename`, `index_partitioning` or
-`comment_attributes`, which only the YDB presets do. Every planner but YDB's
+An index renamed is in neither `IndexesAdded` nor `IndexesRemoved`. The
+comparison fills these lists only on a target whose capability set holds
+`index_rename` or `comment_attributes`, which only the YDB presets do. A
+change of a YDB global index's partitioning is the YDB owner's feature
+change, carried by its table's `TableDiff.FeatureChanges`. Every planner but YDB's
 refuses a diff that carries one with `ptaherr.ErrUnsupportedFeature`, so a
 diff built by hand cannot reach a planner that would plan nothing for it.
 

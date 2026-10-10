@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -76,7 +75,9 @@ func storageSchema(c *qt.C) *schemamodel.Database {
 			{
 				StructName: "Events", Name: "search", Fields: []string{"id"},
 				IncludeColumns: []string{"created_at"}, StorageParams: map[string]string{"tokenizer": "standard"},
-				Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2},
+				Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredIndexPartitioning{
+					IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 2},
+				})),
 			},
 			{StructName: "Events", Name: "vector", Fields: []string{"id"}, Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredVectorIndex{Dimension: 3}))},
 		},
@@ -129,7 +130,7 @@ func TestRender_EmptyOptionalStorageSettingsDoNotWarn(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
 		Tables:  []schemamodel.Table{{StructName: "T", Name: "t"}},
-		Indexes: []schemamodel.Index{{StructName: "T", Name: "idx", Partitioning: &ast.IndexPartitioningSpec{}}},
+		Indexes: []schemamodel.Index{{StructName: "T", Name: "idx"}},
 	}
 
 	result, err := renderDBML(c, db, dbmlrender.Options{})

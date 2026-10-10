@@ -83,9 +83,12 @@ func WritesTableFacet(kind schemaext.Kind) bool {
 }
 
 // WritesIndexFacet reports an index facet kind the renderer writes itself
-// rather than as platform properties: a YDB vector index's settings, which
-// it writes as attributes of the index block.
-func WritesIndexFacet(kind schemaext.Kind) bool { return kind == ydbschema.VectorIndexKind }
+// rather than as platform properties: a YDB vector index's settings and a
+// YDB index's partitioning and read replicas, which it writes as attributes
+// of the index block.
+func WritesIndexFacet(kind schemaext.Kind) bool {
+	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind
+}
 
 // renderHypertables writes the TimescaleDB hypertable blocks.
 //

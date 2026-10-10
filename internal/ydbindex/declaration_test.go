@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 )
@@ -17,7 +17,7 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   *ast.IndexPartitioningSpec
+		want   *ydbschema.IndexPartitioning
 	}{
 		{name: "no partitioning", values: map[string]string{"name": "i", "fields": "a"}, want: nil},
 		{
@@ -27,12 +27,12 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 				"auto_partitioning_by_load": "disabled", "auto_partitioning_min_partitions_count": "2",
 				"auto_partitioning_max_partitions_count": "8", "read_replicas_settings": "any_az:3",
 			},
-			want: &ast.IndexPartitioningSpec{
+			want: &ydbschema.IndexPartitioning{
 				BySize: new(true), PartitionSizeMB: 64, ByLoad: new(false), MinPartitions: 2, MaxPartitions: 8, ReadReplicas: "ANY_AZ:3",
 			},
 		},
 		{name: "no replicas is a declaration of none", values: map[string]string{"read_replicas_settings": "per_az:0"},
-			want: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:0"}},
+			want: &ydbschema.IndexPartitioning{ReadReplicas: "PER_AZ:0"}},
 	}
 
 	for _, test := range tests {

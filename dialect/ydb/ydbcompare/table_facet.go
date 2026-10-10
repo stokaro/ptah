@@ -11,7 +11,7 @@ import (
 	"ptah.run/core/schemaext"
 )
 
-// tableFacet is one comparison of a YDB table facet: the request it answers,
+// tableFacet is one comparison of a YDB table or index facet: the request it answers,
 // the result it fills, and each side's records indexed by subject. declared
 // indexes the result's desired records, which an adoption extends.
 type tableFacet struct {
@@ -27,6 +27,14 @@ type tableFacet struct {
 // error or cancellation returns a zero result.
 func compareTableFacet(ctx context.Context, request schemaext.FacetComparisonRequest, kind schemaext.Kind, name string,
 	table func(*tableFacet, schemaext.ParentState) error,
+) (schemaext.FacetComparisonResult, error) {
+	return compareFacet(ctx, request, objectidentity.KindTable, kind, name, table)
+}
+
+// compareFacet is [compareTableFacet] for owners of ownerKind; an index owner
+// names its table as its parent.
+func compareFacet(ctx context.Context, request schemaext.FacetComparisonRequest, ownerKind objectidentity.Kind, kind schemaext.Kind, name string,
+	compare func(*tableFacet, schemaext.ParentState) error,
 ) (schemaext.FacetComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -51,14 +59,15 @@ func compareTableFacet(ctx context.Context, request schemaext.FacetComparisonReq
 	c.result.Desired.Records = slices.Clone(c.result.Desired.Records)
 	seen := make(map[objectidentity.Key]bool)
 	for _, owner := range request.Owners {
-		if owner.Subject.Kind != objectidentity.KindTable || owner.Subject.Name.Empty() || seen[owner.Subject.Key()] || (!owner.Desired && !owner.Current) {
+		if owner.Subject.Kind != ownerKind || owner.Subject.Name.Empty() || seen[owner.Subject.Key()] || (!owner.Desired && !owner.Current) ||
+			(ownerKind == objectidentity.KindIndex && owner.Subject.Parent.Empty()) {
 			return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: invalid or duplicate %s owner", schemaext.ErrInvalidValue, name)
 		}
 		seen[owner.Subject.Key()] = true
 		if !request.Includes(kind, owner.Subject) {
 			continue
 		}
-		if err := table(c, owner); err != nil {
+		if err := compare(c, owner); err != nil {
 			return schemaext.FacetComparisonResult{}, err
 		}
 	}

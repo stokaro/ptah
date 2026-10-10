@@ -408,7 +408,8 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 // the renderer reports it as a loss rather than writing a partial block. The
 // table facets the renderer handles itself are set aside first: the encoder
 // refuses every table while one facet has no property spelling, and every YDB
-// table read holds column families beside any TTL it has.
+// table read holds column families beside any TTL it has. A YDB index's
+// partitioning is set aside for the same reason.
 func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
 	if r.db == nil || r.info.Dialect == "" {
 		return r.db, nil

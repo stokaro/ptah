@@ -163,9 +163,11 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	// A table's own facets, which every one of these formats can write.
+	// A table's own facets, and a global index's settings, which every one
+	// of these formats can write.
 	for _, facet := range []func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error){
 		ydbschema.TTLCoverage, ydbschema.ColumnFamiliesCoverage, ydbschema.TablePartitioningCoverage, ydbschema.ColumnStoreCoverage,
+		ydbschema.IndexPartitioningCoverage,
 	} {
 		known, err := facet(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		if err != nil {

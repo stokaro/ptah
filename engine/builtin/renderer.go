@@ -603,7 +603,7 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	if err := refuseInvisibleIndexNode(dialect, caps, node); err != nil {
 		return nil, err
 	}
-	if !node.Partitioning.IsZero() {
+	if slices.Contains(node.Facets.Kinds(), ydbschema.IndexPartitioningKind) {
 		if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", node.Name)); err != nil {
 			return nil, err
 		}
@@ -905,9 +905,8 @@ func prepareAlterOperation(
 			return nil, err
 		}
 		return operation, nil
-	case *ast.AddIndexOperation, *ast.ReplaceIndexOperation, *ast.AlterIndexVisibilityOperation,
-		*ast.SetIndexPartitioningOperation:
-		// One arm for the four, for the reason the arm above gives.
+	case *ast.AddIndexOperation, *ast.ReplaceIndexOperation, *ast.AlterIndexVisibilityOperation:
+		// One arm for the three, for the reason the arm above gives.
 		if err := validateIndexOperation(dialect, caps, operation); err != nil {
 			return nil, err
 		}
@@ -947,8 +946,6 @@ func validateIndexOperation(dialect string, caps capability.Capabilities, operat
 		return err
 	case *ast.AlterIndexVisibilityOperation:
 		return refuseInvisibleIndex(dialect, caps, typed.IndexName)
-	case *ast.SetIndexPartitioningOperation:
-		return refuseIndexPartitioning(dialect, caps, fmt.Sprintf("changing the partitioning of index %q", typed.IndexName))
 	}
 	return nil
 }
@@ -1175,7 +1172,7 @@ func validateDeclaredIndexOptions(
 		if err := validateIndexBlockSize(dialect, index.Name, index.KeyBlockSize); err != nil {
 			return err
 		}
-		if !index.Partitioning.IsZero() {
+		if slices.Contains(index.Facets.Kinds(), ydbschema.IndexPartitioningKind) {
 			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
 				return err
 			}

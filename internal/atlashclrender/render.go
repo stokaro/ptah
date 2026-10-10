@@ -1201,7 +1201,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
 	r.renderVectorSettings(index.Facets)
-	r.renderIndexPartitioning(index.Partitioning)
+	r.renderIndexPartitioning(index.Facets)
 	if pages, ok := index.StorageParams["pages_per_range"]; ok {
 		// `page_per_range`, singular, is the spelling the pinned Atlas community
 		// binary v1.3.0 both emits and honors. Measured on PostgreSQL 17.10

@@ -889,7 +889,6 @@ func appendIndexDifferences(
 			})
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 		default:
-			appendPartitioningChange(diff, dialect, databaseEntry.ref, generatedEntry.index, databaseEntry.index)
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 		}
 	}
@@ -918,9 +917,6 @@ func appendIndexDifferences(
 		appendIndexRemoval(diff, entry)
 		appendIndexCommentChange(diff, comparison, entry.ref, "", "", entry.index.Comment)
 	}
-	slices.SortFunc(diff.IndexPartitioningChanged, func(a, b difftypes.IndexPartitioningChange) int {
-		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
-	})
 	slices.SortFunc(diff.IndexCommentsChanged, func(a, b difftypes.IndexCommentChange) int {
 		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
 	})
@@ -975,10 +971,11 @@ func appendIndexCommentChange(
 //
 // A removal whose object a constraint owns is never paired: dropping it drops
 // the constraint, which a rename would leave in place. Nor is an index that
-// carries an owner's facet, such as a YDB vector index's settings: this
-// comparison cannot read them, the owner compares them only for an index both
-// sides hold under one name, and a rename would keep the settings the index
-// was built with whatever the declaration states.
+// carries an owner's facet a rename cannot carry ([ydbindex.RenameKeeps]),
+// such as a YDB vector index's settings: this comparison cannot read them,
+// and a rename would keep the settings the index was built with whatever the
+// declaration states. A YDB index's partitioning is carried: the owner
+// compares it under the new name and changes it in place.
 func pairIndexRenames(
 	diff *difftypes.SchemaDiff,
 	additions []generatedIndexEntry,
@@ -1009,7 +1006,8 @@ func pairIndexRenames(
 	for _, addition := range additions {
 		match := -1
 		for position, removal := range removals {
-			if paired[position] || removal.constraintBacked || !addition.index.Facets.IsZero() || !removal.index.Facets.IsZero() ||
+			if paired[position] || removal.constraintBacked ||
+				!ydbindex.RenameKeeps(addition.index.Facets) || !ydbindex.RenameKeeps(removal.index.Facets) ||
 				semantics.TableIdentityKey(removal.ref.TableName) != semantics.TableIdentityKey(addition.ref.TableName) ||
 				comparison.replacementRequired(addition, removal) {
 				continue
@@ -1029,7 +1027,6 @@ func pairIndexRenames(
 			To:        addition.ref.Name,
 		})
 		renamed := difftypes.IndexRef{TableName: removal.ref.TableName, Name: addition.ref.Name}
-		appendPartitioningChange(diff, comparison.dialect, renamed, addition.index, removal.index)
 		appendIndexCommentChange(diff, comparison, renamed, removal.ref.Name, addition.index.Comment, removal.index.Comment)
 	}
 	left := removals[:0:0]
@@ -1039,22 +1036,6 @@ func pairIndexRenames(
 		}
 	}
 	return unpaired, left
-}
-
-// appendPartitioningChange records the change of partitioning a YDB index both
-// sides hold makes in place, under ref. It records nothing on another dialect,
-// whose catalog reports no partitioning, and nothing where the two settings
-// are the same; see [ydbPartitioningChanged].
-func appendPartitioningChange(diff *difftypes.SchemaDiff, dialect string, ref difftypes.IndexRef, desired schemamodel.Index, database catalog.Index) {
-	if platform.NormalizeDialect(dialect) != platform.YDB || !ydbPartitioningChanged(desired, database) {
-		return
-	}
-	diff.IndexPartitioningChanged = append(diff.IndexPartitioningChanged, difftypes.IndexPartitioningChange{
-		TableName:    ref.TableName,
-		Name:         ref.Name,
-		Partitioning: desired.Partitioning.Clone(),
-		Previous:     database.Partitioning.Clone(),
-	})
 }
 
 // partitionAttachedIndexIsNotPlannable reports whether a database index is a
@@ -1207,10 +1188,10 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 // The covered columns are compared in order, as the key columns are: YDB
 // reports `data_columns` in the order the COVER clause wrote them.
 //
-// The partitioning is never a rebuild: a change of it is made by ALTER INDEX
-// and recorded as [difftypes.SchemaDiff.IndexPartitioningChanged]. The one
-// change YDB cannot make in place, removing a maximum partition count, is one
-// no declaration asks for, because a maximum it leaves out keeps the held one.
+// The partitioning is never a rebuild: it is the YDB owner's index facet,
+// changed in place by ALTER INDEX. The one change YDB cannot make in place,
+// removing a maximum partition count, is one no declaration asks for, because
+// a maximum it leaves out keeps the held one.
 //
 // A vector index's settings are the YDB owner's facet, which its own
 // comparison reads; a difference in them is planned there.
@@ -1227,20 +1208,6 @@ func ydbIndexDefinitionChanged(
 		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
 		(desiredKind.IsFullText() && !ydbindex.FullTextEqual(desired.StorageParams, database.StorageParams)) ||
 		(desiredKind.IsLocal() && !ydbindex.LocalEqual(desiredKind, desired.StorageParams, database.StorageParams))
-}
-
-// ydbPartitioningChanged reports whether a YDB index's partitioning differs
-// between the declaration and the database. The declaration is read over what
-// the index holds ([ydbindex.Resolve]), so a setting it leaves out keeps the
-// held value and is never a difference. A side that does not resolve differs,
-// so the plan reaches the renderer, which refuses it with the reason.
-func ydbPartitioningChanged(desired schemamodel.Index, database catalog.Index) bool {
-	held, heldErr := ydbindex.Held(database.Partitioning)
-	if heldErr != nil {
-		return true
-	}
-	desiredSettings, desiredErr := ydbindex.Resolve(desired.Partitioning, held)
-	return desiredErr != nil || !desiredSettings.Equal(held)
 }
 
 // mysqlIndexDefinitionChanged answers whether a MySQL or MariaDB index has to
@@ -1764,4 +1731,21 @@ func indexTableRowFormat(tables []catalog.Table, index catalog.Index, semantics 
 		}
 	}
 	return ""
+}
+
+// IndexRenames returns the renames [IndexesWithSemantics] plans for desired
+// against database, so a comparison that runs before it can bind what the
+// database holds for a renamed index to the name the declaration gives it.
+// It is the same pairing, run once more, so the two cannot disagree.
+func IndexRenames(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect string,
+	semantics identifier.Semantics,
+	indexes map[string]config.IndexExpression,
+	caps capability.Capabilities,
+) []difftypes.IndexRename {
+	scratch := &difftypes.SchemaDiff{}
+	IndexesWithSemantics(desired, database, scratch, dialect, semantics, indexes, caps)
+	return scratch.IndexesRenamed
 }

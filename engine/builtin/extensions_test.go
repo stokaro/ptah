@@ -77,6 +77,10 @@ func extensionFixtures() []extensionFixture {
 			Settings: ydbschema.VectorSettings{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}},
 			wantSQL: "ALTER TABLE `items` ADD INDEX `by_emb` GLOBAL USING vector_kmeans_tree ON (`gen`, `emb`) COVER (`body`) " +
 				"WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2);\n"},
+		{payload: &ydbast.AlterIndexPartitioning{Index: "by_name", Change: ydbdiff.IndexPartitioning{After: &ydbschema.DesiredIndexPartitioning{
+			IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 3},
+		}}}, wantSQL: "ALTER TABLE `items` ALTER INDEX `by_name` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
+			"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3);\n"},
 	}
 }
 
