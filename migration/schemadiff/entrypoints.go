@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -92,6 +93,26 @@ func CompareWithDatabaseInfo(
 	return completeComparison(compareWithDatabaseInfoReportingUndecidedAdditions(ctx, desired, database, info, opts, runtime))
 }
 
+// comparisonSemantics normalizes the identifier semantics a comparison's
+// server snapshot carries for its dialect, refuses a snapshot whose semantics
+// do not survive that, and checks every name the comparison meets against
+// them.
+func comparisonSemantics(desired *schemamodel.Database, database *catalog.Database, info catalog.ServerInfo) (identifier.Semantics, error) {
+	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
+	if !info.IdentifierSemantics.IsZero() &&
+		!info.IdentifierSemantics.Equal(semantics) {
+		return identifier.Semantics{}, fmt.Errorf(
+			"%w: invalid identifier semantics snapshot",
+			ptaherr.ErrInvalidSchemaDiff,
+		)
+	}
+	names := collectIdentifierNames(desired, database, semantics.DefaultSchema)
+	if err := identifiervalidation.ValidateCoverage(semantics, names); err != nil {
+		return identifier.Semantics{}, err
+	}
+	return semantics, nil
+}
+
 func compareWithDatabaseInfoReportingUndecidedAdditions(
 	ctx context.Context,
 	desired *schemamodel.Database,
@@ -147,16 +168,8 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		return nil, Diagnostics{}, err
 	}
 	desired = schemaprep.AssignDefaultForeignKeyNames(desired, info.Dialect)
-	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
-	if !info.IdentifierSemantics.IsZero() &&
-		!info.IdentifierSemantics.Equal(semantics) {
-		return nil, Diagnostics{}, fmt.Errorf(
-			"%w: invalid identifier semantics snapshot",
-			ptaherr.ErrInvalidSchemaDiff,
-		)
-	}
-	names := collectIdentifierNames(desired, database, semantics.DefaultSchema)
-	if err := identifiervalidation.ValidateCoverage(semantics, names); err != nil {
+	semantics, err := comparisonSemantics(desired, database, info)
+	if err != nil {
 		return nil, Diagnostics{}, err
 	}
 	if err := ValidateDesiredSchema(ctx, runtime, desired, info); err != nil {

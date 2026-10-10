@@ -9,13 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/schemamodel"
-
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
-
+	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
-
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/goannotationexport"

@@ -805,6 +805,20 @@ type defaultPrivilegeSpec struct {
 
 type platformSpec map[string]map[string]stringScalar
 
+// addStandaloneObjects adds the YDB objects a document states outside any
+// table, one kind after another.
+func (d document) addStandaloneObjects(db *schemamodel.Database) error {
+	for _, add := range []func(*schemamodel.Database) error{
+		d.addTopics, d.addResourcePools, d.addAsyncReplications, d.addTransfers,
+		d.addCoordinationNodes, d.addSecrets, d.addStreamingQueries, d.addExternalObjects,
+	} {
+		if err := add(db); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d document) toDatabase(owners yamlext.Set) (*schemamodel.Database, error) {
 	db := &schemamodel.Database{
 		Dependencies:               make(map[string][]string),
@@ -835,28 +849,7 @@ func (d document) toDatabase(owners yamlext.Set) (*schemamodel.Database, error) 
 	if err := d.addTriggers(db); err != nil {
 		return nil, err
 	}
-	if err := d.addTopics(db); err != nil {
-		return nil, err
-	}
-	if err := d.addResourcePools(db); err != nil {
-		return nil, err
-	}
-	if err := d.addAsyncReplications(db); err != nil {
-		return nil, err
-	}
-	if err := d.addTransfers(db); err != nil {
-		return nil, err
-	}
-	if err := d.addCoordinationNodes(db); err != nil {
-		return nil, err
-	}
-	if err := d.addSecrets(db); err != nil {
-		return nil, err
-	}
-	if err := d.addStreamingQueries(db); err != nil {
-		return nil, err
-	}
-	if err := d.addExternalObjects(db); err != nil {
+	if err := d.addStandaloneObjects(db); err != nil {
 		return nil, err
 	}
 	if err := d.addRLS(db); err != nil {

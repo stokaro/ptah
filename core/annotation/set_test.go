@@ -206,7 +206,7 @@ func TestSet_DecodeAttributes_HappyPath(t *testing.T) {
 	}{
 		{name: "the owner's attribute written", attributes: map[string]string{"name": "mv", "shade": "teal"},
 			wantSeen: map[string]string{"shade": "teal"}, want: []schemaext.Value{&level{Value: "teal"}}},
-		{name: "none of the owner's attributes written", attributes: map[string]string{"name": "mv"}, want: []schemaext.Value{}},
+		{name: "none of the owner's attributes written", attributes: map[string]string{"name": "mv"}, want: make([]schemaext.Value, 0)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

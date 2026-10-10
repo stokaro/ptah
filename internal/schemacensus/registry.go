@@ -1,5 +1,11 @@
 package schemacensus
 
+// sharedRLSPolicyReason is why the fields of a shared row-level security
+// policy reach only the comparison.
+const sharedRLSPolicyReason = "no target renders a shared row-level security policy: " +
+	"PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; " +
+	"the dialect-neutral comparison of two shared declarations still compares it"
+
 // registry is the disposition of every field Fields() reports.
 //
 // It is sorted by field path so a diff over it reads as a diff over the model.
@@ -514,16 +520,16 @@ var registry = []Entry{
 	{Field: "schemamodel.RLSEnabledTable.Forced", Disposition: Comparison, Reason: "FORCE is PostgreSQL's, whose switches the row-security owner holds; the dialect-neutral comparison of two shared declarations still compares it"},
 	{Field: "schemamodel.RLSEnabledTable.StructName", Disposition: DDL},
 	{Field: "schemamodel.RLSEnabledTable.Table", Disposition: DDL},
-	{Field: "schemamodel.RLSPolicy.Comment", Disposition: Comparison, Reason: "no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it"},
+	{Field: "schemamodel.RLSPolicy.Comment", Disposition: Comparison, Reason: sharedRLSPolicyReason},
 	{Field: "schemamodel.RLSPolicy.Dialects", Disposition: DDL},
 	{Field: "schemamodel.RLSPolicy.Name", Disposition: DDL},
-	{Field: "schemamodel.RLSPolicy.PolicyFor", Disposition: Comparison, Reason: "no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it"},
+	{Field: "schemamodel.RLSPolicy.PolicyFor", Disposition: Comparison, Reason: sharedRLSPolicyReason},
 	{Field: "schemamodel.RLSPolicy.Restrictive", Disposition: Comparison, Reason: "no target renders a shared policy; the Go and HCL writers carry AS, and the dialect-neutral comparison of two shared declarations still compares it"},
 	{Field: "schemamodel.RLSPolicy.StructName", Disposition: DDL},
 	{Field: "schemamodel.RLSPolicy.Table", Disposition: DDL},
-	{Field: "schemamodel.RLSPolicy.ToRoles", Disposition: Comparison, Reason: "no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it"},
-	{Field: "schemamodel.RLSPolicy.UsingExpression", Disposition: Comparison, Reason: "no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it"},
-	{Field: "schemamodel.RLSPolicy.WithCheckExpression", Disposition: Comparison, Reason: "no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it"},
+	{Field: "schemamodel.RLSPolicy.ToRoles", Disposition: Comparison, Reason: sharedRLSPolicyReason},
+	{Field: "schemamodel.RLSPolicy.UsingExpression", Disposition: Comparison, Reason: sharedRLSPolicyReason},
+	{Field: "schemamodel.RLSPolicy.WithCheckExpression", Disposition: Comparison, Reason: sharedRLSPolicyReason},
 	{Field: "schemamodel.Range.Canonical", Disposition: DDL},
 	{Field: "schemamodel.Range.ClearedAttributes", Disposition: Comparison, Reason: "records the attributes a declaration explicitly cleared, so a comparison can tell a value nobody wrote from one somebody removed"},
 	{Field: "schemamodel.Range.Collation", Disposition: DDL},
