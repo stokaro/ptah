@@ -27,8 +27,8 @@ func TestRouting_EveryRendererDecidesAboutEveryNodeKind(t *testing.T) {
 
 	kinds, err := astrouteguard.NodeKinds(root)
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(kinds) >= astrouteguard.NodeKindFloor, qt.IsTrue,
-		qt.Commentf("the node corpus holds %d kinds, below the floor of %d", len(kinds), astrouteguard.NodeKindFloor))
+	c.Assert(astrouteguard.Account(astrouteguard.Baseline(), astrouteguard.Departures(), kinds).Unaccounted, qt.HasLen, 0,
+		qt.Commentf("the node corpus of %d kinds lost baseline kinds without a recorded departure", len(kinds)))
 
 	renderers, err := astrouteguard.Renderers(root)
 	c.Assert(err, qt.IsNil)

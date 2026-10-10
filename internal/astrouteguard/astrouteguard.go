@@ -19,6 +19,17 @@
 // The corpus is derived, never written down. A hand-maintained list of node
 // kinds is a second place to forget the new kind, and forgetting it there makes
 // the gate agree that nothing is missing.
+//
+// A gate that enumerates also has to notice a corpus that shrank, because a
+// parser that stopped matching reports zero unrouted kinds and reads exactly
+// like a tree where every renderer answers everything. A floor on the count
+// would notice it, but node kinds leave core/ast as their features move to the
+// packages that own them (stokaro/ptah#4140), and a floor lowered for every move
+// says nothing about where a kind went. [Account] answers instead: every node
+// kind core/ast declared when the extraction began is still declared or is
+// recorded with the owner payloads that carry its operations, and
+// [ExtensionKinds] reads those payloads from the type-checked owner packages,
+// so a departure cannot name a payload that does not exist.
 package astrouteguard
 
 import (
@@ -32,15 +43,6 @@ import (
 	"slices"
 	"strings"
 )
-
-// NodeKindFloor is the smallest corpus this guard accepts.
-//
-// A gate that enumerates holds its corpus above a floor, because a parser that
-// stopped matching reports zero unrouted kinds and reads exactly like a tree
-// where every renderer answers everything. The number is a source constant
-// rather than a field in a data file for the same reason: a floor the checked
-// input can lower is not a floor.
-const NodeKindFloor = 80
 
 // NodeKind is one concrete type that implements ast.Node.
 type NodeKind struct {
