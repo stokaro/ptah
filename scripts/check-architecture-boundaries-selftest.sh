@@ -194,4 +194,30 @@ require_acceptance "a consumer dependency with a similar package name"
 rm -f "$tree/internal/genexprprobe/boundaries_selftest_defect.go"
 require_acceptance "the repaired rendering consumer"
 
-echo "check-architecture-boundaries-selftest: OK (9 refusals, 2 false-positive controls)"
+# The neutral layer links no concrete owner, through any chain of imports.
+# core/astbuilder is clean and outside every provider contract's graph, so this
+# rule alone can refuse it.
+cat >"$tree/core/astbuilder/boundaries_selftest_defect.go" <<'GO'
+package astbuilder
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./core/astbuilder)
+require_refusal "a neutral package transitively linking a concrete feature"
+rm -f "$tree/core/astbuilder/boundaries_selftest_defect.go"
+require_acceptance "the repaired neutral package"
+
+# A neutral package that already carries owner debt must not take another
+# owner. core/goschema links several dialects today; a ratchet counting
+# packages rather than owners would pass this.
+cat >"$tree/core/goschema/boundaries_selftest_defect.go" <<'GO'
+package goschema
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./core/goschema)
+require_refusal "a source frontend with owner debt linking one more owner"
+rm -f "$tree/core/goschema/boundaries_selftest_defect.go"
+require_acceptance "the repaired source frontend"
+
+echo "check-architecture-boundaries-selftest: OK (11 refusals, 2 false-positive controls)"

@@ -36,6 +36,7 @@ features, database implementations, or external modules.
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
 | `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
+| `neutral-packages-link-owners` | Models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner. | 27 |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build.
@@ -49,6 +50,20 @@ number would let the debt return to it with the gate green the whole way.
 
 The remaining `model-imports-pipeline` edge is
 `core/schemasource` → `internal/sqlschema`.
+
+`neutral-packages-link-owners` holds the neutral layer of the
+[#4140](https://github.com/stokaro/ptah/issues/4140) design to its import rule.
+The layer is every package at or under `catalog`, `core`, `engine` (except
+`engine/builtin`), `migration/planner` and `migration/schemadiff`. A finding is
+one neutral package and one owner it links through any chain of imports:
+`dialect/<name>`, `feature/<name>` or `engine/builtin`. Moving a type between two
+packages of one owner does not change the count; a neutral package that starts
+linking another owner does. The recorded findings are the source frontends that
+still decode owner models (`core/goschema`, `core/yamlschema`,
+`core/schemasource`), `core/query`, and comparison and planning code that still
+names YDB, ClickHouse, CockroachDB, Spanner, TimescaleDB and `feature/pgpolicy`
+types. Run
+`go run ./internal/cmd/boundaries -json` for the current list.
 
 Renderer assembly lives in `engine/builtin`, above the neutral contracts in
 `core/renderer`. It consumes `internal/modelast` for AST lowering.
@@ -128,6 +143,7 @@ test and the control that make it evidence.
 | Determinism: equivalent inputs produce identical output across runs and map orders | `TestCompare_EquivalentInputsProduceIdenticalOutput`, on `schemadiff.Compare` | 20 runs plus a reversed-input control; deleting one `sort.Strings` in `compare/sequences.go` kills both halves ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
+| Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in a clean package and in one that already carries owner debt |
 
 ## How target facts are held
 
