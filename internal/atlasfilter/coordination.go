@@ -34,6 +34,23 @@ func selectNamedFeatures(objects schemaext.Objects, coverage schemaext.Coverage,
 	return objects.Select(keep), coverage.SelectSubjects(keep)
 }
 
+// selectNamedType keeps the features of kind that the scope's selectors name
+// under typeName, the Atlas type a selector uses for them.
+func (s *scopeSelection) selectNamedType(objects schemaext.Objects, coverage schemaext.Coverage, kind schemaext.Kind, typeName string) (schemaext.Objects, schemaext.Coverage) {
+	return selectNamedFeatures(objects, coverage, kind, func(schema, name string) bool {
+		return s.selected(typeList(typeName), schema, name)
+	})
+}
+
+// filterNamedType drops the features of kind that an exclusion selector names
+// under typeName, and the ones whose directory is excluded, on both sides of a
+// comparison.
+func (s *exclusionState) filterNamedType(objects schemaext.Objects, coverage schemaext.Coverage, kind schemaext.Kind, typeName string) (schemaext.Objects, schemaext.Coverage) {
+	return selectNamedFeatures(objects, coverage, kind, func(schema, name string) bool {
+		return !s.matches(typeName, s.nameCandidates(schema, name)...) && !s.schemaExcluded(schema)
+	})
+}
+
 func (s *scopeSelection) selectCoordinationFeatures(objects schemaext.Objects, coverage schemaext.Coverage) (schemaext.Objects, schemaext.Coverage) {
 	return selectNamedFeatures(objects, coverage, ydbcoordination.Kind, func(schema, name string) bool {
 		return s.selected(typeList("coordination_node"), schema, name)
