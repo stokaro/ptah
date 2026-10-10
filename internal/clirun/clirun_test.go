@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/exeext"
 )
 
 // childMode is the variable a test that runs this test binary again sets to
@@ -110,6 +111,27 @@ func TestBuild_KeepsTargetsApart(t *testing.T) {
 	compat := clirun.Build(c, clirun.Compat)
 
 	c.Assert(compat, qt.Not(qt.Equals), native)
+}
+
+// TestBuildAs_NamesTheFileItIsAsked is what lets a test run ptah-compat under
+// the name it installs as.
+//
+// The compatibility binary takes its command name from argv[0], so a file named
+// after its package would answer `ptah-compat migrate` where the drop-in answers
+// `atlas migrate`. The path Build returns is the control: a memo keyed on the
+// target alone would hand that file back for every name.
+func TestBuildAs_NamesTheFileItIsAsked(t *testing.T) {
+	c := qt.New(t)
+
+	renamed := clirun.BuildAs(c, smallTarget, "renamed")
+	again := clirun.BuildAs(c, smallTarget, "renamed")
+	plain := clirun.Build(c, smallTarget)
+
+	c.Assert(filepath.Base(renamed), qt.Equals, "renamed"+exeext.Suffix)
+	c.Assert(again, qt.Equals, renamed)
+	c.Assert(renamed, qt.Not(qt.Equals), plain)
+	_, err := os.Stat(renamed)
+	c.Assert(err, qt.IsNil)
 }
 
 // TestBuild_BuildsAMainPackageByImportPath is the test the child runs start.

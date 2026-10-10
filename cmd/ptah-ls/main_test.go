@@ -6,13 +6,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/testutils"
+	"ptah.run/internal/clirun"
 )
 
 // These tests build the ptah-ls binary at run time and exercise it as a
@@ -42,6 +41,11 @@ const versionBlockPattern = `Version: [^\n]+\n` +
 // and with stdin held open it never returns at all. The budget is what turns
 // the second case into a failing test instead of a hung run.
 const commandBudget = 20 * time.Second
+
+// TestMain removes the binary the tests share once they have run.
+func TestMain(m *testing.M) {
+	clirun.Main(m)
+}
 
 // TestPtahLSArgumentHandling pins the whole argv surface of ptah-ls in one
 // table (stokaro/ptah#1064). Every row runs with stdin at EOF; the one case
@@ -247,12 +251,10 @@ func newPtahLSProcess(ctx context.Context, binPath string, args ...string) *exec
 	return exec.CommandContext(ctx, binPath, args...)
 }
 
+// buildPtahLSBinary is the ptah-ls binary, compiled once for every test in
+// this package rather than once per test: linking it costs seconds, and more
+// on Windows.
 func buildPtahLSBinary(c *qt.C) string {
 	c.Helper()
-	binPath := filepath.Join(c.TempDir(), "ptah-ls"+testutils.ExecutableSuffix)
-	build := exec.Command("go", "build", "-o", binPath, ".")
-	build.Env = append(os.Environ(), "GOWORK=off")
-	buildOut, err := build.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", buildOut))
-	return binPath
+	return clirun.Build(c, clirun.LanguageServer)
 }
