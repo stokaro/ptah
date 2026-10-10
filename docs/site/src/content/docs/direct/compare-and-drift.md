@@ -545,9 +545,10 @@ rises when a field's meaning changes, not when one is added.
 
 A change an engine-specific setting owns, such as a ClickHouse TTL or a YDB
 coordination node's settings, appears under `feature_changes`: at the top of
-`changes` for a standalone object, and inside the table's entry in
-`tables_modified` for a table setting. Each entry names its subject and carries
-the change in an envelope. This is a ClickHouse TTL change, with each side of
+`changes` for a standalone object, inside the table's entry in
+`tables_modified` for a table setting, and inside the view's entry in
+`materialized_views_modified` for a view setting such as a ClickHouse refresh
+schedule. Each entry names its subject and carries the change in an envelope. This is a ClickHouse TTL change, with each side of
 the payload trimmed to `ttl`:
 
 ```json
