@@ -17,6 +17,7 @@ import (
 
 // The Spanner row deletion policy is a table facet.
 func registerSpannerServices(provider *engine.Provider, target string) {
+	provider.Annotations = append(provider.Annotations, spannersource.Annotations())
 	registerTableFacetOwner(provider, target, tableFacetOwner{
 		codecs:          slices.Concat(spannerschema.Codecs(), spannerdiff.Codecs(), spannerast.Codecs()),
 		properties:      spannersource.Definitions(),
