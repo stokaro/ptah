@@ -343,19 +343,22 @@ these statements on any dev database.
 ### The baseline a rehearsal writes
 
 Before `schema apply` rehearses its plan, it recreates the target's current
-schema in the dev database. That baseline is Ptah's DDL for the target's own
-objects, and it is held to the same realm as a replay before its first
-statement runs. It refuses what escapes the realm or reaches past the server,
-as a replay does: a role, user, group or privilege the cleanup leaves behind,
-a YDB resource pool, and a replication, transfer, external source or
-streaming query. It runs what a migration file is refused only because the
-body is opaque: a routine in a trusted language, a trigger, and a comment on
-the dev database's own schema or extension. A routine in an untrusted
-language such as `plpython3u`, and a MySQL or MariaDB event, stay refused.
+schema in the dev database. Every statement of that baseline is checked
+against the same rules as a replay before the first one runs. A routine or
+trigger body can write outside the dev database when it runs, and a role, a
+user or a privilege the cleanup does not remove outlives it, so a target that
+holds one is rehearsed only on a server the run owns: one Ptah provisions from
+a docker URL, or one declared with `PTAH_DEV_SERVER_DISPOSABLE=1`. The refusal
+names the baseline statement and these two remedies. A comment on a table or a
+column is written. A comment on an extension or a schema is refused on every
+dev server, because the cleanup does not restore it, and that refusal names no
+remedy.
 
-On a server Ptah provisions or one declared disposable, the baseline also
-writes roles, users, privileges and YDB resource pools. A refusal names the
-statement it refused.
+One baseline statement is accepted that a replay refuses. In a YDB dev realm,
+a single `GRANT` or `REVOKE` whose every path is the realm's own absolute path
+or a path under it is written, because the baseline grants the permissions the
+target holds on its database root on the realm's root, and removing the realm
+removes them.
 
 ## Where it appears
 

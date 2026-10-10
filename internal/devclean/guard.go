@@ -1,7 +1,6 @@
 package devclean
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -9,7 +8,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/ydburl"
 )
 
 // ReplayGuard rejects migration statements whose effects cannot be confined to
@@ -20,25 +18,7 @@ type ReplayGuard struct {
 	// remedy ends a refusal that [ReplayRealmServer] lifts; see
 	// [ReplayGuard.WithServerRealmRemedy].
 	remedy string
-	// purpose is what the checked statements are; see [NewBaselineGuard].
-	purpose replayPurpose
 }
-
-// replayPurpose is what the statements a guard checks are, which decides the
-// one class of refusal the two kinds of statement do not share.
-type replayPurpose int
-
-const (
-	// purposeMigration is a migration file, written by anyone. An executable
-	// body in it is opaque, so a routine, a trigger or an event is refused in
-	// a realm whose cleanup it could reach past when it runs.
-	purposeMigration replayPurpose = iota
-	// purposeBaseline is the baseline a rehearsal writes to recreate the
-	// target's current schema. Ptah derived it from the target, so a body in
-	// it is the target's own and stays in the dev database; what escapes the
-	// realm or reaches past the server is refused as for a migration.
-	purposeBaseline
-)
 
 // ReplayRealm is how much of the dev server a replay may change.
 type ReplayRealm int
@@ -73,25 +53,6 @@ const (
 // confined to realm.
 func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
 	return &ReplayGuard{info: info, realm: realm}
-}
-
-// NewBaselineGuard is the guard for the baseline a plan rehearsal writes to
-// recreate the target's current schema in the dev database reached through
-// info. Its realm is [DevReplayRealm]'s, and a refusal the server realm would
-// lift names the two ways to it, as [NewDevReplayGuard] does.
-//
-// It refuses what escapes that realm or reaches past the server, as a replay
-// does: a role, a user, a group or a privilege the realm's cleanup leaves
-// behind, a database-wide YDB object, a replication, a transfer, an external
-// source or table, and a streaming query. It accepts what a migration file is
-// refused only because a body nobody vetted is opaque: a routine in a trusted
-// language, a trigger, and a comment on an object of the dev database. The
-// baseline is DDL Ptah derived from the target, so those bodies are the
-// target's own and stay in the dev database.
-func NewBaselineGuard(info catalog.ServerInfo) *ReplayGuard {
-	guard := NewDevReplayGuard(info)
-	guard.purpose = purposeBaseline
-	return guard
 }
 
 // NewDevReplayGuard is the guard for statements a run executes on the dev
@@ -154,14 +115,16 @@ func (g *ReplayGuard) WithServerRealmRemedy(remedy string) *ReplayGuard {
 // the replay database realm.
 func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	err := g.validate(stmt, g.realm)
-	var unsafe *unsafeStatementError
-	if g.purpose == purposeBaseline && errors.As(err, &unsafe) {
-		unsafe.baseline = true
+	if err == nil {
+		return nil
 	}
-	if err == nil || g.remedy == "" {
-		return err
-	}
-	if g.validate(stmt, ReplayRealmServer) != nil {
+	return g.withRemedy(stmt, err)
+}
+
+// withRemedy ends err, the refusal of stmt, with the guard's remedy when the
+// server realm would have accepted stmt.
+func (g *ReplayGuard) withRemedy(stmt string, err error) error {
+	if g.remedy == "" || g.validate(stmt, ReplayRealmServer) != nil {
 		return err
 	}
 	return fmt.Errorf("%w; %s", err, g.remedy)
@@ -183,7 +146,7 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 		if realm == ReplayRealmServer && postgresServerWideOperation(tokens) != "" {
 			return validatePostgresServerWideStatement(dialect, tokens)
 		}
-		return validatePostgresReplayStatement(dialect, tokens, g.purpose)
+		return validatePostgresReplayStatement(dialect, tokens)
 	case platform.MySQL, platform.MariaDB:
 		if realm == ReplayRealmServer && mysqlServerWideOperation(tokens) != "" {
 			return nil
@@ -191,13 +154,13 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 		if realm == ReplayRealmServerDatabases && mysqlDatabaseOperation(tokens) {
 			return nil
 		}
-		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens, realm, g.purpose)
+		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens, realm)
 	case platform.SQLServer:
-		return validateSQLServerReplayStatement(tokens, g.purpose)
+		return validateSQLServerReplayStatement(tokens)
 	case platform.ClickHouse:
 		return validateClickHouseReplayStatement(g.info.Schema, tokens)
 	case platform.YDB:
-		return validateYDBReplayStatement(tokens, realm, g.ydbBaselineRoot())
+		return validateYDBReplayStatement(tokens, realm)
 	default:
 		unsupportedDialect := strings.TrimSpace(g.info.Dialect)
 		if unsupportedDialect == "" {
@@ -343,9 +306,9 @@ func unsafeReplayStatement(dialect, operation string) error {
 	return &unsafeStatementError{dialect: dialect, operation: operation}
 }
 
-// unsafeStatementError is a refusal of one statement. A baseline refusal says
-// so, because a reader of "migration replay" would look for a migration file
-// that does not exist.
+// unsafeStatementError is the refusal of one statement: the dialect, and the
+// operation whose effects cannot be confined. The baseline guard words the
+// same refusal as its own; see [BaselineGuard.ValidateStatement].
 type unsafeStatementError struct {
 	dialect, operation string
 	baseline           bool
@@ -358,18 +321,4 @@ func (e *unsafeStatementError) Error() string {
 	}
 	return fmt.Sprintf("%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
 		e.dialect, e.operation)
-}
-
-// ydbBaselineRoot is the absolute path of the YDB dev realm a baseline writes
-// in, which a baseline grant may name, or "" for a guard that is not a
-// baseline's or a connection that names no realm.
-func (g *ReplayGuard) ydbBaselineRoot() string {
-	if g.purpose != purposeBaseline {
-		return ""
-	}
-	parsed, err := ydburl.Parse(g.info.URL)
-	if err != nil || parsed.Realm == "" {
-		return ""
-	}
-	return parsed.Root()
 }

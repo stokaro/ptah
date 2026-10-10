@@ -142,7 +142,7 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement), purposeMigration)
+			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement))
 			c.Assert(err, qt.IsNil)
 		})
 	}
@@ -541,7 +541,7 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement), purposeMigration)
+			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement))
 			c.Assert(
 				err,
 				qt.ErrorMatches,

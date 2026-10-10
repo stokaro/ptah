@@ -12,6 +12,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -192,8 +194,13 @@ func TestSchemaApplyCreatesRoutinesAfterWhatTheyNameLive(t *testing.T) {
 // was filed from: ptah-compat rehearses the plan on the dev database, first
 // rebuilding the target's current state there. Both the rebuild and the plan
 // create a LANGUAGE sql routine, so both have to order it after its table.
+//
+// The rebuild writes a routine, which a dev database takes only on a server
+// the run owns, so the test declares its scratch server disposable. It tests
+// ordering; the refusal on a shared server is the next test's.
 func TestSchemaApplyRehearsesARoutineReadingATableLive(t *testing.T) {
 	c := qt.New(t)
+	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
 	target, _ := scratchReplayDatabase(c)
 	dev, _ := scratchReplayDatabase(c)
 	schema := writeRoutineOrderSchema(c, routineReadingATable)
@@ -204,6 +211,31 @@ func TestSchemaApplyRehearsesARoutineReadingATableLive(t *testing.T) {
 	grown := writeRoutineOrderSchema(c, routineReadingATable+"\nCREATE TABLE notes (id bigint PRIMARY KEY);")
 	out, err = runCompatVerb("schema", "apply", "--url", target, "--to", "file://"+grown, "--dev-url", dev, "--auto-approve")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+}
+
+// TestSchemaApplyRefusesARoutineInTheBaselineOnASharedDevServerLive holds the
+// rebuild to the dev database's realm on a server the run does not own. The
+// target holds a routine, whose body could write outside the dev database when
+// it runs, so the rehearsal refuses before any statement of the rebuild runs,
+// names the statement and the remedy, and the target is not changed.
+func TestSchemaApplyRefusesARoutineInTheBaselineOnASharedDevServerLive(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+	target, _ := scratchReplayDatabase(c)
+	dev, _ := scratchReplayDatabase(c)
+	runPtahNative(c, "schema", "apply", "--db-url", target,
+		"--schema-file", writeRoutineOrderSchema(c, routineReadingATable), "--auto-approve")
+	grown := writeRoutineOrderSchema(c, routineReadingATable+"\nCREATE TABLE notes (id bigint PRIMARY KEY);")
+
+	out, err := runCompatVerb("schema", "apply", "--url", target, "--to", "file://"+grown, "--dev-url", dev, "--auto-approve")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Matches, `(?s).*baseline statement \d+ \(CREATE [^)]*order_count.*\) cannot be rehearsed: `+
+		`postgres rehearsal baseline refuses CREATE routine definition because its effects cannot be confined to the dev database realm; `+
+		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1.*`)
+	out = runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--dry-run")
+	c.Assert(out, qt.Not(qt.Contains), "Schema is synced")
+	c.Assert(out, qt.Contains, "notes")
 }
 
 // TestSchemaApplyReplacesARoutineAfterTheColumnItReadsLive pins the replaced

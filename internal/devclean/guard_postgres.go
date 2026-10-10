@@ -10,7 +10,7 @@ import (
 	"ptah.run/internal/sqlreach"
 )
 
-func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, purpose replayPurpose) error {
+func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -23,12 +23,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, purpo
 		return unsafeReplayStatement(dialect, "CALL sublanguage")
 	}
 	if definesPostgresRoutine(tokens) {
-		if purpose != purposeBaseline {
-			return unsafeReplayStatement(dialect, first+" routine definition")
-		}
-		if language := untrustedPostgresLanguage(tokens); language != "" {
-			return unsafeReplayStatement(dialect, first+" routine in untrusted language "+language)
-		}
+		return unsafeReplayStatement(dialect, first+" routine definition")
 	}
 	if namespace := protectedPostgresMutationNamespace(tokens); namespace != "" {
 		return unsafeReplayStatement(
@@ -39,7 +34,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, purpo
 	if first == "IMPORT" && containsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
 		return unsafeReplayStatement(dialect, "IMPORT FOREIGN SCHEMA")
 	}
-	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" && (purpose != purposeBaseline || !commentsOnDatabaseObject(tokens)) {
+	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" {
 		return unsafeReplayStatement(dialect, operation)
 	}
 	if operation := postgresRoleOrAuthorizationChange(tokens); operation != "" {
@@ -939,44 +934,4 @@ func findPostgresKeyword(tokens []lexer.Token, value string, start int) int {
 
 func postgresKeywordAt(token lexer.Token, value string) bool {
 	return token.Type == lexer.TokenIdentifier && strings.EqualFold(token.Value, value)
-}
-
-// untrustedPostgresLanguage names the language of a routine definition when
-// the routine can reach past the server once it runs, or returns "". C and
-// internal functions call into the server's own code, and an untrusted
-// procedural language -- plpython3u, plperlu, pltclu, by PostgreSQL's naming
-// convention the trusted name with a trailing u -- reads files and starts
-// processes on the server's host.
-func untrustedPostgresLanguage(tokens []lexer.Token) string {
-	index := findPostgresKeyword(tokens, "LANGUAGE", 1)
-	if index == mutationTargetNotFound || index+1 >= len(tokens) {
-		return ""
-	}
-	language := strings.ToLower(strings.Trim(tokens[index+1].Value, `"'`))
-	if language == "c" || language == "internal" || strings.HasPrefix(language, "pl") && strings.HasSuffix(language, "u") {
-		return language
-	}
-	return ""
-}
-
-// commentsOnDatabaseObject reports a COMMENT ON an object one database owns,
-// which the replay guard refuses as global metadata because the realm cleanup
-// does not restore it, and which a baseline writes on the dev database's own
-// schema or extension. A comment on a database, a role or a tablespace is the
-// cluster's, and on a foreign server, a subscription or a large object it is
-// left to the replay rule.
-func commentsOnDatabaseObject(tokens []lexer.Token) bool {
-	if normalizedIdentifier(tokens[0]) != "COMMENT" {
-		return false
-	}
-	onIndex := findPostgresKeyword(tokens, "ON", 1)
-	if onIndex == mutationTargetNotFound || onIndex+1 >= len(tokens) {
-		return false
-	}
-	switch normalizedIdentifier(tokens[onIndex+1]) {
-	case "ACCESS", "CAST", "EVENT", "EXTENSION", "LANGUAGE", "PUBLICATION", "SCHEMA", "TABLEGROUP", "TRANSFORM":
-		return true
-	default:
-		return false
-	}
 }

@@ -98,12 +98,17 @@ func TestSchemaApplySwapsMySQLTriggersE2E(t *testing.T) {
 //
 // The dev database lives on a second server: the rehearsal empties it
 // afterwards, and that cleanup refuses while another database on its server
-// holds a trigger, which the target here does.
+// holds a trigger, which the target here does. The rehearsal first rebuilds
+// the target's triggers there, which a dev database takes only on a server the
+// run owns, so the test declares that server disposable; it tests how a body
+// is read, and the refusal on a shared server is pinned by
+// devclean.TestBaselineGuard_RefusesOnASharedDevServer.
 func TestSchemaApplyRehearsesMySQLTriggerBodiesOnTheDevDatabaseE2E(t *testing.T) {
 	for _, engine := range mysqlDevServerEngines {
 		for _, scenario := range triggerSwapScenarios {
 			t.Run(engine.name+"/"+scenario.name, func(t *testing.T) {
 				c := qt.New(t)
+				envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
 				scratch := newMySQLFamilyScratch(c, engine.admin)
 				name, target := scratch.builtFrom(c, scenario.current)
 				_, dev := newMySQLFamilyScratch(c, engine.dev).database(c, "rehearsal_dev")

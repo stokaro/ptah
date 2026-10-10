@@ -317,6 +317,9 @@ func TestYDBBinary_DevDatabaseOnAnotherServer(t *testing.T) {
 // of the other server's whole database, which removing the realm leaves
 // behind. The rehearsal refuses before any statement runs, names the
 // statement, and the target is not changed.
+//
+// The line is shared, so another user or group left on it may be the first
+// statement refused; the assertion names the class rather than this user.
 func TestYDBBinary_ARehearsalRefusesAUserItsRealmCannotHold(t *testing.T) {
 	c := qt.New(t)
 	binary := buildBinary(c, c.Context())
@@ -343,9 +346,9 @@ func TestYDBBinary_ARehearsalRefusesAUserItsRealmCannotHold(t *testing.T) {
 				"--schemas", "ptah_ydb_devrealm", "--dev-url", devURL, "--auto-approve")
 
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(refused, qt.Contains, "(CREATE USER `"+user+"`) cannot be rehearsed: "+
-				"ydb rehearsal baseline refuses a user of the whole database")
-			c.Assert(refused, qt.Contains, "PTAH_DEV_SERVER_DISPOSABLE=1")
+			c.Assert(refused, qt.Matches, `(?s).*baseline statement \d+ \((CREATE|ALTER) (USER|GROUP) [^\n]*\) cannot be rehearsed: `+
+				`ydb rehearsal baseline refuses a (user|group) of the whole database because its effects cannot be confined to the dev database realm; `+
+				`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1.*`)
 			c.Assert(tableNames(readScoped(c, conn, []string{"ptah_ydb_devrealm"})), qt.HasLen, 0)
 			c.Assert(directoryNames(c, ctx, other), qt.Not(qt.Contains), ydburl.RealmDirectory)
 		})

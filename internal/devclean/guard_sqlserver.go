@@ -7,7 +7,7 @@ import (
 
 // validateSQLServerReplayStatement rejects SQL Server mutations whose
 // effects cannot be removed by the database-realm cleanup.
-func validateSQLServerReplayStatement(tokens []lexer.Token, purpose replayPurpose) error {
+func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 	if err := validateSQLServerReplayStatementBase(tokens); err != nil {
 		return err
 	}
@@ -36,8 +36,8 @@ func validateSQLServerReplayStatement(tokens []lexer.Token, purpose replayPurpos
 			first+" DATABASE DDL TRIGGER",
 		)
 	}
-	if err := rejectSQLServerExecutableBody(first, tokens, purpose); err != nil {
-		return err
+	if sqlServerDefinesExecutableBody(tokens) {
+		return unsafeReplayStatement(platform.SQLServer, first+" executable stored body")
 	}
 	if sqlServerSelectIntoEscapesRealm(tokens) {
 		return unsafeReplayStatement(platform.SQLServer, "cross-database SELECT INTO")
@@ -507,15 +507,4 @@ func sqlServerUnsupportedRealmOperation(tokens []lexer.Token) string {
 		}
 	}
 	return ""
-}
-
-// rejectSQLServerExecutableBody refuses a procedure, function or trigger in a
-// migration file, whose body is opaque. A baseline's is the target's own and
-// stays in the dev database; a DDL trigger on the database or the server is
-// refused before this check for either.
-func rejectSQLServerExecutableBody(first string, tokens []lexer.Token, purpose replayPurpose) error {
-	if purpose == purposeBaseline || !sqlServerDefinesExecutableBody(tokens) {
-		return nil
-	}
-	return unsafeReplayStatement(platform.SQLServer, first+" executable stored body")
 }
