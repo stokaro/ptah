@@ -11,16 +11,17 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// ExtensionKindFloor retains coverage for the payloads moved out of core/ast.
-// It supplements NodeKindFloor; extracting a node must not shrink the combined
-// corpus or replace its owner-specific fixtures with one envelope fixture.
-const ExtensionKindFloor = 11
-
 // ExtensionKind identifies a concrete owner type implementing ExtensionPayload.
 type ExtensionKind struct {
+	// Package is the import path of the package declaring the type.
 	Package string
-	Name    string
+	// Name is the type name.
+	Name string
 }
+
+// String spells the kind as a qualified type name, the way reflect spells a
+// type's package path and name.
+func (k ExtensionKind) String() string { return k.Package + "." + k.Name }
 
 // ExtensionKinds type-checks tracked owner packages and enumerates every
 // concrete payload, including types implementing the interface by embedding.
