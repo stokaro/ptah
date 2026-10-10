@@ -82,6 +82,11 @@ func WritesTableFacet(kind schemaext.Kind) bool {
 		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind
 }
 
+// WritesIndexFacet reports an index facet kind the renderer writes itself
+// rather than as platform properties: a YDB vector index's settings, which
+// it writes as attributes of the index block.
+func WritesIndexFacet(kind schemaext.Kind) bool { return kind == ydbschema.VectorIndexKind }
+
 // renderHypertables writes the TimescaleDB hypertable blocks.
 //
 // The block exists because nothing else in a description can say a table is

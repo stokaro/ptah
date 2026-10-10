@@ -5,9 +5,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // withVectorKeys adds the questions the YDB renderer, reader and planner
@@ -98,7 +99,8 @@ func ydbVectorExperiments() []experiment {
 		change: []string{vectorIndexStatement("vkb", "emb", "bit", 8)},
 		after: []check{ydbDescribedIndex("vkb", "vkb_v", "a vector index over bit vectors of 8 elements",
 			func(index catalog.Index) bool {
-				return index.Vector != nil && index.Vector.VectorType == "bit" && index.Vector.Dimension == 8
+				vector, found := observedVector(index)
+				return found && vector.VectorType == "bit" && vector.Dimension == 8
 			})},
 	})
 	bits.requires = []capability.Capability{capability.VectorIndexes}
@@ -109,7 +111,8 @@ func ydbVectorExperiments() []experiment {
 			after: []check{ydbDescribedIndex("vki", "vki_v", "a cosine vector index over float vectors of 3 elements, "+
 				"in a tree of one level of two clusters",
 				func(index catalog.Index) bool {
-					return index.Vector != nil && *index.Vector == ast.VectorIndexSpec{
+					vector, found := observedVector(index)
+					return found && vector == ydbschema.VectorSettings{
 						Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2,
 					}
 				})},
@@ -117,4 +120,14 @@ func ydbVectorExperiments() []experiment {
 		maintained,
 		bits,
 	}
+}
+
+// observedVector is the vector settings a read attached to index, the YDB
+// owner's observation.
+func observedVector(index catalog.Index) (ydbschema.VectorSettings, bool) {
+	vector, found, err := schemaext.FacetAs[*ydbschema.ObservedVectorIndex](index.Facets, ydbschema.VectorIndexKind)
+	if err != nil || !found {
+		return ydbschema.VectorSettings{}, false
+	}
+	return vector.Settings(), true
 }

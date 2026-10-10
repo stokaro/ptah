@@ -647,8 +647,8 @@ func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration schemac
 		return "LOCAL indexes require column storage and GLOBAL indexes require row storage"
 	}
 	shape := ydbindex.Shape{Kind: kind, Columns: indexKeyColumns(index), Cover: index.IncludeColumns}
-	if index.Vector != nil {
-		shape.Dimension = index.Vector.Dimension
+	if vector, found, err := schemaext.FacetAs[*ydbschema.DesiredVectorIndex](index.Facets, ydbschema.VectorIndexKind); err == nil && found {
+		shape.Dimension = vector.Dimension
 	}
 	return ydbindex.ShapeRefusal(shape, key, column)
 }

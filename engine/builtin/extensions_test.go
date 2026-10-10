@@ -72,6 +72,11 @@ func extensionFixtures() []extensionFixture {
 			TablePartitioning: ydbschema.TablePartitioning{KeyBloomFilter: new(true)},
 		}}}, wantSQL: "ALTER TABLE `items` SET (KEY_BLOOM_FILTER = ENABLED);\n"},
 		{payload: &ydbast.AlterColumnStoreTTL{}, wantSQL: "ALTER TABLE `items` RESET (TTL);\n"},
+		{payload: &ydbast.DropVectorIndex{Name: "by_emb"}, wantSQL: "ALTER TABLE `items` DROP INDEX `by_emb`;\n"},
+		{payload: &ydbast.AddVectorIndex{Name: "by_emb", Columns: []string{"gen", "emb"}, Cover: []string{"body"},
+			Settings: ydbschema.VectorSettings{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}},
+			wantSQL: "ALTER TABLE `items` ADD INDEX `by_emb` GLOBAL USING vector_kmeans_tree ON (`gen`, `emb`) COVER (`body`) " +
+				"WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2);\n"},
 	}
 }
 

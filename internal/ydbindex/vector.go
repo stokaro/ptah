@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtype"
 )
@@ -32,16 +32,12 @@ func VectorAttributes() []string {
 	}
 }
 
-// The values YDB takes for each named setting, measured on 25.1.4.7 and
-// 26.2.1.14: `distance=inner_product` answers `Invalid distance:
-// inner_product`, `similarity=euclidean` answers `Invalid similarity:
-// euclidean`, and `vector_type=double` answers `Invalid vector_type: double`.
-// The server reads a value in any case; Ptah keeps it in lower case, as the
-// reader reports it.
+// The values YDB takes for each named setting; see
+// [ydbschema.VectorDistances].
 var (
-	distances    = []string{"cosine", "euclidean", "manhattan"}
-	similarities = []string{"inner_product", "cosine"}
-	vectorTypes  = []string{"float", "uint8", "int8", "bit"}
+	distances    = ydbschema.VectorDistances()
+	similarities = ydbschema.VectorSimilarities()
+	vectorTypes  = ydbschema.VectorElementTypes()
 )
 
 // BitVectorType is the element type that stores a vector as bits, which only
@@ -71,8 +67,8 @@ const (
 // kept in lower case, and a whole number of at least 1 for the counts. Whether
 // the declaration is complete, and its counts within YDB's limits, is
 // [ResolveVector]'s question, which every renderer and planner asks.
-func ParseVectorDeclaration(values map[string]string) (*ast.VectorIndexSpec, error) {
-	var spec ast.VectorIndexSpec
+func ParseVectorDeclaration(values map[string]string) (*ydbschema.DesiredVectorIndex, error) {
+	var spec ydbschema.DesiredVectorIndex
 	present := false
 	for _, attribute := range VectorAttributes() {
 		value, ok := values[attribute]
@@ -90,8 +86,41 @@ func ParseVectorDeclaration(values map[string]string) (*ast.VectorIndexSpec, err
 	return &spec, nil
 }
 
+// DeclareVector reads the vector index settings a source declares for one
+// index: the vector attributes in values, as [ParseVectorDeclaration] reads
+// them, for an index of method indexType with operator class operator.
+//
+// It returns nil for an index that is not a vector index and states no vector
+// setting. A vector index that states none returns an empty declaration, so
+// the stage that builds it refuses it rather than missing it, and so does an
+// index of another kind that states one.
+//
+// A pgvector operator class names the metric on YDB too (see
+// [ResolveVector]), so a declaration naming its metric that way states the
+// setting: the class is folded into the declaration here, which is what
+// lets a comparison that sees only the declaration read it. A class with no
+// YDB counterpart, or one naming another metric than the settings, is
+// refused, because no YDB index can be built from it.
+func DeclareVector(values map[string]string, indexType, operator string) (*ydbschema.DesiredVectorIndex, error) {
+	declared, err := ParseVectorDeclaration(values)
+	if err != nil {
+		return nil, err
+	}
+	if declared == nil {
+		if kind, err := KindOf(indexType); err != nil || kind != Vector {
+			return nil, nil
+		}
+		declared = &ydbschema.DesiredVectorIndex{}
+	}
+	settings := ydbschema.VectorSettings(*declared)
+	if err := resolveOperator(&settings, operator); err != nil {
+		return nil, err
+	}
+	return new(ydbschema.DesiredVectorIndex(settings)), nil
+}
+
 // setVectorAttribute reads one attribute's value into spec.
-func setVectorAttribute(spec *ast.VectorIndexSpec, attribute, value string) error {
+func setVectorAttribute(spec *ydbschema.DesiredVectorIndex, attribute, value string) error {
 	switch attribute {
 	case AttributeDistance:
 		return parseName(attribute, value, distances, &spec.Distance)
@@ -137,7 +166,7 @@ func parseCount(attribute, value string, target *uint64) error {
 // setting: `<=>` is cosine distance, `<->` Euclidean distance, `<+>` taxicab
 // distance and `<#>` the negative inner product, which orders as the inner
 // product similarity does.
-var pgvectorOperators = map[string]ast.VectorIndexSpec{
+var pgvectorOperators = map[string]ydbschema.VectorSettings{
 	"vector_cosine_ops": {Distance: "cosine"},
 	"vector_l2_ops":     {Distance: "euclidean"},
 	"vector_l1_ops":     {Distance: "manhattan"},
@@ -169,9 +198,9 @@ var pgvectorParameters = map[string]string{
 // enforce. Every setting is required, because 25.3 and later refuse an index
 // that leaves one out (`levels should be set`), and 25.1 keeps no default it
 // reports back.
-func ResolveVector(spec *ast.VectorIndexSpec, operator string) (ast.VectorIndexSpec, error) {
+func ResolveVector(spec *ydbschema.VectorSettings, operator string) (ydbschema.VectorSettings, error) {
 	if spec == nil {
-		return ast.VectorIndexSpec{}, fmt.Errorf("a %s index declares none of its settings; declare its distance or "+
+		return ydbschema.VectorSettings{}, fmt.Errorf("a %s index declares none of its settings; declare its distance or "+
 			"similarity, vector_type, vector_dimension, levels and clusters", VectorMethod)
 	}
 	resolved := *spec
@@ -179,16 +208,29 @@ func ResolveVector(spec *ast.VectorIndexSpec, operator string) (ast.VectorIndexS
 	resolved.Similarity = strings.ToLower(resolved.Similarity)
 	resolved.VectorType = strings.ToLower(resolved.VectorType)
 	if err := resolveOperator(&resolved, operator); err != nil {
-		return ast.VectorIndexSpec{}, err
+		return ydbschema.VectorSettings{}, err
 	}
 	if reason := vectorRefusal(resolved); reason != "" {
-		return ast.VectorIndexSpec{}, fmt.Errorf("%s", reason)
+		return ydbschema.VectorSettings{}, fmt.Errorf("%s", reason)
 	}
 	return resolved, nil
 }
 
+// CheckVectorOperator refuses a pgvector operator class a vector index's
+// settings cannot be built with: one with no YDB counterpart, and one naming
+// another metric than the settings. A class naming the metric the settings
+// name, and no class, are accepted. It states no metric: a source folds the
+// class into the declaration it reads (see [DeclareVector]), and the stages
+// that build or compare the index read the declaration alone, so they agree
+// about what it builds.
+func CheckVectorOperator(spec ydbschema.VectorSettings, operator string) error {
+	probe := spec
+	probe.Distance, probe.Similarity = strings.ToLower(probe.Distance), strings.ToLower(probe.Similarity)
+	return resolveOperator(&probe, operator)
+}
+
 // resolveOperator folds a pgvector operator class into the metric it names.
-func resolveOperator(spec *ast.VectorIndexSpec, operator string) error {
+func resolveOperator(spec *ydbschema.VectorSettings, operator string) error {
 	operator = strings.ToLower(strings.TrimSpace(operator))
 	if operator == "" {
 		return nil
@@ -210,7 +252,7 @@ func resolveOperator(spec *ast.VectorIndexSpec, operator string) error {
 }
 
 // metricName writes the metric a spec names as its setting.
-func metricName(spec ast.VectorIndexSpec) string {
+func metricName(spec ydbschema.VectorSettings) string {
 	if spec.Similarity != "" {
 		return AttributeSimilarity + "=" + spec.Similarity
 	}
@@ -219,7 +261,7 @@ func metricName(spec ast.VectorIndexSpec) string {
 
 // vectorRefusal says why YDB refuses a vector index with spec, quoting the
 // server, and answers "" for one it builds.
-func vectorRefusal(spec ast.VectorIndexSpec) string {
+func vectorRefusal(spec ydbschema.VectorSettings) string {
 	switch {
 	case spec.Distance != "" && spec.Similarity != "":
 		return "a vector index names one metric, distance or similarity, and this one names both " +
@@ -266,7 +308,7 @@ func clusterCount(clusters, levels uint64) uint64 {
 
 // VectorClause writes a resolved spec as the WITH (...) clause of a vector
 // index, every setting named, in a fixed order.
-func VectorClause(spec ast.VectorIndexSpec) string {
+func VectorClause(spec ydbschema.VectorSettings) string {
 	settings := make([]string, 0, len(VectorAttributes())-1)
 	settings = append(settings, metricName(spec))
 	settings = append(settings,
@@ -276,23 +318,6 @@ func VectorClause(spec ast.VectorIndexSpec) string {
 		AttributeClusters+"="+strconv.FormatUint(spec.Clusters, 10),
 	)
 	return "WITH (" + strings.Join(settings, ", ") + ")"
-}
-
-// VectorEqual reports whether a declared vector index and a described one
-// are built with the same settings. The declared side is resolved through
-// [ResolveVector] with its operator class, so a metric named either way
-// compares as the setting; a declaration that does not resolve differs from
-// every index, so the plan reaches the renderer, which refuses it with the
-// reason.
-func VectorEqual(declared *ast.VectorIndexSpec, operator string, described *ast.VectorIndexSpec) bool {
-	if declared == nil && operator == "" && described == nil {
-		return true
-	}
-	if described == nil {
-		return false
-	}
-	resolved, err := ResolveVector(declared, operator)
-	return err == nil && resolved == *described
 }
 
 // StorageParameterRefusal says why a vector index cannot carry the storage

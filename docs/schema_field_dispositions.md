@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-611 fields are reachable from the desired schema, and each one carries
+610 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 524 | reaches rendered SQL on at least one target |
+| `ddl` | 523 | reaches rendered SQL on at least one target |
 | `comparison` | 16 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -71,12 +71,6 @@ None.
 | `ast.IndexPartitioningSpec.MinPartitions` | `ddl` | — |
 | `ast.IndexPartitioningSpec.PartitionSizeMB` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ReadReplicas` | `ddl` | — |
-| `ast.VectorIndexSpec.Clusters` | `ddl` | — |
-| `ast.VectorIndexSpec.Dimension` | `ddl` | — |
-| `ast.VectorIndexSpec.Distance` | `ddl` | — |
-| `ast.VectorIndexSpec.Levels` | `ddl` | — |
-| `ast.VectorIndexSpec.Similarity` | `ddl` | — |
-| `ast.VectorIndexSpec.VectorType` | `ddl` | — |
 | `chschema.DesiredIndex.Granularity` | `ddl` | — |
 | `chschema.DesiredIndex.IndexType` | `ddl` | — |
 | `chschema.DesiredRefresh.Schedule` | `ddl` | — |
@@ -370,7 +364,6 @@ None.
 | `schemamodel.Index.TableName` | `ddl` | — |
 | `schemamodel.Index.Type` | `ddl` | — |
 | `schemamodel.Index.Unique` | `ddl` | — |
-| `schemamodel.Index.Vector` | `ddl` | — |
 | `schemamodel.IndexPart.Desc` | `ddl` | — |
 | `schemamodel.IndexPart.Expr` | `ddl` | — |
 | `schemamodel.IndexPart.Name` | `ddl` | — |
@@ -616,6 +609,12 @@ None.
 | `ydbschema.DesiredColumnStore.ColumnStore` | `ddl` | — |
 | `ydbschema.DesiredTTL.Policy` | `ddl` | — |
 | `ydbschema.DesiredTablePartitioning.TablePartitioning` | `ddl` | — |
+| `ydbschema.DesiredVectorIndex.Clusters` | `ddl` | — |
+| `ydbschema.DesiredVectorIndex.Dimension` | `ddl` | — |
+| `ydbschema.DesiredVectorIndex.Distance` | `ddl` | — |
+| `ydbschema.DesiredVectorIndex.Levels` | `ddl` | — |
+| `ydbschema.DesiredVectorIndex.Similarity` | `ddl` | — |
+| `ydbschema.DesiredVectorIndex.VectorType` | `ddl` | — |
 | `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
 | `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |
 | `ydbschema.ReplicationBinding.SupportsTopicAutopartitioning` | `planning` | preserves observed controller behavior through snapshots and codecs |

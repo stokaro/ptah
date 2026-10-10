@@ -8,6 +8,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbrender"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcomment"
@@ -33,7 +35,7 @@ type indexClause struct {
 	settings []string
 	// vector is a vector index's settings, resolved; it is written as the
 	// clause's WITH (...), the one place YDB takes them.
-	vector ast.VectorIndexSpec
+	vector ydbschema.VectorSettings
 	// fullText holds normalized text-analysis options for the WITH clause.
 	fullText map[string]string
 	local    map[string]string
@@ -166,29 +168,40 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 	return clause, nil
 }
 
-// vectorSettings resolves a vector index's settings, refusing the index on a
-// target without [capability.VectorIndexes], and refusing what a vector index
-// cannot be.
-func (r *Renderer) vectorSettings(subject string, index *ast.IndexNode) (ast.VectorIndexSpec, error) {
+// vectorSettings resolves a vector index's settings, the YDB owner's facet,
+// refusing the index on a target without [capability.VectorIndexes], and
+// refusing what a vector index cannot be.
+func (r *Renderer) vectorSettings(subject string, index *ast.IndexNode) (ydbschema.VectorSettings, error) {
 	switch {
 	case !r.caps.Has(capability.VectorIndexes):
-		return ast.VectorIndexSpec{}, refuseKey(capability.VectorIndexes, subject+" is a vector index")
+		return ydbschema.VectorSettings{}, refuseKey(capability.VectorIndexes, subject+" is a vector index")
 	case index.Unique:
-		return ast.VectorIndexSpec{}, refuseFact(subject,
+		return ydbschema.VectorSettings{}, refuseFact(subject,
 			"a vector index is not unique (`VECTOR_KMEANS_TREE index can only be GLOBAL [SYNC]`)")
 	case !index.Partitioning.IsZero():
-		return ast.VectorIndexSpec{}, refuseFact(subject, "a vector index keeps the partitioning YDB gives it "+
+		return ydbschema.VectorSettings{}, refuseFact(subject, "a vector index keeps the partitioning YDB gives it "+
 			"(`ALTER INDEX ... SET` answers `Only index with one impl table is supported`)")
 	}
 	if names := slices.Sorted(maps.Keys(index.StorageParams)); len(names) > 0 {
-		return ast.VectorIndexSpec{}, refuseFact(subject, ydbindex.StorageParameterRefusal(names[0]))
+		return ydbschema.VectorSettings{}, refuseFact(subject, ydbindex.StorageParameterRefusal(names[0]))
 	}
-	spec, err := ydbindex.ResolveVector(index.Vector, index.Operator)
+	declared, err := ydbrender.VectorIndexDeclaration(index.Facets)
 	if err != nil {
-		return ast.VectorIndexSpec{}, refuseFact(subject, err.Error())
+		return ydbschema.VectorSettings{}, refuseFact(subject, err.Error())
+	}
+	var settings *ydbschema.VectorSettings
+	if declared != nil {
+		settings = new(declared.Settings())
+		if err := ydbindex.CheckVectorOperator(*settings, index.Operator); err != nil {
+			return ydbschema.VectorSettings{}, refuseFact(subject, err.Error())
+		}
+	}
+	spec, err := ydbindex.ResolveVector(settings, "")
+	if err != nil {
+		return ydbschema.VectorSettings{}, refuseFact(subject, err.Error())
 	}
 	if spec.VectorType == ydbindex.BitVectorType && !r.caps.Has(capability.VectorBitType) {
-		return ast.VectorIndexSpec{}, refuseKey(capability.VectorBitType, subject+" stores bit vectors")
+		return ydbschema.VectorSettings{}, refuseKey(capability.VectorBitType, subject+" stores bit vectors")
 	}
 	return spec, nil
 }
@@ -213,7 +226,7 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode,
 	case len(index.StorageParams) > 0 && !vector && !kind.IsFullText() && !kind.IsLocal():
 		return refuseFact(subject, "a YDB global index takes no storage parameters; its settings are its "+
 			"partitioning and read replicas, declared with the auto_partitioning_* and read_replicas_settings attributes")
-	case index.Vector != nil && !vector:
+	case ydbschema.HasVectorIndex(index.Facets) && !vector:
 		return refuseFact(subject, fmt.Sprintf("it declares vector settings and is a %s index; declare type %q "+
 			"for a vector index", kind, ydbindex.VectorMethod))
 	}

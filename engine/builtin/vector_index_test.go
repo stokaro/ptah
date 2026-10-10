@@ -4,14 +4,22 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 )
+
+// vectorFacets carries spec as the YDB owner's facet.
+func vectorFacets(spec *ydbschema.DesiredVectorIndex) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(spec))
+}
 
 // TestRender_VectorIndex_FailurePath refuses an index's vector settings on
 // every target without vector_indexes, through the whole-schema render, the
@@ -21,7 +29,7 @@ import (
 // YDB 25.1 is one of those targets, because the line keeps vector indexes
 // behind a flag that is off by default.
 func TestRender_VectorIndex_FailurePath(t *testing.T) {
-	vector := &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}
+	vector := &ydbschema.DesiredVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}
 	schema := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: "t", PrimaryKey: []string{"id"}}},
 		Fields: []schemamodel.Field{
@@ -29,7 +37,7 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 			{StructName: "T", Name: "emb", Type: "bytea", Nullable: true},
 		},
 		Indexes: []schemamodel.Index{{StructName: "T", Name: "k_emb", TableName: "t", Fields: []string{"emb"},
-			Type: "vector_kmeans_tree", Vector: vector}},
+			Type: "vector_kmeans_tree", Facets: vectorFacets(vector)}},
 	}
 	tests := []struct {
 		dialect string
@@ -55,7 +63,7 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 			c.Assert(builtin.ValidateSchemaWithCapabilities(schema, test.dialect, test.caps), qt.ErrorMatches,
 				`.*index "k_emb" declares vector settings, which requires target capability vector_indexes, .*`)
 
-			node := &ast.IndexNode{Name: "k_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Vector: vector}
+			node := &ast.IndexNode{Name: "k_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(vector)}
 			sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps, node)
 			c.Assert(err, qt.ErrorMatches, `.*index "k_emb" declares vector settings, which requires target capability vector_indexes, .*`)
 			c.Assert(sql, qt.Equals, "")
@@ -69,7 +77,7 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 func TestRender_VectorIndex_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	node := &ast.IndexNode{Name: "k_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree",
-		Vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}}
+		Facets: vectorFacets(&ydbschema.DesiredVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2})}
 
 	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB251().With(capability.VectorIndexes, true), node)
 

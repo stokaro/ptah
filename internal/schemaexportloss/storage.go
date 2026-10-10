@@ -17,9 +17,6 @@ func CountIndexStorage(counts map[string]int, index schemamodel.Index) {
 	if !index.Partitioning.IsZero() {
 		counts["index partitioning and read replicas"]++
 	}
-	if index.Vector != nil {
-		counts["vector index settings"]++
-	}
 }
 
 // CountColumnIdentity counts identity details absent from DBML and inspection JSON.

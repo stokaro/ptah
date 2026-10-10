@@ -455,7 +455,6 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 		NullsDistinct:  cloneBoolPtr(index.NullsDistinct),
 		StorageParams:  maps.Clone(index.StorageParams),
 		Partitioning:   index.Partitioning.Clone(),
-		Vector:         index.Vector.Clone(),
 		TableName:      schemamodel.QualifyTableName(tableSchema, tableName),
 	}
 }

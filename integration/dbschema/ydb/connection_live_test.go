@@ -11,7 +11,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
@@ -351,8 +350,8 @@ func TestYDBReader_ReadsAVectorIndex(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(indexNamed(c, live, "by_emb").Method, qt.Equals, "GLOBAL USING vector_kmeans_tree")
-			c.Assert(indexNamed(c, live, "by_emb").Vector, qt.DeepEquals,
-				&ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2})
+			c.Assert(observedVector(c, indexNamed(c, live, "by_emb")), qt.DeepEquals,
+				&ydbschema.ObservedVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2})
 		})
 	}
 }

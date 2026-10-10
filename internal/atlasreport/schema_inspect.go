@@ -414,6 +414,7 @@ func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
 		return r.db, nil
 	}
 	db, written := facetsplit.SetAside(r.db, atlashclrender.WritesTableFacet)
+	db, writtenIndexes := facetsplit.SetAsideIndexes(db, atlashclrender.WritesIndexFacet)
 	for _, encode := range []func(context.Context, *schemamodel.Database, string, schemaproperties.Runtime) (*schemamodel.Database, error){
 		schemaproperties.EncodeTables, schemaproperties.EncodeIndexes,
 	} {
@@ -425,6 +426,10 @@ func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
 			return nil, err
 		}
 		db = encoded
+	}
+	db, err := facetsplit.RestoreIndexes(db, writtenIndexes)
+	if err != nil {
+		return nil, err
 	}
 	return facetsplit.Restore(db, written)
 }

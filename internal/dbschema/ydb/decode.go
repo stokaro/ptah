@@ -332,8 +332,10 @@ func (r *Reader) index(
 			return catalog.Index{}, fmt.Errorf("index %q is a %s, which this build of Ptah does not read",
 				described.GetName(), unreadIndexKind(described))
 		}
+		if index.Facets, err = vectorFacets(*vector); err != nil {
+			return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+		}
 		index.Method = ydbindex.Vector.Clause(false)
-		index.Vector = vector
 		index.Definition = indexClause(index, ydbindex.Vector) + " " + ydbindex.VectorClause(*vector)
 		return index, nil
 	default:
@@ -626,10 +628,14 @@ func ttlPolicy(settings *Ydb_Table.TtlSettings) (*ydbschema.TTL, error) {
 	}
 }
 
-// tableFacetCoverage records what the read knows about the table facets
-// whose coverage spans every returned table: the TTL and the column storage.
+// tableFacetCoverage records what the read knows about the facets whose
+// coverage spans every returned table and index: the TTL, the vector settings
+// of each index and the column storage.
 func tableFacetCoverage(db *catalog.Database) error {
 	if err := ttlCoverage(db); err != nil {
+		return err
+	}
+	if err := vectorCoverage(db); err != nil {
 		return err
 	}
 	return storeCoverage(db)

@@ -274,9 +274,9 @@ ALTER TABLE `orders` RENAME INDEX `orders_customer_ix` TO `orders_by_customer`;
 
 The index keeps its rows, its kind, its cover and its partitioning. A rename
 that also changes the partitioning is a rename followed by an `ALTER INDEX`. A
-pair of indexes that swap names, or an index renamed onto a name the table
-still holds, is dropped and built again. The rollback of a planned migration
-renames the index back.
+pair of indexes that swap names, an index renamed onto a name the table still
+holds, and a renamed vector index are dropped and built again. The rollback of
+a planned migration renames the index back.
 
 A cluster that turns `EnableMoveIndex` off refuses the rename with
 `Move index is not supported yet`. When the URL names the cluster's monitoring
@@ -334,17 +334,22 @@ refused, as YDB refuses it.
 A declaration written for pgvector reads where it has a YDB meaning: the
 operator classes `vector_cosine_ops`, `vector_l2_ops`, `vector_l1_ops` and
 `vector_ip_ops` name the metric `distance=cosine`, `distance=euclidean`,
-`distance=manhattan` and `similarity=inner_product`. The methods `hnsw` and
-`ivfflat` are refused with `vector_kmeans_tree` named in their place, their
-storage parameters `m`, `ef_construction` and `lists` are refused by the method
-they belong to, and so are the other pgvector operator classes. A vector index
+`distance=manhattan` and `similarity=inner_product`, and the source reads the
+class as that setting. The methods `hnsw` and `ivfflat` are refused with
+`vector_kmeans_tree` named in their place, their storage parameters `m`,
+`ef_construction` and `lists` are refused by the method they belong to, and a
+source refuses the other pgvector operator classes on a vector index, and a
+class that names another metric than the settings. A vector index
 is not unique, and it keeps the partitioning YDB gives it: `ALTER INDEX ...
 SET` on one answers `Only index with one impl table is supported`.
 
 No setting changes in place, so an index whose settings, columns or prefix
 change is dropped and added again, after the column it reads exists and
-before any column it reads is dropped. A renamed index keeps its settings and
-is renamed in place.
+before any column it reads is dropped. A renamed vector index is dropped and
+added again under its new name too: its settings are compared only for an
+index both sides hold under one name, and a rename would keep the settings it
+was built with. The rollback of a settings change builds the index again with
+the settings it held.
 
 What a line does with a vector index:
 

@@ -15,7 +15,6 @@ func mutableIndexDeclaration() schemamodel.Index {
 		Parts: []schemamodel.IndexPart{{Name: "label", Prefix: "20"}}, IncludeColumns: []string{"id"},
 		StorageParams: map[string]string{"fillfactor": "70"}, RequiresExtensions: []string{"bloom"},
 		NullsDistinct: new(false), Partitioning: &ast.IndexPartitioningSpec{BySize: new(true), ByLoad: new(false)},
-		Vector: &ast.VectorIndexSpec{Dimension: 32},
 	}
 }
 
@@ -27,7 +26,6 @@ func TestIndexCloneIsolatesTheDeclaredDefinition(t *testing.T) {
 	clone.Fields[0], clone.Parts[0].Name, clone.IncludeColumns[0] = "changed", "changed", "changed"
 	clone.StorageParams["fillfactor"], clone.RequiresExtensions[0] = "20", "changed"
 	*clone.NullsDistinct, *clone.Partitioning.BySize, *clone.Partitioning.ByLoad = true, false, true
-	clone.Vector.Dimension = 64
 	c.Assert(original, qt.DeepEquals, mutableIndexDeclaration())
 }
 

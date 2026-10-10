@@ -10,11 +10,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
@@ -38,21 +39,42 @@ func vectorDeclaration(name string, clusters uint64) *schemamodel.Database {
 		},
 		Indexes: []schemamodel.Index{{StructName: "Doc", Name: name, Fields: []string{"gen", "emb"},
 			IncludeColumns: []string{"body"}, Type: "vector_kmeans_tree",
-			Vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: clusters}}},
+			Facets: vectorFacets(&ydbschema.DesiredVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: clusters})}},
 	}
 	schemamodel.Finalize(db)
 	return db
 }
 
 // withTitleVector adds to a vectorDeclaration a second vector column and an
-// index over it that names its metric by pgvector's operator class.
+// index over it that names its metric by pgvector's operator class, which a
+// source states as the setting the class names.
 func withTitleVector(db *schemamodel.Database) *schemamodel.Database {
 	db.Fields = append(db.Fields, schemamodel.Field{StructName: "Doc", Name: "title_emb", Type: "vector(3)", Nullable: true})
 	db.Indexes = append(db.Indexes, schemamodel.Index{StructName: "Doc", Name: "docs_title_ip", Fields: []string{"title_emb"},
 		Type: "vector_kmeans_tree", Operator: "vector_ip_ops",
-		Vector: &ast.VectorIndexSpec{VectorType: "int8", Dimension: 3, Levels: 2, Clusters: 2}})
+		Facets: vectorFacets(&ydbschema.DesiredVectorIndex{Similarity: "inner_product", VectorType: "int8", Dimension: 3, Levels: 2, Clusters: 2})})
 	schemamodel.Finalize(db)
 	return db
+}
+
+// vectorFacets carries settings as the YDB owner's facet.
+func vectorFacets(settings *ydbschema.DesiredVectorIndex) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(settings))
+}
+
+// observedVector is the vector settings a read attached to index.
+func observedVector(c *qt.C, index catalog.Index) *ydbschema.ObservedVectorIndex {
+	c.Helper()
+	settings, _, err := schemaext.FacetAs[*ydbschema.ObservedVectorIndex](index.Facets, ydbschema.VectorIndexKind)
+	c.Assert(err, qt.IsNil)
+	return settings
+}
+
+// withoutFacets is index with its facets left out, for a comparison of what
+// the common index holds.
+func withoutFacets(index catalog.Index) catalog.Index {
+	index.Facets = schemaext.Facets{}
+	return index
 }
 
 // vectorPath is the path of a table in vectorSchema, quoted.
@@ -79,8 +101,9 @@ func nearest(c *qt.C, conn *dbschema.DatabaseConnection, table, index string) in
 // rows, reads it back, and plans nothing after, applied once and twice; it
 // searches through it to show the index the server built is one. Then it
 // changes a setting, which YDB makes only by a drop and an add, renames the
-// index, which keeps it, adds a vector column with an index in the same plan
-// and drops both again, each step ending with nothing left to plan.
+// index, which builds it again under its new name, adds a vector column with
+// an index in the same plan and drops both again, each step ending with
+// nothing left to plan.
 func TestYDBVectorIndexes_RoundTrip(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -109,10 +132,11 @@ func TestYDBVectorIndexes_RoundTrip(t *testing.T) {
 			c.Assert(planAgainst(c, conn, declared, vectorSchemas), qt.HasLen, 0)
 
 			live := readScoped(c, conn, vectorSchemas)
-			c.Assert(indexNamed(c, live, "docs_emb"), qt.DeepEquals, catalog.Index{
+			c.Assert(observedVector(c, indexNamed(c, live, "docs_emb")), qt.DeepEquals,
+				&ydbschema.ObservedVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2})
+			c.Assert(withoutFacets(indexNamed(c, live, "docs_emb")), qt.DeepEquals, catalog.Index{
 				Name: "docs_emb", TableName: "docs", Schema: vectorSchema, Columns: []string{"gen", "emb"},
 				IncludeColumns: []string{"body"}, Method: "GLOBAL USING vector_kmeans_tree",
-				Vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2},
 				Definition: "INDEX `docs_emb` GLOBAL USING vector_kmeans_tree ON (`gen`, `emb`) COVER (`body`) " +
 					"WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2)",
 			})
@@ -130,10 +154,16 @@ func TestYDBVectorIndexes_RoundTrip(t *testing.T) {
 			apply(c, conn, retuned)
 			c.Assert(planAgainst(c, conn, declared, vectorSchemas), qt.HasLen, 0)
 
+			// A renamed vector index is built again under its new name: the
+			// settings are the YDB owner's, compared only for an index both
+			// sides hold under one name, and a rename would keep the settings
+			// the index was built with whatever the declaration states.
 			declared = vectorDeclaration("docs_emb_cosine", 4)
 			renamed := planAgainst(c, conn, declared, vectorSchemas)
 			c.Assert(renamed, qt.DeepEquals, []string{
-				"ALTER TABLE " + vectorPath("docs") + " RENAME INDEX `docs_emb` TO `docs_emb_cosine`",
+				"ALTER TABLE " + vectorPath("docs") + " DROP INDEX `docs_emb`",
+				"ALTER TABLE " + vectorPath("docs") + " ADD INDEX `docs_emb_cosine` GLOBAL USING vector_kmeans_tree ON (`gen`, `emb`) " +
+					"COVER (`body`) WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=4)",
 			})
 			apply(c, conn, renamed)
 			c.Assert(planAgainst(c, conn, declared, vectorSchemas), qt.HasLen, 0)
@@ -182,8 +212,8 @@ func TestYDBVectorIndexes_CreatedWithTheTable(t *testing.T) {
 			c.Assert(planAgainst(c, conn, declared, vectorSchemas), qt.HasLen, 0)
 
 			live := readScoped(c, conn, vectorSchemas)
-			c.Assert(indexNamed(c, live, "docs_title_ip").Vector, qt.DeepEquals,
-				&ast.VectorIndexSpec{Similarity: "inner_product", VectorType: "int8", Dimension: 3, Levels: 2, Clusters: 2})
+			c.Assert(observedVector(c, indexNamed(c, live, "docs_title_ip")), qt.DeepEquals,
+				&ydbschema.ObservedVectorIndex{Similarity: "inner_product", VectorType: "int8", Dimension: 3, Levels: 2, Clusters: 2})
 		})
 	}
 }
@@ -219,7 +249,7 @@ func TestYDBVectorIndexes_FollowTheirKeys(t *testing.T) {
 			// dimension is the index's alone.
 			bits := vectorDeclaration("docs_emb", 2)
 			bits.Fields[2].Type = "BYTEA"
-			bits.Indexes[0].Vector = &ast.VectorIndexSpec{Distance: "manhattan", VectorType: "bit", Dimension: 8, Levels: 1, Clusters: 2}
+			bits.Indexes[0].Facets = vectorFacets(&ydbschema.DesiredVectorIndex{Distance: "manhattan", VectorType: "bit", Dimension: 8, Levels: 1, Clusters: 2})
 			withoutBits := conn.Info()
 			withoutBits.Capabilities = caps.With(capability.VectorBitType, false)
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), bits, readScoped(c, conn, vectorSchemas), withoutBits, nil, must.Must(builtin.New()))

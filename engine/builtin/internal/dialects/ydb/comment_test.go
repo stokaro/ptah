@@ -89,7 +89,7 @@ func TestRender_Comments_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a vector index added with its comment",
-			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Vector: vectorSpec(), Comment: "Nearest neighbors"},
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(vectorSpec()), Comment: "Nearest neighbors"},
 			want: "ALTER TABLE `t` ADD INDEX `by_emb` GLOBAL USING vector_kmeans_tree ON (`emb`) " +
 				"WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2);\n" +
 				"COMMENT ON INDEX `by_emb` ON `t` IS 'Nearest neighbors';\n",

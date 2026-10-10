@@ -15,7 +15,6 @@ func indexWithMutableFields() catalog.Index {
 		Parts: []catalog.IndexPart{{Name: "label", Desc: true}}, IncludeColumns: []string{"id"},
 		StorageParams: map[string]string{"fillfactor": "70"}, RequiresExtensions: []string{"bloom"},
 		NullsDistinct: new(false), Partitioning: &ast.IndexPartitioningSpec{BySize: new(true), ByLoad: new(false)},
-		Vector: &ast.VectorIndexSpec{Dimension: 32},
 	}
 }
 
@@ -27,7 +26,6 @@ func TestIndexCloneOwnsEveryMutableField(t *testing.T) {
 	clone.Columns[0], clone.Parts[0].Name, clone.IncludeColumns[0] = "changed", "changed", "changed"
 	clone.StorageParams["fillfactor"], clone.RequiresExtensions[0] = "20", "changed"
 	*clone.NullsDistinct, *clone.Partitioning.BySize, *clone.Partitioning.ByLoad = true, false, true
-	clone.Vector.Dimension = 64
 	c.Assert(original, qt.DeepEquals, indexWithMutableFields())
 }
 

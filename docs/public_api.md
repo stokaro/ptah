@@ -1212,6 +1212,31 @@ without aliases, and so are `ast.YDBTablePartitioningSpec`,
 and `YDBHeldSettings.Partitioning`. This changes behavior; pre-v1, so no
 compatibility is owed.
 
+`ydbschema` owns a YDB vector index's settings as an index facet under
+`VectorIndexKind`. `DesiredVectorIndex` and `ObservedVectorIndex` hold the
+`VectorSettings` of a `vector_kmeans_tree` index: the metric, the element type,
+the dimension, and the levels and clusters of its tree. A declaration may leave
+any setting out, and the stage that builds the index refuses what YDB would
+refuse; an observation names one metric, an element type and a dimension.
+`VectorIndexCodecs` and `VectorIndexCoverage` complete the model, and
+`HasVectorIndex` reports the facet. A source attaches a declaration to every
+index it declares as a vector index, and folds a pgvector operator class into
+the metric it names.
+
+`ydbcompare.VectorIndexService` compares the settings of an index both sides
+hold under one name, and `ydbplan.VectorIndexService` plans a change as
+`ydbast.DropVectorIndex` and `ydbast.AddVectorIndex`, which
+`ydbrender.DropVectorIndexHandler` and `ydbrender.AddVectorIndexHandler` lower,
+because YDB changes no setting of a built vector index. A common replacement or
+a table rebuild carries the settings itself. `ydbrender.ValidateIndexFacets`
+and `ydbrender.VectorIndexDeclaration` serve the YDB renderer, and
+`ydbconvert`, `ydbreverse` and `ydbreport` complete the provider. An index
+carrying an owner's facet is never paired as a rename.
+
+The former `ast.VectorIndexSpec` and the `Vector` fields of `ast.IndexNode`,
+`schemamodel.Index` and `catalog.Index` are removed without aliases. This
+changes behavior; pre-v1, so no compatibility is owed.
+
 The former `ast.RowDeletionPolicySpec`, `ast.SetRowDeletionPolicyOperation`,
 `ast.DropRowDeletionPolicyOperation`, the `RowDeletionPolicy` fields of
 `ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`, and

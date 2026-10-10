@@ -175,10 +175,16 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	if err != nil {
 		return schemaext.Facets{}, err
 	}
-	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
+	var validate func(schemaext.Facets) error
+	switch platform.NormalizeDialect(dialect) {
+	case platform.ClickHouse:
+		validate = clickhouse.ValidateIndexFacets
+	case platform.YDB:
+		validate = ydbrender.ValidateIndexFacets
+	default:
 		return refuseActiveFacets(dialect, projected)
 	}
-	if err := clickhouse.ValidateIndexFacets(projected); err != nil {
+	if err := validate(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
 	return projected, nil

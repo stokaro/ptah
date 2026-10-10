@@ -30,6 +30,23 @@ func (ctx *renderContext) captureColumnFamilies() error {
 	return nil
 }
 
+// validateVectorDeclaration refuses vector index settings the export cannot
+// write as the declaration they are: an observation that was not converted,
+// or an invalid value. Either fails the export rather than disappearing from
+// it.
+func validateVectorDeclaration(facets schemaext.Facets) error {
+	declared, _, err := schemaext.FacetAs[*ydbschema.DesiredVectorIndex](facets, ydbschema.VectorIndexKind)
+	if err != nil {
+		return err
+	}
+	return ydbschema.ValidateDesiredVectorIndex(declared)
+}
+
+// isAnnotatedIndexFacet reports an index facet the export writes as
+// attributes of the index annotation rather than as platform properties: a
+// YDB vector index's settings.
+func isAnnotatedIndexFacet(kind schemaext.Kind) bool { return kind == ydbschema.VectorIndexKind }
+
 // captureTablePartitioning validates the YDB settings each table carries and
 // keeps them for its table directive. An invalid value fails the export
 // rather than disappearing from it.

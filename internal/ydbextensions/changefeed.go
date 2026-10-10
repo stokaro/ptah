@@ -36,6 +36,8 @@ func Handlers() []renderer.ExtensionHandler {
 		ydbrender.ColumnFamiliesHandler(),
 		ydbrender.TablePartitioningHandler(),
 		ydbrender.ColumnStoreTTLHandler(),
+		ydbrender.DropVectorIndexHandler(),
+		ydbrender.AddVectorIndexHandler(),
 		renderer.TypedHandler(&ydbast.AddChangefeed{}, ast.AlterExtension, validateAdd, renderAdd),
 		renderer.TypedHandler(&ydbast.DropChangefeed{}, ast.AlterExtension, validateDrop, renderDrop),
 		renderer.TypedHandler(&ydbast.AlterChangefeedTopic{}, ast.AlterExtension, validateTopic, renderTopic),

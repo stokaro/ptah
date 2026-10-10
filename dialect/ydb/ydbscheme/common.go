@@ -16,8 +16,9 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 )
 
-// CommonEffects describes scheme paths, principals, and the external data
-// source reads of a column table's tiered TTL, for a common AST node.
+// CommonEffects describes scheme paths, principals, the index a statement
+// adds or drops, and the external data source reads of a column table's
+// tiered TTL, for a common AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
@@ -26,6 +27,9 @@ import (
 // root is the absolute path of the database the statement runs in, such as
 // /local, or empty when it is not known; see [TieredTTLReads].
 func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) ([]plangraph.Effect, error) {
+	if effect, ok := indexUse(builder, node); ok {
+		return []plangraph.Effect{effect}, nil
+	}
 	if name, action := principalUse(node); action != "" {
 		ref := builder.Role(name)
 		if ref.Name.Source == "" || ref.Name.Normalized == "" {
@@ -186,4 +190,26 @@ func commonSchemeUse(node ast.Node) schemeUse {
 	default:
 		return schemeUse{}
 	}
+}
+
+// indexUse names the index a common ADD INDEX or DROP INDEX creates or drops,
+// in the identity an owner of the index's facets names it with, so an owner
+// sees that the common plan builds the index again. A statement that names no
+// table names no index identity and reports none.
+func indexUse(builder objectidentity.Builder, node ast.Node) (plangraph.Effect, bool) {
+	var table, index string
+	var action plangraph.Action
+	switch n := node.(type) {
+	case *ast.IndexNode:
+		table, index, action = n.Table, n.Name, plangraph.Create
+	case *ast.DropIndexNode:
+		table, index, action = n.Table, n.Name, plangraph.Drop
+	default:
+		return plangraph.Effect{}, false
+	}
+	owner := builder.Table(table)
+	if strings.TrimSpace(table) == "" || strings.TrimSpace(index) == "" || owner.Name.Empty() {
+		return plangraph.Effect{}, false
+	}
+	return plangraph.Effect{Subject: builder.IndexParts(owner.Schema.Source, owner.Name.Source, index), Action: action}, true
 }

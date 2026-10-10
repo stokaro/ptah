@@ -974,7 +974,11 @@ func appendIndexCommentChange(
 // way on every run.
 //
 // A removal whose object a constraint owns is never paired: dropping it drops
-// the constraint, which a rename would leave in place.
+// the constraint, which a rename would leave in place. Nor is an index that
+// carries an owner's facet, such as a YDB vector index's settings: this
+// comparison cannot read them, the owner compares them only for an index both
+// sides hold under one name, and a rename would keep the settings the index
+// was built with whatever the declaration states.
 func pairIndexRenames(
 	diff *difftypes.SchemaDiff,
 	additions []generatedIndexEntry,
@@ -1005,7 +1009,7 @@ func pairIndexRenames(
 	for _, addition := range additions {
 		match := -1
 		for position, removal := range removals {
-			if paired[position] || removal.constraintBacked ||
+			if paired[position] || removal.constraintBacked || !addition.index.Facets.IsZero() || !removal.index.Facets.IsZero() ||
 				semantics.TableIdentityKey(removal.ref.TableName) != semantics.TableIdentityKey(addition.ref.TableName) ||
 				comparison.replacementRequired(addition, removal) {
 				continue
@@ -1208,11 +1212,8 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 // change YDB cannot make in place, removing a maximum partition count, is one
 // no declaration asks for, because a maximum it leaves out keeps the held one.
 //
-// A vector index's settings are fixed when it is built (`ALTER INDEX ... SET
-// (levels = 2)` answers `Unknown table setting: levels`), so a difference in
-// any of them is a rebuild too. The declaration is read through
-// [ydbindex.VectorEqual], which reads a metric named by pgvector's operator
-// class as the setting it names, the way the renderer writes it.
+// A vector index's settings are the YDB owner's facet, which its own
+// comparison reads; a difference in them is planned there.
 func ydbIndexDefinitionChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
@@ -1224,7 +1225,6 @@ func ydbIndexDefinitionChanged(
 		desiredErr != nil || databaseErr != nil || desiredKind != databaseKind ||
 		indexKeyPartsChanged(desired, database, semantics) ||
 		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
-		(desiredKind == ydbindex.Vector && !ydbindex.VectorEqual(desired.Vector, desired.Operator, database.Vector)) ||
 		(desiredKind.IsFullText() && !ydbindex.FullTextEqual(desired.StorageParams, database.StorageParams)) ||
 		(desiredKind.IsLocal() && !ydbindex.LocalEqual(desiredKind, desired.StorageParams, database.StorageParams))
 }

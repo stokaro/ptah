@@ -1121,9 +1121,15 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 	if err != nil {
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
 	}
-	vector, err := ydbindex.ParseVectorDeclaration(spec.vectorValues())
+	vector, err := ydbindex.DeclareVector(spec.vectorValues(), string(spec.Type), string(spec.Operator))
 	if err != nil {
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
+	}
+	var facets schemaext.Facets
+	if vector != nil {
+		if facets, err = facets.With(vector); err != nil {
+			return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
+		}
 	}
 
 	fullText, err := ydbindex.ParseOptionsDeclaration(spec.fullTextValues())
@@ -1132,6 +1138,7 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 	}
 
 	return schemamodel.Index{
+		Facets:         facets,
 		StructName:     structName,
 		Name:           valueOrDefault(spec.Name, key),
 		Fields:         fields,
@@ -1144,7 +1151,6 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 		TableName:      string(spec.TableName),
 		Overrides:      mergePlatform(spec.Platform, nil),
 		Partitioning:   partitioning,
-		Vector:         vector,
 		StorageParams:  fullText,
 	}, nil
 }

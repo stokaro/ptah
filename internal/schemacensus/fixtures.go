@@ -146,10 +146,10 @@ func Fixtures() []Fixture {
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
 		{Name: "index-partitioning", Schema: indexPartitioningFixture()},
 		{Name: "index-partitioning-unsplit", Schema: indexPartitioningUnsplitFixture()},
-		{Name: "index-vector", Schema: indexVectorFixture(&ast.VectorIndexSpec{
+		{Name: "index-vector", Schema: indexVectorFixture(&ydbschema.DesiredVectorIndex{
 			Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 2, Clusters: 128,
 		})},
-		{Name: "index-vector-similarity", Schema: indexVectorFixture(&ast.VectorIndexSpec{
+		{Name: "index-vector-similarity", Schema: indexVectorFixture(&ydbschema.DesiredVectorIndex{
 			Similarity: "inner_product", VectorType: "int8", Dimension: 3, Levels: 1, Clusters: 2,
 		})},
 		{Name: "table-partitioning", Schema: tablePartitioningFixture()},
@@ -1158,13 +1158,13 @@ func indexPartitioningUnsplitFixture() schemamodel.Database {
 
 // indexVectorFixture declares a YDB vector index with settings over a vector
 // column of the dimension the settings name.
-func indexVectorFixture(settings *ast.VectorIndexSpec) schemamodel.Database {
+func indexVectorFixture(settings *ydbschema.DesiredVectorIndex) schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"},
 		schemamodel.Field{StructName: "T", FieldName: "Emb", Name: "emb", Type: "vector(3)", Nullable: true},
 	)
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_emb", TableName: "t", Fields: []string{"emb"}, Type: "vector_kmeans_tree",
-		Vector: settings,
+		Facets: must.Must(schemaext.NewFacets(settings)),
 	}}
 	return db
 }

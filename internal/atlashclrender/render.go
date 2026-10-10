@@ -14,10 +14,11 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
@@ -1199,7 +1200,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 	if len(index.IncludeColumns) > 0 {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
-	r.renderVectorSettings(index.Vector)
+	r.renderVectorSettings(index.Facets)
 	r.renderIndexPartitioning(index.Partitioning)
 	if pages, ok := index.StorageParams["pages_per_range"]; ok {
 		// `page_per_range`, singular, is the spelling the pinned Atlas community
@@ -1723,12 +1724,14 @@ func (r *renderer) tableColumnRefs(table string, columns []string) string {
 	return "[" + strings.Join(refs, ", ") + "]"
 }
 
-// renderVectorSettings writes a YDB vector index's settings as the index
-// block attributes the HCL parser reads them from, so an inspected vector
-// index applies back as the same index. They are a Ptah extension: Atlas has
-// no YDB driver and so no spelling for them.
-func (r *renderer) renderVectorSettings(vector *ast.VectorIndexSpec) {
-	if vector == nil {
+// renderVectorSettings writes a YDB vector index's settings, the owner's
+// facet, declared or read, as the index block attributes the HCL parser
+// reads them from, so an inspected vector index applies back as the same
+// index. They are a Ptah extension: Atlas has no YDB driver and so no
+// spelling for them.
+func (r *renderer) renderVectorSettings(facets schemaext.Facets) {
+	vector, found := vectorSettings(facets)
+	if !found {
 		return
 	}
 	count := func(n uint64) string {
@@ -1789,4 +1792,16 @@ func (r *renderer) renderIndexStorageParams(index schemamodel.Index) {
 		pairs = append(pairs, fmt.Sprintf("%s = %s", name, quote(index.StorageParams[name])))
 	}
 	r.rawAttr(2, "storage_params", "{ "+strings.Join(pairs, ", ")+" }")
+}
+
+// vectorSettings are the vector index settings facets hold, declared or read.
+// An invalid value holds none here and is refused where it is used.
+func vectorSettings(facets schemaext.Facets) (ydbschema.VectorSettings, bool) {
+	if declared, found, err := schemaext.FacetAs[*ydbschema.DesiredVectorIndex](facets, ydbschema.VectorIndexKind); err == nil && found {
+		return declared.Settings(), true
+	}
+	if observed, found, err := schemaext.FacetAs[*ydbschema.ObservedVectorIndex](facets, ydbschema.VectorIndexKind); err == nil && found {
+		return observed.Settings(), true
+	}
+	return ydbschema.VectorSettings{}, false
 }
