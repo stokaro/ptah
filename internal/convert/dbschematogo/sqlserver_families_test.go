@@ -8,84 +8,33 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
-// TestConvert_CarriesSynonyms pins that a synonym a read found reaches the IR,
-// and that its target arrives in the spelling a declaration uses.
+// TestConvert_CarriesSynonyms pins that a synonym a read found reaches the IR
+// as a declaration of the same alias and target.
 //
 // `ptah schema inspect` described no synonym at all, in any format, while the
 // reader found every one: the loss was in this conversion, between the read and
 // the document, so nothing that renders from a hand-built schema could see it
-// (stokaro/ptah#2001).
-//
-// The target is the second half of the claim. `Synonym.Target` is
-// base_object_name exactly as the catalog records it, brackets included, and
-// [schemamodel.Synonym.Target] is what will be emitted. Copying the catalog's form
-// would put `[other].[dbo].[gauge]` in a document and render it again as a name
-// with brackets inside it.
+// (stokaro/ptah#2001). The reader keeps the target in the spelling a
+// declaration uses, so the conversion carries it unchanged.
 func TestConvert_CarriesSynonyms(t *testing.T) {
-	tests := []struct {
-		name       string
-		synonym    catalog.Synonym
-		wantTarget string
-	}{
-		{
-			name: "a local target",
-			synonym: catalog.Synonym{
-				Name: "s_gauge", Schema: "dbo",
-				Target:       "[dbo].[gauge]",
-				TargetSchema: "dbo", TargetObject: "gauge",
-			},
-			wantTarget: "dbo.gauge",
-		},
-		{
-			name: "another database",
-			synonym: catalog.Synonym{
-				Name: "s_remote", Schema: "dbo",
-				Target:         "[other].[dbo].[gauge]",
-				TargetDatabase: "other", TargetSchema: "dbo", TargetObject: "gauge",
-			},
-			wantTarget: "other.dbo.gauge",
-		},
-		{
-			name: "a linked server",
-			synonym: catalog.Synonym{
-				Name: "s_linked", Schema: "dbo",
-				Target:       "[srv].[other].[dbo].[gauge]",
-				TargetServer: "srv", TargetDatabase: "other",
-				TargetSchema: "dbo", TargetObject: "gauge",
-			},
-			wantTarget: "srv.other.dbo.gauge",
-		},
-		{
-			// A row the reader could not parse still names something, and the
-			// catalog's own form is better than an empty target: a declaration
-			// with no target is not a synonym.
-			name: "a target with no parsed parts",
-			synonym: catalog.Synonym{
-				Name: "s_raw", Schema: "dbo", Target: "whatever_the_server_said",
-			},
-			wantTarget: "whatever_the_server_said",
-		},
-	}
+	c := qt.New(t)
+	observed := synonym.ObservedSynonym{Synonym: synonym.Synonym{Name: "s_linked", Schema: "dbo", Target: "srv..dbo.gauge"}}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(synonym.ObservedObject(observed))),
+		FeatureCoverage: must.Must(synonym.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}, "sqlserver", must.Must(builtin.New())))
 
-			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
-				Synonyms: []catalog.Synonym{test.synonym},
-			}, "sqlserver", must.Must(builtin.New())))
-
-			c.Assert(converted.Synonyms, qt.HasLen, 1)
-			c.Assert(converted.Synonyms[0].Target, qt.Equals, test.wantTarget)
-			c.Assert(converted.Synonyms[0].Name, qt.Equals, test.synonym.Name)
-			c.Assert(converted.Synonyms[0].Schema, qt.Equals, test.synonym.Schema)
-		})
-	}
+	c.Assert(must.Must(converted.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
+		synonym.DesiredObject(synonym.DesiredSynonym{Synonym: observed.Synonym}),
+	})
 }
 
 // TestConvert_DecidesEveryFamilyTheReadCanCarry is the guard the two families
@@ -156,7 +105,6 @@ var convertedFamilies = map[string]string{
 	"Ranges":            "Ranges",
 	"Views":             "Views",
 	"MatViews":          "MaterializedViews",
-	"Synonyms":          "Synonyms",
 	"Triggers":          "Triggers",
 	"RLSPolicies":       "RLSPolicies",
 	"Roles":             "Roles",

@@ -1,7 +1,7 @@
 package generator
 
 // White-box testing required: what this pins is which definition the reversal
-// resolves for a modified function, sequence or synonym, and the reversal is
+// resolves for a modified function or sequence, and the reversal is
 // unexported. Through the public API a wrong operand and a missing one are both
 // just SQL that does not say what it should.
 
@@ -20,7 +20,7 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema pins all three
+// TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema pins both
 // reversals to the pre-change database.
 //
 // Each object here exists under one name in both schemas and differs only in
@@ -35,9 +35,6 @@ func TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema(t *testing.T) {
 	prior := &schemamodel.Database{
 		Sequences: []schemamodel.Sequence{
 			{Name: "order_seq", Increment: &oldIncrement},
-		},
-		Synonyms: []schemamodel.Synonym{
-			{Name: "orders", Target: "dbo.orders_v1"},
 		},
 	}
 
@@ -69,16 +66,6 @@ func TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema(t *testing.T) {
 	c.Assert(sequences[0].Desired.Increment, qt.IsNotNil)
 	c.Assert(*sequences[0].Desired.Increment, qt.Equals, int64(1),
 		qt.Commentf("the rollback alters the sequence back to the increment the database held"))
-
-	synonyms := reverseSynonymDiffs([]difftypes.SynonymDiff{{
-		SynonymName: "orders",
-		OldTarget:   "dbo.orders_v1",
-		NewTarget:   "dbo.orders_v2",
-		Desired:     schemamodel.Synonym{Name: "orders", Target: "dbo.orders_v2"},
-	}}, prior)
-	c.Assert(synonyms, qt.HasLen, 1)
-	c.Assert(synonyms[0].Desired.Target, qt.Equals, "dbo.orders_v1",
-		qt.Commentf("the rollback recreates the synonym pointing where the database pointed"))
 }
 
 // TestReverseSchemaDiff_SequenceOperandResolvesAcrossSchemaSpellings pins the

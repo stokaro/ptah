@@ -143,6 +143,7 @@ const (
 	cockroachAST  = "ptah.run/dialect/cockroachdb/crdbast"
 	mssqlProperty = "ptah.run/dialect/mssql/mssqlproperty"
 	spannerAST    = "ptah.run/dialect/spanner/spannerast"
+	synonymOwner  = "ptah.run/feature/synonym"
 	timescaleAST  = "ptah.run/dialect/timescaledb/tsast"
 	ydbAST        = "ptah.run/dialect/ydb/ydbast"
 )
@@ -172,6 +173,7 @@ var recordedDepartures = []Departure{
 	{Node: "CreateResourcePoolClassifierNode", Successors: []ExtensionKind{payload(ydbAST, "ResourcePoolClassifier")}},
 	{Node: "CreateResourcePoolNode", Successors: []ExtensionKind{payload(ydbAST, "ResourcePool")}},
 	{Node: "CreateSecretNode", Successors: []ExtensionKind{payload(ydbAST, "Secret")}},
+	{Node: "CreateSynonymNode", Successors: []ExtensionKind{payload(synonymOwner, "Operation")}},
 	{Node: "CreateTopicNode", Successors: []ExtensionKind{payload(ydbAST, "Topic")}},
 	{Node: "CreateTransferNode", Successors: []ExtensionKind{payload(ydbAST, "Transfer")}},
 	{Node: "DropAsyncReplicationNode", Successors: []ExtensionKind{payload(ydbAST, "AsyncReplication")}},
@@ -184,6 +186,7 @@ var recordedDepartures = []Departure{
 	{Node: "DropResourcePoolNode", Successors: []ExtensionKind{payload(ydbAST, "ResourcePool")}},
 	{Node: "DropRowDeletionPolicyOperation", Successors: []ExtensionKind{payload(spannerAST, "AlterRowDeletion"), payload(ydbAST, "AlterTTL")}},
 	{Node: "DropSecretNode", Successors: []ExtensionKind{payload(ydbAST, "Secret")}},
+	{Node: "DropSynonymNode", Successors: []ExtensionKind{payload(synonymOwner, "Operation")}},
 	{Node: "DropTopicNode", Successors: []ExtensionKind{payload(ydbAST, "Topic")}},
 	{Node: "DropTransferNode", Successors: []ExtensionKind{payload(ydbAST, "Transfer")}},
 	{Node: "ExtendedPropertyNode", Successors: []ExtensionKind{payload(mssqlProperty, "Operation")}},

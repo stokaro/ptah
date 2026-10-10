@@ -569,10 +569,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// Objects another engine owns. Each handler writes the skip comment and
 	// records the omission rather than failing, so the declaration is reported
 	// instead of dropped.
-	case *ast.CreateSynonymNode:
-		return r.renderCreateSynonym(n)
-	case *ast.DropSynonymNode:
-		return r.renderDropSynonym(n)
 
 	// Statements carried as text. A routine node holds the whole executable
 	// statement beside the metadata the SQL parser recovered from it, and the
@@ -3932,24 +3928,4 @@ func (r *Renderer) uniqueConstraintUnsupported(name string, columns []string) er
 
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
-}
-
-// renderCreateSynonym names the synonym as skipped.
-//
-// There is no capability key behind this refusal, and that is the difference
-// between a synonym and a sequence here. A capability varies: some servers on
-// this wire have the object and some do not, so the key records which. The
-// PostgreSQL family has no synonym object at all -- not in PostgreSQL, not in
-// CockroachDB, YugabyteDB or the Spanner interface this renderer also backs --
-// so a key would have exactly one value forever and would invite a preset to
-// turn it on.
-func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
-	r.writeObjectSkipped("synonym", node.Name)
-	return nil
-}
-
-// renderDropSynonym names the synonym as skipped, for the same reason.
-func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
-	r.writeObjectSkipped("synonym", node.Name)
-	return nil
 }

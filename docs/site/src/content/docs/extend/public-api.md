@@ -151,6 +151,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `feature/pgpolicy/policyreport` | Inventory counts of PostgreSQL row-security policies and switches. |
 | `feature/pgpolicy/policyrender` | Rendering of the PostgreSQL row-security operations. |
 | `feature/pgpolicy/policyreverse` | Reversal of PostgreSQL row-security changes. |
+| `feature/synonym` | Synonym model, codecs and every stage's service for SQL Server and Oracle. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
 | `migration/diffpolicy` | Declarative policy for which destructive changes a planner may emit. |

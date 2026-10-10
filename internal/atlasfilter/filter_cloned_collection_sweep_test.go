@@ -126,14 +126,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			field: "Synonyms", present: "s_users", absent: "nosuch_synonym",
-			seed: func(s *catalog.Database) {
-				s.Synonyms = append(s.Synonyms, catalog.Synonym{
-					Name: "s_users", Target: "dbo.users", TargetSchema: "dbo", TargetObject: "users",
-				})
-			},
-		},
-		{
 			field: "MatViews", present: "mv_users", absent: "nosuch_matview",
 			seed: func(s *catalog.Database) {
 				s.MatViews = append(s.MatViews, catalog.MaterializedView{Name: "mv_users"})

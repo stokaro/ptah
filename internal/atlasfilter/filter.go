@@ -128,7 +128,7 @@ func excludeDatabase(
 	filtered.Extensions = state.filterExtensions(filtered.Extensions)
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
-	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSynonymFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterPropertyFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
@@ -1115,28 +1115,6 @@ func (s *exclusionState) filterViews(views []catalog.View) []catalog.View {
 	return result
 }
 
-// filterSynonyms drops synonyms an exclusion selector names, and synonyms
-// whose own schema is excluded.
-//
-// The selector matches the ALIAS, never the target. A synonym excluded because
-// its target was excluded would be a different rule: the alias is the object
-// this schema declares, and the target may not even be in this database.
-func (s *exclusionState) filterSynonyms(synonyms []catalog.Synonym) []catalog.Synonym {
-	result := make([]catalog.Synonym, 0, len(synonyms))
-	for _, synonym := range synonyms {
-		names := s.nameCandidates(synonym.Schema, synonym.Name)
-		if s.matches("synonym", names...) || s.schemaExcluded(synonym.Schema) {
-			s.excludeTable(synonym.Schema, synonym.Name)
-			continue
-		}
-		if s.matchesField("synonym", "comment", names...) {
-			synonym.Comment = ""
-		}
-		result = append(result, synonym)
-	}
-	return result
-}
-
 func (s *exclusionState) filterMatViews(views []catalog.MaterializedView) []catalog.MaterializedView {
 	result := make([]catalog.MaterializedView, 0, len(views))
 	for _, view := range views {
@@ -1801,7 +1779,6 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Composites:        slices.Clone(schema.Composites),
 		Ranges:            slices.Clone(schema.Ranges),
 		Views:             slices.Clone(schema.Views),
-		Synonyms:          slices.Clone(schema.Synonyms),
 		MatViews:          slices.Clone(schema.MatViews),
 		Triggers:          slices.Clone(schema.Triggers),
 		RLSPolicies:       slices.Clone(schema.RLSPolicies),
@@ -1854,7 +1831,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.CompositeTypes = slices.Clone(schema.CompositeTypes)
 	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
-	filtered.Synonyms = slices.Clone(schema.Synonyms)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)
 	filtered.RLSPolicies = slices.Clone(schema.RLSPolicies)

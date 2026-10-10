@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/ydbsource"
 )
 
@@ -26,7 +27,8 @@ import (
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
 		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) || ref.Kind == objectidentity.Kind(tsschema.ContinuousAggregateKind) ||
-			ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) || ref.Kind == objectidentity.Kind(mssqlproperty.Kind) {
+			ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) || ref.Kind == objectidentity.Kind(mssqlproperty.Kind) ||
+			ref.Kind == objectidentity.Kind(synonym.Kind) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{

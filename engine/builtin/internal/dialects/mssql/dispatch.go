@@ -90,10 +90,6 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderCreateView(n)
 	case *ast.DropViewNode:
 		return r.renderDropView(n)
-	case *ast.CreateSynonymNode:
-		return r.renderCreateSynonym(n)
-	case *ast.DropSynonymNode:
-		return r.renderDropSynonym(n)
 	case *ast.CreateMaterializedViewNode:
 		return r.renderCreateMaterializedView(n)
 	case *ast.DropMaterializedViewNode:

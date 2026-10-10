@@ -99,12 +99,10 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.MaterializedViews = keep(db.MaterializedViews, func(view schemamodel.MaterializedView) bool {
 		return s.selectedQualifiedName(typeList("materialized_view"), view.Name)
 	})
-	out.Synonyms = keep(db.Synonyms, func(synonym schemamodel.Synonym) bool {
-		return s.selectedQualifiedName(typeList("synonym"), synonym.QualifiedName())
-	})
 	out.FeatureObjects, out.FeatureCoverage = s.selectPropertyFeatures(out.FeatureObjects, out.FeatureCoverage, func(_, table string) bool {
 		return generatedTableNameKept(out.Tables, table)
 	})
+	out.FeatureObjects, out.FeatureCoverage = s.selectGeneratedSynonymFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.Functions = keep(db.Functions, func(function schemamodel.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
 	})

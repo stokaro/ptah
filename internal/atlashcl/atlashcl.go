@@ -21,6 +21,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/pgpolicysource"
@@ -2617,19 +2618,26 @@ func mysqlTableOptions(overrides map[string]map[string]string, autoIncrement, ch
 }
 
 // withBlockCoverage adds the knowledge the format's own blocks give: one for
-// each TimescaleDB model and one for a SQL Server extended property, so a
-// document without one describes a database without one.
+// each TimescaleDB model, one for a SQL Server extended property and one for a
+// synonym, so a document without one describes a database without one.
 func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
 	timescale, err := tsschema.CompleteCoverage(schemaext.Desired)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	properties, err := mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	properties, err := mssqlproperty.Coverage(schemaext.Desired, complete, nil)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	if known, err = known.Combine(timescale); err != nil {
+	synonyms, err := synonym.Coverage(schemaext.Desired, complete, nil)
+	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	return known.Combine(properties)
+	for _, claim := range []schemaext.Coverage{timescale, properties, synonyms} {
+		if known, err = known.Combine(claim); err != nil {
+			return schemaext.Coverage{}, err
+		}
+	}
+	return known, nil
 }

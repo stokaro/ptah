@@ -72,7 +72,8 @@ type renderOwners struct {
 // owners on every PostgreSQL-family target, and their renderers refuse or skip
 // what a target without the capability cannot hold; row-level TTL is
 // CockroachDB's alone, the row deletion policy Spanner's, and the security
-// policy SQL Server's.
+// policy and the extended property SQL Server's. The synonym owner serves SQL
+// Server and Oracle.
 func ownersFor(dialect string) renderOwners {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.YDB:
@@ -81,6 +82,8 @@ func ownersFor(dialect string) renderOwners {
 		return renderOwners{extensions: chrender.Registry}
 	case platform.SQLServer:
 		return renderOwners{extensions: mssqlRegistry}
+	case platform.Oracle:
+		return renderOwners{extensions: oracleRegistry}
 	case platform.CockroachDB:
 		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause,
 			lowerTableFacets: lowerPostgresFamilyFacets}

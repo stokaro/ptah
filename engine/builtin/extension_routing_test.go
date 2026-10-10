@@ -33,6 +33,7 @@ var extensionOwners = map[schemaext.Kind][]string{
 	"ptah.run/pgpolicy/policy-operation":                  postgresFamilyStatements,
 	"ptah.run/pgpolicy/table-state-operation":             postgresFamilyStatements,
 	"ptah.run/spanner/alter-row-deletion-policy":          {"spanner/alter-table"},
+	"ptah.run/synonym/operation":                          {"oracle/statement", "sqlserver/statement"},
 	"ptah.run/timescaledb/continuous-aggregate-operation": postgresFamilyStatements,
 	"ptah.run/timescaledb/create-hypertable":              postgresFamilyStatements,
 	"ptah.run/ydb/add-changefeed":                         {"ydb/alter-table"},

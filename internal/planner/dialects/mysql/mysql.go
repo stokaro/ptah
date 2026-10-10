@@ -1389,12 +1389,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
 	// Enums are handled inline in column definitions, so we skip enum creation steps
 
-	// 0. Create the schemas the added objects live in, before any of them.
-	// SQL Server only; the reason a schema is not created on the other
-	// dialects of this planner is on [Planner.planSchemaPreconditions]. On
-	// MySQL and MariaDB a comparison of a whole server creates and changes
+	// 0. The schemas the added objects live in are created before any of
+	// them, by guards put in front of the finished plan; see the end of this
+	// function. SQL Server only; the reason a schema is not created on the
+	// other dialects of this planner is on [Planner.planSchemaPreconditions].
+	// On MySQL and MariaDB a comparison of a whole server creates and changes
 	// databases instead; see [Planner.planServerSchemas].
-	result = p.planSchemaPreconditions(result, diff)
 	result, err = p.planServerSchemas(result, diff)
 	if err != nil {
 		return nil, err
@@ -1465,8 +1465,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff)
 	result = p.modifyExistingViews(result, diff)
-	result = p.retargetSynonyms(result, diff)
-	result = p.addNewSynonyms(result, diff)
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
@@ -1519,7 +1517,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// removed at step 4.6.
 	result = p.removeMaterializedViews(result, diff)
 	result = p.removeViews(result, diff)
-	result = p.removeSynonyms(result, diff)
 
 	// 6.7. Remove indexes after constraints so FK-backed indexes can be dropped.
 	result = p.removeIndexes(result, diff, released.IndexSet())
@@ -1527,7 +1524,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// 7. Remove tables (dangerous!)
 	windows.Removal = len(result)
 	result = p.removeTables(result, diff)
-	if p.hostsFeatures() {
+	if p.dropsRoutinesLate() {
 		result = p.removeRoutines(result, diff)
 	}
 
@@ -1549,7 +1546,11 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// every object in them and every key into them is gone.
 	result = p.removeServerSchemas(result, diff)
 
-	return p.scheduleFeatures(ctx, runtime, diff, result, windows)
+	result, created, err := p.scheduleFeatures(ctx, runtime, diff, result, windows)
+	if err != nil {
+		return nil, err
+	}
+	return p.planSchemaPreconditions(result, diff, created), nil
 }
 
 // rejectUniqueIncludeConstraints refuses a covering UNIQUE this plan would have
@@ -1652,42 +1653,6 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, view := range diff.ViewsRemoved {
 		result = append(result, ast.NewDropView(view.Name).SetIfExists())
-	}
-	return result
-}
-
-func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The target travels WITH the change, so this renders what it was handed
-	// rather than looking the name back up in the desired schema.
-	for _, synonym := range diff.SynonymsAdded {
-		result = append(result, modelast.FromSynonym(synonym))
-	}
-	return result
-}
-
-// retargetSynonyms drops and recreates a synonym whose target changed.
-//
-// The pair is emitted together, drop first, because T-SQL has no ALTER SYNONYM
-// and CREATE SYNONYM refuses a name that already exists. Splitting the two
-// across the add and remove phases would put the create before the drop and
-// fail at the server.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The synonym travels WITH the change (stokaro/ptah#2315). The two target
-	// strings are the change; the create needs the object.
-	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := synonymDiff.Desired
-		if synonym.Name == "" {
-			continue
-		}
-		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, modelast.FromSynonym(synonym))
-	}
-	return result
-}
-
-func (p *Planner) removeSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, synonym := range diff.SynonymsRemoved {
-		result = append(result, ast.NewDropSynonym(synonym.QualifiedName()).SetIfExists())
 	}
 	return result
 }

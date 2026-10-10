@@ -109,7 +109,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 // row this object reports and refuses to touch.
 //
 // sp_addextendedproperty takes a sql_variant, so a property may hold an int as
-// well as a string, and the renderer writes an N” literal. Re-emitting an int
+// well as a string, and the renderer writes an N'...' literal. Re-emitting an int
 // through that literal would change its stored type, and a drop would destroy
 // a value no declaration can restore -- so the comparator declines the row in
 // both directions and Ptah leaves it exactly as it found it.

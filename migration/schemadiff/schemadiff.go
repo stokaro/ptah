@@ -214,7 +214,6 @@ func compareReportingUndecidedAdditions(
 
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
-	compare.Synonyms(desired, database, diff, cov)
 	compare.Features(desired, database, diff)
 
 	// Compare SQL Server extended properties (schema, table and column scope)

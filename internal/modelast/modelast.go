@@ -1452,30 +1452,6 @@ func FromView(view schemamodel.View) *ast.CreateViewNode {
 	return viewNode
 }
 
-// FromSynonym converts a schemamodel.Synonym to an ast.CreateSynonymNode.
-//
-// The alias is qualified here and the target is not. The alias is an object
-// this schema declares, so it belongs in the schema the declaration named; the
-// target is written exactly as it was given, because its part count is what
-// tells SQL Server whether it names this database, another one, or a linked
-// server, and adding a qualifier would silently turn a remote reference into a
-// local one.
-func FromSynonym(synonym schemamodel.Synonym) *ast.CreateSynonymNode {
-	return ast.NewCreateSynonym(synonym.QualifiedName()).
-		SetTarget(synonym.Target).
-		SetComment(synonym.Comment)
-}
-
-// appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
-func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.Synonym) error {
-	for _, synonym := range synonyms {
-		if err := visit(FromSynonym(synonym)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // FromMaterializedView converts a schemamodel.MaterializedView to an
 // ast.CreateMaterializedViewNode.
 func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterializedViewNode {
@@ -2030,16 +2006,6 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform string, vi
 
 	// 9a. A materialized view's indexes, once the view exists.
 	if err := appendMaterializedViewIndexStatements(visit, database, viewIndexes); err != nil {
-		return err
-	}
-
-	// 9b. Synonyms come after the objects a local target may name. A synonym
-	// pointing outside this database has nothing here to wait for, and one
-	// pointing at a local table or view has to follow it -- SQL Server does not
-	// require the target to exist when the synonym is created, but a script
-	// that creates the alias first and the table second reads as though the
-	// order did not matter, and the next person reorders it.
-	if err := appendSynonymStatements(visit, database.Synonyms); err != nil {
 		return err
 	}
 

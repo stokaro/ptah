@@ -110,7 +110,7 @@ func (v *ObservedProperty) Desired() *DesiredProperty {
 
 // UnrepresentableValue is the knowledge a read records for a property held
 // under a value type Ptah cannot write back, such as int or date:
-// sp_addextendedproperty takes a sql_variant, and an N” literal would turn
+// sp_addextendedproperty takes a sql_variant, and an N'...' literal would turn
 // the value into text. A comparison neither changes nor drops such a
 // property, and does not add a declaration of the same one.
 func UnrepresentableValue(valueType string) schemaext.Knowledge {

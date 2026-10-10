@@ -148,10 +148,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
 
 	// Objects of other engines.
-	case *ast.CreateSynonymNode:
-		return refuseFact("synonym "+n.Name, "YDB has no synonyms")
-	case *ast.DropSynonymNode:
-		return refuseFact("DROP SYNONYM "+n.Name, "YDB has no synonyms")
 	case *ast.ExtensionNode:
 		return refuseFact("extension "+n.Name, "YDB has no extensions")
 	case *ast.DropExtensionNode:

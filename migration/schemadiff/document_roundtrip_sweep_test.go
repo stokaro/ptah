@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
@@ -201,13 +202,6 @@ func roundTripRows() []roundTripRow {
 			},
 			count: func(d *schemamodel.Database) int { return len(d.DefaultPrivileges) },
 		},
-		{
-			field: "Synonyms",
-			seed: func(d *schemamodel.Database) {
-				d.Synonyms = append(d.Synonyms, schemamodel.Synonym{Name: "s1", Target: "other.dbo.users"})
-			},
-			count: func(d *schemamodel.Database) int { return len(d.Synonyms) },
-		},
 	}
 }
 
@@ -264,9 +258,6 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Domains":        coverage.Domain,
 	"CompositeTypes": coverage.Composite,
 	"Ranges":         coverage.Range,
-	// HCL gained a block for synonyms (stokaro/ptah#1031) and the sweep above
-	// measures that they survive it; YAML still has no key, so here they stay.
-	"Synonyms": coverage.Synonym,
 }
 
 // The YAML surface has a topics key, so a YAML document that leaves a topic
@@ -401,6 +392,30 @@ func TestRoundTrip_TimescaleStateSurvives(t *testing.T) {
 	c.Assert(found, qt.IsTrue)
 	c.Assert(parsedAggregate.Value, qt.DeepEquals, aggregate.Value)
 	c.Assert(parsed.FeatureCoverage.Lookup(tsschema.ContinuousAggregateKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
+}
+
+// TestRoundTrip_SynonymsSurvive is the sweep's row for synonyms, a named
+// feature object rather than a family of the common model. HCL gained a block
+// for them (stokaro/ptah#1031), so the document Ptah writes carries each one
+// back and claims the namespace, and a synonym it leaves out is one the
+// database should not have. A YAML document has no key for one and makes no
+// claim.
+func TestRoundTrip_SynonymsSurvive(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	declared := synonym.DeclaredObject(synonym.DesiredSynonym{
+		Synonym: synonym.Synonym{Name: "s1", Schema: "public", Target: "other.dbo.users"}, Comment: "remote users",
+	})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(declared))
+
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+
+	parsedSynonym, found, err := parsed.FeatureObjects.Get(declared.Ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(parsedSynonym.Value, qt.DeepEquals, declared.Value)
+	c.Assert(parsed.FeatureCoverage.Lookup(synonym.Kind, declared.Ref).State, qt.Equals, schemaext.Complete)
+	c.Assert(loadYAMLDocument(c).FeatureCoverage.Lookup(synonym.Kind, declared.Ref).State, qt.Equals, schemaext.Uninspected)
 }
 
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of

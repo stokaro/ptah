@@ -1003,18 +1003,6 @@ func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: sqlite: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
 }
 
-// renderCreateSynonym refuses: SQLite has no synonym object of any kind.
-func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
-	r.notSupported("CREATE SYNONYM", node.Name)
-	return nil
-}
-
-// renderDropSynonym refuses for the same reason.
-func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
-	r.notSupported("DROP SYNONYM", node.Name)
-	return nil
-}
-
 // recordLostOperatorClasses names every operator class the index declares.
 //
 // A class is declared per index or per part, and the distinct values are

@@ -14,14 +14,24 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// featureOwner is the contribution owner of the common steps a SQL Server
-// plan joins feature operations to.
+// featureOwner is the contribution owner of the common steps a SQL Server or
+// Oracle plan joins feature operations to.
 const featureOwner = "ptah.run/sqlserver"
 
 // hostsFeatures reports whether this planner dispatches feature changes to
-// their owners. SQL Server does; MySQL, MariaDB and Oracle have no feature
+// their owners. SQL Server and Oracle do; MySQL and MariaDB have no feature
 // owner and refuse every feature change.
-func (p *Planner) hostsFeatures() bool { return p.targetDialect() == platform.SQLServer }
+func (p *Planner) hostsFeatures() bool {
+	target := p.targetDialect()
+	return target == platform.SQLServer || target == platform.Oracle
+}
+
+// dropsRoutinesLate reports whether routines are dropped after the tables and
+// the feature objects that may call them rather than with the other routine
+// changes. SQL Server does, because its security policies call predicate
+// functions; on the other dialects of this planner no owner's object calls a
+// routine.
+func (p *Planner) dropsRoutinesLate() bool { return p.targetDialect() == platform.SQLServer }
 
 // refuseUnhostedFeatureChanges refuses the feature changes this planner has
 // no window for: every one on a target without owners, and the settings of a
@@ -44,9 +54,9 @@ func (p *Planner) refuseUnhostedFeatureChanges(diff *difftypes.SchemaDiff) error
 // SQL Server plan writes the same way a PostgreSQL one does. An owner orders
 // itself against them, and [featurehost.Graph.Schedule] orders different
 // owners' effects against each other.
-func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, windows featurehost.Windows) ([]ast.Node, error) {
+func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, windows featurehost.Windows) ([]ast.Node, []string, error) {
 	if !p.hostsFeatures() || diff == nil || !hasFeatureChanges(diff) {
-		return nodes, nil
+		return nodes, nil, nil
 	}
 	target := p.targetDialect()
 	semantics := diff.EffectiveIdentifierSemantics(target)
@@ -65,14 +75,18 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	}
 	graph, err := featurehost.NewGraph(featureOwner, nodes, pgeffects.Sequence(builder, nodes), windows)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	request.CommonSteps = graph.CommonSteps()
 	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return graph.Schedule(ctx, features)
+	scheduled, err := graph.Schedule(ctx, features)
+	if err != nil {
+		return nil, nil, err
+	}
+	return scheduled, createdOwnedSchemas(features), nil
 }
 
 func hasFeatureChanges(diff *difftypes.SchemaDiff) bool {

@@ -13,6 +13,29 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// reverseViewDiffs carries modified views into the down direction.
+//
+// The entry is carried across rather than swapped with anything: the planner
+// renders a modified view from the schema it is given (the pre-change database
+// schema, in the down direction), so the entry itself is what selects the prior
+// definition.
+//
+// PreviousBody is different in kind: it names the body the view HAS when the
+// statement runs, not a change. When the rollback runs, the database holds what
+// the up migration wrote, which is the generated schema's body -- so that is
+// what the reversed entry must carry. Getting this wrong is not cosmetic: the
+// PostgreSQL planner reads it to decide whether CREATE OR REPLACE VIEW is legal
+// for the rollback, and PostgreSQL refuses the replace for every column-list
+// change except a trailing append.
+//
+// A nil schema (the deprecated reverseSchemaDiff entry point) leaves it empty,
+// which planners read as "not known" and answer with drop-and-recreate. That is
+// the safe direction: it always applies.
+//
+// Rollback is set for the same reason and is the other half of it. Where a
+// planner can neither prove the replace legal nor prove it refused, the answer
+// it should give differs by direction, and this is the only place that knows
+// which direction is being built.
 func reverseViewDiffs(
 	viewDiffs []difftypes.ViewDiff,
 	schema, prior *schemamodel.Database,

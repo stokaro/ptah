@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
-	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -49,15 +50,21 @@ import (
 // declared schema should be created is a question about what a schema
 // declaration means, and it is the same question on both dialects; answering it
 // on one would make them disagree.
-func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+//
+// The guards go in front of the finished plan, because the schemas an owner's
+// objects are created in are known only once the owners have planned: created
+// names them, from the steps that create a schema-level owned object.
+func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.SchemaDiff, created []string) []ast.Node {
 	if p.targetDialect() != platform.SQLServer {
 		return result
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, schema := range schemasAddedObjectsNeed(diff) {
-		result = append(result, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
+	schemas := schemasAddedObjectsNeed(diff, created)
+	guarded := make([]ast.Node, 0, len(schemas)+len(result))
+	for _, schema := range schemas {
+		guarded = append(guarded, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
 	}
-	return result
+	return append(guarded, result...)
 }
 
 // schemasAddedObjectsNeed is every schema an added object is declared in, in a
@@ -68,21 +75,20 @@ func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.Sch
 // from the tables covered none of the sequences, functions or views planned in
 // the same run, and each of those fails on the same Msg 2760.
 //
-// A synonym contributes its own schema and NOT its target's: the target is an
-// object this migration does not own, in a database it may not even be in.
-//
-// An extended property contributes the schema it addresses, which is the one
-// place a schema is needed without any object being created in it -- a
-// property on a schema names `@level0name = N'app'` and answers the same Msg
-// 2760 when `app` is absent.
-func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff) []string {
+// The owners' objects are read from the schemas their creating steps name,
+// see [createdOwnedSchemas]. A synonym contributes its own schema and NOT its
+// target's, since the target is an object this migration does not own, in a
+// database it may not even be in. An extended property contributes the schema
+// it addresses, the one place a schema is needed without any object being
+// created in it: a property on a schema names `@level0name = N'app'` and
+// answers the same Msg 2760 when `app` is absent.
+func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff, created []string) []string {
 	qualified := make([]string, 0, len(diff.TablesAdded))
 	qualified = append(qualified, diff.TablesAdded.Names()...)
 	qualified = append(qualified, diff.ViewsAdded.Names()...)
 	qualified = append(qualified, diff.MaterializedViewsAdded.Names()...)
 	qualified = append(qualified, diff.FunctionsAdded.Names()...)
 	qualified = append(qualified, diff.SequencesAdded.Names()...)
-	qualified = append(qualified, diff.SynonymsAdded.Names()...)
 	for _, trigger := range diff.TriggersAdded {
 		qualified = append(qualified, trigger.TableName)
 	}
@@ -108,11 +114,27 @@ func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff) []string {
 		}
 		record(ref.Schema)
 	}
-	for _, change := range diff.FeatureChanges {
-		if property, ok := change.Value.(*mssqlproperty.Change); ok && property.Before == nil && property.After != nil {
-			record(property.After.Schema)
-		}
+	for _, schema := range created {
+		record(schema)
 	}
 	slices.Sort(schemas)
+	return schemas
+}
+
+// createdOwnedSchemas is the schema of every schema-level object an owner's
+// step creates, as the step's effect names it. An object a table owns is in its
+// table's schema, which the table's own creation or existence already
+// accounts for.
+func createdOwnedSchemas(features featurehost.Result) []string {
+	var schemas []string
+	for _, contribution := range features.Contributions {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				if effect.Action == plangraph.Create && effect.Subject.Parent.Empty() && effect.Subject.Schema.Source != "" {
+					schemas = append(schemas, effect.Subject.Schema.Source)
+				}
+			}
+		}
+	}
 	return schemas
 }

@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlrender"
+	"ptah.run/feature/synonym"
 )
 
 // gatedPayload is an owner statement that needs one capability key. A target
@@ -20,15 +21,16 @@ type gatedPayload interface {
 }
 
 // renderExtensionNode renders an owner statement through the handlers of the
-// SQL Server owners: security policies and extended properties. A payload no
-// SQL Server owner renders is refused, and so is an owned operation that names
-// a table, since no SQL Server owner writes one inside ALTER TABLE.
+// SQL Server owners: security policies, extended properties and synonyms. A
+// payload no SQL Server owner renders is refused, and so is an owned operation
+// that names a table, since no SQL Server owner writes one inside ALTER TABLE.
 func (r *Renderer) renderExtensionNode(node ast.Node) error {
 	statement, ok := node.(*ast.ExtensionStatement)
 	if !ok {
 		return fmt.Errorf("%w: expected an extension statement, got %T", ptaherr.ErrInvalidSchemaDiff, node)
 	}
-	registry, err := renderer.NewExtensions(append(mssqlrender.Handlers(), mssqlproperty.Handlers()...)...)
+	handlers := append(mssqlrender.Handlers(), mssqlproperty.Handlers()...)
+	registry, err := renderer.NewExtensions(append(handlers, synonym.Handlers()...)...)
 	if err != nil {
 		return err
 	}

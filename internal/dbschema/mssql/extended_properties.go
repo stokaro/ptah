@@ -136,7 +136,7 @@ func (r *Reader) readExtendedProperties(ctx context.Context) (extendedProperties
 // representableExtendedPropertyType reports whether a sql_variant base type is
 // one the renderer can write back.
 //
-// The renderer emits the value as an N” literal, which is nvarchar. A
+// The renderer emits the value as an N'...' literal, which is nvarchar. A
 // property stored as anything else would come back with a different type after
 // a round trip, so the four character types are the list, and everything else
 // -- int, date, bit, uniqueidentifier, and the rest of sql_variant's range --
@@ -144,7 +144,7 @@ func (r *Reader) readExtendedProperties(ctx context.Context) (extendedProperties
 //
 // The empty string is not representable either. It is what SQL_VARIANT_PROPERTY
 // answers for a value it cannot describe, and treating "no answer" as a
-// character type would write an N” literal over a value nobody read.
+// character type would write an N'...' literal over a value nobody read.
 func representableExtendedPropertyType(baseType string) bool {
 	switch baseType {
 	case "nvarchar", "varchar", "nchar", "char":

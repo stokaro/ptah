@@ -121,14 +121,6 @@ const (
 	// read found some: recording only what was found would assert that the
 	// absence of every other one is authoritative.
 	ChangeStream Kind = "change_stream"
-	// Synonym is a SQL Server synonym (CREATE SYNONYM).
-	//
-	// A document format with no block for one declines it, so a document
-	// rendered from a database that has synonyms carries none of them and its
-	// silence is not a request to drop them; without the record, `schema
-	// inspect` followed by `schema apply` of its own output planned DROP
-	// SYNONYM for every synonym the server had.
-	Synonym Kind = "synonym"
 	// VirtualTable is a SQLite virtual table (CREATE VIRTUAL TABLE ... USING).
 	//
 	// Unlike the kinds above it, a description usually declines this one by
@@ -196,7 +188,7 @@ const (
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, Grant, Policy, Range,
-	Role, Schema, Sequence, Synonym, TableOption,
+	Role, Schema, Sequence, TableOption,
 	TTL, View, VirtualTable,
 }
 

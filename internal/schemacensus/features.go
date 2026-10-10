@@ -22,6 +22,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 )
 
 // featureCodecs supplies the concrete models to this bundled-provider census.
@@ -51,6 +52,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: mysqlschema.Owner, codecs: mysqlschema.ColumnSettingsCodecs()},
 		{owner: mssqlschema.Owner, codecs: mssqlschema.Codecs()},
 		{owner: mssqlproperty.Owner, codecs: mssqlproperty.Codecs()},
+		{owner: synonym.Owner, codecs: synonym.Codecs()},
 		{owner: pgpolicy.Owner, codecs: pgpolicy.Codecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
 		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},

@@ -137,6 +137,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgpolicy/policyreport`
 - `ptah.run/feature/pgpolicy/policyrender`
 - `ptah.run/feature/pgpolicy/policyreverse`
+- `ptah.run/feature/synonym`
 - `ptah.run/migration/datadiff`
 - `ptah.run/migration/dbtest`
 - `ptah.run/migration/diffpolicy`
@@ -2072,6 +2073,17 @@ holds every stage's service: `CompareService`, `PlanService`, which joins the
 host's dependent window and reads the table or column a property is on,
 `ReverseService`, `ConvertService`, `ReportService` and the render `Handlers`.
 
+`feature/synonym` owns synonyms, the aliases SQL Server and Oracle resolve to
+another object. A synonym is one feature object of `Kind`, identified by its
+schema and name through `Synonym.Ref`, which folds case; the target is not part
+of the identity, so a changed target is one change. `TargetParts` reads a
+target of one to four parts from the right and `DeclaredTarget` writes it back,
+an empty middle part included, and `SameTarget` compares two targets without
+their quoting and case. `DeclaredObject` binds a declaration to `Targets`, SQL
+Server and Oracle. The package holds every stage's service: `CompareService`,
+`PlanService`, which joins the host's dependent window, `ReverseService`,
+`ConvertService`, `ReportService` and the render `Handlers` for both targets.
+
 `dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
 0020. A policy is one feature object of `SecurityPolicyKind`, identified by its
 schema and name through `SecurityPolicyRef`, with no table parent, because one
@@ -3105,13 +3117,11 @@ therefore does more than exchange the two lists: it resolves each reversed
 addition against the pre-change database, and strips the operand from each
 reversed removal.
 
-`migration/schemadiff/difftypes.FunctionDiff`, `SequenceDiff` and
-`SynonymDiff` carry a `Desired` field for the same reason: a function
-modification renders as CREATE OR REPLACE and needs the whole body and
-attribute set, an ALTER SEQUENCE reads the option values off the declaration
-while the change map only names which options moved, and a retargeted synonym
-is a drop and a create because no dialect has an ALTER SYNONYM. An empty one
-plans nothing for that entry. `FunctionDiff.Desired` is the declaration as
+`migration/schemadiff/difftypes.FunctionDiff` and `SequenceDiff` carry a
+`Desired` field for the same reason: a function modification renders as CREATE
+OR REPLACE and needs the whole body and attribute set, and an ALTER SEQUENCE
+reads the option values off the declaration while the change map only names
+which options moved. An empty one plans nothing for that entry. `FunctionDiff.Desired` is the declaration as
 written, not the copy the comparison folds: the comparison canonicalizes case
 and normalizes MySQL type spellings on both sides so that two spellings of one
 function converge, and rendering from that copy would write Ptah's

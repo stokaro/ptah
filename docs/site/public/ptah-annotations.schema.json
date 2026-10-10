@@ -2451,7 +2451,7 @@
     },
     "ptah.schema.synonym": {
       "additionalProperties": false,
-      "description": "Declares a SQL Server synonym, an alias for another object.",
+      "description": "Declares a synonym, an alias for another object, on SQL Server and Oracle.",
       "properties": {
         "attributes": {
           "additionalProperties": false,
@@ -3017,9 +3017,6 @@
       "$ref": "#/$defs/ptah.schema.matview"
     },
     {
-      "$ref": "#/$defs/ptah.schema.synonym"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.trigger"
     },
     {
@@ -3090,6 +3087,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.streamingquery"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.synonym"
     },
     {
       "$ref": "#/$defs/ptah.schema.topic"

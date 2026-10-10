@@ -20,7 +20,7 @@ import (
 // TestRepresentableExtendedPropertyType_IsTheRendererQuestion pins which base
 // types survive a round trip.
 //
-// The renderer writes an N” literal, so a value stored under any other base
+// The renderer writes an N'...' literal, so a value stored under any other base
 // type would come back with a different type. The list is the four character
 // types and nothing else -- and the empty string is not one of them, because
 // it is what SQL_VARIANT_PROPERTY answers for a value it cannot describe, and

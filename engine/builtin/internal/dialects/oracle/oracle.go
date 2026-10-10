@@ -895,29 +895,6 @@ func oracleGrantTarget(object string) string {
 	return " ON " + escapeQualifiedIdentifier(object)
 }
 
-// renderCreateSynonym renders Oracle's own object: a synonym is a native Oracle
-// concept rather than a compatibility shim.
-func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-	r.w.WriteLinef("CREATE SYNONYM %s FOR %s;",
-		escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(node.Target))
-	return nil
-}
-
-func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-	guard := ""
-	if node.IfExists {
-		guard = r.dropGuard()
-	}
-	r.w.WriteLinef("DROP SYNONYM%s %s;", guard, escapeQualifiedIdentifier(node.Name))
-	return nil
-}
-
 func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(strings.TrimSpace(node.SQL))
 	return nil

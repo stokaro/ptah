@@ -78,13 +78,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.MatViews = keep(db.MatViews, func(view catalog.MaterializedView) bool {
 		return s.selected(typeList("materialized_view"), view.Schema, view.Name)
 	})
-	// A synonym is selected on its own name, never on its target's. The alias
-	// is the object this schema declares, and a rule that kept a synonym
-	// because its target was selected would pull in an alias the operator did
-	// not name -- possibly one whose target is not even in this database.
-	out.Synonyms = keep(db.Synonyms, func(synonym catalog.Synonym) bool {
-		return s.selected(typeList("synonym"), synonym.Schema, synonym.Name)
-	})
 	// A YDB topic, external data source, external table, async replication
 	// and transfer are feature objects; selectTopicFeatures,
 	// selectExternalFeatures and selectReplicationFeatures select them.
@@ -100,6 +93,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.FeatureObjects, out.FeatureCoverage = s.selectPropertyFeatures(out.FeatureObjects, out.FeatureCoverage, func(schema, table string) bool {
 		return s.tableKept(keptTables, schema, table)
 	})
+	out.FeatureObjects, out.FeatureCoverage = s.selectSynonymFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.Functions = keep(db.Functions, func(function catalog.Function) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)
 	})

@@ -5,8 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashcl"
 )
 
@@ -49,15 +51,13 @@ extended_property "MS_Description" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Synonyms, qt.DeepEquals, []schemamodel.Synonym{{
-		Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
+	c.Assert(declared[*synonym.DesiredSynonym](c, db), qt.DeepEquals, []*synonym.DesiredSynonym{{
+		Synonym: synonym.Synonym{Name: "s_users", Schema: "dbo", Target: "other.dbo.users"},
 		Comment: "the remote users",
 	}})
-	objects, err := db.FeatureObjects.All()
-	c.Assert(err, qt.IsNil)
 	var properties []mssqlproperty.Property
-	for _, object := range objects {
-		properties = append(properties, object.Value.(*mssqlproperty.DesiredProperty).Property)
+	for _, property := range declared[*mssqlproperty.DesiredProperty](c, db) {
+		properties = append(properties, property.Property)
 	}
 	c.Assert(properties, qt.ContentEquals, []mssqlproperty.Property{
 		{Name: "ptah_flag", Value: "database scope"},
@@ -79,9 +79,24 @@ synonym "reporting" "s_users" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Synonyms, qt.DeepEquals, []schemamodel.Synonym{{
-		Name: "s_users", Schema: "reporting", Target: "other.dbo.users",
+	c.Assert(declared[*synonym.DesiredSynonym](c, db), qt.DeepEquals, []*synonym.DesiredSynonym{{
+		Synonym: synonym.Synonym{Name: "s_users", Schema: "reporting", Target: "other.dbo.users"},
 	}})
+}
+
+// declared is every feature object of db holding a value of type T, in
+// identity order.
+func declared[T schemaext.Value](c *qt.C, db *schemamodel.Database) []T {
+	c.Helper()
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	var values []T
+	for _, object := range objects {
+		if value, ok := object.Value.(T); ok {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 // TestParseRefusesAnAddressThatNamesNothing pins the refusals, and pins them

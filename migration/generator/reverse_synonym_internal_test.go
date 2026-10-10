@@ -10,8 +10,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/synonym"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -20,11 +22,8 @@ import (
 //
 // A synonym IS its target -- there is nothing else to it -- and the down
 // direction has to CREATE one the up direction dropped. Nothing covered that,
-// and the conversion to a typed change (stokaro/ptah#2315) moves where the
-// target comes from: the planner reads it off the change rather than looking
-// the name up. Measured on the tree before that conversion, this passes there
-// too, so it records a property the change had to keep rather than one it
-// fixed -- which is why it is worth having.
+// and the change has to carry the target, since the owner's reversal builds
+// the CREATE from it rather than looking the name up (stokaro/ptah#2315).
 //
 // The target is asserted, not just the verb. A CREATE SYNONYM naming the wrong
 // object rolls back to a schema that is the wrong shape while reading as a
@@ -32,24 +31,21 @@ import (
 func TestGenerateDownMigrationSQL_RecreatesASynonymTheUpMigrationDropped(t *testing.T) {
 	c := qt.New(t)
 
-	// The desired schema declares no synonym; the database holds one. That is
-	// the shape that puts it in SynonymsRemoved.
-	schema := &schemamodel.Database{}
+	// The desired schema can declare synonyms and declares none; the database
+	// holds one. That is the shape that drops it.
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	schema := &schemamodel.Database{FeatureCoverage: must.Must(synonym.Coverage(schemaext.Desired, complete, nil))}
 	db := &catalog.Database{
-		Synonyms: []catalog.Synonym{{
-			Name:           "s_users",
-			Schema:         "dbo",
-			Target:         "[other].[dbo].[users]",
-			TargetDatabase: "other",
-			TargetSchema:   "dbo",
-			TargetObject:   "users",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(synonym.ObservedObject(synonym.ObservedSynonym{
+			Synonym: synonym.Synonym{Name: "s_users", Schema: "dbo", Target: "other.dbo.users"},
+		}))),
+		FeatureCoverage: must.Must(synonym.Coverage(schemaext.Observed, complete, nil)),
 	}
 
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
 		schema, db, "sqlserver", must.Must(builtin.New()),
 	))
-	c.Assert(upDiff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
+	c.Assert(upDiff.FeatureChanges, qt.HasLen, 1)
 
 	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "sqlserver")

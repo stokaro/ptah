@@ -100,10 +100,11 @@ remote reference into a local one.
 
 **Ptah manages the alias and never the target.** A synonym pointing outside this
 database is a supported declaration rather than an error — SQL Server does not
-require the target to exist either — and dependency ordering treats it as having
-no local dependency, so nothing tries to create or drop the object it points at.
-A local target does participate in ordering: the alias is emitted after the
-table or view it names.
+require the target to exist either — so nothing tries to create or drop the
+object it points at. A plan creates the alias after the tables, views and
+routines it creates, and drops it before any of them is dropped. A target
+behind a linked server with no database part, `srv..dbo.orders`, keeps its
+empty part.
 
 A changed target is planned as a drop and a create in that order, because T-SQL
 has no `ALTER SYNONYM` and `CREATE SYNONYM` refuses a name that already exists.
@@ -112,9 +113,9 @@ Targets are compared with the server's own bracket quoting normalized away, so a
 declared `dbo.orders` and a stored `[dbo].[orders]` are the same target rather
 than a difference reported on every run.
 
-Every other target names a declared synonym as skipped rather than rendering
-nothing: the object exists in the schema model for one engine, and a dialect
-that dropped it silently would lose a declaration without saying so.
+A synonym belongs to the synonym owner and is bound to SQL Server and Oracle,
+the two targets that have one. A schema rendered or planned for any other
+target leaves it out. Two declarations of one synonym are refused.
 
 ## Extended properties
 
@@ -217,17 +218,17 @@ database-scoped property, the address that passes no level at all.
 object, and a `.sql` document is written back with `CREATE SYNONYM` and
 `sp_addextendedproperty` but read as a schema holding neither, so a file in
 those formats could not have declared one — and reading its silence as intent
-makes this loop destructive:
+would make this loop destructive:
 
 ```bash
 ptah schema inspect --db-url "$SQLSERVER_URL" --format sql > out.sql
 ptah schema apply --db-url "$SQLSERVER_URL" --to file://out.sql
 ```
 
-Each loader records what its format cannot express, and the comparison withholds
-those removals. HCL and a Go schema — `//ptah:schema:synonym` and
-`//ptah:schema:extendedproperty` — can both declare the two objects, so silence
-in either is a request to remove.
+Neither format claims the two objects, so the comparison withholds those
+removals. HCL and a Go schema — `//ptah:schema:synonym` and
+`//ptah:schema:extendedproperty` — can both declare the two objects and claim
+them, so silence in either is a request to remove.
 
 ## Schemas
 

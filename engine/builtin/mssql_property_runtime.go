@@ -8,6 +8,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlrender"
 	"ptah.run/engine"
+	"ptah.run/feature/synonym"
 )
 
 // mssqlPropertyProvider assembles the SQL Server extended property owner on
@@ -37,7 +38,8 @@ func mssqlPropertyProvider() engine.Provider {
 }
 
 // mssqlRegistry is the SQL Server owners' handler registry: the security
-// policy's and the extended properties'.
+// policy's, the extended properties' and the synonyms'.
 func mssqlRegistry() (renderer.Extensions, error) {
-	return renderer.NewExtensions(append(mssqlrender.Handlers(), mssqlproperty.Handlers()...)...)
+	handlers := append(mssqlrender.Handlers(), mssqlproperty.Handlers()...)
+	return renderer.NewExtensions(append(handlers, synonym.Handlers()...)...)
 }

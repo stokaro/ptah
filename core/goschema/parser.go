@@ -662,7 +662,6 @@ type schemaParseState struct {
 	compositeTypes        []schemamodel.CompositeType
 	ranges                []schemamodel.Range
 	views                 []schemamodel.View
-	synonyms              []schemamodel.Synonym
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
 	rlsPolicies           []rlsPolicyDeclaration
@@ -792,7 +791,6 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:range":            (*schemaParseState).parseRangeComment,
 	"ptah:schema:view":             (*schemaParseState).parseViewComment,
 	"ptah:schema:matview":          (*schemaParseState).parseMaterializedViewComment,
-	"ptah:schema:synonym":          (*schemaParseState).parseSynonymComment,
 	"ptah:schema:trigger":          (*schemaParseState).parseTriggerComment,
 	"ptah:schema:rls:policy":       (*schemaParseState).parseRLSPolicyComment,
 	"ptah:schema:rls:enable":       (*schemaParseState).parseRLSEnableComment,
@@ -1021,7 +1019,6 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 		CompositeTypes:    state.compositeTypes,
 		Ranges:            state.ranges,
 		Views:             state.views,
-		Synonyms:          state.synonyms,
 		MaterializedViews: state.materializedViews,
 		Triggers:          state.triggers,
 		RLSPolicies:       policies,
@@ -1644,30 +1641,6 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		Comment:    kv["comment"],
 		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
-	})
-	return nil
-}
-
-// parseSynonymComment reads a SQL Server synonym declaration.
-//
-// There is no dialect scope here, and the omission is deliberate: a synonym is
-// a SQL Server object and nothing else, so a scope attribute would let a schema
-// claim it belongs to a target that has no such construct.
-func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:synonym", structName)
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-	s.synonyms = append(s.synonyms, schemamodel.Synonym{
-		StructName: structName,
-		Name:       kv["name"],
-		Schema:     kv["schema"],
-		Target:     kv["target"],
-		Comment:    kv["comment"],
 	})
 	return nil
 }

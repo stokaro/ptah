@@ -69,7 +69,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertViews(database, dbSchema.Views)
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
-	convertSynonyms(database, dbSchema.Synonyms)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath
 	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
@@ -492,31 +491,6 @@ func convertSequences(database *schemamodel.Database, dbSequences []catalog.Sequ
 			Cycle:     dbSequence.Cycle,
 			OwnedBy:   dbSequence.OwnedBy,
 			Comment:   dbSequence.Comment,
-		})
-	}
-}
-
-// convertSynonyms carries the SQL Server synonyms a read found into the IR.
-//
-// Without it `ptah schema inspect` described none of them, in any format, even
-// though the reader finds every one and the HCL surface has a `synonym` block
-// (stokaro/ptah#1031). The loss sits between the read and the document, so
-// nothing that renders from a hand-built schema can see it
-// (stokaro/ptah#2001).
-//
-// The target is rebuilt from the PARSED parts rather than copied. `Target` is
-// base_object_name exactly as the catalog records it, brackets included, and
-// [ptah.run/core/schemamodel.Synonym.Target] is the spelling that will be
-// emitted: one to four dot-separated parts, unquoted. Copying the catalog's
-// form would put `[other].[dbo].[gauge]` in a document and render it again as
-// a name with brackets inside it.
-func convertSynonyms(database *schemamodel.Database, synonyms []catalog.Synonym) {
-	for _, synonym := range synonyms {
-		database.Synonyms = append(database.Synonyms, schemamodel.Synonym{
-			Name:    synonym.Name,
-			Schema:  synonym.Schema,
-			Target:  synonym.DeclaredTarget(),
-			Comment: synonym.Comment,
 		})
 	}
 }

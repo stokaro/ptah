@@ -130,11 +130,6 @@ func mysqlRenderedKinds() []mysqlCensusRow {
 			want: "-- CREATE SEQUENCE seq1 not supported in mysql\n",
 		},
 		{
-			kind: "CreateSynonymNode",
-			node: &ast.CreateSynonymNode{Name: "s1", Target: "users"},
-			want: "-- Synonym s1 not supported in mysql\n",
-		},
-		{
 			kind: "CreateTableNode",
 			node: mysqlCensusTable(),
 			want: "-- MYSQL TABLE: users --\nCREATE TABLE `users` (\n  `id` INT\n);\n\n",
@@ -191,11 +186,6 @@ func mysqlRenderedKinds() []mysqlCensusRow {
 			kind: "DropSequenceNode",
 			node: ast.NewDropSequence("seq1"),
 			want: "-- DROP SEQUENCE seq1 not supported in mysql\n",
-		},
-		{
-			kind: "DropSynonymNode",
-			node: ast.NewDropSynonym("s1"),
-			want: "-- DROP SYNONYM s1 not supported in mysql\n",
 		},
 		{
 			kind: "DropTableNode",
@@ -366,7 +356,7 @@ func TestMySQLDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 45
+const censusKindFloor = 43
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mysqlCensusRow {

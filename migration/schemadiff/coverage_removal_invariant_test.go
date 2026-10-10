@@ -76,12 +76,6 @@ func TestCompare_NotInspectedNeverBecomesAbsent(t *testing.T) {
 		// plans nothing -- a control that cannot fire, which is the shape this
 		// test's inverse half exists to refuse. Roles reach coverage through
 		// the ADDITIVE gate instead, which is a different property.
-		{
-			name:    "synonym",
-			kind:    coverage.Synonym,
-			current: func(db *catalog.Database) { db.Synonyms = []catalog.Synonym{{Name: "syn"}} },
-			removed: func(d *difftypes.SchemaDiff) int { return len(d.SynonymsRemoved) },
-		},
 	}
 
 	for _, test := range tests {

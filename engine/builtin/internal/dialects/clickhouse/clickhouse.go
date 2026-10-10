@@ -1553,18 +1553,6 @@ func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 // grants, so they render SQL rather than a diagnostic; the syntax they render,
 // and what it refuses, is documented there.
 
-// renderCreateSynonym refuses: ClickHouse has no synonym object.
-func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
-	r.notSupported("CREATE SYNONYM", node.Name)
-	return nil
-}
-
-// renderDropSynonym refuses for the same reason.
-func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
-	r.notSupported("DROP SYNONYM", node.Name)
-	return nil
-}
-
 // recordLostOperatorClasses names every operator class the index declares.
 //
 // A class is declared per index or per part, and the distinct values are

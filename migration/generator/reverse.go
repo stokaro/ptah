@@ -178,30 +178,11 @@ func reverseSchemaDiffWithPrior(
 		ViewsRemoved:  diff.ViewsAdded,   // Views to add become views to remove
 		ViewsModified: reverseViewDiffs(diff.ViewsModified, schema, prior, semantics),
 
-		// A synonym is an alias with no body, so reversing it needs no schema
-		// side: the down direction drops what the up direction created and
-		// recreates what it dropped. A retarget is the one entry that carries
-		// state, and swapping its two targets is the whole reversal -- the
-		// planner drops and recreates either way.
-		SynonymsAdded:    diff.SynonymsRemoved,
-		SynonymsRemoved:  diff.SynonymsAdded,
-		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified, prior),
 		// The context the down plan reads is the database the up migration
 		// left: the declared objects become the current ones, each with the
 		// value the database held where it held one already, which carries
 		// the state a replication or a transfer reported.
 		Features: reverseFeatureContext(diff.Features),
-
-		// A resource pool and a classifier reverse like a synonym: the down
-		// direction drops what the up direction created, and creates what it
-		// dropped from the settings the removal carried. A change carries
-		// both of its states, so the reversal swaps them.
-
-		// An extended property is a name, an address and a value, and the
-		// reversal needs no schema side because all three are already in the
-		// diff: the down direction drops what the up direction added, adds
-		// back what it dropped with the value the removal carried, and swaps
-		// the two values of a modification.
 
 		// Materialized views to remove become materialized views to add, each
 		// as the pre-change database held it, settings included.
