@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -59,12 +60,16 @@ func spannerLiveTable(c *qt.C, conn *dbschema.DatabaseConnection, table string) 
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
 	return &catalog.Database{
-		FeatureCoverage: live.FeatureCoverage,
-		Schemas:         live.Schemas,
-		Tables:          slices.DeleteFunc(slices.Clone(live.Tables), func(t catalog.Table) bool { return t.Name != table }),
-		Indexes:         slices.DeleteFunc(slices.Clone(live.Indexes), func(i catalog.Index) bool { return i.TableName != table }),
-		Constraints:     slices.DeleteFunc(slices.Clone(live.Constraints), func(k catalog.Constraint) bool { return k.TableName != table }),
-		NotDescribed:    live.NotDescribed,
+		// The coverage keeps no record of a table the narrowed read leaves out,
+		// since a record whose table is not there names no owner.
+		FeatureCoverage: live.FeatureCoverage.SelectSubjects(func(subject objectidentity.ID) bool {
+			return subject.Kind != objectidentity.KindTable || subject.Name.Source == table
+		}),
+		Schemas:      live.Schemas,
+		Tables:       slices.DeleteFunc(slices.Clone(live.Tables), func(t catalog.Table) bool { return t.Name != table }),
+		Indexes:      slices.DeleteFunc(slices.Clone(live.Indexes), func(i catalog.Index) bool { return i.TableName != table }),
+		Constraints:  slices.DeleteFunc(slices.Clone(live.Constraints), func(k catalog.Constraint) bool { return k.TableName != table }),
+		NotDescribed: live.NotDescribed,
 	}
 }
 

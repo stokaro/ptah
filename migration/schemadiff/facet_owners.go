@@ -46,9 +46,17 @@ func observedFacetSlots(db *catalog.Database, target string, semantics identifie
 		table := &db.Tables[i]
 		slots = append(slots, facetOwnerSlot{tableidentity.Subject(table.Schema, table.Name, target, semantics), &table.Facets})
 	}
+	builder := objectidentity.NewBuilder(semantics)
 	for i := range db.Indexes {
 		index := &db.Indexes[i]
-		subject := objectidentity.NewBuilder(semantics).IndexParts(index.Schema, index.TableName, index.Name)
+		subject := builder.IndexParts(index.Schema, index.TableName, index.Name)
+		if index.IsPrimary {
+			// A primary key's index is its table's key, so it is named within
+			// its table even where index names are the schema's: Spanner names
+			// every one PRIMARY_KEY (stokaro/ptah#4287). A declaration names no
+			// primary key index, so no declared slot is keyed this way.
+			subject.Parent = builder.TableParts(index.Schema, index.TableName).Name
+		}
 		slots = append(slots, facetOwnerSlot{subject, &index.Facets})
 	}
 	return slots
