@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/dialect/spanner/spannersource"
@@ -222,4 +223,59 @@ func TestTableDirectiveSpellsRowDeletionAsPlatformProperties(t *testing.T) {
 			}
 		}
 	}
+}
+
+func shadeOwner(c *qt.C, directive, attribute string) annotation.Set {
+	c.Helper()
+	set, err := annotation.NewSet(annotation.Extension{
+		Owner:    "example.org/paint",
+		Coverage: func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil },
+		Attributes: []annotation.DirectiveAttributes{{
+			Directive: directive, Attributes: []annotation.Attribute{{Name: attribute, Value: "string"}},
+			Decode: func(map[string]string) (schemaext.Facets, error) { return schemaext.Facets{}, nil },
+		}},
+	})
+	c.Assert(err, qt.IsNil)
+	return set
+}
+
+// TestNewCatalog_AddsOwnerAttributesToTheFrontendDirective pins that an
+// owner's attribute is known on the directive it extends, and only on that
+// one, and only in a catalog that selected the owner.
+func TestNewCatalog_AddsOwnerAttributesToTheFrontendDirective(t *testing.T) {
+	c := qt.New(t)
+
+	catalog, err := annotationmeta.NewCatalog(shadeOwner(c, "ptah:schema:matview", "shade"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(catalog.AllowsAttribute("ptah:schema:matview", "shade"), qt.IsTrue)
+	c.Assert(catalog.AllowsAttribute("ptah:schema:view", "shade"), qt.IsFalse)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:matview", "shade"), qt.IsFalse)
+}
+
+func TestNewCatalog_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		directive string
+		attribute string
+		wantErr   string
+	}{
+		{name: "an attribute the directive declares already", directive: "ptah:schema:matview", attribute: "body",
+			wantErr: `an owner adds attribute "body" to "ptah:schema:matview", which declares it already`},
+		{name: "attributes on a directive the frontend does not own", directive: "ptah:schema:gadget", attribute: "shade",
+			wantErr: `an owner adds attributes to "ptah:schema:gadget", which is not one of the frontend's own directives`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			catalog, err := annotationmeta.NewCatalog(shadeOwner(c, test.directive, test.attribute))
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(catalog.Directives(), qt.HasLen, 0)
+		})
+	}
+	c := qt.New(t)
+	_, err := annotationmeta.NewCatalog(annotation.Set{})
+	c.Assert(err, qt.ErrorIs, annotation.ErrUnselected)
 }

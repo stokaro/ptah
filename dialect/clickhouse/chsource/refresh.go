@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
@@ -46,4 +47,31 @@ func RefreshFacets(clause string) (schemaext.Facets, error) {
 // unmanaged.
 func RefreshCoverage() (schemaext.Coverage, error) {
 	return chschema.RefreshCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+}
+
+// MaterializedViewDirective is the frontend's directive the refresh schedule
+// is an attribute of.
+const MaterializedViewDirective = "ptah:schema:matview"
+
+// Annotations is the owner's contribution to the Go annotation frontend: the
+// refresh attribute of a materialized view, read by [RefreshFacets], and the
+// claim [RefreshCoverage] makes, so a view declared without a schedule
+// declares a plain view. A parse that does not select the owner refuses the
+// attribute as one the directive does not declare.
+func Annotations() annotation.Extension {
+	return annotation.Extension{
+		Owner: chschema.Owner,
+		Kinds: []schemaext.Kind{chschema.RefreshKind},
+		Attributes: []annotation.DirectiveAttributes{{
+			Directive: MaterializedViewDirective,
+			Attributes: []annotation.Attribute{{Name: "refresh", Value: "string",
+				Description: "ClickHouse refresh schedule, as ClickHouse spells it: " +
+					"`every 1 hour`, `after 30 minute`, `every 1 day offset 2 hour`. " +
+					"Omitted leaves the view maintained by inserts into its source."}},
+			Decode: func(attributes map[string]string) (schemaext.Facets, error) {
+				return RefreshFacets(attributes["refresh"])
+			},
+		}},
+		Coverage: RefreshCoverage,
+	}
 }

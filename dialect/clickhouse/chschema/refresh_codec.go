@@ -30,12 +30,17 @@ func RefreshCodecs() []schemaext.Codec {
 	}
 }
 
+// Owner is the provider identity under which the bundled runtime registers
+// the ClickHouse codecs. Coverage built here names it, so a runtime that
+// registers the codecs under another identity must build its own coverage.
+const Owner = "ptah.run/clickhouse"
+
 // RefreshCoverage records knowledge of refresh schedules for one
 // representation: the whole kind, and any subject that departs from it.
 func RefreshCoverage(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
 	owned := make([]schemaext.OwnedCodec, 0, 2)
 	for _, codec := range RefreshCodecs() {
-		owned = append(owned, schemaext.OwnedCodec{Owner: "ptah.run/clickhouse", Codec: codec})
+		owned = append(owned, schemaext.OwnedCodec{Owner: Owner, Codec: codec})
 	}
 	registry, err := schemaext.NewRegistry(owned...)
 	if err != nil {

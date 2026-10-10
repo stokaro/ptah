@@ -58,13 +58,35 @@ func Common() Catalog {
 }
 
 // NewCatalog joins the frontend's own directives with those of the owners in
-// set. It refuses an unselected set, and an owner directive that takes the
-// name of one of the frontend's own.
+// set, and adds to each of the frontend's directives the attributes owners add
+// to it. It refuses an unselected set, an owner directive that takes the name
+// of one of the frontend's own, an owner attribute the directive declares
+// already, and owner attributes on a directive that is not the frontend's.
 func NewCatalog(set annotation.Set) (Catalog, error) {
 	if !set.Selected() {
 		return Catalog{}, annotation.ErrUnselected
 	}
-	joined := slices.Clone(directives)
+	for _, name := range set.AttributedDirectives() {
+		if !slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == name }) {
+			return Catalog{}, fmt.Errorf("an owner adds attributes to %q, which is not one of the frontend's own directives", name)
+		}
+	}
+	joined := make([]Directive, 0, len(directives))
+	for _, own := range directives {
+		added := set.Attributes(own.Name)
+		if len(added) == 0 {
+			joined = append(joined, own)
+			continue
+		}
+		widened := own.Clone()
+		for _, attribute := range added {
+			if slices.ContainsFunc(widened.Attributes, func(existing Attribute) bool { return existing.Name == attribute.Name }) {
+				return Catalog{}, fmt.Errorf("an owner adds attribute %q to %q, which declares it already", attribute.Name, own.Name)
+			}
+			widened.Attributes = append(widened.Attributes, attribute)
+		}
+		joined = append(joined, widened)
+	}
 	for _, directive := range set.Directives() {
 		if slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == directive.Name }) {
 			owner, _ := set.Owner(directive.Name)
@@ -803,10 +825,6 @@ var directives = []Directive{
 			attr("name", "Materialized view name.", valueString, true, false),
 			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("body", "Materialized view SELECT body.", valueSQL, true, false),
-			attr("refresh", "ClickHouse refresh schedule, as ClickHouse spells it: "+
-				"`every 1 hour`, `after 30 minute`, `every 1 day offset 2 hour`. "+
-				"Omitted leaves the view maintained by inserts into its source.",
-				valueString, false, false),
 			attr("depends_on", "Comma-separated objects this view must be created after.", valueList, false, false),
 			retiredAttr("refresh_strategy",
 				"Retired: refused when the annotation is parsed, on every dialect.",

@@ -27,6 +27,7 @@ import (
 // yet, and the common path still carries ClickHouse policies, so the services
 // run only for objects a caller builds itself (ADR 0020).
 func registerClickHouseServices(provider *engine.Provider, name string) {
+	provider.Annotations = append(provider.Annotations, chsource.Annotations())
 	provider.Targets[0].Preparation = chprepare.Service{}
 	provider.Targets[0].Creations = chprepare.Service{}
 	provider.Codecs = append(provider.Codecs, chschema.Codecs()...)
