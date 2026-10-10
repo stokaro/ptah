@@ -45,3 +45,32 @@ func TestClassifySchemaDiffKeepsUnknownFeatureRisk(t *testing.T) {
 		c.Assert(findings, qt.DeepEquals, []safety.Finding{{Category: "feature_changes:" + string(value.Kind()), Count: 3, Severity: safety.Destructive}})
 	}
 }
+
+// A view the plan replaces loses its rows, so a setting change on it is as
+// destructive as the replacement whatever its own effect says: a schedule
+// changed in place keeps the rows, and changed beside the view's body it does
+// not (stokaro/ptah#4278). The control is the same change on a view the plan
+// keeps, which reports its own effect.
+func TestClassifySchemaDiffReportsAChangeOnAReplacedViewAsDestructive(t *testing.T) {
+	ref := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "", "daily")
+	record := schemaext.ChangeRecord{Subject: ref, Value: &classifiedChange{effect: schemaext.Effect{Impact: schemaext.Behavioral, Reason: "rows are kept"}}}
+	for _, test := range []struct {
+		name    string
+		changes map[string]string
+		want    safety.Severity
+	}{
+		{"a view the plan keeps", make(map[string]string), safety.Warning},
+		{"a view the plan replaces", map[string]string{"body": "SELECT 1 -> SELECT 2"}, safety.Destructive},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{
+				{ViewName: "daily", Changes: test.changes, FeatureChanges: []schemaext.ChangeRecord{record}},
+			}}
+
+			findings := safety.ClassifySchemaDiff(diff)
+
+			c.Assert(findings, qt.DeepEquals, []safety.Finding{{Category: "feature_changes:example.org/classified-change", Count: 1, Severity: test.want}})
+		})
+	}
+}

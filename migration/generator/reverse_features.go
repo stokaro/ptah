@@ -60,6 +60,9 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 	for i, view := range forward.MaterializedViewsModified {
 		count := len(view.FeatureChanges)
 		reverse.MaterializedViewsModified[i].FeatureChanges = reversedRecords(recovery[offset : offset+count])
+		if view.Replaces() {
+			accountForViewReplacement(recovery[offset : offset+count])
+		}
 		offset += count
 	}
 	for _, observed := range forward.ObservedConstraintHosts {
@@ -165,4 +168,27 @@ func reverseFeatureTableState(
 		return current, nil
 	}
 	return projectTableFeatures(ctx, current, recovery, semantics, runtime.Codecs())
+}
+
+// replacedViewLimitation is what undoing a change to a replaced view cannot
+// recover.
+const replacedViewLimitation = "Replacing a materialized view restores its definition and settings but not the rows it held."
+
+// accountForViewReplacement describes the reversal of changes to a view the
+// forward plan replaces. The reverse plan replaces it again, whatever each
+// owner would have done to the settings in place, so that is the strategy and
+// the lost rows are a limitation (stokaro/ptah#4278).
+//
+// A change that itself replaces the view is left as its owner described it:
+// the owner's reversal already says so and names what it cannot recover.
+func accountForViewReplacement(results []schemaext.Reversal) {
+	for i := range results {
+		if schemaext.ReplacesOwner(results[i].Change.Value) {
+			continue
+		}
+		results[i].Strategy = "replace the materialized view with its captured definition and settings"
+		if !slices.Contains(results[i].Limitations, replacedViewLimitation) {
+			results[i].Limitations = append(slices.Clone(results[i].Limitations), replacedViewLimitation)
+		}
+	}
 }

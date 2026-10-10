@@ -7,15 +7,6 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 )
 
-// Mode names the two ways ClickHouse schedules a refresh.
-const (
-	// ModeEvery refreshes on a wall-clock schedule, so a run that takes longer
-	// than the interval does not push the next one back.
-	ModeEvery = "EVERY"
-	// ModeAfter refreshes that long after the previous run finished.
-	ModeAfter = "AFTER"
-)
-
 // Canonical returns spec in the form the server stores, or an error naming what
 // the server would have refused.
 //
@@ -28,8 +19,8 @@ func Canonical(spec *chschema.Schedule, schema string) (*chschema.Schedule, erro
 		return nil, nil
 	}
 	mode := strings.ToUpper(strings.TrimSpace(spec.Mode))
-	if mode != ModeEvery && mode != ModeAfter {
-		return nil, fmt.Errorf("refresh mode %q: expected %s or %s", spec.Mode, ModeEvery, ModeAfter)
+	if mode != chschema.RefreshEvery && mode != chschema.RefreshAfter {
+		return nil, fmt.Errorf("refresh mode %q: expected %s or %s", spec.Mode, chschema.RefreshEvery, chschema.RefreshAfter)
 	}
 
 	interval, err := CanonicalInterval(spec.Interval)
@@ -45,8 +36,8 @@ func Canonical(spec *chschema.Schedule, schema string) (*chschema.Schedule, erro
 	if strings.TrimSpace(spec.Offset) != "" {
 		// Measured: `AFTER 1 HOUR OFFSET 5 MINUTE` is a syntax error, so the
 		// combination is refused here rather than sent.
-		if mode != ModeEvery {
-			return nil, fmt.Errorf("refresh OFFSET belongs to %s and this schedule is %s", ModeEvery, mode)
+		if mode != chschema.RefreshEvery {
+			return nil, fmt.Errorf("refresh OFFSET belongs to %s and this schedule is %s", chschema.RefreshEvery, mode)
 		}
 		canonical.Offset, err = CanonicalInterval(spec.Offset)
 		if err != nil {
@@ -88,26 +79,4 @@ func qualifyDependencies(dependencies []string, schema string) []string {
 		return nil
 	}
 	return qualified
-}
-
-// Clause renders spec as the text that follows REFRESH in a CREATE statement,
-// in the order the server prints it.
-func Clause(spec *chschema.Schedule) string {
-	if spec == nil {
-		return ""
-	}
-	return spec.Clause()
-}
-
-// Equal reports whether two schedules describe the same thing.
-//
-// Both sides are expected to be canonical already -- the declared one through
-// [Canonical] and the read one through the parser that produced it -- so this
-// compares values rather than folding again. Comparing a raw declaration here
-// would hide the case the canonicalizer exists for.
-func Equal(a, b *chschema.Schedule) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return a.Equal(*b)
 }

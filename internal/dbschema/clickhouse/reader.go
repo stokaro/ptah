@@ -103,7 +103,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read views: %w", err)
 	}
-	matViews, unreadable, err := r.readMaterializedViews(ctx, dbName)
+	matViews, refreshLimits, err := r.readMaterializedViews(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
 	}
@@ -116,7 +116,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		Views:    views,
 		MatViews: matViews,
 	}, revisiontable.NativeNames())
-	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexKnowledge, unreadable)
+	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexKnowledge, refreshLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -343,9 +343,11 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 // The schedule is read only for a view system.view_refreshes lists, so a plain
 // view whose body happens to contain the word cannot acquire one. A
 // refreshable view whose clause this reader cannot read gets no observation
-// and is returned in unreadable, so its schedule is reported unknown rather
+// and a refresh limit naming it, so its schedule is reported unknown rather
 // than absent: a schedule read as absent would plan a replacement that drops
-// the view's rows.
+// the view's rows. When the account may not read system.view_refreshes, every
+// view's schedule is reported uninspected for the same reason, and the rest of
+// the read goes on.
 //
 // What this read cannot tell apart, stated rather than hidden: a view created
 // with `TO <target table>` routes its rows into a table the user owns and has no
@@ -366,11 +368,40 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 // the renderer emitting `TO`, the comparator diffing it); refusing the read
 // outright would take away a read that works today. Neither is decided here --
 // the support matrix says plainly not to manage a `TO` view with Ptah.
-func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) (views, unreadable []catalog.MaterializedView, err error) {
+func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) ([]catalog.MaterializedView, []schemaext.SubjectCoverage, error) {
+	views, statements, err := r.readMaterializedViewRows(ctx, dbName)
+	if err != nil || len(views) == 0 {
+		return views, nil, err
+	}
 	refreshable, err := r.readRefreshableViews(ctx, dbName)
 	if err != nil {
-		return nil, nil, err
+		if !isAccessDenied(err) && !isUnknownTable(err) {
+			return nil, nil, fmt.Errorf("read system.view_refreshes: %w", err)
+		}
+		return views, refreshLimits(views, schemaext.Knowledge{State: schemaext.Uninspected,
+			Reason: "the account may not read system.view_refreshes, so which views refresh on a schedule is unknown"}), nil
 	}
+	var limits []schemaext.SubjectCoverage
+	for i := range views {
+		if !refreshable[views[i].Name] {
+			continue
+		}
+		schedule := chrefresh.ParseCreateQuery(statements[i])
+		if schedule == nil {
+			limits = append(limits, refreshLimits(views[i:i+1], schemaext.Knowledge{State: schemaext.Unrepresentable,
+				Reason: "the refresh clause of the stored CREATE statement could not be read"})...)
+			continue
+		}
+		if views[i].Facets, err = observedRefresh(*schedule); err != nil {
+			return nil, nil, fmt.Errorf("refresh schedule of %s: %w", views[i].Name, err)
+		}
+	}
+	return views, limits, nil
+}
+
+// readMaterializedViewRows lists the materialized views of dbName with the
+// statement each was stored as, in the same order.
+func (r *Reader) readMaterializedViewRows(ctx context.Context, dbName string) ([]catalog.MaterializedView, []string, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT name, as_select, comment, create_table_query
 		FROM system.tables
@@ -384,26 +415,21 @@ func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) (view
 	}
 	defer rows.Close()
 
+	var views []catalog.MaterializedView
+	var statements []string
 	for rows.Next() {
 		view := catalog.MaterializedView{Schema: dbName}
-		var createQuery string
-		if err := rows.Scan(&view.Name, &view.Body, &view.Comment, &createQuery); err != nil {
+		var statement string
+		if err := rows.Scan(&view.Name, &view.Body, &view.Comment, &statement); err != nil {
 			return nil, nil, err
 		}
-		if refreshable[view.Name] {
-			schedule := chrefresh.ParseCreateQuery(createQuery)
-			if schedule == nil {
-				unreadable = append(unreadable, view)
-			} else if view.Facets, err = observedRefresh(*schedule); err != nil {
-				return nil, nil, fmt.Errorf("refresh schedule of %s: %w", view.Name, err)
-			}
-		}
 		views = append(views, view)
+		statements = append(statements, statement)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	return views, unreadable, nil
+	return views, statements, nil
 }
 
 func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]catalog.Column, error) {
@@ -585,12 +611,10 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 // not "scheduled how"; the schedule itself comes from create_table_query
 // (stokaro/ptah#1802).
 //
-// A server that does not have the table at all predates refreshable views, so
-// every view it holds is plain and the answer is an empty set. Any other
-// failure is returned: answering it with an empty set would read every
-// schedule as absent and plan replacements that drop the views' rows. Whether
-// the table exists is asked only after the query fails, so an ordinary read
-// costs no extra round trip.
+// Only a view this lists has a schedule; a failure to read it is returned, and
+// the caller decides what the description can still claim. Answering it with
+// an empty set would read every schedule as absent and plan replacements that
+// drop the views' rows.
 func (r *Reader) readRefreshableViews(ctx context.Context, dbName string) (map[string]bool, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT view
@@ -598,13 +622,7 @@ func (r *Reader) readRefreshableViews(ctx context.Context, dbName string) (map[s
 		WHERE database = ?
 	`, dbName)
 	if err != nil {
-		var count uint64
-		if probe := r.db.QueryRowContext(ctx, `
-			SELECT count() FROM system.tables WHERE database = 'system' AND name = 'view_refreshes'
-		`).Scan(&count); probe == nil && count == 0 {
-			return make(map[string]bool), nil
-		}
-		return nil, fmt.Errorf("read system.view_refreshes: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 

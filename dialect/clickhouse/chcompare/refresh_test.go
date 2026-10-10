@@ -197,6 +197,42 @@ func TestRefreshComparison_AnUnreadScheduleIsUndecided(t *testing.T) {
 	}
 }
 
+// A current side that did not inspect schedules states none: a document read
+// as the current state, or an account that may not read the catalog of
+// schedules. A declaration of a plain view asks for nothing a plan could do
+// there, so it is neither a change nor undecided; one declaring a schedule
+// cannot be checked, so it is undecided (stokaro/ptah#4278).
+func TestRefreshComparison_AnUninspectedSideStatesNoSchedule(t *testing.T) {
+	builder := objectidentity.NewBuilder(identifier.ForDialect("clickhouse"))
+	view := builder.SchemaScopedParts(objectidentity.KindMatView, "", "mv")
+	readLimit := must.Must(chschema.RefreshCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: chschema.RefreshKind, Subject: view, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not read"}}}))
+	tests := []struct {
+		name      string
+		declared  *chschema.Schedule
+		current   schemaext.Coverage
+		undecided int
+	}{
+		{name: "a plain declaration against a side with no coverage"},
+		{name: "a plain declaration against a view the read did not inspect", current: readLimit},
+		{name: "a schedule against a side with no coverage", declared: every("1 HOUR"), undecided: 1},
+		{name: "a schedule against a view the read did not inspect", declared: every("1 HOUR"), current: readLimit, undecided: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := refreshRequest(test.declared, nil, schemaext.Complete, schemaext.Uninspected)
+			request.Current.Coverage = test.current
+
+			result, err := refreshRuntime().CompareFacets(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 0)
+			c.Assert(result.Undecided, qt.HasLen, test.undecided)
+		})
+	}
+}
+
 // A view only one side holds is created with its declared schedule or removed
 // with its own, so the comparison reports no schedule change for it.
 func TestRefreshComparison_LeavesNewAndRemovedViewsToTheirLifecycle(t *testing.T) {

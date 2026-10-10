@@ -87,7 +87,7 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 	if err := validateIndexIncludeColumns(db.Indexes); err != nil {
 		return nil, err
 	}
-	if err := validateMaterializedViewFacets(db.MaterializedViews); err != nil {
+	if err := validateMaterializedViewFacets(db.MaterializedViews, db.FeatureCoverage); err != nil {
 		return nil, err
 	}
 	if err := refuseNarrowedDeleteActions(db.Constraints); err != nil {

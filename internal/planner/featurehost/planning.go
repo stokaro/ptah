@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/featureops"
-	"ptah.run/internal/tableref"
 )
 
 // Result retains lowered contributions and explicit common-step rewrites.
@@ -86,19 +85,10 @@ func validateNames(request featureplan.Request, names map[objectidentity.Key]str
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for key, name := range names {
 		table := captured[key] && builder.Table(name).Key() == key
-		view := views[key] && materializedView(builder, name).Key() == key
+		view := views[key] && builder.SchemaScoped(objectidentity.KindMatView, name).Key() == key
 		if name == "" || !table && !view {
 			return fmt.Errorf("%w: feature table name disagrees with its captured identity", schemaext.ErrInvalidValue)
 		}
 	}
 	return nil
-}
-
-// materializedView is the identity of a materialized view named the way the
-// host spells it, with or without its schema.
-func materializedView(builder objectidentity.Builder, name string) objectidentity.ID {
-	if ref, valid := tableref.Parse(name); valid {
-		return builder.SchemaScopedParts(objectidentity.KindMatView, ref.Schema, ref.Name)
-	}
-	return builder.SchemaScopedParts(objectidentity.KindMatView, "", name)
 }

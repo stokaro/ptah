@@ -21,10 +21,9 @@ func RefreshFacets(clause string) (schemaext.Facets, error) {
 	if declared == "" {
 		return schemaext.Facets{}, nil
 	}
-	parsed := chrefresh.ParseClause(declared)
-	if parsed == nil {
-		return schemaext.Facets{}, fmt.Errorf("%w: refresh %q is not a ClickHouse refresh clause; expected EVERY or AFTER "+
-			"followed by an interval", schemaext.ErrInvalidValue, declared)
+	parsed, err := chrefresh.ParseClause(declared)
+	if err != nil {
+		return schemaext.Facets{}, fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
 	}
 	canonical, err := chrefresh.Canonical(parsed, "")
 	if err != nil {

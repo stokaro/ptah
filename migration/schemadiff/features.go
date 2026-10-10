@@ -256,12 +256,11 @@ func constraintHostDeclarations(desired *schemamodel.Database, diff *difftypes.S
 
 // attachMaterializedViewChanges attaches the feature changes of materialized
 // views to their entries. It runs after the view comparison, so a view whose
-// definition also changed holds both in one entry.
-func attachMaterializedViewChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, changes []schemaext.ChangeRecord, semantics identifier.Semantics) error {
-	views, err := newMaterializedViewChanges(diff, desired, semantics)
-	if err != nil {
-		return err
-	}
+// definition also changed holds both in one entry. A replacement that would
+// lose a setting the read could not capture is refused; see
+// [refuseLossyViewReplacements].
+func attachMaterializedViewChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, changes []schemaext.ChangeRecord, semantics identifier.Semantics) error {
+	views := newMaterializedViewChanges(diff, desired, semantics)
 	for _, change := range changes {
 		if change.Subject.Kind != objectidentity.KindMatView {
 			continue
@@ -273,6 +272,35 @@ func attachMaterializedViewChanges(diff *difftypes.SchemaDiff, desired *schemamo
 	slices.SortStableFunc(diff.MaterializedViewsModified, func(a, b difftypes.MaterializedViewDiff) int {
 		return strings.Compare(a.ViewName, b.ViewName)
 	})
+	return refuseLossyViewReplacements(diff, desired, current, semantics)
+}
+
+// refuseLossyViewReplacements refuses to replace a materialized view while
+// the current side says it holds an attached setting the read could not
+// capture, such as a refresh schedule whose stored clause it could not read,
+// and the desired side neither states that setting nor asks for its absence.
+// The replacement creates the view from the declaration, so the setting would
+// be gone with no change saying so (stokaro/ptah#4278).
+func refuseLossyViewReplacements(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, semantics identifier.Semantics) error {
+	for _, view := range diff.MaterializedViewsModified {
+		if !view.Replaces() {
+			continue
+		}
+		subject := declaredMaterializedViewSubject(view.ViewName, semantics)
+		for _, record := range current.FeatureCoverage.SubjectRecords() {
+			if record.Subject.Key() != subject.Key() || (record.Knowledge.State != schemaext.Unrepresentable && record.Knowledge.State != schemaext.Uninspected) {
+				continue
+			}
+			if _, declared, err := view.Desired.Facets.Get(record.Kind); err != nil || declared {
+				continue
+			}
+			if desired.FeatureCoverage.Lookup(record.Kind, subject).State == schemaext.Complete {
+				continue
+			}
+			return &RefusalError{cause: fmt.Errorf("%w: materialized view %s is replaced, and its %q could not be read (%s), so the replacement would recreate it without that setting; "+
+				"declare the setting, or leave the view's definition unchanged", ptaherr.ErrUnsupportedFeature, view.ViewName, record.Kind, record.Knowledge.Reason)}
+		}
+	}
 	return nil
 }
 
@@ -287,23 +315,20 @@ type materializedViewChanges struct {
 	declarations map[objectidentity.Key]schemamodel.MaterializedView
 }
 
-func newMaterializedViewChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, semantics identifier.Semantics) (materializedViewChanges, error) {
+func newMaterializedViewChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, semantics identifier.Semantics) materializedViewChanges {
 	views := materializedViewChanges{
 		diff: diff, semantics: semantics,
 		positions:    make(map[objectidentity.Key]int, len(diff.MaterializedViewsModified)),
 		declarations: make(map[objectidentity.Key]schemamodel.MaterializedView, len(desired.MaterializedViews)),
 	}
-	for _, view := range desired.MaterializedViews {
-		subject := declaredMaterializedViewSubject(view.Name, semantics)
-		if _, duplicate := views.declarations[subject.Key()]; duplicate {
-			return materializedViewChanges{}, fmt.Errorf("%w: duplicate desired materialized view %s", ptaherr.ErrInvalidSchemaDiff, subject)
-		}
-		views.declarations[subject.Key()] = view
+	for _, i := range standingMaterializedViews(desired.MaterializedViews, semantics) {
+		view := desired.MaterializedViews[i]
+		views.declarations[declaredMaterializedViewSubject(view.Name, semantics).Key()] = view
 	}
 	for i, view := range diff.MaterializedViewsModified {
 		views.positions[declaredMaterializedViewSubject(view.ViewName, semantics).Key()] = i
 	}
-	return views, nil
+	return views
 }
 
 func (v materializedViewChanges) attach(change schemaext.ChangeRecord) error {

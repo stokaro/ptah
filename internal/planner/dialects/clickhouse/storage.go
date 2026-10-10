@@ -20,8 +20,12 @@ import (
 // Columns and indexes become graph steps with known effects, so feature owners
 // can order their operations around them and see what the host already does
 // to an object they own settings of.
+//
+// drops holds the drops of the materialized views the plan replaces: they run
+// after before and ahead of the column and feature steps, and the views are
+// recreated in after.
 type storagePhases struct {
-	before, columns, after, indexes, last []ast.Node
+	before, drops, columns, after, indexes, last []ast.Node
 }
 
 func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, phases storagePhases) ([]ast.Node, error) {
@@ -50,11 +54,10 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 		return nil, err
 	}
 	first, last := plangraph.StepID{Owner: common.Owner, Name: "before-storage"}, plangraph.StepID{Owner: common.Owner, Name: "after-storage"}
-	replacements := materializedViewChanges(&request, names, diff)
+	materializedViewChanges(&request, names, diff)
 	drops := plangraph.StepID{Owner: common.Owner, Name: "materialized-view-replacements"}
-	after, dropped := splitReplacementDrops(phases.after, replacements)
-	dropEffects, createEffects := replacementEffects(replacements, plangraph.Drop), replacementEffects(replacements, plangraph.Create)
-	if len(replacements) > 0 {
+	dropEffects, createEffects := replacementEffects(builder, phases.drops)
+	if len(dropEffects) > 0 {
 		steps = append(steps,
 			featureplan.CommonStep{ID: drops, Effects: slices.Clone(dropEffects)},
 			featureplan.CommonStep{ID: last, Effects: slices.Clone(createEffects)})
@@ -80,18 +83,18 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	}
 	// These surrounding phases retain their order. Their footprints remain
 	// unknown until each object family contributes its own graph metadata;
-	// the one known so far is the replacement of a materialized view whose
-	// attached settings changed, whose drop runs just before the phase that
-	// recreates it.
+	// the one known so far is the replacement of a materialized view, whose
+	// drop runs ahead of every column and feature step and whose recreation
+	// is in the phase after them.
 	final := plangraph.StepID{Owner: common.Owner, Name: "after-indexes"}
 	common.Steps = append(common.Steps,
 		plangraph.Step[[]ast.Node]{ID: first, Payload: phases.before},
-		plangraph.Step[[]ast.Node]{ID: drops, Payload: dropped, Effects: dropEffects},
-		plangraph.Step[[]ast.Node]{ID: last, Payload: after, Effects: createEffects},
+		plangraph.Step[[]ast.Node]{ID: drops, Payload: phases.drops, Effects: dropEffects},
+		plangraph.Step[[]ast.Node]{ID: last, Payload: phases.after, Effects: createEffects},
 		plangraph.Step[[]ast.Node]{ID: final, Payload: phases.last})
 	common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: first, After: drops}, plangraph.Dependency{Before: drops, After: last})
 	for _, id := range middle {
-		common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: first, After: id}, plangraph.Dependency{Before: id, After: last})
+		common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: drops, After: id}, plangraph.Dependency{Before: id, After: last})
 	}
 	// Index operations keep their sequence after the other objects: a
 	// replacement drops before it adds, and removals follow additions.
@@ -182,52 +185,33 @@ func commonColumns(builder objectidentity.Builder, nodes []ast.Node) (plangraph.
 	return common, steps, nil
 }
 
-// viewReplacement is a materialized view the common plan replaces while the
-// settings attached to it change.
-type viewReplacement struct {
-	name    string
-	subject objectidentity.ID
-}
-
 // materializedViewChanges adds the attached-setting changes of materialized
-// views to the request and binds each view's name for the operations its owner
-// contributes. It returns the views the common plan replaces, whose owners
-// learn of the replacement from the effects of the steps that drop and
-// recreate them.
-func materializedViewChanges(request *featureplan.Request, names map[objectidentity.Key]string, diff *difftypes.SchemaDiff) []viewReplacement {
-	var replaced []viewReplacement
+// views to the request and binds each view's name for the operations its
+// owner contributes. Whether the common plan replaces a view, its owner learns
+// from the effects of the steps that drop and recreate it.
+func materializedViewChanges(request *featureplan.Request, names map[objectidentity.Key]string, diff *difftypes.SchemaDiff) {
 	for _, view := range diff.MaterializedViewsModified {
 		if len(view.FeatureChanges) == 0 {
 			continue
 		}
 		request.Changes = append(request.Changes, view.FeatureChanges...)
-		subject := view.FeatureChanges[0].Subject
-		names[subject.Key()] = view.ViewName
-		if view.Replaces() {
-			replaced = append(replaced, viewReplacement{name: view.ViewName, subject: subject})
-		}
+		names[view.FeatureChanges[0].Subject.Key()] = view.ViewName
 	}
-	return replaced
 }
 
-// splitReplacementDrops moves the drop half of each replacement out of the
-// view phase, so the drop and the recreation are two steps a graph can name.
-func splitReplacementDrops(nodes []ast.Node, replaced []viewReplacement) (rest, drops []ast.Node) {
-	for _, node := range nodes {
+// replacementEffects are the effects of the replacement drops the plan
+// emitted: each drops its view, and the phase after storage creates it again.
+// A view whose drop was not emitted, such as on a target without materialized
+// views, is not replaced and has neither effect.
+func replacementEffects(builder objectidentity.Builder, drops []ast.Node) (dropEffects, createEffects []plangraph.Effect) {
+	for _, node := range drops {
 		drop, ok := node.(*ast.DropMaterializedViewNode)
-		if ok && slices.ContainsFunc(replaced, func(view viewReplacement) bool { return view.name == drop.Name }) {
-			drops = append(drops, node)
+		if !ok {
 			continue
 		}
-		rest = append(rest, node)
+		subject := builder.SchemaScoped(objectidentity.KindMatView, drop.Name)
+		dropEffects = append(dropEffects, plangraph.Effect{Subject: subject, Action: plangraph.Drop})
+		createEffects = append(createEffects, plangraph.Effect{Subject: subject, Action: plangraph.Create})
 	}
-	return rest, drops
-}
-
-func replacementEffects(replaced []viewReplacement, action plangraph.Action) []plangraph.Effect {
-	var effects []plangraph.Effect
-	for _, view := range replaced {
-		effects = append(effects, plangraph.Effect{Subject: view.subject, Action: action})
-	}
-	return effects
+	return dropEffects, createEffects
 }

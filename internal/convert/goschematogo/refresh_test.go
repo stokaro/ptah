@@ -7,6 +7,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -50,4 +52,28 @@ func TestRenderRefusesAMaterializedViewSettingItCannotWrite_FailurePath(t *testi
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `.*: materialized view "daily" carries setting "ptah.run/clickhouse/table", which a Go annotation cannot represent`)
 	c.Assert(files, qt.IsNil)
+}
+
+// A schedule the read could not capture cannot be written: a Go source states
+// every view's schedule, so the view would come out plain and applying the
+// export would remove the schedule. The export is refused and names the view
+// (stokaro/ptah#4278).
+func TestRenderRefusesAScheduleItCouldNotCapture_FailurePath(t *testing.T) {
+	for _, state := range []schemaext.KnowledgeState{schemaext.Unrepresentable, schemaext.Uninspected} {
+		t.Run(string(state), func(t *testing.T) {
+			c := qt.New(t)
+			view := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "analytics", "daily")
+			db := &schemamodel.Database{
+				MaterializedViews: []schemamodel.MaterializedView{{Name: "analytics.daily", Body: "SELECT 1"}},
+				FeatureCoverage: must.Must(chschema.RefreshCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+					[]schemaext.SubjectCoverage{{Kind: chschema.RefreshKind, Subject: view, Knowledge: schemaext.Knowledge{State: state, Reason: "not read"}}})),
+			}
+
+			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `.*materialized view analytics.daily: its refresh schedule was not captured \(not read\).*`)
+			c.Assert(files, qt.IsNil)
+		})
+	}
 }

@@ -191,7 +191,9 @@ func collectViewMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 		"materialized_view_mismatch",
 		"materialized view",
 		func(value difftypes.MaterializedViewDiff) string { return value.ViewName },
-		func(value difftypes.MaterializedViewDiff) map[string]string { return value.Changes },
+		func(value difftypes.MaterializedViewDiff) map[string]string {
+			return withFeatureChanges(value.Changes, value.FeatureChanges)
+		},
 	)...)
 	return mismatches
 }
@@ -588,4 +590,30 @@ func describeChanges(changes map[string]string) string {
 		parts = append(parts, key+" "+changes[key])
 	}
 	return strings.Join(parts, ", ")
+}
+
+// withFeatureChanges adds each owner change to changes under its kind, as the
+// owner describes it: a change value that is a fmt.Stringer says what changed,
+// such as `EVERY 1 HOUR -> EVERY 2 HOUR` for a refresh schedule, and any other
+// one says why it matters through its effect. A mismatch that is only an
+// owner change would otherwise name the object and nothing it differs in.
+func withFeatureChanges(changes map[string]string, features []schemaext.ChangeRecord) map[string]string {
+	if len(features) == 0 {
+		return changes
+	}
+	result := maps.Clone(changes)
+	if result == nil {
+		result = make(map[string]string, len(features))
+	}
+	for _, feature := range features {
+		description := "changed"
+		switch value := feature.Value.(type) {
+		case fmt.Stringer:
+			description = value.String()
+		case schemaext.EffectSource:
+			description = value.Effect().Reason
+		}
+		result[string(feature.Value.Kind())] = description
+	}
+	return result
 }

@@ -47,6 +47,19 @@ func (v *Refresh) Effect() schemaext.Effect {
 	return schemaext.Effect{Impact: schemaext.Behavioral, Reason: "changing a refresh schedule changes when the view is refreshed; its rows are kept"}
 }
 
+// String describes the transition as the two clauses, such as
+// `EVERY 1 HOUR -> EVERY 2 HOUR`, with `none` for a plain view.
+func (v *Refresh) String() string {
+	before, after := "none", "none"
+	if v != nil && v.Before != nil {
+		before = v.Before.Clause()
+	}
+	if v != nil && v.After != nil {
+		after = v.After.Clause()
+	}
+	return before + " -> " + after
+}
+
 // CloneChange returns independent operands. A nil receiver remains typed nil.
 func (v *Refresh) CloneChange() schemaext.ChangeValue {
 	if v == nil {

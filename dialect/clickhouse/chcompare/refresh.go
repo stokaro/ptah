@@ -25,8 +25,10 @@ type RefreshService struct{}
 // differ. A view without a declared schedule asks for none where the source's
 // coverage is complete for the kind; under any other coverage its schedule is
 // unmanaged and the observed one is adopted, so a source that cannot state a
-// schedule never removes one. A declared schedule that cannot be read, or a
-// view whose schedule the server did not let the reader see, is undecided.
+// schedule never removes one. A declared schedule that cannot be read is
+// undecided, and so is a view the current side did not inspect, unless the
+// declaration asks for a plain view and the current side states no schedule
+// it could not read.
 // Errors and cancellation return no partial result. Inputs remain unchanged.
 func (RefreshService) CompareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
 	if ctx == nil {
@@ -85,6 +87,15 @@ func compareRefresh(request schemaext.FacetComparisonRequest, owner schemaext.Pa
 		return adoptRefresh(result, owner.Subject, current)
 	}
 	if !refreshKnown(request.Current.Coverage, owner.Subject) {
+		// A declared plain view is only in doubt when the current side says a
+		// schedule exists that it could not read. A side that did not look,
+		// such as a document or an account that may not read the catalog of
+		// schedules, states none, and a plain declaration asks for nothing a
+		// plan could do (stokaro/ptah#4278).
+		state := request.Current.Coverage.Lookup(chschema.RefreshKind, owner.Subject).State
+		if desired == nil && state != schemaext.Unrepresentable {
+			return nil
+		}
 		refreshUndecided(result, owner.Subject, "the ClickHouse refresh schedule was not fully inspected")
 		return nil
 	}
@@ -109,7 +120,7 @@ func compareRefresh(request schemaext.FacetComparisonRequest, owner schemaext.Pa
 			reported = stored
 		}
 	}
-	if chrefresh.Equal(wanted, reported) {
+	if sameSchedule(wanted, reported) {
 		return nil
 	}
 	change := &chdiff.Refresh{Before: current}
@@ -190,4 +201,13 @@ func refreshLimited(coverage schemaext.Coverage, subject objectidentity.ID) bool
 
 func refreshUndecided(result *schemaext.FacetComparisonResult, subject objectidentity.ID, reason string) {
 	result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: chschema.RefreshKind, Subject: subject, Reason: reason})
+}
+
+// sameSchedule compares two schedules read the way the server stores them;
+// nil is a plain view.
+func sameSchedule(a, b *chschema.Schedule) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
 }

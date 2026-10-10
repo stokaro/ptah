@@ -2071,7 +2071,8 @@ func WalkDatabase(
 	if visit == nil {
 		return fmt.Errorf("walk database schema: nil visitor")
 	}
-	if err := validateFeatureLowering(database, targetPlatform); err != nil {
+	notes, err := validateFeatureLowering(database, targetPlatform)
+	if err != nil {
 		return err
 	}
 	if lowering.Context == nil {
@@ -2079,6 +2080,11 @@ func WalkDatabase(
 	}
 	if err := lowering.Context.Err(); err != nil {
 		return err
+	}
+	for _, note := range notes {
+		if err := visit(note); err != nil {
+			return err
+		}
 	}
 	if err := walkDeclarations(database, targetPlatform, lowering, func(node ast.Node) error {
 		if err := lowering.Context.Err(); err != nil {

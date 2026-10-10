@@ -75,26 +75,21 @@ var storageRegistry = sync.OnceValues(func() (schemaext.Registry, error) {
 // Only returned, retained tables establish complete settings observations.
 // Index knowledge applies to the whole database; readSkippingIndexes says why.
 // Refresh schedules are known for every materialized view the read returns,
-// except a refreshable one whose schedule could not be read.
-func observedCoverage(tables []catalog.Table, index schemaext.Knowledge, unreadable []catalog.MaterializedView) (schemaext.Coverage, error) {
+// except the ones refreshLimits names.
+func observedCoverage(tables []catalog.Table, index schemaext.Knowledge, refreshLimits []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
 	registry, err := storageRegistry()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
 	identities := objectidentity.NewBuilder(identifier.ForDialect(platform.ClickHouse))
-	subjects := make([]schemaext.SubjectCoverage, 0, len(tables))
+	subjects := make([]schemaext.SubjectCoverage, 0, len(tables)+len(refreshLimits))
 	for _, table := range tables {
 		subjects = append(subjects, schemaext.SubjectCoverage{
 			Kind: chschema.TableKind, Subject: identities.TableParts(table.Schema, table.Name),
 			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
 		})
 	}
-	for _, view := range unreadable {
-		subjects = append(subjects, schemaext.SubjectCoverage{
-			Kind: chschema.RefreshKind, Subject: identities.SchemaScopedParts(objectidentity.KindMatView, view.Schema, view.Name),
-			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the refresh clause of the stored CREATE statement could not be read"},
-		})
-	}
+	subjects = append(subjects, refreshLimits...)
 	knowledge := map[schemaext.Kind]schemaext.Knowledge{
 		chschema.TableKind:   {State: schemaext.Uninspected, Reason: "only returned tables have inspected ClickHouse settings"},
 		chschema.IndexKind:   index,
@@ -110,4 +105,16 @@ func observedCoverage(tables []catalog.Table, index schemaext.Knowledge, unreada
 		return schemaext.Coverage{}, fmt.Errorf("%w: no observed ClickHouse storage codec", schemaext.ErrUnknownCodec)
 	}
 	return schemaext.NewCoverage(schemaext.Observed, kinds, subjects)
+}
+
+// refreshLimits records knowledge of the refresh schedule of each view.
+func refreshLimits(views []catalog.MaterializedView, knowledge schemaext.Knowledge) []schemaext.SubjectCoverage {
+	identities := objectidentity.NewBuilder(identifier.ForDialect(platform.ClickHouse))
+	limits := make([]schemaext.SubjectCoverage, len(views))
+	for i, view := range views {
+		limits[i] = schemaext.SubjectCoverage{
+			Kind: chschema.RefreshKind, Subject: identities.SchemaScopedParts(objectidentity.KindMatView, view.Schema, view.Name), Knowledge: knowledge,
+		}
+	}
+	return limits
 }

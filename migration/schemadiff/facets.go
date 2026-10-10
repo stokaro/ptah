@@ -28,12 +28,15 @@ func captureFeatureStates(desired *schemamodel.Database, current *catalog.Databa
 			declared.Facets = append(declared.Facets, schemaext.FacetRecord{Subject: slot.subject, Values: *slot.values})
 		}
 	}
-	for _, slot := range observedFacetSlots(current, target, semantics) {
+	observedSlots := observedFacetSlots(current, target, semantics)
+	for _, slot := range observedSlots {
 		captured[slot.values] = true
 		if !slot.values.IsZero() {
 			observed.Facets = append(observed.Facets, schemaext.FacetRecord{Subject: slot.subject, Values: *slot.values})
 		}
 	}
+	declared.Coverage = followOwners(declared.Coverage, declaredSlots)
+	observed.Coverage = followOwners(observed.Coverage, observedSlots)
 	for _, slots := range [][]*schemaext.Facets{desired.FacetSlots(), current.FacetSlots()} {
 		for _, slot := range slots {
 			if !captured[slot] && !slot.IsZero() {
@@ -73,4 +76,25 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 		*values = record.Values
 	}
 	return &effective, nil
+}
+
+// followOwners drops the knowledge a side holds about the attached settings
+// of an owner that side no longer has: a table, index or materialized view a
+// dialect scope, an exclusion or a schema selection took out of the
+// comparison. Knowledge of an object that is not there describes nothing, and
+// kept, it refused the comparison the selection was meant to narrow
+// (stokaro/ptah#4278). Knowledge of named feature objects is the objects' own.
+func followOwners(coverage schemaext.Coverage, slots []facetOwnerSlot) schemaext.Coverage {
+	owners := make(map[objectidentity.Key]bool, len(slots))
+	for _, slot := range slots {
+		owners[slot.subject.Key()] = true
+	}
+	return coverage.SelectSubjects(func(subject objectidentity.ID) bool {
+		switch subject.Kind {
+		case objectidentity.KindTable, objectidentity.KindIndex, objectidentity.KindMatView:
+			return owners[subject.Key()]
+		default:
+			return true
+		}
+	})
 }

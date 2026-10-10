@@ -10,7 +10,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chdiff"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -156,4 +161,28 @@ func TestNewBaselineMismatchError_ReportsWhatTheTargetReadCouldNotCheck(t *testi
 			c.Assert(err.Result.Mismatches, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestCollectMismatches_DescribesAViewsOwnerChange holds the detail of a
+// mismatch that is only an owner change, such as a refresh schedule a replay
+// did not reproduce. Without it the mismatch named the view and nothing it
+// differs in (stokaro/ptah#4278).
+func TestCollectMismatches_DescribesAViewsOwnerChange(t *testing.T) {
+	c := qt.New(t)
+	refresh := schemaext.ChangeRecord{
+		Subject: objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "", "daily"),
+		Value: &chdiff.Refresh{
+			Before: &chschema.ObservedRefresh{Schedule: chschema.Schedule{Mode: chschema.RefreshEvery, Interval: "1 HOUR"}},
+			After:  &chschema.DesiredRefresh{Schedule: chschema.Schedule{Mode: chschema.RefreshEvery, Interval: "2 HOUR"}},
+		},
+	}
+	diff := &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{
+		{ViewName: "daily", Changes: make(map[string]string), FeatureChanges: []schemaext.ChangeRecord{refresh}},
+	}}
+
+	got := collectMismatches(diff)
+
+	c.Assert(got, qt.HasLen, 1)
+	c.Assert(got[0].Message, qt.Equals, "materialized view mismatch daily: ptah.run/clickhouse/refresh-change EVERY 1 HOUR -> EVERY 2 HOUR")
+	c.Assert(got[0].Changes, qt.DeepEquals, map[string]string{"ptah.run/clickhouse/refresh-change": "EVERY 1 HOUR -> EVERY 2 HOUR"})
 }

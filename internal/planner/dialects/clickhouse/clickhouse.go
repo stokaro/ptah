@@ -147,7 +147,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
-	after, err := planObjectsAfterTables(nil, diff, p.capabilities())
+	after, replacementDrops, err := planObjectsAfterTables(nil, diff, p.capabilities())
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	last := removeRowPolicies(nil, diff, p.capabilities())
 	last = p.removeTables(last, diff)
 
-	return p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, columns: columns, after: after, indexes: indexes, last: last})
+	return p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, drops: replacementDrops, columns: columns, after: after, indexes: indexes, last: last})
 }
 
 // addNewTables emits CREATE TABLE for every declared table the diff creates.

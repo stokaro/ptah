@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
@@ -301,36 +302,73 @@ func TestReaderReadSchema_AnUnreadableScheduleIsUnknown(t *testing.T) {
 	c.Assert(knowledge.Reason, qt.Contains, "could not be read")
 }
 
-// errViewRefreshes is a failed read of system.view_refreshes.
-var errViewRefreshes = errors.New("code: 60, unknown table")
+// errViewRefreshes is a failed read of system.view_refreshes that says nothing
+// about privileges.
+var errViewRefreshes = errors.New("connection reset")
 
-// refreshTableQuery fails the read of system.view_refreshes and answers the
-// existence probe that follows with present tables.
-func refreshTableQuery(present uint64) dbtest.QueryHandler {
+// refreshCatalogQuery answers system.view_refreshes with failure.
+func refreshCatalogQuery(failure error) dbtest.QueryHandler {
 	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
-		switch {
-		case strings.Contains(query, "FROM system.view_refreshes"):
-			return dbtest.QueryResult{}, errViewRefreshes
-		case strings.Contains(query, "name = 'view_refreshes'"):
-			return dbtest.QueryResult{Columns: []string{"count()"}, Rows: [][]driver.Value{{present}}}, nil
-		default:
-			return clickHouseViewReaderQuery(query, args)
+		if strings.Contains(query, "FROM system.view_refreshes") {
+			return dbtest.QueryResult{}, failure
 		}
+		return clickHouseViewReaderQuery(query, args)
 	}
 }
 
-// A server without system.view_refreshes predates refreshable views, so its
-// views are plain and their schedules known to be absent.
-func TestReaderReadSchema_AServerWithoutRefreshableViewsHasPlainViews(t *testing.T) {
+// An account that may not read system.view_refreshes still reads the schema.
+// Which views refresh on a schedule is then unknown, so each view's schedule
+// is uninspected: never absent, which would plan a replacement of a view that
+// does refresh, and never a failed read of a schema that may hold no
+// refreshable view at all (stokaro/ptah#4278). The server answers an
+// invisible table as an unknown one, so both read the same way.
+func TestReaderReadSchema_AnUnreadableRefreshCatalogLeavesSchedulesUninspected(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		failure error
+	}{
+		{"access denied", &clickhousedriver.Exception{Code: 497, Name: "ACCESS_DENIED", Message: "lowpriv: Not enough privileges."}},
+		{"unknown or invisible table", &clickhousedriver.Exception{Code: 60, Name: "UNKNOWN_TABLE", Message: "Table system.view_refreshes does not exist."}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, refreshCatalogQuery(test.failure))
+
+			schema, err := clickhouse.NewClickHouseReader(db.SQL, "analytics").ReadSchemaContext(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(schema.MatViews, qt.HasLen, 1)
+			c.Assert(schema.MatViews[0].Facets.IsZero(), qt.IsTrue)
+			knowledge := schema.FeatureCoverage.Lookup(chschema.RefreshKind, matViewSubject("user_counts"))
+			c.Assert(knowledge.State, qt.Equals, schemaext.Uninspected)
+			c.Assert(knowledge.Reason, qt.Contains, "may not read system.view_refreshes")
+		})
+	}
+}
+
+// A schema without materialized views does not ask for their schedules, so an
+// account that may not read the catalog of them reads it unchanged.
+func TestReaderReadSchema_NoMaterializedViewsNeedNoRefreshCatalog(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.Open(t, refreshTableQuery(0))
+	db := dbtest.Open(t, noMaterializedViewsQuery)
 
 	schema, err := clickhouse.NewClickHouseReader(db.SQL, "analytics").ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(schema.MatViews, qt.HasLen, 1)
-	c.Assert(schema.MatViews[0].Facets.IsZero(), qt.IsTrue)
-	c.Assert(schema.FeatureCoverage.Lookup(chschema.RefreshKind, matViewSubject("user_counts")).State, qt.Equals, schemaext.Complete)
+	c.Assert(schema.MatViews, qt.HasLen, 0)
+}
+
+// noMaterializedViewsQuery answers a database without materialized views, and
+// fails a read of system.view_refreshes.
+func noMaterializedViewsQuery(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+	switch {
+	case strings.Contains(query, "FROM system.view_refreshes"):
+		return dbtest.QueryResult{}, errViewRefreshes
+	case strings.Contains(query, "engine = 'MaterializedView'"):
+		return dbtest.QueryResult{Columns: []string{"name", "as_select", "comment", "create_table_query"}}, nil
+	default:
+		return clickHouseViewReaderQuery(query, args)
+	}
 }
 
 // Any other failure to read system.view_refreshes fails the read: answered
@@ -338,7 +376,7 @@ func TestReaderReadSchema_AServerWithoutRefreshableViewsHasPlainViews(t *testing
 // that drop the views' rows.
 func TestReaderReadSchema_AFailedRefreshCatalogRead_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.Open(t, refreshTableQuery(1))
+	db := dbtest.Open(t, refreshCatalogQuery(errViewRefreshes))
 
 	schema, err := clickhouse.NewClickHouseReader(db.SQL, "analytics").ReadSchemaContext(t.Context())
 

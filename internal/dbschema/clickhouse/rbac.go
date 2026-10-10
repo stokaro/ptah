@@ -327,3 +327,17 @@ func isAccessDenied(err error) bool {
 	}
 	return false
 }
+
+// unknownTableCode is what ClickHouse answers for a table it does not have,
+// or one the connected account may not see.
+const unknownTableCode = 60
+
+// isUnknownTable reports whether err is the server answering that a table
+// does not exist. Matched on the driver's exception code for the reason
+// isAccessDenied gives.
+func isUnknownTable(err error) bool {
+	if exception, ok := errors.AsType[*clickhousedriver.Exception](err); ok {
+		return exception.Code == unknownTableCode
+	}
+	return false
+}

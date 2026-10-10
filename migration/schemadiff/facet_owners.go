@@ -39,22 +39,36 @@ func declaredFacetSlots(db *schemamodel.Database, target string, semantics ident
 		subject := objectidentity.NewBuilder(semantics).IndexParts(owner.Schema, owner.Name, index.Name)
 		slots = append(slots, facetOwnerSlot{subject, &index.Facets})
 	}
-	for i := range db.MaterializedViews {
+	for _, i := range standingMaterializedViews(db.MaterializedViews, semantics) {
 		view := &db.MaterializedViews[i]
 		slots = append(slots, facetOwnerSlot{declaredMaterializedViewSubject(view.Name, semantics), &view.Facets})
 	}
 	return slots, nil
 }
 
+// standingMaterializedViews returns the positions of the declarations that
+// stand, in declaration order: of two declarations of one view, such as
+// `daily` and `analytics.daily` where analytics is the default schema, the
+// last one stands, as it does for the view's body in the common comparison.
+func standingMaterializedViews(views []schemamodel.MaterializedView, semantics identifier.Semantics) []int {
+	last := make(map[objectidentity.Key]int, len(views))
+	for i, view := range views {
+		last[declaredMaterializedViewSubject(view.Name, semantics).Key()] = i
+	}
+	standing := make([]int, 0, len(last))
+	for i, view := range views {
+		if last[declaredMaterializedViewSubject(view.Name, semantics).Key()] == i {
+			standing = append(standing, i)
+		}
+	}
+	return standing
+}
+
 // declaredMaterializedViewSubject is the identity of a declared materialized
 // view, whose name may carry its schema. A name whose own text contains a dot
 // is not mistaken for a qualified one.
 func declaredMaterializedViewSubject(name string, semantics identifier.Semantics) objectidentity.ID {
-	builder := objectidentity.NewBuilder(semantics)
-	if ref, valid := tableref.Parse(name); valid {
-		return builder.SchemaScopedParts(objectidentity.KindMatView, ref.Schema, ref.Name)
-	}
-	return builder.SchemaScopedParts(objectidentity.KindMatView, "", name)
+	return objectidentity.NewBuilder(semantics).SchemaScoped(objectidentity.KindMatView, name)
 }
 
 func observedFacetSlots(db *catalog.Database, target string, semantics identifier.Semantics) []facetOwnerSlot {

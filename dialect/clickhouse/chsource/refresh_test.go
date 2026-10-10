@@ -65,7 +65,10 @@ func TestRefreshFacets_FailurePath(t *testing.T) {
 		clause string
 		want   string
 	}{
-		{"not a schedule", "hourly", `.*not a ClickHouse refresh clause.*`},
+		{"not a schedule", "hourly", `.*refresh clause starts with "hourly"; expected EVERY or AFTER`},
+		{"an offset with no interval", "every 1 hour offset", `.*refresh OFFSET needs an interval.*`},
+		{"a repeated offset", "every 1 day offset 1 hour offset 2 hour", `.*refresh OFFSET is repeated or out of order.*`},
+		{"refresh settings", "every 1 hour settings refresh_retries = 3", `.*refresh SETTINGS is not modeled`},
 		{"offset on after", "after 1 hour offset 5 minute", `.*OFFSET.*`},
 		{"calendar and clock units mixed", "every 1 month 1 day", `.*interval shouldn't contain both calendar units and clock units`},
 		{"a zero interval", "every 0 hour", `.*interval must be positive`},

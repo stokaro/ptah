@@ -99,7 +99,7 @@ func TestParseMatView_RefusesAScheduleTheServerWouldRefuse(t *testing.T) {
 		{
 			name:     "not a clause",
 			declared: "hourly",
-			want:     `.*is not a ClickHouse refresh clause.*`,
+			want:     `.*refresh clause starts with .*; expected EVERY or AFTER.*`,
 		},
 		{
 			// Measured: the server answers `Interval shouldn't contain both

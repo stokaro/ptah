@@ -210,7 +210,7 @@ func compareReportingUndecidedAdditions(
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(desired, database, diff, cov)
 	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
-	if err := attachMaterializedViewChanges(diff, desired, comparisonChanges(featureResult), identifierSemantics); err != nil {
+	if err := attachMaterializedViewChanges(diff, desired, database, comparisonChanges(featureResult), identifierSemantics); err != nil {
 		return nil, Diagnostics{}, err
 	}
 	compare.TriggersWithSemanticsAndConditions(desired, database, diff, identifierSemantics, opts.TriggerConditions, caps)

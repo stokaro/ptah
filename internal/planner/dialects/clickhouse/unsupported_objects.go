@@ -51,24 +51,28 @@ func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *difftypes.Sch
 // fails with Code 511 (UNKNOWN_ROLE), and grants sit between the row-level
 // security phase and the triggers because that is where the offline render path
 // emits them -- the two surfaces have to agree on order, not merely on content.
+//
+// The drops of the materialized views the plan replaces come back apart, as
+// replacementDrops: they are a phase of their own, ahead of the column and
+// feature steps, so a view is gone before anything it reads changes and is
+// recreated after.
 func planObjectsAfterTables(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	caps capability.Capabilities,
-) ([]ast.Node, error) {
+) (after, replacementDrops []ast.Node, err error) {
 	result = planRoles(result, diff)
 	result = reportFunctions(result, diff)
-	var err error
-	result, err = reportViewLikes(result, diff, caps)
+	result, replacementDrops, err = reportViewLikes(result, diff, caps)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	result = reportRowLevelSecurity(result, diff, caps)
 	result = planRowPolicies(result, diff, caps)
 	result = planGrants(result, diff)
 	result = reportDefaultPrivileges(result, diff)
 	result = reportTriggers(result, diff)
-	return result, nil
+	return result, replacementDrops, nil
 }
 
 // reportRemovedUserTypes names the domains, composite types and range types a
@@ -199,7 +203,7 @@ func reportViewLikes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	caps capability.Capabilities,
-) ([]ast.Node, error) {
+) (planned, replacementDrops []ast.Node, err error) {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 	capacity := len(diff.ViewsAdded) + len(diff.ViewsModified) +
 		len(diff.MaterializedViewsAdded) + len(diff.MaterializedViewsModified)
@@ -246,7 +250,7 @@ func reportViewLikes(
 				// did here: this planner reported a modification it could not
 				// resolve instead of planning past it. The other three
 				// planners skip, because a failed lookup is what they did.
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"%w: ClickHouse view %q named by diff carries no declaration",
 					ptaherr.ErrInvalidSchemaDiff,
 					view.ViewName,
@@ -274,9 +278,9 @@ func reportViewLikes(
 		}
 		object, node, err := clickHouseMaterializedViewChange(view, caps)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		result = appendMaterializedViewReplacementDrop(result, view.ViewName, caps)
+		replacementDrops = appendMaterializedViewReplacementDrop(replacementDrops, view.ViewName, caps)
 		objects = append(objects, object)
 		nodes[identityOf(object)] = node
 	}
@@ -296,7 +300,7 @@ func reportViewLikes(
 		}
 		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
 	}
-	return result, nil
+	return result, replacementDrops, nil
 }
 
 // crossKindReplacements returns the removed names the other kind's additions

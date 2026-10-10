@@ -171,7 +171,7 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "external_tables_changed", len(diff.ExternalTablesChanged), Warning)
 
 	for _, view := range diff.MaterializedViewsModified {
-		appendFeatureFindings(&findings, view.FeatureChanges)
+		appendViewFeatureFindings(&findings, view)
 	}
 	for _, table := range diff.TablesModified {
 		appendFeatureFindings(&findings, table.FeatureChanges)
