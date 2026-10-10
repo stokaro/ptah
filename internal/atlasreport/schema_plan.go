@@ -59,9 +59,10 @@ type SchemaPlanChange struct {
 	Reason   string
 	// Access and AccessReason are the access assessment the plan recorded
 	// for a statement an owned operation rendered: widens, narrows, unchanged
-	// or unknown, and why. Both are empty for every other statement.
-	Access       string
-	AccessReason string
+	// or unknown, and why. Both are empty, and left out of JSON, for every
+	// other statement.
+	Access       string `json:",omitempty"`
+	AccessReason string `json:",omitempty"`
 }
 
 // SchemaPlanOptions carries the plan-file fields [NewSchemaPlan] renders.

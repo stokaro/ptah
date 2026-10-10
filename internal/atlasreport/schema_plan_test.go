@@ -61,6 +61,29 @@ func TestWriteSchemaPlanRendersTheDocumentedPayload(t *testing.T) {
 	c.Assert(first["Reason"], qt.Equals, "does not remove data")
 }
 
+// An access assessment is printed for the statement the plan recorded it on
+// and left out of every other statement, so a template does not read an empty
+// key as an assessment.
+func TestWriteSchemaPlanPrintsAccessOnlyWhereThePlanRecordedIt(t *testing.T) {
+	c := qt.New(t)
+	var out strings.Builder
+	plan := atlasreport.NewSchemaPlan(atlasreport.SchemaPlanOptions{Name: "p", Statements: []atlasreport.SchemaPlanChange{
+		{Cmd: `CREATE TABLE "users" (id INT)`, Severity: "safe", Reason: "does not remove data"},
+		{Cmd: `CREATE POLICY p ON t USING (true)`, Severity: "destructive", Reason: "can widen access: r", Access: "widens", AccessReason: "r"},
+	}})
+
+	err := atlasreport.WriteSchemaPlan(&out, "{{ json .Changes }}", plan)
+
+	c.Assert(err, qt.IsNil)
+	var changes []map[string]any
+	c.Assert(json.Unmarshal([]byte(out.String()), &changes), qt.IsNil)
+	c.Assert(changes, qt.DeepEquals, []map[string]any{
+		{"Cmd": `CREATE TABLE "users" (id INT)`, "Severity": "safe", "Reason": "does not remove data"},
+		{"Cmd": `CREATE POLICY p ON t USING (true)`, "Severity": "destructive", "Reason": "can widen access: r",
+			"Access": "widens", "AccessReason": "r"},
+	})
+}
+
 // TestWriteSchemaPlanOmitsEmptyOptionalFields keeps a consumer from having to
 // distinguish "no exclusions" from "the empty list".
 func TestWriteSchemaPlanOmitsEmptyOptionalFields(t *testing.T) {
