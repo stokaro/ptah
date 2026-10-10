@@ -12,17 +12,15 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/migrationfile"
 )
 
 func selectedRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	return runtime
+	return builtintest.Runtime()
 }
 
 func TestBuildRequiresRuntimeBeforeSourceAccess(t *testing.T) {

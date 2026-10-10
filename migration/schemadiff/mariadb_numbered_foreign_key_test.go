@@ -11,7 +11,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -66,7 +66,7 @@ func desiredChildWithKeys(keys map[string]string, onDelete string) *schemamodel.
 func compareForDialect(dialect string, desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
-	return must.Must(schemadiff.CompareWithOptions(context.Background(), desired, current, opts, must.Must(builtin.New())))
+	return must.Must(schemadiff.CompareWithOptions(context.Background(), desired, current, opts, builtintest.Runtime()))
 }
 
 // TestCompare_MariaDBNumberedKeyIsTheUnnamedKey covers MariaDB 12.1 and later,

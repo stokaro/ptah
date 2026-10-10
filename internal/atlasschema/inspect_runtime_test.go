@@ -4,12 +4,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 func inspectFeatureRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	return runtime
+	return builtintest.Runtime()
 }

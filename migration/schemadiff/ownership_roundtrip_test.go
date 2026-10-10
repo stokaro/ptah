@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -202,8 +203,8 @@ func TestOwnershipRoundTrip_ACatalogComparedWithItselfPlansNoObject(t *testing.T
 			// dialect-aware comparator against a dialect-blind description --
 			// agreement between a pairing the product does not ship
 			// (stokaro/ptah#2606).
-			desired := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ownershipCatalog(cell.shape), cell.dialect, must.Must(builtin.New())))
-			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, ownershipCatalog(cell.shape), cell.dialect, must.Must(builtin.New())))
+			desired := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ownershipCatalog(cell.shape), cell.dialect, builtintest.Runtime()))
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, ownershipCatalog(cell.shape), cell.dialect, builtintest.Runtime()))
 
 			changes := objectChanges(diff)
 			c.Assert(changes, qt.HasLen, 0,

@@ -11,17 +11,14 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func reverseForTest(t testing.TB, diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, dialect string) *difftypes.SchemaDiff {
 	t.Helper()
-	c := qt.New(t)
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	return reverseWithRuntimeForTest(t, runtime, diff, desired, current, dialect)
+	return reverseWithRuntimeForTest(t, builtintest.Runtime(), diff, desired, current, dialect)
 }
 
 func reverseWithRuntimeForTest(t testing.TB, runtime Runtime, diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, dialect string) *difftypes.SchemaDiff {

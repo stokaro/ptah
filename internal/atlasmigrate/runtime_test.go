@@ -8,15 +8,13 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/builtintest"
 )
 
 func selectedRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	return runtime
+	return builtintest.Runtime()
 }
 
 func TestGenerateDiffRequiresRuntimeBeforeDatabaseAccess(t *testing.T) {

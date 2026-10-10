@@ -9,16 +9,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemaext"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
 )
 
 func sourceRuntime(c *qt.C) goschematodb.Runtime {
 	c.Helper()
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	return runtime
+	return builtintest.Runtime()
 }
 
 func TestResolveRequiresRuntimeBeforeConnection(t *testing.T) {

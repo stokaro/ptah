@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -142,7 +141,7 @@ func TestEveryRefusedDiffCategoryIsRefused(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := postgres.New().GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
+				context.Background(), builtintest.Runtime(),
 				fixture.diff,
 			)
 
@@ -173,7 +172,7 @@ func TestEveryDiffCategoryRendersSQL(t *testing.T) {
 			// so the carries a comparison would have filled are filled here
 			// rather than in every literal (stokaro/ptah#2315).
 			nodes, err := postgres.New().GenerateMigrationAST(
-				context.Background(), must.Must(builtin.New()),
+				context.Background(), builtintest.Runtime(),
 				withDeclaredObjects(fixture.diff, fixture.desired),
 			)
 
