@@ -160,9 +160,10 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 
 	out, err := runCompatSchemaApply(targetURL, devURL, schemaPath)
 
-	// The rehearsal on the dev database reproduces PostgreSQL's own answer, so
-	// the apply is refused and the target keeps no policy on either spelling.
-	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*relation "orders" does not exist.*the plan was not applied to the target database`)
+	// The row-security owner reads the switch against the tables the file
+	// declares, so the file is refused when it is loaded, naming the relation
+	// as PostgreSQL does, and the target keeps no policy on either spelling.
+	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: relation "orders" does not exist in the document.*`)
 	c.Assert(out, qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(rlsPolicyRows(t, targetURL), qt.DeepEquals, make([]string, 0))
 }
@@ -233,7 +234,10 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 
 	out, err := runCompatSchemaApply(targetURL, devURL, schemaPath)
 
-	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*relation "ORDERS" does not exist.*the plan was not applied to the target database`)
+	// The policy is the row-security owner's object, and its parent is the
+	// relation the file names, which it does not declare, so the comparison
+	// refuses it before anything is planned.
+	c.Assert(err, qt.ErrorMatches, `(?s).*feature object ptah.run/pgpolicy/policy public\.ORDERS\.p has no declared parent table.*`)
 	c.Assert(out, qt.Not(qt.Contains), "Schema apply completed successfully.")
 	// Neither spelling is protected, and in particular `orders` did not quietly
 	// acquire the policy the file put on `ORDERS`.
@@ -266,6 +270,17 @@ func executeRenderedSchema(t *testing.T, dbURL, schemaPath string) error {
 		}
 	}
 	return nil
+}
+
+// renderSchemaFile renders a schema file for PostgreSQL as executeRenderedSchema
+// does and returns the render's error, for a file the render must refuse.
+func renderSchemaFile(t *testing.T, schemaPath string) error {
+	t.Helper()
+	c := qt.New(t)
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{schemaPath}, Dialect: "postgres"})
+	c.Assert(err, qt.IsNil)
+	_, err = builtin.GetOrderedCreateStatements(database, "postgres")
+	return err
 }
 
 // TestRenderedRLSQualifiedMixedCaseReferenceLandsOnTheNamedRelationLivePostgres
@@ -310,8 +325,8 @@ CREATE POLICY tenant_isolation ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_i
 }
 
 // TestRenderedRLSQuotedReferenceIsRefusedByPostgres is the executed half of the
-// blocker: the render of a file whose policy names `"ORDERS"` must be refused
-// by the server exactly as the file is, and must leave `orders` unprotected.
+// blocker: the render of a file whose policy names `"ORDERS"` must be refused,
+// as the server refuses the file, and must leave `orders` unprotected.
 //
 // The fold produced `CREATE POLICY "p" ON "orders"`, which the server accepts
 // with exit 0 and a pg_policy row on `public.orders` -- the relocation, seen in
@@ -327,8 +342,10 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	err := executeRenderedSchema(t, targetURL, schemaPath)
+	err := renderSchemaFile(t, schemaPath)
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*relation "ORDERS" does not exist.*`)
+	// The render refuses before the server sees a statement: the policy's
+	// parent is the undeclared `ORDERS`, never the declared `orders`.
+	c.Assert(err, qt.ErrorMatches, `(?s).*feature object ptah.run/pgpolicy/policy public\.ORDERS\.p has no declared parent table.*`)
 	c.Assert(qualifiedRLSPolicyRows(t, targetURL), qt.DeepEquals, make([]string, 0))
 }

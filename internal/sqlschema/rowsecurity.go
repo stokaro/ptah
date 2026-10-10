@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/pgpolicysource"
@@ -95,7 +94,7 @@ func ownSwitches(db *schemamodel.Database, collector *pgpolicysource.Collector, 
 		return fmt.Errorf("%s: %w", origin, err)
 	}
 	if index < 0 {
-		return fmt.Errorf("%s: %w: the document declares no such table", origin, ptaherr.ErrInvalidAttributeValue)
+		return fmt.Errorf("%s: relation %q does not exist in the document", origin, cmp.Or(enabled.Table, enabled.StructName))
 	}
 	table := &db.Tables[index]
 	state := pgpolicy.DesiredTableState{Enabled: true, Forced: enabled.Forced, Comment: enabled.Comment}
