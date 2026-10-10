@@ -97,7 +97,7 @@ func TestGoSecretLimitsReadThePath(t *testing.T) {
 func TestGoSecretLimits_RefuseAnAbsolutePath(t *testing.T) {
 	c := qt.New(t)
 	db, err := goschema.ParseSource("limits.go", "package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\"/local/ext/pw\"\ntype Unmanaged struct{}\n")
-	c.Assert(err, qt.ErrorMatches, `.*"/local/ext/pw" is not a secret path \(dir/name\): .*write the secret's path relative to the database root.*`)
+	c.Assert(err, qt.ErrorMatches, `.*"/local/ext/pw" is not a secret path \(dir/name\): .*write the path relative to the database root.*`)
 	c.Assert(err, qt.ErrorIs, ydbsecret.ErrAbsolutePath)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 }

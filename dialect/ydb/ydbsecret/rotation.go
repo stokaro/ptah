@@ -3,13 +3,13 @@ package ydbsecret
 import (
 	"errors"
 	"fmt"
-	pathpkg "path"
 	"slices"
 	"strings"
 
 	"ptah.run/config"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/ydbpath"
 )
 
 // RotateAction is the [schemaext.ChangeRequest] action that gives a secret the
@@ -75,12 +75,11 @@ func WithRotations(opts *config.CompareOptions, paths []string) error {
 // ErrAbsolutePath is what [ParsePath] wraps for a path that starts with a
 // slash: such a path names the database it lies in, which nothing that spells
 // a secret this way knows, so it is refused rather than read some other way.
-var ErrAbsolutePath = errors.New("the path starts with a slash; write the secret's path relative to the database root, " +
-	"without the database's own path")
+var ErrAbsolutePath = ydbpath.ErrAbsolute
 
 // ErrOutsideDatabase is what [ResolvePath] wraps for an absolute path outside
 // the database it is read against.
-var ErrOutsideDatabase = errors.New("the path lies outside the database")
+var ErrOutsideDatabase = ydbpath.ErrOutsideDatabase
 
 // ParsePath reads the path of a secret relative to the database root, as YDB
 // writes it and as every Ptah spelling of a secret names it: a slash separates
@@ -91,13 +90,9 @@ var ErrOutsideDatabase = errors.New("the path lies outside the database")
 // with an empty, `.` or `..` segment, a trailing slash included, is refused.
 // [ResolvePath] reads an absolute path where the database root is known.
 func ParsePath(path string) (objectidentity.ID, error) {
-	trimmed := strings.TrimSpace(path)
-	if strings.HasPrefix(trimmed, "/") {
-		return objectidentity.ID{}, fmt.Errorf("%q is not a secret path (dir/name): %w: %w", path, schemaext.ErrInvalidValue, ErrAbsolutePath)
-	}
-	schema, name := "", trimmed
-	if index := strings.LastIndex(trimmed, "/"); index >= 0 {
-		schema, name = trimmed[:index], trimmed[index+1:]
+	schema, name, err := ydbpath.Split(path)
+	if err != nil {
+		return objectidentity.ID{}, fmt.Errorf("%q is not a secret path (dir/name): %w: %w", path, schemaext.ErrInvalidValue, err)
 	}
 	ref := Ref(schema, name)
 	if err := ValidateIdentity(ref); err != nil {
@@ -112,14 +107,12 @@ func ParsePath(path string) (objectidentity.ID, error) {
 // outside root is refused with [ErrOutsideDatabase]; with an empty root, every
 // absolute path is refused with [ErrAbsolutePath].
 func ResolvePath(root, path string) (objectidentity.ID, error) {
-	trimmed := strings.TrimSpace(path)
-	if !strings.HasPrefix(trimmed, "/") || strings.Trim(root, "/") == "" {
-		return ParsePath(path)
+	relative, err := ydbpath.Relative(root, path)
+	if errors.Is(err, ydbpath.ErrOutsideDatabase) {
+		return objectidentity.ID{}, fmt.Errorf("%q is outside the database /%s: %w: %w", path, strings.Trim(root, "/"), schemaext.ErrInvalidValue, err)
 	}
-	database := "/" + strings.Trim(root, "/")
-	relative, under := strings.CutPrefix(pathpkg.Clean(trimmed), database+"/")
-	if !under {
-		return objectidentity.ID{}, fmt.Errorf("%q is outside the database %s: %w: %w", path, database, schemaext.ErrInvalidValue, ErrOutsideDatabase)
+	if err != nil {
+		return ParsePath(path)
 	}
 	return ParsePath(relative)
 }
