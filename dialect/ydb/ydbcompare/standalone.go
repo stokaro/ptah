@@ -137,6 +137,30 @@ func captureStandaloneInputs[T any](ctx context.Context, request schemaext.Objec
 	return nodes, nil
 }
 
+// collectStandalone captures one kind's objects, then gives every subject its
+// coverage records a place of its own, so a path recorded only as unread still
+// reaches the comparison. A subject record must name the kind and cannot
+// declare a default object.
+func collectStandalone[D, O schemaext.Value](ctx context.Context, state schemaext.ObjectState, direction schemaext.Representation,
+	kind schemaext.Kind, family string, codecs []schemaext.Codec, validate func(objectidentity.ID) error, capture func(objectidentity.ID, D, O),
+) error {
+	if err := captureStandalone(ctx, state, direction, kind, codecs, validate, capture); err != nil {
+		return err
+	}
+	for _, record := range state.Coverage.SubjectRecords() {
+		if record.Kind != kind || record.Knowledge.State == schemaext.Defaulted {
+			return fmt.Errorf("%w: %s coverage cannot declare another kind or a default object", schemaext.ErrInvalidValue, family)
+		}
+		if err := validate(record.Subject); err != nil {
+			return err
+		}
+		var desired D
+		var current O
+		capture(record.Subject, desired, current)
+	}
+	return nil
+}
+
 // Capture validates identity, positive evidence, and the selected model codec
 // before the owner's comparison sees a value. Desired and observed types remain
 // separate, and cloned settings cannot be shared with a provider's request.
