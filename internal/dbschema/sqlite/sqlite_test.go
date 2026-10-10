@@ -16,7 +16,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/sqlite"
 	"ptah.run/migration/planner"
@@ -461,8 +463,8 @@ func TestSQLiteWriterConcurrentTransactions(t *testing.T) {
 func sqliteRoundTripSchema() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
-			{Name: "accounts", StructName: "Account", Strict: true},
-			{Name: "users", StructName: "User", Strict: true},
+			{Name: "accounts", StructName: "Account", Facets: sqliteTableFacets(true, false)},
+			{Name: "users", StructName: "User", Facets: sqliteTableFacets(true, false)},
 		},
 		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true, AutoInc: true},
@@ -523,4 +525,10 @@ func findConstraint(constraints []catalog.Constraint, name string) *catalog.Cons
 		}
 	}
 	return nil
+}
+
+// sqliteTableFacets is the facet a table declaring SQLite table options
+// carries.
+func sqliteTableFacets(strict, withoutRowID bool) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&sqlitetable.DesiredTable{Options: sqlitetable.Options{Strict: strict, WithoutRowID: withoutRowID}}))
 }

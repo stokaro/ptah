@@ -742,10 +742,8 @@ type Table struct {
 	// bare `engine` attribute, which more than one target reads: the MySQL
 	// family writes it as ENGINE, under an engine its own table options state,
 	// and ClickHouse starts its settings from it.
-	Engine       string
-	Collate      string // Table default collation (MySQL/MariaDB specific)
-	Strict       bool   // SQLite STRICT table option
-	WithoutRowID bool   // SQLite WITHOUT ROWID table option
+	Engine  string
+	Collate string // Table default collation (MySQL/MariaDB specific)
 	// Unlogged marks a PostgreSQL table whose writes skip the write-ahead log.
 	// The table is faster to write and is truncated after a crash, and it is
 	// not replicated, so it suits a cache or a staging table and nothing whose

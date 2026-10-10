@@ -51,6 +51,12 @@ The SQLite renderer and planner support:
 
 - `CREATE TABLE`, including the `STRICT` and `WITHOUT ROWID` table options,
   with inline `PRIMARY KEY`, `UNIQUE`, `CHECK`, and `FOREIGN KEY` constraints.
+  The options belong to the SQLite owner: a Go annotation states them as
+  `platform.sqlite.strict="true"` and `platform.sqlite.without_rowid="true"`,
+  HCL as the table's `strict` and `without_rowid` attributes, and another
+  target leaves them out. They apply when a table is created; SQLite has no
+  statement that turns either on or off for a table that exists, so a plan
+  never changes them on one.
 - Enum annotations as `TEXT` columns plus a generated
   `CHECK (<column> IN (...))` constraint.
 - `CREATE INDEX`, including unique and partial indexes, and

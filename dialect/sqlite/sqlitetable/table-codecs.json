@@ -1,0 +1,36 @@
+{
+  "$id": "ptah.run/sqlite/table/v1",
+  "values": {
+    "desired": {
+      "ptah.run/sqlite/table": {
+        "type": "object",
+        "properties": {
+          "strict": {
+            "const": true
+          },
+          "without_rowid": {
+            "const": true
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The options a declaration states for a SQLite table: STRICT, which enforces the column types, and WITHOUT ROWID, which stores the table in its primary key. An option left out is off. The options apply when the table is created."
+      }
+    },
+    "observed": {
+      "ptah.run/sqlite/table": {
+        "type": "object",
+        "properties": {
+          "strict": {
+            "const": true
+          },
+          "without_rowid": {
+            "const": true
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The options a read found the table created with."
+      }
+    }
+  },
+  "canonicalization": "Keys are written in the order above, and an option that is off is omitted."
+}

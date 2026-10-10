@@ -547,11 +547,11 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	strict, err := p.optionalTableBool(block, "strict", false)
+	strict, err := p.tableOptionProperty(block, "strict")
 	if err != nil {
 		return err
 	}
-	withoutRowID, err := p.optionalTableBool(block, "without_rowid", false)
+	withoutRowID, err := p.tableOptionProperty(block, "without_rowid")
 	if err != nil {
 		return err
 	}
@@ -573,23 +573,21 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 
 	table := schemamodel.Table{
-		StructName:   hclTableStructName(labels.schema, labels.name),
-		Name:         labels.name,
-		Schema:       labels.schema,
-		APIName:      apiName,
-		APINames:     apiNames,
-		Engine:       p.optionalString(block.Body.Attributes["engine"]),
-		Collate:      p.optionalString(block.Body.Attributes["collate"]),
-		Strict:       strict,
-		WithoutRowID: withoutRowID,
-		Unlogged:     unlogged,
-		Comment:      p.optionalString(block.Body.Attributes["comment"]),
-		Checks:       checks,
-		CustomSQL:    customSQL,
-		Overrides: mysqlProperties(overrides, map[string]string{
+		StructName: hclTableStructName(labels.schema, labels.name),
+		Name:       labels.name,
+		Schema:     labels.schema,
+		APIName:    apiName,
+		APINames:   apiNames,
+		Engine:     p.optionalString(block.Body.Attributes["engine"]),
+		Collate:    p.optionalString(block.Body.Attributes["collate"]),
+		Unlogged:   unlogged,
+		Comment:    p.optionalString(block.Body.Attributes["comment"]),
+		Checks:     checks,
+		CustomSQL:  customSQL,
+		Overrides: sqliteProperties(mysqlProperties(overrides, map[string]string{
 			"auto_increment": p.optionalString(block.Body.Attributes["auto_increment"]),
 			"charset":        p.optionalString(block.Body.Attributes["charset"]),
-		}),
+		}), map[string]string{"strict": strict, "without_rowid": withoutRowID}),
 		DependsOn: p.objectRefListAttr(block, "depends_on"),
 	}
 
@@ -2314,6 +2312,17 @@ func (p *parser) optionalTableBool(block *hclsyntax.Block, name string, fallback
 	return value.True(), nil
 }
 
+// tableOptionProperty reads a boolean table attribute as the platform property
+// value its owner decodes: "true" when the attribute is true, and empty when it
+// is false or absent, so a table that leaves the option off states nothing.
+func (p *parser) tableOptionProperty(block *hclsyntax.Block, name string) (string, error) {
+	on, err := p.optionalTableBool(block, name, false)
+	if err != nil || !on {
+		return "", err
+	}
+	return "true", nil
+}
+
 func (p *parser) optionalIndexOnBool(block *hclsyntax.Block, name string, fallback bool) (bool, error) {
 	attr := block.Body.Attributes[name]
 	if attr == nil {
@@ -2593,17 +2602,30 @@ func writePrintLine(line string) {
 // mysqlProperties states options only the MySQL family has, such as a
 // table's auto_increment and charset or a FULLTEXT index's parser, as the
 // platform properties of the mysql and mariadb targets, where the MySQL owner
-// reads them. An empty option states nothing, and a target group that states
-// one already keeps its own. overrides is not changed.
+// reads them. See [targetProperties].
 func mysqlProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
+	return targetProperties(overrides, []string{"mysql", "mariadb"}, options)
+}
+
+// sqliteProperties states a table's strict and without_rowid, which only
+// SQLite has, as the platform properties of the sqlite target, where the
+// SQLite owner reads them. See [targetProperties].
+func sqliteProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
+	return targetProperties(overrides, []string{"sqlite"}, options)
+}
+
+// targetProperties states options as the platform properties of targets. An
+// empty option states nothing, and a target group that states one already
+// keeps its own. overrides is not changed.
+func targetProperties(overrides map[string]map[string]string, targets []string, options map[string]string) map[string]map[string]string {
 	if !slices.ContainsFunc(slices.Collect(maps.Values(options)), func(value string) bool { return value != "" }) {
 		return overrides
 	}
-	result := make(map[string]map[string]string, len(overrides)+2)
+	result := make(map[string]map[string]string, len(overrides)+len(targets))
 	for target, group := range overrides {
 		result[target] = maps.Clone(group)
 	}
-	for _, target := range []string{"mysql", "mariadb"} {
+	for _, target := range targets {
 		for key, value := range options {
 			if value == "" {
 				continue

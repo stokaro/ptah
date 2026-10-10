@@ -13,7 +13,9 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -24,8 +26,8 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
-			{Name: "accounts", StructName: "Account", Strict: true},
-			{Name: "users", StructName: "User", Strict: true},
+			{Name: "accounts", StructName: "Account", Facets: sqliteTableFacets(true, false)},
+			{Name: "users", StructName: "User", Facets: sqliteTableFacets(true, false)},
 		},
 		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true},
@@ -1178,4 +1180,10 @@ func TestPlannerInlineConstraintsComeFromTheCreation(t *testing.T) {
 		c.Assert(sql, qt.Contains, `CREATE TABLE "bookings"`)
 		c.Assert(sql, qt.Not(qt.Contains), "uq_bookings_code")
 	})
+}
+
+// sqliteTableFacets is the facet a table declaring SQLite table options
+// carries.
+func sqliteTableFacets(strict, withoutRowID bool) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&sqlitetable.DesiredTable{Options: sqlitetable.Options{Strict: strict, WithoutRowID: withoutRowID}}))
 }

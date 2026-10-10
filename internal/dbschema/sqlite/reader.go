@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
@@ -89,7 +91,10 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		}
 
 		ddl := sqliteCatalog.tableDDLByName[tableName]
-		table := r.readTable(tableName, columnsByTable[tableName], ddl)
+		table, err := r.readTable(tableName, columnsByTable[tableName], ddl)
+		if err != nil {
+			return nil, err
+		}
 		schema.Tables = append(schema.Tables, table)
 
 		schema.Indexes = append(schema.Indexes, indexesByTable[tableName]...)
@@ -113,6 +118,16 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, err
 	}
 	schema.UnregisteredVirtualTables = unregistered
+
+	// The read looked at every ordinary table's options, so a table it found
+	// none on was created with neither.
+	known, err := sqlitetable.TableCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return nil, err
+	}
+	if schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(known); err != nil {
+		return nil, err
+	}
 
 	return &schema, nil
 }
@@ -287,16 +302,26 @@ func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, er
 	return sqliteCatalog, nil
 }
 
-func (r *Reader) readTable(name string, columns []catalog.Column, ddl string) catalog.Table {
-	strict, withoutRowID := sqliteTableOptions(ddl)
-	return catalog.Table{
-		Name:         name,
-		Schema:       r.outputSchema(),
-		Type:         "TABLE",
-		Columns:      columns,
-		Strict:       strict,
-		WithoutRowID: withoutRowID,
+// readTable describes an ordinary table. Its STRICT and WITHOUT ROWID options
+// are the SQLite owner's, observed on the table's facets; a table created with
+// neither carries no facet.
+func (r *Reader) readTable(name string, columns []catalog.Column, ddl string) (catalog.Table, error) {
+	table := catalog.Table{
+		Name:    name,
+		Schema:  r.outputSchema(),
+		Type:    "TABLE",
+		Columns: columns,
 	}
+	strict, withoutRowID := sqliteTableOptions(ddl)
+	if !strict && !withoutRowID {
+		return table, nil
+	}
+	facets, err := table.Facets.With(&sqlitetable.ObservedTable{Options: sqlitetable.Options{Strict: strict, WithoutRowID: withoutRowID}})
+	if err != nil {
+		return catalog.Table{}, fmt.Errorf("sqlite: table %s options: %w", name, err)
+	}
+	table.Facets = facets
+	return table, nil
 }
 
 // readVirtualTable describes a virtual table by the module declaration that

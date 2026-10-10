@@ -339,8 +339,8 @@ func TestToTable_BasicTable(t *testing.T) {
 			sourcePlatform: "sqlite",
 			expected: func(table schemamodel.Table) bool {
 				return table.Name == "events" &&
-					table.Strict &&
-					table.WithoutRowID
+					table.Overrides["sqlite"]["strict"] == "true" &&
+					table.Overrides["sqlite"]["without_rowid"] == "true"
 			},
 		},
 		{
@@ -350,9 +350,7 @@ func TestToTable_BasicTable(t *testing.T) {
 				SetOption("WITHOUT_ROWID", "false"),
 			sourcePlatform: "sqlite",
 			expected: func(table schemamodel.Table) bool {
-				return table.Name == "events" &&
-					!table.Strict &&
-					!table.WithoutRowID
+				return table.Name == "events" && table.Overrides["sqlite"] == nil
 			},
 		},
 		{
@@ -847,11 +845,10 @@ func TestMergeTableOverrides_BasicMerging(t *testing.T) {
 			Comment: "Product catalog",
 		},
 		"sqlite": {
-			Name:         "products",
-			Engine:       "InnoDB",
-			Comment:      "Product catalog",
-			Strict:       true,
-			WithoutRowID: true,
+			Name:      "products",
+			Engine:    "InnoDB",
+			Comment:   "Product catalog",
+			Overrides: map[string]map[string]string{"sqlite": {"strict": "true", "without_rowid": "true"}},
 		},
 	}
 

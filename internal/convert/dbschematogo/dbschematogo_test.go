@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -1027,9 +1028,8 @@ func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
 	c := qt.New(t)
 	dbSchema := &catalog.Database{
 		Tables: []catalog.Table{{
-			Name:         "users",
-			Strict:       true,
-			WithoutRowID: true,
+			Name:   "users",
+			Facets: must.Must(schemaext.NewFacets(&sqlitetable.ObservedTable{Options: sqlitetable.Options{Strict: true, WithoutRowID: true}})),
 			Columns: []catalog.Column{{
 				Name:         "id",
 				DataType:     "TEXT",
@@ -1038,11 +1038,13 @@ func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
 		}},
 	}
 
-	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "postgres", must.Must(builtin.New())))
+	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(result.Tables, qt.HasLen, 1)
-	c.Assert(result.Tables[0].Strict, qt.IsTrue)
-	c.Assert(result.Tables[0].WithoutRowID, qt.IsTrue)
+	declared, found, err := schemaext.FacetAs[*sqlitetable.DesiredTable](result.Tables[0].Facets, sqlitetable.TableKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(declared.Options, qt.Equals, sqlitetable.Options{Strict: true, WithoutRowID: true})
 }
 
 func TestConvertDBSchemaToGoSchema_PreservesStructuralMemberIdentity(t *testing.T) {

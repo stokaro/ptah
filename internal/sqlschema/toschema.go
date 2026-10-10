@@ -283,12 +283,6 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 	if engine, exists := table.Options["ENGINE"]; exists {
 		tableSchema.Engine = engine
 	}
-	if strict, exists := table.Options["STRICT"]; exists {
-		tableSchema.Strict, _ = strconv.ParseBool(strict)
-	}
-	if withoutRowID, exists := table.Options["WITHOUT_ROWID"]; exists {
-		tableSchema.WithoutRowID, _ = strconv.ParseBool(withoutRowID)
-	}
 	// The inverse of what modelast writes. Reading these back keeps a
 	// goschema -> AST -> goschema trip from turning a virtual table into an
 	// ordinary one, which is the shape the whole defect took the first time.
@@ -346,6 +340,9 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		}
 	}
 
+	// STRICT and WITHOUT ROWID are the SQLite owner's, which reads them from
+	// the table's sqlite platform properties.
+	tableSchema.Overrides = sqliteTableProperties(tableSchema.Overrides, table.Options)
 	return tableSchema
 }
 
@@ -1638,11 +1635,10 @@ func MergeTableOverrides(baseTable schemamodel.Table, platformTables map[string]
 		if platformTable.Comment != baseTable.Comment {
 			platformOverrides["comment"] = platformTable.Comment
 		}
-		if platformTable.Strict != baseTable.Strict {
-			platformOverrides["strict"] = strconv.FormatBool(platformTable.Strict)
-		}
-		if platformTable.WithoutRowID != baseTable.WithoutRowID {
-			platformOverrides["without_rowid"] = strconv.FormatBool(platformTable.WithoutRowID)
+		for _, key := range []string{"strict", "without_rowid"} {
+			if on := sqliteOption(platformTable, key); on != sqliteOption(baseTable, key) {
+				platformOverrides[key] = strconv.FormatBool(on)
+			}
 		}
 		if platformTable.Unlogged != baseTable.Unlogged {
 			platformOverrides["unlogged"] = strconv.FormatBool(platformTable.Unlogged)
@@ -1706,4 +1702,40 @@ func generateStructName(tableName string) string {
 	}
 
 	return structName
+}
+
+// sqliteTableProperties states the STRICT and WITHOUT ROWID options a parsed
+// CREATE TABLE carries as the table's sqlite platform properties, where the
+// SQLite owner reads them. An option that is off states nothing, and a group
+// that states one already keeps its own. overrides is not changed.
+func sqliteTableProperties(overrides map[string]map[string]string, options map[string]string) map[string]map[string]string {
+	stated := make(map[string]string, 2)
+	for option, key := range map[string]string{"STRICT": "strict", "WITHOUT_ROWID": "without_rowid"} {
+		if on, _ := strconv.ParseBool(options[option]); on {
+			stated[key] = "true"
+		}
+	}
+	if len(stated) == 0 {
+		return overrides
+	}
+	result := make(map[string]map[string]string, len(overrides)+1)
+	for target, group := range overrides {
+		result[target] = maps.Clone(group)
+	}
+	if result[sqlplatform.SQLite] == nil {
+		result[sqlplatform.SQLite] = make(map[string]string, len(stated))
+	}
+	for key, value := range stated {
+		if _, own := result[sqlplatform.SQLite][key]; !own {
+			result[sqlplatform.SQLite][key] = value
+		}
+	}
+	return result
+}
+
+// sqliteOption reports whether a table's sqlite platform properties turn the
+// option key on.
+func sqliteOption(table schemamodel.Table, key string) bool {
+	on, _ := strconv.ParseBool(table.Overrides[sqlplatform.SQLite][key])
+	return on
 }

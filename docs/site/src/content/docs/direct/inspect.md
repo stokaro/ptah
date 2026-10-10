@@ -236,8 +236,9 @@ narrower set of schema objects than HCL or SQL. Verify a DBML adoption with
 `ptah schema drift --schema-file schema.dbml` before treating it as the
 desired-schema source.
 
-On YDB, JSON inspection warns on standard error about object families and
-properties absent from its compact report. See
+JSON inspection warns on standard error about object families and properties
+absent from its compact report, such as YDB's object families or a SQLite
+table's `STRICT` and `WITHOUT ROWID` options. See
 [YDB inspection formats](../../databases/ydb/#reading-a-live-database).
 
 | Output | Can Ptah load it back as a desired schema? | Role |

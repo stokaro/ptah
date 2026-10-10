@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/sqlitekey"
 )
 
@@ -44,49 +47,49 @@ func TestImpliesNotNull(t *testing.T) {
 		},
 		{
 			name:       "without rowid text key is not null",
-			table:      schemamodel.Table{Name: "t", WithoutRowID: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(false, true)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "TEXT", Primary: true},
 			want:       true,
 		},
 		{
 			name:       "without rowid integer key is not null",
-			table:      schemamodel.Table{Name: "t", WithoutRowID: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(false, true)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
 			want:       true,
 		},
 		{
 			name:       "without rowid composite key is not null",
-			table:      schemamodel.Table{Name: "t", WithoutRowID: true, PrimaryKey: []string{"a", "b"}},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(false, true), PrimaryKey: []string{"a", "b"}},
 			keyColumns: []string{"a", "b"},
 			field:      schemamodel.Field{Name: "b", Type: "TEXT"},
 			want:       true,
 		},
 		{
 			name:       "strict text key is not null",
-			table:      schemamodel.Table{Name: "t", Strict: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, false)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "TEXT", Primary: true},
 			want:       true,
 		},
 		{
 			name:       "strict integer key is the rowid alias and stays nullable",
-			table:      schemamodel.Table{Name: "t", Strict: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, false)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
 			want:       false,
 		},
 		{
 			name:       "strict INT key is not the rowid alias",
-			table:      schemamodel.Table{Name: "t", Strict: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, false)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "INT", Primary: true},
 			want:       true,
 		},
 		{
 			name:       "strict composite key is not null",
-			table:      schemamodel.Table{Name: "t", Strict: true, PrimaryKey: []string{"a", "b"}},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, false), PrimaryKey: []string{"a", "b"}},
 			keyColumns: []string{"a", "b"},
 			field:      schemamodel.Field{Name: "a", Type: "TEXT"},
 			want:       true,
@@ -102,7 +105,7 @@ func TestImpliesNotNull(t *testing.T) {
 			name: "strict integer key ordered DESC follows what the renderer builds",
 			table: schemamodel.Table{
 				Name:            "t",
-				Strict:          true,
+				Facets:          sqliteTableFacets(true, false),
 				PrimaryKeyParts: []schemamodel.PrimaryKeyPart{{Name: "id", Desc: true}},
 			},
 			keyColumns: []string{"id"},
@@ -111,28 +114,28 @@ func TestImpliesNotNull(t *testing.T) {
 		},
 		{
 			name:       "strict and without rowid together answer not null",
-			table:      schemamodel.Table{Name: "t", Strict: true, WithoutRowID: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, true)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
 			want:       true,
 		},
 		{
 			name:       "a column outside the key is never touched",
-			table:      schemamodel.Table{Name: "t", Strict: true, WithoutRowID: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, true)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "note", Type: "TEXT", Nullable: true},
 			want:       false,
 		},
 		{
 			name:       "a table with no key at all",
-			table:      schemamodel.Table{Name: "t", Strict: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, false)},
 			keyColumns: nil,
 			field:      schemamodel.Field{Name: "note", Type: "TEXT", Nullable: true},
 			want:       false,
 		},
 		{
 			name:       "key columns are matched the way SQLite compares names",
-			table:      schemamodel.Table{Name: "t", WithoutRowID: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(false, true)},
 			keyColumns: []string{"ID"},
 			field:      schemamodel.Field{Name: "id", Type: "TEXT", Primary: true},
 			want:       true,
@@ -259,7 +262,7 @@ func TestKeyColumnIsNotNull(t *testing.T) {
 		{
 			name:       "SQLite STRICT table key",
 			dialect:    "sqlite",
-			table:      schemamodel.Table{Name: "t", Strict: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, false)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "TEXT", Primary: true, Nullable: true},
 			want:       true,
@@ -304,14 +307,14 @@ func TestIsRowidAlias(t *testing.T) {
 		},
 		{
 			name:       "an INTEGER key on a STRICT table",
-			table:      schemamodel.Table{Name: "t", Strict: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(true, false)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
 			want:       true,
 		},
 		{
 			name:       "an INTEGER key on a WITHOUT ROWID table",
-			table:      schemamodel.Table{Name: "t", WithoutRowID: true},
+			table:      schemamodel.Table{Name: "t", Facets: sqliteTableFacets(false, true)},
 			keyColumns: []string{"id"},
 			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
 			want:       false,
@@ -353,4 +356,10 @@ func TestIsRowidAlias(t *testing.T) {
 			c.Assert(sqlitekey.IsRowidAlias(tt.table, tt.keyColumns, tt.field), qt.Equals, tt.want)
 		})
 	}
+}
+
+// sqliteTableFacets is the facet a table declaring SQLite table options
+// carries.
+func sqliteTableFacets(strict, withoutRowID bool) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&sqlitetable.DesiredTable{Options: sqlitetable.Options{Strict: strict, WithoutRowID: withoutRowID}}))
 }

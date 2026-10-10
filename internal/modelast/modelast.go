@@ -481,8 +481,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	tableComment := table.Comment
 	tableEngine := table.Engine
 	tableCollate := table.Collate
-	tableStrict := table.Strict
-	tableWithoutRowID := table.WithoutRowID
 	tableUnlogged := table.Unlogged
 
 	platformOverrides, exists := schemaprep.PlatformOverrideGroup(table.Overrides, targetPlatform)
@@ -493,8 +491,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	tableComment = overrideString(platformOverrides, "comment", tableComment)
 	tableEngine = overrideString(platformOverrides, "engine", tableEngine)
 	tableCollate = overrideString(platformOverrides, "collate", tableCollate)
-	tableStrict = overrideBool(platformOverrides, "strict", tableStrict)
-	tableWithoutRowID = overrideBool(platformOverrides, "without_rowid", tableWithoutRowID)
 	tableUnlogged = overrideBool(platformOverrides, "unlogged", tableUnlogged)
 
 	// Apply any other platform-specific options
@@ -508,8 +504,6 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	newTable.Comment = tableComment
 	newTable.Engine = tableEngine
 	newTable.Collate = tableCollate
-	newTable.Strict = tableStrict
-	newTable.WithoutRowID = tableWithoutRowID
 	newTable.Unlogged = tableUnlogged
 	return newTable
 }
@@ -538,8 +532,6 @@ func isKnownTablePlatformOverride(key string) bool {
 		"comment",
 		"engine",
 		"collate",
-		"strict",
-		"without_rowid",
 	}
 	return slices.Contains(knownKeys, key)
 }
@@ -682,12 +674,6 @@ func fromTableWithFieldConverter(
 		createTable.Unlogged = newTable.Unlogged
 	}
 	if isSQLiteTarget(targetPlatform) {
-		if newTable.WithoutRowID {
-			createTable.SetOption("WITHOUT_ROWID", "true")
-		}
-		if newTable.Strict {
-			createTable.SetOption("STRICT", "true")
-		}
 		// A virtual table is a different statement, not a trailing option, so
 		// the SQLite renderer branches on this key before it writes anything.
 		// The only producer of a non-empty VirtualModule is the SQLite reader,

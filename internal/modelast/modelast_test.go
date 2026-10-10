@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/schemaprep"
@@ -2278,39 +2279,17 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		{
 			name: "SQLite strict and without rowid options",
 			table: schemamodel.Table{
-				StructName:   "Event",
-				Name:         "events",
-				Strict:       true,
-				WithoutRowID: true,
+				StructName: "Event",
+				Name:       "events",
+				Facets: must.Must(schemaext.NewFacets(&sqlitetable.DesiredTable{
+					Options: sqlitetable.Options{Strict: true, WithoutRowID: true},
+				})),
 			},
 			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "sqlite",
 			expected: func(table *ast.CreateTableNode) bool {
-				return table.Name == "events" &&
-					table.Options["STRICT"] == "true" &&
-					table.Options["WITHOUT_ROWID"] == "true"
-			},
-		},
-		{
-			name: "SQLite table options use platform overrides",
-			table: schemamodel.Table{
-				StructName:   "Event",
-				Name:         "events",
-				Strict:       true,
-				WithoutRowID: true,
-				Overrides: map[string]map[string]string{
-					"sqlite": {
-						"strict":        "false",
-						"without_rowid": "false",
-					},
-				},
-			},
-			fields:         make([]schemamodel.Field, 0),
-			targetPlatform: "sqlite",
-			expected: func(table *ast.CreateTableNode) bool {
-				_, strict := table.Options["STRICT"]
-				_, withoutRowID := table.Options["WITHOUT_ROWID"]
-				return table.Name == "events" && !strict && !withoutRowID
+				options, err := sqlitetable.TableOptions(table.Facets)
+				return table.Name == "events" && err == nil && options != nil && options.Strict && options.WithoutRowID
 			},
 		},
 		{

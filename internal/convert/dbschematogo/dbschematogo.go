@@ -180,8 +180,6 @@ func convertTablesAndFields(
 			PrimaryKeyMethod:     primaryKey.method,
 			PrimaryKeyComment:    primaryKey.comment,
 			PrimaryKeyBlockSize:  primaryKey.blockSize,
-			Strict:               dbTable.Strict,
-			WithoutRowID:         dbTable.WithoutRowID,
 			Unlogged:             dbTable.Unlogged,
 			// A virtual table's module declaration is what recreates it.
 			// Dropping it here is what made `ptah db read` describe an FTS5
