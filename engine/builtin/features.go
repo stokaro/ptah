@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
@@ -31,7 +32,33 @@ func validateNamedFeatures(dialect string, caps capability.Capabilities, objects
 	if platform.IsPostgresFamily(dialect) {
 		return validateTimescaleObjects(dialect, objects)
 	}
+	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
+		return validateRowPolicyObjects(dialect, objects)
+	}
 	return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+}
+
+// validateRowPolicyObjects accepts the row policies a ClickHouse table
+// declares, which the renderer writes after the table's CREATE TABLE, and
+// refuses every other named object.
+func validateRowPolicyObjects(dialect string, objects schemaext.Objects) error {
+	all, err := objects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range all {
+		value, ok := object.Value.(*chschema.DesiredRowPolicy)
+		if !ok {
+			return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+		}
+		if err := chschema.ValidateRowPolicyRef(object.Ref); err != nil {
+			return err
+		}
+		if err := chschema.ValidateDesiredRowPolicy(value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateTimescaleObjects accepts the continuous aggregates a PostgreSQL-family

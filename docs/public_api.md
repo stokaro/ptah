@@ -47,6 +47,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/clickhouse/chdiff`
 - `ptah.run/dialect/clickhouse/chplan`
 - `ptah.run/dialect/clickhouse/chprepare`
+- `ptah.run/dialect/clickhouse/chprobe`
 - `ptah.run/dialect/clickhouse/chresolve`
 - `ptah.run/dialect/clickhouse/chschema`
 - `ptah.run/dialect/clickhouse/chsource`
@@ -922,8 +923,37 @@ and selection always stated.
 exceptions, each list a set, so a role named `ALL` stays a name. The codecs
 encode both lists in byte order and refuse unknown, null and empty-valued keys
 and a selection ClickHouse cannot express. `RowPolicyCoverage` builds the
-model's coverage. The package defines the model, its codecs and its coverage;
-nothing reads, compares or plans it yet.
+model's coverage.
+
+The ClickHouse provider registers the row policy services, and no source or
+reader produces the model yet. `chcompare.RowPolicyService` pairs policies by
+resolved identity, so a declaration that leaves the database to the
+connection matches the policy the server reports with the database named. A
+policy whose table the plan creates or removes is left to that table's
+transition. A held policy that a source cannot describe is adopted into the
+effective declaration rather than dropped, and a policy whose presence or
+content was not established is undecided.
+
+`chprobe.Service` attaches `NormalizedFilter` to each declared policy the
+server holds by asking the server to format the declared filter inside a
+rolled-back transaction of the probe session; where no probe ran, the
+comparison compares the filters token by token.
+
+`chdiff.RowPolicy` carries an observed `Before`, a desired `After`, where nil
+is an absent policy, and an `Access` assessment. A change of composition alone
+narrows access (permissive to restrictive) or widens it; every other change
+is unknown. The effect of a creation or an alteration is behavioral, and of a
+drop destructive. `chast.RowPolicy` is the operation `chrender` writes as
+`CREATE ROW POLICY`, `ALTER ROW POLICY` or `DROP ROW POLICY`.
+
+`chplan.RowPolicyService` plans one statement per change outside a
+transaction. ClickHouse keeps a policy when its table is dropped, so the
+service drops the captured policies of a dropped table itself, and a created
+table renders its declared policies after `CREATE TABLE`.
+`chreverse.RowPolicyService` restores the prior policy and reports that doing
+so cannot undo rows read while the forward plan applied.
+`chreport.RowPolicyService` and `RowPolicyDefinitions()` supply the count and
+omission label.
 
 `schemaproperties.DecodeTables` attaches decoded property groups as desired
 facets bound to the selected target. It consumes only claimed keys; other keys

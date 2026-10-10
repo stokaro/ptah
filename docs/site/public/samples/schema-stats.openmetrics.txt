@@ -70,6 +70,9 @@ ptah_schema_external_columns{dialect="sqlite"} 0
 # HELP ptah_schema_clickhouse_refreshable_materialized_views Materialized views with a captured ClickHouse refresh schedule.
 # TYPE ptah_schema_clickhouse_refreshable_materialized_views gauge
 ptah_schema_clickhouse_refreshable_materialized_views{dialect="sqlite"} 0
+# HELP ptah_schema_clickhouse_row_policies ClickHouse row policies captured as owned feature objects.
+# TYPE ptah_schema_clickhouse_row_policies gauge
+ptah_schema_clickhouse_row_policies{dialect="sqlite"} 0
 # HELP ptah_schema_clickhouse_index_settings Indexes with captured ClickHouse data-skipping settings.
 # TYPE ptah_schema_clickhouse_index_settings gauge
 ptah_schema_clickhouse_index_settings{dialect="sqlite"} 0

@@ -18,9 +18,10 @@ type comparisonIdentity struct {
 	semantics identifier.Semantics
 }
 
-// Readers and source codecs can capture facet claims before a connection supplies
-// its default database. Bind those claims with the same semantics as the common
-// owners before ForParent selects them. No new knowledge is inferred here.
+// Readers and source codecs can capture facet claims and table-owned feature
+// objects before a connection supplies its default database. Bind both with the
+// same semantics as the common owners before ForParent selects them. No new
+// knowledge is inferred here.
 func comparisonTableIdentities(desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions) (comparisonIdentity, error) {
 	semantics, err := comparisonIdentifiers(desired, current, opts)
 	if err != nil {
@@ -32,6 +33,14 @@ func comparisonTableIdentities(desired *schemamodel.Database, current *catalog.D
 		return comparisonIdentity{}, err
 	}
 	observed.FeatureCoverage, err = bindFacetCoverage(current.FeatureCoverage, opts.Dialect, semantics)
+	if err != nil {
+		return comparisonIdentity{}, err
+	}
+	declared.FeatureObjects, err = tableidentity.BindObjects(desired.FeatureObjects, opts.Dialect, semantics)
+	if err != nil {
+		return comparisonIdentity{}, err
+	}
+	observed.FeatureObjects, err = tableidentity.BindObjects(current.FeatureObjects, opts.Dialect, semantics)
 	if err != nil {
 		return comparisonIdentity{}, err
 	}

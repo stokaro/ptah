@@ -54,3 +54,29 @@ func matViewRefreshFixture() schemamodel.Database {
 	}}
 	return db
 }
+
+// tableRowPolicyFixture declares a restrictive row policy for named users on a
+// table, every declared field set, so the census measures each one. The
+// normalized filter is the server's spelling a live comparison attaches; the
+// statement writes the declared filter, which is why ablating it moves
+// nothing.
+func tableRowPolicyFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	filter, normalized := "tenant=1", "tenant = 1"
+	db.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(chschema.DesiredRowPolicyObject(chschema.RowPolicyRef("", "t", "tenant_rows"),
+		chschema.DesiredRowPolicy{Filter: &filter, NormalizedFilter: &normalized, Composition: chschema.Restrictive,
+			Roles: chschema.RoleSelection{Names: []string{"reader", "analyst"}}, StructName: "T"}))))
+	db.FeatureCoverage = must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return db
+}
+
+// tableRowPolicyAllExceptFixture applies a policy to every user but one, the
+// selection the named-list fixture cannot measure.
+func tableRowPolicyAllExceptFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	filter := "tenant = 1"
+	db.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(chschema.DesiredRowPolicyObject(chschema.RowPolicyRef("", "t", "tenant_rows"),
+		chschema.DesiredRowPolicy{Filter: &filter, Roles: chschema.RoleSelection{All: true, Except: []string{"admin"}}}))))
+	db.FeatureCoverage = must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return db
+}

@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-584 fields are reachable from the desired schema, and each one carries
+592 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 506 | reaches rendered SQL on at least one target |
-| `comparison` | 11 | read when two schemas are compared, and written into no statement |
+| `ddl` | 512 | reaches rendered SQL on at least one target |
+| `comparison` | 12 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 25 | identifies the source text the declaration was read from |
+| `source` | 26 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -122,6 +122,11 @@ None.
 | `chschema.DesiredIndex.Granularity` | `ddl` | — |
 | `chschema.DesiredIndex.IndexType` | `ddl` | — |
 | `chschema.DesiredRefresh.Schedule` | `ddl` | — |
+| `chschema.DesiredRowPolicy.Composition` | `ddl` | — |
+| `chschema.DesiredRowPolicy.Filter` | `ddl` | — |
+| `chschema.DesiredRowPolicy.NormalizedFilter` | `comparison` | a connected server's spelling of the declared filter, attached before a live comparison; a statement writes the filter as declared |
+| `chschema.DesiredRowPolicy.Roles` | `ddl` | — |
+| `chschema.DesiredRowPolicy.StructName` | `source` | the Go struct the declaration was read from; the policy's database, table and name are its identity |
 | `chschema.DesiredTable.Engine` | `ddl` | — |
 | `chschema.DesiredTable.OrderBy` | `ddl` | — |
 | `chschema.DesiredTable.PartitionBy` | `ddl` | — |
@@ -131,6 +136,9 @@ None.
 | `chschema.DesiredTable.TTL` | `ddl` | — |
 | `chschema.GranularitySetting.State` | `ddl` | — |
 | `chschema.GranularitySetting.Value` | `ddl` | — |
+| `chschema.RoleSelection.All` | `ddl` | — |
+| `chschema.RoleSelection.Except` | `ddl` | — |
+| `chschema.RoleSelection.Names` | `ddl` | — |
 | `chschema.Schedule.Append` | `ddl` | — |
 | `chschema.Schedule.DependsOn` | `ddl` | — |
 | `chschema.Schedule.Interval` | `ddl` | — |
