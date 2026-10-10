@@ -86,9 +86,8 @@ func TestFormatRoles(t *testing.T) {
 	}
 }
 
-// TestAttributesPolicy_HappyPath reads the attributes ClickHouse keeps: the
-// filter, the composition, the role selection and the struct, and FOR ALL or
-// SELECT, which create the same policy.
+// TestAttributesPolicy_HappyPath reads the attributes: the filter, the role
+// selection and the struct.
 func TestAttributesPolicy_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -96,11 +95,10 @@ func TestAttributesPolicy_HappyPath(t *testing.T) {
 		want  chschema.DesiredRowPolicy
 	}{
 		{name: "nothing", want: chschema.DesiredRowPolicy{}},
-		{name: "every attribute", input: chpolicysource.Attributes{For: "select", To: "ALL EXCEPT admin", Using: "tenant = 1",
-			Restrictive: true, StructName: "Order"},
-			want: chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Restrictive,
+		{name: "every attribute", input: chpolicysource.Attributes{To: "ALL EXCEPT admin", Using: "tenant = 1", StructName: "Order"},
+			want: chschema.DesiredRowPolicy{Filter: new("tenant = 1"),
 				Roles: chschema.RoleSelection{All: true, Except: []string{"admin"}}, StructName: "Order"}},
-		{name: "FOR ALL", input: chpolicysource.Attributes{For: "ALL", To: "alice"},
+		{name: "a role", input: chpolicysource.Attributes{To: "alice"},
 			want: chschema.DesiredRowPolicy{Roles: chschema.RoleSelection{Names: []string{"alice"}}}},
 	}
 	for _, test := range tests {
@@ -113,19 +111,14 @@ func TestAttributesPolicy_HappyPath(t *testing.T) {
 	}
 }
 
-// TestAttributesPolicy_FailurePath refuses, by name, an attribute ClickHouse
-// would accept and discard, or not parse.
+// TestAttributesPolicy_FailurePath refuses a role selection ClickHouse does
+// not parse.
 func TestAttributesPolicy_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   chpolicysource.Attributes
 		wantErr string
 	}{
-		{name: "a write check", input: chpolicysource.Attributes{Using: "true", WithCheck: "true"},
-			wantErr: `.*a ClickHouse row policy has no write check: ClickHouse parses WITH CHECK and discards it.*`},
-		{name: "a write command", input: chpolicysource.Attributes{For: "insert"},
-			wantErr: `.*filters SELECT only; FOR INSERT is not one ClickHouse parses.*`},
-		{name: "a comment", input: chpolicysource.Attributes{Comment: "tenants"}, wantErr: `.*a ClickHouse row policy holds no comment`},
 		{name: "a role selection", input: chpolicysource.Attributes{To: "CURRENT_USER"}, wantErr: `.*CURRENT_USER is a keyword.*`},
 	}
 	for _, test := range tests {
@@ -137,31 +130,6 @@ func TestAttributesPolicy_FailurePath(t *testing.T) {
 			c.Assert(&got, qt.CmpEquals(), &chschema.DesiredRowPolicy{})
 		})
 	}
-}
-
-// TestOwns takes a declaration scoped to ClickHouse alone, leaves one scoped
-// elsewhere shared, and refuses one naming ClickHouse beside another target,
-// saying how to split it.
-func TestOwns(t *testing.T) {
-	c := qt.New(t)
-	owned, err := chpolicysource.Owns([]string{"clickhouse"})
-	c.Assert(err, qt.IsNil)
-	c.Assert(owned, qt.IsTrue)
-	owned, err = chpolicysource.Owns([]string{"sqlserver"})
-	c.Assert(err, qt.IsNil)
-	c.Assert(owned, qt.IsFalse)
-	owned, err = chpolicysource.Owns([]string{"clickhouse", "sqlserver"})
-	c.Assert(err, qt.ErrorMatches, `.*declare one scoped to clickhouse and another scoped to sqlserver`)
-	c.Assert(owned, qt.IsFalse)
-}
-
-// TestRefuseSwitches refuses an enablement scoped to ClickHouse, which has no
-// switch, and passes one scoped elsewhere.
-func TestRefuseSwitches(t *testing.T) {
-	c := qt.New(t)
-	c.Assert(chpolicysource.RefuseSwitches([]string{"sqlserver"}), qt.IsNil)
-	c.Assert(chpolicysource.RefuseSwitches([]string{"sqlserver", "clickhouse"}), qt.ErrorMatches,
-		`.*ClickHouse has no row-level security switch.*`)
 }
 
 // TestCollector_RefusesTwoDeclarationsOfOnePolicy names both declarations of

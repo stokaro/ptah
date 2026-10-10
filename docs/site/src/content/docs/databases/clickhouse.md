@@ -543,10 +543,10 @@ type Order struct {
   that pass at least one permissive policy and every restrictive one.
 
 The directive binds the policy to ClickHouse, so another target leaves it out.
-In YAML, an `rls_policies` entry scoped with `dialects: [clickhouse]` declares
-the same policy; it takes no `as`. A `//ptah:schema:rls:policy` scoped to
-ClickHouse is refused, since it declares PostgreSQL's row-level security, and
-so is an `rls:enable` scoped to ClickHouse: ClickHouse has no table switch.
+In YAML, an entry of the `row_policies` key declares the same policy with the
+same attributes, keyed by its name. Row-level security scoped to ClickHouse is
+refused in both formats, since it declares PostgreSQL's row-level security,
+and so is an enablement: ClickHouse has no table switch.
 
 A plan creates, alters in place or drops each policy, and a read reports every
 policy on a table of the database, restrictive ones included. These are
