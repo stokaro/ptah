@@ -2,7 +2,9 @@
 // declarations that more than one frontend shares, for the owner of package
 // pgpolicy: how a role list is spelled in a Go annotation or a YAML value.
 // A reader and the writer that exports to the same format use it, so a
-// written list reads back as the same selectors.
+// written list reads back as the same selectors. [Annotations] is the owner's
+// side of the Go annotation frontend, which hands it the row-level security
+// declarations their target scope makes the owner's.
 package pgpolicysource
 
 import (

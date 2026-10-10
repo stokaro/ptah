@@ -13,7 +13,7 @@ import (
 func TestRLSPolicyGenerationMultipleFiles(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseDir(noOwners, "../../integration/internal/fixtures/entities/016-rls-multiple-files")
+	database, err := goschema.ParseDir(rowSecurityOwners, "../../integration/internal/fixtures/entities/016-rls-multiple-files")
 	c.Assert(err, qt.IsNil)
 
 	// One policy and one enablement in each file reach the row-security owner.

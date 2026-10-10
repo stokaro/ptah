@@ -8,6 +8,7 @@ package pgpolicyprovider
 import (
 	"slices"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -19,6 +20,7 @@ import (
 	"ptah.run/feature/pgpolicy/policyprobe"
 	"ptah.run/feature/pgpolicy/policyreport"
 	"ptah.run/feature/pgpolicy/policyreverse"
+	"ptah.run/internal/pgpolicysource"
 )
 
 // Targets are the targets the services are registered for. Spanner speaks the
@@ -32,8 +34,9 @@ func Targets() []string {
 // it must also select a provider of each of [Targets].
 func Provider() engine.Provider {
 	provider := engine.Provider{
-		ID:     pgpolicy.Owner,
-		Codecs: slices.Concat(pgpolicy.Codecs(), pgpolicy.ChangeCodecs(), pgpolicy.OperationCodecs()),
+		ID:          pgpolicy.Owner,
+		Codecs:      slices.Concat(pgpolicy.Codecs(), pgpolicy.ChangeCodecs(), pgpolicy.OperationCodecs()),
+		Annotations: []annotation.Extension{pgpolicysource.Annotations()},
 	}
 	models := []schemaext.Kind{pgpolicy.PolicyKind, pgpolicy.TableStateKind}
 	changes := []schemaext.Kind{pgpolicy.PolicyChangeKind, pgpolicy.TableStateChangeKind}

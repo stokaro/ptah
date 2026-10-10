@@ -971,6 +971,12 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 	if err := state.processFileAST(f); err != nil {
 		return schemamodel.Database{}, err
 	}
+	// Row-level security is dispatched first: a declaration an owner reads by
+	// its target scope joins that owner's file before the owners finish.
+	policies, switches, err := state.attachRowSecurity()
+	if err != nil {
+		return schemamodel.Database{}, err
+	}
 	if err := state.finishOwnerDirectives(); err != nil {
 		return schemamodel.Database{}, err
 	}
@@ -981,9 +987,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 	if err != nil {
 		return schemamodel.Database{}, err
 	}
-	state.featureCoverage = known
-	policies, switches, err := state.attachRowSecurity()
-	if err != nil {
+	if state.featureCoverage, err = state.owners.Cover(known); err != nil {
 		return schemamodel.Database{}, err
 	}
 
@@ -1176,7 +1180,7 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment)
 	if err != nil {
 		return err
 	}
-	s.rlsPolicies = append(s.rlsPolicies, rlsPolicyDeclaration{ctx: ctx, policy: schemamodel.RLSPolicy{
+	s.rlsPolicies = append(s.rlsPolicies, rlsPolicyDeclaration{ctx: ctx, attributes: kv, policy: schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                policyName,
 		Table:               tableName,
@@ -1210,7 +1214,7 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment)
 		return nil
 	}
 
-	s.rlsEnabledTables = append(s.rlsEnabledTables, rlsSwitchDeclaration{ctx: ctx, enabled: schemamodel.RLSEnabledTable{
+	s.rlsEnabledTables = append(s.rlsEnabledTables, rlsSwitchDeclaration{ctx: ctx, attributes: kv, enabled: schemamodel.RLSEnabledTable{
 		StructName: structName,
 		Table:      tableName,
 		Comment:    kv["comment"],
@@ -1748,7 +1752,7 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
-	s.rlsPolicies = append(s.rlsPolicies, rlsPolicyDeclaration{ctx: ctx, policy: schemamodel.RLSPolicy{
+	s.rlsPolicies = append(s.rlsPolicies, rlsPolicyDeclaration{ctx: ctx, attributes: kv, policy: schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                kv["name"],
 		Table:               kv["table"],
@@ -1808,7 +1812,7 @@ func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
-	s.rlsEnabledTables = append(s.rlsEnabledTables, rlsSwitchDeclaration{ctx: ctx, enabled: schemamodel.RLSEnabledTable{
+	s.rlsEnabledTables = append(s.rlsEnabledTables, rlsSwitchDeclaration{ctx: ctx, attributes: kv, enabled: schemamodel.RLSEnabledTable{
 		StructName: structName,
 		Table:      kv["table"],
 		Comment:    kv["comment"],

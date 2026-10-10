@@ -32,6 +32,13 @@ type Declaration struct {
 	// from 1, or 0 where the frontend does not know it. A refusal that names
 	// the declaration is reported there.
 	Line int
+	// File names the file the directive is written in, as the frontend names
+	// it in a refusal.
+	File string
+	// Targets are the targets the declaration's dialects attribute scopes it
+	// to, for a declaration of one of the frontend's own directives that an
+	// owner reads by its [TargetScope]. Empty means the declaration names none.
+	Targets []string
 }
 
 // Contribution is one thing a declaration adds to the schema: a standalone
@@ -55,6 +62,27 @@ type Contribution struct {
 	// Source's struct and reports a refusal at Source. A contribution a
 	// decoder returns for the declaration it is decoding leaves it zero.
 	Source Declaration
+	// Targets scope a facet to the targets it holds on, as a declaration's
+	// dialects attribute scopes it. Empty holds on every target.
+	Targets []string
+}
+
+// TargetScope hands an owner the declarations of one of the frontend's own
+// directives whose target scope makes them the owner's, such as a row-level
+// security policy scoped to PostgreSQL: the owner reads them in place of the
+// frontend, as it reads its own directives.
+type TargetScope struct {
+	// Directive names the frontend's directive, such as
+	// "ptah:schema:rls:policy".
+	Directive string
+	// Targets are the dialects whose declarations the owner reads. A target
+	// belongs to one owner for a directive.
+	Targets []string
+	// Unscoped hands the owner the declarations that name no target too. One
+	// owner of a directive may set it.
+	Unscoped bool
+	// Label names Targets in a refusal, such as "PostgreSQL-family targets".
+	Label string
 }
 
 // DirectiveAttributes are attributes an owner adds to one of the frontend's
@@ -109,6 +137,10 @@ type Extension struct {
 	// declarations refer to each other or to the file's tables. Exactly one
 	// of Decode and File is set when Directives is not empty.
 	File func() FileDecoder
+	// TargetScopes are the frontend's directives whose declarations the
+	// owner reads where their target scope makes them its own. They need a
+	// decoder as Directives do.
+	TargetScopes []TargetScope
 	// Limits are the kinds of ptah:schema:notdescribed declaration the owner
 	// reads, in lower case, such as "coordination_node". A file's
 	// declarations of them reach Coverage instead of the frontend's own
@@ -132,6 +164,11 @@ type Set struct {
 	owners     map[string]int
 	// limits holds the extension index that reads each not-described kind.
 	limits map[string]int
+	// scopes holds, for each frontend directive, the extension index that
+	// reads its declarations scoped to each target, and unscoped the one that
+	// reads those that name none.
+	scopes   map[string]map[string]int
+	unscoped map[string]int
 	// attributes holds, for each frontend directive, the extension index
 	// that owns each attribute an owner adds to it.
 	attributes map[string]map[string]int
@@ -151,20 +188,11 @@ func None() Set {
 // limit kind or a model two extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, owners: make(map[string]int), limits: make(map[string]int),
-		attributes: make(map[string]map[string]int)}
+		attributes: make(map[string]map[string]int), scopes: make(map[string]map[string]int), unscoped: make(map[string]int)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
-		if strings.TrimSpace(extension.Owner) == "" {
-			return Set{}, fmt.Errorf("annotation extension %d names no owner", index)
-		}
-		if extension.Coverage == nil {
-			return Set{}, fmt.Errorf("annotation extension of %s makes no coverage claim", extension.Owner)
-		}
-		if len(extension.Directives) > 0 && extension.Decode == nil && extension.File == nil {
-			return Set{}, fmt.Errorf("annotation extension of %s declares directives and no decoder", extension.Owner)
-		}
-		if extension.Decode != nil && extension.File != nil {
-			return Set{}, fmt.Errorf("annotation extension of %s declares both a decoder and a file decoder", extension.Owner)
+		if err := checkExtension(index, extension); err != nil {
+			return Set{}, err
 		}
 		for _, kind := range extension.Kinds {
 			if owner, claimed := kinds[kind]; claimed {
@@ -172,15 +200,8 @@ func NewSet(extensions ...Extension) (Set, error) {
 			}
 			kinds[kind] = extension.Owner
 		}
-		for _, directive := range extension.Directives {
-			if strings.TrimSpace(directive.Name) == "" || strings.HasPrefix(directive.Name, "//") {
-				return Set{}, fmt.Errorf("annotation extension of %s declares a directive without a name", extension.Owner)
-			}
-			if previous, claimed := set.owners[directive.Name]; claimed {
-				return Set{}, fmt.Errorf("%w: directive %q is declared by %s and %s", schemaext.ErrDuplicate, directive.Name,
-					set.extensions[previous].Owner, extension.Owner)
-			}
-			set.owners[directive.Name] = index
+		if err := set.claimDirectives(index, extension); err != nil {
+			return Set{}, err
 		}
 		if err := set.claimAttributes(index, extension); err != nil {
 			return Set{}, err
@@ -188,9 +209,42 @@ func NewSet(extensions ...Extension) (Set, error) {
 		if err := set.claimLimits(index, extension); err != nil {
 			return Set{}, err
 		}
+		if err := set.claimScopes(index, extension); err != nil {
+			return Set{}, err
+		}
 		set.extensions = append(set.extensions, cloneExtension(extension))
 	}
 	return set, nil
+}
+
+// checkExtension refuses an extension without an owner or a coverage claim,
+// and one that reads declarations without exactly one decoder.
+func checkExtension(index int, extension Extension) error {
+	switch {
+	case strings.TrimSpace(extension.Owner) == "":
+		return fmt.Errorf("annotation extension %d names no owner", index)
+	case extension.Coverage == nil:
+		return fmt.Errorf("annotation extension of %s makes no coverage claim", extension.Owner)
+	case (len(extension.Directives) > 0 || len(extension.TargetScopes) > 0) && extension.Decode == nil && extension.File == nil:
+		return fmt.Errorf("annotation extension of %s declares directives and no decoder", extension.Owner)
+	case extension.Decode != nil && extension.File != nil:
+		return fmt.Errorf("annotation extension of %s declares both a decoder and a file decoder", extension.Owner)
+	}
+	return nil
+}
+
+func (s *Set) claimDirectives(index int, extension Extension) error {
+	for _, directive := range extension.Directives {
+		if strings.TrimSpace(directive.Name) == "" || strings.HasPrefix(directive.Name, "//") {
+			return fmt.Errorf("annotation extension of %s declares a directive without a name", extension.Owner)
+		}
+		if previous, claimed := s.owners[directive.Name]; claimed {
+			return fmt.Errorf("%w: directive %q is declared by %s and %s", schemaext.ErrDuplicate, directive.Name,
+				s.extensions[previous].Owner, extension.Owner)
+		}
+		s.owners[directive.Name] = index
+	}
+	return nil
 }
 
 func (s *Set) claimAttributes(index int, extension Extension) error {
@@ -447,6 +501,12 @@ func cloneExtension(extension Extension) Extension {
 	extension.Directives = directives
 	extension.Kinds = slices.Clone(extension.Kinds)
 	extension.Limits = slices.Clone(extension.Limits)
+	scopes := make([]TargetScope, 0, len(extension.TargetScopes))
+	for _, scope := range extension.TargetScopes {
+		scope.Targets = slices.Clone(scope.Targets)
+		scopes = append(scopes, scope)
+	}
+	extension.TargetScopes = scopes
 	groups := make([]DirectiveAttributes, 0, len(extension.Attributes))
 	for _, group := range extension.Attributes {
 		group.Attributes = slices.Clone(group.Attributes)

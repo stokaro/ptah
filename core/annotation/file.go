@@ -3,6 +3,7 @@ package annotation
 import (
 	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -127,10 +128,17 @@ func (s Set) Reader() *Reader {
 func (r *Reader) Decode(declaration Declaration) ([]Contribution, error) {
 	index, found := r.set.owners[declaration.Directive]
 	if !found {
+		var err error
+		if index, found, err = r.set.scopeIndex(declaration.Directive, declaration.Targets); err != nil {
+			return nil, err
+		}
+	}
+	if !found {
 		return nil, fmt.Errorf("no selected owner declares directive %q", declaration.Directive)
 	}
 	extension := r.set.extensions[index]
 	declaration.Attributes = cloneAttributes(declaration.Attributes)
+	declaration.Targets = slices.Clone(declaration.Targets)
 	var (
 		contributions []Contribution
 		err           error

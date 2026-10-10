@@ -35,6 +35,19 @@ func returning(contributions ...yamlext.Contribution) func(func(any) error, yaml
 	return func(func(any) error, yamlext.Tables) ([]yamlext.Contribution, error) { return contributions, nil }
 }
 
+// decodeLevels reads the levels key as a level of the first table, and
+// records the tables it is handed in seen.
+func decodeLevels(seen *yamlext.Tables) func(func(any) error, yamlext.Tables) ([]yamlext.Contribution, error) {
+	return func(decode func(any) error, tables yamlext.Tables) ([]yamlext.Contribution, error) {
+		*seen = tables
+		var written map[string]string
+		if err := decode(&written); err != nil {
+			return nil, err
+		}
+		return []yamlext.Contribution{{Facet: &level{Value: written["docs"]}, Table: 0, Label: "a level"}}, nil
+	}
+}
+
 func TestSet_Section_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	set, err := yamlext.NewSet(sectionOwner("example.org/widget", "levels", noDecode),
@@ -56,15 +69,7 @@ func TestSet_Section_HappyPath(t *testing.T) {
 func TestSet_Decode_HandsTheOwnerItsSection(t *testing.T) {
 	c := qt.New(t)
 	var seenTables yamlext.Tables
-	set, err := yamlext.NewSet(sectionOwner("example.org/widget", "levels",
-		func(decode func(any) error, tables yamlext.Tables) ([]yamlext.Contribution, error) {
-			seenTables = tables
-			var written map[string]string
-			if err := decode(&written); err != nil {
-				return nil, err
-			}
-			return []yamlext.Contribution{{Facet: &level{Value: written["docs"]}, Table: 0, Label: "a level"}}, nil
-		}))
+	set, err := yamlext.NewSet(sectionOwner("example.org/widget", "levels", decodeLevels(&seenTables)))
 	c.Assert(err, qt.IsNil)
 	tables := yamlext.Tables{{Key: "docs", Name: "docs"}}
 

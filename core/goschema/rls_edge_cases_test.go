@@ -134,7 +134,7 @@ type User struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
-			wantErr: `(?s).*//ptah:schema:rls:policy at .*test\.go:4 and //ptah:schema:rls:policy at .*test\.go:5 both declare policy "user_policy" on table public\.users; keep one declaration`,
+			wantErr: `(?s).*//ptah:schema:rls:policy at .*test\.go:4 and //ptah:schema:rls:policy at .*test\.go:5 both declare policy "user_policy" on table public\.users; keep one declaration on //ptah:schema:rls:policy at User`,
 		},
 		{
 			name: "one table enabled twice",
@@ -148,7 +148,7 @@ type User struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
-			wantErr: `(?s).*//ptah:schema:rls:enable at .*test\.go:3 and //ptah:schema:rls:enable at .*test\.go:4 both declare the row-level security switches of table public\.users; keep one declaration`,
+			wantErr: `(?s).*//ptah:schema:rls:enable at .*test\.go:3 and //ptah:schema:rls:enable at .*test\.go:4 both declare the row-level security switches of table public\.users; keep one declaration on //ptah:schema:rls:enable at User`,
 		},
 		{
 			name: "a policy spelled with and without its schema",
@@ -161,7 +161,7 @@ type Order struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
-			wantErr: `(?s).*//ptah:schema:rls:policy at .*test\.go:3 and //ptah:schema:rls:policy at .*test\.go:4 both declare policy "tenant" on table public\.orders; keep one declaration`,
+			wantErr: `(?s).*//ptah:schema:rls:policy at .*test\.go:3 and //ptah:schema:rls:policy at .*test\.go:4 both declare policy "tenant" on table public\.orders; keep one declaration on //ptah:schema:rls:policy at Order`,
 		},
 	}
 
@@ -171,7 +171,7 @@ type Order struct {
 			tempFile := filepath.Join(t.TempDir(), "test.go")
 			c.Assert(os.WriteFile(tempFile, []byte(tt.goCode), 0o600), qt.IsNil)
 
-			database, err := goschema.ParseFile(noOwners, tempFile)
+			database, err := goschema.ParseFile(rowSecurityOwners, tempFile)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)

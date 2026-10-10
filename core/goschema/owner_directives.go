@@ -17,6 +17,7 @@ type pendingFacet struct {
 	structName string
 	table      string
 	value      schemaext.Value
+	targets    []string
 	label      string
 	directive  string
 	ctx        annotationErrorContext
@@ -35,7 +36,7 @@ func (s *schemaParseState) parseOwnerDirective(comment *ast.Comment, directive, 
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	declaration := annotation.Declaration{Directive: directive, Attributes: kv, Struct: structName, Line: ctx.line}
+	declaration := annotation.Declaration{Directive: directive, Attributes: kv, Struct: structName, Line: ctx.line, File: ctx.file}
 	contributions, err := s.owners.Decode(declaration)
 	if err != nil {
 		return s.ownerError(declaration, err)
@@ -69,7 +70,7 @@ func (s *schemaParseState) contribute(declaration annotation.Declaration, contri
 	for _, contribution := range contributions {
 		if contribution.Facet != nil {
 			s.pendingFacets = append(s.pendingFacets, pendingFacet{structName: declaration.Struct, table: contribution.Table,
-				value: contribution.Facet, label: contribution.Label, directive: declaration.Directive, ctx: ctx})
+				value: contribution.Facet, targets: contribution.Targets, label: contribution.Label, directive: declaration.Directive, ctx: ctx})
 			continue
 		}
 		objects, err := s.featureObjects.With(*contribution.Object)
@@ -137,6 +138,11 @@ func (s *schemaParseState) attachOwnerFacets() error {
 		}
 		if err != nil {
 			return err
+		}
+		if len(pending.targets) > 0 {
+			if facets, err = facets.WithTargetScope(pending.value.Kind(), pending.targets...); err != nil {
+				return err
+			}
 		}
 		table.Facets = facets
 	}
