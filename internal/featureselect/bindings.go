@@ -44,8 +44,30 @@ type Bindings struct {
 }
 
 type binding struct {
-	ref    objectidentity.ID
-	tables []objectidentity.ID
+	ref        objectidentity.ID
+	tables     []objectidentity.ID
+	references []objectidentity.ID
+	incomplete string
+}
+
+// Bound is one standalone object with every reference its owner reported:
+// the tables, columns and functions it binds. Incomplete is the owner's
+// reason when that list is not exhaustive, and empty when it is.
+type Bound struct {
+	Object     objectidentity.ID
+	References []objectidentity.ID
+	Incomplete string
+}
+
+// Objects returns every recorded object in identity order, each with its
+// references in the order its owner first reported them.
+func (b Bindings) Objects() []Bound {
+	result := make([]Bound, 0, len(b.objects))
+	for _, bound := range b.objects {
+		result = append(result, Bound{Object: bound.ref, References: slices.Clone(bound.references), Incomplete: bound.incomplete})
+	}
+	slices.SortFunc(result, func(a, b Bound) int { return schemaext.CompareRefs(a.Object, b.Object) })
+	return result
 }
 
 // CaptureBindings asks the owners of the standalone objects on sides which
@@ -107,7 +129,13 @@ func (b Bindings) add(record schemaext.ValueRelations) {
 	if found.ref.Kind == "" {
 		found.ref = record.Subject.Subject
 	}
+	if !record.Complete && found.incomplete == "" {
+		found.incomplete = record.Reason
+	}
 	for _, dependency := range record.Dependencies {
+		if !slices.ContainsFunc(found.references, func(reference objectidentity.ID) bool { return reference.Key() == dependency.Key() }) {
+			found.references = append(found.references, dependency)
+		}
 		if dependency.Kind == objectidentity.KindTable && !slices.ContainsFunc(found.tables, func(table objectidentity.ID) bool {
 			return table.Key() == dependency.Key()
 		}) {
