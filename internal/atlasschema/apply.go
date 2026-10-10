@@ -407,7 +407,7 @@ func computeApplyPlan(
 	}
 	selectionOpts := opts
 	selectionOpts.RefuseUnmatchedExclude = opts.RefuseUnmatchedExclude && !allowUnmatched
-	current, desired, err = selectApplyStates(current, desired, scope, selectionOpts)
+	current, desired, err = selectApplyStates(ctx, conn.Info().Dialect, current, desired, scope, selectionOpts)
 	if err != nil {
 		return applyComputation{}, err
 	}
@@ -488,7 +488,14 @@ func computeApplyPlan(
 
 // selectApplyStates checks selectors against both sides before planning. One
 // empty side is a create or removal; two empty selections cannot prove agreement.
-func selectApplyStates(current *catalog.Database, desired *schemamodel.Database, scope atlasfilter.Scope, opts ApplyOptions) (*catalog.Database, *schemamodel.Database, error) {
+// A standalone feature object is kept or left out whole by the tables it binds
+// on either side, and a selection that would split one is refused.
+func selectApplyStates(ctx context.Context, dialect string, current *catalog.Database, desired *schemamodel.Database, scope atlasfilter.Scope, opts ApplyOptions) (*catalog.Database, *schemamodel.Database, error) {
+	var err error
+	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, dialect, scope, databaseSide(current), generatedSide(desired))
+	if err != nil {
+		return nil, nil, err
+	}
 	scoped := scopeApplyStates(current, desired, scope)
 	current, currentReports, currentErr := scoped.current, scoped.currentReports, scoped.currentErr
 	if currentErr != nil && !emptySelection(currentErr) {

@@ -12,7 +12,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
-	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/migration/migrator"
 )
@@ -120,7 +119,7 @@ func RehearsePlanStatements(
 	}
 	// Same default schema computeApplyPlan uses, so the rehearsal subtracts
 	// exactly the objects the plan was computed without.
-	current, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(current, opts.Exclude, conn.Info().Schema)
+	current, err = excludeCurrentWithBindings(ctx, current, opts.Exclude, conn.Info(), opts.Runtime)
 	if err != nil {
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}

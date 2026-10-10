@@ -65,7 +65,7 @@ func ExcludeDatabaseReport(
 	patterns []string,
 	defaultSchema string,
 ) (*catalog.Database, ExcludeReport, error) {
-	return excludeDatabase(schema, patterns, defaultSchema, defaultSchema)
+	return excludeDatabase(schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
 }
 
 // ExcludeDatabaseScopeReport is [ExcludeDatabaseReport] for a caller holding
@@ -80,13 +80,14 @@ func ExcludeDatabaseScopeReport(
 	schema *catalog.Database,
 	scope Scope,
 ) (*catalog.Database, ExcludeReport, error) {
-	return excludeDatabase(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema)
+	return excludeDatabase(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
 }
 
 func excludeDatabase(
 	schema *catalog.Database,
 	patterns []string,
 	patternScope, defaultSchema string,
+	bindings featureselect.Bindings,
 ) (*catalog.Database, ExcludeReport, error) {
 	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope))
 	if err != nil {
@@ -102,9 +103,12 @@ func excludeDatabase(
 	// left, and that answer has to exist before the first object is judged.
 	filtered.Schemas = state.filterSchemas(filtered.Schemas)
 	filtered.Tables = state.filterTables(filtered.Tables)
-	filtered.FeatureObjects, filtered.FeatureCoverage = featureselect.Tables(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
-	})
+	}, namedFeatureKinds...)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
@@ -180,7 +184,7 @@ func ExcludeGeneratedReport(
 	patterns []string,
 	defaultSchema string,
 ) (*schemamodel.Database, ExcludeReport, error) {
-	return excludeGenerated(schema, patterns, defaultSchema, defaultSchema)
+	return excludeGenerated(schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
 }
 
 // ExcludeGeneratedScopeReport is [ExcludeDatabaseScopeReport] for the generated
@@ -189,13 +193,14 @@ func ExcludeGeneratedScopeReport(
 	schema *schemamodel.Database,
 	scope Scope,
 ) (*schemamodel.Database, ExcludeReport, error) {
-	return excludeGenerated(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema)
+	return excludeGenerated(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
 }
 
 func excludeGenerated(
 	schema *schemamodel.Database,
 	patterns []string,
 	patternScope, defaultSchema string,
+	bindings featureselect.Bindings,
 ) (*schemamodel.Database, ExcludeReport, error) {
 	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope))
 	if err != nil {
@@ -217,9 +222,12 @@ func excludeGenerated(
 	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
 	state.excludeGeneratedColumnSequences(schema.Tables, schema.Fields)
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
-	filtered.FeatureObjects, filtered.FeatureCoverage = featureselect.Tables(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
-	})
+	}, namedFeatureKinds...)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
 
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)

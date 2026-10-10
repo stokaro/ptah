@@ -367,6 +367,11 @@ func diffResolvedStates(
 		DefaultSchema: defaultSchema,
 	}
 	scope.RealmRelativePatterns = realmRelative
+	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, dialect, scope, generatedSide(fromState.Schema), databaseSide(fromState.DB),
+		generatedSide(toState.Schema), databaseSide(toState.DB))
+	if err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	fromSide, toSide := scopeDiffStates(ctx, fromState, toState, scope, dialect, opts.Runtime)
 	if fromSide.err != nil {
 		return atlasreport.SchemaDiff{}, nil, fromSide.err

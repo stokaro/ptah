@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/featureselect"
 )
 
 // projectGenerated applies the schema universe and include selectors to the
@@ -24,16 +23,19 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 	for _, table := range out.Tables {
 		keptTables[s.tableIdentity(table.Schema, table.Name)] = struct{}{}
 	}
-	out.FeatureObjects, out.FeatureCoverage = featureselect.Tables(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
+	var err error
+	out.FeatureObjects, out.FeatureCoverage, err = s.bindings.Select(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
 		return s.tableKept(keptTables, schema, table)
-	})
+	}, namedFeatureKinds...)
+	if err != nil {
+		return nil, err
+	}
 
 	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTimescaleFeatures(out.FeatureObjects, out.FeatureCoverage)
-	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
 		return nil, err
