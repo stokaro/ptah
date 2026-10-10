@@ -57,7 +57,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chresolve` | Storage-setting resolution with retained intent and property origins. |
-| `dialect/clickhouse/chschema` | Desired and observed storage settings with versioned model codecs. |
+| `dialect/clickhouse/chschema` | Desired and observed storage settings and row policies with versioned model codecs. |
 | `dialect/clickhouse/chsource` | Table and index property encoding and decoding that preserves setting intent. |
 | `dialect/clickhouse/chreport` | Captured storage-setting counts and export omission labels. |
 | `core/schemaproperties` | Selected table and index property decoding and export without engine-specific field access. |
@@ -298,6 +298,12 @@ the spelling the server stores. `chcompare.RefreshService` adopts a schedule an
 undescribing source leaves unmanaged; `chdiff.Refresh` replaces the view when a
 schedule or its `APPEND` is gained or lost. `chplan.RefreshService` plans any
 other change as `chast.ModifyRefresh` in the ALTER envelope naming the view.
+
+`chschema.DesiredRowPolicy` and `ObservedRowPolicy` hold a ClickHouse row
+policy as a feature object named by database, table and policy through
+`RowPolicyRef`: the SELECT filter, permissive or restrictive composition, and
+a `RoleSelection` of named users and roles or `TO ALL` with exceptions. A
+database-wide policy has no representation and its reference is refused.
 
 `chresolve.Table` and `chresolve.Index` retain declarations, resolved settings,
 and property origins. Existing objects require observations for omitted settings.

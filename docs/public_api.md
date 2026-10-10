@@ -882,6 +882,32 @@ count and omission label. The former `ast.MatViewRefreshSpec`,
 `catalog.MaterializedView` are removed without aliases. This changes behavior;
 pre-v1, so no compatibility is owed.
 
+`chschema.RowPolicyCodecs()` handles ClickHouse row policies under
+`RowPolicyKind`, the ClickHouse model of ADR 0020. A policy is a feature
+object identified by its database, table and name through `RowPolicyRef`, so
+two tables may each hold a policy of one name; an empty database is the
+connection's. `ValidateRowPolicyRef` refuses a reference without a table,
+because a database-wide policy (`ON db.*`) is a variant this model does not
+hold.
+
+`DesiredRowPolicy` declares the SELECT filter, permissive or restrictive
+composition and a `RoleSelection`; an omitted filter is a policy without USING,
+an omitted composition is permissive, and a zero selection applies the policy
+to nobody, as a policy without TO does.
+
+`DesiredRowPolicy.NormalizedFilter` is the connected server's spelling of the
+filter. A live comparison attaches it, because the server reformats a filter
+and 24.10 and 26.9 format it differently; a source never writes it.
+`ObservedRowPolicy` holds what `system.row_policies` reports, with composition
+and selection always stated.
+
+`RoleSelection` holds named users and roles, or `TO ALL` with optional
+exceptions, each list a set, so a role named `ALL` stays a name. The codecs
+encode both lists in byte order and refuse unknown, null and empty-valued keys
+and a selection ClickHouse cannot express. `RowPolicyCoverage` builds the
+model's coverage. The package defines the model, its codecs and its coverage;
+nothing reads, compares or plans it yet.
+
 `schemaproperties.DecodeTables` attaches decoded property groups as desired
 facets bound to the selected target. It consumes only claimed keys; other keys
 and target groups remain in `Overrides`. `EncodeTables` writes table facets as

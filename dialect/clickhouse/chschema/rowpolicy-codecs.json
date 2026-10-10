@@ -1,0 +1,89 @@
+{
+  "$id": "ptah.run/clickhouse/row-policy/v1",
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\u0000]*$"
+    },
+    "composition": {
+      "enum": [
+        "permissive",
+        "restrictive"
+      ]
+    },
+    "names": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "const": true
+        },
+        "names": {
+          "$ref": "#/$defs/names"
+        },
+        "except": {
+          "$ref": "#/$defs/names"
+        }
+      },
+      "constraint": "An empty object names nobody, as a policy without TO or with TO NONE does. names lists users and roles without all; except lists the exceptions of TO ALL EXCEPT and requires all. Both lists are sets."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/clickhouse/row-policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "$ref": "#/$defs/text"
+          },
+          "composition": {
+            "$ref": "#/$defs/composition"
+          },
+          "roles": {
+            "$ref": "#/$defs/roles"
+          },
+          "struct_name": {
+            "$ref": "#/$defs/text"
+          },
+          "normalized_filter": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "constraint": "A declared row policy on one table. normalized_filter is the connected server's spelling of filter, attached by a live comparison and only beside filter; a source never writes it. An omitted filter declares no USING clause, an omitted composition is permissive, and omitted roles apply the policy to nobody. The object's identity carries the database, table and name; a database-wide policy has no representation. Null is invalid."
+      }
+    },
+    "observed": {
+      "ptah.run/clickhouse/row-policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "composition",
+          "roles"
+        ],
+        "properties": {
+          "filter": {
+            "$ref": "#/$defs/text"
+          },
+          "composition": {
+            "$ref": "#/$defs/composition"
+          },
+          "roles": {
+            "$ref": "#/$defs/roles"
+          }
+        },
+        "constraint": "The policy system.row_policies reports. An omitted filter is a policy without USING. A policy whose state could not be read carries no value and a coverage limit instead. Null is invalid."
+      }
+    }
+  },
+  "canonicalization": "Sort names and except by bytes and omit an empty list. Strings must be valid UTF-8. The filter keeps its spelling; comparison reads both sides in the spelling the server stores, and the codec does not."
+}
