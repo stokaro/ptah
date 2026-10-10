@@ -946,10 +946,12 @@ and 24.10 and 26.9 format it differently; a source never writes it.
 and selection always stated.
 
 `RoleSelection` holds named users and roles, or `TO ALL` with optional
-exceptions, each list a set, so a role named `ALL` stays a name. The codecs
-encode both lists in byte order and refuse unknown, null and empty-valued keys
-and a selection ClickHouse cannot express. `RowPolicyCoverage` builds the
-model's coverage.
+exceptions, each list a set, so a role named `ALL` stays a name. Its
+`MarshalJSON` writes both lists in byte order, so a policy encodes the same
+alone and inside a change or an operation. The codecs refuse unknown, null and
+empty-valued keys and a selection ClickHouse cannot express, as do the
+`chdiff` and `chast` codecs that carry a policy, each refusal a
+`schemaext.InvalidModelError`. `RowPolicyCoverage` builds the model's coverage.
 
 The ClickHouse provider registers the row policy services, and no source or
 reader produces the model yet. `chcompare.RowPolicyService` pairs policies by

@@ -141,6 +141,8 @@ func TestRowPolicyCodecsRefuseMalformedValues(t *testing.T) {
 				decoded, err := codec.Decode(json.RawMessage(test.wire))
 
 				c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+				var invalid *schemaext.InvalidModelError
+				c.Assert(err, qt.ErrorAs, &invalid)
 				c.Assert(decoded, qt.IsNil)
 			})
 		}

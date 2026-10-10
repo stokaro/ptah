@@ -111,6 +111,8 @@ func TestRowPolicyChangeCodecRefusesMalformedChanges(t *testing.T) {
 			decoded, err := codec.Decode(json.RawMessage(test.wire))
 
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			var invalid *schemaext.InvalidModelError
+			c.Assert(err, qt.ErrorAs, &invalid)
 			c.Assert(decoded, qt.IsNil)
 		})
 	}
@@ -177,4 +179,17 @@ func TestRoleClause(t *testing.T) {
 			c.Assert(chdiff.RoleClause(test.roles), qt.Equals, test.want)
 		})
 	}
+}
+
+// A change encodes each operand in its canonical form, so two changes whose
+// operands list the same users in another order encode to the same bytes.
+func TestRowPolicyChangeEncodingIsCanonical(t *testing.T) {
+	c := qt.New(t)
+	codec := chdiff.RowPolicyCodecs()[0]
+	encode := func(names ...string) string {
+		change := chdiff.NewRowPolicy(observedPolicy(chschema.Permissive, "tenant = 1", names...), desiredPolicy(chschema.Restrictive, "tenant = 1", names...))
+		return string(must.Must(codec.Encode(change)))
+	}
+
+	c.Assert(encode("bob", "alice"), qt.Equals, encode("alice", "bob"))
 }
