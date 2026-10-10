@@ -209,21 +209,35 @@ func (id ID) Equal(other ID) bool {
 }
 
 // String renders the identity for a diagnostic, in the spelling the author
-// wrote. It is never used as a key -- Key is -- so a name containing a dot
-// renders confusingly at worst rather than colliding.
+// wrote: the kind, then the catalog, schema, parent and name that are present,
+// joined by dots. A component holding a dot or a double quote is written in
+// double quotes, with each double quote inside doubled, so two identities whose
+// components differ never render as the same text: the name `pw` in the schema
+// `ext` is `ext.pw`, and the name `ext.pw` with no schema is `"ext.pw"`
+// (stokaro/ptah#4276). String is for people; [ID.Key] is the comparison form.
 func (id ID) String() string {
 	parts := make([]string, 0, 4)
 	for _, part := range []Part{id.Catalog, id.Schema, id.Parent} {
 		if !part.Empty() {
-			parts = append(parts, part.Source)
+			parts = append(parts, displayComponent(part.Source))
 		}
 	}
-	parts = append(parts, id.Name.Source)
+	parts = append(parts, displayComponent(id.Name.Source))
 	rendered := string(id.Kind) + " " + strings.Join(parts, ".")
 	if id.Signature != "" {
 		rendered += "(" + id.Signature + ")"
 	}
 	return rendered
+}
+
+// displayComponent writes one component of [ID.String]: as it is, or in
+// double quotes when it holds the dot that separates components or the quote
+// that would open one.
+func displayComponent(source string) string {
+	if !strings.ContainsAny(source, `."`) {
+		return source
+	}
+	return `"` + strings.ReplaceAll(source, `"`, `""`) + `"`
 }
 
 // Builder turns source-spelled names into identities under one target's

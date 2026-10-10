@@ -311,3 +311,33 @@ func TestPart_Authored(t *testing.T) {
 		})
 	}
 }
+
+// TestIdentity_StringSeparatesComponentsThatHoldADot pins that String never
+// writes two different identities as the same text.
+//
+// On YDB a schema is a directory path and a dot is a literal character of a
+// name, so the secret `pw` in the directory `ext` and the secret `ext.pw` at
+// the root both printed `ext.pw` in rollback notes, export warnings and
+// planning diagnostics (stokaro/ptah#4276).
+func TestIdentity_StringSeparatesComponentsThatHoldADot(t *testing.T) {
+	builder := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
+	tests := []struct {
+		name   string
+		schema string
+		object string
+		want   string
+	}{
+		{name: "a name in a directory", schema: "ext", object: "pw", want: `ptah.run/ydb/secret ext.pw`},
+		{name: "a dotted name at the root", object: "ext.pw", want: `ptah.run/ydb/secret "ext.pw"`},
+		{name: "a dotted name in a nested directory", schema: "a/b", object: "c.d", want: `ptah.run/ydb/secret a/b."c.d"`},
+		{name: "a dotted directory", schema: "a.b", object: "c", want: `ptah.run/ydb/secret "a.b".c`},
+		{name: "a quote in a name", object: `x"y`, want: `ptah.run/ydb/secret "x""y"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			id := builder.SchemaScopedParts("ptah.run/ydb/secret", test.schema, test.object)
+			c.Assert(id.String(), qt.Equals, test.want)
+		})
+	}
+}
