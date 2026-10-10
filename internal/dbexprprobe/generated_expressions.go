@@ -9,7 +9,6 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/dbschema"
 	"ptah.run/internal/exprkey"
 )
 
@@ -64,7 +63,7 @@ type GeneratedExpressionProbe struct {
 // map, which leaves every such comparison exactly as it was.
 func ResolveGeneratedExpressions(
 	ctx context.Context,
-	dev *dbschema.DatabaseConnection,
+	dev Executor,
 	probes []GeneratedExpressionProbe,
 ) (map[string]config.GeneratedExpression, error) {
 	if dev == nil || len(probes) == 0 {
@@ -103,7 +102,7 @@ func GeneratedExpressionProbeTable(index int) string {
 
 func resolveOneGeneratedProbe(
 	ctx context.Context,
-	dev *dbschema.DatabaseConnection,
+	dev Executor,
 	probe GeneratedExpressionProbe,
 	into map[string]config.GeneratedExpression,
 	dialect string,
@@ -168,7 +167,7 @@ const oracleVirtualColumnQuery = `
 
 func readOracleVirtualColumnExpressions(
 	ctx context.Context,
-	dev *dbschema.DatabaseConnection,
+	dev Executor,
 	table string,
 ) (map[string]string, error) {
 	rows, err := dev.QueryContext(ctx, oracleVirtualColumnQuery, strings.ToUpper(table))

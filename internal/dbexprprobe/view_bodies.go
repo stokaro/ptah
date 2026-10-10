@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/dbschema"
 	"ptah.run/internal/lexer"
 )
 
@@ -59,7 +58,7 @@ type ViewBodyProbe struct {
 // reasons [ResolveCheckExpressions] gives.
 func ResolveViewBodies(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []ViewBodyProbe,
 ) (map[string]config.ViewBody, error) {
 	if conn == nil {

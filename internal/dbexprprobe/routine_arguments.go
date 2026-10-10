@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"ptah.run/config"
-	"ptah.run/dbschema"
 	"ptah.run/internal/routineargs"
 )
 
@@ -72,7 +71,7 @@ type RoutineArgumentsProbe struct {
 // then compares as text (stokaro/ptah#4058).
 func ResolveRoutineArguments(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []RoutineArgumentsProbe,
 ) (map[string]config.RoutineArguments, error) {
 	if conn == nil {

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/config"
-	"ptah.run/dbschema"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -43,7 +42,7 @@ type TriggerConditionProbe struct {
 // gives.
 func ResolveTriggerConditions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []TriggerConditionProbe,
 ) (map[string]config.TriggerCondition, error) {
 	if conn == nil {

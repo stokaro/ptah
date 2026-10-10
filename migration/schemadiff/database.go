@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dbschema"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
@@ -30,7 +29,7 @@ import (
 // the target schema with the connected database schema.
 func CompareWithDatabase(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
@@ -49,7 +48,7 @@ func CompareWithDatabase(
 // meaning and ordering of the second return.
 func CompareWithDatabaseReportingUndecidedAdditions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
@@ -212,7 +211,7 @@ func withResolvedExpressions(
 // declaration unchanged, and its condition has no live table to parse against.
 func resolveTriggerConditions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
@@ -281,7 +280,7 @@ func resolveTriggerConditions(
 // plan adds, as it would for a view. Its signature is used either way.
 func resolveRoutineArguments(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
@@ -336,7 +335,7 @@ func resolveRoutineArguments(
 // either kind worth asking about.
 func resolveViewBodies(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 ) (map[string]config.ViewBody, error) {
@@ -482,7 +481,7 @@ func rewritesStoredBodies(dialect string) bool {
 // and none of it changes how a type or a default is spelled.
 func resolveColumnSpellings(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
@@ -603,7 +602,7 @@ func typeAndDefaultOnly(field schemamodel.Field) schemamodel.Field {
 // middle are the ones a string comparison cannot decide (stokaro/ptah#1717).
 func resolveDomainExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 ) (map[string]config.DomainExpression, error) {
@@ -658,7 +657,7 @@ func resolveDomainExpressions(
 // against.
 func resolveCheckExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	dialect string,
@@ -714,7 +713,7 @@ func resolveCheckExpressions(
 // one the database lacks has nothing to be compared with.
 func resolveExcludeExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
@@ -768,7 +767,7 @@ func resolveExcludeExpressions(
 // what the declaration already says.
 func resolveIndexExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
@@ -879,7 +878,7 @@ func liveTableColumns(
 // never changed in place; with no declared object it is returned as it is.
 func normalizeFeatureObjects(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	info catalog.ServerInfo,

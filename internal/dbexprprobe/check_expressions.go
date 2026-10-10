@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/dbschema"
 )
 
 // CheckProbeColumn is one column the probe table needs so a declared CHECK can
@@ -78,7 +77,7 @@ type CheckExpressionProbe struct {
 // check stays uncompared.
 func ResolveCheckExpressions(
 	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
+	conn Session,
 	probes []CheckExpressionProbe,
 ) (map[string]config.CheckExpression, error) {
 	if conn == nil {
