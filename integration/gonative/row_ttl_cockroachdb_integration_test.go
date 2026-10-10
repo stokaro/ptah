@@ -20,6 +20,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -137,6 +138,11 @@ func TestCockroachDBRowLevelTTL_IsReadBackVerbatim(t *testing.T) {
 		{name: "an explicit cast", expression: "expires_at::TIMESTAMPTZ"},
 		{name: "arithmetic carrying a quoted interval", expression: "expires_at + INTERVAL '1 day'"},
 		{name: "extra internal whitespace", expression: "expires_at  +  INTERVAL '2 days'"},
+		// `:::` is CockroachDB's type annotation operator, and the catalog
+		// writes one after a typed parameter's literal too: only that suffix
+		// is the catalog's.
+		{name: "a type annotation inside the expression", expression: "expires_at:::TIMESTAMPTZ"},
+		{name: "an annotated literal carrying a quote", expression: "expires_at + '1 day':::INTERVAL"},
 	}
 
 	for _, test := range tests {
@@ -533,4 +539,71 @@ func TestCockroachDBRowLevelTTL_SwitchesItsEnablerLive(t *testing.T) {
 			c.Assert(planRowTTLAgainstLive(c, t, dsn, switched), qt.HasLen, 0)
 		})
 	}
+}
+
+// TestCockroachDBRowLevelTTL_RollsBackBesideAnRLSToggleLive applies both
+// directions of a plan that sets a policy on a table whose row-level security
+// is enabled in the same plan. The generator cannot project that table's
+// reverse capture, and the TTL reverse does not need it, so the plan exists in
+// both directions; this measures that each one runs and reaches its state.
+func TestCockroachDBRowLevelTTL_RollsBackBesideAnRLSToggleLive(t *testing.T) {
+	dsn := skipIfNoCockroachDB(t)
+	c := qt.New(t)
+	db, err := sql.Open("pgx", dsn)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	dropRowTTLTable(db)
+	defer dropRowTTLTable(db)
+	_, err = db.Exec(`CREATE TABLE ` + rowTTLTable + ` (id INT8 PRIMARY KEY, expires_at TIMESTAMPTZ)`)
+	c.Assert(err, qt.IsNil)
+
+	declared := must.Must(goschema.ParseSource("sessions.go", "package entities\n\n"+
+		"//ptah:schema:rls:enable table=\""+rowTTLTable+"\"\n"+
+		"//ptah:schema:table name=\""+rowTTLTable+"\" platform.cockroachdb.ttl_expire_after=\"3 days\"\n"+
+		"type Sessions struct {\n"+
+		"\t//ptah:schema:field name=\"id\" type=\"INT8\" primary=\"true\"\n\tID int64\n"+
+		"\t//ptah:schema:field name=\"expires_at\" type=\"TIMESTAMPTZ\"\n\tExpiresAt *time.Time\n"+
+		"}\n"))
+	forward, reverse := planRowTTLBothWays(c, t, dsn, &declared)
+
+	applyRowTTLPlan(c, db, forward)
+	c.Assert(readRowTTL(c, t, dsn), qt.DeepEquals, &crdbschema.Policy{ExpireAfter: "3 days"})
+	c.Assert(rowSecurity(c, db), qt.IsTrue)
+
+	applyRowTTLPlan(c, db, reverse)
+	c.Assert(readRowTTL(c, t, dsn), qt.IsNil)
+	c.Assert(rowSecurity(c, db), qt.IsFalse)
+}
+
+// planRowTTLBothWays reads the database and returns the statements of both
+// directions of the bidirectional plan to the declaration.
+func planRowTTLBothWays(c *qt.C, t *testing.T, dsn string, declared *schemamodel.Database) (forward, reverse []string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
+	c.Assert(err, qt.IsNil)
+	info := conn.Info()
+	runtime := must.Must(builtin.New())
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, live, info, nil, runtime)
+	c.Assert(err, qt.IsNil)
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: declared, CurrentSchema: live, Dialect: info.Dialect, Capabilities: info.Capabilities,
+	})
+	c.Assert(err, qt.IsNil)
+	options := planner.Options{Capabilities: info.Capabilities}
+	forward, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, plan.Forward.Diff, info.Dialect, options)
+	c.Assert(err, qt.IsNil)
+	reverse, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, plan.Reverse.Diff, info.Dialect, options)
+	c.Assert(err, qt.IsNil)
+	return forward, reverse
+}
+
+// rowSecurity reports whether row-level security is enabled on the table.
+func rowSecurity(c *qt.C, db *sql.DB) bool {
+	c.Helper()
+	var enabled bool
+	c.Assert(db.QueryRow(`SELECT relrowsecurity FROM pg_class WHERE relname = $1`, rowTTLTable).Scan(&enabled), qt.IsNil)
+	return enabled
 }

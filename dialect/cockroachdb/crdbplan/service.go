@@ -66,7 +66,10 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		})
 	}
 	if len(request.ParentKinds) == 0 {
-		return result, ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return featureplan.Result{}, err
+		}
+		return result, nil
 	}
 	for i, table := range request.Tables {
 		if table.Action == "" {

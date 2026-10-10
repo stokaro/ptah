@@ -149,3 +149,44 @@ func TestCockroachDBRowTTLTableCreationCarriesThePolicy(t *testing.T) {
 		qt.Contains, ") WITH (ttl_expire_after = '3 days');")
 	c.Assert(renderedStatements(c, plan.Reverse.Nodes), qt.DeepEquals, []string{`DROP TABLE IF EXISTS "sessions" CASCADE;`})
 }
+
+// TestCockroachDBRowTTLPlansBothDirectionsBesideAnRLSToggle pins a row-level
+// TTL change on a table whose row-level security changes in the same plan.
+// The generator cannot project the reverse capture of such a table; the TTL
+// reverse does not read it, so both directions are planned rather than the
+// whole plan being refused.
+func TestCockroachDBRowTTLPlansBothDirectionsBesideAnRLSToggle(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	source := must.Must(goschema.ParseSource("sessions.go", `package entities
+
+//ptah:schema:rls:enable table="sessions"
+//ptah:schema:table name="sessions" platform.cockroachdb.ttl_expire_after="3 days"
+type Session struct {
+	//ptah:schema:field name="id" type="INT8" primary="true"
+	ID int64
+	//ptah:schema:field name="expires_at" type="TIMESTAMPTZ"
+	ExpiresAt string
+}
+`))
+	current := liveRowTTLTable(nil)
+
+	diff, err := schemadiff.CompareWithDialect(t.Context(), &source, current, "cockroachdb", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 1)
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: &source, CurrentSchema: current, Dialect: "cockroachdb", Capabilities: capability.CockroachDB26(),
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(renderedStatements(c, plan.Forward.Nodes), qt.DeepEquals, []string{
+		`ALTER TABLE "sessions" ENABLE ROW LEVEL SECURITY;`,
+		"-- Row-level TTL on table: sessions",
+		`ALTER TABLE "sessions" SET (ttl_expire_after = '3 days');`,
+	})
+	c.Assert(renderedStatements(c, plan.Reverse.Nodes), qt.DeepEquals, []string{
+		`ALTER TABLE "sessions" DISABLE ROW LEVEL SECURITY;`,
+		"-- Row-level TTL on table: sessions",
+		`ALTER TABLE "sessions" RESET (ttl);`,
+	})
+}

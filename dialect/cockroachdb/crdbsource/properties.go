@@ -22,12 +22,14 @@ type Service struct{}
 
 // Definitions returns independent property ownership declarations: every
 // managed parameter, and the derived ttl marker so that declaring it is refused
-// with the reason instead of passing through as an unrelated table option. Go
-// annotations prefix these keys with platform.cockroachdb.; YAML places them
-// in the cockroachdb platform group.
+// with the reason instead of passing through as an unrelated table option. The
+// owner also claims every key that begins with ttl in any case, so a misspelled
+// or miscased parameter is refused by name rather than left as a table option
+// nothing reads. Go annotations prefix these keys with platform.cockroachdb.;
+// YAML places them in the cockroachdb platform group.
 func Definitions() []schemaext.PropertyDefinition {
 	keys := append([]string{crdbschema.MarkerParameter}, crdbschema.ManagedParameters()...)
-	return []schemaext.PropertyDefinition{{Kind: crdbschema.RowTTLKind, Keys: keys}}
+	return []schemaext.PropertyDefinition{{Kind: crdbschema.RowTTLKind, Keys: keys, Prefixes: []string{crdbschema.MarkerParameter}}}
 }
 
 func validateRequest(ctx context.Context, target string, format schemaext.PropertyFormat) error {

@@ -89,7 +89,9 @@ introspect, and diff cycle: a declared TTL is applied, read back from
 `pg_class.reloptions`, and compared to zero difference on the next run.
 
 Declare it as `platform.cockroachdb` properties on the table, named exactly for
-the storage parameters they become:
+the storage parameters they become. A property whose name begins with `ttl` but
+is not one of them, misspelled or in upper case, is refused by name rather than
+ignored:
 
 ```go
 //ptah:schema:table name="sessions" platform.cockroachdb.ttl_expiration_expression="expires_at" platform.cockroachdb.ttl_job_cron="@daily"

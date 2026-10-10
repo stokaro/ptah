@@ -26,7 +26,7 @@ func (r *Runtime) validateParentPlanningOwnership(request featureplan.Request) e
 		if table.Action == "" {
 			continue
 		}
-		kinds, err := capturedPlanningKinds(table)
+		kinds, err := table.CapturedKinds()
 		if err != nil {
 			return err
 		}
@@ -37,27 +37,6 @@ func (r *Runtime) validateParentPlanningOwnership(request featureplan.Request) e
 		}
 	}
 	return nil
-}
-
-func capturedPlanningKinds(table featureplan.Table) ([]schemaext.Kind, error) {
-	var kinds []schemaext.Kind
-	for _, group := range capturedTableModelGroups(table.Desired, table.Current) {
-		objects, err := group.state.Objects.All()
-		if err != nil {
-			return nil, err
-		}
-		for _, object := range objects {
-			kinds = append(kinds, object.Value.Kind())
-		}
-		for _, facets := range group.facets {
-			kinds = append(kinds, facets.Kinds()...)
-		}
-		for _, record := range group.state.Coverage.ForParent(table.Subject).SubjectRecords() {
-			kinds = append(kinds, record.Kind)
-		}
-	}
-	slices.Sort(kinds)
-	return slices.Compact(kinds), nil
 }
 
 func validatePlannedParents(request featureplan.Request, parents []featureplan.ParentPlan, steps, covered map[plangraph.StepID]bool) error {

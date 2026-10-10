@@ -3988,7 +3988,7 @@ func SQLServer2022() Capabilities {
 // `{ttl='on',ttl_expiration_expression='expires_at',...}`, while PostgreSQL
 // 18.4 answers `ERROR: unrecognized parameter`. It is set here rather than on
 // the per-line presets because both measured lines answered identically to
-// row-level TTL probe the CockroachDB owner was measured with
+// every row-level TTL probe the CockroachDB owner was measured with
 // (stokaro/ptah#1027).
 func CockroachDB23() Capabilities {
 	return Postgres16().

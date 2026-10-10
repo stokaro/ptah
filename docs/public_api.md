@@ -199,6 +199,11 @@ model for the target even without child changes, concrete feature values, or
 source coverage. Callers cannot narrow the registered `ParentKinds`. Concrete
 attached state without a parent planning owner is refused before dispatch.
 An unavailable parent planning service is an error even for an empty capture.
+`Table.CapturedKinds` names the kinds whose state the capture carries, on the
+table, its columns, indexes, constraints and triggers, in owned objects, and in
+coverage records under it; the runtime refuses an action on a table any of them
+has no owner for, and a host that sends only such tables asks the same
+question.
 
 Each `ParentPlan` accounts for one model and table action, preserving the exact
 subject, kind, and action. Its strategy describes how the parent operation treats
@@ -702,6 +707,12 @@ does not replace a catalog read.
 `Provider.Properties` assigns source property keys to feature owners for a
 selected target and format. A `PropertySource` must own the desired model codec
 for each kind, and two definitions cannot claim the same key in that format.
+`PropertyDefinition.Prefixes` also claims every key that begins with a
+lower-case prefix, compared without regard to case, so the owner decodes or
+refuses a misspelled key in its namespace instead of leaving it unread.
+`PropertyDefinition.Claims` answers both forms. A prefix may cover its own
+definition's keys and no key or prefix of another definition. A prefix widens
+only what a decoder is handed; an encoder's output must use the exact `Keys`.
 `PropertyDefinitions` returns independent copies for a frontend to group input
 without knowing the feature's Go type. A definition's `Absorbs` names the
 common attributes it takes over, each into one of its keys; registration refuses
@@ -788,7 +799,9 @@ codecs write each parameter under its own name and a flag only when it is true.
 
 `crdbsource.Service` decodes and encodes `platform.cockroachdb` table
 properties, one per storage parameter. Its definition also claims the derived
-`ttl` marker, so declaring it is refused with the server's reason.
+`ttl` marker, so declaring it is refused with the server's reason, and every key
+that begins with `ttl` in any case, so a misspelled or upper-case parameter is
+refused by name.
 `crdbsource.Coverage` is the knowledge a source format with platform properties
 holds. Go annotations and YAML enroll it, so a table without the properties
 requests no TTL; HCL, SQL and hand-built schemas do not, and leave a live policy
@@ -797,9 +810,12 @@ unmanaged.
 `crdbcompare.Service` compares the facet on tables both sides hold and reads
 `ttl_expire_after` and `ttl_row_stats_poll_interval` through the value each
 spelling denotes. `crdbdiff.RowTTL` carries an observed `Before` and a desired
-`After`; a nil side is a known absence. A managed declaration against
-uninspected live state is undecided, and an unmanaged live policy is adopted
-into the effective declaration so a rebuild keeps it.
+`After`; a nil side is a known absence. A source that manages the policy
+against uninspected live state is undecided, declaring one or declaring none,
+unless the capability set establishes that the target has no row-level TTL. So
+is a declaration the source could not describe, on a table the plan creates
+too, and a live policy the read could not describe. An unmanaged live policy is
+adopted into the effective declaration so a rebuild keeps it.
 
 `crdbast.AlterRowTTL` carries one change in `ast.ExtensionAlterOperation`.
 `crdbrender` lowers it to `RESET (ttl)` for a removal, and otherwise to a

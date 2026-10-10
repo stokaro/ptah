@@ -8,25 +8,25 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// unownedFeatureChanges is the part of a diff no owner on this target plans.
-// CockroachDB's table settings are planned by their owner through the runtime;
-// every other feature change, and every change on another target, is refused
-// before the first statement.
+// unownedFeatureChanges is the part of a diff this planner has no step for:
+// standalone feature objects, which it refuses before the first statement.
+// A table's feature changes go to the runtime in planTableFeatures, which
+// plans them through the target's owner or refuses a kind no owner on the
+// target plans; this planner does not decide which targets have one.
 func (p *Planner) unownedFeatureChanges(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
-	if diff == nil || p.targetDialect() != platform.CockroachDB {
-		return diff
+	if diff == nil {
+		return nil
 	}
 	return &difftypes.SchemaDiff{FeatureChanges: diff.FeatureChanges}
 }
 
 // planTableFeatures lowers the owner-planned changes of surviving tables, and
-// on CockroachDB accounts for the owned state of every removed table. The
+// accounts for the owned state of every removed table that carries some. The
 // operations are emitted at the caller's position in the plan, which is after
 // the columns an owned setting may refer to exist and before any column is
 // dropped. CockroachDB row-level TTL is the setting that needs it: its
@@ -52,12 +52,21 @@ func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Run
 		request.Changes = append(request.Changes, table.FeatureChanges...)
 		names[subject.Key()] = table.TableName
 	}
-	if target == platform.CockroachDB {
-		for _, removal := range diff.TablesRemoved {
-			subject := builder.Table(removal.Name)
-			request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Action: featureplan.DropTable, Current: removal.Current})
-			names[subject.Key()] = removal.Name
+	// A removed table is the runtime's business only when it carries owned
+	// state: a table without any has nothing for an owner to account for, and
+	// asking would make every table drop depend on a parent planning service
+	// the target may not register.
+	for _, removal := range diff.TablesRemoved {
+		table := featureplan.Table{Subject: builder.Table(removal.Name), Action: featureplan.DropTable, Current: removal.Current}
+		kinds, err := table.CapturedKinds()
+		if err != nil {
+			return nil, err
 		}
+		if len(kinds) == 0 {
+			continue
+		}
+		request.Tables = append(request.Tables, table)
+		names[table.Subject.Key()] = removal.Name
 	}
 	if len(request.Tables) == 0 {
 		return result, nil

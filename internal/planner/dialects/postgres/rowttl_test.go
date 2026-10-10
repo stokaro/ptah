@@ -8,15 +8,18 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/cockroachdb/crdbdiff"
 	"ptah.run/dialect/cockroachdb/crdbschema"
+	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -268,4 +271,77 @@ func statementIndex(c *qt.C, statements []string, fragment string) int {
 	}
 	c.Fatalf("no statement contains %q, in: %v", fragment, statements)
 	return -1
+}
+
+// ownerlessRuntime knows the CockroachDB target and the row-level TTL models,
+// and registers no planning service, as an embedder's runtime can.
+func ownerlessRuntime() *engine.Runtime {
+	return must.Must(engine.New(engine.Provider{
+		ID: crdbschema.Owner, Targets: []engine.Target{{Name: platform.CockroachDB}}, Codecs: crdbschema.Codecs(),
+	}))
+}
+
+// droppedTable is a removal of events whose capture carries the given facets.
+func droppedTable(facets schemaext.Facets) *difftypes.SchemaDiff {
+	removal := difftypes.TableRemoval{Name: "events"}
+	removal.Current.Table = catalog.Table{Name: "events", Facets: facets}
+	return &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{removal}}
+}
+
+// TestPlanner_DroppingATableWithoutOwnedStateAsksNoOwner pins that a table
+// drop depends on a feature owner only when the table carries owned state: a
+// runtime with no CockroachDB services, as an embedder may build, still drops
+// a plain table.
+func TestPlanner_DroppingATableWithoutOwnedStateAsksNoOwner(t *testing.T) {
+	c := qt.New(t)
+
+	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
+	nodes, err := planner.GenerateMigrationAST(t.Context(), ownerlessRuntime(), droppedTable(schemaext.Facets{}))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(renderedSQL(c, nodes), "\n"), qt.Contains, `DROP TABLE IF EXISTS "events"`)
+}
+
+// TestPlanner_DroppingATableWithOwnedStateNeedsItsOwner is the control on the
+// test above: a table that carries owned state anywhere the runtime looks --
+// a policy, a facet on a column, or only a coverage record -- is accounted for
+// by its owner, and a runtime without one refuses the drop rather than losing
+// the receipt.
+func TestPlanner_DroppingATableWithOwnedStateNeedsItsOwner(t *testing.T) {
+	policy := must.Must(schemaext.NewFacets(&crdbschema.ObservedRowTTL{Policy: crdbschema.Policy{ExpirationExpression: "expires_at"}}))
+	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.CockroachDB)).Table("events")
+	coverage := must.Must(crdbschema.RowTTLCoverage(schemaext.Observed,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables were read"},
+		[]schemaext.SubjectCoverage{{Kind: crdbschema.RowTTLKind, Subject: subject, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}))
+	tests := []struct {
+		name    string
+		current schemacapture.TableObservation
+	}{
+		{name: "a policy", current: schemacapture.TableObservation{Table: catalog.Table{Name: "events", Facets: policy}}},
+		{name: "a column facet", current: schemacapture.TableObservation{Table: catalog.Table{Name: "events",
+			Columns: []catalog.Column{{Name: "id", Facets: policy}}}}},
+		{name: "a coverage record", current: schemacapture.TableObservation{Table: catalog.Table{Name: "events"}, FeatureCoverage: coverage}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "events", Current: test.current}}}
+			planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
+			nodes, err := planner.GenerateMigrationAST(t.Context(), ownerlessRuntime(), diff)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// renderedSQL renders every planned node.
+func renderedSQL(c *qt.C, nodes []ast.Node) []string {
+	c.Helper()
+	var statements []string
+	for _, node := range nodes {
+		sql, err := builtin.RenderSQLWithCapabilities(platform.CockroachDB, capability.CockroachDB26(), node)
+		c.Assert(err, qt.IsNil)
+		statements = append(statements, sql)
+	}
+	return statements
 }

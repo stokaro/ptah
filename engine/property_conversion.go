@@ -22,7 +22,7 @@ func (r *Runtime) DecodeProperties(ctx context.Context, request schemaext.Proper
 	}
 	fragments := make([]schemaext.PropertyFragment, len(request.Fragments))
 	for i, fragment := range request.Fragments {
-		fragments[i], err = r.snapshotPropertyFragment(target, request.Format, fragment)
+		fragments[i], err = r.snapshotPropertyFragment(target, request.Format, fragment, schemaext.PropertyDefinition.Claims)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +106,7 @@ func (r *Runtime) EncodeProperties(ctx context.Context, request schemaext.Proper
 			if encoded[i].Kind != kinds[index] {
 				return nil, fmt.Errorf("%w: property encoder changed an ordered kind", schemaext.ErrInvalidValue)
 			}
-			fragment, err := r.snapshotPropertyFragment(target, request.Format, encoded[i])
+			fragment, err := r.snapshotPropertyFragment(target, request.Format, encoded[i], exactKey)
 			if err != nil {
 				return nil, err
 			}

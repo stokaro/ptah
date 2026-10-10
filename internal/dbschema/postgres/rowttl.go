@@ -174,12 +174,48 @@ func unescapeStorageParameter(value string) string {
 // value differ from anything a declaration could write, so the parameter would
 // never compare equal to itself. The suffix is removed rather than parsed: the
 // type the server chose is not something Ptah models.
+//
+// The annotation follows the literal's closing quote, so only a suffix there is
+// removed. `:::` is also CockroachDB's type annotation operator inside an
+// expression, and an expression such as `expires_at:::TIMESTAMPTZ` is stored
+// inside the quotes; cutting at the last `:::` anywhere would cut it. A value
+// written without quotes, a count or a flag, holds no expression, so an
+// annotation after it is removed the same way, which no measured line writes
+// but which would otherwise leave a count no integer reading accepts.
 func stripTypeAnnotation(value string) string {
-	annotation := strings.LastIndex(value, ":::")
-	if annotation < 0 {
+	end := literalEnd(value)
+	if end < 0 && !strings.HasPrefix(value, "'") && !strings.HasPrefix(value, "e'") {
+		end = strings.Index(value, ":::")
+	}
+	if end < 0 || !strings.HasPrefix(value[end:], ":::") {
 		return value
 	}
-	return value[:annotation]
+	return value[:end]
+}
+
+// literalEnd is the index just past the closing quote of the string literal
+// value starts with, in either form unquoteStorageParameter reads, or -1 when
+// value does not start with a complete literal. A plain literal holds no quote,
+// because any quote forces the escape form; in the escape form a backslash
+// escapes the character after it.
+func literalEnd(value string) int {
+	start := 0
+	escaped := strings.HasPrefix(value, "e'")
+	if escaped {
+		start = 1
+	}
+	if !strings.HasPrefix(value[start:], "'") {
+		return -1
+	}
+	for i := start + 1; i < len(value); i++ {
+		switch {
+		case escaped && value[i] == '\\':
+			i++
+		case value[i] == '\'':
+			return i + 1
+		}
+	}
+	return -1
 }
 
 // hiddenColumnFilter excludes the columns CockroachDB creates and hides, and

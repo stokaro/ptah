@@ -3,6 +3,8 @@ package schemaext
 import (
 	"context"
 	"maps"
+	"slices"
+	"strings"
 )
 
 // PropertyFormat identifies a source fragment grammar independently of the
@@ -30,6 +32,22 @@ type PropertyDefinition struct {
 	// for its selected target, each into one of Keys. A key never absorbs a
 	// common attribute because it shares the attribute's spelling.
 	Absorbs []Absorption
+	// Prefixes claims, beside Keys, every key that begins with one of these
+	// lower-case prefixes, compared without regard to case. The owner then
+	// decodes or refuses such a key, so a misspelled or miscased key in its
+	// namespace is not left unclaimed for no reader to see. A prefix may cover
+	// the definition's own keys and no key or prefix of another definition.
+	Prefixes []string
+}
+
+// Claims reports whether the definition owns key: one of Keys exactly, or a
+// key that begins with one of Prefixes, compared without regard to case.
+func (d PropertyDefinition) Claims(key string) bool {
+	if slices.Contains(d.Keys, key) {
+		return true
+	}
+	lower := strings.ToLower(key)
+	return slices.ContainsFunc(d.Prefixes, func(prefix string) bool { return strings.HasPrefix(lower, prefix) })
 }
 
 // CommonAttribute names a field of a common declaration that a feature owner

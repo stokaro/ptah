@@ -96,10 +96,14 @@ func Options(p crdbschema.Policy) []string {
 // parameter would leave it in place forever unless the plan resets it by name.
 // Removing the whole policy is `RESET (ttl)`, which callers decide first.
 func Dropped(desired, current crdbschema.Policy) []string {
+	kept := make(map[string]bool)
+	for _, parameter := range desired.Parameters() {
+		kept[parameter.Name] = true
+	}
 	var dropped []string
-	for _, name := range crdbschema.ManagedParameters() {
-		if current.Sets(name) && !desired.Sets(name) {
-			dropped = append(dropped, name)
+	for _, parameter := range current.Parameters() {
+		if !kept[parameter.Name] {
+			dropped = append(dropped, parameter.Name)
 		}
 	}
 	return dropped

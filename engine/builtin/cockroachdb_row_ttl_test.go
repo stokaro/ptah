@@ -21,9 +21,9 @@ import (
 
 // TestCockroachDBRowTTL_OwnerSpellsTheTableAsTheRenderer pins the agreement
 // between two spellings of one table name: the owner's ALTER statement and the
-// PostgreSQL-family renderer's own ALTER in the same batch. They are written by
-// different code, so a name with a dot inside quotes, an embedded quote or a
-// non-ASCII letter is where they would part.
+// PostgreSQL-family renderer's own ALTER in the same batch. Both call
+// sqlident.QuotePostgresQualified; a name with a dot inside quotes, an embedded quote
+// or a non-ASCII letter is where one that stopped calling it would part.
 func TestCockroachDBRowTTL_OwnerSpellsTheTableAsTheRenderer(t *testing.T) {
 	for _, table := range []string{"sessions", "audit.sessions", `"a.b"."c"`, `odd"name`, "Größe"} {
 		t.Run(table, func(t *testing.T) {
@@ -114,4 +114,65 @@ func TestCockroachDBRowTTL_AnUnboundPolicyIsRefusedElsewhere(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// TestCockroachDBRowTTL_AMisspelledParameterIsRefused pins that the owner
+// claims every ttl-prefixed platform key: a misspelled or miscased parameter
+// is refused by name. Left unclaimed, it stayed a table option nothing read,
+// the CREATE TABLE carried no policy, and a source with complete knowledge of
+// row-level TTL then planned the live policy's removal.
+func TestCockroachDBRowTTL_AMisspelledParameterIsRefused(t *testing.T) {
+	tests := []struct {
+		name     string
+		property string
+		wantErr  string
+	}{
+		{
+			name: "a misspelled name", property: `platform.cockroachdb.ttl_expiration_expresion="expires_at"`,
+			wantErr: `(?s).*unknown row-level TTL parameter "ttl_expiration_expresion": Ptah manages .*`,
+		},
+		{
+			name: "an upper-case name", property: `platform.cockroachdb.TTL_EXPIRE_AFTER="3 days"`,
+			wantErr: `(?s).*unknown row-level TTL parameter "TTL_EXPIRE_AFTER": parameter names are lower case, as "ttl_expire_after".*`,
+		},
+		{
+			name: "a name under the alias group", property: `platform.crdb.ttl_expire_aftr="3 days"`,
+			wantErr: `(?s).*unknown row-level TTL parameter "ttl_expire_aftr".*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := must.Must(goschema.ParseSource("sessions.go", "package entities\n\n//ptah:schema:table name=\"sessions\" "+test.property+`
+type Session struct {
+	//ptah:schema:field name="id" type="INT8" primary="true"
+	ID int64
+	//ptah:schema:field name="expires_at" type="TIMESTAMPTZ"
+	ExpiresAt string
+}
+`))
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "cockroachdb", capability.CockroachDB26())
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestCockroachDBRowTTL_AnUnrelatedPlatformKeyIsNotClaimed is the control on
+// the test above: the claim is the ttl namespace, so another CockroachDB table
+// option is left for the readers of table options, as before.
+func TestCockroachDBRowTTL_AnUnrelatedPlatformKeyIsNotClaimed(t *testing.T) {
+	c := qt.New(t)
+	database := must.Must(goschema.ParseSource("sessions.go", `package entities
+
+//ptah:schema:table name="sessions" platform.cockroachdb.fillfactor="70"
+type Session struct {
+	//ptah:schema:field name="id" type="INT8" primary="true"
+	ID int64
+}
+`))
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "cockroachdb", capability.CockroachDB26())
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, `CREATE TABLE "sessions"`)
 }

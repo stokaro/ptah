@@ -85,6 +85,26 @@ func TestRowTTLFacets_DecodesTheCatalogProjection(t *testing.T) {
 			want:    &crdbschema.Policy{ExpireAfter: "3 days"},
 		},
 		{
+			// `:::` is also the annotation operator inside an expression, and
+			// the expression is stored inside the quotes: only a suffix after
+			// the closing quote is the catalog's.
+			name:    "an expression that annotates a type itself",
+			encoded: `["ttl='on'", "ttl_expiration_expression='expires_at:::TIMESTAMPTZ'"]`,
+			want:    &crdbschema.Policy{ExpirationExpression: "expires_at:::TIMESTAMPTZ"},
+		},
+		{
+			name:    "an annotated expression carrying a quote, in the escape-string form",
+			encoded: `["ttl='on'", "ttl_expiration_expression=e'expires_at + \\'1 day\\':::INTERVAL'"]`,
+			want:    &crdbschema.Policy{ExpirationExpression: "expires_at + '1 day':::INTERVAL"},
+		},
+		{
+			// No measured line annotates an unquoted value, but a count that
+			// arrived annotated must still read as a count.
+			name:    "an unquoted count with a type annotation",
+			encoded: `["ttl='on'", "ttl_expiration_expression='expires_at'", "ttl_select_batch_size=500:::INT8"]`,
+			want:    &crdbschema.Policy{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
+		},
+		{
 			// The server's own spellings, read back verbatim. Only the
 			// comparison reads them as an interval and a duration.
 			name:    "an interval and a duration the server rewrote on the way in",

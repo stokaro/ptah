@@ -131,6 +131,13 @@ func TestProperties_RejectRegistrationConflicts(t *testing.T) {
 		{"empty keys", func(p *engine.Provider) { p.Properties[0].Definitions[0].Keys = nil }},
 		{"invalid key", func(p *engine.Provider) { p.Properties[0].Definitions[0].Keys[0] = "a..b" }},
 		{"shared key", func(p *engine.Provider) { p.Properties[0].Definitions[1].Keys[0] = "number" }},
+		{"invalid prefix", func(p *engine.Provider) { p.Properties[0].Definitions[0].Prefixes = []string{"Num"} }},
+		{"a prefix over another definition's key", func(p *engine.Provider) { p.Properties[0].Definitions[1].Prefixes = []string{"num"} }},
+		{"a key under another definition's prefix", func(p *engine.Provider) { p.Properties[0].Definitions[0].Prefixes = []string{"si"} }},
+		{"overlapping prefixes", func(p *engine.Provider) {
+			p.Properties[0].Definitions[0].Prefixes = []string{"zz"}
+			p.Properties[0].Definitions[1].Prefixes = []string{"zzz"}
+		}},
 		{"duplicate service", func(p *engine.Provider) { p.Properties = append(p.Properties, p.Properties[0]) }},
 		{"absorption into another format", func(p *engine.Provider) {
 			p.Properties[0].Definitions[0].Absorbs = []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "number"}}
@@ -158,6 +165,68 @@ func TestProperties_RejectRegistrationConflicts(t *testing.T) {
 			c.Assert(runtime, qt.IsNil)
 		})
 	}
+}
+
+// prefixedProvider registers the provider of these tests with the prefix num
+// on its first definition, beside the keys number and number.default.
+func prefixedProvider(service schemaext.PropertyService) engine.Provider {
+	provider := propertyProvider(service)
+	provider.Properties[0].Definitions[0].Prefixes = []string{"num"}
+	return provider
+}
+
+// TestProperties_APrefixClaimsKeysInAnyCase_HappyPath pins what a prefix adds:
+// its own keys stay valid under it, and a key that begins with it in any case
+// reaches the owner, which then decides it.
+func TestProperties_APrefixClaimsKeysInAnyCase_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	var decoded []schemaext.PropertyFragment
+	runtime := mustRuntime(c, prefixedProvider(propertyService{decode: func(_ context.Context, request schemaext.PropertyDecodeRequest) ([]schemaext.Value, error) {
+		decoded = request.Fragments
+		return []schemaext.Value{&conversionValue{ID: conversionFirst, Number: 1}}, nil
+	}}))
+	definitions, err := runtime.PropertyDefinitions("custom", schemaext.TablePlatformProperties)
+	c.Assert(err, qt.IsNil)
+	c.Assert(definitions[0].Prefixes, qt.DeepEquals, []string{"num"})
+	claimed := schemaext.PropertyFragment{Kind: conversionFirst, Properties: map[string]string{"NUMBR": "1"}}
+
+	values, err := runtime.DecodeProperties(t.Context(), schemaext.PropertyDecodeRequest{
+		Target: "custom", Format: schemaext.TablePlatformProperties, Fragments: []schemaext.PropertyFragment{claimed},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(values, qt.HasLen, 1)
+	c.Assert(decoded, qt.DeepEquals, []schemaext.PropertyFragment{claimed})
+}
+
+// TestProperties_APrefixClaimsKeysInAnyCase_FailurePath pins what a prefix
+// does not widen: a key outside every claim is refused before the owner sees
+// the batch, and an encoder must write the definition's exact keys, because
+// what it writes is what a source then declares.
+func TestProperties_APrefixClaimsKeysInAnyCase_FailurePath(t *testing.T) {
+	t.Run("a decoded key outside the claims", func(t *testing.T) {
+		c := qt.New(t)
+		runtime := mustRuntime(c, prefixedProvider(propertyService{decode: func(context.Context, schemaext.PropertyDecodeRequest) ([]schemaext.Value, error) {
+			return []schemaext.Value{&conversionValue{ID: conversionFirst}}, nil
+		}}))
+		values, err := runtime.DecodeProperties(t.Context(), schemaext.PropertyDecodeRequest{
+			Target: "custom", Format: schemaext.TablePlatformProperties,
+			Fragments: []schemaext.PropertyFragment{{Kind: conversionFirst, Properties: map[string]string{"size": "1"}}},
+		})
+		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+		c.Assert(values, qt.IsNil)
+	})
+	t.Run("an encoded key the prefix claims but no key names", func(t *testing.T) {
+		c := qt.New(t)
+		runtime := mustRuntime(c, prefixedProvider(propertyService{encode: func(context.Context, schemaext.PropertyEncodeRequest) ([]schemaext.PropertyFragment, error) {
+			return []schemaext.PropertyFragment{{Kind: conversionFirst, Properties: map[string]string{"NUMBR": "1"}}}, nil
+		}}))
+		fragments, err := runtime.EncodeProperties(t.Context(), schemaext.PropertyEncodeRequest{
+			Target: "custom", Format: schemaext.TablePlatformProperties, Values: []schemaext.Value{&conversionValue{ID: conversionFirst}},
+		})
+		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+		c.Assert(fragments, qt.IsNil)
+	})
 }
 
 func TestPropertyDecoderValidatesWholeBatchBeforeDispatch(t *testing.T) {

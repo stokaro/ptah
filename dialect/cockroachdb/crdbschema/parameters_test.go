@@ -89,6 +89,27 @@ func TestDecodeDeclared_FailurePath(t *testing.T) {
 			wantErr:    `(?s).*unknown row-level TTL parameter "ttl_expiration_expresion": Ptah manages ttl_expiration_expression, ttl_expire_after, .*`,
 		},
 		{
+			// Storage parameter names are lower case on the server, and a
+			// source keeps what the author wrote.
+			name:       "a parameter in upper case",
+			parameters: map[string]string{"TTL_EXPIRE_AFTER": "3 days"},
+			wantErr:    `(?s).*unknown row-level TTL parameter "TTL_EXPIRE_AFTER": parameter names are lower case, as "ttl_expire_after".*`,
+		},
+		{
+			// Its lower-case spelling is refused too, so the refusal is the
+			// marker's own rather than a pointer to it.
+			name:       "the marker in upper case",
+			parameters: map[string]string{"TTL": "on"},
+			wantErr:    `(?s).*ttl is derived from the other parameters.*`,
+		},
+		{
+			// An empty text is the policy's spelling of unset, so storing it
+			// would turn a declared parameter into one never written.
+			name:       "an empty text parameter",
+			parameters: map[string]string{"ttl_expiration_expression": "expires_at", "ttl_job_cron": ""},
+			wantErr:    `(?s).*ttl_job_cron is empty; remove the parameter to leave it unset.*`,
+		},
+		{
 			name:       "a count that is not an integer",
 			parameters: map[string]string{"ttl_expiration_expression": "expires_at", "ttl_select_batch_size": "many"},
 			wantErr:    `(?s).*ttl_select_batch_size = "many", which is not an integer.*`,
