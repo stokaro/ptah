@@ -89,7 +89,7 @@ func (d *fileDecoder) Finish(tables annotation.Tables) ([]annotation.Contributio
 }
 
 func (d *fileDecoder) policy(tables annotation.Tables, declaration annotation.Declaration) (annotation.Contribution, error) {
-	schemaName, tableName, err := policyTable(tables, declaration)
+	schemaName, tableName, err := tables.Reference(declaration.Struct, declaration.Attributes["table"], "a row-level security policy")
 	if err != nil {
 		return annotation.Contribution{}, err
 	}
@@ -128,36 +128,6 @@ func (d *fileDecoder) enable(tables annotation.Tables, declaration annotation.De
 // of a table with policies are left to the owner's default (see [Claim]).
 func (d *fileDecoder) Cover(claim schemaext.Coverage) (schemaext.Coverage, error) {
 	return Claim(claim, d.collector.Objects())
-}
-
-// policyTable is the table a policy declaration is on: the file's table its
-// table attribute names, or the one its struct maps to. A table attribute
-// naming no table in the file is used as written, because a struct-attached
-// policy may name a table another file declares.
-func policyTable(tables annotation.Tables, declaration annotation.Declaration) (schemaName, tableName string, err error) {
-	written := declaration.Attributes["table"]
-	if written == "" {
-		index, err := tables.Owning(declaration.Struct, "", "a row-level security policy")
-		if err != nil {
-			return "", "", err
-		}
-		return tables[index].Schema, tables[index].Name, nil
-	}
-	schemaName, tableName = annotation.QualifiedName("", written)
-	var matches []annotation.Table
-	for _, declared := range tables {
-		if declared.Name == tableName && (schemaName == "" || declared.Schema == schemaName) {
-			matches = append(matches, declared)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return schemaName, tableName, nil
-	case 1:
-		return matches[0].Schema, matches[0].Name, nil
-	}
-	_, err = tables.Owning(declaration.Struct, written, "a row-level security policy")
-	return "", "", err
 }
 
 // origin names a declaration in a refusal that has to name two.

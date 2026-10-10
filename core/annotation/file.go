@@ -107,6 +107,39 @@ func (t Tables) Owning(structName, table, part string) (int, error) {
 	return -1, fmt.Errorf("table %q is declared in schemas %s; name the schema in the table attribute", table, strings.Join(schemas, " and "))
 }
 
+// Reference returns the schema and name of the table a declaration names
+// that may name a table another file declares, such as a row-level security
+// policy: the file's table that table names, or, where table is empty, the one
+// the declaration's struct maps to. A name the file declares no table of is
+// returned as written, split by [QualifiedName]. A struct that maps to no
+// table of the file, and a name the file declares in more than one schema,
+// are refused as [Tables.Owning] refuses them. part names what the
+// declaration declares, as the refusal reads it.
+func (t Tables) Reference(structName, table, part string) (schemaName, tableName string, err error) {
+	if table == "" {
+		index, err := t.Owning(structName, "", part)
+		if err != nil {
+			return "", "", err
+		}
+		return t[index].Schema, t[index].Name, nil
+	}
+	schemaName, tableName = QualifiedName("", table)
+	var matches []Table
+	for _, declared := range t {
+		if declared.Name == tableName && (schemaName == "" || declared.Schema == schemaName) {
+			matches = append(matches, declared)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return schemaName, tableName, nil
+	case 1:
+		return matches[0].Schema, matches[0].Name, nil
+	}
+	_, err = t.Owning(structName, table, part)
+	return "", "", err
+}
+
 // Reader reads the owner declarations of one Go file for the frontend.
 // [Set.Reader] starts one for each file. A Reader is not safe for concurrent
 // use.

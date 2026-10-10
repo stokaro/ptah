@@ -3,6 +3,7 @@ package builtin
 import (
 	"slices"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlast"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlreverse"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/engine"
+	"ptah.run/internal/mssqlpolicysource"
 )
 
 // mssqlProvider assembles the SQL Server security policy owner of ADR 0020 on
@@ -39,6 +41,7 @@ func mssqlProvider() engine.Provider {
 		Declarations: []engine.DeclarationPlanning{{Target: target, Kinds: models, OperationKinds: operations,
 			Service: mssqlplan.Service{}}},
 		Normalizations: []engine.Normalization{{Target: target, Kinds: models, Service: mssqlprobe.Service{}}},
+		Annotations:    []annotation.Extension{mssqlpolicysource.Annotations()},
 	}
 	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 		provider.Relations = append(provider.Relations, engine.RelationDiscovery{Target: target,

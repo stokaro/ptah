@@ -298,3 +298,49 @@ func TestUnlimited_IgnoresTheLimits(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(known.Lookup(levelKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 }
+
+func TestTables_Reference_HappyPath(t *testing.T) {
+	tables := annotation.Tables{{Name: "items", Struct: "Item"}, {Schema: "app", Name: "events", Struct: "Event"}}
+	tests := []struct {
+		name, structName, table string
+		wantSchema, wantName    string
+	}{
+		{name: "the struct's own table", structName: "Item", wantName: "items"},
+		{name: "a table the file declares", structName: "Holder", table: "events", wantSchema: "app", wantName: "events"},
+		{name: "a table another file declares", structName: "Holder", table: "audit.log", wantSchema: "audit", wantName: "log"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			schemaName, tableName, err := tables.Reference(test.structName, test.table, "a policy")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(schemaName, qt.Equals, test.wantSchema)
+			c.Assert(tableName, qt.Equals, test.wantName)
+		})
+	}
+}
+
+func TestTables_Reference_FailurePath(t *testing.T) {
+	tables := annotation.Tables{{Schema: "archive", Name: "events"}, {Schema: "public", Name: "events"}}
+	tests := []struct {
+		name, structName, table, wantErr string
+	}{
+		{name: "a struct that maps to no table", structName: "Holder",
+			wantErr: `struct Holder maps to no table in this file; name the table with the table attribute`},
+		{name: "a name two schemas declare", structName: "Holder", table: "events",
+			wantErr: `table "events" is declared in schemas "archive" and "public"; name the schema in the table attribute`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			schemaName, tableName, err := tables.Reference(test.structName, test.table, "a policy")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(schemaName, qt.Equals, "")
+			c.Assert(tableName, qt.Equals, "")
+		})
+	}
+}
