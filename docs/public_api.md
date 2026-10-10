@@ -730,6 +730,7 @@ refuses a misspelled key in its namespace instead of leaving it unread.
 `PropertyDefinition.Claims` answers both forms. A prefix may cover its own
 definition's keys and no key or prefix of another definition. A prefix widens
 only what a decoder is handed; an encoder's output must use the exact `Keys`.
+
 `PropertyDefinitions` returns independent copies for a frontend to group input
 without knowing the feature's Go type. A definition's `Absorbs` names the
 common attributes it takes over, each into one of its keys; registration refuses
