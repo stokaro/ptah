@@ -5,6 +5,7 @@ package dbschema_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
+	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -279,4 +281,63 @@ func spannerLiveExecutableLines(rendered string) []string {
 // spannerLiveJoined renders a statement list as one string for assertions.
 func spannerLiveJoined(statements []string) string {
 	return strings.Join(statements, "\n")
+}
+
+// TestSpannerLiveComparesADatabaseOfSeveralTables pins stokaro/ptah#4287.
+// Spanner names the index of every table's primary key PRIMARY_KEY, so a read
+// of a database holding two tables reports two indexes of that one name, and
+// the comparison refused the read as two owners of one identity before it
+// compared anything. The read is of the whole schema, as a command's is, and
+// both tables have nothing left to plan.
+func TestSpannerLiveComparesADatabaseOfSeveralTables(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.Spanner)
+	c := qt.New(t)
+	ctx := t.Context()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	suffix := time.Now().UnixNano()
+	tables := []string{fmt.Sprintf("ptah_sp_many_a_%d", suffix), fmt.Sprintf("ptah_sp_many_b_%d", suffix)}
+	description := &schemamodel.Database{}
+	for _, table := range tables {
+		description.Tables = append(description.Tables, schemamodel.Table{StructName: table, Name: table})
+		description.Fields = append(description.Fields, schemamodel.Field{StructName: table, Name: "id", Type: "bigint", Primary: true})
+		c.Cleanup(func() { _, _ = conn.ExecContext(context.Background(), `DROP TABLE IF EXISTS "`+table+`"`) })
+	}
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Spanner)
+	c.Assert(err, qt.IsNil)
+	for _, statement := range statements {
+		_, execErr := conn.ExecContext(ctx, statement)
+		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
+	}
+
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"public"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(spannerLivePrimaryKeyIndexes(live, tables), qt.DeepEquals, []string{"PRIMARY_KEY", "PRIMARY_KEY"},
+		qt.Commentf("the shape this test exists for: one index name for every table's key"))
+
+	engine := must.Must(builtin.New())
+	diff, err := schemadiff.CompareWithDatabaseInfo(ctx, description, live, conn.Info(), nil, engine)
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.TablesAdded, qt.HasLen, 0)
+	c.Assert(diff.TablesModified, qt.HasLen, 0)
+	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, engine, diff, platform.Spanner,
+		planner.Options{Capabilities: conn.Info().Capabilities})
+	c.Assert(err, qt.IsNil)
+	for _, table := range tables {
+		c.Assert(spannerLiveJoined(planned), qt.Not(qt.Contains), table)
+	}
+}
+
+// spannerLivePrimaryKeyIndexes lists the names of the primary key indexes a
+// read reported for tables.
+func spannerLivePrimaryKeyIndexes(live *catalog.Database, tables []string) []string {
+	var names []string
+	for _, index := range live.Indexes {
+		if index.IsPrimary && slices.Contains(tables, index.TableName) {
+			names = append(names, index.Name)
+		}
+	}
+	return names
 }
