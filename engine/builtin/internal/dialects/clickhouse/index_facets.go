@@ -15,16 +15,23 @@ import (
 // kinds wrap ErrUnsupportedFeature; observations and malformed declarations
 // wrap schemaext.ErrInvalidValue. Target selection happens before this call.
 func ValidateIndexFacets(facets schemaext.Facets) error {
-	for _, kind := range facets.Kinds() {
-		if kind != chschema.IndexKind {
-			return fmt.Errorf("%w: ClickHouse index facet %q is not supported", ptaherr.ErrUnsupportedFeature, kind)
-		}
-	}
-	value, found, err := schemaext.FacetAs[*chschema.DesiredIndex](facets, chschema.IndexKind)
-	if err != nil || !found {
+	value, err := declaredIndexSettings(facets)
+	if err != nil || value == nil {
 		return err
 	}
 	return chschema.ValidateDesiredIndex(value)
+}
+
+// declaredIndexSettings returns the index's declared settings, or nil when it
+// declares none. Any other active kind is refused.
+func declaredIndexSettings(facets schemaext.Facets) (*chschema.DesiredIndex, error) {
+	for _, kind := range facets.Kinds() {
+		if kind != chschema.IndexKind {
+			return nil, fmt.Errorf("%w: ClickHouse index facet %q is not supported", ptaherr.ErrUnsupportedFeature, kind)
+		}
+	}
+	value, _, err := schemaext.FacetAs[*chschema.DesiredIndex](facets, chschema.IndexKind)
+	return value, err
 }
 
 // skippingIndexSettings resolves the type and granularity a new index is
@@ -32,16 +39,14 @@ func ValidateIndexFacets(facets schemaext.Facets) error {
 // takes minmax and one granule, as a declaration that leaves them out does.
 // The common Type field is not a second spelling of the skipping-index type.
 func skippingIndexSettings(node *ast.IndexNode) (*chschema.ObservedIndex, error) {
-	if err := ValidateIndexFacets(node.Facets); err != nil {
-		return nil, err
-	}
-	value, found, err := schemaext.FacetAs[*chschema.DesiredIndex](node.Facets, chschema.IndexKind)
+	value, err := declaredIndexSettings(node.Facets)
 	if err != nil {
 		return nil, err
 	}
-	if !found {
+	if value == nil {
 		value = &chschema.DesiredIndex{}
 	}
+	// Resolution validates the declaration before it resolves the defaults.
 	resolved, err := chresolve.Index(chresolve.IndexRequest{Desired: value, Creating: true})
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: index %q: %w", node.Name, err)

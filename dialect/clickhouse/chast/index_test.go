@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine"
 )
 
@@ -65,4 +66,46 @@ func TestIndexCodecRefusesIncompleteAndInvalidOperands(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 		c.Assert(cloned, qt.IsNil)
 	}
+}
+
+// TestAddSkippingIndexDeclaredFacetsStateWhatItRenders pins that the declaration
+// read out of an operation is the index the operation builds: an empty type
+// renders minmax and zero granularity renders one granule, so both request the
+// default rather than leaving a setting the statement fixes unmanaged.
+func TestAddSkippingIndexDeclaredFacetsStateWhatItRenders(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		op   chast.AddSkippingIndex
+		want chschema.DesiredIndex
+	}{
+		{name: "both settings left out", op: chast.AddSkippingIndex{Name: "idx", Expression: "a"}, want: chschema.DesiredIndex{
+			IndexType: chschema.Setting{State: chschema.Default}, Granularity: chschema.GranularitySetting{State: chschema.Default},
+		}},
+		{name: "both settings stated", op: chast.AddSkippingIndex{Name: "idx", Expression: "a", IndexType: "set(100)", Granularity: 4}, want: chschema.DesiredIndex{
+			IndexType: chschema.Setting{State: chschema.Explicit, Value: "set(100)"}, Granularity: chschema.GranularitySetting{State: chschema.Explicit, Value: 4},
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			facets, err := test.op.DeclaredFacets()
+			c.Assert(err, qt.IsNil)
+			value, found, err := schemaext.FacetAs[*chschema.DesiredIndex](facets, chschema.IndexKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(*value, qt.Equals, test.want)
+			c.Assert(facets.TargetScope(chschema.IndexKind), qt.DeepEquals, []string{"clickhouse"})
+		})
+	}
+}
+
+// TestAddSkippingIndexRefusesAForeignAccessMethod_FailurePath holds a hand-built
+// operation to the owner's rule: a PostgreSQL or MySQL access method is no
+// ClickHouse index type, and the server would refuse the statement.
+func TestAddSkippingIndexRefusesAForeignAccessMethod_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	op := &chast.AddSkippingIndex{Name: "idx", Expression: "a", IndexType: "GIN"}
+	c.Assert(op.Validate(), qt.ErrorIs, schemaext.ErrInvalidValue)
+	facets, err := op.DeclaredFacets()
+	c.Assert(err, qt.ErrorMatches, `(?s).*names a PostgreSQL or MySQL access method.*`)
+	c.Assert(facets.IsZero(), qt.IsTrue)
 }

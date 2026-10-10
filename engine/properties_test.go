@@ -132,6 +132,22 @@ func TestProperties_RejectRegistrationConflicts(t *testing.T) {
 		{"invalid key", func(p *engine.Provider) { p.Properties[0].Definitions[0].Keys[0] = "a..b" }},
 		{"shared key", func(p *engine.Provider) { p.Properties[0].Definitions[1].Keys[0] = "number" }},
 		{"duplicate service", func(p *engine.Provider) { p.Properties = append(p.Properties, p.Properties[0]) }},
+		{"absorption into another format", func(p *engine.Provider) {
+			p.Properties[0].Definitions[0].Absorbs = []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "number"}}
+		}},
+		{"absorption into an unowned key", func(p *engine.Provider) {
+			p.Properties[0].Format = schemaext.IndexPlatformProperties
+			p.Properties[0].Definitions[0].Absorbs = []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "size"}}
+		}},
+		{"unknown absorbed attribute", func(p *engine.Provider) {
+			p.Properties[0].Format = schemaext.IndexPlatformProperties
+			p.Properties[0].Definitions[0].Absorbs = []schemaext.Absorption{{Attribute: "example.org/unknown", Key: "number"}}
+		}},
+		{"two absorbers of one attribute", func(p *engine.Provider) {
+			p.Properties[0].Format = schemaext.IndexPlatformProperties
+			p.Properties[0].Definitions[0].Absorbs = []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "number"}}
+			p.Properties[0].Definitions[1].Absorbs = []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "size"}}
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -290,4 +306,22 @@ func TestProperties_LaterBatchFailureDiscardsEarlierSuccess(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, failure)
 	c.Assert(encoded, qt.IsNil)
 	c.Assert(calls, qt.DeepEquals, []string{"decode first", "decode second", "encode first", "encode second"})
+}
+
+// A declared absorption is kept by the runtime and returned in independent
+// copies, so a caller cannot change which common attribute an owner takes.
+func TestProperties_DefinitionsCarryIndependentAbsorptions(t *testing.T) {
+	c := qt.New(t)
+	provider := propertyProvider(propertyService{})
+	provider.Properties[0].Format = schemaext.IndexPlatformProperties
+	provider.Properties[0].Definitions[0].Absorbs = []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "number"}}
+	runtime, err := engine.New(provider)
+	c.Assert(err, qt.IsNil)
+	definitions, err := runtime.PropertyDefinitions("custom", schemaext.IndexPlatformProperties)
+	c.Assert(err, qt.IsNil)
+	c.Assert(definitions[0].Absorbs, qt.DeepEquals, []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "number"}})
+	definitions[0].Absorbs[0].Key = "changed"
+	again, err := runtime.PropertyDefinitions("custom", schemaext.IndexPlatformProperties)
+	c.Assert(err, qt.IsNil)
+	c.Assert(again[0].Absorbs[0].Key, qt.Equals, "number")
 }

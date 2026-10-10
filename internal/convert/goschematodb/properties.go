@@ -38,11 +38,9 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err != nil {
 		return nil, nil, err
 	}
-	database, err := schemaproperties.DecodeTables(ctx, scoped, selected.Name(), runtime)
-	if err != nil {
-		return nil, nil, err
-	}
-	database, err = schemaproperties.DecodeIndexes(ctx, database, selected.Name(), runtime)
+	// Decoding copies the tables and indexes, so the creation facets and
+	// coverage written below stay out of the caller's schema.
+	database, err := schemaproperties.Decode(ctx, scoped, selected.Name(), runtime)
 	if err != nil {
 		return nil, nil, err
 	}

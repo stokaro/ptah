@@ -468,6 +468,9 @@ v0.13.0 ptah.run/catalog
 # TableDeclarationFor moves to the neutral schemacapture.DeclareTable so
 # source projection and comparison share capture without a pipeline dependency.
 v0.13.0 ptah.run/migration/schemadiff/difftypes
+# SchemaToAST takes a LoweringRuntime, which adds the target's source-property
+# owners to declaration planning, and decodes table and index properties before
+# lowering, so a ClickHouse index's `type` reaches its owner on this path too.
 v0.13.0 ptah.run/atlascompat
 
 # #4140 makes comparison context-aware and runtime-selected. All entry points

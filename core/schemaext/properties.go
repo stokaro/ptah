@@ -26,6 +26,34 @@ const IndexPlatformProperties PropertyFormat = "ptah.run/source/index-platform-p
 type PropertyDefinition struct {
 	Kind Kind
 	Keys []string
+	// Absorbs lists the common declaration attributes this feature takes over
+	// for its selected target, each into one of Keys. A key never absorbs a
+	// common attribute because it shares the attribute's spelling.
+	Absorbs []Absorption
+}
+
+// CommonAttribute names a field of a common declaration that a feature owner
+// may take over for a selected target. Taking it over moves the field's value
+// into the owner's property and clears the common field for that target.
+type CommonAttribute string
+
+// IndexTypeAttribute is the common index type declaration. Only an owner of
+// IndexPlatformProperties may absorb it.
+const IndexTypeAttribute CommonAttribute = "ptah.run/common/index-type"
+
+// Format returns the property format whose owners may absorb the attribute,
+// and false for an attribute no format defines.
+func (a CommonAttribute) Format() (PropertyFormat, bool) {
+	if a == IndexTypeAttribute {
+		return IndexPlatformProperties, true
+	}
+	return "", false
+}
+
+// Absorption moves a common attribute's value into the owned property Key.
+type Absorption struct {
+	Attribute CommonAttribute
+	Key       string
 }
 
 // PropertyFragment is one feature's source properties. Map membership preserves

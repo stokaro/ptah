@@ -203,3 +203,43 @@ func skippingIndexSettings(c *qt.C, db *catalog.Database, name string) *chschema
 	c.Assert(found, qt.IsTrue)
 	return settings
 }
+
+// system.data_skipping_indices reports the key of a tuple index as a bare list.
+// A settings change and its rollback must still write a tuple: DROP INDEX runs
+// outside a transaction, so an ADD INDEX the server refuses would lose the
+// index.
+func TestSkippingIndexTupleKeySettingsChangeLive(t *testing.T) {
+	c := qt.New(t)
+	conn, name := skippingIndexFixture(c)
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(), "ALTER TABLE "+name+" ADD INDEX idx_pair (id, value) TYPE minmax GRANULARITY 8"), qt.IsNil)
+	current := readIndexedTable(c, conn, name)
+	before := skippingIndexSettings(c, current, "idx_pair")
+	c.Assert(before, qt.DeepEquals, &chschema.ObservedIndex{IndexType: "minmax", Granularity: 8})
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: name, Schema: current.Tables[0].Schema, StructName: "Event"}},
+		Fields: []schemamodel.Field{{Name: "id", StructName: "Event", Type: "UInt64", Primary: true}, {Name: "value", StructName: "Event", Type: "UInt64"}},
+		Indexes: []schemamodel.Index{{
+			Name: "idx_pair", StructName: "Event", TableName: name, Fields: []string{"id", "value"},
+			Overrides: map[string]map[string]string{"clickhouse": {"granularity": "4"}},
+		}},
+	}
+	runtime := must.Must(builtin.New())
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current, conn.Info(), nil, runtime)
+	c.Assert(err, qt.IsNil)
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: desired, CurrentSchema: current, Dialect: "clickhouse", Capabilities: conn.Info().Capabilities,
+	})
+	c.Assert(err, qt.IsNil)
+	forward, err := builtin.RenderSQL("clickhouse", plan.Forward.Nodes...)
+	c.Assert(err, qt.IsNil)
+	applyStatements(c, conn, sqlutil.SplitStatementsForDialect("clickhouse", forward))
+	described := readIndexedTable(c, conn, name)
+	c.Assert(skippingIndexSettings(c, described, "idx_pair"), qt.DeepEquals, &chschema.ObservedIndex{IndexType: "minmax", Granularity: 4})
+	noChange, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, described, conn.Info(), nil, runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(noChange.HasChanges(), qt.IsFalse)
+	reverse, err := builtin.RenderSQL("clickhouse", plan.Reverse.Nodes...)
+	c.Assert(err, qt.IsNil)
+	applyStatements(c, conn, sqlutil.SplitStatementsForDialect("clickhouse", reverse))
+	c.Assert(skippingIndexSettings(c, readIndexedTable(c, conn, name), "idx_pair"), qt.DeepEquals, before)
+}

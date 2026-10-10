@@ -375,7 +375,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Fields:         fields,
 		Unique:         kv["unique"] == "true",
 		Comment:        kv["comment"],
-		Overrides:      parseutils.ParsePlatformSpecific(kv),
+		Overrides:      parseutils.ParsePlatformProperties(kv),
 		Invisible:      kv["invisible"] == "true",
 		KeyBlockSize:   keyBlockSize,
 		Type:           kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; the ClickHouse owner consumes it as the skipping-index type

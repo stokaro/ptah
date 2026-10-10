@@ -526,7 +526,11 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 	// system.data_skipping_indices exposes `granularity` as UInt64, and the
 	// owner's model keeps the whole range.
 	// type_full preserves parameters such as the set size or Bloom-filter
-	// probability; type contains only the index type's name.
+	// probability; type contains only the index type's name, so an index read
+	// from it could not be rebuilt or compared. The read requires the column
+	// rather than degrading: every release line Ptah tests, 24.10 through 26.9,
+	// has it, and a read without it would have to report each index's settings
+	// as unknown.
 	// The same inner-table subtraction the table read applies: an index on a
 	// materialized view's storage belongs to a table this reader does not
 	// report, and an index whose TableName names nothing in the schema is a
@@ -539,7 +543,8 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 		ORDER BY table, name
 	`, dbName, dbName)
 	if err != nil {
-		return nil, schemaext.Knowledge{}, err
+		return nil, schemaext.Knowledge{}, fmt.Errorf("read system.data_skipping_indices with its type_full column, "+
+			"which every release line Ptah tests (24.10 through 26.9) has; a server without it is not supported: %w", err)
 	}
 	defer rows.Close()
 

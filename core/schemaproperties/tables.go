@@ -26,6 +26,9 @@ type propertyBatch struct {
 	definitions []schemaext.PropertyDefinition
 	format      schemaext.PropertyFormat
 	owners      []propertyOwner
+	// exclusive reports that only feature owners read this format, so a key
+	// of the selected target that no owner claims is refused.
+	exclusive bool
 }
 
 type propertyOwner struct {
@@ -33,54 +36,117 @@ type propertyOwner struct {
 	name       string
 	facets     *schemaext.Facets
 	properties *map[string]map[string]string
-	commonType *string
+	// indexType is the common index type an owner's definition may absorb,
+	// and nil for an owner that has none. Only a declared absorption moves a
+	// value out of it.
+	indexType *string
 }
 
-func capture(ctx context.Context, db *schemamodel.Database, target string, format schemaext.PropertyFormat, runtime Runtime) (propertyBatch, error) {
+// commonField returns the owner's common declaration field for attribute, or
+// nil when the owner has no such field.
+func (o propertyOwner) commonField(attribute schemaext.CommonAttribute) *string {
+	if attribute == schemaext.IndexTypeAttribute {
+		return o.indexType
+	}
+	return nil
+}
+
+// selection is a resolved target and the property definitions it has for one
+// format. It is computed before any schema data is copied.
+type selection struct {
+	target      schemaext.TargetSelection
+	definitions []schemaext.PropertyDefinition
+}
+
+func selectTarget(ctx context.Context, db *schemamodel.Database, target string, format schemaext.PropertyFormat, runtime Runtime) (selection, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
-		return propertyBatch{}, err
+		return selection{}, err
 	}
 	if db == nil {
-		return propertyBatch{}, fmt.Errorf("%w: source properties require a schema", schemaext.ErrInvalidValue)
+		return selection{}, fmt.Errorf("%w: source properties require a schema", schemaext.ErrInvalidValue)
 	}
 	selected, err := runtime.ResolveTarget(target)
 	if err != nil {
-		return propertyBatch{}, err
+		return selection{}, err
 	}
 	formats, err := runtime.PropertyFormats(selected.Name())
 	if err != nil {
-		return propertyBatch{}, err
+		return selection{}, err
 	}
-	var definitions []schemaext.PropertyDefinition
+	result := selection{target: selected}
 	if slices.Contains(formats, format) {
-		definitions, err = runtime.PropertyDefinitions(selected.Name(), format)
+		result.definitions, err = runtime.PropertyDefinitions(selected.Name(), format)
 		if err != nil {
-			return propertyBatch{}, err
+			return selection{}, err
 		}
 	}
-	result := *db
-	owners := clonePropertyOwners(&result, format)
-	return propertyBatch{database: &result, target: selected, definitions: definitions, format: format, owners: owners}, nil
+	return result, nil
 }
 
-func clonePropertyOwners(db *schemamodel.Database, format schemaext.PropertyFormat) []propertyOwner {
-	var owners []propertyOwner
+// capture copies the format's owners so the batch can change them without
+// touching the caller's schema. Other schema data stays shared and read-only.
+func capture(db *schemamodel.Database, chosen selection, format schemaext.PropertyFormat) propertyBatch {
+	result := *db
+	isolateOwners(&result, format)
+	owners, exclusive := ownerSlots(&result, format)
+	return propertyBatch{database: &result, target: chosen.target, definitions: chosen.definitions, format: format, owners: owners, exclusive: exclusive}
+}
+
+// isolateOwners replaces the slice that holds one format's owners with
+// independent copies of them.
+func isolateOwners(db *schemamodel.Database, format schemaext.PropertyFormat) {
 	if format == schemaext.IndexPlatformProperties {
 		db.Indexes = slices.Clone(db.Indexes)
 		for i := range db.Indexes {
 			db.Indexes[i] = db.Indexes[i].Clone()
-			index := &db.Indexes[i]
-			owners = append(owners, propertyOwner{"index", index.Name, &index.Facets, &index.Overrides, &index.Type})
 		}
-		return owners
+		return
 	}
 	db.Tables = slices.Clone(db.Tables)
 	for i := range db.Tables {
 		db.Tables[i] = db.Tables[i].Clone()
+	}
+}
+
+// ownerSlots lists the model slots that hold one format's properties, and
+// whether nothing but feature owners reads them. This is the core's knowledge
+// of the model; which common fields an owner absorbs is the owner's
+// declaration, never inferred here.
+func ownerSlots(db *schemamodel.Database, format schemaext.PropertyFormat) ([]propertyOwner, bool) {
+	if format == schemaext.IndexPlatformProperties {
+		owners := make([]propertyOwner, 0, len(db.Indexes))
+		for i := range db.Indexes {
+			index := &db.Indexes[i]
+			owners = append(owners, propertyOwner{"index", index.Name, &index.Facets, &index.Overrides, &index.Type})
+		}
+		// Index properties have no reader besides their feature owners.
+		return owners, true
+	}
+	owners := make([]propertyOwner, 0, len(db.Tables))
+	for i := range db.Tables {
 		table := &db.Tables[i]
 		owners = append(owners, propertyOwner{"table", table.QualifiedName(), &table.Facets, &table.Overrides, nil})
 	}
-	return owners
+	// Table properties also carry common target options with readers of
+	// their own, such as a MySQL engine, so unclaimed keys stay for them.
+	return owners, false
+}
+
+// needsDecoding reports whether any owner holds properties, or a common field
+// a selected definition absorbs. Without either, decoding changes nothing, and
+// the copy is returned without running the batch.
+func needsDecoding(owners []propertyOwner, definitions []schemaext.PropertyDefinition) bool {
+	return slices.ContainsFunc(owners, func(owner propertyOwner) bool {
+		if len(*owner.properties) > 0 {
+			return true
+		}
+		return slices.ContainsFunc(definitions, func(definition schemaext.PropertyDefinition) bool {
+			return slices.ContainsFunc(definition.Absorbs, func(absorption schemaext.Absorption) bool {
+				field := owner.commonField(absorption.Attribute)
+				return field != nil && *field != ""
+			})
+		})
+	})
 }
 
 // DecodeTables replaces claimed properties with desired table facets. It
@@ -95,9 +161,16 @@ func DecodeTables(ctx context.Context, db *schemamodel.Database, target string, 
 }
 
 func decode(ctx context.Context, db *schemamodel.Database, target string, format schemaext.PropertyFormat, runtime Runtime) (*schemamodel.Database, error) {
-	batch, err := capture(ctx, db, target, format, runtime)
+	chosen, err := selectTarget(ctx, db, target, format, runtime)
 	if err != nil {
 		return nil, err
+	}
+	batch := capture(db, chosen, format)
+	if !needsDecoding(batch.owners, batch.definitions) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return batch.database, nil
 	}
 	var fragments []schemaext.PropertyFragment
 	var owners []int
@@ -116,7 +189,7 @@ func decode(ctx context.Context, db *schemamodel.Database, target string, format
 			fragments = append(fragments, schemaext.PropertyFragment{Kind: definition.Kind, Properties: properties})
 			owners = append(owners, i)
 		}
-		if err := refuseUnclaimed(owner, batch.target, format); err != nil {
+		if err := batch.refuseUnclaimed(owner); err != nil {
 			return nil, err
 		}
 	}
@@ -126,21 +199,19 @@ func decode(ctx context.Context, db *schemamodel.Database, target string, format
 	return batch.database, nil
 }
 
-// refuseUnclaimed reports an index property the selected target's owners left
-// in place. Nothing else reads index properties, so an unclaimed key would be
-// accepted and then ignored. Table properties also carry common target
-// options, which their own readers consume, and are left for those readers.
-func refuseUnclaimed(owner propertyOwner, target schemaext.TargetSelection, format schemaext.PropertyFormat) error {
-	if format != schemaext.IndexPlatformProperties {
+// refuseUnclaimed reports a key of the selected target that no owner claimed,
+// for a format nothing else reads: it would be accepted and then ignored.
+func (b propertyBatch) refuseUnclaimed(owner propertyOwner) error {
+	if !b.exclusive {
 		return nil
 	}
 	for _, name := range slices.Sorted(maps.Keys(*owner.properties)) {
-		if !target.Includes([]string{name}) {
+		if !b.target.Includes([]string{name}) {
 			continue
 		}
 		if keys := slices.Sorted(maps.Keys((*owner.properties)[name])); len(keys) > 0 {
 			return fmt.Errorf("%w: %s %q declares property %q for %q, which no feature owner of target %q claims",
-				ptaherr.ErrUnsupportedFeature, owner.label, owner.name, keys[0], name, target.Name())
+				ptaherr.ErrUnsupportedFeature, owner.label, owner.name, keys[0], name, b.target.Name())
 		}
 	}
 	return nil
@@ -178,9 +249,11 @@ func (b propertyBatch) decode(ctx context.Context, runtime Runtime, fragments []
 
 func takeProperties(owner propertyOwner, target schemaext.TargetSelection, definition schemaext.PropertyDefinition) (map[string]string, error) {
 	properties := make(map[string]string)
-	if owner.commonType != nil && *owner.commonType != "" && slices.Contains(definition.Keys, "type") {
-		properties["type"] = *owner.commonType
-		*owner.commonType = ""
+	for _, absorption := range definition.Absorbs {
+		if field := owner.commonField(absorption.Attribute); field != nil && *field != "" {
+			properties[absorption.Key] = *field
+			*field = ""
+		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(*owner.properties)) {
 		if !target.Includes([]string{name}) {

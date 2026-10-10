@@ -51,8 +51,10 @@ func (v *AddSkippingIndex) SchemaChange() ast.ExtensionChange {
 }
 
 // Validate requires an index name and an expression. Zero granularity and an
-// empty type retain the documented default requests. SQL expression semantics
-// remain the selected target's responsibility.
+// empty type retain the documented default requests. A type is held to
+// chschema.ValidateDesiredIndex, which refuses a PostgreSQL or MySQL access
+// method. SQL expression semantics remain the selected target's
+// responsibility.
 func (v *AddSkippingIndex) Validate() error {
 	if v == nil || strings.TrimSpace(v.Name) == "" || strings.TrimSpace(v.Expression) == "" {
 		return fmt.Errorf("%w: ClickHouse ADD INDEX requires a name and a non-empty expression", schemaext.ErrInvalidValue)
@@ -63,22 +65,29 @@ func (v *AddSkippingIndex) Validate() error {
 	if v.IndexType != "" && strings.TrimSpace(v.IndexType) == "" {
 		return fmt.Errorf("%w: ClickHouse ADD INDEX has an invalid type", schemaext.ErrInvalidValue)
 	}
+	if v.IndexType != "" {
+		return chschema.ValidateDesiredIndex(&chschema.DesiredIndex{IndexType: chschema.Setting{State: chschema.Explicit, Value: v.IndexType}})
+	}
 	return nil
 }
 
 // DeclaredFacets returns the operation's settings as the skipping-index
-// declaration a common index carries, bound to the clickhouse target. A
-// nonempty type is explicit. Zero granularity leaves the setting unmanaged, so
-// an existing index keeps its own and a new one takes the creation default.
-// An invalid operation returns its validation error and no facets.
+// declaration a common index carries, bound to the clickhouse target. The
+// declaration states what the operation renders: a nonempty type and a nonzero
+// granularity are explicit, and an empty type or zero granularity requests the
+// default the statement renders, minmax and one granule. A SQL statement that
+// leaves GRANULARITY out is therefore one granule, as ClickHouse defines it;
+// Ptah's own source formats keep an omitted setting unmanaged instead. An
+// invalid operation returns its validation error and no facets.
 func (v *AddSkippingIndex) DeclaredFacets() (schemaext.Facets, error) {
 	if err := v.Validate(); err != nil {
 		return schemaext.Facets{}, err
 	}
-	value := &chschema.DesiredIndex{}
+	value := &chschema.DesiredIndex{IndexType: chschema.Setting{State: chschema.Default}}
 	if v.IndexType != "" {
 		value.IndexType = chschema.Setting{State: chschema.Explicit, Value: v.IndexType}
 	}
+	value.Granularity = chschema.GranularitySetting{State: chschema.Default}
 	if v.Granularity != 0 {
 		value.Granularity = chschema.GranularitySetting{State: chschema.Explicit, Value: v.Granularity}
 	}

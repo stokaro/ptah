@@ -23,9 +23,16 @@ func EncodeTables(ctx context.Context, db *schemamodel.Database, target string, 
 }
 
 func encode(ctx context.Context, db *schemamodel.Database, target string, format schemaext.PropertyFormat, runtime Runtime) (*schemamodel.Database, error) {
-	batch, err := capture(ctx, db, target, format, runtime)
+	chosen, err := selectTarget(ctx, db, target, format, runtime)
 	if err != nil {
 		return nil, err
+	}
+	batch := capture(db, chosen, format)
+	if !slices.ContainsFunc(batch.owners, func(owner propertyOwner) bool { return len(owner.facets.DeclaredKinds()) > 0 }) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return batch.database, nil
 	}
 	var values []schemaext.Value
 	var owners []int

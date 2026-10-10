@@ -1146,7 +1146,7 @@ func FromIndex(index schemamodel.Index) *ast.IndexNode {
 // TestIndexConverters_CarryTheSameDeclaration requires both entry points to
 // agree about every one that is here.
 func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
-	indexNode := ast.NewIndex(index.Name, tableName, indexFields(index)...)
+	indexNode := ast.NewIndex(index.Name, tableName, schemaprep.IndexKeyParts(index)...)
 	indexNode.Facets = index.Facets
 	if len(index.Parts) > 0 {
 		indexNode.SetParts(toASTIndexParts(index.Parts))
@@ -3043,21 +3043,6 @@ func toASTIndexParts(parts []schemamodel.IndexPart) []ast.IndexPart {
 		})
 	}
 	return astParts
-}
-
-func indexFields(index schemamodel.Index) []string {
-	if len(index.Parts) == 0 {
-		return index.Fields
-	}
-	fields := make([]string, 0, len(index.Parts))
-	for _, part := range index.Parts {
-		if part.Expr != "" {
-			fields = append(fields, part.Expr)
-			continue
-		}
-		fields = append(fields, part.Name)
-	}
-	return fields
 }
 
 func foreignKeyReference(foreign string) *ast.ForeignKeyRef {

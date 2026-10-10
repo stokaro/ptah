@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaproperties"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/convert/dbschematogo"
@@ -107,15 +108,30 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 // Table facets preserve their values and source target bindings on CREATE TABLE.
 // The selected renderer decides support; other facet placements are refused.
 //
-// The caller supplies context, a selected declaration runtime, and target
-// capabilities. Standalone objects are planned by their owners and scheduled
-// with common creation operations before any statements are returned.
+// The caller supplies context, a selected runtime, and target capabilities.
+// The target's source properties are decoded into their owners' facets first,
+// so a ClickHouse index's `type` and platform properties lower to the same
+// settings a rendered schema carries. Standalone objects are planned by their
+// owners and scheduled with common creation operations before any statements
+// are returned.
 // Canonical platform names are declared in core/platform.
-func SchemaToAST(ctx context.Context, runtime featureplan.DeclarationRuntime, database schemamodel.Database, targetPlatform string, caps capability.Capabilities) (*ast.StatementList, error) {
+func SchemaToAST(ctx context.Context, runtime LoweringRuntime, database schemamodel.Database, targetPlatform string, caps capability.Capabilities) (*ast.StatementList, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
-	return modelast.CollectDatabase(database, targetPlatform, builtinlowering.ForTarget(ctx, runtime, targetPlatform, caps))
+	decoded, err := schemaproperties.Decode(ctx, &database, targetPlatform, runtime)
+	if err != nil {
+		return nil, err
+	}
+	return modelast.CollectDatabase(*decoded, targetPlatform, builtinlowering.ForTarget(ctx, runtime, targetPlatform, caps))
+}
+
+// LoweringRuntime selects declaration planning and the owners of the target's
+// source properties. SchemaToAST decodes those properties before lowering, as
+// rendering and comparison do. *engine.Runtime satisfies it.
+type LoweringRuntime interface {
+	featureplan.DeclarationRuntime
+	schemaproperties.Runtime
 }
 
 // DBSchemaToGoSchema converts an introspected database schema into Ptah's Go

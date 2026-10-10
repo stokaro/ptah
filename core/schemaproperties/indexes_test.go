@@ -1,6 +1,7 @@
 package schemaproperties_test
 
 import (
+	"context"
 	"math"
 	"testing"
 
@@ -144,6 +145,125 @@ func TestIndexPropertiesRefuseUnclaimedKeysOfTheSelectedTarget(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(decoded, qt.IsNil)
+		})
+	}
+}
+
+// Only a declared absorption takes the common index type. An owner whose key
+// merely spells `type`, such as a future MySQL index owner, leaves a declared
+// BTREE in the common field rather than moving it into its own facet.
+func TestIndexPropertiesAbsorbOnlyADeclaredCommonType(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(engine.Provider{
+		ID: "example.org/index-properties", Targets: []engine.Target{{Name: "other"}},
+		Codecs: chschema.IndexCodecs(), Properties: []engine.PropertySource{{
+			Target: "other", Format: schemaext.IndexPlatformProperties, Service: chsource.IndexService{},
+			Definitions: []schemaext.PropertyDefinition{{Kind: chschema.IndexKind, Keys: []string{"type", "granularity"}}},
+		}},
+	}))
+	source := &schemamodel.Database{Indexes: []schemamodel.Index{{
+		Name: "by_id", Type: "BTREE", Fields: []string{"id"}, Overrides: map[string]map[string]string{"clickhouse": {"granularity": "4"}},
+	}}}
+	decoded, err := schemaproperties.DecodeIndexes(t.Context(), source, "other", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(decoded.Indexes[0].Type, qt.Equals, "BTREE")
+	c.Assert(decoded.Indexes[0].Facets.IsZero(), qt.IsTrue)
+}
+
+// propertyOperation is one exported decode or encode entry point.
+type propertyOperation func(context.Context, *schemamodel.Database, string, schemaproperties.Runtime) (*schemamodel.Database, error)
+
+func propertylessSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables:  []schemamodel.Table{{Name: "events"}},
+		Indexes: []schemamodel.Index{{Name: "by_id", Fields: []string{"id"}}},
+	}
+}
+
+// A schema with no source properties, no absorbable common field, and no
+// facets to export skips the owners' batch, and still returns copied owners,
+// as each entry point promises, so a caller may change the result freely.
+func TestPropertiesCopyTheTablesOfASchemaWithoutProperties_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		operation propertyOperation
+	}{
+		{name: "DecodeTables", operation: schemaproperties.DecodeTables},
+		{name: "EncodeTables", operation: schemaproperties.EncodeTables},
+		{name: "Decode", operation: schemaproperties.Decode},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := propertylessSchema()
+			result, err := test.operation(t.Context(), source, "clickhouse", indexPropertyRuntime())
+			c.Assert(err, qt.IsNil)
+			c.Assert(result, qt.DeepEquals, propertylessSchema())
+			result.Tables[0].Name = "changed"
+			c.Assert(source.Tables[0].Name, qt.Equals, "events")
+		})
+	}
+}
+
+// The index entry points copy the indexes the same way.
+func TestPropertiesCopyTheIndexesOfASchemaWithoutProperties_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		operation propertyOperation
+	}{
+		{name: "DecodeIndexes", operation: schemaproperties.DecodeIndexes},
+		{name: "EncodeIndexes", operation: schemaproperties.EncodeIndexes},
+		{name: "Decode", operation: schemaproperties.Decode},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := propertylessSchema()
+			result, err := test.operation(t.Context(), source, "clickhouse", indexPropertyRuntime())
+			c.Assert(err, qt.IsNil)
+			c.Assert(result, qt.DeepEquals, propertylessSchema())
+			result.Indexes[0].Fields[0] = "changed"
+			c.Assert(source.Indexes[0].Fields, qt.DeepEquals, []string{"id"})
+		})
+	}
+}
+
+// cancelingRuntime cancels the caller's context while the target's property
+// formats are selected, after the context was checked on entry.
+type cancelingRuntime struct {
+	*engine.Runtime
+	cancel context.CancelFunc
+}
+
+func (r cancelingRuntime) PropertyFormats(target string) ([]schemaext.PropertyFormat, error) {
+	r.cancel()
+	return r.Runtime.PropertyFormats(target)
+}
+
+// Cancellation and an unknown target return no schema from every entry point,
+// including when the schema has nothing to decode or export.
+func TestPropertiesReturnNoSchemaOnError_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		operation propertyOperation
+	}{
+		{name: "DecodeTables", operation: schemaproperties.DecodeTables},
+		{name: "DecodeIndexes", operation: schemaproperties.DecodeIndexes},
+		{name: "Decode", operation: schemaproperties.Decode},
+		{name: "EncodeTables", operation: schemaproperties.EncodeTables},
+		{name: "EncodeIndexes", operation: schemaproperties.EncodeIndexes},
+	} {
+		t.Run(test.name+"/canceled", func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+			result, err := test.operation(ctx, propertylessSchema(), "clickhouse", cancelingRuntime{indexPropertyRuntime(), cancel})
+			c.Assert(err, qt.ErrorIs, context.Canceled)
+			c.Assert(result, qt.IsNil)
+		})
+		t.Run(test.name+"/unknown target", func(t *testing.T) {
+			c := qt.New(t)
+			result, err := test.operation(t.Context(), propertylessSchema(), "unknown", indexPropertyRuntime())
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+			c.Assert(result, qt.IsNil)
 		})
 	}
 }

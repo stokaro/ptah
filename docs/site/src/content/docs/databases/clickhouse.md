@@ -128,26 +128,40 @@ keeps its parameters, such as `set(100)` or `bloom_filter(0.01)`.
 A new index that declares neither setting is a `minmax` index with
 `GRANULARITY 1`. Index granularity counts table granules per index block; it is
 separate from the table's `index_granularity` setting, which controls rows per
-granule. A setting left out of the declaration of an existing index keeps the
-value the server reports. A `.state` suffix with the value `default`, such as
-`platform.clickhouse.granularity.state="default"`, asks for the creation
-default instead.
+granule. In Go annotations, YAML and HCL, a setting left out of the declaration
+of an existing index keeps the value the server reports. A `.state` suffix with
+the value `default`, such as `platform.clickhouse.granularity.state="default"`,
+asks for the creation default instead. A SQL source is read as ClickHouse reads
+it: an `INDEX ... TYPE ...` clause without `GRANULARITY` means one granule, so
+comparing it with an index that has another granularity plans a change.
 
 ClickHouse changes neither setting in place. A changed type or granularity is
-planned as `ALTER TABLE ... DROP INDEX`, then `ADD INDEX` with the index's
-current expression and the declared settings. The pair runs around a change to
-a column the expression reads, and a plan that also removes such a column is
-refused. When the plan already rebuilds the index for another reason, that
-rebuild carries the new settings and no second pair is planned. `ADD INDEX`
-indexes data written afterwards; existing parts have no index data until a
-separate `MATERIALIZE INDEX` runs. The reverse migration restores the previous
+planned as `ALTER TABLE ... DROP INDEX`, then `ADD INDEX` with the declared key
+expression and settings. A key with several parts is written as a tuple,
+including one the server reports as a bare list, `a, b`, for `INDEX i (a, b)`.
+The pair runs around a change to a column either expression reads. When the
+plan already rebuilds the index for another reason, that rebuild carries the new
+settings and no second pair is planned. `ADD INDEX` indexes data written
+afterwards; existing parts have no index data until a separate
+`MATERIALIZE INDEX` runs. The reverse migration restores the previous key and
 settings the same way and reports that it cannot restore materialized index
 data.
 
-Database inspection reads the type with its parameters and the granularity from
-`system.data_skipping_indices`. HCL and Go output write both as ClickHouse
-platform properties. A ClickHouse `ADD INDEX` or `DROP INDEX` operation sent to
-another target is refused. See the
+Because the old index is gone before the new one is added, the change is
+refused when the declared key names a column the table does not declare, such
+as a misspelled field, and when the plan also removes a column the declared key
+reads. Only a name that can be nothing but a column is checked: a bare key part,
+or a bare argument of a call, such as `payload` in `lower(payload)`.
+
+The comparison matches skipping indexes by name. A changed key expression is
+applied when the settings change too; on its own it plans nothing.
+
+Database inspection reads the type with its parameters, from the `type_full`
+column, and the granularity from `system.data_skipping_indices`. A server whose
+catalog has no `type_full` column is refused with a message that names the
+column; every release line Ptah tests has it. HCL and Go output write the
+settings as ClickHouse platform properties. A ClickHouse `ADD INDEX` or
+`DROP INDEX` operation sent to another target is refused. See the
 [ClickHouse skipping-index reference](https://clickhouse.com/docs/reference/statements/alter/skipping-index).
 
 A secondary index declaring a PostgreSQL or MySQL access method is refused the
@@ -155,7 +169,9 @@ same way as a MySQL engine, and for the same reason: an index's type reaches
 ClickHouse through the field those families fill, so `USING GIN` in a SQL source
 arrives here looking like a data-skipping type. Rendering it produces an
 `ALTER TABLE` the server rejects with `Code: 80 ... Unknown Index type`, and the
-index is not added. Ptah names the type and points at the fix: declare a
+index is not added. The ClickHouse owner refuses the type wherever it reads the
+settings, so comparison and planning refuse it too, before a settings change
+could drop the old index. Ptah names the type and points at the fix: declare a
 ClickHouse data-skipping type such as `minmax`, or drop the type to take the
 `minmax` default. As with the engine, the refusal reads the closed PostgreSQL
 and MySQL sets rather than deciding what a ClickHouse type is, so a type from a

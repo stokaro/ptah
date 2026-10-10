@@ -27,9 +27,13 @@ func indexProperties(settings *indexSettings) []property {
 // IndexDefinitions returns independent property ownership for skipping-index
 // type and granularity. A bare key carries explicit intent; .state=default
 // selects a creation default. Missing keys remain unmanaged. Granularity is a
-// positive decimal uint64. Explicit empty strings and zero are invalid.
+// positive decimal uint64. Explicit empty strings and zero are invalid. The
+// definition absorbs the common index type into `type`, because on ClickHouse
+// a declared index type is the data-skipping type.
 func IndexDefinitions() []schemaext.PropertyDefinition {
-	return definitions(chschema.IndexKind, indexProperties(&indexSettings{}))
+	result := definitions(chschema.IndexKind, indexProperties(&indexSettings{}))
+	result[0].Absorbs = []schemaext.Absorption{{Attribute: schemaext.IndexTypeAttribute, Key: "type"}}
+	return result
 }
 
 // DecodeProperties decodes an ordered batch of index platform properties into
