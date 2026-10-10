@@ -26,8 +26,8 @@ type ChangeRecord struct {
 // Clone returns an independent change payload and preserves structured identity.
 // Nil payloads and clones that change their kind or concrete type are refused.
 func (c ChangeRecord) Clone() (ChangeRecord, error) {
-	if c.Subject.Kind == "" || c.Subject.Name.Source == "" || c.Subject.Name.Normalized == "" {
-		return ChangeRecord{}, fmt.Errorf("%w: a change requires a structured subject", ErrInvalidValue)
+	if err := validChangeSubject(c.Subject); err != nil {
+		return ChangeRecord{}, err
 	}
 	if err := ValidatePayload(c.Value); err != nil {
 		return ChangeRecord{}, err
@@ -76,6 +76,7 @@ func (r Registry) SnapshotChanges(ctx context.Context, changes []ChangeRecord) (
 }
 
 // MarshalJSON refuses a summary-only or implicit interface encoding of a change.
+// [Registry.EncodeChanges] writes the explicit form.
 func (ChangeRecord) MarshalJSON() ([]byte, error) { return nil, ErrExplicitCodec }
 
 // UnmarshalJSON requires a registry that understands the recorded change codec.

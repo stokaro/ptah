@@ -11,10 +11,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/schemaops"
+	"ptah.run/internal/featurejson"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -69,12 +75,12 @@ func TestWriteJSONReport(t *testing.T) {
 	c := qt.New(t)
 
 	var buf bytes.Buffer
-	err := writeReport(&buf, formatJSON, driftReport{
+	err := writeReport(t.Context(), &buf, formatJSON, driftReport{
 		Drift:            true,
 		Failed:           false,
 		FailureThreshold: severityDestructive,
 		HighestSeverity:  safety.Warning,
-	})
+	}, schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Contains, `"drift": true`)
@@ -153,7 +159,7 @@ func TestWriteTextReportNamesAnUndecidedObject(t *testing.T) {
 	result := &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Undecided: undecidedRoles("reporter", "auditor")}
 	var buf bytes.Buffer
 
-	err := writeReport(&buf, formatText, assessDrift(result, severityAll, true, nil))
+	err := writeReport(t.Context(), &buf, formatText, assessDrift(result, severityAll, true, nil), schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Equals, `No schema drift found, but 2 declared objects could not be decided (highest severity: warning).
@@ -176,7 +182,7 @@ func TestWriteGitHubActionsReportAnnotatesAnUndecidedObject(t *testing.T) {
 	result := &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Undecided: undecidedRoles("reporter")}
 	var buf bytes.Buffer
 
-	err := writeReport(&buf, formatGitHubActions, assessDrift(result, severityAll, true, nil))
+	err := writeReport(t.Context(), &buf, formatGitHubActions, assessDrift(result, severityAll, true, nil), schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Equals, "::error title=Ptah schema drift::No schema drift found, but 1 declared object"+
@@ -192,7 +198,7 @@ func TestWriteJSONReportCarriesTheUndecidedObjects(t *testing.T) {
 	result := &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Undecided: undecidedRoles("reporter")}
 	var buf bytes.Buffer
 
-	err := writeReport(&buf, formatJSON, assessDrift(result, severityAll, true, nil))
+	err := writeReport(t.Context(), &buf, formatJSON, assessDrift(result, severityAll, true, nil), schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Contains, `"drift": false,
@@ -219,4 +225,33 @@ func undecidedRoles(names ...string) schemadiff.Diagnostics {
 		objects = append(objects, object)
 	}
 	return schemadiff.Diagnostics{Common: objects}
+}
+
+// TestWriteJSONReportEncodesOwnerChanges is the document half of a drift an
+// owner records: a coordination node whose settings differ. The report's diff
+// carries it through the runtime's codecs, so it reads back as the same
+// change; written by encoding/json it failed the whole report
+// (stokaro/ptah#4279).
+func TestWriteJSONReportEncodesOwnerChanges(t *testing.T) {
+	c := qt.New(t)
+	codecs := must.Must(builtin.New()).Codecs()
+	change := schemaext.ChangeRecord{Subject: ydbcoordination.Ref("", "locks"), Value: &ydbdiff.CoordinationNode{
+		Before: &ydbcoordination.Observed{Spec: ydbcoordination.Spec{ReadConsistencyMode: "relaxed"}},
+		After:  &ydbcoordination.Desired{Spec: ydbcoordination.Spec{ReadConsistencyMode: "strict"}},
+	}}
+	result := &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{change}}}
+	var buf bytes.Buffer
+
+	err := writeReport(t.Context(), &buf, formatJSON, assessDrift(result, severityAll, true, nil), codecs)
+
+	c.Assert(err, qt.IsNil)
+	var document struct {
+		Drift bool `json:"drift"`
+		Diff  struct {
+			FeatureChanges []schemaext.ChangeRecord `json:"feature_changes"`
+		} `json:"diff"`
+	}
+	c.Assert(featurejson.Unmarshal(t.Context(), codecs, schemaext.Desired, buf.Bytes(), &document), qt.IsNil)
+	c.Assert(document.Drift, qt.IsTrue)
+	c.Assert(document.Diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{change})
 }

@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/atlasreport"
 )
 
@@ -33,7 +34,7 @@ func TestSQLTemplate_ANoteWithNothingAfterItEndsWithoutASemicolon(t *testing.T) 
 	c.Assert(migrateDiff.String(), qt.Equals, want)
 
 	var schemaDiff bytes.Buffer
-	c.Assert(atlasreport.WriteSchemaDiff(&schemaDiff, `{{ sql . "  " }}`, atlasreport.NewSchemaDiff(nil, nil, statements)), qt.IsNil)
+	c.Assert(atlasreport.WriteSchemaDiff(t.Context(), &schemaDiff, `{{ sql . "  " }}`, atlasreport.NewSchemaDiff(nil, nil, statements), schemaext.Registry{}), qt.IsNil)
 	c.Assert(schemaDiff.String(), qt.Equals, want)
 
 	apply, err := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Statements: statements}).MarshalSQL("  ")

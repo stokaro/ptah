@@ -266,7 +266,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	if err := atlasreport.WriteSchemaDiff(cmd.OutOrStdout(), format, report); err != nil {
+	if err := atlasreport.WriteSchemaDiff(cmd.Context(), cmd.OutOrStdout(), format, report, runtime.Codecs()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	return nil
