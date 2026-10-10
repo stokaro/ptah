@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
 
@@ -161,4 +163,69 @@ func ExampleAccessEffectSource() {
 	// widens
 	// a new permissive policy admits rows no other policy admits
 	// true
+}
+
+// retentionChange is an owner's change between two retention periods.
+type retentionChange struct {
+	Before uint32 `json:"before"`
+	After  uint32 `json:"after"`
+}
+
+func (*retentionChange) Kind() schemaext.Kind { return "example.org/retention-change" }
+func (v *retentionChange) CloneChange() schemaext.ChangeValue {
+	cloned := *v
+	return &cloned
+}
+
+// ExampleRegistry_EncodeChanges writes change records through their change
+// codec and reads them back. Each encoded record keeps its subject beside an
+// envelope naming the owner, the kind, the representation and the codec
+// version, which is the form a document carrying owner changes stores; the
+// payload is the codec's canonical JSON.
+func ExampleRegistry_EncodeChanges() {
+	encode := func(payload schemaext.Payload) (json.RawMessage, error) {
+		return json.Marshal(payload.(*retentionChange))
+	}
+	registry, err := schemaext.NewRegistry(schemaext.OwnedCodec{
+		Owner: "example.org/provider",
+		Codec: schemaext.Codec{
+			Prototype: &retentionChange{}, Representation: schemaext.Change, Version: 1,
+			Definition: json.RawMessage(`{"type":"object","required":["before","after"],"additionalProperties":false,` +
+				`"properties":{"before":{"type":"integer","minimum":0},"after":{"type":"integer","minimum":0}}}`),
+			Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
+				return payload.(*retentionChange).CloneChange(), nil
+			},
+			Encode: encode, Canonical: encode,
+			Decode: func(data json.RawMessage) (schemaext.Payload, error) {
+				return schemaext.DecodeJSON[*retentionChange](data)
+			},
+		},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	subject := objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("", "events")
+	encoded, err := registry.EncodeChanges(context.Background(), []schemaext.ChangeRecord{
+		{Subject: subject, Value: &retentionChange{Before: 30, After: 90}},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	envelope := encoded[0].Value
+	fmt.Println(encoded[0].Subject.Name.Source, envelope.Owner, envelope.Kind, envelope.Representation, envelope.Version)
+	fmt.Println(string(envelope.Payload))
+
+	decoded, err := registry.DecodeChanges(context.Background(), encoded)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	change := decoded[0].Value.(*retentionChange)
+	fmt.Println(decoded[0].Subject.Name.Source, change.Before, "->", change.After)
+	// Output:
+	// events example.org/provider example.org/retention-change change 1
+	// {"after":90,"before":30}
+	// events 30 -> 90
 }

@@ -29,11 +29,9 @@ func (r Registry) EncodeChanges(ctx context.Context, changes []ChangeRecord) ([]
 		if err := validChangeSubject(change.Subject); err != nil {
 			return nil, err
 		}
-		if err := ValidatePayload(change.Value); err != nil {
-			return nil, err
-		}
 		payloads[i] = change.Value
 	}
+	// Encode validates each payload before it encodes it.
 	envelopes, err := r.Encode(ctx, Change, payloads)
 	if err != nil {
 		return nil, err

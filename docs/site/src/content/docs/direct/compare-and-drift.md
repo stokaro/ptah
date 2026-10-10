@@ -567,7 +567,7 @@ the payload trimmed to `ttl`:
     "kind": "ptah.run/clickhouse/table-change",
     "representation": "change",
     "version": 1,
-    "definition": "sha256:364c86469f029305bf63c6d00c8638535f52fb02c9e732f88eac11d0b32181b3",
+    "definition": "sha256:<digest of the codec definition>",
     "payload": {
       "after": {"ttl": {"state": "explicit", "value": "at + INTERVAL 2 DAY"}},
       "before": {"ttl": "at + toIntervalDay(1)"}
@@ -576,8 +576,10 @@ the payload trimmed to `ttl`:
 }
 ```
 
-`kind` and `version` say which owner wrote `payload` and in which form, so a
-reader can rely on the fields of a kind it knows and skip the rest. The
+`owner` names the provider that wrote `payload`, `kind` names what it holds,
+and `version` says in which form. `definition` is a digest of the codec
+definition, so it changes whenever that form does; it is elided above. A reader
+can rely on the fields of a kind it knows and skip the rest. The
 `schema drift --format json` report carries the same entries in its `diff`.
 
 An explicit `--include` selection that matches neither side is invalid. The

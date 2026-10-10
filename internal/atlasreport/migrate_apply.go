@@ -495,17 +495,24 @@ func atlasTemplateIdentity(value string) string {
 }
 
 func atlasTemplateJSON(value any, args ...string) (string, error) {
+	return templateJSON(value, args, json.Marshal, json.MarshalIndent)
+}
+
+// templateJSON is the argument grammar of the `json` template helper over an
+// encoder: no argument writes compact JSON, one is the indent, and two are the
+// prefix and the indent.
+func templateJSON(value any, args []string, marshal func(any) ([]byte, error), marshalIndent func(any, string, string) ([]byte, error)) (string, error) {
 	var (
 		data []byte
 		err  error
 	)
 	switch len(args) {
 	case 0:
-		data, err = json.Marshal(value)
+		data, err = marshal(value)
 	case 1:
-		data, err = json.MarshalIndent(value, "", args[0])
+		data, err = marshalIndent(value, "", args[0])
 	default:
-		data, err = json.MarshalIndent(value, args[0], args[1])
+		data, err = marshalIndent(value, args[0], args[1])
 	}
 	if err != nil {
 		return "", err
