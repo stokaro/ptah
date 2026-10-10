@@ -26,6 +26,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
@@ -99,8 +100,19 @@ func secretFixture() extensionFixture {
 		wantSQL: "CREATE SECRET `ext/pg.password` WITH (value = $PTAH_SECRET_PG);\n"}
 }
 
+func topicFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.Topic{Schema: "ext", Name: "events.v1", Change: ydbdiff.Topic{
+		After: &ydbtopic.Desired{Spec: ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{{Name: "billing", Important: true}}}}}},
+		wantSQL: "CREATE TOPIC `ext/events.v1` (CONSUMER `billing` WITH (important = TRUE));\n"}
+}
+
+func topicConsumerFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.TopicConsumer{Schema: "ext", Name: "events.v1", Consumer: ydbtopic.ConsumerSpec{Name: "audit"}},
+		wantSQL: "ALTER TOPIC `ext/events.v1` ADD CONSUMER `audit`;\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture())
 }
 
 func defaultPoolFixture() extensionFixture {

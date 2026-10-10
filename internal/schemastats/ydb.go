@@ -2,19 +2,14 @@ package schemastats
 
 import "ptah.run/core/schemamodel"
 
-// Standalone topic counts do not include table-owned streams. Feature reports
-// supply those metrics independently from their owning providers.
+// ydbMetrics counts the YDB families the common schema still carries. Topics,
+// secrets and the other feature objects are counted by their owners' reports.
 func ydbMetrics(db *schemamodel.Database) []Metric {
-	var topicConsumers, externalColumns int
-	for _, topic := range db.Topics {
-		topicConsumers += len(topic.Spec.Consumers)
-	}
+	var externalColumns int
 	for _, table := range db.ExternalTables {
 		externalColumns += len(table.Columns)
 	}
 	return []Metric{
-		{Name: "topics", Help: "Standalone topics", Value: len(db.Topics)},
-		{Name: "topic_consumers", Help: "Consumers of standalone topics", Value: topicConsumers},
 		{Name: "async_replications", Help: "Async replications", Value: len(db.AsyncReplications)},
 		{Name: "transfers", Help: "Transfers", Value: len(db.Transfers)},
 		{Name: "external_data_sources", Help: "External data sources", Value: len(db.ExternalDataSources)},

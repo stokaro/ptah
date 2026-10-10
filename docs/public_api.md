@@ -78,6 +78,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbsecret`
 - `ptah.run/dialect/ydb/ydbstreaming`
 - `ptah.run/dialect/ydb/ydbsyntax`
+- `ptah.run/dialect/ydb/ydbtopic`
 - `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
@@ -729,6 +730,7 @@ refuses a misspelled key in its namespace instead of leaving it unread.
 `PropertyDefinition.Claims` answers both forms. A prefix may cover its own
 definition's keys and no key or prefix of another definition. A prefix widens
 only what a decoder is handed; an encoder's output must use the exact `Keys`.
+
 `PropertyDefinitions` returns independent copies for a frontend to group input
 without knowing the feature's Go type. A definition's `Absorbs` names the
 common attributes it takes over, each into one of its keys; registration refuses
@@ -1037,6 +1039,26 @@ of different owners against each other's paths. `ydbscheme.CommonEffects` reads 
 path relative to the database root it is given. Reverse planning reports the
 values a rollback cannot restore, and the reversal of a rotation carries no
 change.
+
+`dialect/ydb/ydbtopic` owns standalone YDB topics: the `Spec` of settings and
+consumers, the desired and observed models in `Database.FeatureObjects`, the
+declaration grammar, the checks a declaration and a change are held to, and the
+statements. A setting a declaration leaves out stands for the value YDB gives a
+new topic, and `Equal` compares two specs with every setting resolved that way.
+`ConsumerSpec` is the consumer of a topic and of a changefeed's topic alike.
+`Declare` is how every source format adds a topic declaration and refuses a
+second one with a `DuplicateError`, and `ParsePath` and `ResolvePath` read a
+topic's path by the rules a secret's path follows. The common schema, catalog,
+AST, and diff types contain no topic fields.
+
+The topic services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
+`ydbreport` consume this model, `ydbdiff.Topic` captures both change operands,
+and `ydbast.Topic` and `ydbast.TopicConsumer` are the statement payloads
+`ydbrender.TopicHandler` and `ydbrender.TopicConsumerHandler` write. Planning
+places a topic statement as a secret's, creates or changes a topic before a
+transfer reads it, and drops it after the transfer that reads it. A reversal
+returns a changed topic to the nearest state YDB reaches in place and reports
+what it cannot restore.
 
 `dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
 are distinct values in `Database.FeatureObjects`, with their table recorded as

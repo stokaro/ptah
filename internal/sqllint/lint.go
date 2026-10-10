@@ -634,7 +634,6 @@ var analyzedStatementKinds = map[reflect.Type]struct{}{
 // `CREATE TYPE ... AS ENUM` parses to an EnumNode, and reporting that Ptah
 // "does not model ENUM statements" names a keyword no author wrote.
 var statementLabelOverrides = map[string]string{
-	"AddTopicConsumerNode":       "ALTER TOPIC",
 	"EnumNode":                   "CREATE TYPE",
 	"ExtensionNode":              "CREATE EXTENSION",
 	"DefaultPrivilegeNode":       "ALTER DEFAULT PRIVILEGES",

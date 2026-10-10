@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbtopic"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // topic adds one described topic.
@@ -26,8 +27,8 @@ func (r *Reader) topic(ctx context.Context, source Source, schema, name string, 
 	if err != nil {
 		return fmt.Errorf("YDB topic %s: %w", path, err)
 	}
-	db.Topics = append(db.Topics, catalog.Topic{Name: name, Schema: schema, Spec: spec})
-	return nil
+	db.FeatureObjects, err = db.FeatureObjects.With(ydbtopic.ObservedObject(schema, name, spec))
+	return err
 }
 
 // decodeTopic reads a topic's description as the settings and consumers it
@@ -44,14 +45,14 @@ func (r *Reader) topic(ctx context.Context, source Source, schema, name string, 
 // attributes are left out: YDB's own begin with an underscore and change by
 // line (`_timestamp_type` on 26.2.1.14, `__max_partition_message_groups_
 // seqno_stored` on 25.1.4.7), and no statement Ptah writes changes one.
-func decodeTopic(described *Ydb_Topic.DescribeTopicResult) (ast.TopicSpec, error) {
+func decodeTopic(described *Ydb_Topic.DescribeTopicResult) (ydbtopic.Spec, error) {
 	if err := refuseUnknownFields("its description", described); err != nil {
-		return ast.TopicSpec{}, err
+		return ydbtopic.Spec{}, err
 	}
 	if err := refuseUnmodeledTopicSettings(described); err != nil {
-		return ast.TopicSpec{}, err
+		return ydbtopic.Spec{}, err
 	}
-	var spec ast.TopicSpec
+	var spec ydbtopic.Spec
 	partitioning := described.GetPartitioningSettings()
 	auto := partitioning.GetAutoPartitioningSettings()
 	for subject, message := range map[string]protoreflect.ProtoMessage{
@@ -60,13 +61,13 @@ func decodeTopic(described *Ydb_Topic.DescribeTopicResult) (ast.TopicSpec, error
 		"its auto-partitioning write speed rule": auto.GetPartitionWriteSpeed(),
 	} {
 		if err := refuseUnknownFields(subject, message); err != nil {
-			return ast.TopicSpec{}, err
+			return ydbtopic.Spec{}, err
 		}
 	}
 	spec.MinActivePartitions = uint64(max(partitioning.GetMinActivePartitions(), 0))
 	strategy, err := topicStrategy(auto.GetStrategy())
 	if err != nil {
-		return ast.TopicSpec{}, err
+		return ydbtopic.Spec{}, err
 	}
 	spec.AutoPartitioningStrategy = strategy
 	if strategy != ydbtopic.StrategyDisabled {
@@ -76,21 +77,21 @@ func decodeTopic(described *Ydb_Topic.DescribeTopicResult) (ast.TopicSpec, error
 		spec.AutoPartitioningDownUtilizationPercent = uint32(max(speed.GetDownUtilizationPercent(), 0))
 		if spec.AutoPartitioningStabilizationWindow, err = topicInterval("its stabilization window",
 			speed.GetStabilizationWindow()); err != nil {
-			return ast.TopicSpec{}, err
+			return ydbtopic.Spec{}, err
 		}
 	}
 	if spec.RetentionPeriod, err = topicInterval("its retention period", described.GetRetentionPeriod()); err != nil {
-		return ast.TopicSpec{}, err
+		return ydbtopic.Spec{}, err
 	}
 	spec.PartitionWriteSpeedBytesPerSecond = uint64(max(described.GetPartitionWriteSpeedBytesPerSecond(), 0))
 	spec.PartitionWriteBurstBytes = uint64(max(described.GetPartitionWriteBurstBytes(), 0))
 	if spec.SupportedCodecs, err = topicCodecs("its", described.GetSupportedCodecs()); err != nil {
-		return ast.TopicSpec{}, err
+		return ydbtopic.Spec{}, err
 	}
 	for _, consumer := range described.GetConsumers() {
 		decoded, err := decodeTopicConsumer(consumer)
 		if err != nil {
-			return ast.TopicSpec{}, fmt.Errorf("consumer %q: %w", consumer.GetName(), err)
+			return ydbtopic.Spec{}, fmt.Errorf("consumer %q: %w", consumer.GetName(), err)
 		}
 		spec.Consumers = append(spec.Consumers, decoded)
 	}
@@ -188,36 +189,36 @@ const (
 )
 
 // decodeTopicConsumer reads one consumer.
-func decodeTopicConsumer(described *Ydb_Topic.Consumer) (ast.TopicConsumerSpec, error) {
+func decodeTopicConsumer(described *Ydb_Topic.Consumer) (ydbtopic.ConsumerSpec, error) {
 	for _, number := range unknownFields(described) {
 		switch number {
 		case streamingConsumerType:
 			if !emptyField(described, number) {
-				return ast.TopicConsumerSpec{}, fmt.Errorf("its streaming consumer type carries settings this " +
+				return ydbtopic.ConsumerSpec{}, fmt.Errorf("its streaming consumer type carries settings this " +
 					"build of Ptah does not read")
 			}
 		case sharedConsumerType:
-			return ast.TopicConsumerSpec{}, fmt.Errorf("it is a shared consumer, which Ptah does not model")
+			return ydbtopic.ConsumerSpec{}, fmt.Errorf("it is a shared consumer, which Ptah does not model")
 		default:
-			return ast.TopicConsumerSpec{}, fmt.Errorf("its description carries field %d, which this build of "+
+			return ydbtopic.ConsumerSpec{}, fmt.Errorf("its description carries field %d, which this build of "+
 				"Ptah does not read", number)
 		}
 	}
-	consumer := ast.TopicConsumerSpec{Name: described.GetName(), Important: described.GetImportant()}
+	consumer := ydbtopic.ConsumerSpec{Name: described.GetName(), Important: described.GetImportant()}
 	if readFrom := described.GetReadFrom(); readFrom != nil {
 		if readFrom.GetNanos() != 0 {
-			return ast.TopicConsumerSpec{}, fmt.Errorf("its read_from %s is not a whole second",
+			return ydbtopic.ConsumerSpec{}, fmt.Errorf("its read_from %s is not a whole second",
 				readFrom.AsTime().Format(time.RFC3339Nano))
 		}
 		consumer.ReadFrom = ydbtopic.FormatReadFrom(readFrom.AsTime())
 	}
 	var err error
 	if consumer.SupportedCodecs, err = topicCodecs("its", described.GetSupportedCodecs()); err != nil {
-		return ast.TopicConsumerSpec{}, err
+		return ydbtopic.ConsumerSpec{}, err
 	}
 	if consumer.AvailabilityPeriod, err = topicInterval("its availability period",
 		described.GetAvailabilityPeriod()); err != nil {
-		return ast.TopicConsumerSpec{}, err
+		return ydbtopic.ConsumerSpec{}, err
 	}
 	return consumer, nil
 }
@@ -254,4 +255,36 @@ func emptyField(message protoreflect.ProtoMessage, number protowire.Number) bool
 		unknown = unknown[valueLength:]
 	}
 	return true
+}
+
+// unreadTopicEntries are the scheme entries the reader records as topics it
+// does not read, with the reason each is recorded: a topic on a server without
+// [capability.Topics], and a queue of the older persistent queue kind, which
+// Ptah does not read on any line. A plan neither keeps nor drops one, and its
+// silence never reads as absence.
+var unreadTopicEntries = map[Ydb_Scheme.Entry_Type]string{
+	Ydb_Scheme.Entry_TOPIC:            ydbtopic.UnsupportedReason,
+	Ydb_Scheme.Entry_PERS_QUEUE_GROUP: ydbtopic.QueueGroupReason,
+}
+
+// unreadTopics collects the topics a walk records rather than describes, and
+// records them in the read's coverage once the walk is done.
+type unreadTopics []schemaext.SubjectCoverage
+
+func (u *unreadTopics) add(schema, name, reason string) {
+	*u = append(*u, schemaext.SubjectCoverage{Kind: ydbtopic.Kind, Subject: ydbtopic.Ref(schema, name),
+		Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: reason}})
+}
+
+func (u unreadTopics) record(db *catalog.Database) error {
+	if len(u) == 0 {
+		return nil
+	}
+	known, err := schemaext.NewCoverage(schemaext.Observed, db.FeatureCoverage.KindRecords(),
+		append(db.FeatureCoverage.SubjectRecords(), u...))
+	if err != nil {
+		return err
+	}
+	db.FeatureCoverage = known
+	return nil
 }

@@ -8,11 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -36,15 +36,15 @@ func changefeedsChanged(t *testing.T, desired, current []ydbschema.ChangefeedSpe
 // and 25.1.4.7 and read back as declared.
 func TestGenerateMigrationAST_Changefeeds_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	audit := ast.TopicConsumerSpec{Name: "audit", SupportedCodecs: []string{"raw"}}
+	audit := ydbtopic.ConsumerSpec{Name: "audit", SupportedCodecs: []string{"raw"}}
 	current := []ydbschema.ChangefeedSpec{
-		{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "reader"}}},
-		{Name: "moved", Mode: "KEYS_ONLY", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}}},
-		{Name: "kept", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H", Consumers: []ast.TopicConsumerSpec{audit}},
+		{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "reader"}}},
+		{Name: "moved", Mode: "KEYS_ONLY", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "a"}, {Name: "b"}}},
+		{Name: "kept", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H", Consumers: []ydbtopic.ConsumerSpec{audit}},
 	}
 	desired := []ydbschema.ChangefeedSpec{
-		{Name: "moved", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}}},
-		{Name: "kept", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "audit"}}},
+		{Name: "moved", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "a"}, {Name: "b"}}},
+		{Name: "kept", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "audit"}}},
 		{Name: "fresh", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON", InitialScan: true},
 	}
 	diff := changefeedsChanged(t, desired, current)
@@ -80,7 +80,7 @@ func TestGenerateMigrationAST_Changefeeds_HappyPath(t *testing.T) {
 // 25.1.4.7, with rows written before and after, and read back as declared.
 func TestGenerateMigrationAST_Changefeeds_RebuildCarriesThem(t *testing.T) {
 	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON",
-		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true}}}
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", Important: true}}}
 	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
 	declaration = declaredFeeds(t, declaration, feed)
 	typeChange := []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}

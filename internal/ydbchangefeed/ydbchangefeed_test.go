@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -92,19 +92,19 @@ func TestParseConsumer_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.TopicConsumerSpec
+		want   ydbtopic.ConsumerSpec
 	}{
 		{name: "a name alone", values: map[string]string{"name": "audit", "changefeed": "feed"},
-			want: ast.TopicConsumerSpec{Name: "audit"}},
+			want: ydbtopic.ConsumerSpec{Name: "audit"}},
 		{
 			name: "every setting, the time kept in UTC and the codecs in lower case",
 			values: map[string]string{"name": "c", "important": "true",
 				"read_from": "2026-01-01T03:00:00+03:00", "supported_codecs": "RAW, gzip"},
-			want: ast.TopicConsumerSpec{Name: "c", Important: true, ReadFrom: "2026-01-01T00:00:00Z",
+			want: ydbtopic.ConsumerSpec{Name: "c", Important: true, ReadFrom: "2026-01-01T00:00:00Z",
 				SupportedCodecs: []string{"raw", "gzip"}},
 		},
 		{name: "an availability period", values: map[string]string{"name": "c", "availability_period": "PT1H"},
-			want: ast.TopicConsumerSpec{Name: "c", AvailabilityPeriod: "PT1H"}},
+			want: ydbtopic.ConsumerSpec{Name: "c", AvailabilityPeriod: "PT1H"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestParseConsumer_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbchangefeed.ParseConsumer(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.DeepEquals, ast.TopicConsumerSpec{})
+			c.Assert(got, qt.DeepEquals, ydbtopic.ConsumerSpec{})
 		})
 	}
 }
@@ -203,7 +203,7 @@ func TestCheck_HappyPath(t *testing.T) {
 		{name: "every option on the newest line", caps: capability.YDB262(),
 			spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE", Format: "JSON", UserSIDs: true,
 				SchemaChanges: true, TopicAutoPartitioning: true, ResolvedTimestamps: "PT1S", RetentionPeriod: "P31D",
-				Consumers: []ast.TopicConsumerSpec{{Name: "a", AvailabilityPeriod: "PT1H"}, {Name: "b", Important: true}}}},
+				Consumers: []ydbtopic.ConsumerSpec{{Name: "a", AvailabilityPeriod: "PT1H"}, {Name: "b", Important: true}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -221,7 +221,7 @@ func TestCheck_RefusesWhatTheTargetLacks(t *testing.T) {
 	withSIDs.UserSIDs = true
 	withSchema.SchemaChanges = true
 	withAuto.TopicAutoPartitioning = true
-	withAvailability.Consumers = []ast.TopicConsumerSpec{{Name: "c", AvailabilityPeriod: "PT1H"}}
+	withAvailability.Consumers = []ydbtopic.ConsumerSpec{{Name: "c", AvailabilityPeriod: "PT1H"}}
 	tests := []struct {
 		name string
 		spec ydbschema.ChangefeedSpec
@@ -278,7 +278,7 @@ func TestCheck_RefusesWhatYDBRefusesEverywhere(t *testing.T) {
 		{name: "a fractional retention", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
 			RetentionPeriod: "PT1.5S"}, wantReason: `its retention_period "PT1.5S": interval "PT1.5S" has a fraction of a second, .*`},
 		{name: "two consumers of one name", spec: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
-			Consumers: []ast.TopicConsumerSpec{{Name: "c"}, {Name: "c"}}},
+			Consumers: []ydbtopic.ConsumerSpec{{Name: "c"}, {Name: "c"}}},
 			wantReason: `two of its consumers are named "c", .*`},
 	}
 	for _, test := range tests {

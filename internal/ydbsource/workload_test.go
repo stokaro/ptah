@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/sqlschema"
@@ -97,7 +98,7 @@ func TestGoSecretLimitsReadThePath(t *testing.T) {
 func TestGoSecretLimits_RefuseAnAbsolutePath(t *testing.T) {
 	c := qt.New(t)
 	db, err := goschema.ParseSource("limits.go", "package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\"/local/ext/pw\"\ntype Unmanaged struct{}\n")
-	c.Assert(err, qt.ErrorMatches, `.*"/local/ext/pw" is not a secret path \(dir/name\): .*write the secret's path relative to the database root.*`)
+	c.Assert(err, qt.ErrorMatches, `.*"/local/ext/pw" is not a secret path \(dir/name\): .*write the path relative to the database root.*`)
 	c.Assert(err, qt.ErrorIs, ydbsecret.ErrAbsolutePath)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 }
@@ -210,7 +211,7 @@ func TestGoExportPreservesUnenrolledNamespaces(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
 				c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("missing")).State, qt.Equals, test.pools)
-				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing"), ydbsecret.Ref("", "missing")} {
+				for _, ref := range []objectidentity.ID{ydbworkload.ClassifierRef("missing"), ydbcoordination.Ref("", "missing"), ydbstreaming.Ref("", "missing"), ydbsecret.Ref("", "missing"), ydbtopic.Ref("", "missing")} {
 					c.Assert(parsed.FeatureCoverage.Lookup(schemaext.Kind(ref.Kind), ref).State, qt.Equals, schemaext.Uninspected)
 				}
 				again, err := goschematogo.Render(t.Context(), parsed, goschematogo.Options{SingleFile: layout.single, Dialect: "ydb"})

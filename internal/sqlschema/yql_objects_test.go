@@ -5,8 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -16,16 +18,26 @@ func TestReadYQLViewQuery(t *testing.T) {
 	database, _, err := sqlschema.Read([]byte("CREATE VIEW `app/summary` WITH (security_invoker = TRUE) AS "+body+"; CREATE TOPIC `app/events`;"), "ydb")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Views, qt.DeepEquals, []schemamodel.View{{Name: "app.summary", Body: body}})
-	c.Assert(database.Topics, qt.DeepEquals, []schemamodel.Topic{{Name: "events", Schema: "app"}})
+	c.Assert(topicObjects(c, database), qt.DeepEquals, []schemaext.Object{ydbtopic.DesiredObject("app", "events", "", ydbtopic.Spec{})})
+}
+
+// topicObjects lists the topics a read declared.
+func topicObjects(c *qt.C, database schemamodel.Database) []schemaext.Object {
+	c.Helper()
+	objects, err := database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(ydbtopic.Kind)
+	}).All()
+	c.Assert(err, qt.IsNil)
+	return objects
 }
 
 func TestReadYQLTopicConsumers(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE TOPIC `app/events.v1` (CONSUMER `work\\x65r` WITH (important = TRUE, read_from = Timestamp('2026-01-01T00:00:00Z'), supported_codecs = 'raw,gzip')) WITH (min_active_partitions = 2, retention_period = Interval('P1D'));"), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Topics, qt.DeepEquals, []schemamodel.Topic{{Name: "events.v1", Schema: "app", Spec: ast.TopicSpec{
-		MinActivePartitions: 2, RetentionPeriod: "P1D", Consumers: []ast.TopicConsumerSpec{{Name: "worker", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}},
-	}}})
+	c.Assert(topicObjects(c, database), qt.DeepEquals, []schemaext.Object{ydbtopic.DesiredObject("app", "events.v1", "", ydbtopic.Spec{
+		MinActivePartitions: 2, RetentionPeriod: "P1D", Consumers: []ydbtopic.ConsumerSpec{{Name: "worker", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}},
+	})})
 }
 
 func TestReadYQLObjectRefusals(t *testing.T) {
@@ -57,7 +69,7 @@ func TestReadYQLObjectRefusals(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
 			c.Assert(statements, qt.IsNil)
 			c.Assert(database.Views, qt.HasLen, 0)
-			c.Assert(database.Topics, qt.HasLen, 0)
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
 }

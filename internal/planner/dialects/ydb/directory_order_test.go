@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -53,6 +54,34 @@ func TestGenerateMigrationAST_ObjectsBelowAPathFollowItsDrop(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(render(c, capability.YDB262(), test.diff), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestGenerateMigrationAST_OwnersTradeAPath hands one path from an object of
+// one owner to an object of another, which neither owner sees: the drop runs
+// first, so the creation finds the path free.
+func TestGenerateMigrationAST_OwnersTradeAPath(t *testing.T) {
+	empty := ydbtopic.Spec{}
+	tests := []struct {
+		name    string
+		changes []schemaext.ChangeRecord
+		want    string
+	}{
+		{name: "a coordination node where a secret was",
+			changes: []schemaext.ChangeRecord{coordinationCreated("", "ext"), secretDropped("", "ext")},
+			want:    "DROP SECRET `ext`;\nCREATE COORDINATION NODE `ext`;\n"},
+		{name: "a secret where a topic was",
+			changes: []schemaext.ChangeRecord{secretCreated("", "ext", "PTAH_SECRET_EXT"), topicChange("ext", &empty, nil)},
+			want:    "DROP TOPIC `ext`;\nCREATE SECRET `ext` WITH (value = $PTAH_SECRET_EXT);\n"},
+		{name: "a topic where a coordination node was",
+			changes: []schemaext.ChangeRecord{topicChange("ext", nil, &empty), coordinationDropped("", "ext")},
+			want:    "DROP COORDINATION NODE `ext`;\nCREATE TOPIC `ext`;\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(render(c, capability.YDB262(), &difftypes.SchemaDiff{FeatureChanges: test.changes}), qt.Equals, test.want)
 		})
 	}
 }

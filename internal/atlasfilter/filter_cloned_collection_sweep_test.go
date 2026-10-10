@@ -170,12 +170,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			field: "Topics", present: "events", absent: "nosuch_topic",
-			seed: func(s *catalog.Database) {
-				s.Topics = append(s.Topics, catalog.Topic{Name: "events"})
-			},
-		},
-		{
 			field: "AsyncReplications", present: "mirror", absent: "nosuch_replication",
 			seed: func(s *catalog.Database) {
 				s.AsyncReplications = append(s.AsyncReplications, catalog.AsyncReplication{Name: "mirror"})

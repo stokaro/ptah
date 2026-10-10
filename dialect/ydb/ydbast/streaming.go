@@ -115,6 +115,20 @@ func validateStreamingSpec(spec ydbstreaming.Spec) error {
 	return nil
 }
 
+// RunsBeforeChanges reports whether the statement belongs before the plan's
+// other changes rather than after them: a drop, and a stop that changes
+// nothing else, so the query is not running while the tables and topics it
+// reads change. Every other statement runs after them, against the schema
+// they leave.
+func (v *StreamingQuery) RunsBeforeChanges() bool {
+	if v == nil {
+		return false
+	}
+	return v.Operation == StreamingDrop || (v.Operation == StreamingAlter &&
+		ydbstreaming.Running(v.Previous) && !ydbstreaming.Running(v.Spec) &&
+		ydbstreaming.SameBody(v.Previous.Text, v.Spec.Text) && ydbstreaming.Pool(v.Previous) == ydbstreaming.Pool(v.Spec))
+}
+
 // Effect preserves checkpoint-loss classification through generic envelopes.
 // Invalid operations have unknown effects; reconstructing their declarations
 // cannot restore discarded checkpoint state.

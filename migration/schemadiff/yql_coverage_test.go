@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
@@ -42,10 +43,13 @@ func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 	c := qt.New(t)
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
-	held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), Topics: []catalog.Topic{readTopic("events")}, Views: []catalog.View{{Name: "summary"}}}
+	held := &catalog.Database{FeatureCoverage: completeYDBFixtureCoverage(), Views: []catalog.View{{Name: "summary"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(ydbtopic.ObservedObject("app", "events", readTopicSpec())))}
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
-	c.Assert(diff.TopicsRemoved, qt.HasLen, 1)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: ydbtopic.Ref("app", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{Spec: readTopicSpec()}}},
+	})
 }
 
 func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {

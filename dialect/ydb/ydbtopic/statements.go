@@ -5,29 +5,34 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/tableref"
 )
 
-// Path writes name, a topic's canonical reference, as one quoted YDB path:
+// Path writes the topic name in the directory schema as one quoted YDB path:
 // `<directory>/<topic>`, or the name alone at the database root.
-func Path(name string) string {
-	ref, ok := tableref.Parse(name)
-	if !ok {
-		return sqlident.Quote(platform.YDB, name)
-	}
-	return sqlident.Qualified(platform.YDB, ref.Schema, ref.Name)
+func Path(schema, name string) string {
+	return sqlident.Qualified(platform.YDB, schema, name)
 }
 
-// CreateStatement writes what creates the topic name as spec declares it:
+// Display names the topic name in the directory schema by the path YDB
+// writes for it, unquoted, for messages: `dir/name`, or `name` at the database
+// root. A dot is part of a name.
+func Display(schema, name string) string {
+	if schema == "" {
+		return name
+	}
+	return strings.TrimRight(schema, "/") + "/" + name
+}
+
+// CreateStatement writes what creates the topic name in the directory schema
+// as spec declares it:
 // one `CREATE TOPIC` naming each consumer and each setting spec declares. A
 // setting spec leaves out is left to YDB, which gives a new topic the value
 // [Resolve] reads the declaration with.
-func CreateStatement(name string, spec ast.TopicSpec) string {
+func CreateStatement(schema, name string, spec Spec) string {
 	var b strings.Builder
-	b.WriteString("CREATE TOPIC " + Path(name))
+	b.WriteString("CREATE TOPIC " + Path(schema, name))
 	if len(spec.Consumers) > 0 {
 		consumers := make([]string, len(spec.Consumers))
 		for i, consumer := range spec.Consumers {
@@ -43,8 +48,8 @@ func CreateStatement(name string, spec ast.TopicSpec) string {
 
 // DropStatement writes what drops the topic name, with every message it holds
 // and every consumer's position in it.
-func DropStatement(name string) string {
-	return "DROP TOPIC " + Path(name) + ";"
+func DropStatement(schema, name string) string {
+	return "DROP TOPIC " + Path(schema, name) + ";"
 }
 
 // AlterStatements writes what moves the topic name from previous to desired,
@@ -65,8 +70,8 @@ func DropStatement(name string) string {
 // takes a setting named at the value it holds (measured on 25.1.4.7 and
 // 26.2.1.14: `auto_partitioning_strategy = 'disabled'` on a topic with none,
 // and `supported_codecs = ”` on a topic with no list).
-func AlterStatements(name string, desired, previous ast.TopicSpec) []string {
-	path := Path(name)
+func AlterStatements(schema, name string, desired, previous Spec) []string {
+	path := Path(schema, name)
 	changes := Compare(desired, previous)
 	var actions []string
 	if !SettingsEqual(desired, previous) {
@@ -104,7 +109,7 @@ func AlterStatements(name string, desired, previous ast.TopicSpec) []string {
 
 // declaredSettings writes the settings spec names, in the order YDB's
 // documentation lists them.
-func declaredSettings(spec ast.TopicSpec) []string {
+func declaredSettings(spec Spec) []string {
 	var settings []string
 	add := func(declared bool, setting string) {
 		if declared {
@@ -154,7 +159,7 @@ func resolvedSettings(settings Settings) []string {
 
 // consumerWith writes the WITH clause of a new consumer, naming only what the
 // consumer declares, or nothing for a consumer that declares nothing.
-func consumerWith(consumer ast.TopicConsumerSpec) string {
+func consumerWith(consumer ConsumerSpec) string {
 	var settings []string
 	if consumer.Important {
 		settings = append(settings, AttributeImportant+" = TRUE")
@@ -180,7 +185,7 @@ func consumerWith(consumer ast.TopicConsumerSpec) string {
 // any, and the availability period where either side has one: zero removes
 // it, which 26.2.1.14 takes, and a line without the setting has no consumer
 // holding one.
-func alteredConsumer(desired, previous ast.TopicConsumerSpec) string {
+func alteredConsumer(desired, previous ConsumerSpec) string {
 	readFrom := desired.ReadFrom
 	if readFrom == "" {
 		readFrom = epoch
@@ -237,7 +242,7 @@ func formatCount(count uint64) string {
 	return strconv.FormatUint(count, 10)
 }
 
-// consumerSubject names one consumer of the topic name, for a refusal.
-func consumerSubject(name, consumer string) string {
-	return fmt.Sprintf("consumer %q of topic %s", consumer, name)
+// consumerSubject names one consumer of the topic at path, for a refusal.
+func consumerSubject(path, consumer string) string {
+	return fmt.Sprintf("consumer %q of topic %s", consumer, path)
 }

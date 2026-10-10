@@ -2,17 +2,19 @@ package atlashclrender
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbsource"
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out,
-// and every secret the source records as not described without holding it,
-// which HCL has no directive for. It reads identities without interpreting
+// and every secret or topic the source records as not described without
+// holding it, which HCL has no directive for. It reads identities without interpreting
 // payloads, so an unrecognized provider cannot turn export loss into a
 // successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
@@ -28,7 +30,7 @@ func (r *renderer) reportFeatureObjects() {
 	}
 	for _, record := range r.db.FeatureCoverage.SubjectRecords() {
 		state := record.Knowledge.State
-		if record.Kind != ydbsecret.Kind || (state != schemaext.Uninspected && state != schemaext.Unrepresentable) {
+		if !slices.Contains(unrecordableLimits, record.Kind) || (state != schemaext.Uninspected && state != schemaext.Unrepresentable) {
 			continue
 		}
 		if _, held, err := r.db.FeatureObjects.Get(record.Subject); held || err != nil {
@@ -51,6 +53,10 @@ func (r *renderer) reportFeatureObjects() {
 		}
 	}
 }
+
+// unrecordableLimits are the kinds whose source limits HCL has no directive
+// for. Changefeeds, streaming queries and pools report their own losses.
+var unrecordableLimits = []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind}
 
 func featurePath(ref objectidentity.ID) string {
 	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)

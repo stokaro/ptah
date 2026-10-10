@@ -11,10 +11,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafingerprint"
@@ -28,7 +28,7 @@ func TestDesiredFingerprintBindsObjectsAndCoverage(t *testing.T) {
 	empty.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
 	absent := must.Must(schemafingerprint.Desired(t.Context(), runtime, empty))
 	c.Assert(absent, qt.Not(qt.Equals), unknown)
-	a := ydbschema.DesiredObject("", "events", ydbschema.ChangefeedSpec{Name: "a", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "audit"}, {Name: "worker"}}})
+	a := ydbschema.DesiredObject("", "events", ydbschema.ChangefeedSpec{Name: "a", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "audit"}, {Name: "worker"}}})
 	b := ydbschema.DesiredObject("", "events", ydbschema.ChangefeedSpec{Name: "b", Mode: "KEYS_ONLY", Format: "JSON"})
 	empty.FeatureObjects = must.Must(schemaext.NewObjects(a, b))
 	first := must.Must(schemafingerprint.Desired(t.Context(), runtime, empty))

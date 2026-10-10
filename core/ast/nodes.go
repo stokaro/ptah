@@ -227,38 +227,6 @@ func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec {
 	return &out
 }
 
-// TopicConsumerSpec is one consumer of a YDB topic: a named reader that keeps
-// its own position in the topic. The settings are the ones `ALTER TOPIC ...
-// ADD CONSUMER ... WITH (...)` takes, and a field left at its zero value
-// declares nothing.
-type TopicConsumerSpec struct {
-	// Name is the consumer's name, unique within its topic.
-	Name string `json:"name"`
-	// Important is `important`: the topic keeps a record this consumer has
-	// not read even after the retention period.
-	Important bool `json:"important,omitempty"`
-	// ReadFrom is `read_from`, an RFC 3339 time: a partition this consumer
-	// has not read yet is read from the first record written at or after
-	// it. Empty reads from the beginning.
-	ReadFrom string `json:"read_from,omitempty"`
-	// SupportedCodecs is `supported_codecs`, the codecs this consumer can
-	// read: raw, gzip, lzop, zstd and custom. Empty takes any.
-	SupportedCodecs []string `json:"supported_codecs,omitempty"`
-	// AvailabilityPeriod is `availability_period`, an ISO 8601 interval for
-	// which the topic keeps a record this consumer has not read beyond the
-	// retention period. Empty sets none.
-	AvailabilityPeriod string `json:"availability_period,omitempty"`
-}
-
-// Clone returns an independent copy of the consumer.
-func (c TopicConsumerSpec) Clone() TopicConsumerSpec {
-	out := c
-	if c.SupportedCodecs != nil {
-		out.SupportedCodecs = append([]string(nil), c.SupportedCodecs...)
-	}
-	return out
-}
-
 // YDBColumnFamilySpec is YDB's, and no other dialect has column families: one
 // column family of a YDB row table, a group of columns YDB stores together
 // with settings of their own, as `CREATE TABLE ... (c T FAMILY f, ...,

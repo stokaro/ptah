@@ -16,7 +16,6 @@ import (
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
-	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -191,14 +190,6 @@ func reverseSchemaDiffWithPrior(
 		SynonymsAdded:    diff.SynonymsRemoved,
 		SynonymsRemoved:  diff.SynonymsAdded,
 		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified, prior),
-		// A topic reverses like a synonym: the down direction drops what the
-		// up direction created, and creates what it dropped from the settings
-		// and consumers the removal carried. A change carries both of its
-		// states, so the reversal swaps them and builds the change again, which
-		// is what tells a consumer the rollback drops from one it adds back.
-		TopicsAdded:    cloneTopics(diff.TopicsRemoved),
-		TopicsRemoved:  cloneTopics(diff.TopicsAdded),
-		TopicsModified: reverseTopicDiffs(diff.TopicsModified),
 		// An async replication and a transfer reverse like a synonym: the down
 		// direction drops what the up direction created, and creates what it
 		// dropped from the specification the removal carried. A change carries
@@ -720,26 +711,6 @@ func reverseIndexComments(changes []difftypes.IndexCommentChange) []difftypes.In
 			Current:   change.Desired,
 			Desired:   change.Current,
 		})
-	}
-	return reversed
-}
-
-// reverseTopicDiffs swaps the two states of every topic change and builds the
-// change again from them. The state a rollback returns to is the nearest one
-// YDB reaches in place: a topic keeps the partitions the forward change gave
-// it, and pauses auto-partitioning the forward change enabled, because YDB
-// neither removes a partition nor disables auto-partitioning again (see
-// [ydbtopic.RollbackTarget]).
-func reverseTopicDiffs(changes []difftypes.TopicDiff) []difftypes.TopicDiff {
-	if changes == nil {
-		return nil
-	}
-	reversed := make([]difftypes.TopicDiff, 0, len(changes))
-	for _, change := range changes {
-		target := ydbtopic.RollbackTarget(change.Current, change.Desired)
-		if back, differs := difftypes.NewTopicDiff(change.Name, target, change.Desired); differs {
-			reversed = append(reversed, back)
-		}
 	}
 	return reversed
 }

@@ -7,11 +7,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
@@ -97,7 +97,7 @@ func TestPlannerCancellationAfterSelectedServiceReturnsNoPlan(t *testing.T) {
 		cancel()
 		return result, err
 	}}
-	diff := changefeedsChanged(t, []ydbschema.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "reader"}}}}, nil)
+	diff := changefeedsChanged(t, []ydbschema.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "reader"}}}}, nil)
 	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(ctx, selected, diff)
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(nodes, qt.IsNil)

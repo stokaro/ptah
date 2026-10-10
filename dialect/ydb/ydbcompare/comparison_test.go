@@ -5,13 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 )
 
@@ -104,7 +104,7 @@ func TestComparison_UsesServerDefaultsWithoutRewritingDeclarations(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	desired := feed("updates")
 	desired.ResolvedTimestamps = "PT60S"
-	desired.Consumers = []ast.TopicConsumerSpec{{Name: "worker", SupportedCodecs: []string{"ZSTD", "RAW"}}}
+	desired.Consumers = []ydbtopic.ConsumerSpec{{Name: "worker", SupportedCodecs: []string{"ZSTD", "RAW"}}}
 	current := desired.Clone()
 	current.Mode, current.Format, current.RetentionPeriod, current.ResolvedTimestamps = "updates", "json", "PT24H", "PT1M"
 	current.TopicMinActivePartitions = 8
@@ -125,7 +125,7 @@ func TestComparison_PreservesDisabledStreamAndItsCoverageForCapture(t *testing.T
 	c.Assert(err, qt.IsNil)
 	current := feed("updates")
 	current.Disabled = true
-	current.Consumers = []ast.TopicConsumerSpec{{Name: "worker", SupportedCodecs: []string{"raw"}}}
+	current.Consumers = []ydbtopic.ConsumerSpec{{Name: "worker", SupportedCodecs: []string{"raw"}}}
 	request := schemaext.ObjectComparisonRequest{Target: "ydb", Capabilities: capability.YDB262(), Desired: source(c, schemaext.Desired, schemaext.Uninspected, nil), Current: source(c, schemaext.Observed, schemaext.Complete, []ydbschema.ChangefeedSpec{current}), Parents: []schemaext.ParentState{{Subject: table("", "orders"), Desired: true, Current: true}}}
 	result, err := runtime.CompareObjects(t.Context(), request)
 	c.Assert(err, qt.IsNil)

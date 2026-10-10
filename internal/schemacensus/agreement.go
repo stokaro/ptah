@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine"
 	"ptah.run/internal/capabilityprobe"
@@ -97,6 +98,7 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 		func() (schemaext.Coverage, error) { return ydbcoordination.Coverage(schemaext.Observed, complete, nil) },
 		func() (schemaext.Coverage, error) { return ydbstreaming.Coverage(schemaext.Observed, complete, nil) },
 		func() (schemaext.Coverage, error) { return ydbsecret.Coverage(schemaext.Observed, complete, nil) },
+		func() (schemaext.Coverage, error) { return ydbtopic.Coverage(schemaext.Observed, complete, nil) },
 		func() (schemaext.Coverage, error) {
 			return ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Observed, complete, nil)
 		},

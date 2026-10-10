@@ -23,12 +23,12 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
-	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -131,12 +131,6 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
 	add(&findings, "constraints_added", len(diff.ConstraintsAdded), Warning)
 	add(&findings, "constraints_removed", len(diff.ConstraintsRemoved), Destructive)
-	// A topic holds messages and each consumer's position in them, so dropping
-	// either loses what a reader has not read or where it was.
-	add(&findings, "topics_added", len(diff.TopicsAdded), Safe)
-	add(&findings, "topics_removed", len(diff.TopicsRemoved), Destructive)
-	add(&findings, "topics_modified", len(diff.TopicsModified), Warning)
-	add(&findings, "topic_consumers_removed", droppedTopicConsumers(diff.TopicsModified), Destructive)
 	// Dropping an async replication drops the replica tables it created, or
 	// leaves them read-only for good, and dropping a transfer drops the
 	// consumer YDB created for it, with its position in the topic. A change
@@ -610,8 +604,7 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
-	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropAsyncReplicationNode, *ast.DropTransferNode,
-		*ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
+	case *ast.DropAsyncReplicationNode, *ast.DropTransferNode, *ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
 		return assessYDBObjectNode(n, assessment)
 	case *ast.DropExternalDataSourceNode, *ast.DropExternalTableNode,
 		*ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode:
@@ -638,8 +631,6 @@ func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
 		return n.Name, "DROP ROLE removes an existing database principal", true
 	case *ast.DropPolicyNode:
 		return n.Name, "DROP POLICY removes an access-control protection", true
-	case *ast.DropTopicNode:
-		return n.Name, dropTopicReason, true
 	default:
 		return "", "", false
 	}
@@ -828,7 +819,7 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 		assessment.Reason = "DROP COLUMN removes existing column data"
 	case hasWordSequence(words, "DROP", "CONSUMER"):
 		assessment.Severity = Destructive
-		assessment.Reason = dropConsumerReason
+		assessment.Reason = ydbdiff.DropConsumerReason
 	case hasWordSequence(words, "DROP", "CONSTRAINT"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP CONSTRAINT removes an existing data protection"
@@ -1057,7 +1048,7 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "FUNCTION"}, reason: "DROP FUNCTION removes executable database behavior"},
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
-	{words: []string{"DROP", "TOPIC"}, reason: dropTopicReason},
+	{words: []string{"DROP", "TOPIC"}, reason: ydbdiff.DropTopicReason},
 	{words: []string{"DROP", "ASYNC", "REPLICATION"}, reason: dropReplicationReason},
 	{words: []string{"DROP", "TRANSFER"}, reason: dropTransferReason},
 	{words: []string{"DROP", "COORDINATION", "NODE"}, reason: dropCoordinationNodeReason},
@@ -1065,17 +1056,10 @@ var destructivePrefixes = []struct {
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
 
-// assessYDBObjectNode judges a change of a YDB topic, async replication or
-// transfer.
+// assessYDBObjectNode judges a change of a YDB async replication or transfer.
+// A topic statement is an extension payload its owner classifies.
 func assessYDBObjectNode(node ast.Node, assessment StatementAssessment) StatementAssessment {
 	switch n := node.(type) {
-	case *ast.DropTopicNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = dropTopicReason
-	case *ast.AlterTopicNode:
-		assessment.Subject = n.Name
-		return assessAlterTopic(n, assessment)
 	case *ast.DropAsyncReplicationNode:
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
@@ -1122,17 +1106,10 @@ const (
 const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
 	"resources, even while a session holds a lock on it"
 
-// assessYDBObject judges a YDB topic or external object statement. A dropped
-// topic loses the messages it holds, and no external object holds data in
-// YDB, so dropping or replacing one warns. A secret statement is an extension
-// payload its owner classifies.
+// assessYDBObject judges a YDB external object statement. No external object
+// holds data in YDB, so dropping or replacing one warns.
 func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAssessment {
 	switch n := node.(type) {
-	case *ast.DropTopicNode:
-		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Destructive, dropTopicReason
-	case *ast.AlterTopicNode:
-		assessment.Subject = n.Name
-		return assessAlterTopic(n, assessment)
 	case *ast.DropExternalDataSourceNode:
 		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Warning, dropExternalDataSourceReason
 	case *ast.DropExternalTableNode:
@@ -1174,48 +1151,9 @@ func destructivePrefixReason(words []string) (string, bool) {
 	return "", false
 }
 
-// dropTopicReason and dropConsumerReason are why dropping a YDB topic or one of
-// its consumers is destructive, in the words both the AST and the SQL-text
-// classifiers report. A consumer's position is where its reader resumes;
-// adding the consumer again starts it over at the beginning of the topic.
-const (
-	dropTopicReason    = "DROP TOPIC removes the topic, every message it holds and every consumer's position in it"
-	dropConsumerReason = "DROP CONSUMER removes a topic consumer and its position in the topic"
-)
-
-// assessAlterTopic judges a change of a YDB topic: destructive where it drops
-// a consumer, including one it adds again because YDB cannot change it in
-// place, safe where it only adds consumers, and a warning otherwise, since a
-// changed setting can shorten how long the topic keeps a message and a
-// changed consumer can read from another point.
-func assessAlterTopic(node *ast.AlterTopicNode, assessment StatementAssessment) StatementAssessment {
-	consumers := ydbtopic.Compare(node.Spec, node.Previous)
-	switch {
-	case len(consumers.Removed)+len(consumers.Restarted) > 0:
-		assessment.Severity = Destructive
-		assessment.Reason = dropConsumerReason
-	case ydbtopic.SettingsEqual(node.Spec, node.Previous) && len(consumers.Changed) == 0:
-		return assessment
-	default:
-		assessment.Severity = Warning
-		assessment.Reason = "ALTER TOPIC can shorten how long the topic keeps a message, or move where a consumer reads from"
-	}
-	return assessment
-}
-
 // noForceReason is why NO FORCE ROW LEVEL SECURITY is destructive, in the
 // words both the AST and the SQL-text classifiers report.
 const noForceReason = "NO FORCE ROW LEVEL SECURITY exempts the table owner from its policies"
-
-// droppedTopicConsumers counts the consumers the topic changes drop, those
-// added again because YDB cannot change them in place included.
-func droppedTopicConsumers(changes []difftypes.TopicDiff) int {
-	count := 0
-	for _, change := range changes {
-		count += len(change.ConsumersRemoved) + len(change.ConsumersRestarted)
-	}
-	return count
-}
 
 // rlsForceDirections counts the FORCE changes that turn the flag on and off.
 func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int) {

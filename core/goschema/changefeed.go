@@ -6,12 +6,12 @@ import (
 	"go/ast"
 	"slices"
 
-	ptahast "ptah.run/core/ast"
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -29,7 +29,7 @@ type pendingConsumer struct {
 	structName string
 	table      string
 	changefeed string
-	consumer   ptahast.TopicConsumerSpec
+	consumer   ydbtopic.ConsumerSpec
 	ctx        annotationErrorContext
 }
 

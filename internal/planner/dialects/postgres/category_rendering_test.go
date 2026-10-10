@@ -109,18 +109,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "the comparison records an index comment apart from the index only on a target with comment_attributes, which is YDB's; planning nothing would report a comment written that is not",
 		diff: &difftypes.SchemaDiff{IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "users", Name: "a", Desired: "x"}}},
 	},
-	"TopicsAdded": {
-		why:  "a topic is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a topic applied that the database does not have",
-		diff: &difftypes.SchemaDiff{TopicsAdded: difftypes.TopicChanges{{Name: "events"}}},
-	},
-	"TopicsRemoved": {
-		why:  "no PostgreSQL read reports a topic, so a removal reaches the planner only through a diff built by hand, and planning nothing would report it dropped",
-		diff: &difftypes.SchemaDiff{TopicsRemoved: difftypes.TopicChanges{{Name: "events"}}},
-	},
-	"TopicsModified": {
-		why:  "a changed topic is YDB's for the same reason",
-		diff: &difftypes.SchemaDiff{TopicsModified: []difftypes.TopicDiff{{Name: "events", SettingsChanged: true}}},
-	},
 	"AsyncReplicationsAdded": {
 		why:  "an async replication is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a replication applied that the database does not have",
 		diff: &difftypes.SchemaDiff{AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{{Name: "mirror"}}},

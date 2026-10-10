@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/ydbsource"
 	"ptah.run/migration/generator"
@@ -25,9 +26,11 @@ const streamingSchema = "ptah_ydb_streaming"
 
 func streamingDeclaration() *schemamodel.Database {
 	return &schemamodel.Database{
-		Topics:          []schemamodel.Topic{{Name: "input", Schema: streamingSchema}, {Name: "output", Schema: streamingSchema}},
 		FeatureCoverage: must.Must(ydbsource.Coverage(ydbsource.Limits{})),
-		FeatureObjects:  must.Must(schemaext.NewObjects(ydbstreaming.DesiredObject(streamingSchema, "copy", "", ydbstreaming.Spec{Text: "INSERT INTO `ptah_ydb_streaming/output` SELECT * FROM `ptah_ydb_streaming/input`;", Run: new(false)}, false))),
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			ydbtopic.DesiredObject(streamingSchema, "input", "", ydbtopic.Spec{}),
+			ydbtopic.DesiredObject(streamingSchema, "output", "", ydbtopic.Spec{}),
+			ydbstreaming.DesiredObject(streamingSchema, "copy", "", ydbstreaming.Spec{Text: "INSERT INTO `ptah_ydb_streaming/output` SELECT * FROM `ptah_ydb_streaming/input`;", Run: new(false)}, false))),
 	}
 }
 

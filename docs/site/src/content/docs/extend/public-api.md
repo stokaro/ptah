@@ -92,6 +92,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbsecret` | Secret declarations, observations, rotation requests, statements, and codecs, without values. |
 | `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
 | `dialect/ydb/ydbsyntax` | YQL quoting helpers. |
+| `dialect/ydb/ydbtopic` | Topic and consumer declarations, observations, checks, statements, and codecs. |
 | `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |

@@ -32,6 +32,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
 	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
@@ -81,9 +82,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	// A YDB topic is selected on its own name, in the directory that holds
 	// it, and its consumers ride with it.
-	out.Topics = keep(db.Topics, func(topic catalog.Topic) bool {
-		return s.selected(typeList("topic"), topic.Schema, topic.Name)
-	})
 	// A YDB async replication and a transfer are each selected on their own
 	// name, in the directory that holds them.
 	out.AsyncReplications = keep(db.AsyncReplications, func(replication catalog.AsyncReplication) bool {

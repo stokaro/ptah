@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -201,7 +202,7 @@ func refuseTransferDependencies(diff *difftypes.SchemaDiff) error {
 			continue
 		}
 		source := ydbreplication.SourceKey(transfer.Spec.Source, "")
-		if topics[source] || declaresChangefeed(diff.Replications.DesiredObjects, declared, source) || recordsTopic(diff.CurrentNotDescribed, source) || recordsChangefeed(diff.Replications.CurrentCoverage, declared, source) {
+		if topics[source] || declaresChangefeed(diff.Replications.DesiredObjects, declared, source) || recordsTopic(diff.Replications.CurrentCoverage, source) || recordsChangefeed(diff.Replications.CurrentCoverage, declared, source) {
 			continue
 		}
 		return refuseFact(subject, fmt.Sprintf("it reads topic %s, which the schema declares neither as a topic "+
@@ -241,19 +242,16 @@ func recordsChangefeed(knowledgeOf schemaext.Coverage, declared map[string]schem
 	return found && knowledge.State == schemaext.Unrepresentable
 }
 
-// recordsTopic reports whether the read recorded a topic at source, a path:
-// a topic of its own, or the topic of a changefeed the read recorded rather
-// than described, such as one a replication added to its source table.
-func recordsTopic(notDescribed coverage.Set, source string) bool {
+// recordsTopic reports whether the read recorded a topic at source, a path,
+// rather than described it: a topic it listed and could not read. A topic of
+// a changefeed the read recorded is [recordsChangefeed]'s.
+func recordsTopic(knowledgeOf schemaext.Coverage, source string) bool {
 	schema, name, found := cutLast(source)
 	if !found {
 		schema, name = "", source
 	}
-	if object, limited := notDescribed.Limit(coverage.Topic, tableref.Canonical(schema, name)); limited &&
-		!object.WholeKind() {
-		return true
-	}
-	return false
+	knowledge, recorded := knowledgeOf.SubjectKnowledge(ydbtopic.Kind, ydbtopic.Ref(schema, name))
+	return recorded && (knowledge.State == schemaext.Unrepresentable || knowledge.State == schemaext.Uninspected)
 }
 
 // cutLast splits a path at its last slash.
@@ -292,7 +290,11 @@ func transferOfTable(diff *difftypes.SchemaDiff, table schemamodel.Table) string
 func dropReplications(diff *difftypes.SchemaDiff) []ast.Node {
 	nodes := make([]ast.Node, 0, len(diff.TransfersRemoved)+len(diff.AsyncReplicationsRemoved))
 	for _, transfer := range diff.TransfersRemoved {
-		nodes = append(nodes, ast.NewDropTransfer(transfer.QualifiedName()))
+		node := ast.NewDropTransfer(transfer.QualifiedName())
+		if ydbreplication.LocalSource(transfer.Spec) {
+			node.Topic = transfer.Spec.Source
+		}
+		nodes = append(nodes, node)
 	}
 	for _, replication := range diff.AsyncReplicationsRemoved {
 		name := replication.QualifiedName()

@@ -5,10 +5,10 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // ChangefeedKind identifies an individually named table-owned YDB stream.
@@ -85,7 +85,7 @@ func equalSpec(a, b ChangefeedSpec) bool {
 		return false
 	}
 	a, b = a.Clone(), b.Clone()
-	order := func(a, b ast.TopicConsumerSpec) int { return strings.Compare(a.Name, b.Name) }
+	order := func(a, b ydbtopic.ConsumerSpec) int { return strings.Compare(a.Name, b.Name) }
 	slices.SortFunc(a.Consumers, order)
 	slices.SortFunc(b.Consumers, order)
 	for i, left := range a.Consumers {

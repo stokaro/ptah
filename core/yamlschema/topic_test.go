@@ -5,14 +5,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
-// TestParse_Topic_HappyPath reads a YDB topic in YAML: its settings under the
-// keys the annotation reads, with the same spellings, and its consumers in
-// the order they are written.
+// TestParse_Topic_HappyPath reads a YDB topic in YAML into the topic owner's
+// model: its settings under the keys the annotation reads, with the same
+// spellings, and its consumers in the order they are written. The document
+// claims the topic namespace.
 func TestParse_Topic_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
@@ -36,17 +37,20 @@ topics:
 `))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Topics, qt.DeepEquals, []schemamodel.Topic{
-		{Name: "events", Schema: "app", Spec: ast.TopicSpec{
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbtopic.DesiredObject("", "queue", "", ydbtopic.Spec{}),
+		ydbtopic.DesiredObject("app", "events", "", ydbtopic.Spec{
 			MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
 			RetentionPeriod: "PT36H", SupportedCodecs: []string{"raw", "gzip"},
-			Consumers: []ast.TopicConsumerSpec{
+			Consumers: []ydbtopic.ConsumerSpec{
 				{Name: "billing", Important: true},
 				{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw"}},
 			},
-		}},
-		{Name: "queue"},
+		}),
 	})
+	c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestParse_Topic_FailurePath refuses a topic YDB would refuse or keep
@@ -69,6 +73,8 @@ func TestParse_Topic_FailurePath(t *testing.T) {
 			wantErr:  `topic "events": invalid max_active_partitions "2": it is below min_active_partitions, 4, .*`},
 		{name: "a codec YDB keeps as no list", document: "topics:\n  events:\n    supported_codecs: [raw, snappy]\n",
 			wantErr: `topic "events": invalid supported_codecs "raw,snappy": takes a comma-separated list of .*`},
+		{name: "a directory written from the server root", document: "topics:\n  events:\n    schema: /local/app\n",
+			wantErr: `topic "events": invalid schema "/local/app": starts with a slash; name the directory relative to the database root, .*`},
 		{name: "a consumer YDB refuses", document: "topics:\n  events:\n    consumers:\n      c:\n        important: true\n        availability_period: PT1H\n",
 			wantErr: `topic "events", consumer "c": invalid availability_period "PT1H": .*`},
 	}

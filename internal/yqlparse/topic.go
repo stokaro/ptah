@@ -5,12 +5,21 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
-	"ptah.run/internal/ydbtopic"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
-func (p *parser) topic() *ast.CreateTopicNode {
-	name := p.path()
-	var consumers []ast.TopicConsumerSpec
+// topic reads `CREATE TOPIC <path> (CONSUMER ...) WITH (...)` as the owner's
+// creation of a declared topic. The path is read by [ydbtopic.ParsePath], so
+// a dot is part of a name and a path written absolute is refused.
+func (p *parser) topic() *ast.ExtensionStatement {
+	ref, err := ydbtopic.ParsePath(decodedName(p.path()))
+	if err != nil {
+		p.failf("%v", err)
+	}
+	schema, name := ref.Schema.Source, ref.Name.Source
+	var consumers []ydbtopic.ConsumerSpec
 	seen := make(map[string]bool)
 	if p.accept("(") {
 		for !p.done() {
@@ -32,10 +41,11 @@ func (p *parser) topic() *ast.CreateTopicNode {
 		p.failf("%v", err)
 	}
 	spec.Consumers = consumers
-	return ast.NewCreateTopic(name, spec)
+	return &ast.ExtensionStatement{Payload: &ydbast.Topic{Schema: schema, Name: name,
+		Change: ydbdiff.Topic{After: &ydbtopic.Desired{Spec: spec}}}}
 }
 
-func (p *parser) consumer() ast.TopicConsumerSpec {
+func (p *parser) consumer() ydbtopic.ConsumerSpec {
 	name := decodedName(p.identifier())
 	values := p.declarationSettings(consumerSetting)
 	values[ydbtopic.AttributeName] = name

@@ -5,8 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbtopic"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // A declaration resolves to what YDB gives a new topic for each setting it
@@ -16,7 +15,7 @@ import (
 func TestResolve(t *testing.T) {
 	tests := []struct {
 		name string
-		spec ast.TopicSpec
+		spec ydbtopic.Spec
 		want ydbtopic.Settings
 	}{
 		{
@@ -26,20 +25,20 @@ func TestResolve(t *testing.T) {
 		},
 		{
 			name: "a write speed without a burst",
-			spec: ast.TopicSpec{PartitionWriteSpeedBytesPerSecond: 4194304},
+			spec: ydbtopic.Spec{PartitionWriteSpeedBytesPerSecond: 4194304},
 			want: ydbtopic.Settings{MinActivePartitions: 1, Strategy: "disabled", RetentionSeconds: 86400,
 				WriteSpeed: 4194304, WriteBurst: 4194304},
 		},
 		{
 			name: "a strategy without thresholds or a maximum",
-			spec: ast.TopicSpec{MinActivePartitions: 3, AutoPartitioningStrategy: "Scale_Up"},
+			spec: ydbtopic.Spec{MinActivePartitions: 3, AutoPartitioningStrategy: "Scale_Up"},
 			want: ydbtopic.Settings{MinActivePartitions: 3, Strategy: "scale_up", MaxActivePartitions: 3,
 				UpUtilizationPercent: 90, DownUtilizationPercent: 30, StabilizationWindowSeconds: 300,
 				RetentionSeconds: 86400, WriteSpeed: 1048576, WriteBurst: 1048576},
 		},
 		{
 			name: "every setting",
-			spec: ast.TopicSpec{MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "paused",
+			spec: ydbtopic.Spec{MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "paused",
 				AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
 				AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "PT36H",
 				PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
@@ -50,7 +49,7 @@ func TestResolve(t *testing.T) {
 		},
 		{
 			name: "the shaping settings of a disabled topic are none",
-			spec: ast.TopicSpec{MaxActivePartitions: 5, AutoPartitioningUpUtilizationPercent: 70},
+			spec: ydbtopic.Spec{MaxActivePartitions: 5, AutoPartitioningUpUtilizationPercent: 70},
 			want: ydbtopic.Settings{MinActivePartitions: 1, Strategy: "disabled", RetentionSeconds: 86400,
 				WriteSpeed: 1048576, WriteBurst: 1048576},
 		},
@@ -67,22 +66,22 @@ func TestResolve(t *testing.T) {
 // from the read of a topic created without settings in one setting, or in
 // how it is spelled.
 func TestSettingsEqual(t *testing.T) {
-	read := ast.TopicSpec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
+	read := ydbtopic.Spec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
 		PartitionWriteSpeedBytesPerSecond: 1048576, PartitionWriteBurstBytes: 1048576}
 	tests := []struct {
 		name     string
-		declared ast.TopicSpec
+		declared ydbtopic.Spec
 		want     bool
 	}{
-		{name: "nothing declared", declared: ast.TopicSpec{}, want: true},
+		{name: "nothing declared", declared: ydbtopic.Spec{}, want: true},
 		{name: "each default named", declared: read, want: true},
-		{name: "the retention spelled in hours", declared: ast.TopicSpec{RetentionPeriod: "PT24H"}, want: true},
-		{name: "another retention", declared: ast.TopicSpec{RetentionPeriod: "PT25H"}, want: false},
-		{name: "another partition count", declared: ast.TopicSpec{MinActivePartitions: 2}, want: false},
-		{name: "a strategy", declared: ast.TopicSpec{AutoPartitioningStrategy: "paused"}, want: false},
-		{name: "another write speed", declared: ast.TopicSpec{PartitionWriteSpeedBytesPerSecond: 2097152}, want: false},
-		{name: "another burst", declared: ast.TopicSpec{PartitionWriteBurstBytes: 2097152}, want: false},
-		{name: "codecs", declared: ast.TopicSpec{SupportedCodecs: []string{"raw"}}, want: false},
+		{name: "the retention spelled in hours", declared: ydbtopic.Spec{RetentionPeriod: "PT24H"}, want: true},
+		{name: "another retention", declared: ydbtopic.Spec{RetentionPeriod: "PT25H"}, want: false},
+		{name: "another partition count", declared: ydbtopic.Spec{MinActivePartitions: 2}, want: false},
+		{name: "a strategy", declared: ydbtopic.Spec{AutoPartitioningStrategy: "paused"}, want: false},
+		{name: "another write speed", declared: ydbtopic.Spec{PartitionWriteSpeedBytesPerSecond: 2097152}, want: false},
+		{name: "another burst", declared: ydbtopic.Spec{PartitionWriteBurstBytes: 2097152}, want: false},
+		{name: "codecs", declared: ydbtopic.Spec{SupportedCodecs: []string{"raw"}}, want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -99,11 +98,11 @@ func TestSettingsEqual(t *testing.T) {
 // the 90% and 30% a topic created with a strategy gets.
 func TestSettingsEqual_ThresholdsOfAnAutoPartitionedTopic(t *testing.T) {
 	c := qt.New(t)
-	given := ast.TopicSpec{MinActivePartitions: 1, MaxActivePartitions: 4, AutoPartitioningStrategy: "scale_up",
+	given := ydbtopic.Spec{MinActivePartitions: 1, MaxActivePartitions: 4, AutoPartitioningStrategy: "scale_up",
 		AutoPartitioningUpUtilizationPercent: 80, AutoPartitioningDownUtilizationPercent: 20,
 		AutoPartitioningStabilizationWindow: "PT5M", RetentionPeriod: "P1D",
 		PartitionWriteSpeedBytesPerSecond: 1048576, PartitionWriteBurstBytes: 1048576}
-	declared := ast.TopicSpec{MaxActivePartitions: 4, AutoPartitioningStrategy: "scale_up"}
+	declared := ydbtopic.Spec{MaxActivePartitions: 4, AutoPartitioningStrategy: "scale_up"}
 
 	c.Assert(ydbtopic.SettingsEqual(declared, given), qt.IsFalse)
 	declared.AutoPartitioningUpUtilizationPercent, declared.AutoPartitioningDownUtilizationPercent = 80, 20
@@ -111,14 +110,14 @@ func TestSettingsEqual_ThresholdsOfAnAutoPartitionedTopic(t *testing.T) {
 }
 
 func TestCompare(t *testing.T) {
-	current := ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{
+	current := ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{
 		{Name: "gone"},
 		{Name: "kept", Important: true},
 		{Name: "same", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}},
 		{Name: "narrowed", SupportedCodecs: []string{"raw"}},
 		{Name: "widened"},
 	}}
-	desired := ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{
+	desired := ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{
 		{Name: "fresh"},
 		{Name: "kept"},
 		{Name: "same", ReadFrom: "2026-01-01T03:00:00+03:00", SupportedCodecs: []string{"GZIP", "raw"}},
@@ -144,19 +143,19 @@ func TestCompare(t *testing.T) {
 func TestConsumerEqual(t *testing.T) {
 	tests := []struct {
 		name string
-		a, b ast.TopicConsumerSpec
+		a, b ydbtopic.ConsumerSpec
 		want bool
 	}{
-		{name: "read_from at the epoch", a: ast.TopicConsumerSpec{Name: "c"},
-			b: ast.TopicConsumerSpec{Name: "c", ReadFrom: "1970-01-01T00:00:00Z"}, want: true},
-		{name: "one period in two spellings", a: ast.TopicConsumerSpec{Name: "c", AvailabilityPeriod: "PT48H"},
-			b: ast.TopicConsumerSpec{Name: "c", AvailabilityPeriod: "P2D"}, want: true},
-		{name: "another period", a: ast.TopicConsumerSpec{Name: "c", AvailabilityPeriod: "PT1H"},
-			b: ast.TopicConsumerSpec{Name: "c"}, want: false},
-		{name: "important", a: ast.TopicConsumerSpec{Name: "c", Important: true},
-			b: ast.TopicConsumerSpec{Name: "c"}, want: false},
-		{name: "another read_from", a: ast.TopicConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:01Z"},
-			b: ast.TopicConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}, want: false},
+		{name: "read_from at the epoch", a: ydbtopic.ConsumerSpec{Name: "c"},
+			b: ydbtopic.ConsumerSpec{Name: "c", ReadFrom: "1970-01-01T00:00:00Z"}, want: true},
+		{name: "one period in two spellings", a: ydbtopic.ConsumerSpec{Name: "c", AvailabilityPeriod: "PT48H"},
+			b: ydbtopic.ConsumerSpec{Name: "c", AvailabilityPeriod: "P2D"}, want: true},
+		{name: "another period", a: ydbtopic.ConsumerSpec{Name: "c", AvailabilityPeriod: "PT1H"},
+			b: ydbtopic.ConsumerSpec{Name: "c"}, want: false},
+		{name: "important", a: ydbtopic.ConsumerSpec{Name: "c", Important: true},
+			b: ydbtopic.ConsumerSpec{Name: "c"}, want: false},
+		{name: "another read_from", a: ydbtopic.ConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:01Z"},
+			b: ydbtopic.ConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}, want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

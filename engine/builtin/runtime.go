@@ -89,6 +89,7 @@ func New() (*engine.Runtime, error) {
 			provider.Reversals = append(provider.Reversals, engine.Reversal{Target: name, Kinds: []schemaext.Kind{ydbdiff.StreamingQueryKind}, Service: ydbreverse.StreamingService{}})
 			registerWorkloadServices(&provider, name)
 			registerSecretServices(&provider, name)
+			registerTopicServices(&provider, name)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

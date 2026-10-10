@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
 
@@ -97,7 +98,7 @@ func exportFamilyLimits(known schemaext.Coverage, family sourceFamily, model sch
 			continue
 		}
 		if !sourceLimitRepresentable(record.Knowledge, unmanagedObjectReason) &&
-			(family.unmanaged == "" || !sourceLimitRepresentable(record.Knowledge, family.unmanaged)) {
+			!slices.ContainsFunc(family.unmanaged, func(reason string) bool { return sourceLimitRepresentable(record.Knowledge, reason) }) {
 			return nil, fmt.Errorf("%w: %s object %s cannot be exported without losing its coverage record: %s %s",
 				ptaherr.ErrUnsupportedFeature, family.label, record.Subject, record.Knowledge.State, record.Knowledge.Reason)
 		}
@@ -130,6 +131,9 @@ func limitSubjectName(kind schemaext.Kind, ref objectidentity.ID) (string, error
 		// A secret limit is read as a path, so its directory and name
 		// need no leading slash to keep a dot literal.
 		return ydbsecret.Display(ref.Schema.Source, ref.Name.Source), ydbsecret.ValidateIdentity(ref)
+	case ydbtopic.Kind:
+		// A topic limit is read as a path, as a secret limit is.
+		return ydbtopic.Display(ref.Schema.Source, ref.Name.Source), ydbtopic.ValidateIdentity(ref)
 	default:
 		return "", fmt.Errorf("%w: no source limit spelling for %s", schemaext.ErrInvalidValue, kind)
 	}

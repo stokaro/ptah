@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // Equal reports whether two descriptions of a changefeed describe the one YDB
@@ -101,16 +101,16 @@ func intervalSeconds(text string, fallback uint64) uint64 {
 }
 
 // consumerNamed finds a consumer by name.
-func consumerNamed(consumers []ast.TopicConsumerSpec, name string) (ast.TopicConsumerSpec, bool) {
-	index := slices.IndexFunc(consumers, func(consumer ast.TopicConsumerSpec) bool { return consumer.Name == name })
+func consumerNamed(consumers []ydbtopic.ConsumerSpec, name string) (ydbtopic.ConsumerSpec, bool) {
+	index := slices.IndexFunc(consumers, func(consumer ydbtopic.ConsumerSpec) bool { return consumer.Name == name })
 	if index < 0 {
-		return ast.TopicConsumerSpec{}, false
+		return ydbtopic.ConsumerSpec{}, false
 	}
 	return consumers[index], true
 }
 
 // consumerEqual compares two consumers of one name as YDB keeps them.
-func consumerEqual(a, b ast.TopicConsumerSpec) bool {
+func consumerEqual(a, b ydbtopic.ConsumerSpec) bool {
 	return a.Important == b.Important &&
 		readFromInstant(a.ReadFrom).Equal(readFromInstant(b.ReadFrom)) &&
 		codecsEqual(a.SupportedCodecs, b.SupportedCodecs) &&
@@ -168,6 +168,6 @@ func ConsumerPositionsLost(desired, current ydbschema.ChangefeedSpec) []string {
 
 // consumerRecreated is shared by statement generation and reversal assessment:
 // neither may report preserved consumer state while the other emits a drop.
-func consumerRecreated(desired, current ast.TopicConsumerSpec) bool {
+func consumerRecreated(desired, current ydbtopic.ConsumerSpec) bool {
 	return len(desired.SupportedCodecs) == 0 && len(current.SupportedCodecs) > 0
 }

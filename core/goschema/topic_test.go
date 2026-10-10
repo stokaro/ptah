@@ -5,14 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // TestParseSource_Topic_HappyPath reads a YDB topic and its consumers, which
-// may be declared before the topic or on another struct of the same file.
+// may be declared before the topic or on another struct of the same file, into
+// the topic owner's model, and claims the topic namespace the source
+// describes.
 func TestParseSource_Topic_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	source := `package entities
@@ -22,7 +25,7 @@ type Audit struct{}
 
 // Events is a queue.
 //
-//ptah:schema:topic name="events" schema="/app/" retention_period="PT36H" supported_codecs="raw,gzip"
+//ptah:schema:topic name="events" schema=" app " retention_period="PT36H" supported_codecs="raw,gzip"
 //ptah:schema:topic:consumer name="billing" topic="events" schema="app" important="true"
 type Events struct{}
 
@@ -33,16 +36,19 @@ type Plain struct{}
 	db, err := goschema.ParseSource("topics.go", source)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Topics, qt.DeepEquals, []schemamodel.Topic{
-		{StructName: "Events", Name: "events", Schema: "app", Spec: ast.TopicSpec{
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbtopic.DesiredObject("", "plain", "Plain", ydbtopic.Spec{}),
+		ydbtopic.DesiredObject("app", "events", "Events", ydbtopic.Spec{
 			RetentionPeriod: "PT36H", SupportedCodecs: []string{"raw", "gzip"},
-			Consumers: []ast.TopicConsumerSpec{
+			Consumers: []ydbtopic.ConsumerSpec{
 				{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z"},
 				{Name: "billing", Important: true},
 			},
-		}},
-		{StructName: "Plain", Name: "plain"},
+		}),
 	})
+	c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestParseSource_Topic_FailurePath refuses a topic or a consumer YDB would
@@ -73,6 +79,18 @@ func TestParseSource_Topic_FailurePath(t *testing.T) {
 			`//ptah:schema:topic:consumer name="c" topic="events"`,
 			wantErr: `the file declares no topic "events" for consumer "c" on //ptah:schema:topic:consumer at Events`,
 			wantIs:  ptaherr.ErrInvalidAttributeValue},
+		{name: "a directory written from the server root", annotations: `//ptah:schema:topic name="events" schema="/local/app"`,
+			wantErr: `invalid schema "/local/app": starts with a slash; name the directory relative to the database root, ` +
+				`without the database's own path on //ptah:schema:topic at Events`,
+			wantIs: ptaherr.ErrInvalidAttributeValue},
+		{name: "a topic declared twice", annotations: `//ptah:schema:topic name="events" schema="app"` + "\n" +
+			`//ptah:schema:topic name="events" schema="app"`,
+			wantErr: `topic app/events is declared twice on //ptah:schema:topic at Events`,
+			wantIs:  ptaherr.ErrInvalidAttributeValue},
+		{name: "a consumer's directory written from the server root", annotations: `//ptah:schema:topic name="events" schema="app"` + "\n" +
+			`//ptah:schema:topic:consumer name="c" topic="events" schema="/local/app"`,
+			wantErr: `invalid schema "/local/app": starts with a slash; .* on //ptah:schema:topic:consumer at Events`,
+			wantIs:  ptaherr.ErrInvalidAttributeValue},
 		{name: "a consumer declared twice", annotations: `//ptah:schema:topic name="events"` + "\n" +
 			`//ptah:schema:topic:consumer name="c" topic="events"` + "\n" + `//ptah:schema:topic:consumer name="c" topic="events"`,
 			wantErr: `topic "events" declares consumer "c" twice on //ptah:schema:topic:consumer at Events`,
@@ -89,20 +107,17 @@ func TestParseSource_Topic_FailurePath(t *testing.T) {
 	}
 }
 
-// Two files declaring one topic differently are refused when they are
-// merged, as two declarations of one table are.
-func TestMerge_Topics_Conflict(t *testing.T) {
+// TestMerge_Topics_DeclaredTwice refuses two files that declare one topic,
+// even the same way: a topic has one declaration.
+func TestMerge_Topics_DeclaredTwice(t *testing.T) {
 	c := qt.New(t)
-	first := &schemamodel.Database{Topics: []schemamodel.Topic{{StructName: "A", Name: "events", Schema: "app"}}}
-	same := &schemamodel.Database{Topics: []schemamodel.Topic{{StructName: "B", Name: "events", Schema: "app"}}}
-	other := &schemamodel.Database{Topics: []schemamodel.Topic{{StructName: "C", Name: "events", Schema: "app",
-		Spec: ast.TopicSpec{RetentionPeriod: "PT1H"}}}}
+	first, err := goschema.ParseSource("a.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\ntype A struct{}\n")
+	c.Assert(err, qt.IsNil)
+	second, err := goschema.ParseSource("b.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\ntype B struct{}\n")
+	c.Assert(err, qt.IsNil)
 
-	merged, mergeErr := schemamodel.Merge(first, same)
-	conflict, conflictErr := schemamodel.Merge(first, other)
+	merged, err := schemamodel.Merge(&first, &second)
 
-	c.Assert(mergeErr, qt.IsNil)
-	c.Assert(merged.Topics, qt.HasLen, 1)
-	c.Assert(conflictErr, qt.ErrorMatches, `conflicting topic "app.events" definitions`)
-	c.Assert(conflict, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+	c.Assert(merged, qt.IsNil)
 }

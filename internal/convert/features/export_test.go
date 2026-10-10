@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/goschematogo"
@@ -22,7 +23,7 @@ import (
 
 func TestNamedChangefeeds_GoExportRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "audit", SupportedCodecs: []string{"raw", "gzip"}}}}
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", SupportedCodecs: []string{"raw", "gzip"}}}}
 	objects, err := schemaext.NewObjects(ydbschema.DesiredObject("shop", "items", feed))
 	c.Assert(err, qt.IsNil)
 	database := &schemamodel.Database{FeatureObjects: objects, Tables: []schemamodel.Table{{Name: "items", Schema: "shop", StructName: "Item"}}, Fields: []schemamodel.Field{{StructName: "Item", Name: "id", FieldName: "ID", Type: "BIGINT", Primary: true}}}

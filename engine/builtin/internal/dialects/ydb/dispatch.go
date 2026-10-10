@@ -149,15 +149,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
 
-	// Topics and their consumers.
-	case *ast.CreateTopicNode:
-		return r.renderCreateTopic(n)
-	case *ast.AddTopicConsumerNode:
-		return r.renderAddTopicConsumer(n)
-	case *ast.AlterTopicNode:
-		return r.renderAlterTopic(n)
-	case *ast.DropTopicNode:
-		return r.renderDropTopic(n)
 	// Async replications and transfers.
 	case *ast.CreateAsyncReplicationNode:
 		return r.renderCreateAsyncReplication(n)

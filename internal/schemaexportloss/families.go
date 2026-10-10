@@ -14,8 +14,9 @@ type familyCount struct {
 	count int
 }
 
-// CommonFamilies names object families absent from both DBML and compact
-// schema-inspection JSON. Keep their recognition shared: a newly modeled
+// CommonFamilies names object families of the common schema absent from both
+// DBML and compact schema-inspection JSON; a feature object's owner reports
+// its own family. Keep their recognition shared: a newly modeled
 // family must not become a silent omission in one of those exports.
 //
 // Listed rather than counted in one number, because "3 objects were dropped"
@@ -42,7 +43,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 		{"row-level security policies", len(db.RLSPolicies)},
 		{"sequences", len(db.Sequences)},
 		{"synonyms", len(db.Synonyms)},
-		{"topics", len(db.Topics)},
 		{"transfers", len(db.Transfers)},
 		{"triggers", len(db.Triggers)},
 		{"views", len(db.Views)},

@@ -49,7 +49,7 @@ func TestCensusAblatesNestedOwnerValuesWithoutChangingTheSource(t *testing.T) {
 		codecs     []string
 	}{
 		{name: "stream setting", field: "ydbschema.ChangefeedSpec.TopicMinActivePartitions", codecs: []string{"raw"}},
-		{name: "nested consumer", field: "ast.TopicConsumerSpec.SupportedCodecs", partitions: 2},
+		{name: "nested consumer", field: "ydbtopic.ConsumerSpec.SupportedCodecs", partitions: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

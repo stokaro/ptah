@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/capabilityprobe"
 )
@@ -866,7 +867,7 @@ func tableChangefeedFixture() schemamodel.Database {
 		Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", VirtualTimestamps: true,
 		ResolvedTimestamps: "PT10S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 		TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
-		Consumers: []ast.TopicConsumerSpec{
+		Consumers: []ydbtopic.ConsumerSpec{
 			{Name: "audit", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw"}},
 			{Name: "late", AvailabilityPeriod: "PT1H"},
 		},
@@ -1435,21 +1436,19 @@ func synonymFixture() schemamodel.Database {
 // holding both.
 func topicFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Topics = []schemamodel.Topic{{
-		StructName: "TO", Name: "events", Schema: "app",
-		Spec: ast.TopicSpec{
-			MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
-			AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
-			AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "PT36H",
-			PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
-			SupportedCodecs: []string{"raw", "gzip"},
-			Consumers: []ast.TopicConsumerSpec{
-				{Name: "billing", Important: true},
-				{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"},
-					AvailabilityPeriod: "PT2H"},
-			},
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbtopic.DesiredObject("app", "events", "TO", ydbtopic.Spec{
+		MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
+		AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
+		AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "PT36H",
+		PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
+		SupportedCodecs: []string{"raw", "gzip"},
+		Consumers: []ydbtopic.ConsumerSpec{
+			{Name: "billing", Important: true},
+			{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"},
+				AvailabilityPeriod: "PT2H"},
 		},
-	}}
+	})))
+	db.FeatureCoverage = must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
 

@@ -1290,9 +1290,6 @@ func deduplicateComposite(r *Database) {
 		return rangeType.QualifiedName()
 	})
 	r.ManagedData = deduplicateNamedDefinitions(r.ManagedData, managedDataDefinitionIdentity)
-	r.Topics = deduplicateNamedDefinitions(r.Topics, func(topic Topic) string {
-		return topic.QualifiedName()
-	})
 	r.AsyncReplications = deduplicateNamedDefinitions(r.AsyncReplications, func(replication AsyncReplication) string {
 		return replication.QualifiedName()
 	})

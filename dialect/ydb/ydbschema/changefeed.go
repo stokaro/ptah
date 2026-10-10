@@ -1,7 +1,7 @@
 // Package ydbschema owns typed YDB schema state and its local snapshot semantics.
 package ydbschema
 
-import "ptah.run/core/ast"
+import "ptah.run/dialect/ydb/ydbtopic"
 
 // ChangefeedSpec is a YDB changefeed: a stream of the changes made to one row
 // table, which YDB writes to a topic of its own at the path
@@ -53,7 +53,7 @@ type ChangefeedSpec struct {
 	RetentionPeriod string `json:"retention_period,omitempty"`
 	// Consumers are the consumers of the changefeed's topic. Each keeps its
 	// position in the stream, which a stream that restarts loses.
-	Consumers []ast.TopicConsumerSpec `json:"consumers,omitempty"`
+	Consumers []ydbtopic.ConsumerSpec `json:"consumers,omitempty"`
 	// Disabled reports a changefeed YDB no longer writes to. Only a reader
 	// sets it: YDB has no statement that disables one (`ALTER CHANGEFEED ...
 	// DISABLE` answers `Name not found: quote` on every measured line), so a
@@ -68,7 +68,7 @@ type ChangefeedSpec struct {
 func (s ChangefeedSpec) Clone() ChangefeedSpec {
 	out := s
 	if s.Consumers != nil {
-		out.Consumers = make([]ast.TopicConsumerSpec, len(s.Consumers))
+		out.Consumers = make([]ydbtopic.ConsumerSpec, len(s.Consumers))
 		for i, consumer := range s.Consumers {
 			out.Consumers[i] = consumer.Clone()
 		}

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbtopic"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // topicSpec is one YDB topic in a YAML document: its directory, its settings
@@ -97,11 +97,10 @@ func (d document) addTopics(db *schemamodel.Database) error {
 			}
 			topic.Consumers = append(topic.Consumers, consumer)
 		}
-		db.Topics = append(db.Topics, schemamodel.Topic{
-			Name:   valueOrDefault(spec.Name, key),
-			Schema: strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"),
-			Spec:   topic,
-		})
+		db.FeatureObjects, err = ydbtopic.Declare(db.FeatureObjects, string(spec.Schema), valueOrDefault(spec.Name, key), "", topic)
+		if err != nil {
+			return fmt.Errorf("topic %q: %w", key, err)
+		}
 	}
 	return nil
 }

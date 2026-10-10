@@ -5,11 +5,13 @@ import (
 	"sort"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -42,14 +44,8 @@ func Replications(
 		DeclaredReplications: cloneNonEmpty(desired.AsyncReplications),
 		DeclaredTransfers:    cloneNonEmpty(desired.Transfers),
 	}
-	for _, topic := range database.Topics {
-		diff.Replications.CurrentTopics = append(diff.Replications.CurrentTopics,
-			ydbreplication.TablePath(topic.Schema, topic.Name))
-	}
-	for _, topic := range desired.Topics {
-		diff.Replications.DeclaredTopics = append(diff.Replications.DeclaredTopics,
-			ydbreplication.TablePath(topic.Schema, topic.Name))
-	}
+	diff.Replications.CurrentTopics = topicPaths(database.FeatureObjects)
+	diff.Replications.DeclaredTopics = topicPaths(desired.FeatureObjects)
 	compareAsyncReplications(desired, database, diff, cov)
 	compareTransfers(desired, database, diff, cov)
 }
@@ -186,7 +182,10 @@ func AdoptTransferConsumers(
 	if err != nil {
 		return nil, err
 	}
-	topics := adoptTopicConsumers(&adopted, database)
+	topics, err := adoptTopicConsumers(&adopted, database)
+	if err != nil {
+		return nil, err
+	}
 	if !changefeeds && !topics {
 		return desired, nil
 	}
@@ -243,34 +242,52 @@ func adoptChangefeedConsumers(adopted *schemamodel.Database, database *catalog.D
 }
 
 // adoptTopicConsumers gives each of adopted's topics the consumers the
-// database's transfers read it through, and reports whether it gave any. It
-// copies the topics before it changes one.
-func adoptTopicConsumers(adopted *schemamodel.Database, database *catalog.Database) bool {
-	held := make(map[string]catalog.Topic, len(database.Topics))
-	for _, topic := range database.Topics {
-		held[topic.QualifiedName()] = topic
-	}
-	declared := adopted.Topics
+// database's transfers read it through, and reports whether it gave any.
+// adopted's objects are replaced, never changed in place.
+func adoptTopicConsumers(adopted *schemamodel.Database, database *catalog.Database) (bool, error) {
 	changed := false
-	for i, topic := range declared {
-		current, holds := held[topic.QualifiedName()]
-		if !holds {
+	for _, ref := range adopted.FeatureObjects.Refs() {
+		if ref.Kind != objectidentity.Kind(ydbtopic.Kind) {
 			continue
 		}
-		missing := transferConsumers(database.Transfers, ydbreplication.TablePath(topic.Schema, topic.Name),
-			topic.Spec.Consumers, current.Spec.Consumers)
+		object, _, err := adopted.FeatureObjects.Get(ref)
+		if err != nil {
+			return false, err
+		}
+		declared, isDesired := object.Value.(*ydbtopic.Desired)
+		current, held, err := database.FeatureObjects.Get(ref)
+		if err != nil {
+			return false, err
+		}
+		observed, isObserved := current.Value.(*ydbtopic.Observed)
+		if !isDesired || !held || !isObserved {
+			continue
+		}
+		missing := transferConsumers(database.Transfers, ydbreplication.TablePath(ref.Schema.Source, ref.Name.Source),
+			declared.Spec.Consumers, observed.Spec.Consumers)
 		if len(missing) == 0 {
 			continue
 		}
-		if !changed {
-			adopted.Topics = slices.Clone(declared)
-			changed = true
+		declared.Spec.Consumers = append(declared.Spec.Consumers, missing...)
+		adopted.FeatureObjects, err = adopted.FeatureObjects.Replace(object)
+		if err != nil {
+			return false, err
 		}
-		spec := topic.Spec.Clone()
-		spec.Consumers = append(spec.Consumers, missing...)
-		adopted.Topics[i].Spec = spec
+		changed = true
 	}
-	return changed
+	return changed, nil
+}
+
+// topicPaths lists the paths of the topics objects holds, desired or
+// observed, as a transfer names its source.
+func topicPaths(objects schemaext.Objects) []string {
+	var paths []string
+	for _, ref := range objects.Refs() {
+		if ref.Kind == objectidentity.Kind(ydbtopic.Kind) {
+			paths = append(paths, ydbreplication.TablePath(ref.Schema.Source, ref.Name.Source))
+		}
+	}
+	return paths
 }
 
 // transferConsumers returns the consumers of topic, a changefeed's path, that
@@ -279,20 +296,20 @@ func adoptTopicConsumers(adopted *schemamodel.Database, database *catalog.Databa
 func transferConsumers(
 	transfers []catalog.Transfer,
 	topic string,
-	declared, held []ast.TopicConsumerSpec,
-) []ast.TopicConsumerSpec {
-	var missing []ast.TopicConsumerSpec
+	declared, held []ydbtopic.ConsumerSpec,
+) []ydbtopic.ConsumerSpec {
+	var missing []ydbtopic.ConsumerSpec
 	for _, transfer := range transfers {
 		if !ydbreplication.LocalSource(transfer.Spec) || transfer.Spec.Consumer == "" ||
 			ydbreplication.SourceKey(transfer.Spec.Source, "") != topic {
 			continue
 		}
 		name := transfer.Spec.Consumer
-		if slices.ContainsFunc(declared, func(consumer ast.TopicConsumerSpec) bool { return consumer.Name == name }) ||
-			slices.ContainsFunc(missing, func(consumer ast.TopicConsumerSpec) bool { return consumer.Name == name }) {
+		if slices.ContainsFunc(declared, func(consumer ydbtopic.ConsumerSpec) bool { return consumer.Name == name }) ||
+			slices.ContainsFunc(missing, func(consumer ydbtopic.ConsumerSpec) bool { return consumer.Name == name }) {
 			continue
 		}
-		if index := slices.IndexFunc(held, func(consumer ast.TopicConsumerSpec) bool {
+		if index := slices.IndexFunc(held, func(consumer ydbtopic.ConsumerSpec) bool {
 			return consumer.Name == name
 		}); index >= 0 {
 			missing = append(missing, held[index].Clone())

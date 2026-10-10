@@ -13,10 +13,11 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
-// CommonEffects describes scheme paths, principals and secret reads of a common
-// AST node.
+// CommonEffects describes scheme paths, principals, and secret and topic reads
+// of a common AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
@@ -56,7 +57,8 @@ func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) (
 	if err != nil {
 		return nil, err
 	}
-	return append(effects, reads...), nil
+	effects = append(effects, reads...)
+	return append(effects, topicReads(root, node)...), nil
 }
 
 // secretReads names each YDB secret a statement reads by its path when it
@@ -110,6 +112,36 @@ func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 	return effects, nil
 }
 
+// topicReads names the topic of this database a transfer reads, by its path:
+// the topic's owner creates or changes a topic before a statement that reads
+// it, and drops one after. A transfer from another database reads none here.
+// A source path written absolute is read against root, as a secret's is; one
+// outside root, or written absolute where root is not known, names no topic
+// this plan manages and is left out.
+func topicReads(root string, node ast.Node) []plangraph.Effect {
+	var source string
+	switch n := node.(type) {
+	case *ast.CreateTransferNode:
+		if n.Spec.Connection.ConnectionString == "" {
+			source = n.Spec.Source
+		}
+	case *ast.AlterTransferNode:
+		if n.Spec.Connection.ConnectionString == "" {
+			source = n.Spec.Source
+		}
+	case *ast.DropTransferNode:
+		source = n.Topic
+	}
+	if strings.TrimSpace(source) == "" {
+		return nil
+	}
+	ref, err := ydbtopic.ResolvePath(root, source)
+	if err != nil {
+		return nil
+	}
+	return []plangraph.Effect{{Subject: ref, Action: plangraph.Read}}
+}
+
 func connectionSecretPaths(connection ast.ReplicationConnectionSpec) []string {
 	return []string{connection.TokenSecretPath, connection.PasswordSecretPath}
 }
@@ -160,12 +192,6 @@ func commonSchemeUse(node ast.Node) schemeUse {
 		}
 		return schemeUse{n.Name, plangraph.Create, false}
 	case *ast.DropViewNode:
-		return schemeUse{n.Name, plangraph.Drop, false}
-	case *ast.CreateTopicNode:
-		return schemeUse{n.Name, plangraph.Create, false}
-	case *ast.AlterTopicNode:
-		return schemeUse{n.Name, plangraph.Alter, false}
-	case *ast.DropTopicNode:
 		return schemeUse{n.Name, plangraph.Drop, false}
 	default:
 		return externalSchemeUse(node)

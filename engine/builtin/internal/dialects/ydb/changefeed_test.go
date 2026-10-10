@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
@@ -48,7 +49,7 @@ func TestRenderRefusesToRecreateARetainedReplicationStream(t *testing.T) {
 // statement per query and read back through DescribeTable and DescribeTopic.
 func TestRender_Changefeed_HappyPath(t *testing.T) {
 	updates := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H",
-		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true}}}
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", Important: true}}}
 	keys := ydbschema.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}
 	tests := []struct {
 		name string
@@ -90,9 +91,9 @@ func TestRender_Changefeed_HappyPath(t *testing.T) {
 			caps: capability.YDB262(),
 			node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{
 				Changefeed: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
-					Consumers: []ast.TopicConsumerSpec{{Name: "late", AvailabilityPeriod: "PT1H"}}},
+					Consumers: []ydbtopic.ConsumerSpec{{Name: "late", AvailabilityPeriod: "PT1H"}}},
 				Previous: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H",
-					Consumers: []ast.TopicConsumerSpec{{Name: "old"}}},
+					Consumers: []ydbtopic.ConsumerSpec{{Name: "old"}}},
 			}}),
 			want: "ALTER TOPIC `t/f` SET (retention_period = Interval('P1D'));\n" +
 				"ALTER TOPIC `t/f` DROP CONSUMER `old`;\n" +
@@ -146,7 +147,7 @@ func TestRender_Changefeed_RefusesByCapability(t *testing.T) {
 			name: "an availability period on 25.3", caps: capability.YDB253(),
 			node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{
 				Changefeed: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
-					Consumers: []ast.TopicConsumerSpec{{Name: "c", AvailabilityPeriod: "PT1H"}}},
+					Consumers: []ydbtopic.ConsumerSpec{{Name: "c", AvailabilityPeriod: "PT1H"}}},
 				Previous: ydbschema.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON"},
 			}}),
 			wantKey: capability.TopicConsumerAvailabilityPeriod,

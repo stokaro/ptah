@@ -32,15 +32,15 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// HCL has the synonym and extended_property blocks
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
 			// name a virtual table, a table's row deletion policy, a changefeed,
-			// a YDB topic, a column family, or a YDB async replication or
-			// transfer, external object, resource pool or classifier. A secret
-			// is an owned feature the format makes no claim about.
-			name: "HCL cannot name a virtual table, a TTL, a changefeed, a topic, a column family, a " +
+			// a column family, or a YDB async replication or transfer, external
+			// object, resource pool or classifier. A secret and a topic are
+			// owned features the format makes no claim about.
+			name: "HCL cannot name a virtual table, a TTL, a changefeed, a column family, a " +
 				"replication, transfer, external object, resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
 			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.ExternalDataSource, coverage.ExternalTable,
-				coverage.Replication, coverage.Topic,
+				coverage.Replication,
 				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 		{
@@ -55,7 +55,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
 				coverage.ContinuousAggregate, coverage.ExtendedProperty, coverage.ExternalDataSource, coverage.ExternalTable,
-				coverage.Hypertable, coverage.Replication, coverage.Synonym, coverage.Topic, coverage.Transfer),
+				coverage.Hypertable, coverage.Replication, coverage.Synonym, coverage.Transfer),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -64,9 +64,9 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// deletion policy, a changefeed and a column family, as `.sql` has
 			// Spanner's policy clause, so both rows are the control on the TTL,
 			// changefeed and column family records HCL and DBML carry. It is
-			// also the control on the topic, the replication and the
-			// transfer and external objects: YAML has a key for each, so a loader that recorded
-			// them for every format fails here.
+			// also the control on the replication and the transfer and
+			// external objects: YAML has a key for each, so a loader that
+			// recorded them for every format fails here.
 			name:     "YAML cannot name nine families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
@@ -90,7 +90,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 				coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.Composite, coverage.ContinuousAggregate,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Hypertable,
 				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Sequence,
-				coverage.Synonym, coverage.Topic, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
+				coverage.Synonym, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 	}
 

@@ -95,7 +95,7 @@ func TestYDBDesiredYQL_ViewsAndTopics(t *testing.T) {
 				ydbcoordination.ObservedObject("", "locks", ydbcoordination.Spec{}),
 			})
 			c.Assert(live.Views, qt.HasLen, 0)
-			c.Assert(live.Topics, qt.HasLen, 0)
+			c.Assert(liveTopics(c, live), qt.HasLen, 0)
 		})
 	}
 }

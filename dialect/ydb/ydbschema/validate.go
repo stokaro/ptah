@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // ValidateChangefeed checks the local wire model without probing target capabilities.
@@ -62,5 +62,5 @@ func CanonicalChangefeed(feed *ChangefeedSpec) {
 	for i := range feed.Consumers {
 		slices.Sort(feed.Consumers[i].SupportedCodecs)
 	}
-	slices.SortFunc(feed.Consumers, func(a, b ast.TopicConsumerSpec) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(feed.Consumers, func(a, b ydbtopic.ConsumerSpec) int { return strings.Compare(a.Name, b.Name) })
 }

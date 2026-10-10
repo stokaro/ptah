@@ -131,7 +131,6 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// Remove refused YDB families in the order shared validation checks them,
 	// then run the census over the rest of the fixture.
 	refused := assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
-	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect, must.Must(modelast.CollectDatabase(desired, dialect, modelast.Lowering{Context: context.Background()})).Statements)
@@ -229,27 +228,6 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	return true
 }
 
-// assertBothSurfacesRefuseTheTopic checks that a target without the topics key
-// refuses the fixture's topic on both surfaces, through the one validation they
-// share, and takes the topic out of desired so the census can run over the
-// rest. It returns how many routed kinds it took out.
-func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamodel.Database) int {
-	c.Helper()
-	if capability.ForDialect(dialect).Has(capability.Topics) {
-		return 0
-	}
-	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		c.Context(), desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-	renderErr := builtin.ValidateSchema(desired, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "requires target capability topics")
-	c.Assert(renderErr.Error(), qt.Contains, "requires target capability topics")
-	desired.Topics = nil
-	return 1
-}
-
 // assertBothSurfacesRefuseTheReplications checks that a target without the
 // async_replication and transfers keys refuses the fixture's replication and
 // transfer on both surfaces, through the one validation they share, and takes
@@ -286,17 +264,13 @@ func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *s
 // assertBothSurfacesRefuseTheExternalObjects checks that a target without the
 // external_data_sources key refuses the fixture's data source on both
 // surfaces, and takes the data source and the external table out of desired.
-// It returns how many routed kinds it took out. The fixture holds a topic,
-// which the same targets refuse, so the probe leaves it out: the refusal
-// measured here is the external objects' whichever family the validation
-// reaches first.
+// It returns how many routed kinds it took out.
 func assertBothSurfacesRefuseTheExternalObjects(c *qt.C, dialect string, desired *schemamodel.Database) int {
 	c.Helper()
 	if capability.ForDialect(dialect).Has(capability.ExternalDataSources) {
 		return 0
 	}
 	probe := *desired
-	probe.Topics = nil
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
 		c.Context(), &probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
 	)

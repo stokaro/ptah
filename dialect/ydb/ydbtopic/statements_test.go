@@ -5,30 +5,30 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbtopic"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 func TestCreateStatement(t *testing.T) {
 	tests := []struct {
-		name  string
-		topic string
-		spec  ast.TopicSpec
-		want  string
+		name   string
+		schema string
+		topic  string
+		spec   ydbtopic.Spec
+		want   string
 	}{
 		{name: "nothing declared", topic: "events", want: "CREATE TOPIC `events`;"},
-		{name: "in a directory", topic: "app.events", want: "CREATE TOPIC `app/events`;"},
-		{name: "a dotted name in a directory", topic: `app."order.events"`, want: "CREATE TOPIC `app/order.events`;"},
+		{name: "in a directory", schema: "app", topic: "events", want: "CREATE TOPIC `app/events`;"},
+		{name: "a dotted name in a directory", schema: "app", topic: "order.events", want: "CREATE TOPIC `app/order.events`;"},
 		{
 			name:  "consumers and settings",
 			topic: "events",
-			spec: ast.TopicSpec{
+			spec: ydbtopic.Spec{
 				MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
 				AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
 				AutoPartitioningStabilizationWindow: "PT120S", RetentionPeriod: "PT36H",
 				PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
 				SupportedCodecs: []string{"RAW", "gzip"},
-				Consumers: []ast.TopicConsumerSpec{
+				Consumers: []ydbtopic.ConsumerSpec{
 					{Name: "billing", Important: true},
 					{Name: "it's", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw"}, AvailabilityPeriod: "P2D"},
 					{Name: "plain"},
@@ -47,14 +47,14 @@ func TestCreateStatement(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ydbtopic.CreateStatement(test.topic, test.spec), qt.Equals, test.want)
+			c.Assert(ydbtopic.CreateStatement(test.schema, test.topic, test.spec), qt.Equals, test.want)
 		})
 	}
 }
 
 func TestDropStatement(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ydbtopic.DropStatement("app.events"), qt.Equals, "DROP TOPIC `app/events`;")
+	c.Assert(ydbtopic.DropStatement("app", "events"), qt.Equals, "DROP TOPIC `app/events`;")
 }
 
 // A change names every setting of the topic once any of them differs,
@@ -63,23 +63,23 @@ func TestDropStatement(t *testing.T) {
 // one setting whose neighbor a statement naming only the change would leave
 // behind.
 func TestAlterStatements_NamesEverySetting(t *testing.T) {
-	created := ast.TopicSpec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
+	created := ydbtopic.Spec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
 		PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 2097152}
 	tests := []struct {
 		name     string
-		declared ast.TopicSpec
+		declared ydbtopic.Spec
 		want     string
 	}{
 		{
 			name:     "a write speed changed alone keeps the burst following it",
-			declared: ast.TopicSpec{PartitionWriteSpeedBytesPerSecond: 4194304},
+			declared: ydbtopic.Spec{PartitionWriteSpeedBytesPerSecond: 4194304},
 			want: "ALTER TOPIC `events` SET (min_active_partitions = 1, auto_partitioning_strategy = 'disabled', " +
 				"retention_period = Interval('P1D'), partition_write_speed_bytes_per_second = 4194304, " +
 				"partition_write_burst_bytes = 4194304, supported_codecs = '');",
 		},
 		{
 			name:     "a strategy given later names the thresholds a new topic takes",
-			declared: ast.TopicSpec{PartitionWriteSpeedBytesPerSecond: 2097152, AutoPartitioningStrategy: "scale_up", MaxActivePartitions: 4},
+			declared: ydbtopic.Spec{PartitionWriteSpeedBytesPerSecond: 2097152, AutoPartitioningStrategy: "scale_up", MaxActivePartitions: 4},
 			want: "ALTER TOPIC `events` SET (min_active_partitions = 1, auto_partitioning_strategy = 'scale_up', " +
 				"max_active_partitions = 4, auto_partitioning_up_utilization_percent = 90, " +
 				"auto_partitioning_down_utilization_percent = 30, auto_partitioning_stabilization_window = Interval('PT5M'), " +
@@ -88,7 +88,7 @@ func TestAlterStatements_NamesEverySetting(t *testing.T) {
 		},
 		{
 			name:     "codecs taken away name the empty list",
-			declared: ast.TopicSpec{PartitionWriteSpeedBytesPerSecond: 2097152, RetentionPeriod: "PT2H"},
+			declared: ydbtopic.Spec{PartitionWriteSpeedBytesPerSecond: 2097152, RetentionPeriod: "PT2H"},
 			want: "ALTER TOPIC `events` SET (min_active_partitions = 1, auto_partitioning_strategy = 'disabled', " +
 				"retention_period = Interval('PT2H'), partition_write_speed_bytes_per_second = 2097152, " +
 				"partition_write_burst_bytes = 2097152, supported_codecs = '');",
@@ -97,7 +97,7 @@ func TestAlterStatements_NamesEverySetting(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ydbtopic.AlterStatements("events", test.declared, created), qt.DeepEquals, []string{test.want})
+			c.Assert(ydbtopic.AlterStatements("", "events", test.declared, created), qt.DeepEquals, []string{test.want})
 		})
 	}
 }
@@ -107,13 +107,13 @@ func TestAlterStatements_NamesEverySetting(t *testing.T) {
 // changes only by dropping it is dropped there and added again by a second
 // statement, since one ALTER TOPIC naming a consumer twice is refused.
 func TestAlterStatements_Consumers(t *testing.T) {
-	current := ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{
+	current := ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{
 		{Name: "gone"},
 		{Name: "kept", Important: true},
 		{Name: "dated", AvailabilityPeriod: "PT2H"},
 		{Name: "narrowed", SupportedCodecs: []string{"raw"}},
 	}}
-	desired := ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{
+	desired := ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{
 		{Name: "kept", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"zstd"}},
 		{Name: "dated"},
 		{Name: "narrowed", Important: true},
@@ -121,7 +121,7 @@ func TestAlterStatements_Consumers(t *testing.T) {
 	}}
 	c := qt.New(t)
 
-	statements := ydbtopic.AlterStatements("events", desired, current)
+	statements := ydbtopic.AlterStatements("", "events", desired, current)
 
 	c.Assert(statements, qt.DeepEquals, []string{
 		"ALTER TOPIC `events` DROP CONSUMER `gone`, DROP CONSUMER `narrowed`, " +
@@ -135,8 +135,8 @@ func TestAlterStatements_Consumers(t *testing.T) {
 
 func TestAlterStatements_NothingToChange(t *testing.T) {
 	c := qt.New(t)
-	read := ast.TopicSpec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
+	read := ydbtopic.Spec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
 		PartitionWriteSpeedBytesPerSecond: 1048576, PartitionWriteBurstBytes: 1048576,
-		Consumers: []ast.TopicConsumerSpec{{Name: "c"}}}
-	c.Assert(ydbtopic.AlterStatements("events", ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{{Name: "c"}}}, read), qt.IsNil)
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "c"}}}
+	c.Assert(ydbtopic.AlterStatements("", "events", ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{{Name: "c"}}}, read), qt.IsNil)
 }

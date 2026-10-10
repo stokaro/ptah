@@ -46,7 +46,6 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/ast"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -120,9 +119,9 @@ var codecNumbers = map[string]int32{
 	"custom": 10000,
 }
 
-// Codecs lists the codec names a topic and a consumer take, in the order YDB
+// CodecNames lists the codec names a topic and a consumer take, in the order YDB
 // numbers them.
-func Codecs() []string {
+func CodecNames() []string {
 	return []string{"raw", "gzip", "lzop", "zstd", "custom"}
 }
 
@@ -165,8 +164,8 @@ func (e *DeclarationError) Error() string {
 // `max_active_partitions` as nothing while auto-partitioning is disabled
 // (measured: `max_active_partitions = 5` reads back as 1), and the others
 // have no effect then.
-func ParseTopic(values map[string]string) (ast.TopicSpec, error) {
-	var spec ast.TopicSpec
+func ParseTopic(values map[string]string) (Spec, error) {
+	var spec Spec
 	var err error
 	counts := []struct {
 		attribute string
@@ -179,43 +178,43 @@ func ParseTopic(values map[string]string) (ast.TopicSpec, error) {
 	}
 	for _, count := range counts {
 		if *count.target, err = positive(values, count.attribute); err != nil {
-			return ast.TopicSpec{}, err
+			return Spec{}, err
 		}
 	}
 	if raw, ok := present(values, AttributeStrategy); ok {
 		strategy := strings.ToLower(raw)
 		if !slices.Contains(Strategies(), strategy) {
-			return ast.TopicSpec{}, &DeclarationError{Attribute: AttributeStrategy, Value: raw,
+			return Spec{}, &DeclarationError{Attribute: AttributeStrategy, Value: raw,
 				Reason: "takes one of " + strings.Join(Strategies(), ", ")}
 		}
 		spec.AutoPartitioningStrategy = strategy
 	}
 	if spec.AutoPartitioningUpUtilizationPercent, err = percent(values, AttributeUpUtilizationPercent); err != nil {
-		return ast.TopicSpec{}, err
+		return Spec{}, err
 	}
 	if spec.AutoPartitioningDownUtilizationPercent, err = percent(values, AttributeDownUtilizationPercent); err != nil {
-		return ast.TopicSpec{}, err
+		return Spec{}, err
 	}
 	if spec.AutoPartitioningStabilizationWindow, err = interval(values, AttributeStabilizationWindow); err != nil {
-		return ast.TopicSpec{}, err
+		return Spec{}, err
 	}
 	if spec.RetentionPeriod, err = interval(values, AttributeRetentionPeriod); err != nil {
-		return ast.TopicSpec{}, err
+		return Spec{}, err
 	}
 	if raw, ok := present(values, AttributeSupportedCodecs); ok {
 		if spec.SupportedCodecs, err = parseCodecs(raw); err != nil {
-			return ast.TopicSpec{}, err
+			return Spec{}, err
 		}
 	}
 	if reason := settingsRefusal(spec); reason != nil {
-		return ast.TopicSpec{}, reason
+		return Spec{}, reason
 	}
 	return spec, nil
 }
 
 // settingsRefusal says why YDB would not keep spec's settings as written, or
 // is nil.
-func settingsRefusal(spec ast.TopicSpec) *DeclarationError {
+func settingsRefusal(spec Spec) *DeclarationError {
 	if !autoPartitioned(spec.AutoPartitioningStrategy) {
 		shaping := []struct {
 			attribute string
@@ -261,34 +260,34 @@ func autoPartitioned(strategy string) bool {
 // `2024-01-01T00:00:00Z`); and a consumer is not both important and limited
 // by an availability period, which YDB refuses (`has both an important flag
 // and a limited availability_period, which are mutually exclusive`).
-func ParseConsumer(values map[string]string) (ast.TopicConsumerSpec, error) {
-	consumer := ast.TopicConsumerSpec{Name: strings.TrimSpace(values[AttributeName])}
+func ParseConsumer(values map[string]string) (ConsumerSpec, error) {
+	consumer := ConsumerSpec{Name: strings.TrimSpace(values[AttributeName])}
 	if consumer.Name == "" {
-		return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a consumer needs a name"}
+		return ConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a consumer needs a name"}
 	}
 	if strings.Contains(consumer.Name, "/") {
-		return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Value: consumer.Name,
+		return ConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Value: consumer.Name,
 			Reason: "a consumer's name cannot hold a slash"}
 	}
 	var err error
 	if consumer.Important, err = boolean(values, AttributeImportant); err != nil {
-		return ast.TopicConsumerSpec{}, err
+		return ConsumerSpec{}, err
 	}
 	if raw, ok := present(values, AttributeReadFrom); ok {
 		if consumer.ReadFrom, err = NormalizeReadFrom(raw); err != nil {
-			return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeReadFrom, Value: raw, Reason: err.Error()}
+			return ConsumerSpec{}, &DeclarationError{Attribute: AttributeReadFrom, Value: raw, Reason: err.Error()}
 		}
 	}
 	if raw, ok := present(values, AttributeSupportedCodecs); ok {
 		if consumer.SupportedCodecs, err = parseCodecs(raw); err != nil {
-			return ast.TopicConsumerSpec{}, err
+			return ConsumerSpec{}, err
 		}
 	}
 	if consumer.AvailabilityPeriod, err = interval(values, AttributeAvailabilityPeriod); err != nil {
-		return ast.TopicConsumerSpec{}, err
+		return ConsumerSpec{}, err
 	}
 	if consumer.Important && consumer.AvailabilityPeriod != "" {
-		return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeAvailabilityPeriod,
+		return ConsumerSpec{}, &DeclarationError{Attribute: AttributeAvailabilityPeriod,
 			Value: consumer.AvailabilityPeriod, Reason: "YDB keeps every unread record for an important consumer, " +
 				"so it takes no availability period as well (`has both an important flag and a limited " +
 				"availability_period, which are mutually exclusive`)"}
@@ -370,7 +369,7 @@ func parseCodecs(raw string) ([]string, error) {
 		codec := strings.ToLower(strings.TrimSpace(part))
 		if _, known := codecNumbers[codec]; !known {
 			return nil, &DeclarationError{Attribute: AttributeSupportedCodecs, Value: raw,
-				Reason: "takes a comma-separated list of " + strings.Join(Codecs(), ", ") +
+				Reason: "takes a comma-separated list of " + strings.Join(CodecNames(), ", ") +
 					"; YDB keeps a list naming any other codec as no list at all"}
 		}
 		if slices.Contains(codecs, codec) {

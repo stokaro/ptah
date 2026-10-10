@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/rowdeletion"
@@ -33,7 +34,6 @@ import (
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbreplication"
-	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -244,6 +244,7 @@ func validatePackageName(name string) error {
 type renderContext struct {
 	featureLimitAnnotations []string
 	coordinationAnnotations []string
+	topicAnnotations        []string
 	streamingAnnotations    []string
 	workloadAnnotations     []string
 	secretAnnotations       []string
@@ -408,7 +409,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 
 // hasYDBObjects reports declarations of the YDB-specific global families.
 func (ctx *renderContext) hasYDBObjects() bool {
-	return len(ctx.featureLimitAnnotations) > 0 || len(ctx.db.Topics) > 0 ||
+	return len(ctx.featureLimitAnnotations) > 0 || len(ctx.topicAnnotations) > 0 ||
 		len(ctx.workloadAnnotations) > 0 ||
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
@@ -508,10 +509,8 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 			dialectsAttr(view.Dialects),
 		))
 	}
-	for _, topic := range sortedTopics(ctx.db.Topics) {
-		for _, comment := range topicAnnotations(topic) {
-			w.writeComment(comment)
-		}
+	for _, comment := range ctx.topicAnnotations {
+		w.writeComment(comment)
 	}
 	for _, replication := range sortedReplications(ctx.db.AsyncReplications) {
 		for _, comment := range replicationAnnotations(replication) {
@@ -743,7 +742,7 @@ func changefeedAttrs(changefeed ydbschema.ChangefeedSpec) []attr {
 }
 
 // consumerAttrs writes a consumer of the changefeed named changefeed.
-func consumerAttrs(changefeed string, consumer ast.TopicConsumerSpec) []attr {
+func consumerAttrs(changefeed string, consumer ydbtopic.ConsumerSpec) []attr {
 	return []attr{
 		{name: ydbchangefeed.AttributeChangefeed, value: changefeed, set: true},
 		{name: ydbchangefeed.AttributeName, value: consumer.Name, set: true},
@@ -1051,15 +1050,14 @@ func triggerAnnotation(trigger schemamodel.Trigger) string {
 // fills every setting the server holds, and an attribute naming a setting at
 // the value YDB gives a new topic declares the same topic as one leaving it
 // out.
-func topicAnnotations(topic schemamodel.Topic) []string {
-	spec := topic.Spec
+func topicAnnotations(schema, name string, spec ydbtopic.Spec) []string {
 	count := func(name string, value uint64) attr {
 		return attr{name: name, value: strconv.FormatUint(value, 10), set: value != 0}
 	}
 	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
 	comments := []string{annotation("ptah:schema:topic",
-		attr{name: ydbtopic.AttributeName, value: topic.Name, set: true},
-		text(ydbtopic.AttributeSchema, topic.Schema),
+		attr{name: ydbtopic.AttributeName, value: name, set: true},
+		text(ydbtopic.AttributeSchema, schema),
 		count(ydbtopic.AttributeMinActivePartitions, spec.MinActivePartitions),
 		count(ydbtopic.AttributeMaxActivePartitions, spec.MaxActivePartitions),
 		text(ydbtopic.AttributeStrategy, spec.AutoPartitioningStrategy),
@@ -1074,8 +1072,8 @@ func topicAnnotations(topic schemamodel.Topic) []string {
 	for _, consumer := range spec.Consumers {
 		comments = append(comments, annotation("ptah:schema:topic:consumer",
 			attr{name: ydbtopic.AttributeName, value: consumer.Name, set: true},
-			attr{name: ydbtopic.AttributeTopic, value: topic.Name, set: true},
-			text(ydbtopic.AttributeSchema, topic.Schema),
+			attr{name: ydbtopic.AttributeTopic, value: name, set: true},
+			text(ydbtopic.AttributeSchema, schema),
 			attr{name: ydbtopic.AttributeImportant, value: "true", set: consumer.Important},
 			text(ydbtopic.AttributeReadFrom, consumer.ReadFrom),
 			text(ydbtopic.AttributeSupportedCodecs, strings.Join(consumer.SupportedCodecs, ",")),
@@ -1590,12 +1588,6 @@ func sortedFunctions(values []schemamodel.Function) []schemamodel.Function {
 	result := append([]schemamodel.Function(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
-}
-
-func sortedTopics(values []schemamodel.Topic) []schemamodel.Topic {
-	sorted := slices.Clone(values)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
-	return sorted
 }
 
 func sortedReplications(values []schemamodel.AsyncReplication) []schemamodel.AsyncReplication {

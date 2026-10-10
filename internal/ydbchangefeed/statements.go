@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbttl"
@@ -102,7 +102,7 @@ func TopicStatements(table string, desired, previous ydbschema.ChangefeedSpec) (
 			statements = append(statements, dropConsumer(topic, have.Name))
 		}
 	}
-	var added []ast.TopicConsumerSpec
+	var added []ydbtopic.ConsumerSpec
 	for _, want := range desired.Consumers {
 		have, found := consumerNamed(previous.Consumers, want.Name)
 		switch {
@@ -125,7 +125,7 @@ func TopicStatements(table string, desired, previous ydbschema.ChangefeedSpec) (
 
 // addConsumer writes one ADD CONSUMER, with a WITH clause naming only what the
 // consumer declares.
-func addConsumer(topic string, consumer ast.TopicConsumerSpec) string {
+func addConsumer(topic string, consumer ydbtopic.ConsumerSpec) string {
 	var settings []string
 	if consumer.Important {
 		settings = append(settings, "important = TRUE")
@@ -151,7 +151,7 @@ func addConsumer(topic string, consumer ast.TopicConsumerSpec) string {
 // availability period where either side has one: zero removes it, which
 // 26.2.1.14 takes, and a line without the setting has no consumer holding
 // one.
-func alterConsumer(topic string, desired, previous ast.TopicConsumerSpec) string {
+func alterConsumer(topic string, desired, previous ydbtopic.ConsumerSpec) string {
 	readFrom := desired.ReadFrom
 	if readFrom == "" {
 		readFrom = time0

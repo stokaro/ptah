@@ -127,7 +127,7 @@ func compareSecret(request schemaext.ObjectComparisonRequest, value secret, resu
 }
 
 func collectSecrets(ctx context.Context, state schemaext.ObjectState, direction schemaext.Representation, secrets map[objectidentity.Key]secret) error {
-	err := captureStandalone(ctx, state, direction, ydbsecret.Kind, ydbsecret.Codecs(), ydbsecret.ValidateIdentity,
+	return collectStandalone(ctx, state, direction, ydbsecret.Kind, "secret", ydbsecret.Codecs(), ydbsecret.ValidateIdentity,
 		func(ref objectidentity.ID, desired *ydbsecret.Desired, current *ydbsecret.Observed) {
 			value := secrets[ref.Key()]
 			value.ref = ref
@@ -139,19 +139,4 @@ func collectSecrets(ctx context.Context, state schemaext.ObjectState, direction 
 			}
 			secrets[ref.Key()] = value
 		})
-	if err != nil {
-		return err
-	}
-	for _, record := range state.Coverage.SubjectRecords() {
-		if record.Kind != ydbsecret.Kind || record.Knowledge.State == schemaext.Defaulted {
-			return fmt.Errorf("%w: secret coverage cannot declare another kind or a default object", schemaext.ErrInvalidValue)
-		}
-		if err := ydbsecret.ValidateIdentity(record.Subject); err != nil {
-			return err
-		}
-		value := secrets[record.Subject.Key()]
-		value.ref = record.Subject
-		secrets[record.Subject.Key()] = value
-	}
-	return nil
 }

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"slices"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/internal/tableref"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 func appendChangefeed(target alterTarget, spec ydbschema.ChangefeedSpec) error {
@@ -35,7 +35,13 @@ func appendChangefeed(target alterTarget, spec ydbschema.ChangefeedSpec) error {
 	return nil
 }
 
-func appendTopicConsumer(database, base *schemamodel.Database, node *ast.AddTopicConsumerNode) error {
+// appendTopicConsumer applies `ALTER TOPIC <path> ADD CONSUMER ...` to the
+// topic or the changefeed this schema, or the one it extends, declares at the
+// path.
+func appendTopicConsumer(database, base *schemamodel.Database, node *ydbast.TopicConsumer) error {
+	if err := node.Validate(); err != nil {
+		return err
+	}
 	for _, source := range []*schemamodel.Database{database, base} {
 		if source == nil {
 			continue
@@ -48,21 +54,26 @@ func appendTopicConsumer(database, base *schemamodel.Database, node *ast.AddTopi
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: ALTER TOPIC %s ADD CONSUMER names no topic or changefeed this schema declares", ErrUnmodeledStatement, node.Name)
+	return fmt.Errorf("%w: ALTER TOPIC %s ADD CONSUMER names no topic or changefeed this schema declares", ErrUnmodeledStatement, node.Path())
 }
 
-func appendDeclaredTopicConsumer(database *schemamodel.Database, node *ast.AddTopicConsumerNode) (bool, error) {
-	for i := range database.Topics {
-		topic := &database.Topics[i]
-		if topic.QualifiedName() != node.Name {
-			continue
+func appendDeclaredTopicConsumer(database *schemamodel.Database, node *ydbast.TopicConsumer) (bool, error) {
+	object, found, err := database.FeatureObjects.Get(ydbtopic.Ref(node.Schema, node.Name))
+	if err != nil {
+		return false, err
+	}
+	if found {
+		topic, ok := object.Value.(*ydbtopic.Desired)
+		if !ok {
+			return false, fmt.Errorf("%w: expected desired topic, got %T", schemaext.ErrInvalidValue, object.Value)
 		}
 		consumers, err := withTopicConsumer(topic.Spec.Consumers, node)
 		if err != nil {
 			return false, err
 		}
 		topic.Spec.Consumers = consumers
-		return true, nil
+		database.FeatureObjects, err = database.FeatureObjects.Replace(object)
+		return true, err
 	}
 	for _, ref := range database.FeatureObjects.Refs() {
 		if ref.Kind != objectidentity.Kind(ydbschema.ChangefeedKind) {
@@ -72,7 +83,7 @@ func appendDeclaredTopicConsumer(database *schemamodel.Database, node *ast.AddTo
 		if ref.Schema.Source != "" {
 			directory = ref.Schema.Source + "/" + directory
 		}
-		if tableref.Canonical(directory, ref.Name.Source) != node.Name {
+		if directory != node.Schema || ref.Name.Source != node.Name {
 			continue
 		}
 		object, found, err := database.FeatureObjects.Get(ref)
@@ -101,9 +112,9 @@ func appendDeclaredTopicConsumer(database *schemamodel.Database, node *ast.AddTo
 	return false, nil
 }
 
-func withTopicConsumer(consumers []ast.TopicConsumerSpec, node *ast.AddTopicConsumerNode) ([]ast.TopicConsumerSpec, error) {
-	if slices.ContainsFunc(consumers, func(held ast.TopicConsumerSpec) bool { return held.Name == node.Consumer.Name }) {
-		return nil, fmt.Errorf("consumer %q is declared twice on topic %s", node.Consumer.Name, node.Name)
+func withTopicConsumer(consumers []ydbtopic.ConsumerSpec, node *ydbast.TopicConsumer) ([]ydbtopic.ConsumerSpec, error) {
+	if slices.ContainsFunc(consumers, func(held ydbtopic.ConsumerSpec) bool { return held.Name == node.Consumer.Name }) {
+		return nil, fmt.Errorf("consumer %q is declared twice on topic %s", node.Consumer.Name, node.Path())
 	}
 	return append(slices.Clone(consumers), node.Consumer.Clone()), nil
 }

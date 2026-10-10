@@ -6,17 +6,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbtopic"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 func TestParseTopic_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.TopicSpec
+		want   ydbtopic.Spec
 	}{
-		{name: "nothing declared", values: map[string]string{"name": "events"}, want: ast.TopicSpec{}},
+		{name: "nothing declared", values: map[string]string{"name": "events"}, want: ydbtopic.Spec{}},
 		{
 			name: "every setting",
 			values: map[string]string{
@@ -26,7 +25,7 @@ func TestParseTopic_HappyPath(t *testing.T) {
 				"partition_write_speed_bytes_per_second": "2097152", "partition_write_burst_bytes": "3145728",
 				"supported_codecs": " RAW, gzip ,custom",
 			},
-			want: ast.TopicSpec{
+			want: ydbtopic.Spec{
 				MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
 				AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
 				AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "P1DT12H",
@@ -37,12 +36,12 @@ func TestParseTopic_HappyPath(t *testing.T) {
 		{
 			name:   "paused keeps the shaping settings",
 			values: map[string]string{"auto_partitioning_strategy": "paused", "max_active_partitions": "3"},
-			want:   ast.TopicSpec{AutoPartitioningStrategy: "paused", MaxActivePartitions: 3},
+			want:   ydbtopic.Spec{AutoPartitioningStrategy: "paused", MaxActivePartitions: 3},
 		},
 		{
 			name:   "a maximum equal to the minimum",
 			values: map[string]string{"auto_partitioning_strategy": "scale_up_and_down", "min_active_partitions": "3", "max_active_partitions": "3"},
-			want:   ast.TopicSpec{AutoPartitioningStrategy: "scale_up_and_down", MinActivePartitions: 3, MaxActivePartitions: 3},
+			want:   ydbtopic.Spec{AutoPartitioningStrategy: "scale_up_and_down", MinActivePartitions: 3, MaxActivePartitions: 3},
 		},
 	}
 	for _, test := range tests {
@@ -96,7 +95,7 @@ func TestParseTopic_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			spec, err := ydbtopic.ParseTopic(test.values)
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
-			c.Assert(spec, qt.DeepEquals, ast.TopicSpec{})
+			c.Assert(spec, qt.DeepEquals, ydbtopic.Spec{})
 		})
 	}
 }
@@ -105,18 +104,18 @@ func TestParseConsumer_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.TopicConsumerSpec
+		want   ydbtopic.ConsumerSpec
 	}{
 		{name: "a name alone", values: map[string]string{"name": " billing ", "topic": "events"},
-			want: ast.TopicConsumerSpec{Name: "billing"}},
+			want: ydbtopic.ConsumerSpec{Name: "billing"}},
 		{name: "important", values: map[string]string{"name": "billing", "important": "TRUE"},
-			want: ast.TopicConsumerSpec{Name: "billing", Important: true}},
+			want: ydbtopic.ConsumerSpec{Name: "billing", Important: true}},
 		{name: "a read_from in another zone", values: map[string]string{"name": "audit", "read_from": "2026-01-01T03:00:00+03:00"},
-			want: ast.TopicConsumerSpec{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z"}},
+			want: ydbtopic.ConsumerSpec{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z"}},
 		{name: "read_from at the epoch is no read_from", values: map[string]string{"name": "audit", "read_from": "1970-01-01T00:00:00Z"},
-			want: ast.TopicConsumerSpec{Name: "audit"}},
+			want: ydbtopic.ConsumerSpec{Name: "audit"}},
 		{name: "codecs and an availability period", values: map[string]string{"name": "audit", "supported_codecs": "zstd,raw", "availability_period": "PT2H"},
-			want: ast.TopicConsumerSpec{Name: "audit", SupportedCodecs: []string{"zstd", "raw"}, AvailabilityPeriod: "PT2H"}},
+			want: ydbtopic.ConsumerSpec{Name: "audit", SupportedCodecs: []string{"zstd", "raw"}, AvailabilityPeriod: "PT2H"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -155,7 +154,7 @@ func TestParseConsumer_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			consumer, err := ydbtopic.ParseConsumer(test.values)
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
-			c.Assert(consumer, qt.DeepEquals, ast.TopicConsumerSpec{})
+			c.Assert(consumer, qt.DeepEquals, ydbtopic.ConsumerSpec{})
 		})
 	}
 }

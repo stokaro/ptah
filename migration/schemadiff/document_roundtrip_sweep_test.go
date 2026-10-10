@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
@@ -282,13 +283,14 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 }
 
 // The YAML surface has a topics key, so a YAML document that leaves a topic
-// out is asking for it to go: unlike the HCL one, it records nothing.
+// out is asking for it to go: unlike the HCL one, it claims the topic
+// namespace.
 func TestYAMLDocument_DescribesTopics(t *testing.T) {
 	c := qt.New(t)
 
 	parsed := loadYAMLDocument(c)
 
-	c.Assert(parsed.NotDescribed.Describes(coverage.Topic), qt.IsTrue)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName is the same rule as
@@ -389,10 +391,11 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 
 // hclUnwritableFields are the object families the HCL document has no block
 // for, and the coverage kind its header records each one under instead. A YDB
-// topic, async replication, transfer and external objects are such families: Atlas HCL has none
-// of them, and Ptah does not invent a block the pinned binary would refuse.
+// async replication, transfer and external objects are such families: Atlas
+// HCL has none of them, and Ptah does not invent a block the pinned binary
+// would refuse. A topic is a feature object an HCL document makes no claim
+// about, so it is not among them.
 var hclUnwritableFields = map[string]coverage.Kind{
-	"Topics":              coverage.Topic,
 	"AsyncReplications":   coverage.Replication,
 	"Transfers":           coverage.Transfer,
 	"ExternalDataSources": coverage.ExternalDataSource,
@@ -408,18 +411,17 @@ var hclUnwritableFields = map[string]coverage.Kind{
 func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
-	db.Topics = append(db.Topics, schemamodel.Topic{Name: "events", Schema: "public"})
 	db.FeatureObjects = must.Must(schemaext.NewObjects(
 		ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}),
 		ydbworkload.DesiredClassifierObject("batch_users", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}),
 		ydbsecret.DesiredObject("", "pg_password", "", "PTAH_SECRET_PG"),
+		ydbtopic.DesiredObject("public", "events", "", ydbtopic.Spec{}),
 	))
 	db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{Name: "mirror", Schema: "public"})
 	db.Transfers = append(db.Transfers, schemamodel.Transfer{Name: "ingest", Schema: "public"})
 	live := &catalog.Database{
 		Schemas:           []catalog.Schema{{Name: "public"}},
 		Tables:            []catalog.Table{{Schema: "public", Name: "users"}},
-		Topics:            []catalog.Topic{{Schema: "public", Name: "events"}},
 		AsyncReplications: []catalog.AsyncReplication{{Schema: "public", Name: "mirror"}},
 		Transfers:         []catalog.Transfer{{Schema: "public", Name: "ingest"}},
 		Sequences:         []catalog.Sequence{{Schema: "public", Name: "s1"}},
@@ -431,13 +433,11 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.Topics, qt.HasLen, 0)
-	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.AsyncReplications, qt.HasLen, 0)
 	c.Assert(parsed.Transfers, qt.HasLen, 0)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["AsyncReplications"]), qt.IsFalse)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Transfers"]), qt.IsFalse)
-	c.Assert(diff.TopicsRemoved, qt.HasLen, 0)
 	c.Assert(diff.AsyncReplicationsRemoved, qt.HasLen, 0)
 	c.Assert(diff.TransfersRemoved, qt.HasLen, 0)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)

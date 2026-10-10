@@ -14,9 +14,9 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbttl"
 )
@@ -203,31 +203,31 @@ func readTopic(spec *ydbschema.ChangefeedSpec, topic *Ydb_Topic.DescribeTopicRes
 	}
 	// By name, as the changefeeds are: the server lists consumers in the order
 	// they were added, which a consumer dropped and added again changes.
-	slices.SortFunc(spec.Consumers, func(a, b ast.TopicConsumerSpec) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(spec.Consumers, func(a, b ydbtopic.ConsumerSpec) int { return strings.Compare(a.Name, b.Name) })
 	return true
 }
 
 // readConsumer reads one consumer, and reports false for one holding an
 // attribute, a codec or a field Ptah does not model.
-func readConsumer(consumer *Ydb_Topic.Consumer) (ast.TopicConsumerSpec, bool) {
+func readConsumer(consumer *Ydb_Topic.Consumer) (ydbtopic.ConsumerSpec, bool) {
 	attributes := consumer.GetAttributes()
 	if !streamingConsumer(consumer) || (len(attributes) > 0 && !maps.Equal(attributes, consumerServiceType)) {
-		return ast.TopicConsumerSpec{}, false
+		return ydbtopic.ConsumerSpec{}, false
 	}
-	read := ast.TopicConsumerSpec{Name: consumer.GetName(), Important: consumer.GetImportant()}
+	read := ydbtopic.ConsumerSpec{Name: consumer.GetName(), Important: consumer.GetImportant()}
 	if from := consumer.GetReadFrom(); from != nil {
 		read.ReadFrom = ydbchangefeed.FormatReadFrom(from.AsTime())
 	}
 	for _, number := range consumer.GetSupportedCodecs().GetCodecs() {
 		name, known := ydbchangefeed.CodecName(number)
 		if !known {
-			return ast.TopicConsumerSpec{}, false
+			return ydbtopic.ConsumerSpec{}, false
 		}
 		read.SupportedCodecs = append(read.SupportedCodecs, name)
 	}
 	availability, whole := durationSeconds(consumer.GetAvailabilityPeriod())
 	if !whole {
-		return ast.TopicConsumerSpec{}, false
+		return ydbtopic.ConsumerSpec{}, false
 	}
 	if availability > 0 {
 		read.AvailabilityPeriod = ydbttl.FormatInterval(availability)
