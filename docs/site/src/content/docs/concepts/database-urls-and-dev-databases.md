@@ -363,6 +363,15 @@ target gave an extension itself, or a comment on a schema, is written only on a
 server Ptah provisions from a docker URL, because the cleanup does not restore
 it and a server declared disposable keeps it for the next run.
 
+The plan is held to the same rules, before the first statement of the
+baseline or the plan runs. The plan comes from the desired schema, so a role,
+a routine or trigger body, or a comment the cleanup keeps is rehearsed only
+on a server the run owns. On a server the operator named, the rehearsal
+refuses, names the plan statement and the remedies, and leaves the target and
+the dev server as they were. Before this check, a role the rehearsal created
+outlived the cleanup on the dev server, and the real apply then failed on it
+when the target was on the same server.
+
 In a YDB dev realm, the baseline leaves out the permissions the target holds
 on its database root. The realm's root would stand in for the target's, but a
 reset in the middle of a run keeps the realm's root and its permissions, so a
