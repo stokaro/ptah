@@ -31,7 +31,7 @@ type storagePhases struct {
 func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, phases storagePhases) ([]ast.Node, error) {
 	request := featureplan.Request{
 		Target: platform.ClickHouse, Identifiers: diff.EffectiveIdentifierSemantics(platform.ClickHouse),
-		Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges),
+		Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges), DatabasePath: diff.CurrentDatabasePath,
 	}
 	names := make(map[objectidentity.Key]string)
 	builder := objectidentity.NewBuilder(request.Identifiers)

@@ -59,7 +59,8 @@ func (p *Planner) planTableFacets(
 		subject := builder.Table(table.TableName)
 		request := featureplan.Request{
 			Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: changes,
-			Tables: []featureplan.Table{{Subject: subject, Desired: table.Desired, Current: table.Current}},
+			Tables:       []featureplan.Table{{Subject: subject, Desired: table.Desired, Current: table.Current}},
+			DatabasePath: diff.CurrentDatabasePath,
 		}
 		features, err := featurehost.Plan(ctx, runtime, request, map[objectidentity.Key]string{subject.Key(): table.TableName})
 		if err != nil {

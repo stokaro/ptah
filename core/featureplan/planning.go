@@ -51,6 +51,12 @@ type Request struct {
 	// ParentKinds is the model vocabulary assigned to this service. The
 	// selected runtime derives it from registration; callers cannot narrow it.
 	ParentKinds []schemaext.Kind
+	// DatabasePath is the absolute path of the database the plan runs
+	// against, such as /local, and empty when the target has none or the
+	// host does not know it, as for a declaration rendered without a
+	// database. An owner reads a path its operation writes absolute against
+	// it, to name the object the path holds in an effect.
+	DatabasePath string
 }
 
 // ParentAction identifies a common table operation. It does not grant

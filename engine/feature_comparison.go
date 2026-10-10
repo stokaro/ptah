@@ -126,6 +126,7 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		Current:           schemaext.ObjectState{Objects: request.Current.Objects, Coverage: request.Current.Coverage.SelectKinds(objectKinds)},
 		Requests:          request.Requests,
 		DeclaredRelations: request.DeclaredRelations,
+		DatabasePath:      request.DatabasePath,
 	}
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind == objectidentity.KindTable {

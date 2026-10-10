@@ -33,6 +33,13 @@ type ParentState struct {
 // views the desired schema declares, so an owner whose objects hold their
 // names as relations can refuse a declaration that collides with one it
 // observes. Inputs are snapshots.
+//
+// DatabasePath is the absolute path of the database the current state
+// describes, such as /local, and empty when the target has none or the caller
+// does not know it. A path a declaration or a read writes absolute -- YDB
+// stores the path of a secret a data source names that way -- is read against
+// it; with an empty DatabasePath an owner cannot tell an absolute path of this
+// database from one of another and must not treat the two as equal.
 type ObjectComparisonRequest struct {
 	Target            string
 	Identifiers       identifier.Semantics
@@ -43,6 +50,7 @@ type ObjectComparisonRequest struct {
 	Parents           []ParentState
 	Requests          []ChangeRequest
 	DeclaredRelations []objectidentity.ID
+	DatabasePath      string
 }
 
 // UndecidedChange is a requested state the available evidence cannot safely
