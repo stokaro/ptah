@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/targetscope"
 )
 
 // ErrUnselected is returned for a [Set] nobody built: the zero value. A
@@ -164,11 +165,9 @@ type Set struct {
 	owners     map[string]int
 	// limits holds the extension index that reads each not-described kind.
 	limits map[string]int
-	// scopes holds, for each frontend directive, the extension index that
-	// reads its declarations scoped to each target, and unscoped the one that
-	// reads those that name none.
-	scopes   map[string]map[string]int
-	unscoped map[string]int
+	// routes holds, for each frontend directive, the extension index that
+	// reads its declarations scoped to each target.
+	routes map[string]*targetscope.Routes
 	// attributes holds, for each frontend directive, the extension index
 	// that owns each attribute an owner adds to it.
 	attributes map[string]map[string]int
@@ -188,7 +187,7 @@ func None() Set {
 // limit kind or a model two extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, owners: make(map[string]int), limits: make(map[string]int),
-		attributes: make(map[string]map[string]int), scopes: make(map[string]map[string]int), unscoped: make(map[string]int)}
+		attributes: make(map[string]map[string]int), routes: make(map[string]*targetscope.Routes)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
 		if err := checkExtension(index, extension); err != nil {

@@ -2278,6 +2278,16 @@ facets of those tables. A key that no selected owner reads is unknown and
 refused, so a parse without the owner refuses the owner's section instead of
 dropping it.
 
+An owner may also read entries of the frontend's own keys that their target
+scope makes its own. This is the YAML twin of `annotation.TargetScope`: the
+row-security owner reads `rls_policies` and `rls_enabled_tables` entries
+without a scope or scoped to PostgreSQL-family targets. `Set.TargetOwner`
+routes an entry by the rule the Go annotation contract applies, and the
+owner's `Entries` reads every routed entry of a document at once. An entry
+reaches the owner as the attribute map the Go annotation of the same
+declaration carries, so one reader serves both frontends. `Extension.Cover`
+narrows the document's claim by what it declares of the owner's models.
+
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any

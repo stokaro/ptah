@@ -90,11 +90,7 @@ func decodeSection(data []byte, key string, target any) error {
 // document's feature objects, a facet to the table it names. data is the
 // document, which the owner's decoder reads its section from.
 func (d document) addOwnerSections(db *schemamodel.Database, owners yamlext.Set, data []byte) error {
-	tables := make(yamlext.Tables, 0, len(db.Tables))
-	for index, key := range sortedKeys(d.Tables) {
-		table := db.Tables[index]
-		tables = append(tables, yamlext.Table{Key: key, Schema: table.Schema, Name: table.Name, Struct: table.StructName})
-	}
+	tables := d.documentTables(db)
 	for _, key := range sortedKeys(d.Owned) {
 		contributions, err := owners.Decode(key, func(target any) error { return decodeSection(data, key, target) }, tables)
 		if err != nil {
@@ -109,6 +105,19 @@ func (d document) addOwnerSections(db *schemamodel.Database, owners yamlext.Set,
 	return nil
 }
 
+// documentTables are the document's tables as an owner reads them. db holds
+// them in the order of their keys.
+func (d document) documentTables(db *schemamodel.Database) yamlext.Tables {
+	tables := make(yamlext.Tables, 0, len(db.Tables))
+	for index, key := range sortedKeys(d.Tables) {
+		table := db.Tables[index]
+		tables = append(tables, yamlext.Table{Key: key, Schema: table.Schema, Name: table.Name, Struct: table.StructName})
+	}
+	return tables
+}
+
+// contribute joins what an owner declared to the document's schema. key
+// names what declared it in a refusal.
 func contribute(db *schemamodel.Database, key string, contribution yamlext.Contribution) error {
 	if contribution.Object != nil {
 		objects, err := db.FeatureObjects.With(*contribution.Object)
@@ -122,6 +131,11 @@ func contribute(db *schemamodel.Database, key string, contribution yamlext.Contr
 	facets, err := table.Facets.With(contribution.Facet)
 	if err != nil {
 		return fmt.Errorf("%s: table %q declares %s twice: %w", key, table.Name, contribution.Label, schemaext.ErrDuplicate)
+	}
+	if len(contribution.Targets) > 0 {
+		if facets, err = facets.WithTargetScope(contribution.Facet.Kind(), contribution.Targets...); err != nil {
+			return err
+		}
 	}
 	table.Facets = facets
 	return nil

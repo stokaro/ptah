@@ -41,6 +41,9 @@ type Contribution struct {
 	// Label names what the contribution declares in a refusal, such as
 	// `row policy "tenant_rows" on table "orders"`.
 	Label string
+	// Targets scope a facet to the targets it holds on, as an entry's
+	// dialects scope it. Empty holds on every target.
+	Targets []string
 }
 
 // Table is a table a YAML document declares.
@@ -132,19 +135,29 @@ func (s Set) Decode(key string, decode func(target any) error, tables Tables) ([
 	if err != nil {
 		return nil, err
 	}
+	if err := checkContributions(extension, fmt.Sprintf("YAML key %q", key), contributions, len(tables)); err != nil {
+		return nil, err
+	}
+	return contributions, nil
+}
+
+// checkContributions refuses a contribution that sets neither or both of an
+// object and a facet, a facet of no table of the document, and one of a model
+// extension does not declare. source names what contributed them.
+func checkContributions(extension Extension, source string, contributions []Contribution, tables int) error {
 	for _, contribution := range contributions {
 		if (contribution.Object == nil) == (contribution.Facet == nil) {
-			return nil, fmt.Errorf("%w: YAML key %q contributed neither or both of an object and a facet", schemaext.ErrInvalidValue, key)
+			return fmt.Errorf("%w: %s contributed neither or both of an object and a facet", schemaext.ErrInvalidValue, source)
 		}
 		value := contribution.Facet
 		if contribution.Object != nil {
 			value = contribution.Object.Value
-		} else if contribution.Table < 0 || contribution.Table >= len(tables) {
-			return nil, fmt.Errorf("%w: YAML key %q contributed a facet of no table the document declares", schemaext.ErrInvalidValue, key)
+		} else if contribution.Table < 0 || contribution.Table >= tables {
+			return fmt.Errorf("%w: %s contributed a facet of no table the document declares", schemaext.ErrInvalidValue, source)
 		}
 		if value == nil || !slices.Contains(extension.Kinds, value.Kind()) {
-			return nil, fmt.Errorf("%w: YAML key %q contributed a model %s does not declare", schemaext.ErrInvalidValue, key, extension.Owner)
+			return fmt.Errorf("%w: %s contributed a model %s does not declare", schemaext.ErrInvalidValue, source, extension.Owner)
 		}
 	}
-	return contributions, nil
+	return nil
 }

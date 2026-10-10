@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/targetscope"
 )
 
 // ErrUnselected is returned for a [Set] nobody built: the zero value. A
@@ -35,6 +36,18 @@ type Extension struct {
 	Kinds []schemaext.Kind
 	// Sections are the top-level document keys the owner reads.
 	Sections []Section
+	// TargetScopes are the frontend's keys whose entries the owner reads
+	// where their target scope makes them its own.
+	TargetScopes []TargetScope
+	// Entries reads the entries TargetScopes hand the owner, every one of a
+	// document at once and in the document's order, and returns what they
+	// declare. It is required with TargetScopes.
+	Entries func(entries []Entry, tables Tables) ([]Contribution, error)
+	// Cover narrows the document's claim by what it declares of the owner's
+	// models, handed the document's objects of those models, such as a
+	// table whose policies leave its row-level security switches to the
+	// owner's default. It is optional.
+	Cover func(claim schemaext.Coverage, objects schemaext.Objects) (schemaext.Coverage, error)
 	// Coverage is the knowledge a YAML document holds about Kinds. It is
 	// required, so the claim is always the owner's to make.
 	Coverage func() (schemaext.Coverage, error)
@@ -48,6 +61,9 @@ type Set struct {
 	extensions []Extension
 	// sections holds the extension index that reads each section key.
 	sections map[string]int
+	// routes holds, for each frontend key, the extension index that reads
+	// its entries scoped to each target.
+	routes map[string]*targetscope.Routes
 }
 
 // None returns a selected set without owners. A parse with it claims no
@@ -57,10 +73,11 @@ func None() Set {
 }
 
 // NewSet validates and freezes extensions. It refuses an extension without an
-// owner or a coverage claim, a section without a key or a decoder, and a model
-// or a section key two extensions claim.
+// owner or a coverage claim, a section without a key or a decoder, target
+// scopes without a key, a target or a reader, and a model, a section key or
+// the entries of one key and target two extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
-	set := Set{selected: true, sections: make(map[string]int)}
+	set := Set{selected: true, sections: make(map[string]int), routes: make(map[string]*targetscope.Routes)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
@@ -85,8 +102,12 @@ func NewSet(extensions ...Extension) (Set, error) {
 			}
 			set.sections[section.Key] = index
 		}
+		if err := set.claimScopes(index, extension); err != nil {
+			return Set{}, err
+		}
 		extension.Kinds = slices.Clone(extension.Kinds)
 		extension.Sections = slices.Clone(extension.Sections)
+		extension.TargetScopes = slices.Clone(extension.TargetScopes)
 		set.extensions = append(set.extensions, extension)
 	}
 	return set, nil

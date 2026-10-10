@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/yamlext"
 	"ptah.run/engine"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policycompare"
@@ -37,6 +38,7 @@ func Provider() engine.Provider {
 		ID:          pgpolicy.Owner,
 		Codecs:      slices.Concat(pgpolicy.Codecs(), pgpolicy.ChangeCodecs(), pgpolicy.OperationCodecs()),
 		Annotations: []annotation.Extension{pgpolicysource.Annotations()},
+		YAML:        []yamlext.Extension{pgpolicysource.YAML()},
 	}
 	models := []schemaext.Kind{pgpolicy.PolicyKind, pgpolicy.TableStateKind}
 	changes := []schemaext.Kind{pgpolicy.PolicyChangeKind, pgpolicy.TableStateChangeKind}
