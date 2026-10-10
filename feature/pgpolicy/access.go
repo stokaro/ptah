@@ -28,6 +28,7 @@ const (
 	reasonRLSForced          = "FORCE ROW LEVEL SECURITY subjects the table's owner to its policies"
 	reasonRLSUnforced        = "NO FORCE ROW LEVEL SECURITY exempts the table's owner from its policies"
 	reasonFlagsUnenforced    = "the table enforces row security neither before nor after the change"
+	reasonTableCreated       = "the table is created by this plan, so no role could read it before"
 )
 
 // accessRank orders assessments from the weakest claim to the strongest, the
@@ -139,6 +140,13 @@ func TableStateAccess(before *ObservedTableState, after *DesiredTableState) sche
 // and hides nothing, because no policy of the table applies.
 func UnenforcedAccess() schemaext.AccessEffect {
 	return schemaext.AccessEffect{Access: schemaext.AccessUnchanged, Reason: reasonFlagsUnenforced}
+}
+
+// CreatedTableAccess is the assessment of a policy or switch statement on a
+// table the plan creates: it admits and hides nothing, because no role could
+// read the table before.
+func CreatedTableAccess() schemaext.AccessEffect {
+	return schemaext.AccessEffect{Access: schemaext.AccessUnchanged, Reason: reasonTableCreated}
 }
 
 func createdAccess(composition Composition) schemaext.AccessEffect {

@@ -69,7 +69,7 @@ func LowerTableFacets(table string, facets schemaext.Facets) ([]ast.ExtensionPay
 	}
 	operation := &pgpolicy.TableStateOperation{Table: table, Change: pgpolicy.TableStateChange{
 		Before: &pgpolicy.ObservedTableState{}, After: new(*declared),
-		Access: schemaext.AccessEffect{Access: schemaext.AccessUnchanged, Reason: "the table is created by this plan, so no role could read it before"},
+		Access: pgpolicy.CreatedTableAccess(),
 	}}
 	return []ast.ExtensionPayload{operation}, rest, nil
 }

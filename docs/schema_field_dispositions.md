@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-600 fields are reachable from the desired schema, and each one carries
+617 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 519 | reaches rendered SQL on at least one target |
-| `comparison` | 12 | read when two schemas are compared, and written into no statement |
+| `ddl` | 530 | reaches rendered SQL on at least one target |
+| `comparison` | 16 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 27 | identifies the source text the declaration was read from |
+| `source` | 29 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -176,6 +176,23 @@ None.
 | `mssqlschema.Predicate.Operation` | `ddl` | — |
 | `mssqlschema.Predicate.Table` | `ddl` | — |
 | `mssqlschema.Predicate.Type` | `ddl` | — |
+| `pgpolicy.DesiredPolicy.Command` | `ddl` | — |
+| `pgpolicy.DesiredPolicy.Comment` | `ddl` | — |
+| `pgpolicy.DesiredPolicy.Composition` | `ddl` | — |
+| `pgpolicy.DesiredPolicy.Normalized` | `comparison` | a connected server's spelling of the declared roles and clauses, attached before a live comparison; a statement writes the declaration |
+| `pgpolicy.DesiredPolicy.Roles` | `ddl` | — |
+| `pgpolicy.DesiredPolicy.StructName` | `source` | the Go struct the declaration was read from; the policy's schema, table and name are its identity |
+| `pgpolicy.DesiredPolicy.Using` | `ddl` | — |
+| `pgpolicy.DesiredPolicy.WithCheck` | `ddl` | — |
+| `pgpolicy.DesiredTableState.Comment` | `ddl` | — |
+| `pgpolicy.DesiredTableState.Enabled` | `ddl` | — |
+| `pgpolicy.DesiredTableState.Forced` | `ddl` | — |
+| `pgpolicy.DesiredTableState.StructName` | `source` | the Go struct the declaration was read from; the switches belong to the table that carries them |
+| `pgpolicy.NormalizedPolicy.Roles` | `comparison` | the server's resolution of the declared roles, compared with the catalog's and never rendered |
+| `pgpolicy.NormalizedPolicy.Using` | `comparison` | the server's spelling of a declared USING expression, compared with the catalog's and never rendered |
+| `pgpolicy.NormalizedPolicy.WithCheck` | `comparison` | the server's spelling of a declared WITH CHECK expression, compared with the catalog's and never rendered |
+| `pgpolicy.RoleSelector.Keyword` | `ddl` | — |
+| `pgpolicy.RoleSelector.Name` | `ddl` | — |
 | `schemamodel.AsyncReplication.Name` | `ddl` | — |
 | `schemamodel.AsyncReplication.Schema` | `ddl` | — |
 | `schemamodel.AsyncReplication.Spec` | `ddl` | — |

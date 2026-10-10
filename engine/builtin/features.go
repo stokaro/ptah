@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -18,6 +19,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyrender"
+	"ptah.run/internal/pgpolicyprovider"
 	"ptah.run/internal/ydbextensions"
 )
 
@@ -31,7 +33,7 @@ func validateNamedFeatures(dialect string, caps capability.Capabilities, objects
 		return ydbextensions.ValidateObjects(dialect, caps, objects)
 	}
 	if platform.IsPostgresFamily(dialect) {
-		return validateTimescaleObjects(dialect, objects)
+		return validatePostgresFamilyObjects(dialect, objects)
 	}
 	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
 		return validateRowPolicyObjects(dialect, objects)
@@ -84,24 +86,34 @@ func validateRowPolicyObjects(dialect string, objects schemaext.Objects) error {
 	return nil
 }
 
-// validateTimescaleObjects accepts the continuous aggregates a PostgreSQL-family
-// target's owner plans and refuses every other named object. Capability gating
-// stays with rendering, which writes the skip line on a target without the key.
-func validateTimescaleObjects(dialect string, objects schemaext.Objects) error {
+// validatePostgresFamilyObjects accepts the continuous aggregates a
+// PostgreSQL-family target's TimescaleDB owner plans, and the policies the
+// row-security owner plans on a target it is registered for, and refuses
+// every other named object. Capability gating stays with rendering, which
+// writes the skip line on a target without the key.
+func validatePostgresFamilyObjects(dialect string, objects schemaext.Objects) error {
 	all, err := objects.All()
 	if err != nil {
 		return err
 	}
 	for _, object := range all {
-		value, ok := object.Value.(*tsschema.DesiredContinuousAggregate)
-		if !ok {
+		switch value := object.Value.(type) {
+		case *tsschema.DesiredContinuousAggregate:
+			if err := tsschema.ValidateContinuousAggregateRef(object.Ref); err != nil {
+				return err
+			}
+			if err := tsschema.ValidateDesiredContinuousAggregate(value); err != nil {
+				return err
+			}
+		case *pgpolicy.DesiredPolicy:
+			if !slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
+				return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+			}
+			if _, err := pgpolicy.DesiredPolicyObject(object.Ref, *value); err != nil {
+				return err
+			}
+		default:
 			return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
-		}
-		if err := tsschema.ValidateContinuousAggregateRef(object.Ref); err != nil {
-			return err
-		}
-		if err := tsschema.ValidateDesiredContinuousAggregate(value); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -170,20 +182,24 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	return projected, nil
 }
 
-// preparePostgresTableFacets accepts the TimescaleDB settings and the
-// row-security switches every PostgreSQL-family renderer writes after CREATE
-// TABLE, the row-level TTL a
-// CockroachDB CREATE TABLE carries, and the row deletion policy a Spanner one
-// carries. Every other kind is refused: no owner composed for this family
-// renders it.
+// preparePostgresTableFacets accepts the TimescaleDB settings every
+// PostgreSQL-family renderer writes after CREATE TABLE, the row-security
+// switches it writes there on a target the row-security owner is registered
+// for, the row-level TTL a CockroachDB CREATE TABLE carries, and the row
+// deletion policy a Spanner one carries. Every other kind is refused: no owner
+// composed for this family renders it, and Spanner has no row security to
+// compare or plan.
 func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (schemaext.Facets, error) {
 	if err := tsrender.ValidateTableFacets(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
-	if err := policyrender.ValidateTableFacets(projected); err != nil {
-		return schemaext.Facets{}, err
+	rest := projected.Without(tsschema.HypertableKind)
+	if slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
+		if err := policyrender.ValidateTableFacets(projected); err != nil {
+			return schemaext.Facets{}, err
+		}
+		rest = rest.Without(pgpolicy.TableStateKind)
 	}
-	rest := projected.Without(tsschema.HypertableKind).Without(pgpolicy.TableStateKind)
 	var validate func(schemaext.Facets) error
 	switch platform.NormalizeDialect(dialect) {
 	case platform.CockroachDB:

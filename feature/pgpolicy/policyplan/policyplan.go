@@ -38,6 +38,11 @@ import (
 // permissive one is dropped before the new one is created, and row security is
 // enabled before a policy that admits rows is created and disabled only after
 // the policies it hid are gone.
+//
+// A table the plan creates gets its policies from the owner, in steps of the
+// dependent phase like every other, and its switches from the statements that
+// follow its CREATE TABLE. A whole-schema render has no phases, so there each
+// declared policy is created after every common step instead.
 type Service struct{}
 
 // planned is one change's steps, with the table they order against and the
@@ -52,9 +57,9 @@ type planned struct {
 }
 
 // PlanFeatures returns complete receipts, one per change in input order, and a
-// receipt for each table the host drops or alters, or a completed refusal with
-// no usable prefix. A successful reply must join the host graph before any
-// operation is rendered or executed.
+// receipt for each table the host creates, drops or alters, or a completed
+// refusal with no usable prefix. A successful reply must join the host graph
+// before any operation is rendered or executed.
 func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
 	if err := validateRequest(ctx, request.Target); err != nil {
 		return featureplan.Result{}, err
@@ -82,23 +87,73 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		all = append(all, step)
 	}
 	contribution.Dependencies = append(contribution.Dependencies, accessOrder(all)...)
+	for index, table := range request.Tables {
+		switch table.Action {
+		case "":
+			continue
+		case featureplan.CreateTable:
+			steps, parents, err := planCreatedTable(roles, index, table, request.ParentKinds)
+			if err != nil {
+				return featureplan.Result{}, err
+			}
+			contribution.Steps = append(contribution.Steps, steps.steps...)
+			contribution.Dependencies = append(contribution.Dependencies, steps.edges...)
+			result.Parents = append(result.Parents, parents...)
+		default:
+			parents, refused := assessParent(index, table, request.ParentKinds)
+			if refused != nil {
+				return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{*refused}}, nil
+			}
+			result.Parents = append(result.Parents, parents...)
+		}
+	}
 	if len(contribution.Steps) > 0 {
 		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
-	}
-	for index, table := range request.Tables {
-		if table.Action == "" {
-			continue
-		}
-		parents, refused := assessParent(index, table, request.ParentKinds)
-		if refused != nil {
-			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{*refused}}, nil
-		}
-		result.Parents = append(result.Parents, parents...)
 	}
 	if err := ctx.Err(); err != nil {
 		return featureplan.Result{}, err
 	}
 	return result, nil
+}
+
+// PlanDeclarations creates each authored policy for a whole-schema render,
+// with its comment after it, once every common step has run: its expressions
+// may name any table, view or routine the render creates, and nothing the
+// render creates reads a policy. A policy is always a table's child, so the
+// request declares its table.
+func (Service) PlanDeclarations(ctx context.Context, request featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
+	if err := validateRequest(ctx, request.Target); err != nil {
+		return featureplan.DeclarationResult{}, err
+	}
+	roles := objectidentity.NewBuilder(request.Identifiers)
+	result := featureplan.DeclarationResult{Complete: true}
+	contribution := plangraph.Contribution[featureplan.Operation]{Owner: pgpolicy.Owner}
+	for index, object := range request.Objects {
+		if err := ctx.Err(); err != nil {
+			return featureplan.DeclarationResult{}, err
+		}
+		declared, ok := object.Value.(*pgpolicy.DesiredPolicy)
+		if !ok || declared == nil {
+			return featureplan.DeclarationResult{}, fmt.Errorf("%w: expected a declared policy, got %T", schemaext.ErrInvalidValue, object.Value)
+		}
+		step, err := planPolicy(roles, fmt.Sprintf("declared/%06d", index), object.Ref,
+			&pgpolicy.PolicyChange{After: declared, Access: pgpolicy.CreatedTableAccess()}, featureplan.PhaseDefault)
+		if err != nil {
+			return featureplan.DeclarationResult{}, err
+		}
+		first := step.plan.Steps[0]
+		for _, common := range request.CommonSteps {
+			contribution.Dependencies = append(contribution.Dependencies, plangraph.Dependency{Before: common.ID, After: first})
+		}
+		contribution.Steps = append(contribution.Steps, step.steps...)
+		contribution.Dependencies = append(contribution.Dependencies, step.edges...)
+		result.Declarations = append(result.Declarations, featureplan.DeclarationPlan{Subject: object.Ref,
+			Strategy: "create the policy after every object the render creates, since its expressions may name any of them", Steps: step.plan.Steps})
+	}
+	if len(contribution.Steps) > 0 {
+		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
+	}
+	return result, ctx.Err()
 }
 
 func validateRequest(ctx context.Context, target string) error {
@@ -121,7 +176,7 @@ func planChange(roles objectidentity.Builder, index int, record schemaext.Change
 	}
 	switch change := cloned.Value.(type) {
 	case *pgpolicy.PolicyChange:
-		return planPolicy(roles, index, cloned.Subject, change)
+		return planPolicy(roles, fmt.Sprintf("policy/%06d", index), cloned.Subject, change, featureplan.PhaseDependent)
 	case *pgpolicy.TableStateChange:
 		return planTableState(index, cloned.Subject, change)
 	default:
@@ -129,7 +184,9 @@ func planChange(roles objectidentity.Builder, index int, record schemaext.Change
 	}
 }
 
-func planPolicy(roles objectidentity.Builder, index int, subject objectidentity.ID, change *pgpolicy.PolicyChange) (planned, error) {
+// planPolicy plans one policy change in phase as the steps name and
+// name/comment.
+func planPolicy(roles objectidentity.Builder, name string, subject objectidentity.ID, change *pgpolicy.PolicyChange, phase featureplan.Phase) (planned, error) {
 	if err := change.Validate(); err != nil {
 		return planned{}, err
 	}
@@ -143,7 +200,7 @@ func planPolicy(roles objectidentity.Builder, index int, subject objectidentity.
 	if change.After != nil {
 		reads = append(reads, roleReads(roles, change.After)...)
 	}
-	main := plangraph.StepID{Owner: pgpolicy.Owner, Name: fmt.Sprintf("policy/%06d", index)}
+	main := plangraph.StepID{Owner: pgpolicy.Owner, Name: name}
 	if !change.CommentOnly {
 		action, transaction := plangraph.Alter, plangraph.TransactionRequired
 		switch {
@@ -153,8 +210,8 @@ func planPolicy(roles objectidentity.Builder, index int, subject objectidentity.
 			action, transaction = plangraph.Drop, plangraph.TransactionAllowed
 		}
 		result.steps = append(result.steps, plangraph.Step[featureplan.Operation]{ID: main,
-			Payload: featureplan.Operation{Role: ast.StatementExtension, Phase: featureplan.PhaseDependent, Payload: &pgpolicy.PolicyOperation{
-				Schema: subject.Schema.Source, Table: subject.Parent.Source, Name: subject.Name.Source, Change: *change.Copy()}},
+			Payload: featureplan.Operation{Role: ast.StatementExtension, Phase: phase, Payload: &pgpolicy.PolicyOperation{
+				Schema: subject.Schema.Authored(), Table: subject.Parent.Source, Name: subject.Name.Source, Change: *change.Copy()}},
 			Effects: append([]plangraph.Effect{{Subject: subject, Action: action}}, reads...), Transaction: transaction, Impact: change.Effect(),
 		})
 		result.main = main
@@ -162,10 +219,10 @@ func planPolicy(roles objectidentity.Builder, index int, subject objectidentity.
 	// A creation and a replacement start without a comment, so a declared one
 	// is set after them; a comment-only change sets it, or clears it, alone.
 	if change.After != nil && (change.CommentOnly || change.After.Comment != "") {
-		comment := plangraph.StepID{Owner: pgpolicy.Owner, Name: fmt.Sprintf("policy/%06d/comment", index)}
+		comment := plangraph.StepID{Owner: pgpolicy.Owner, Name: name + "/comment"}
 		result.steps = append(result.steps, plangraph.Step[featureplan.Operation]{ID: comment,
-			Payload: featureplan.Operation{Role: ast.StatementExtension, Phase: featureplan.PhaseDependent, Payload: &pgpolicy.PolicyCommentOperation{
-				Schema: subject.Schema.Source, Table: subject.Parent.Source, Name: subject.Name.Source, Comment: change.After.Comment}},
+			Payload: featureplan.Operation{Role: ast.StatementExtension, Phase: phase, Payload: &pgpolicy.PolicyCommentOperation{
+				Schema: subject.Schema.Authored(), Table: subject.Parent.Source, Name: subject.Name.Source, Comment: change.After.Comment}},
 			Effects:     []plangraph.Effect{{Subject: subject, Action: plangraph.Alter}, {Subject: table, Action: plangraph.Read}},
 			Transaction: plangraph.TransactionAllowed,
 			Impact:      schemaext.Effect{Impact: schemaext.Additive, Reason: "sets the comment of a row-security policy"},
@@ -268,6 +325,48 @@ func compareStep(a, b plangraph.StepID) int {
 	default:
 		return 0
 	}
+}
+
+// planCreatedTable creates the policies of a table the plan creates, in the
+// dependent phase like every other policy step, and accounts for both models.
+// The CREATE TABLE carries no policy. Its switches are the statements that
+// follow it, which the renderer writes from the table's declaration. A new
+// table had no rows anyone could read, so every step leaves access unchanged
+// and the steps need no access order.
+func planCreatedTable(roles objectidentity.Builder, index int, table featureplan.Table, kinds []schemaext.Kind) (planned, []featureplan.ParentPlan, error) {
+	objects, err := table.Desired.OwnedObjects.All()
+	if err != nil {
+		return planned{}, nil, err
+	}
+	var created planned
+	var steps []plangraph.StepID
+	for position, object := range objects {
+		declared, ok := object.Value.(*pgpolicy.DesiredPolicy)
+		if !ok {
+			continue
+		}
+		step, err := planPolicy(roles, fmt.Sprintf("created/%06d/policy/%06d", index, position), object.Ref,
+			&pgpolicy.PolicyChange{After: declared, Access: pgpolicy.CreatedTableAccess()}, featureplan.PhaseDependent)
+		if err != nil {
+			return planned{}, nil, err
+		}
+		created.steps = append(created.steps, step.steps...)
+		created.edges = append(created.edges, step.edges...)
+		steps = append(steps, step.plan.Steps...)
+	}
+	strategies := map[schemaext.Kind]string{
+		pgpolicy.PolicyKind:     "create the table's policies after the objects their expressions may name",
+		pgpolicy.TableStateKind: "set the table's declared row-security switches in the statements after its CREATE TABLE",
+	}
+	var receipts []featureplan.ParentPlan
+	for _, kind := range kinds {
+		receipt := featureplan.ParentPlan{Subject: table.Subject, Kind: kind, Action: table.Action, Strategy: strategies[kind]}
+		if kind == pgpolicy.PolicyKind {
+			receipt.Steps = steps
+		}
+		receipts = append(receipts, receipt)
+	}
+	return created, receipts, nil
 }
 
 // assessParent accounts for a table's policies and switches through the

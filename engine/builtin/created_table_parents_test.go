@@ -23,8 +23,9 @@ import (
 // TestBundledOwnersAccountForACreatedTable pins every bundled owner that
 // assesses a PostgreSQL-family table: asked about a table the plan creates,
 // each answers with a receipt and no step, because the table's CREATE TABLE
-// carries the setting it owns. The receipts are compared in sorted order,
-// which is not part of the contract.
+// carries the setting it owns, or the table has no policy for the row-security
+// owner to create. The receipts are compared in sorted order, which is not
+// part of the contract.
 func TestBundledOwnersAccountForACreatedTable(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -33,10 +34,14 @@ func TestBundledOwnersAccountForACreatedTable(t *testing.T) {
 		want   []string
 	}{
 		{name: "a hypertable", target: "postgres", facet: &tsschema.DesiredHypertable{Column: "at"}, want: []string{
+			"ptah.run/pgpolicy/policy: create the table's policies after the objects their expressions may name",
+			"ptah.run/pgpolicy/table-state: set the table's declared row-security switches in the statements after its CREATE TABLE",
 			"ptah.run/timescaledb/hypertable: partition the table with the create_hypertable call that follows its CREATE TABLE",
 		}},
 		{name: "a row-level TTL", target: "cockroachdb", facet: &crdbschema.DesiredRowTTL{Policy: crdbschema.Policy{ExpirationExpression: "at"}}, want: []string{
 			"ptah.run/cockroachdb/row-ttl: create the row-level TTL with the table; its CREATE TABLE carries the storage parameters",
+			"ptah.run/pgpolicy/policy: create the table's policies after the objects their expressions may name",
+			"ptah.run/pgpolicy/table-state: set the table's declared row-security switches in the statements after its CREATE TABLE",
 			"ptah.run/timescaledb/hypertable: partition the table with the create_hypertable call that follows its CREATE TABLE",
 		}},
 		{name: "a row deletion policy", target: "spanner", facet: &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "at", Interval: "30 days"}}, want: []string{
