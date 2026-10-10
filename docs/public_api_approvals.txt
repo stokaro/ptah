@@ -634,3 +634,17 @@ v0.13.0 ptah.run/core/schemamodel
 # so no compatibility is owed under the authorized #4140/#4204 clean-break
 # policy.
 v0.13.0 ptah.run/core/schemamodel
+
+# #4140 moves SQLite virtual tables to the SQLite owner
+# ptah.run/dialect/sqlite/sqlitetable as a table facet that defines what its
+# table is. The VirtualModule and VirtualArguments fields of catalog.Table and
+# schemamodel.Table, the ast.SQLiteVirtualModuleOption and
+# ast.SQLiteVirtualArgumentsOption keys and the coverage.VirtualTable kind are
+# removed without aliases; a caller declares a virtual table as the owner's
+# facet, and its removal follows the desired coverage of that kind. This
+# changes the Go API; pre-v1, so no compatibility is owed under the authorized
+# #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/catalog
+v0.13.0 ptah.run/core/ast
+v0.13.0 ptah.run/core/coverage
+v0.13.0 ptah.run/core/schemamodel

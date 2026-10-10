@@ -126,10 +126,11 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/envbool"
@@ -404,65 +405,20 @@ func ValidateComparison(
 		return err
 	}
 
-	// A nil desired state declares nothing, which is not the same as declaring
-	// that it cannot describe virtual tables: the zero Set claims everything,
-	// so the removal refusal still fires for it.
-	var declaredLimits coverage.Set
+	// The desired state's coverage of virtual tables decides whether leaving
+	// one out asks for its removal. A nil desired state, like a source with no
+	// syntax for a virtual table, makes no claim, and the comparator keeps the
+	// table, so there is no removal to refuse.
+	var declaredCoverage schemaext.Coverage
 	if desired != nil {
-		declaredLimits = desired.NotDescribed
+		declaredCoverage = desired.FeatureCoverage
 	}
-	sides := pairSides(desired, database, semantics)
-	var collisions, transitions, removals, uncreatable []Table
-	for _, side := range sides {
-		switch {
-		case side.live.virtual && !side.declared:
-			// The desired state says nothing about it. When that side is a
-			// document it could not have said anything, so the silence is not
-			// intent: this is the data-loss path.
-			//
-			// Unless the caller deletes the statement again. `skip drop_table`
-			// filters this table out of TablesRemoved before the plan is
-			// rendered, so the `DROP TABLE "docs"` this refusal exists to
-			// prevent is never emitted, and refusing sends an operator to an
-			// opt-in for a plan that drops nothing. Measured with
-			// `diff.skip: [drop_table]` in ptah.yaml: both opt-ins set,
-			// `ptah schema apply` reports `Schema is synced, no changes to be
-			// made.` at exit 0 -- and without them it exited 2.
-			if !plansVirtualTableRemoval(side, policy, declaredLimits) {
-				continue
-			}
-			removals = append(removals, side.table())
-		case side.wanted.virtual && !side.present:
-			// An addition: the module declaration reaches the renderer and
-			// CREATE VIRTUAL TABLE is planned. That statement is the only thing
-			// a missing module makes impossible, so this is the ONE branch the
-			// desired-side check belongs in.
-			//
-			// Checking every desired virtual table instead refused a diff of two
-			// databases that both already hold the same fts4 index, where no
-			// CREATE is planned at all and the diagnostic's claimed mid-apply
-			// failure cannot happen -- and it did so even with
-			// [AllowUnregisteredModuleEnvVar] set, so the opt-in did not restore
-			// the comparison it promises. That is the same conflation of "the
-			// desired state names this" with "the desired state adds this" that
-			// this package's doc comment records from stokaro/ptah#1028, one
-			// level along.
-			if !registered.Registers(side.wanted.module) {
-				uncreatable = append(uncreatable, side.table())
-			}
-		case side.live.virtual != side.wanted.virtual:
-			// Both sides hold the name, and it is a virtual table on one and an
-			// ordinary table on the other. Two kinds of object, one name, and
-			// no statement converts one into the other.
-			collisions = append(collisions, side.table())
-		case !side.declarationsMatch(semantics):
-			// Both virtual, different declaration. SQLite has no
-			// ALTER VIRTUAL TABLE, so converging this means dropping and
-			// recreating, which destroys the index contents. Refused rather
-			// than planned, and refused rather than passed off as equal.
-			transitions = append(transitions, side.table())
-		}
+	sides, err := pairSides(desired, database, semantics)
+	if err != nil {
+		return err
 	}
+	classified := classifySides(sides, policy, declaredCoverage, semantics, registered)
+	collisions, transitions, removals, uncreatable := classified.collisions, classified.transitions, classified.removals, classified.uncreatable
 
 	if len(uncreatable) > 0 {
 		return refuseUncreatableAdditions(uncreatable, registered)
@@ -514,6 +470,76 @@ func ValidateComparison(
 		pronoun(len(removals)),
 		AllowDropEnvVar,
 	)
+}
+
+// sideClasses holds the names a comparison cannot plan, by why: a kind
+// collision, a changed declaration, a removal the comparator would plan, and
+// an addition this build cannot create.
+type sideClasses struct {
+	collisions, transitions, removals, uncreatable []Table
+}
+
+// classifySides sorts every name either side calls virtual into the answers a
+// plan cannot express. A name in none of them needs no refusal.
+func classifySides(
+	sides []pairedSide,
+	policy Policy,
+	declaredCoverage schemaext.Coverage,
+	semantics identifier.Semantics,
+	registered sqlitemodule.Set,
+) sideClasses {
+	var collisions, transitions, removals, uncreatable []Table
+	for _, side := range sides {
+		switch {
+		case side.live.virtual && !side.declared:
+			// The desired state says nothing about it. When that side is a
+			// document it could not have said anything, so the silence is not
+			// intent: this is the data-loss path.
+			//
+			// Unless the caller deletes the statement again. `skip drop_table`
+			// filters this table out of TablesRemoved before the plan is
+			// rendered, so the `DROP TABLE "docs"` this refusal exists to
+			// prevent is never emitted, and refusing sends an operator to an
+			// opt-in for a plan that drops nothing. Measured with
+			// `diff.skip: [drop_table]` in ptah.yaml: both opt-ins set,
+			// `ptah schema apply` reports `Schema is synced, no changes to be
+			// made.` at exit 0 -- and without them it exited 2.
+			if !plansVirtualTableRemoval(side, policy, declaredCoverage, semantics) {
+				continue
+			}
+			removals = append(removals, side.table())
+		case side.wanted.virtual && !side.present:
+			// An addition: the module declaration reaches the renderer and
+			// CREATE VIRTUAL TABLE is planned. That statement is the only thing
+			// a missing module makes impossible, so this is the ONE branch the
+			// desired-side check belongs in.
+			//
+			// Checking every desired virtual table instead refused a diff of two
+			// databases that both already hold the same fts4 index, where no
+			// CREATE is planned at all and the diagnostic's claimed mid-apply
+			// failure cannot happen -- and it did so even with
+			// [AllowUnregisteredModuleEnvVar] set, so the opt-in did not restore
+			// the comparison it promises. That is the same conflation of "the
+			// desired state names this" with "the desired state adds this" that
+			// this package's doc comment records from stokaro/ptah#1028, one
+			// level along.
+			if !registered.Registers(side.wanted.module) {
+				uncreatable = append(uncreatable, side.table())
+			}
+		case side.live.virtual != side.wanted.virtual:
+			// Both sides hold the name, and it is a virtual table on one and an
+			// ordinary table on the other. Two kinds of object, one name, and
+			// no statement converts one into the other.
+			collisions = append(collisions, side.table())
+		case !side.declarationsMatch(semantics):
+			// Both virtual, different declaration. SQLite has no
+			// ALTER VIRTUAL TABLE, so converging this means dropping and
+			// recreating, which destroys the index contents. Refused rather
+			// than planned, and refused rather than passed off as equal.
+			transitions = append(transitions, side.table())
+		}
+	}
+	return sideClasses{collisions: collisions, transitions: transitions, removals: removals, uncreatable: uncreatable}
 }
 
 // validateDatabaseIsClassifiable refuses a comparison whose DATABASE side holds
@@ -584,9 +610,9 @@ func validateDatabaseIsClassifiable(
 	if policy.SkipDropTable {
 		return nil
 	}
-	unclassified := liveUnregistered(database, registered)
-	if len(unclassified) == 0 {
-		return nil
+	unclassified, err := liveUnregistered(database, registered)
+	if err != nil || len(unclassified) == 0 {
+		return err
 	}
 	if !someLiveTableIsUndeclared(desired, database, semantics) {
 		return nil
@@ -887,9 +913,9 @@ func refusePlanTouchingUnclassifiedStorage(
 	if err != nil {
 		return err
 	}
-	unclassified := liveUnregistered(database, registered)
-	if len(unclassified) == 0 {
-		return nil
+	unclassified, err := liveUnregistered(database, registered)
+	if err != nil || len(unclassified) == 0 {
+		return err
 	}
 	return fmt.Errorf(
 		"%w: %s %s in a database that holds virtual %s %s whose %s this build of Ptah"+
@@ -1156,9 +1182,9 @@ func someLiveTableIsUndeclared(
 //     built by something other than the SQLite reader -- a test, a future
 //     producer -- cannot walk past this by leaving the field empty. A zero
 //     value must not read as "every module is present".
-func liveUnregistered(current *catalog.Database, registered sqlitemodule.Set) []Table {
+func liveUnregistered(current *catalog.Database, registered sqlitemodule.Set) ([]Table, error) {
 	if current == nil {
-		return nil
+		return nil, nil
 	}
 	seen := make(map[string]struct{})
 	var unclassified []Table
@@ -1176,10 +1202,14 @@ func liveUnregistered(current *catalog.Database, registered sqlitemodule.Set) []
 		add(table.Schema, table.Name, table.Module)
 	}
 	for _, table := range current.Tables {
-		add(table.Schema, table.Name, table.VirtualModule)
+		declared, err := declarationOf(table.Facets, schemaext.Observed)
+		if err != nil {
+			return nil, err
+		}
+		add(table.Schema, table.Name, declared.module)
 	}
 	sortTables(unclassified)
-	return unclassified
+	return unclassified, nil
 }
 
 // distinctModules lists the modules of a table list once each, in a stable
@@ -1225,6 +1255,9 @@ type declaration struct {
 	virtual   bool
 	module    string
 	arguments string
+	// kind is the facet kind that defines the table as virtual, which the
+	// desired coverage answers removal for.
+	kind schemaext.Kind
 }
 
 // pairedSide is one table name seen from both sides of a comparison.
@@ -1261,24 +1294,16 @@ type pairedSide struct {
 // all. Then it did not withhold one, and there is nothing an operator could
 // add that would say "keep it": the refusal would be permanent for every Go
 // annotation, HCL and YAML schema in front of an FTS5 index, which is the
-// blocker stokaro/ptah#1028 opens with. A source that CAN express one records
-// nothing in NotDescribed, so its silence still reaches the refusal.
-func plansVirtualTableRemoval(side pairedSide, policy Policy, declaredLimits coverage.Set) bool {
+// blocker stokaro/ptah#1028 opens with. Only a source whose coverage describes
+// virtual tables, a SQLite SQL document or a SQLite read, asks for the removal
+// by leaving one out, and the comparator plans it from the same answer
+// ([schemaext.PlansDefinedTableRemoval]), so the two cannot disagree.
+func plansVirtualTableRemoval(side pairedSide, policy Policy, declared schemaext.Coverage, semantics identifier.Semantics) bool {
 	if policy.SkipDropTable {
 		return false
 	}
-	return declaredLimits.Describes(coverage.VirtualTable, side.spellings()...)
-}
-
-// spellings returns every name the two sides might use for this table, which
-// is what [ptah.run/core/coverage.Set.Describes] asks for: a directive
-// written against one spelling has to answer for the other, and a false
-// negative there restores the removal coverage exists to withhold.
-func (s pairedSide) spellings() []string {
-	if strings.TrimSpace(s.schema) == "" {
-		return []string{s.name}
-	}
-	return []string{s.name, s.schema + "." + s.name}
+	table := objectidentity.NewBuilder(semantics).TablePartsVerbatim(side.schema, side.name)
+	return schemaext.PlansDefinedTableRemoval(declared, side.live.kind, table)
 }
 
 func (s pairedSide) table() Table {
@@ -1309,7 +1334,7 @@ func pairSides(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
-) []pairedSide {
+) ([]pairedSide, error) {
 	sides := make(map[string]*pairedSide)
 	at := func(schema, name string) *pairedSide {
 		key := identity(schema, name, semantics)
@@ -1325,22 +1350,22 @@ func pairSides(
 		for _, table := range database.Tables {
 			side := at(table.Schema, table.Name)
 			side.present = true
-			side.live = declaration{
-				virtual:   table.VirtualModule != "",
-				module:    table.VirtualModule,
-				arguments: table.VirtualArguments,
+			live, err := declarationOf(table.Facets, schemaext.Observed)
+			if err != nil {
+				return nil, err
 			}
+			side.live = live
 		}
 	}
 	if desired != nil {
 		for _, table := range desired.Tables {
 			side := at(table.Schema, table.Name)
 			side.declared = true
-			side.wanted = declaration{
-				virtual:   table.VirtualModule != "",
-				module:    table.VirtualModule,
-				arguments: table.VirtualArguments,
+			wanted, err := declarationOf(table.Facets, schemaext.Desired)
+			if err != nil {
+				return nil, err
 			}
+			side.wanted = wanted
 		}
 	}
 
@@ -1357,7 +1382,40 @@ func pairSides(
 		}
 		return paired[i].name < paired[j].name
 	})
-	return paired
+	return paired, nil
+}
+
+// sqliteVirtualDeclaration is a SQLite virtual table's module declaration, as
+// the SQLite owner's facet values answer it in either representation. The
+// guard asks the method rather than the owner's types, so the comparison that
+// calls the guard does not link the owner.
+type sqliteVirtualDeclaration interface {
+	schemaext.Value
+	SQLiteVirtualDeclaration() (module, arguments string)
+}
+
+// declarationOf reads what a table is off the SQLite owner's facet, in either
+// representation: the desired side of a comparison may itself be a read. A
+// table no such value defines is ordinary. A declaration that names no module
+// is refused as the invalid model it is, in representation.
+func declarationOf(facets schemaext.Facets, representation schemaext.Representation) (declaration, error) {
+	values, err := facets.Values()
+	if err != nil {
+		return declaration{}, err
+	}
+	for _, value := range values {
+		declared, ok := value.(sqliteVirtualDeclaration)
+		if !ok {
+			continue
+		}
+		module, arguments := declared.SQLiteVirtualDeclaration()
+		if strings.TrimSpace(module) == "" {
+			return declaration{}, &schemaext.InvalidModelError{Kind: value.Kind(), Representation: representation,
+				Message: fmt.Sprintf("%v: a SQLite virtual table names no module", schemaext.ErrInvalidValue)}
+		}
+		return declaration{virtual: true, module: module, arguments: arguments, kind: value.Kind()}, nil
+	}
+	return declaration{}, nil
 }
 
 // describe renders each table as the side that calls it virtual sees it.
@@ -1487,20 +1545,26 @@ func useVerb(count int) string {
 }
 
 // Tables lists the virtual tables a database schema holds, in a stable order.
-func Tables(current *catalog.Database) []Table {
+// A table facet that cannot be read is returned as an error rather than read
+// as an ordinary table.
+func Tables(current *catalog.Database) ([]Table, error) {
 	if current == nil {
-		return nil
+		return nil, nil
 	}
 	var virtual []Table
 	for _, table := range current.Tables {
-		if table.VirtualModule == "" {
+		declared, err := declarationOf(table.Facets, schemaext.Observed)
+		if err != nil {
+			return nil, err
+		}
+		if !declared.virtual {
 			continue
 		}
 		virtual = append(virtual, Table{
 			Schema:    table.Schema,
 			Name:      table.Name,
-			Module:    table.VirtualModule,
-			Arguments: table.VirtualArguments,
+			Module:    declared.module,
+			Arguments: declared.arguments,
 		})
 	}
 	sort.Slice(virtual, func(i, j int) bool {
@@ -1509,7 +1573,7 @@ func Tables(current *catalog.Database) []Table {
 		}
 		return virtual[i].Name < virtual[j].Name
 	})
-	return virtual
+	return virtual, nil
 }
 
 // identity is the comparator's own table identity, built from

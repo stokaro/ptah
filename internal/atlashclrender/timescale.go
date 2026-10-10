@@ -78,13 +78,15 @@ func (r *renderer) captureTimescale() error {
 // where a table has only the default family stating nothing, a YDB table's
 // settings, whose loss it reports by setting, YDB column storage, whose loss
 // it reports by table, MySQL table options, which it writes as the table's
-// engine, charset and auto_increment, and SQLite table options, which it
-// writes as the table's strict and without_rowid attributes, the spelling the
-// community binary reads. A caller that encodes the other facets as platform
-// properties sets these aside first.
+// engine, charset and auto_increment, SQLite table options, which it writes as
+// the table's strict and without_rowid attributes, the spelling the community
+// binary reads, and a SQLite virtual table's module declaration, which no HCL
+// block carries and whose loss the inspect command reports with the module. A
+// caller that encodes the other facets as platform properties sets these aside
+// first.
 func WritesTableFacet(kind schemaext.Kind) bool {
 	return kind == tsschema.HypertableKind || kind == ydbschema.ColumnFamiliesKind || kind == mysqlschema.TableKind || kind == ydbschema.TablePartitioningKind ||
-		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind || kind == sqlitetable.TableKind
+		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind || kind == sqlitetable.TableKind || kind == sqlitetable.VirtualKind
 }
 
 // WritesColumnFacet reports a column facet kind the renderer writes itself

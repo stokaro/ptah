@@ -312,9 +312,9 @@ func reportOmittedVirtualTables(
 	output atlasreport.SchemaInspectOutput,
 	opts InspectOptions,
 ) error {
-	omitted := virtualTablesTheRenderingDropped(schema, output)
-	if len(omitted) == 0 {
-		return nil
+	omitted, err := virtualTablesTheRenderingDropped(schema, output)
+	if err != nil || len(omitted) == 0 {
+		return err
 	}
 
 	names := sqlitevirtual.Names(omitted)
@@ -354,10 +354,10 @@ func reportOmittedVirtualTables(
 func virtualTablesTheRenderingDropped(
 	schema *catalog.Database,
 	output atlasreport.SchemaInspectOutput,
-) []sqlitevirtual.Table {
-	virtual := sqlitevirtual.Tables(schema)
-	if len(virtual) == 0 {
-		return nil
+) ([]sqlitevirtual.Table, error) {
+	virtual, err := sqlitevirtual.Tables(schema)
+	if err != nil || len(virtual) == 0 {
+		return nil, err
 	}
 
 	rendered := []string{output.Text}
@@ -371,7 +371,7 @@ func virtualTablesTheRenderingDropped(
 			omitted = append(omitted, table)
 		}
 	}
-	return omitted
+	return omitted, nil
 }
 
 // declarationRendered reports whether one table's module declaration appears in

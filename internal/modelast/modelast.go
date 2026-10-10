@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/pgprivilege"
@@ -673,17 +674,6 @@ func fromTableWithFieldConverter(
 	if unloggedtable.Supported(targetPlatform) {
 		createTable.Unlogged = newTable.Unlogged
 	}
-	if isSQLiteTarget(targetPlatform) {
-		// A virtual table is a different statement, not a trailing option, so
-		// the SQLite renderer branches on this key before it writes anything.
-		// The only producer of a non-empty VirtualModule is the SQLite reader,
-		// so a virtual table never reaches another dialect's renderer.
-		// See stokaro/ptah#1028.
-		if newTable.VirtualModule != "" {
-			createTable.SetOption(ast.SQLiteVirtualModuleOption, newTable.VirtualModule)
-			createTable.SetOption(ast.SQLiteVirtualArgumentsOption, newTable.VirtualArguments)
-		}
-	}
 	createTable.Partition = toASTPartition(newTable.Partition)
 	// Cloned rather than shared: the node travels to a renderer and a planner
 	// that must not be able to reach back through a pointer into the schema
@@ -729,9 +719,10 @@ func fromTableWithFieldConverter(
 
 func renderTableName(table schemamodel.Table, targetPlatform string) string {
 	// SQLite catalog identifiers are already parsed. Preserve their exact
-	// components for virtual tables: quoted leading or trailing whitespace is
-	// part of the identity, and normalizing it would recreate another object.
-	if isSQLiteTarget(targetPlatform) && table.VirtualModule != "" {
+	// components for a table a facet defines, such as a virtual table: quoted
+	// leading or trailing whitespace is part of the identity, and normalizing
+	// it would recreate another object.
+	if _, defined := schemaext.DefiningKind(table.Facets); isSQLiteTarget(targetPlatform) && defined {
 		return tableref.CanonicalExact(table.Schema, table.Name)
 	}
 	// The YDB renderer reads every table reference through tableref, so it

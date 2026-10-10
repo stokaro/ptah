@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/featurereport"
 	"ptah.run/internal/schemaexportloss"
 )
@@ -51,7 +52,7 @@ func attachFeatureJSONLoss(ctx context.Context, realm *atlasSchemaInspectJSONRea
 			destination = projection.root
 		}
 		for _, value := range attached {
-			if representedInJSON(value) {
+			if representedInJSON(value) || reportedByInspect(value) {
 				continue
 			}
 			values = append(values, value)
@@ -84,6 +85,14 @@ func attachFeatureJSONLoss(ctx context.Context, realm *atlasSchemaInspectJSONRea
 func representedInJSON(value schemaext.Value) bool {
 	settings, ok := mysqlschema.ValueSettings(value)
 	return ok && settings.OnUpdate == ""
+}
+
+// reportedByInspect reports a facet value whose loss the inspect command
+// answers for itself: a SQLite virtual table's module declaration, which every
+// format but SQL drops, and which the command names with its module and the
+// format that keeps it. A second warning here would say the same thing twice.
+func reportedByInspect(value schemaext.Value) bool {
+	return value.Kind() == sqlitetable.VirtualKind
 }
 
 type jsonFeatureProjection struct {

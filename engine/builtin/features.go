@@ -201,7 +201,10 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 		validate = mysqlrender.ValidateTableFacets
 	case platform.SQLite:
 		validate = func(facets schemaext.Facets) error {
-			_, err := sqlitetable.TableOptions(facets)
+			if _, err := sqlitetable.TableOptions(facets); err != nil {
+				return err
+			}
+			_, err := sqlitetable.VirtualDeclaration(facets)
 			return err
 		}
 	default:

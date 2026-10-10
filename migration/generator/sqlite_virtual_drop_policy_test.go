@@ -9,8 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/generator"
@@ -33,7 +35,9 @@ import (
 // can create the index whose drop the guard refuses.
 //
 // The zero-policy row is the control: without it this passes against a guard
-// that was simply switched off.
+// that was simply switched off. The desired state describes virtual tables, as
+// a SQLite SQL document does; one that makes no claim keeps the table and
+// plans no drop to refuse.
 func TestGenerateMigrationCarriesTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -82,6 +86,7 @@ func TestGenerateMigrationCarriesTheDropPolicyIntoTheVirtualTableGuard(t *testin
 				Fields: []schemamodel.Field{
 					{StructName: "users", Name: "id", Type: "INTEGER", Primary: true},
 				},
+				FeatureCoverage: must.Must(sqlitetable.VirtualCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 			},
 				DBConn:        conn,
 				MigrationName: "drop_policy",

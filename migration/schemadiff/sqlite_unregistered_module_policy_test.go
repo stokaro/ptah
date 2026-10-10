@@ -121,7 +121,7 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 func unclassifiableFTS4Database() *catalog.Database {
 	return &catalog.Database{
 		Tables: []catalog.Table{
-			{Name: "docs", Type: "TABLE", VirtualModule: "fts4", VirtualArguments: "title, body"},
+			{Name: "docs", Type: "TABLE", Facets: observedVirtualTable("fts4", "title, body")},
 			{Name: "docs_content", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "docid", DataType: "INTEGER", IsNullable: "YES", OrdinalPosition: 1},
 			}},
@@ -157,7 +157,7 @@ func unclassifiableFTS4DatabaseWithIndex() *catalog.Database {
 func declaredLiveTables() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
-			{StructName: "Doc", Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
+			{StructName: "Doc", Name: "docs", Facets: declaredVirtualTable("fts4", "title, body")},
 			{StructName: "DocContent", Name: "docs_content"},
 			{StructName: "User", Name: "users"},
 		},

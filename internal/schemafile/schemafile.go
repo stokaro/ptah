@@ -336,9 +336,10 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 // Each rule is a measurement of the surface rather than a reading of its
 // documentation:
 //
-//   - Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite
-//     virtual table is intent there and is not intent in HCL or YAML
-//     (stokaro/ptah#1028).
+//   - Only `.sql` has CREATE VIRTUAL TABLE. The SQLite owner's coverage says
+//     so: a SQLite SQL document enrolls virtual tables and the other formats
+//     make no claim, so silence about a live virtual table is intent only in
+//     `.sql` (stokaro/ptah#1028).
 //   - Only HCL and a Go schema express a SQL Server synonym or an extended
 //     property. YAML has no key for either, and the SQL parser's conversion
 //     produces none, so a `.sql` document naming CREATE SYNONYM still loads a
@@ -394,9 +395,6 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 		database.NotDescribed = database.NotDescribed.With(
 			unsupportedByFormat(coverage.Changefeed, coverage.ColumnTable, coverage.TTL)...)
 	}
-	if extension != dirSQLExtension {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)
-	}
 	if slices.Contains(yamlOnlyExtensions, extension) {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Sequence, coverage.Domain, coverage.Composite, coverage.Range)...)
@@ -432,7 +430,6 @@ func dbmlCannotExpress() []coverage.Kind {
 		coverage.Range,
 		coverage.Role,
 		coverage.Sequence,
-		coverage.VirtualTable,
 	}
 }
 

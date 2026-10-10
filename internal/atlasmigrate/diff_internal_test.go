@@ -19,11 +19,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -47,10 +50,11 @@ const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared
 // `migrate diff`'s half of the plumbing internal/atlasschema and
 // migration/generator pin.
 //
-// A migration directory can create an FTS5 index, and no --to document can
-// declare one, so the replayed state holds a virtual table the desired side
-// never names -- the shape the SQLite virtual-table guard refuses because it
-// plans DROP TABLE. That refusal happens inside the comparison, while
+// A migration directory can create an FTS5 index that a --to SQLite SQL
+// document leaves out, so the replayed state holds a virtual table the desired
+// side never names. That document describes virtual tables, so its silence
+// asks for the drop -- the shape the SQLite virtual-table guard refuses
+// because it plans DROP TABLE. That refusal happens inside the comparison, while
 // atlasschema.ApplyDiffPolicy deletes the drop afterwards, so a project
 // carrying `diff { skip { drop_table = true } }` was refused for a statement it
 // had configured away.
@@ -83,7 +87,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 			conn := connectDiffComparisonSQLite(c)
 			replayed := &catalog.Database{
 				Tables: []catalog.Table{
-					{Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "title, body"},
+					{Name: "docs", Type: "TABLE", Facets: must.Must(schemaext.NewFacets(&sqlitetable.ObservedVirtual{Virtual: sqlitetable.Virtual{Module: "fts5", Arguments: "title, body"}}))},
 				},
 			}
 			runtime := diffRuntime{
@@ -99,7 +103,8 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 
 			_, _, err := compareReplayedState(
 				c.Context(), conn, runtime, nil, conn.Info().Schema,
-				&schemamodel.Database{}, devclean.Baseline{}, nil, nil, tt.policy, selectedRuntime(c),
+				&schemamodel.Database{FeatureCoverage: must.Must(sqlitetable.VirtualCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))},
+				devclean.Baseline{}, nil, nil, tt.policy, selectedRuntime(c),
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)

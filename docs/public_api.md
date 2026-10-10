@@ -760,6 +760,16 @@ such as `migration/dbtest` keeps that change. It leaves out a change that
 takes state away, and applies one whose owner says it does not even beside no
 structural change.
 
+A table facet value that also implements `TableDefinition` and reports true
+defines what its table is, rather than adding a setting to an ordinary one:
+the owner's declaration, not a column list, recreates the table.
+`DefiningKind` names the kind of such a value in a table's facets. The
+migration comparator compares no columns of a table either side defines this
+way, and removes a live one only when `PlansDefinedTableRemoval` says the
+desired coverage describes the defining kind for the table, `Complete` or
+`Absent`; any other answer, a kind the source never enrolled included, keeps
+it. A SQLite virtual table is the first such kind.
+
 `Facets.WithTargetScope` binds a value to target names from its source.
 `ForTarget` uses an explicit `TargetSelection`, including its registered aliases.
 An excluded value retains its binding without its payload. `Kinds` and `Len`
@@ -1164,6 +1174,20 @@ and `PlanService` accounts for them through table creation, rebuild and
 removal. `TableOptions` is what the SQLite renderer writes after the column
 list; `TableCodecs`, `TableCoverage`, `ChangeCodec`, `ConvertService` and
 `ReportService` complete the owner.
+
+The same package owns the module declaration that makes a table virtual,
+under `VirtualKind`. `DesiredVirtual` and `ObservedVirtual` hold the module and
+its arguments as written in `Virtual`, and implement
+`schemaext.TableDefinition`: a virtual table has no column list of its own.
+`VirtualCoverage` records the claim a source makes; a SQLite `.sql` document
+and the SQLite reader claim it complete, and no other source claims it.
+`VirtualCompareService` reports a changed declaration, and a virtual table on
+one side and an ordinary one on the other, as a change, and
+`VirtualPlanService` refuses every such change: SQLite has no ALTER VIRTUAL
+TABLE. `VirtualDeclaration` is what the SQLite renderer writes in place of a
+column list, `VirtualOf` reads either representation, and `VirtualCodecs`,
+`VirtualChangeCodec`, `VirtualConvertService` and `VirtualReportService`
+complete it.
 
 `mysqlschema` owns an index's options under `IndexKind` the same way:
 `DesiredIndex` and `ObservedIndex` hold the parser of a FULLTEXT index, read

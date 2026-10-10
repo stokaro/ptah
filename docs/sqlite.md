@@ -214,12 +214,20 @@ answers a plan cannot express are refused:
 
 | desired side | database side | outcome |
 | --- | --- | --- |
-| does not name it | virtual | **refused** — a document could not have asked for it to be kept, so the silence is not a request to drop it |
+| does not name it, and **cannot** name it | virtual | **left alone** — Go annotations, HCL and YAML have no virtual-table syntax, so their silence is not a request to drop it |
+| does not name it, but **could** | virtual | **refused** — a `.sql` document or a database URL asks for the drop by leaving it out, and the drop deletes the index |
 | ordinary table | virtual | **refused** — two kinds of object under one name |
 | virtual | ordinary table | **refused** — the same collision, mirrored |
 | virtual, different module or arguments | virtual | **refused** — SQLite has no `ALTER VIRTUAL TABLE`, so converging means dropping and recreating, which destroys the index |
 | virtual, same declaration | virtual | synced, nothing to do |
 | virtual | absent | planned as `CREATE VIRTUAL TABLE` |
+
+The declaration is the SQLite owner's table facet
+(`ptah.run/dialect/sqlite/sqlitetable`), of a kind that defines what its table
+is (`schemaext.TableDefinition`). The common comparison compares no columns of
+such a table on either side, and removes a live one only when the desired
+side's coverage describes the kind: a SQLite `.sql` document and a SQLite read
+claim it complete, and every other source makes no claim.
 
 Declarations are compared with the module name folded the way SQLite folds an
 identifier, and the module arguments compared verbatim: they are not SQL, only
@@ -241,8 +249,8 @@ To proceed, say which one you meant:
   is only offered when the module is registered; see the next section for why.
 - **To drop it**, set `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1`. The removal is
   planned exactly as before, including the `DROP TABLE` that destroys the index
-  contents and the module's shadow tables. The opt-in covers only that first
-  row of the table above: a kind collision and a changed declaration stay
+  contents and the module's shadow tables. The opt-in covers only the refused
+  removal in the table above: a kind collision and a changed declaration stay
   refused however it is set, because no value of it makes the planner able to
   convert one object into another.
 

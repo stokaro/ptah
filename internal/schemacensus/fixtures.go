@@ -840,7 +840,9 @@ func tableVirtualFixture() schemamodel.Database {
 	return schemamodel.Database{
 		Tables: []schemamodel.Table{{
 			StructName: "T", Name: "t",
-			VirtualModule: "fts5", VirtualArguments: "body, tokenize='porter'",
+			Facets: must.Must(schemaext.NewFacets(&sqlitetable.DesiredVirtual{
+				Virtual: sqlitetable.Virtual{Module: "fts5", Arguments: "body, tokenize='porter'"},
+			})),
 		}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", FieldName: "Body", Name: "body", Type: "TEXT", Nullable: true},

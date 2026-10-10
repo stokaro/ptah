@@ -86,7 +86,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	var schema catalog.Database
 	for _, tableName := range sqliteCatalog.tableNames {
 		if spec, ok := sqliteCatalog.virtualTables[tableName]; ok {
-			schema.Tables = append(schema.Tables, r.readVirtualTable(tableName, spec))
+			table, err := r.readVirtualTable(tableName, spec)
+			if err != nil {
+				return nil, err
+			}
+			schema.Tables = append(schema.Tables, table)
 			continue
 		}
 
@@ -120,12 +124,20 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	schema.UnregisteredVirtualTables = unregistered
 
 	// The read looked at every ordinary table's options, so a table it found
-	// none on was created with neither.
+	// none on was created with neither, and at what every table is, so a table
+	// it found no module on is an ordinary table.
 	known, err := sqlitetable.TableCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
 	if err != nil {
 		return nil, err
 	}
+	kinds, err := sqlitetable.VirtualCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return nil, err
+	}
 	if schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(known); err != nil {
+		return nil, err
+	}
+	if schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(kinds); err != nil {
 		return nil, err
 	}
 
@@ -333,14 +345,17 @@ func (r *Reader) readTable(name string, columns []catalog.Column, ddl string) (c
 // the module is not registered in this build, SQLite cannot report the columns
 // at all, so a description built from them would be empty for exactly the
 // databases that need it most.
-func (r *Reader) readVirtualTable(name string, spec virtualTableSpec) catalog.Table {
-	return catalog.Table{
-		Name:             name,
-		Schema:           r.outputSchema(),
-		Type:             "TABLE",
-		VirtualModule:    spec.Module,
-		VirtualArguments: spec.Arguments,
+//
+// The declaration is the SQLite owner's observed facet: it is what the table
+// is, so the common comparison compares no columns of it.
+func (r *Reader) readVirtualTable(name string, spec virtualTableSpec) (catalog.Table, error) {
+	table := catalog.Table{Name: name, Schema: r.outputSchema(), Type: "TABLE"}
+	facets, err := table.Facets.With(&sqlitetable.ObservedVirtual{Virtual: sqlitetable.Virtual{Module: spec.Module, Arguments: spec.Arguments}})
+	if err != nil {
+		return catalog.Table{}, fmt.Errorf("sqlite: virtual table %s: %w", name, err)
 	}
+	table.Facets = facets
+	return table, nil
 }
 
 func sqliteTableOptions(ddl string) (strict, withoutRowID bool) {

@@ -181,11 +181,6 @@ func convertTablesAndFields(
 			PrimaryKeyComment:    primaryKey.comment,
 			PrimaryKeyBlockSize:  primaryKey.blockSize,
 			Unlogged:             dbTable.Unlogged,
-			// A virtual table's module declaration is what recreates it.
-			// Dropping it here is what made `ptah db read` describe an FTS5
-			// index as an ordinary table. See stokaro/ptah#1028.
-			VirtualModule:    dbTable.VirtualModule,
-			VirtualArguments: dbTable.VirtualArguments,
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
 			// other (stokaro/ptah#1027).

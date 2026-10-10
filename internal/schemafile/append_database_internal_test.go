@@ -51,7 +51,7 @@ func TestAppendDatabase_UnionsTheCoverageRecord(t *testing.T) {
 	merged := &schemamodel.Database{}
 
 	limited := coverage.Set{}.With(coverage.Object{
-		Kind:       coverage.VirtualTable,
+		Kind:       coverage.Domain,
 		Reason:     coverage.Unsupported,
 		Provenance: coverage.DerivedFromFact,
 	})
@@ -59,7 +59,7 @@ func TestAppendDatabase_UnionsTheCoverageRecord(t *testing.T) {
 	appendDatabase(merged, &schemamodel.Database{NotDescribed: limited})
 	appendDatabase(merged, &schemamodel.Database{})
 
-	c.Assert(merged.NotDescribed.Describes(coverage.VirtualTable), qt.IsFalse)
+	c.Assert(merged.NotDescribed.Describes(coverage.Domain), qt.IsFalse)
 }
 
 // nonMergeableDatabaseFields are the slice fields [appendDatabase] must NOT

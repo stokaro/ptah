@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/spanner/spannerschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -2051,7 +2052,8 @@ func (p *Parser) parseCreateTableHeader() (*ast.CreateTableNode, error) {
 // `ptah db read` on a database holding an FTS5 index produced a file that
 // `ptah schema diff --from file://...` rejected with "unsupported CREATE
 // target: VIRTUAL". Nothing else in the pipeline was missing -- the AST carries
-// the module as an option and the conversions both ways already existed.
+// the declaration as the SQLite owner's facet and the conversions both ways
+// already existed.
 //
 // The arguments are kept verbatim, as the byte range between the module's outer
 // parentheses. They are not a column list: fts5 takes tokenizer settings,
@@ -2093,14 +2095,16 @@ func (p *Parser) parseCreateVirtualTable() (ast.Node, error) {
 	if ifNotExists {
 		table.SetIfNotExists()
 	}
-	table.SetOption(ast.SQLiteVirtualModuleOption, module)
 
 	arguments, err := p.parseVirtualTableArguments()
 	if err != nil {
 		return nil, err
 	}
-	if arguments != "" {
-		table.SetOption(ast.SQLiteVirtualArgumentsOption, arguments)
+	// The declaration is the SQLite owner's facet: it is what the table is,
+	// and the renderer writes it in place of a column list.
+	table.Facets, err = table.Facets.With(&sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: module, Arguments: arguments}})
+	if err != nil {
+		return nil, err
 	}
 	return table, nil
 }

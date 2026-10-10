@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
@@ -191,17 +192,18 @@ func TablesAndColumnsWithTableContext(
 		}
 	}
 
+	builder := objectidentity.NewBuilder(semantics)
 	for identity, table := range dbTables {
 		if _, exists := genTables[identity]; !exists {
-			// An object type the desired source cannot represent is outside
-			// the surface that source manages. Go annotations, HCL and YAML
-			// have no virtual-table construct, so their silence about a live
-			// FTS5 index is not a request to drop it -- and the drop takes the
-			// index and everything in it. A native `.sql` document can express
-			// one and records nothing in NotDescribed, so its silence still
-			// removes (stokaro/ptah#1028).
-			if table.VirtualModule != "" &&
-				!cov.PlansRemoval(coverage.VirtualTable, table.Schema, table.Name) {
+			// A table a facet defines, such as a SQLite virtual table, is a
+			// kind of object the desired source may have no syntax for: Go
+			// annotations, HCL and YAML cannot declare a virtual table, so
+			// their silence about a live FTS5 index is not a request to drop
+			// it -- and the drop takes the index and everything in it. Only a
+			// source whose coverage describes the defining kind asks for the
+			// removal by leaving the table out (stokaro/ptah#1028).
+			if kind, defined := schemaext.DefiningKind(table.Facets); defined &&
+				!schemaext.PlansDefinedTableRemoval(desired.FeatureCoverage, kind, builder.TablePartsVerbatim(table.Schema, table.Name)) {
 				continue
 			}
 			diff.TablesRemoved = append(diff.TablesRemoved, difftypes.TableRemoval{
@@ -213,25 +215,23 @@ func TablesAndColumnsWithTableContext(
 	// Find modified tables (compare columns)
 	for identity, genTable := range genTables {
 		if dbTable, exists := dbTables[identity]; exists {
-			// A SQLite virtual table has no column list of its own: its
-			// columns are the module's answer, and when the module is not
-			// registered in this build the catalog reports none at all.
-			// Comparing them against a desired table's columns plans
-			// `ALTER TABLE ... ADD COLUMN` against an object ALTER TABLE
-			// cannot touch.
+			// A table a facet defines on either side has no column list of its
+			// own. A SQLite virtual table's columns are the module's answer,
+			// and when the module is not registered in this build the catalog
+			// reports none at all. Comparing them against the other side's
+			// columns plans `ALTER TABLE ... ADD COLUMN` against an object
+			// ALTER TABLE cannot touch.
 			//
-			// This is the fail-safe, not the report. Reaching it means the
-			// desired state declares an ordinary table whose live counterpart
-			// is virtual, and two different kinds of object have collided;
-			// silently reporting no difference would leave the incompatible
-			// object in place while every surface said the schema was synced.
-			// [ptah.run/internal/sqlitevirtual.ValidateComparison]
-			// refuses that collision by name at the seams that can return an
-			// error, which is every verb comparing a live database. What
-			// remains here is the direct library API, which has no error to
-			// return and must still not emit an unrunnable ALTER.
-			// See stokaro/ptah#1028.
-			if dbTable.VirtualModule != "" {
+			// The owner's facet comparison answers for such a table instead:
+			// a changed declaration, or a defined table on one side and an
+			// ordinary one on the other, is its change, which no planner
+			// accepts. [ptah.run/internal/sqlitevirtual.ValidateComparison]
+			// refuses the same by name, earlier, at the seams that can return
+			// an error. See stokaro/ptah#1028.
+			if _, defined := schemaext.DefiningKind(dbTable.Facets); defined {
+				continue
+			}
+			if _, defined := schemaext.DefiningKind(genTable.Facets); defined {
 				continue
 			}
 			tableDiff := tableColumnsWithSemantics(

@@ -109,6 +109,9 @@ ptah_schema_sqlite_strict_tables{dialect="sqlite"} 0
 # HELP ptah_schema_sqlite_without_rowid_tables SQLite tables created WITHOUT ROWID.
 # TYPE ptah_schema_sqlite_without_rowid_tables gauge
 ptah_schema_sqlite_without_rowid_tables{dialect="sqlite"} 0
+# HELP ptah_schema_sqlite_virtual_tables SQLite virtual tables.
+# TYPE ptah_schema_sqlite_virtual_tables gauge
+ptah_schema_sqlite_virtual_tables{dialect="sqlite"} 0
 # HELP ptah_schema_synonyms Synonyms.
 # TYPE ptah_schema_synonyms gauge
 ptah_schema_synonyms{dialect="sqlite"} 0

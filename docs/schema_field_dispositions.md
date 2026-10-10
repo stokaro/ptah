@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-612 fields are reachable from the desired schema, and each one carries
+613 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 516 | reaches rendered SQL on at least one target |
+| `ddl` | 517 | reaches rendered SQL on at least one target |
 | `comparison` | 24 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -481,8 +481,6 @@ None.
 | `schemamodel.Table.Schema` | `ddl` | — |
 | `schemamodel.Table.StructName` | `ddl` | — |
 | `schemamodel.Table.Unlogged` | `ddl` | — |
-| `schemamodel.Table.VirtualArguments` | `ddl` | — |
-| `schemamodel.Table.VirtualModule` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |
@@ -513,8 +511,11 @@ None.
 | `spannerschema.Policy.Column` | `ddl` | — |
 | `spannerschema.Policy.Interval` | `ddl` | — |
 | `sqlitetable.DesiredTable.Options` | `ddl` | — |
+| `sqlitetable.DesiredVirtual.Virtual` | `ddl` | — |
 | `sqlitetable.Options.Strict` | `ddl` | — |
 | `sqlitetable.Options.WithoutRowID` | `ddl` | — |
+| `sqlitetable.Virtual.Arguments` | `ddl` | — |
+| `sqlitetable.Virtual.Module` | `ddl` | — |
 | `synonym.DesiredSynonym.Comment` | `ddl` | — |
 | `synonym.DesiredSynonym.StructName` | `source` | the Go struct the declaration was read from; the alias is its identity |
 | `synonym.DesiredSynonym.Synonym` | `ddl` | — |

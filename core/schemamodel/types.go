@@ -741,19 +741,9 @@ type Table struct {
 	// Only PostgreSQL and YugabyteDB accept the keyword. A renderer for any
 	// other dialect reports the option as skipped rather than dropping it in
 	// silence.
-	Unlogged bool
-	// VirtualModule is the SQLite module that owns this table, from the USING
-	// clause of its CREATE VIRTUAL TABLE statement. The SQLite reader sets it,
-	// and so does the native SQL parser -- a `.sql` schema file may declare
-	// one, which is what makes `ptah db read` output readable back. Go
-	// annotations, HCL and YAML still have no syntax for it, so it is empty
-	// on a schema parsed from those. A non-empty value makes the table render
-	// as CREATE VIRTUAL TABLE rather than CREATE TABLE. See stokaro/ptah#1028.
-	VirtualModule string
-	// VirtualArguments is the text between the module's parentheses, verbatim.
-	VirtualArguments string
-	Comment          string   // Table comment/description
-	PrimaryKey       []string // Composite primary key column names
+	Unlogged   bool
+	Comment    string   // Table comment/description
+	PrimaryKey []string // Composite primary key column names
 	// PrimaryKeyName is the name a declaration gave the primary key, empty
 	// when it named none.
 	//

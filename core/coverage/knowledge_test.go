@@ -225,7 +225,7 @@ func TestExplainDistinguishesTheReasonsThatMatter(t *testing.T) {
 		{
 			name: "a format that cannot express the kind",
 			object: coverage.Object{
-				Kind:       coverage.VirtualTable,
+				Kind:       coverage.Domain,
 				Reason:     coverage.Unsupported,
 				Provenance: coverage.DerivedFromFact,
 			},

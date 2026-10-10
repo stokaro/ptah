@@ -8,20 +8,23 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
-// Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite virtual
-// table is intent there and is not intent in HCL, where the document could not
-// have named it (stokaro/ptah#1028).
+// A format that has no syntax for an object family records that it does not
+// describe the family, so silence about a live object of that family is not
+// read as a request to drop it.
 //
-// The record now carries why. "Unsupported, derived from another fact Ptah
-// holds" is the document's FORMAT speaking, not a read that failed and not a
-// selection the user wrote, and a user told only that virtual tables were "not
+// The record carries why. "Unsupported, derived from another fact Ptah holds"
+// is the document's FORMAT speaking, not a read that failed and not a
+// selection the user wrote, and a user told only that a family was "not
 // described" cannot tell those three apart (stokaro/ptah#1346).
 func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 	tests := []struct {
@@ -33,22 +36,20 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 		{
 			// HCL has the synonym and extended_property blocks
 			// (stokaro/ptah#1031), and their owners' coverage says so -- and it still cannot
-			// name a virtual table, a table's row deletion policy, a changefeed,
-			// or a YDB resource pool or classifier. A secret, a topic, an
-			// external object, an async replication, a transfer and a column
-			// family are owned features the format makes no claim about.
-			name:     "HCL cannot name a virtual table, a TTL, a changefeed, a resource pool or classifier",
+			// name a table's row deletion policy, a changefeed, or a YDB
+			// resource pool or classifier. A secret, a topic, an external
+			// object, an async replication, a transfer, a column family and a
+			// SQLite virtual table are owned features the format makes no
+			// claim about.
+			name:     "HCL cannot name a TTL, a changefeed, a resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnTable,
-				coverage.TTL, coverage.VirtualTable),
+			want:     unsupportedRecords(coverage.Changefeed, coverage.ColumnTable, coverage.TTL),
 		},
 		{
-			// The control on the virtual table. A `.sql` document CAN name one,
-			// so it carries no record for that kind -- without this row a
-			// loader that recorded the limit for every format would pass the
-			// row above. Synonyms and extended properties are owned features
-			// the format makes no claim about, so it records nothing at all.
+			// The control on the common families. Synonyms, extended
+			// properties and virtual tables are owned features the format
+			// makes no common claim about, so it records nothing at all.
 			name:     "SQL can",
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
@@ -61,12 +62,12 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// deletion policy, a changefeed and a column family, as `.sql` has
 			// Spanner's policy clause, so both rows are the control on the TTL,
 			// changefeed and column family records HCL and DBML carry.
-			name:     "YAML cannot name five families",
+			name:     "YAML cannot name four families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
 			want: unsupportedRecords(
 				coverage.Composite, coverage.Domain,
-				coverage.Range, coverage.Sequence, coverage.VirtualTable),
+				coverage.Range, coverage.Sequence),
 		},
 		{
 			// DBML declares the widest boundary of any format here, and that is
@@ -83,7 +84,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 				coverage.Changefeed, coverage.ColumnTable, coverage.Composite,
 				coverage.Domain, coverage.Extension,
 				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
-				coverage.TTL, coverage.VirtualTable),
+				coverage.TTL),
 		},
 	}
 
@@ -149,6 +150,60 @@ func TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace(t *testing.T) {
 			c.Assert(database.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "held")).State, qt.Equals, test.want)
 		})
 	}
+}
+
+// TestOnlyASQLiteSQLDocumentDescribesVirtualTables holds the virtual table
+// coverage to the one format that can declare one. A SQLite SQL document
+// claims it complete, so leaving out a live virtual table asks for its
+// removal; HCL, YAML, DBML and SQL of another dialect make no claim, so
+// applying one keeps every virtual table the database holds instead of
+// planning a DROP TABLE that deletes the index and everything in it
+// (stokaro/ptah#1028).
+func TestOnlyASQLiteSQLDocumentDescribesVirtualTables(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		dialect  string
+		contents string
+		want     schemaext.KnowledgeState
+	}{
+		{name: "SQLite SQL", file: "schema.sql", dialect: "sqlite", contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n", want: schemaext.Complete},
+		{name: "SQLite SQL whose header declines them", file: "schema.sql", dialect: "sqlite",
+			contents: "-- ptah:not-described virtual_table\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n", want: schemaext.Uninspected},
+		{name: "PostgreSQL SQL", file: "schema.sql", dialect: "postgres", contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n", want: schemaext.Uninspected},
+		{name: "HCL", file: "schema.hcl", dialect: "sqlite", contents: "schema \"main\" {\n}\n", want: schemaext.Uninspected},
+		{name: "YAML", file: "schema.yaml", dialect: "sqlite", contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n", want: schemaext.Uninspected},
+		{name: "DBML", file: "schema.dbml", dialect: "sqlite", contents: "Table users {\n  id integer [pk]\n}\n", want: schemaext.Uninspected},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(t.TempDir(), test.file)
+			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
+
+			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: test.dialect})
+
+			c.Assert(err, qt.IsNil)
+			table := objectidentity.ID{Kind: objectidentity.KindTable, Name: objectidentity.Part{Source: "docs", Normalized: "docs"}}
+			c.Assert(database.FeatureCoverage.Lookup(sqlitetable.VirtualKind, table).State, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestASQLiteSQLDocumentRefusesANamedVirtualTableLimit refuses a header that
+// declines one virtual table by name: the directive covers the kind, and
+// widening it to every virtual table or matching a name the comparison may
+// spell differently would each decide something the author did not write.
+func TestASQLiteSQLDocumentRefusesANamedVirtualTableLimit(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte("-- ptah:not-described virtual_table \"docs\"\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*ptah:not-described virtual_table names "docs"; the directive takes no name in a SQLite document.*`)
+	c.Assert(database, qt.IsNil)
 }
 
 // TestTimescaleCoverageFollowsWhatAFormatCanName pins which formats claim to
