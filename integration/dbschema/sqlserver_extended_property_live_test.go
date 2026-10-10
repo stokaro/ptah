@@ -4,6 +4,7 @@ package dbschema_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,10 +12,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -74,25 +76,22 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(extendedPropertySummary(live.ExtendedProperties, table), qt.DeepEquals, []string{
-		"dbo." + table + " " + property + " = enabled (nvarchar)",
-		"dbo." + table + ".title " + columnProperty + " = sensitive (nvarchar)",
+	c.Assert(extendedPropertySummary(live.FeatureObjects, table), qt.DeepEquals, []string{
+		"dbo." + table + ".title/" + columnProperty + " = sensitive (nvarchar)",
+		"dbo." + table + "/" + property + " = enabled (nvarchar)",
 	})
 
 	// 3. Convergence. Comparing the same description against what the server
 	// now holds must produce nothing to do.
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
-	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesAdded, table), qt.HasLen, 0)
-	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesRemoved, table), qt.HasLen, 0)
-	c.Assert(modifiedExtendedPropertiesOn(settled.ExtendedPropertiesModified, table), qt.HasLen, 0)
+	c.Assert(propertyChanges(settled), qt.HasLen, 0)
 
 	// 4. And the change. A declaration carrying a different value plans an
 	// update rather than a drop and an add, and the statement it plans is one
 	// the server accepts and the reader sees.
 	changed := sqlServerExtendedPropertySchema(table, property, columnProperty, "disabled")
 	plan := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, live, platform.SQLServer, must.Must(builtin.New())))
-	c.Assert(extendedPropertiesOn(plan.ExtendedPropertiesAdded, table), qt.HasLen, 0)
-	c.Assert(modifiedExtendedPropertiesOn(plan.ExtendedPropertiesModified, table), qt.HasLen, 1)
+	c.Assert(propertyChanges(plan), qt.DeepEquals, []string{"update dbo." + table + "/" + property})
 
 	_, err = conn.ExecContext(ctx, fmt.Sprintf(
 		"EXEC sp_updateextendedproperty @name = N'%s', @value = N'disabled', "+
@@ -103,7 +102,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 	after, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	settledAgain := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, after, platform.SQLServer, must.Must(builtin.New())))
-	c.Assert(modifiedExtendedPropertiesOn(settledAgain.ExtendedPropertiesModified, table), qt.HasLen, 0)
+	c.Assert(propertyChanges(settledAgain), qt.HasLen, 0)
 }
 
 // TestSQLServerLiveExtendedPropertyLeavesAnUnwritableValueAlone pins the one
@@ -142,19 +141,22 @@ func TestSQLServerLiveExtendedPropertyLeavesAnUnwritableValueAlone(t *testing.T)
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
-	found := findExtendedProperty(c, live.ExtendedProperties, table, property)
-	c.Assert(found.ValueType, qt.Equals, "int")
-	c.Assert(found.ValueNotRepresentable, qt.IsTrue)
-	// Blank rather than "42": CONVERT(NVARCHAR, value) answers a rendering
-	// rather than the value, and carrying it would invite a comparison to
-	// write it back as a string.
-	c.Assert(found.Value, qt.Equals, "")
+	// The read records it in coverage rather than as a value:
+	// CONVERT(NVARCHAR, value) answers a rendering rather than the value, and
+	// carrying it would invite a comparison to write it back as a string.
+	ref := mssqlproperty.Property{Name: property, Schema: "dbo", Table: table}.Ref()
+	_, held, err := live.FeatureObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(held, qt.IsFalse)
+	knowledge, recorded := live.FeatureCoverage.SubjectKnowledge(mssqlproperty.Kind, ref)
+	c.Assert(recorded, qt.IsTrue)
+	c.Assert(knowledge, qt.DeepEquals, mssqlproperty.UnrepresentableValue("int"))
 
 	// A declaration that does not name it plans no removal, which is the half
 	// that would otherwise destroy the value.
-	empty := &schemamodel.Database{}
+	empty := &schemamodel.Database{FeatureCoverage: propertyCoverage()}
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), empty, live, platform.SQLServer, must.Must(builtin.New())))
-	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesRemoved, table), qt.HasLen, 0)
+	c.Assert(propertyChanges(settled), qt.Not(qt.Contains), "drop dbo."+table+"/"+property)
 }
 
 // sqlServerExtendedPropertySchema declares one table carrying a table-scoped
@@ -166,71 +168,61 @@ func sqlServerExtendedPropertySchema(table, property, columnProperty, value stri
 			{StructName: "XP", Name: "id", Type: "INT", Primary: true},
 			{StructName: "XP", Name: "title", Type: "NVARCHAR(200)", Nullable: true},
 		},
-		ExtendedProperties: []schemamodel.ExtendedProperty{
-			{StructName: "XP", Name: property, Schema: "dbo", Table: table, Value: value},
-			{
-				StructName: "XP", Name: columnProperty, Schema: "dbo",
-				Table: table, Column: "title", Value: "sensitive",
-			},
-		},
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			declaredProperty(mssqlproperty.Property{Name: property, Schema: "dbo", Table: table, Value: value}),
+			declaredProperty(mssqlproperty.Property{Name: columnProperty, Schema: "dbo", Table: table, Column: "title", Value: "sensitive"}),
+		)),
+		FeatureCoverage: propertyCoverage(),
 	}
+}
+
+// declaredProperty is a property a Go schema declares.
+func declaredProperty(property mssqlproperty.Property) schemaext.Object {
+	return mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{Property: property, StructName: "XP"})
+}
+
+// propertyCoverage is what a Go schema records: it can declare extended
+// properties, so leaving one out drops it.
+func propertyCoverage() schemaext.Coverage {
+	return must.Must(mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 }
 
 // extendedPropertySummary renders one table's properties in a stable order.
-func extendedPropertySummary(
-	properties []catalog.ExtendedProperty,
-	table string,
-) []string {
+func extendedPropertySummary(objects schemaext.Objects, table string) []string {
+	all := must.Must(objects.All())
 	var summary []string
-	for _, property := range properties {
-		if property.Table != table {
-			continue
+	for _, object := range all {
+		property, ok := object.Value.(*mssqlproperty.ObservedProperty)
+		if ok && property.Table == table {
+			summary = append(summary, fmt.Sprintf("%s = %s (%s)", property.Label(), property.Value, property.ValueType))
 		}
-		summary = append(summary, fmt.Sprintf("%s %s = %s (%s)",
-			property.QualifiedOwner(), property.Name, property.Value, property.ValueType))
 	}
+	slices.Sort(summary)
 	return summary
 }
 
-func extendedPropertiesOn(
-	refs []difftypes.ExtendedPropertyRef,
-	table string,
-) []difftypes.ExtendedPropertyRef {
-	var found []difftypes.ExtendedPropertyRef
-	for _, ref := range refs {
-		if ref.Table == table {
-			found = append(found, ref)
+// propertyChanges names each extended property change a comparison plans, as
+// its action and the property's label, on tables and on their own.
+func propertyChanges(diff *difftypes.SchemaDiff) []string {
+	records := slices.Clone(diff.FeatureChanges)
+	for _, table := range diff.TablesModified {
+		records = append(records, table.FeatureChanges...)
+	}
+	var changes []string
+	for _, record := range records {
+		change, ok := record.Value.(*mssqlproperty.Change)
+		switch {
+		case !ok:
+		case change.Before == nil:
+			changes = append(changes, "add "+change.After.Label())
+		case change.After == nil:
+			changes = append(changes, "drop "+change.Before.Label())
+		default:
+			changes = append(changes, "update "+change.After.Label())
 		}
 	}
-	return found
-}
-
-func modifiedExtendedPropertiesOn(
-	diffs []difftypes.ExtendedPropertyDiff,
-	table string,
-) []difftypes.ExtendedPropertyDiff {
-	var found []difftypes.ExtendedPropertyDiff
-	for _, diff := range diffs {
-		if diff.Table == table {
-			found = append(found, diff)
-		}
-	}
-	return found
-}
-
-func findExtendedProperty(
-	c *qt.C,
-	properties []catalog.ExtendedProperty,
-	table, name string,
-) catalog.ExtendedProperty {
-	c.Helper()
-	for _, property := range properties {
-		if property.Table == table && property.Name == name {
-			return property
-		}
-	}
-	c.Fatalf("extended property %q on %q is absent from the read schema", name, table)
-	return catalog.ExtendedProperty{}
+	slices.Sort(changes)
+	return changes
 }
 
 // TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip is the scope with
@@ -267,10 +259,11 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 	}()
 
 	description := &schemamodel.Database{
-		ExtendedProperties: []schemamodel.ExtendedProperty{
-			{StructName: "DB", Name: databaseProperty, Value: "database scope"},
-			{StructName: "DB", Name: schemaProperty, Schema: "dbo", Value: "schema scope"},
-		},
+		FeatureObjects: must.Must(schemaext.NewObjects(
+			declaredProperty(mssqlproperty.Property{Name: databaseProperty, Value: "database scope"}),
+			declaredProperty(mssqlproperty.Property{Name: schemaProperty, Schema: "dbo", Value: "schema scope"}),
+		)),
+		FeatureCoverage: propertyCoverage(),
 	}
 
 	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
@@ -289,55 +282,13 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
-	found := findExtendedPropertyByName(c, live.ExtendedProperties, databaseProperty)
-	c.Assert(found.Schema, qt.Equals, "")
-	c.Assert(found.Table, qt.Equals, "")
-	c.Assert(found.Value, qt.Equals, "database scope")
-	c.Assert(found.QualifiedOwner(), qt.Equals, "(database)")
+	found, held, err := live.FeatureObjects.Get(mssqlproperty.Property{Name: databaseProperty}.Ref())
+	c.Assert(err, qt.IsNil)
+	c.Assert(held, qt.IsTrue)
+	c.Assert(found.Value.(*mssqlproperty.ObservedProperty).Label(), qt.Equals, "(database)/"+databaseProperty)
+	c.Assert(found.Value.(*mssqlproperty.ObservedProperty).Value, qt.Equals, "database scope")
 
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
-	c.Assert(extendedPropertiesNamed(settled.ExtendedPropertiesAdded, databaseProperty), qt.HasLen, 0)
-	c.Assert(extendedPropertiesNamed(settled.ExtendedPropertiesRemoved, databaseProperty), qt.HasLen, 0)
-	c.Assert(modifiedExtendedPropertiesNamed(settled.ExtendedPropertiesModified, databaseProperty), qt.HasLen, 0)
-}
-
-func findExtendedPropertyByName(
-	c *qt.C,
-	properties []catalog.ExtendedProperty,
-	name string,
-) catalog.ExtendedProperty {
-	c.Helper()
-	for _, property := range properties {
-		if property.Name == name {
-			return property
-		}
-	}
-	c.Fatalf("extended property %q is absent from the read schema", name)
-	return catalog.ExtendedProperty{}
-}
-
-func extendedPropertiesNamed(
-	refs []difftypes.ExtendedPropertyRef,
-	name string,
-) []difftypes.ExtendedPropertyRef {
-	var found []difftypes.ExtendedPropertyRef
-	for _, ref := range refs {
-		if ref.Name == name {
-			found = append(found, ref)
-		}
-	}
-	return found
-}
-
-func modifiedExtendedPropertiesNamed(
-	diffs []difftypes.ExtendedPropertyDiff,
-	name string,
-) []difftypes.ExtendedPropertyDiff {
-	var found []difftypes.ExtendedPropertyDiff
-	for _, diff := range diffs {
-		if diff.Name == name {
-			found = append(found, diff)
-		}
-	}
-	return found
+	c.Assert(propertyChanges(settled), qt.Not(qt.Contains), "add (database)/"+databaseProperty)
+	c.Assert(propertyChanges(settled), qt.Not(qt.Contains), "drop (database)/"+databaseProperty)
 }

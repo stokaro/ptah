@@ -1978,7 +1978,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.modifyExistingViews(result, diff)
 	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
-	result = p.addExtendedProperties(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
@@ -2081,7 +2080,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// and materialized views that may read them are dropped, and before the
 	// tables they may read.
 	windows.Removal = len(result)
-	result = p.removeExtendedProperties(result, diff)
 	result = p.removeSynonyms(result, diff)
 
 	// 13. Remove tables (dangerous!)
@@ -2983,51 +2981,6 @@ func (p *Planner) removeSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) 
 		result = append(result, ast.NewDropSynonym(synonym.QualifiedName()).SetIfExists())
 	}
 	return result
-}
-
-// addExtendedProperties emits the extended properties a diff adds and the
-// updates it plans for the ones whose value changed.
-//
-// Both go here, after the tables and views exist: sp_addextendedproperty and
-// sp_updateextendedproperty resolve @level1name through the catalog and answer
-// `Cannot find the object ... because it does not exist or you do not have
-// permission` when the owner is not there yet.
-//
-// An update rather than a drop and an add, because SQL Server has the
-// statement and dropping first would take the property away for the length of
-// the script.
-func (p *Planner) addExtendedProperties(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, ref := range diff.ExtendedPropertiesAdded {
-		result = append(result, extendedPropertyNode(ast.ExtendedPropertyAdd, ref))
-	}
-	for _, changed := range diff.ExtendedPropertiesModified {
-		result = append(result, extendedPropertyNode(ast.ExtendedPropertyUpdate, changed.ExtendedPropertyRef))
-	}
-	return result
-}
-
-// removeExtendedProperties drops the properties a diff removes, before the
-// objects they hang off are dropped.
-//
-// The order is the one SQL Server forces rather than a preference: dropping
-// the table takes its properties with it, and a sp_dropextendedproperty that
-// runs afterwards answers `Property cannot be dropped. Property does not
-// exist`.
-func (p *Planner) removeExtendedProperties(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, ref := range diff.ExtendedPropertiesRemoved {
-		result = append(result, extendedPropertyNode(ast.ExtendedPropertyDrop, ref))
-	}
-	return result
-}
-
-// extendedPropertyNode builds the node for one operation on one property.
-func extendedPropertyNode(
-	operation ast.ExtendedPropertyOperation,
-	ref difftypes.ExtendedPropertyRef,
-) *ast.ExtendedPropertyNode {
-	return ast.NewExtendedProperty(operation, ref.Name).
-		SetOwner(ref.Schema, ref.Table, ref.Column).
-		SetValue(ref.Value)
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {

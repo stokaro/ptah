@@ -102,17 +102,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.Synonyms = keep(db.Synonyms, func(synonym schemamodel.Synonym) bool {
 		return s.selectedQualifiedName(typeList("synonym"), synonym.QualifiedName())
 	})
-	out.ExtendedProperties = keep(db.ExtendedProperties,
-		func(property schemamodel.ExtendedProperty) bool {
-			if property.Schema == "" {
-				return s.selectedDatabaseProperty(property.Name)
-			}
-			if property.Table != "" && !generatedTableNameKept(out.Tables, property.Table) {
-				return false
-			}
-			return s.selected(typeList("extended_property"), property.Schema, property.Name) ||
-				(property.Table != "" && generatedTableNameKept(out.Tables, property.Table))
-		})
+	out.FeatureObjects, out.FeatureCoverage = s.selectPropertyFeatures(out.FeatureObjects, out.FeatureCoverage, func(_, table string) bool {
+		return generatedTableNameKept(out.Tables, table)
+	})
 	out.Functions = keep(db.Functions, func(function schemamodel.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
 	})

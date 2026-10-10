@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/cockroachdb/crdbschema"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/spanner/spannerschema"
@@ -49,6 +50,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: mysqlschema.Owner, codecs: mysqlschema.TableCodecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.ColumnSettingsCodecs()},
 		{owner: mssqlschema.Owner, codecs: mssqlschema.Codecs()},
+		{owner: mssqlproperty.Owner, codecs: mssqlproperty.Codecs()},
 		{owner: pgpolicy.Owner, codecs: pgpolicy.Codecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
 		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},

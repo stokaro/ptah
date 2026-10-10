@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/revisiontable"
 )
 
@@ -101,30 +103,32 @@ const extendedPropertyQuery = `
 
 // readExtendedProperties reads the schema-, table- and column-scoped extended
 // properties of the schemas this read covers.
-func (r *Reader) readExtendedProperties(ctx context.Context) ([]catalog.ExtendedProperty, error) {
+func (r *Reader) readExtendedProperties(ctx context.Context) (extendedProperties, error) {
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(extendedPropertyQuery), r.schemaArgs()...)
 	if err != nil {
-		return nil, err
+		return extendedProperties{}, err
 	}
 	defer rows.Close()
 
-	var properties []catalog.ExtendedProperty
+	var properties extendedProperties
 	for rows.Next() {
-		var property catalog.ExtendedProperty
+		var property mssqlproperty.ObservedProperty
 		var value sql.NullString
 		var baseType sql.NullString
 		var scannedSchema string
 		if err := rows.Scan(&scannedSchema, &property.Table, &property.Column,
 			&property.Name, &value, &baseType); err != nil {
-			return nil, err
+			return extendedProperties{}, err
 		}
 		property.Schema = scannedSchema
 		property.ValueType = strings.ToLower(strings.TrimSpace(baseType.String))
-		property.ValueNotRepresentable = !representableExtendedPropertyType(property.ValueType)
-		if !property.ValueNotRepresentable {
-			property.Value = value.String
+		if !representableExtendedPropertyType(property.ValueType) {
+			properties.unrepresentable = append(properties.unrepresentable, schemaext.SubjectCoverage{
+				Kind: mssqlproperty.Kind, Subject: property.Ref(), Knowledge: mssqlproperty.UnrepresentableValue(property.ValueType)})
+			continue
 		}
-		properties = append(properties, property)
+		property.Value = value.String
+		properties.found = append(properties.found, property)
 	}
 	return properties, rows.Err()
 }
@@ -148,4 +152,36 @@ func representableExtendedPropertyType(baseType string) bool {
 	default:
 		return false
 	}
+}
+
+// extendedProperties is what one read found: the properties it describes, and
+// the ones held under a value type Ptah cannot write back, as coverage.
+type extendedProperties struct {
+	found           []mssqlproperty.ObservedProperty
+	unrepresentable []schemaext.SubjectCoverage
+}
+
+// recordExtendedProperties adds the properties the read found to db as the
+// owner's objects, and the knowledge that the read looked: a property this
+// read did not return is one the database does not have.
+func recordExtendedProperties(db *catalog.Database, properties extendedProperties) error {
+	objects := db.FeatureObjects
+	for _, property := range properties.found {
+		if err := mssqlproperty.ValidateObserved(&property); err != nil {
+			return err
+		}
+		var err error
+		if objects, err = objects.With(mssqlproperty.ObservedObject(property)); err != nil {
+			return err
+		}
+	}
+	known, err := mssqlproperty.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, properties.unrepresentable)
+	if err != nil {
+		return err
+	}
+	if db.FeatureCoverage, err = db.FeatureCoverage.Combine(known); err != nil {
+		return err
+	}
+	db.FeatureObjects = objects
+	return nil
 }

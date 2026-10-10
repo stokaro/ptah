@@ -1018,22 +1018,6 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "ptah:schema:extendedproperty",
-		Description: "Declares a SQL Server extended property on a schema, a table, or a column.",
-		Scopes:      []Scope{ScopeStruct},
-		Attributes: []Attribute{
-			attr("name", "Property name. MS_Description is refused: it is the object comment, "+
-				"which Ptah already manages.", valueString, true, false),
-			attr("schema", "Schema the property is on, or that owns the addressed table. "+
-				"Omit for a database-scoped property.", valueString, false, false),
-			attr("table", "Table the property is on. Requires schema; omit for a schema-scoped "+
-				"property.", valueString, false, false),
-			attr("column", "Column the property is on. Requires table.", valueString, false, false),
-			attr("value", "The value, written back as an N'' literal.", valueString, true, false),
-			attr("comment", "Extended property comment.", valueString, false, false),
-		},
-	},
-	{
 		Name:        "ptah:schema:trigger",
 		Description: "Declares a database trigger.",
 		Scopes:      []Scope{ScopeStruct},

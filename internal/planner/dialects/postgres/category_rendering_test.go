@@ -406,30 +406,6 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{},
 		},
 		{
-			"ExtendedPropertiesAdded",
-			&difftypes.SchemaDiff{ExtendedPropertiesAdded: []difftypes.ExtendedPropertyRef{
-				{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled"},
-			}},
-			&schemamodel.Database{},
-		},
-		{
-			"ExtendedPropertiesRemoved",
-			&difftypes.SchemaDiff{ExtendedPropertiesRemoved: []difftypes.ExtendedPropertyRef{
-				{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled"},
-			}},
-			&schemamodel.Database{},
-		},
-		{
-			"ExtendedPropertiesModified",
-			&difftypes.SchemaDiff{ExtendedPropertiesModified: []difftypes.ExtendedPropertyDiff{{
-				ExtendedPropertyRef: difftypes.ExtendedPropertyRef{
-					Name: "ptah_flag", Schema: "app", Table: "docs", Value: "disabled",
-				},
-				OldValue: "enabled",
-			}}},
-			&schemamodel.Database{},
-		},
-		{
 			"MaterializedViewsAdded",
 			&difftypes.SchemaDiff{
 				MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv"}},

@@ -52,8 +52,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			name:     "SQL can",
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
-			want: unsupportedRecords(
-				coverage.ExtendedProperty, coverage.Synonym),
+			want:     unsupportedRecords(coverage.Synonym),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -66,7 +65,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
 			want: unsupportedRecords(
-				coverage.Composite, coverage.Domain, coverage.ExtendedProperty,
+				coverage.Composite, coverage.Domain,
 				coverage.Range, coverage.Sequence, coverage.Synonym, coverage.VirtualTable),
 		},
 		{
@@ -82,7 +81,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.ColumnTable, coverage.Composite,
-				coverage.Domain, coverage.ExtendedProperty, coverage.Extension,
+				coverage.Domain, coverage.Extension,
 				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
 				coverage.Synonym, coverage.TTL, coverage.VirtualTable),
 		},

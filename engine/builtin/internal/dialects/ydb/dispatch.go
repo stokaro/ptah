@@ -156,8 +156,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return refuseFact("extension "+n.Name, "YDB has no extensions")
 	case *ast.DropExtensionNode:
 		return refuseFact("DROP EXTENSION "+n.Name, "YDB has no extensions")
-	case *ast.ExtendedPropertyNode:
-		return refuseFact("extended property "+n.Name, "extended properties are SQL Server's")
 
 	// An upsert node carries the match columns, update assignments and
 	// predicates of a MERGE as SQL fragments. YDB's own upsert, UPSERT INTO,

@@ -198,10 +198,6 @@ func SurfaceDifferences() []SurfaceDifference {
 			Reason: "the collation half of the same decision, unreachable on this plan for the same reason",
 		},
 		{
-			Field: "schemamodel.ExtendedProperty.Comment", RenderOnly: true,
-			Reason: "a leading `--` line the render writes above the statement; the statement itself is identical on both surfaces",
-		},
-		{
 			Field: "schemamodel.Database.DatabasePath", RenderOnly: true,
 			Reason: "the path of the database a description was read from, which a render writes a YDB grant on " +
 				"the database under; a plan names that object by the path of the database it reads, which the " +

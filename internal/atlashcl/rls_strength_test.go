@@ -9,7 +9,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/feature/pgpolicy"
-
 	"ptah.run/internal/atlashcl"
 )
 

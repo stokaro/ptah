@@ -1559,17 +1559,6 @@ func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
-// renderExtendedProperty refuses: an extended property is a SQL Server object,
-// and ClickHouse has no catalog to attach one to.
-//
-// There is no capability key behind this refusal, for the reason
-// renderCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
-	r.notSupported("EXTENDED PROPERTY", node.Name)
-	return nil
-}
-
 // renderDropSynonym refuses for the same reason.
 func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	r.notSupported("DROP SYNONYM", node.Name)

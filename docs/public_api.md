@@ -71,6 +71,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mssql/mssqldiff`
 - `ptah.run/dialect/mssql/mssqlplan`
 - `ptah.run/dialect/mssql/mssqlprobe`
+- `ptah.run/dialect/mssql/mssqlproperty`
 - `ptah.run/dialect/mssql/mssqlrelation`
 - `ptah.run/dialect/mssql/mssqlrender`
 - `ptah.run/dialect/mssql/mssqlreport`
@@ -2032,6 +2033,18 @@ The bundled runtime selects these services on PostgreSQL, CockroachDB and
 YugabyteDB. No source or reader produces the models yet, so they act only on
 values a caller builds. Spanner speaks the PostgreSQL dialect without row
 security, so a declared policy or set of switches is refused there.
+
+`dialect/mssql/mssqlproperty` owns SQL Server extended properties. A property
+is one feature object of `Kind`, addressed to the database, a schema, a table or
+a column; `Property.Ref` folds every part, since the default collation compares
+names without case, and keeps the table out of the parent slot, so the owner
+plans it apart from the table's own transition. `DesiredProperty` and
+`ObservedProperty` hold the value; a read records a value held under a type Ptah
+cannot write back as unrepresentable coverage (`UnrepresentableValue`) instead
+of a value. `DeclaredObject` binds a declaration to SQL Server. The package
+holds every stage's service: `CompareService`, `PlanService`, which joins the
+host's dependent window and reads the table or column a property is on,
+`ReverseService`, `ConvertService`, `ReportService` and the render `Handlers`.
 
 `dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
 0020. A policy is one feature object of `SecurityPolicyKind`, identified by its

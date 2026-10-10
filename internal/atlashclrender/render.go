@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/feature/pgpolicy"
@@ -204,6 +205,9 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if err := r.captureCoordinationNodes(); err != nil {
 		return Result{}, err
 	}
+	if err := r.captureExtendedProperties(); err != nil {
+		return Result{}, err
+	}
 	if err := r.captureTimescale(); err != nil {
 		return Result{}, err
 	}
@@ -220,6 +224,7 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 
 type renderer struct {
 	coordinationNodes      []coordinationNode
+	extendedProperties     []mssqlproperty.DesiredProperty
 	coordinationDirectives []string
 	hypertables            []hypertableBlock
 	aggregates             []aggregateBlock
@@ -515,8 +520,15 @@ func (r *renderer) render() {
 // [ptah.run/internal/goannotationexport.ErrLossyCleanup]. Without this,
 // cleanup would remove the only place the scope was ever written down and the
 // schema would silently go back to reaching every dialect.
+//
+// A SQL Server extended property is bound to SQL Server by its kind rather
+// than by anything the declaration wrote, and reading the block back binds it
+// again, so its scope is not a loss.
 func (r *renderer) reportDialectScopes() {
 	for _, scoped := range schemamodel.ScopedObjects(r.db) {
+		if scoped.Kind == string(mssqlproperty.Kind) && slices.Equal(scoped.Dialects, []string{platform.SQLServer}) {
+			continue
+		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
 			Severity: SeverityWarning,
 			Path:     fmt.Sprintf("%s.%s", scoped.Kind, scoped.Name),

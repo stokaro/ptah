@@ -150,8 +150,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderCreateSynonym(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
-	case *ast.ExtendedPropertyNode:
-		return r.renderExtendedProperty(n)
 
 	// Data manipulation.
 	case *ast.UpsertNode:

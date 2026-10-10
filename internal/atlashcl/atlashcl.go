@@ -6,7 +6,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"ptah.run/internal/pgpolicysource"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,10 +18,12 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
+	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
@@ -238,25 +239,24 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
 	}
 	p.db.NotDescribed = notDescribed
-	p.db.FeatureCoverage, _, err = ydbsource.ReadHCLCoverage(string(data), limits)
-	if err != nil {
-		return nil, err
-	}
-	// The format has a block for each TimescaleDB model, so a document
-	// without one describes a database without one.
-	timescale, err := tsschema.CompleteCoverage(schemaext.Desired)
-	if err != nil {
-		return nil, err
-	}
-	p.db.FeatureCoverage, err = p.db.FeatureCoverage.Combine(timescale)
-	if err != nil {
-		return nil, err
-	}
-	p.db.FeatureCoverage, err = pgpolicysource.Claim(p.db.FeatureCoverage, p.db.FeatureObjects)
-	if err != nil {
+	if p.db.FeatureCoverage, err = documentCoverage(string(data), limits, p.db.FeatureObjects); err != nil {
 		return nil, err
 	}
 	return p.db, nil
+}
+
+// documentCoverage is what a document knows about the owned models: the YDB
+// limits its directives record, the models its own blocks declare, and the
+// row-security policies it claims.
+func documentCoverage(data string, limits ydbsource.Limits, objects schemaext.Objects) (schemaext.Coverage, error) {
+	known, _, err := ydbsource.ReadHCLCoverage(data, limits)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if known, err = withBlockCoverage(known); err != nil {
+		return schemaext.Coverage{}, err
+	}
+	return pgpolicysource.Claim(known, objects)
 }
 
 // projectFileBlocks names the top-level blocks that mark an HCL file as an Atlas
@@ -2614,4 +2614,22 @@ func mysqlTableOptions(overrides map[string]map[string]string, autoIncrement, ch
 		}
 	}
 	return result
+}
+
+// withBlockCoverage adds the knowledge the format's own blocks give: one for
+// each TimescaleDB model and one for a SQL Server extended property, so a
+// document without one describes a database without one.
+func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
+	timescale, err := tsschema.CompleteCoverage(schemaext.Desired)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	properties, err := mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if known, err = known.Combine(timescale); err != nil {
+		return schemaext.Coverage{}, err
+	}
+	return known.Combine(properties)
 }

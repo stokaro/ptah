@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/deporder"
 )
 
@@ -138,8 +140,9 @@ func removeTable(target alterTarget) {
 		database.Grants = slices.DeleteFunc(database.Grants, func(grant schemamodel.Grant) bool {
 			return grant.OnTable != "" && target.reachesTable(grant.OnTable)
 		})
-		database.ExtendedProperties = slices.DeleteFunc(database.ExtendedProperties, func(property schemamodel.ExtendedProperty) bool {
-			return property.Table != "" && target.reachesTable(schemamodel.QualifyTableName(property.Schema, property.Table))
+		database.FeatureObjects = database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+			address, property := mssqlproperty.RefAddress(ref)
+			return !property || address.Table == "" || !target.reachesTable(schemamodel.QualifyTableName(address.Schema, address.Table))
 		})
 		database.ManagedData = slices.DeleteFunc(database.ManagedData, func(data schemamodel.ManagedData) bool {
 			return target.reachesTable(schemamodel.QualifyTableName(data.Schema, data.Table))

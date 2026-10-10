@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlrender"
 )
 
@@ -18,16 +19,16 @@ type gatedPayload interface {
 	OmissionSubject() (kind, name string)
 }
 
-// renderExtensionNode renders an owner statement through the SQL Server
-// owners' registry. A payload no SQL Server owner renders is refused, and so
-// is an owned operation that names a table, since no SQL Server owner writes
-// one inside ALTER TABLE.
+// renderExtensionNode renders an owner statement through the handlers of the
+// SQL Server owners: security policies and extended properties. A payload no
+// SQL Server owner renders is refused, and so is an owned operation that names
+// a table, since no SQL Server owner writes one inside ALTER TABLE.
 func (r *Renderer) renderExtensionNode(node ast.Node) error {
 	statement, ok := node.(*ast.ExtensionStatement)
 	if !ok {
 		return fmt.Errorf("%w: expected an extension statement, got %T", ptaherr.ErrInvalidSchemaDiff, node)
 	}
-	registry, err := mssqlrender.Registry()
+	registry, err := renderer.NewExtensions(append(mssqlrender.Handlers(), mssqlproperty.Handlers()...)...)
 	if err != nil {
 		return err
 	}

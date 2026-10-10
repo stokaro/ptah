@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -107,8 +108,10 @@ func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff) []string {
 		}
 		record(ref.Schema)
 	}
-	for _, property := range diff.ExtendedPropertiesAdded {
-		record(property.Schema)
+	for _, change := range diff.FeatureChanges {
+		if property, ok := change.Value.(*mssqlproperty.Change); ok && property.Before == nil && property.After != nil {
+			record(property.After.Schema)
+		}
 	}
 	slices.Sort(schemas)
 	return schemas

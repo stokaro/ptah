@@ -202,9 +202,6 @@ func reverseSchemaDiffWithPrior(
 		// diff: the down direction drops what the up direction added, adds
 		// back what it dropped with the value the removal carried, and swaps
 		// the two values of a modification.
-		ExtendedPropertiesAdded:    slices.Clone(diff.ExtendedPropertiesRemoved),
-		ExtendedPropertiesRemoved:  slices.Clone(diff.ExtendedPropertiesAdded),
-		ExtendedPropertiesModified: reverseExtendedPropertyDiffs(diff.ExtendedPropertiesModified),
 
 		// Materialized views to remove become materialized views to add, each
 		// as the pre-change database held it, settings included.

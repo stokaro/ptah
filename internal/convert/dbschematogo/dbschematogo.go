@@ -70,7 +70,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
 	convertSynonyms(database, dbSchema.Synonyms)
-	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath
 	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
@@ -518,37 +517,6 @@ func convertSynonyms(database *schemamodel.Database, synonyms []catalog.Synonym)
 			Schema:  synonym.Schema,
 			Target:  synonym.DeclaredTarget(),
 			Comment: synonym.Comment,
-		})
-	}
-}
-
-// convertExtendedProperties carries the SQL Server extended properties a read
-// found into the IR, except the ones no declaration could restore.
-//
-// A property whose value the server stores under a base type Ptah cannot write
-// back must NOT become a declaration. The renderer emits an N” literal, so
-// putting an int or a date into the document would change its type on the next
-// apply, and CONVERT(NVARCHAR, …) on a date answers `Jan  2 2026` -- a
-// locale-dependent rendering rather than the value. The comparator already
-// declines those in both directions; describing one would undo that by turning
-// the description into a declaration that asks for the string.
-//
-// The read still reports it, so it is not invisible: [catalog.ExtendedProperty]
-// carries the row and the flag, and nothing is planned to remove it.
-func convertExtendedProperties(
-	database *schemamodel.Database,
-	properties []catalog.ExtendedProperty,
-) {
-	for _, property := range properties {
-		if property.ValueNotRepresentable {
-			continue
-		}
-		database.ExtendedProperties = append(database.ExtendedProperties, schemamodel.ExtendedProperty{
-			Name:   property.Name,
-			Schema: property.Schema,
-			Table:  property.Table,
-			Column: property.Column,
-			Value:  property.Value,
 		})
 	}
 }

@@ -82,15 +82,6 @@ func TestCompare_NotInspectedNeverBecomesAbsent(t *testing.T) {
 			current: func(db *catalog.Database) { db.Synonyms = []catalog.Synonym{{Name: "syn"}} },
 			removed: func(d *difftypes.SchemaDiff) int { return len(d.SynonymsRemoved) },
 		},
-
-		{
-			name: "extended property",
-			kind: coverage.ExtendedProperty,
-			current: func(db *catalog.Database) {
-				db.ExtendedProperties = []catalog.ExtendedProperty{{Name: "MS_Description", Schema: "dbo"}}
-			},
-			removed: func(d *difftypes.SchemaDiff) int { return len(d.ExtendedPropertiesRemoved) },
-		},
 	}
 
 	for _, test := range tests {

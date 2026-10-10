@@ -12,7 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -60,18 +61,15 @@ func TestReadExtendedProperties_CarriesTheAddressAndDeclinesTheValueItCannotWrit
 	properties, err := reader.readExtendedProperties(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(properties, qt.DeepEquals, []catalog.ExtendedProperty{
-		{Name: "ptah_db_prop", Value: "database scope", ValueType: "nvarchar"},
-		{Name: "ptah_schema_prop", Schema: "app", Value: "schema scope", ValueType: "nvarchar"},
-		{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled", ValueType: "nvarchar"},
-		{
-			Name: "ptah_int", Schema: "app", Table: "docs",
-			ValueType: "int", ValueNotRepresentable: true,
-		},
-		{
-			Name: "ptah_col", Schema: "app", Table: "docs", Column: "title",
-			Value: "sensitive", ValueType: "nvarchar",
-		},
+	c.Assert(properties.found, qt.DeepEquals, []mssqlproperty.ObservedProperty{
+		{Property: mssqlproperty.Property{Name: "ptah_db_prop", Value: "database scope"}, ValueType: "nvarchar"},
+		{Property: mssqlproperty.Property{Name: "ptah_schema_prop", Schema: "app", Value: "schema scope"}, ValueType: "nvarchar"},
+		{Property: mssqlproperty.Property{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled"}, ValueType: "nvarchar"},
+		{Property: mssqlproperty.Property{Name: "ptah_col", Schema: "app", Table: "docs", Column: "title", Value: "sensitive"}, ValueType: "nvarchar"},
+	})
+	unwritable := mssqlproperty.Property{Name: "ptah_int", Schema: "app", Table: "docs"}
+	c.Assert(properties.unrepresentable, qt.DeepEquals, []schemaext.SubjectCoverage{
+		{Kind: mssqlproperty.Kind, Subject: unwritable.Ref(), Knowledge: mssqlproperty.UnrepresentableValue("int")},
 	})
 }
 

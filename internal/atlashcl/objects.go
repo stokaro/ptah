@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
-	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/pgpolicysource"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,9 +20,12 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 	"ptah.run/internal/viewcolumns"
@@ -2028,8 +2029,8 @@ func (p *parser) parseCoordinationNode(block *hclsyntax.Block) error {
 	return nil
 }
 
-// parseExtendedProperty parses a top-level extended_property block into a
-// schemamodel.ExtendedProperty.
+// parseExtendedProperty parses a top-level extended_property block into the
+// SQL Server extended property owner's declaration.
 //
 // The address is refused exactly where the SQL Server renderer refuses it: a
 // `table` needs the `schema` that holds it and a `column` needs its `table`,
@@ -2072,14 +2073,16 @@ func (p *parser) parseExtendedProperty(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.ExtendedProperties = append(p.db.ExtendedProperties, schemamodel.ExtendedProperty{
-		Name:    name,
-		Schema:  schema,
-		Table:   table,
-		Column:  column,
-		Value:   value,
-		Comment: p.optionalString(block.Body.Attributes["comment"]),
-	})
+	property := mssqlproperty.DesiredProperty{Comment: p.optionalString(block.Body.Attributes["comment"]),
+		Property: mssqlproperty.Property{Name: name, Schema: schema, Table: table, Column: column, Value: value}}
+	if err := mssqlproperty.ValidateDesired(&property); err != nil {
+		return p.blockError(block, "%v", err)
+	}
+	objects, err := p.db.FeatureObjects.With(mssqlproperty.DeclaredObject(property))
+	if err != nil {
+		return p.blockError(block, "extended_property %s is declared twice: %v", property.Label(), err)
+	}
+	p.db.FeatureObjects = objects
 	return nil
 }
 

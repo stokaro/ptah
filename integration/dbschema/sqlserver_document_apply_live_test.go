@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"slices"
 	"testing"
 	"time"
@@ -14,7 +17,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -75,7 +77,7 @@ func TestSQLServerLiveDocumentAppliesEveryPropertyScope(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	// Non-vacuity: the merge really carries them, so an empty plan below cannot
 	// pass as agreement.
-	c.Assert(declared.ExtendedProperties, qt.HasLen, 4)
+	c.Assert(declared.FeatureObjects.Len(), qt.Equals, 4)
 
 	statements := planDocumentAgainstLive(c, conn, declared, schemaName)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
@@ -90,7 +92,7 @@ func TestSQLServerLiveDocumentAppliesEveryPropertyScope(t *testing.T) {
 	// plan sp_dropextendedproperty for a property the declaration still names.
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	c.Assert(extendedPropertyNames(live.ExtendedProperties), qt.DeepEquals,
+	c.Assert(extendedPropertyNames(c, live.FeatureObjects), qt.DeepEquals,
 		[]string{"ptah_column", databaseProperty, "ptah_schema", "ptah_table"})
 
 	// And the same document is now a no-op.
@@ -99,10 +101,12 @@ func TestSQLServerLiveDocumentAppliesEveryPropertyScope(t *testing.T) {
 
 // extendedPropertyNames is the read's property names, sorted, so the assertion
 // says which properties rather than how many.
-func extendedPropertyNames(properties []catalog.ExtendedProperty) []string {
-	names := make([]string, 0, len(properties))
-	for _, property := range properties {
-		names = append(names, property.Name)
+func extendedPropertyNames(c *qt.C, objects schemaext.Objects) []string {
+	refs := objects.Refs()
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		c.Assert(ref.Kind, qt.Equals, objectidentity.Kind(mssqlproperty.Kind))
+		names = append(names, ref.Name.Source)
 	}
 	slices.Sort(names)
 	return names

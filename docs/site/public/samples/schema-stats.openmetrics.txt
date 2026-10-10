@@ -67,6 +67,9 @@ ptah_schema_clickhouse_table_settings{dialect="sqlite"} 0
 # HELP ptah_schema_cockroachdb_row_ttl_tables Tables with a captured CockroachDB row-level TTL.
 # TYPE ptah_schema_cockroachdb_row_ttl_tables gauge
 ptah_schema_cockroachdb_row_ttl_tables{dialect="sqlite"} 0
+# HELP ptah_schema_extended_properties SQL Server extended properties.
+# TYPE ptah_schema_extended_properties gauge
+ptah_schema_extended_properties{dialect="sqlite"} 0
 # HELP ptah_schema_security_policies SQL Server security policies.
 # TYPE ptah_schema_security_policies gauge
 ptah_schema_security_policies{dialect="sqlite"} 0

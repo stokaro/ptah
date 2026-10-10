@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -243,9 +246,9 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 			// what it promises: a schema the read DID report is written.
 			name: "an extended property",
 			declare: func(db *schemamodel.Database) {
-				db.ExtendedProperties = []schemamodel.ExtendedProperty{{
-					Name: "MS_Description", Schema: "reporting", Table: "t", Value: "the table",
-				}}
+				db.FeatureObjects = must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+					Property: mssqlproperty.Property{Name: "MS_Description", Schema: "reporting", Table: "t", Value: "the table"},
+				})))
 			},
 			want: "extended_property \"MS_Description\" {\n  schema = schema.reporting\n",
 		},

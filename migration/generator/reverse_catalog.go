@@ -94,22 +94,6 @@ func reverseSequenceDiffs(
 // which direction is being built.
 // reverseSynonymDiffs swaps each retarget so the down direction restores the
 // target the database had before the up migration ran.
-// reverseExtendedPropertyDiffs swaps the two values of every modified extended
-// property, so the down direction restores what the database held.
-func reverseExtendedPropertyDiffs(diffs []difftypes.ExtendedPropertyDiff) []difftypes.ExtendedPropertyDiff {
-	if len(diffs) == 0 {
-		return nil
-	}
-	reversed := make([]difftypes.ExtendedPropertyDiff, 0, len(diffs))
-	for _, diff := range diffs {
-		restored := diff
-		restored.Value = diff.OldValue
-		restored.OldValue = diff.Value
-		reversed = append(reversed, restored)
-	}
-	return reversed
-}
-
 func reverseSynonymDiffs(
 	diffs []difftypes.SynonymDiff,
 	prior *schemamodel.Database,

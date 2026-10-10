@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -53,9 +56,9 @@ func TestRenderInspectedKeepsADatabaseScopedPropertyAtDatabaseScope(t *testing.T
 	c := qt.New(t)
 
 	db := sqlServerObjects()
-	db.ExtendedProperties = append(db.ExtendedProperties, schemamodel.ExtendedProperty{
-		Name: "ptah_flag", Value: "database scope",
-	})
+	db.FeatureObjects = must.Must(db.FeatureObjects.With(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+		Property: mssqlproperty.Property{Name: "ptah_flag", Value: "database scope"},
+	})))
 
 	result, err := atlashclrender.RenderInspected(db, platform.SQLServer, "dbo")
 
@@ -76,9 +79,8 @@ func sqlServerObjects() *schemamodel.Database {
 		Synonyms: []schemamodel.Synonym{{
 			Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
 		}},
-		ExtendedProperties: []schemamodel.ExtendedProperty{{
-			Name: "MS_Description", Schema: "dbo", Table: "users",
-			Column: "title", Value: "the title",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+			Property: mssqlproperty.Property{Name: "MS_Description", Schema: "dbo", Table: "users", Column: "title", Value: "the title"},
+		}))),
 	}
 }

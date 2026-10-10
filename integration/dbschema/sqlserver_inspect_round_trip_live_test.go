@@ -4,6 +4,7 @@ package dbschema_test
 
 import (
 	"fmt"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"testing"
 	"time"
 
@@ -65,9 +66,14 @@ func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	// Non-vacuity: the read really found all three, so an empty document below
-	// cannot pass as agreement about what is describable.
+	// cannot pass as agreement about what is describable. The property held
+	// as an int is recorded in coverage rather than as a value.
 	c.Assert(live.Synonyms, qt.HasLen, 1)
-	c.Assert(live.ExtendedProperties, qt.HasLen, 2)
+	c.Assert(live.FeatureObjects.Len(), qt.Equals, 1)
+	unwritable, recorded := live.FeatureCoverage.SubjectKnowledge(mssqlproperty.Kind,
+		mssqlproperty.Property{Name: "ptah_int", Schema: schemaName, Table: "gauge"}.Ref())
+	c.Assert(recorded, qt.IsTrue)
+	c.Assert(unwritable, qt.DeepEquals, mssqlproperty.UnrepresentableValue("int"))
 
 	rendered, err := atlashclrender.RenderInspected(
 		must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "sqlserver", must.Must(builtin.New()))), platform.SQLServer, schemaName)

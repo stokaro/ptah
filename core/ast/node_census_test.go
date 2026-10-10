@@ -79,7 +79,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.DropTypeNode{}},
 	{node: &ast.DropViewNode{}},
 	{node: &ast.EnumNode{}},
-	{node: &ast.ExtendedPropertyNode{}},
 	{node: &ast.ExtensionNode{}},
 	{node: &ast.GrantPrivilegeNode{}},
 	{node: &ast.GrantRoleMembershipNode{}},

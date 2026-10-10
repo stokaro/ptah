@@ -2,12 +2,12 @@ package schemafile
 
 import (
 	"fmt"
-	"ptah.run/core/objectidentity"
-	"ptah.run/feature/pgpolicy"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 )
 
 // A schema DIRECTORY is an ordered script, not a set of declarations.

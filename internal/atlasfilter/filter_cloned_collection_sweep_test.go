@@ -80,15 +80,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			field: "ExtendedProperties", present: "ptah_flag", absent: "nosuch_property",
-			seed: func(s *catalog.Database) {
-				s.ExtendedProperties = append(s.ExtendedProperties,
-					catalog.ExtendedProperty{
-						Name: "ptah_flag", Table: "users", Value: "enabled", ValueType: "nvarchar",
-					})
-			},
-		},
-		{
 			field: "Extensions", present: "pgcrypto", absent: "nosuch_extension",
 			seed: func(s *catalog.Database) {
 				s.Extensions = append(s.Extensions, catalog.Extension{Name: "pgcrypto"})

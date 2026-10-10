@@ -1476,37 +1476,6 @@ func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.
 	return nil
 }
 
-// fromExtendedProperty converts a schemamodel.ExtendedProperty into the node that
-// writes it.
-//
-// The operation is always an add. An update is what a COMPARISON produces, from
-// a live value that differs; a declaration rendered on its own is a schema
-// being created, where nothing is there to update.
-//
-// The address parts are passed unqualified and unquoted. They reach the
-// renderer as string literals rather than identifiers, because that is what
-// sp_addextendedproperty takes -- see VisitExtendedProperty for what quoting
-// them would write.
-func fromExtendedProperty(property schemamodel.ExtendedProperty) *ast.ExtendedPropertyNode {
-	return ast.NewExtendedProperty(ast.ExtendedPropertyAdd, property.Name).
-		SetOwner(property.Schema, property.Table, property.Column).
-		SetValue(property.Value).
-		SetComment(property.Comment)
-}
-
-// appendExtendedPropertyStatements adds one add-property node per declaration.
-func appendExtendedPropertyStatements(
-	visit func(ast.Node) error,
-	properties []schemamodel.ExtendedProperty,
-) error {
-	for _, property := range properties {
-		if err := visit(fromExtendedProperty(property)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // FromMaterializedView converts a schemamodel.MaterializedView to an
 // ast.CreateMaterializedViewNode.
 func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterializedViewNode {
@@ -2074,12 +2043,6 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform string, vi
 		return err
 	}
 
-	// 9b1-9c. The objects that depend on the tables existing and on nothing
-	// declared here but each other's order.
-	if err := appendTableIndependentObjectStatements(visit, database); err != nil {
-		return err
-	}
-
 	// 10. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
 	if !mysqlFamily {
@@ -2089,19 +2052,6 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform string, vi
 	}
 
 	return nil
-}
-
-// appendTableIndependentObjectStatements appends the statements for every
-// object family that depends on the tables existing and on nothing else
-// declared here, in the order WalkDatabase reports them. Extracted from
-// WalkDatabase to keep its branching under the complexity limit.
-func appendTableIndependentObjectStatements(visit func(ast.Node) error, database schemamodel.Database) error {
-	// 9c. Extended properties come after every object one can hang off.
-	// sp_addextendedproperty resolves @level1name through the catalog and
-	// answers `Cannot find the object ... because it does not exist or you do
-	// not have permission` when the table is not there yet, so a property can
-	// never precede its owner.
-	return appendExtendedPropertyStatements(visit, database.ExtendedProperties)
 }
 
 func appendPreTableStatements(

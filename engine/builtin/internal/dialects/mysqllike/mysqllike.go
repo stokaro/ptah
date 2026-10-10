@@ -1871,17 +1871,6 @@ func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
-// renderExtendedProperty refuses: an extended property is a SQL Server object,
-// and this engine has no catalog to attach one to.
-//
-// There is no capability key behind this refusal, for the reason
-// renderCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
-	r.w.WriteLinef("-- EXTENDED PROPERTY %s not supported in %s", node.Name, r.dialect)
-	return nil
-}
-
 // renderDropSynonym names the drop as unsupported, for the same reason.
 func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	if node.Comment != "" {

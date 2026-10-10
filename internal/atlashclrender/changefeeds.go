@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
@@ -25,7 +26,7 @@ import (
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
 		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) || ref.Kind == objectidentity.Kind(tsschema.ContinuousAggregateKind) ||
-			ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) {
+			ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) || ref.Kind == objectidentity.Kind(mssqlproperty.Kind) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{

@@ -9,7 +9,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
-	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -24,6 +23,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -207,15 +207,6 @@ func roundTripRows() []roundTripRow {
 			},
 			count: func(d *schemamodel.Database) int { return len(d.Synonyms) },
 		},
-		{
-			field: "ExtendedProperties",
-			seed: func(d *schemamodel.Database) {
-				d.ExtendedProperties = append(d.ExtendedProperties, schemamodel.ExtendedProperty{
-					Name: "MS_Description", Value: "the users", Schema: "public", Table: "users",
-				})
-			},
-			count: func(d *schemamodel.Database) int { return len(d.ExtendedProperties) },
-		},
 	}
 }
 
@@ -272,10 +263,9 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Domains":        coverage.Domain,
 	"CompositeTypes": coverage.Composite,
 	"Ranges":         coverage.Range,
-	// HCL gained a block for these two (stokaro/ptah#1031) and the sweep above
+	// HCL gained a block for synonyms (stokaro/ptah#1031) and the sweep above
 	// measures that they survive it; YAML still has no key, so here they stay.
-	"Synonyms":           coverage.Synonym,
-	"ExtendedProperties": coverage.ExtendedProperty,
+	"Synonyms": coverage.Synonym,
 }
 
 // The YAML surface has a topics key, so a YAML document that leaves a topic

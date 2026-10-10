@@ -88,83 +88,6 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 	}
 }
 
-// TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite pins both
-// halves of the extended-property conversion.
-//
-// The four addresses are four different statements, and the conversion has to
-// keep them apart: a schema property passes level 0 alone, a table adds level 1,
-// a column adds level 2, and a database property passes none.
-//
-// The exclusion is the second half and it is a decision, not an omission. A
-// value SQL Server stores under a base type Ptah cannot write back must not
-// become a declaration: the renderer emits an N” literal, so an int or a date
-// would change type on the next apply, and CONVERT(NVARCHAR, …) on a date
-// answers a locale-dependent rendering rather than the value. The comparator
-// declines those in both directions, and describing one would undo that by
-// asking for the string.
-func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T) {
-	tests := []struct {
-		name     string
-		property catalog.ExtendedProperty
-		want     []schemamodel.ExtendedProperty
-	}{
-		{
-			name: "database scope",
-			property: catalog.ExtendedProperty{
-				Name: "ptah_db", Value: "on", ValueType: "nvarchar",
-			},
-			want: []schemamodel.ExtendedProperty{{Name: "ptah_db", Value: "on"}},
-		},
-		{
-			name: "schema scope",
-			property: catalog.ExtendedProperty{
-				Name: "ptah_schema", Schema: "dbo", Value: "on", ValueType: "nvarchar",
-			},
-			want: []schemamodel.ExtendedProperty{{Name: "ptah_schema", Schema: "dbo", Value: "on"}},
-		},
-		{
-			name: "table scope",
-			property: catalog.ExtendedProperty{
-				Name: "ptah_table", Schema: "dbo", Table: "gauge",
-				Value: "on", ValueType: "nvarchar",
-			},
-			want: []schemamodel.ExtendedProperty{{
-				Name: "ptah_table", Schema: "dbo", Table: "gauge", Value: "on",
-			}},
-		},
-		{
-			name: "column scope",
-			property: catalog.ExtendedProperty{
-				Name: "ptah_column", Schema: "dbo", Table: "gauge", Column: "title",
-				Value: "on", ValueType: "nvarchar",
-			},
-			want: []schemamodel.ExtendedProperty{{
-				Name: "ptah_column", Schema: "dbo", Table: "gauge", Column: "title", Value: "on",
-			}},
-		},
-		{
-			name: "a value no declaration could restore",
-			property: catalog.ExtendedProperty{
-				Name: "ptah_int", Schema: "dbo", Table: "gauge",
-				Value: "42", ValueType: "int", ValueNotRepresentable: true,
-			},
-			want: nil,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
-				ExtendedProperties: []catalog.ExtendedProperty{test.property},
-			}, "sqlserver", must.Must(builtin.New())))
-
-			c.Assert(converted.ExtendedProperties, qt.DeepEquals, test.want)
-		})
-	}
-}
-
 // TestConvert_DecidesEveryFamilyTheReadCanCarry is the guard the two families
 // stokaro/ptah#2001 lost would have needed.
 //
@@ -220,26 +143,25 @@ func readSliceFields() []string {
 
 // convertedFamilies maps each read family to the IR field it becomes.
 var convertedFamilies = map[string]string{
-	"Schemas":            "Schemas",
-	"Tables":             "Tables",
-	"Enums":              "Enums",
-	"Indexes":            "Indexes",
-	"Constraints":        "Constraints",
-	"Extensions":         "Extensions",
-	"Functions":          "Functions",
-	"Sequences":          "Sequences",
-	"Domains":            "Domains",
-	"Composites":         "CompositeTypes",
-	"Ranges":             "Ranges",
-	"Views":              "Views",
-	"MatViews":           "MaterializedViews",
-	"Synonyms":           "Synonyms",
-	"ExtendedProperties": "ExtendedProperties",
-	"Triggers":           "Triggers",
-	"RLSPolicies":        "RLSPolicies",
-	"Roles":              "Roles",
-	"Grants":             "Grants",
-	"DefaultPrivileges":  "DefaultPrivileges",
+	"Schemas":           "Schemas",
+	"Tables":            "Tables",
+	"Enums":             "Enums",
+	"Indexes":           "Indexes",
+	"Constraints":       "Constraints",
+	"Extensions":        "Extensions",
+	"Functions":         "Functions",
+	"Sequences":         "Sequences",
+	"Domains":           "Domains",
+	"Composites":        "CompositeTypes",
+	"Ranges":            "Ranges",
+	"Views":             "Views",
+	"MatViews":          "MaterializedViews",
+	"Synonyms":          "Synonyms",
+	"Triggers":          "Triggers",
+	"RLSPolicies":       "RLSPolicies",
+	"Roles":             "Roles",
+	"Grants":            "Grants",
+	"DefaultPrivileges": "DefaultPrivileges",
 }
 
 // unconvertedFamilies are the read families that deliberately do not become
