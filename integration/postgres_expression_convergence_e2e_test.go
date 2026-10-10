@@ -14,9 +14,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/config"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -89,7 +91,9 @@ func TestPostgresIndexAndPolicyExpressionsConvergeE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0)
-	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 0)
+	// The policy is a table-owned subject of the row-security owner, so a
+	// change to it would sit under the table; nothing at all is planned.
+	c.Assert(diff.HasChanges(), qt.IsFalse)
 
 	// The controls: a real change to each is still reported, so the
 	// convergence above is not a comparison that always agrees.
@@ -103,13 +107,14 @@ func TestPostgresIndexAndPolicyExpressionsConvergeE2E(t *testing.T) {
 		ctx, conn, expressionDeclaration("lower(code)", "unit >= 0", "owner = 'y'"),
 		read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	c.Assert(changedPolicy.RLSPoliciesModified, qt.HasLen, 1)
+	c.Assert(changedPolicy.TablesModified, qt.HasLen, 1)
+	c.Assert(changedPolicy.TablesModified[0].FeatureChanges, qt.HasLen, 1)
 }
 
 // expressionDeclaration is the same schema as a description, carrying the
 // expressions as they were WRITTEN.
 func expressionDeclaration(indexExpr, predicate, using string) *schemamodel.Database {
-	return &schemamodel.Database{
+	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "O", Name: "orders"}},
 		Fields: []schemamodel.Field{
 			{StructName: "O", Name: "id", Type: "integer", Primary: true},
@@ -127,12 +132,14 @@ func expressionDeclaration(indexExpr, predicate, using string) *schemamodel.Data
 				Fields: []string{"code"}, Condition: predicate,
 			},
 		},
-		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "O", Table: "orders"}},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			StructName: "O", Name: "p_owner", Table: "orders",
-			PolicyFor: "SELECT", ToRoles: "PUBLIC", UsingExpression: using,
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+			pgpolicy.PolicyRef("", "orders", "p_owner"),
+			pgpolicy.DesiredPolicy{Command: pgpolicy.CommandSelect, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}},
+				Using: new(using)})))),
+		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)),
 	}
+	db.Tables[0].Facets = must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true}))
+	return db
 }
 
 // storedIndexKey asks the server how it spells an index's first key.
