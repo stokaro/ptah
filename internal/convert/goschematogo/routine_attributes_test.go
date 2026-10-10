@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -36,7 +37,7 @@ func TestRender_RoutineAttributesRoundTrip(t *testing.T) {
 	for _, file := range files {
 		source.Write(file.Data)
 	}
-	parsed, err := goschema.ParseSource("schema.go", source.String())
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 
 	c.Assert(err, qt.IsNil, qt.Commentf("the exported source does not parse:\n%s", source.String()))
 	c.Assert(parsed.Functions, qt.HasLen, 1)

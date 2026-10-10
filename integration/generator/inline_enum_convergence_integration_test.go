@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -47,7 +48,7 @@ type Order struct {
 	Status string
 }
 `
-	description, err := goschema.ParseFS(fstest.MapFS{
+	description, err := goschema.ParseFS(builtintest.Annotations(), fstest.MapFS{
 		"entities/schema.go": &fstest.MapFile{Data: []byte(source)},
 	}, "entities")
 	c.Assert(err, qt.IsNil)

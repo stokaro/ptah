@@ -138,13 +138,17 @@ func compareReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	prepared, err := prepareComparisonTables(ctx, desired, database, opts.Dialect, identifierSemantics, caps, runtime)
+	// The feature comparison runs before the index comparison, and reads a
+	// renamed index under the name the plan gives it.
+	prepared, err := prepareComparisonTables(ctx, desired, database,
+		compare.IndexRenames(desired, database, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps),
+		opts.Dialect, identifierSemantics, caps, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
 	desired, diff.TablePreparation = prepared.desired, prepared.capture
 
-	featureResult, desired, err := compareEffectiveFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.parents, opts.FeatureRequests, runtime)
+	featureResult, desired, err := compareEffectiveFeatures(ctx, desired, prepared.owners, opts.Dialect, identifierSemantics, caps, prepared.parents, opts.FeatureRequests, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -256,12 +260,10 @@ func compareReportingUndecidedAdditions(
 	// rebuilds a table and must not drop a setting nobody compared.
 	diff.CurrentNotDescribed = database.NotDescribed
 	// Where the read happened, for the statements YDB takes only with an
-	// absolute path, every grant it reported, for a plan that recreates a
-	// table and must give the table its grants back, and every YDB table's
-	// settings, for the same plan to keep the ones nobody declared.
+	// absolute path, and every grant it reported, for a plan that recreates a
+	// table and must give the table its grants back.
 	diff.CurrentDatabasePath = database.DatabasePath
 	diff.CurrentGrants = compare.CurrentGrants(database)
-	diff.CurrentYDBSettings = compare.CurrentYDBSettings(database)
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.

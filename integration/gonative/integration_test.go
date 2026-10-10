@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/modelast"
 )
 
@@ -35,7 +36,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 			c := qt.New(t)
 
 			// Parse the entity file
-			database, err := goschema.ParseFile(file)
+			database, err := goschema.ParseFile(builtintest.Annotations(), file)
 			c.Assert(err, qt.IsNil)
 
 			// Verify that we got data from the file

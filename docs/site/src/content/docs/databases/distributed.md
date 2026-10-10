@@ -58,6 +58,14 @@ is refused. CockroachDB and YugabyteDB take the transactional path, where a
 failed body leaves nothing behind. See
 [Apply migrations](../../versioned/apply/) for what each target records.
 
+Spanner also has one drop mode, and it refuses `CASCADE` on `DROP TABLE`,
+`DROP VIEW` and `ALTER TABLE ... DROP COLUMN`. A plan for Spanner writes those
+statements without it and drops what depends on an object first: a removed
+table's indexes go before the table, and a removed view goes before the tables
+it reads. Spanner refuses the drop when something the plan keeps still depends
+on the object, such as a kept view that reads a removed table. PostgreSQL would
+drop that view with the table instead.
+
 ## Coverage in continuous integration
 
 CockroachDB and YugabyteDB run in integration coverage against live
@@ -73,6 +81,17 @@ starts.
 It stays best-effort for a reason that no amount of coverage changes: an
 emulator is evidence about the PostgreSQL interface, not about the managed
 service. Review generated SQL before relying on it.
+
+One difference between the emulator and the documented service is known. For
+a foreign key, Spanner documents `key_column_usage.position_in_unique_constraint`
+as the column's position in the referenced key, and Ptah reads it that way. The
+emulator behind PGAdapter 0.56.1 reports the position in the order the foreign
+key lists its referenced columns. On the emulator, a composite foreign key that
+lists them in another order than the referenced key, such as
+`FOREIGN KEY (y, x) REFERENCES parent (b, a)` against `PRIMARY KEY (a, b)`,
+therefore reads back with `y` paired to `a`, and every plan drops and adds it.
+The server still enforces the key as declared. A foreign key that lists its
+referenced columns in the referenced key's order reads back as declared.
 
 PostgreSQL and YugabyteDB keep the database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
@@ -253,10 +272,8 @@ On a table that exists, a plan emits `ALTER TABLE ... ADD TTL` for a new policy,
 when the declaration names none. Spanner refuses `ADD` and `ALTER` in each
 other's place, so the plan chooses by what the table holds. A policy that moves
 to a new column is changed after the column is added and before the column it
-named is dropped. A column drop on Spanner carries no `CASCADE`, which Spanner
-refuses. A table in a Go or YAML
-schema that names no policy declares none, so a policy on the live table is
-removed. `ptah introspect` writes a read policy back as the same properties,
+named is dropped. A table in a Go or YAML schema that names no policy declares
+none, so a policy on the live table is removed. `ptah introspect` writes a read policy back as the same properties,
 with the interval in the spelling Spanner stores.
 
 The `platform.spanner` properties apply to Spanner only, so the same schema

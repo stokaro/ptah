@@ -66,7 +66,7 @@ type Post struct {
 `)},
 	}
 
-	_, err := goschema.ParseFS(fsys, ".")
+	_, err := goschema.ParseFS(noOwners, fsys, ".")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
 	c.Assert(countParseErrors(err), qt.Equals, 2)
@@ -75,7 +75,7 @@ type Post struct {
 func TestParseSource_InvalidAttributeValueIsTyped(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschema.ParseSource("schema.go", `package models
+	_, err := goschema.ParseSource(noOwners, "schema.go", `package models
 
 //ptah:schema:table name="users"
 type User struct {
@@ -113,14 +113,14 @@ type Event struct {
 `)},
 	}
 
-	_, err := goschema.ParseFS(fsys, ".")
+	_, err := goschema.ParseFS(noOwners, fsys, ".")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(countParseErrors(err), qt.Equals, 2)
 }
 
 func runEmbedPath(root string) error {
-	desired, err := goschema.ParseDir(root)
+	desired, err := goschema.ParseDir(noOwners, root)
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/planner"
@@ -54,7 +55,7 @@ type User struct {
 		},
 	}
 
-	db, err := goschema.ParseFS(fsys, "models")
+	db, err := goschema.ParseFS(builtintest.Annotations(), fsys, "models")
 	c.Assert(err, qt.IsNil)
 
 	runtime, err := builtin.New()

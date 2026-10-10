@@ -465,7 +465,7 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("migrate_to requires a migrations directory")
 	}
 
-	desiredSchema, err := desiredSchemaForMigrationCases(opts.RootDir, opts.Cases)
+	desiredSchema, err := desiredSchemaForMigrationCases(opts.Runtime.Annotations(), opts.RootDir, opts.Cases)
 	if err != nil {
 		return nil, err
 	}

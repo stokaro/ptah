@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -26,76 +25,6 @@ func compareYDBIndexes(desired []schemamodel.Index, database []catalog.Index, ca
 	return diff
 }
 
-// TestIndexes_YDBPartitioningChangesInPlace records a change of partitioning
-// on an index both sides hold with the same definition as a change made in
-// place, carrying both settings, and plans no rebuild for it.
-func TestIndexes_YDBPartitioningChangesInPlace(t *testing.T) {
-	tests := []struct {
-		name     string
-		desired  *ast.IndexPartitioningSpec
-		database *ast.IndexPartitioningSpec
-	}{
-		{name: "a setting declared", desired: &ast.IndexPartitioningSpec{MinPartitions: 3}, database: nil},
-		{name: "a setting moved", desired: &ast.IndexPartitioningSpec{MinPartitions: 4}, database: &ast.IndexPartitioningSpec{MinPartitions: 3}},
-		{name: "replicas declared away", desired: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:0"},
-			database: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:1"}},
-		{name: "a maximum lowered", desired: &ast.IndexPartitioningSpec{MaxPartitions: 4}, database: &ast.IndexPartitioningSpec{MaxPartitions: 9}},
-		{name: "a declaration YDB refuses", desired: &ast.IndexPartitioningSpec{BySize: new(false), PartitionSizeMB: 100}, database: nil},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			desired := ydbDeclaredIndex("", false, []string{"a"}, nil)
-			desired.Partitioning = test.desired
-			database := ydbIndex("GLOBAL SYNC", false, []string{"a"}, nil)
-			database.Partitioning = test.database
-
-			diff := compareYDBIndexes([]schemamodel.Index{desired}, []catalog.Index{database}, capability.YDB262())
-
-			c.Assert(diff.IndexPartitioningChanged, qt.DeepEquals, []difftypes.IndexPartitioningChange{
-				{TableName: "t", Name: "i", Partitioning: test.desired, Previous: test.database},
-			})
-			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
-			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
-		})
-	}
-}
-
-// TestIndexes_YDBPartitioningUnchanged is the control: settings that resolve
-// alike are one index, whichever side names them, and a setting the
-// declaration leaves out keeps what the index holds, so it is no change.
-func TestIndexes_YDBPartitioningUnchanged(t *testing.T) {
-	tests := []struct {
-		name     string
-		desired  *ast.IndexPartitioningSpec
-		database *ast.IndexPartitioningSpec
-	}{
-		{name: "neither side tuned", desired: nil, database: nil},
-		{name: "the defaults declared", desired: &ast.IndexPartitioningSpec{BySize: new(true), PartitionSizeMB: 2048, MinPartitions: 1}, database: nil},
-		{name: "read replicas of zero", desired: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:0"}, database: nil},
-		{name: "the same settings", desired: &ast.IndexPartitioningSpec{ByLoad: new(true), MaxPartitions: 9},
-			database: &ast.IndexPartitioningSpec{ByLoad: new(true), MaxPartitions: 9}},
-		{name: "a setting no longer declared", desired: nil, database: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:1"}},
-		{name: "a maximum left out", desired: &ast.IndexPartitioningSpec{MinPartitions: 2},
-			database: &ast.IndexPartitioningSpec{MinPartitions: 2, MaxPartitions: 9}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			desired := ydbDeclaredIndex("", false, []string{"a"}, nil)
-			desired.Partitioning = test.desired
-			database := ydbIndex("GLOBAL SYNC", false, []string{"a"}, nil)
-			database.Partitioning = test.database
-
-			diff := compareYDBIndexes([]schemamodel.Index{desired}, []catalog.Index{database}, capability.YDB262())
-
-			c.Assert(diff.HasChanges(), qt.IsFalse)
-		})
-	}
-}
-
 // namedIndex renames one of the indexes ydbDeclaredIndex and ydbIndex build.
 func namedIndex(index schemamodel.Index, name string) schemamodel.Index {
 	index.Name = name
@@ -109,30 +38,30 @@ func namedCatalogIndex(index catalog.Index, name string) catalog.Index {
 
 // TestIndexes_YDBPairsARenamedIndex reads an index the database drops and one
 // the declaration adds, on the same table with the same definition, as one
-// index renamed, and carries a change of partitioning under the new name.
+// index renamed. IndexRenames, which the feature comparison reads to bind a
+// renamed index's settings to its new name, returns the same renames.
 func TestIndexes_YDBPairsARenamedIndex(t *testing.T) {
 	c := qt.New(t)
-	plain := ydbDeclaredIndex("async", false, []string{"a"}, []string{"c"})
-	tuned := namedIndex(plain, "by_a")
-	tuned.Partitioning = &ast.IndexPartitioningSpec{MinPartitions: 4}
-	held := namedCatalogIndex(ydbIndex("GLOBAL ASYNC", false, []string{"a"}, []string{"c"}), "old_a")
-	held.Partitioning = &ast.IndexPartitioningSpec{MinPartitions: 3}
+	desired := []schemamodel.Index{
+		namedIndex(ydbDeclaredIndex("async", false, []string{"a"}, []string{"c"}), "by_a"),
+		namedIndex(ydbDeclaredIndex("", true, []string{"b"}, nil), "uq_b"),
+	}
+	database := []catalog.Index{
+		namedCatalogIndex(ydbIndex("GLOBAL ASYNC", false, []string{"a"}, []string{"c"}), "old_a"),
+		namedCatalogIndex(ydbIndex("GLOBAL SYNC", true, []string{"b"}, nil), "old_uq_b"),
+	}
 
-	diff := compareYDBIndexes(
-		[]schemamodel.Index{tuned, namedIndex(ydbDeclaredIndex("", true, []string{"b"}, nil), "uq_b")},
-		[]catalog.Index{held, namedCatalogIndex(ydbIndex("GLOBAL SYNC", true, []string{"b"}, nil), "old_uq_b")},
-		capability.YDB262(),
-	)
+	diff := compareYDBIndexes(desired, database, capability.YDB262())
 
-	c.Assert(diff.IndexesRenamed, qt.DeepEquals, []difftypes.IndexRename{
+	want := []difftypes.IndexRename{
 		{TableName: "t", From: "old_a", To: "by_a"},
 		{TableName: "t", From: "old_uq_b", To: "uq_b"},
-	})
-	c.Assert(diff.IndexPartitioningChanged, qt.DeepEquals, []difftypes.IndexPartitioningChange{
-		{TableName: "t", Name: "by_a", Partitioning: tuned.Partitioning, Previous: held.Partitioning},
-	})
+	}
+	c.Assert(diff.IndexesRenamed, qt.DeepEquals, want)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
+	c.Assert(compare.IndexRenames(&schemamodel.Database{Indexes: desired}, &catalog.Database{Indexes: database},
+		platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262()), qt.DeepEquals, want)
 }
 
 // TestIndexes_YDBPairsEqualRenamesInNameOrder pairs two equal indexes renamed
@@ -193,18 +122,15 @@ func TestIndexes_RenameNotPaired(t *testing.T) {
 }
 
 // TestIndexes_PostgresRecordsNoYDBIndexChange is the control on another
-// dialect: its catalog reports no partitioning and its preset plans no rename,
-// so a renamed index is a drop and a create and a declared partitioning is not
-// compared.
+// dialect: its preset plans no rename, so a renamed index is a drop and a
+// create.
 func TestIndexes_PostgresRecordsNoYDBIndexChange(t *testing.T) {
 	c := qt.New(t)
-	desired := schemamodel.Index{Name: "new", TableName: "t", Fields: []string{"a"},
-		Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 3}}
+	desired := schemamodel.Index{Name: "new", TableName: "t", Fields: []string{"a"}}
 	diff := &difftypes.SchemaDiff{}
 
 	compare.IndexesWithDialect(
-		&schemamodel.Database{Indexes: []schemamodel.Index{desired, {Name: "kept", TableName: "t", Fields: []string{"b"},
-			Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 3}}}},
+		&schemamodel.Database{Indexes: []schemamodel.Index{desired, {Name: "kept", TableName: "t", Fields: []string{"b"}}}},
 		&catalog.Database{Indexes: []catalog.Index{
 			{Name: "old", TableName: "t", Columns: []string{"a"}},
 			{Name: "kept", TableName: "t", Columns: []string{"b"}},
@@ -213,7 +139,6 @@ func TestIndexes_PostgresRecordsNoYDBIndexChange(t *testing.T) {
 	)
 
 	c.Assert(diff.IndexesRenamed, qt.HasLen, 0)
-	c.Assert(diff.IndexPartitioningChanged, qt.HasLen, 0)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{Name: "new", TableName: "t"}})
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{Name: "old", TableName: "t"}})
 }

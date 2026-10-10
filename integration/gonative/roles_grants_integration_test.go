@@ -27,6 +27,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/readdb"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/rolescope"
@@ -348,7 +349,7 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	integrationDir := filepath.Dir(srcDir)  // .../integration
 	rootDir := filepath.Dir(integrationDir) // module root
 	absFixture := filepath.Join(rootDir, "integration/internal/fixtures/entities/023-go-annotations-objects")
-	result, err := goschema.ParseDir(absFixture)
+	result, err := goschema.ParseDir(builtintest.Annotations(), absFixture)
 	c.Assert(err, qt.IsNil, qt.Commentf("ParseDir on new objects fixture must succeed"))
 
 	c.Assert(result.Views, qt.HasLen, 1)

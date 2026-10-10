@@ -5,9 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // TestParse_YDBGlobalIndex_HappyPath reads a YDB global index in YAML: its
@@ -42,11 +43,17 @@ tables:
 `))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Indexes, qt.DeepEquals, []schemamodel.Index{
-		{StructName: "items", TableName: "items", Name: "idx_items_price", Fields: []string{"price"}, IncludeColumns: []string{"kind"}, Type: "async",
-			Partitioning: &ast.IndexPartitioningSpec{
-				BySize: new(false), ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "ANY_AZ:2",
-			}},
+	c.Assert(db.Indexes, qt.HasLen, 2)
+	declared, found, err := schemaext.FacetAs[*ydbschema.DesiredIndexPartitioning](db.Indexes[0].Facets, ydbschema.IndexPartitioningKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(declared.IndexPartitioning, qt.DeepEquals, ydbschema.IndexPartitioning{
+		BySize: new(false), ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "ANY_AZ:2",
+	})
+	price, kind := db.Indexes[0], db.Indexes[1]
+	price.Facets = schemaext.Facets{}
+	c.Assert([]schemamodel.Index{price, kind}, qt.DeepEquals, []schemamodel.Index{
+		{StructName: "items", TableName: "items", Name: "idx_items_price", Fields: []string{"price"}, IncludeColumns: []string{"kind"}, Type: "async"},
 		{StructName: "items", TableName: "items", Name: "idx_items_kind", Fields: []string{"kind"}},
 	})
 }

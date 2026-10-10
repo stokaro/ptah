@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/datamigrate"
 )
 
@@ -51,7 +52,7 @@ type Event struct {
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(root, "events.yaml"), []byte(rows), 0o600), qt.IsNil)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, Dialect: "oracle"})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, Dialect: "oracle"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains,
 		`INSERT INTO events (enabled, id, seen_at) VALUES (1, 'A', TIMESTAMP '2024-03-01 12:30:45+00:00');`)

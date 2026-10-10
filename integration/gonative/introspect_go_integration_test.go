@@ -22,6 +22,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/root"
 	"ptah.run/migration/schemadiff"
 )
@@ -81,7 +82,7 @@ func TestIntrospectCommand_PostgresBrownfieldGoRoundTrip(t *testing.T) {
 	output, err := goTest.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("generated package go test:\n%s", output))
 
-	desired, err := goschema.ParseDir(outDir)
+	desired, err := goschema.ParseDir(builtintest.Annotations(), outDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(desired.Tables, qt.HasLen, 10)
 	c.Assert(desired.Enums, qt.HasLen, 1)

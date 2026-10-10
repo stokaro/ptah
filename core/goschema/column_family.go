@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -30,7 +29,7 @@ const columnFamilyDirective = "ptah:schema:columnfamily"
 // belongs to the table the struct maps to, or to the table its `table`
 // attribute names, and is attached to it once the whole file is read.
 func (s *schemaParseState) parseColumnFamilyComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//"+columnFamilyDirective, structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err

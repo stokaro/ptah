@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
@@ -40,7 +41,7 @@ func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
 		"029-roundtrip-mutual-cycle",
 	)
 
-	database, err := goschema.ParseDir(fixtureDir)
+	database, err := goschema.ParseDir(builtintest.Annotations(), fixtureDir)
 	c.Assert(err, qt.IsNil)
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")

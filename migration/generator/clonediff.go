@@ -6,7 +6,6 @@ package generator
 import (
 	"slices"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -26,7 +25,6 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.IndexesRemoved = slices.Clone(diff.IndexesRemoved)
 	clone.ConstraintBackedIndexRemovals = slices.Clone(diff.ConstraintBackedIndexRemovals)
 	clone.IndexesRenamed = slices.Clone(diff.IndexesRenamed)
-	clone.IndexPartitioningChanged = cloneIndexPartitioningChanges(diff.IndexPartitioningChanged)
 	clone.IndexCommentsChanged = slices.Clone(diff.IndexCommentsChanged)
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
@@ -73,7 +71,6 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.RoleMembershipsAdded = slices.Clone(diff.RoleMembershipsAdded)
 	clone.RoleMembershipsRemoved = slices.Clone(diff.RoleMembershipsRemoved)
 	clone.CurrentGrants = slices.Clone(diff.CurrentGrants)
-	clone.CurrentYDBSettings = cloneYDBHeldSettings(diff.CurrentYDBSettings)
 	clone.GrantsAdded = slices.Clone(diff.GrantsAdded)
 	clone.GrantsRemoved = slices.Clone(diff.GrantsRemoved)
 	clone.GrantOptionsAdded = slices.Clone(diff.GrantOptionsAdded)
@@ -122,41 +119,6 @@ func cloneBoolPtr(value *bool) *bool {
 		return nil
 	}
 	return new(*value)
-}
-
-// cloneIndexPartitioningChanges copies the changes and the settings each one
-// points at, so a reversal swapping them leaves the caller's diff alone.
-func cloneIndexPartitioningChanges(changes []difftypes.IndexPartitioningChange) []difftypes.IndexPartitioningChange {
-	if changes == nil {
-		return nil
-	}
-	clone := make([]difftypes.IndexPartitioningChange, len(changes))
-	for i, change := range changes {
-		change.Partitioning = change.Partitioning.Clone()
-		change.Previous = change.Previous.Clone()
-		clone[i] = change
-	}
-	return clone
-}
-
-// cloneYDBHeldSettings copies each table's held settings and its index map,
-// so a planner that reads them cannot change the caller's diff.
-func cloneYDBHeldSettings(settings []difftypes.YDBHeldSettings) []difftypes.YDBHeldSettings {
-	if settings == nil {
-		return nil
-	}
-	clone := make([]difftypes.YDBHeldSettings, len(settings))
-	for i, table := range settings {
-		if table.Indexes != nil {
-			indexes := make(map[string]*ast.IndexPartitioningSpec, len(table.Indexes))
-			for name, spec := range table.Indexes {
-				indexes[name] = spec.Clone()
-			}
-			table.Indexes = indexes
-		}
-		clone[i] = table
-	}
-	return clone
 }
 
 // cloneTablePreparation preserves comparison provenance in both plan directions.

@@ -99,8 +99,6 @@ func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.Alte
 	case *ast.AlterIndexVisibilityOperation:
 		return nil, r.keyed(capability.InvisibleIndexes, "invisible index",
 			fmt.Sprintf("the visibility of index %q of %s", op.IndexName, subject))
-	case *ast.SetIndexPartitioningOperation:
-		return r.setIndexPartitioning(table, op)
 	case *ast.ExtensionAlterOperation:
 		registry, err := ydbextensions.Registry()
 		if err != nil {

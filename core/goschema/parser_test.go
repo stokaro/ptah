@@ -12,18 +12,19 @@ import (
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/annotationmeta"
 )
 
 func mustParseSource(c *qt.C, filename string, source any) schemamodel.Database {
 	c.Helper()
-	db, err := goschema.ParseSource(filename, source)
+	db, err := goschema.ParseSource(noOwners, filename, source)
 	c.Assert(err, qt.IsNil)
 	return db
 }
 
 func mustParseFile(c *qt.C, filename string) schemamodel.Database {
 	c.Helper()
-	db, err := goschema.ParseFile(filename)
+	db, err := goschema.ParseFile(noOwners, filename)
 	c.Assert(err, qt.IsNil)
 	return db
 }
@@ -126,7 +127,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := parseutils.ParseKeyValueComment(tt.comment)
+			result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
 			c.Assert(result, qt.DeepEquals, tt.expected)
 		})
 	}
@@ -156,7 +157,7 @@ type User struct {
 func TestParseSource_FieldIdentityAttributesRejectInvalidGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschema.ParseSource("schema.go", `
+	_, err := goschema.ParseSource(noOwners, "schema.go", `
 package test
 
 //ptah:schema:table name="users"
@@ -190,7 +191,7 @@ type User struct {
 func TestParseSource_HappyPath_NearPrefixDirectiveIsOrdinaryComment(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseSource("schema.go", `
+	database, err := goschema.ParseSource(noOwners, "schema.go", `
 package test
 
 //ptah:schema:tableau name="users"
@@ -204,7 +205,7 @@ type User struct{}
 func TestParseSource_HappyPath_IgnoresFileOnlyRLSOnField(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseSource("schema.go", `
+	database, err := goschema.ParseSource(noOwners, "schema.go", `
 package test
 
 //ptah:schema:table name="users"
@@ -241,18 +242,18 @@ func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			annotation := tt.annotation
+			written := tt.annotation
 			if tt.field {
-				annotation = ""
+				written = ""
 			}
 			fieldAnnotation := `//ptah:schema:field name="id" type="SERIAL" primary="true"`
 			if tt.field {
 				fieldAnnotation = tt.annotation
 			}
-			_, err := goschema.ParseSource("schema.go", `
+			_, err := goschema.ParseSource(noOwners, "schema.go", `
 package test
 
-`+annotation+`
+`+written+`
 type User struct {
 	`+fieldAnnotation+`
 	ID int64
@@ -348,7 +349,7 @@ func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := goschema.ParseSource("schema_object_invalid.go", `
+			_, err := goschema.ParseSource(noOwners, "schema_object_invalid.go", `
 package test
 `+tt.annotation+`
 type User struct{}
@@ -418,7 +419,7 @@ func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := parseutils.ParseKeyValueComment(tt.comment)
+			result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
 			c.Assert(result[tt.attr], qt.Equals, tt.expected)
 		})
 	}
@@ -429,7 +430,7 @@ func TestParseKeyValueComment_IgnoreNonBooleans(t *testing.T) {
 
 	// Test that non-boolean words are not treated as booleans
 	comment := `//ptah:schema:field name="test" type="VARCHAR" ptah schema field table`
-	result := parseutils.ParseKeyValueComment(comment)
+	result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(comment)
 
 	// These should not be treated as boolean attributes
 	c.Assert(result["ptah"], qt.Equals, "")
@@ -447,7 +448,7 @@ func TestParseKeyValueComment_PrecedenceRules(t *testing.T) {
 
 	// Test that explicit key=value takes precedence over standalone boolean
 	comment := `//ptah:schema:field not_null not_null="false"`
-	result := parseutils.ParseKeyValueComment(comment)
+	result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(comment)
 
 	// The explicit not_null="false" should take precedence over standalone not_null
 	c.Assert(result["not_null"], qt.Equals, "false")
@@ -582,7 +583,7 @@ func TestParsePackageRecursively(t *testing.T) {
 	c := qt.New(t)
 
 	// Test parsing the stubs directory
-	result, err := goschema.ParseDir("../../internal/stubs")
+	result, err := goschema.ParseDir(noOwners, "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Verify we found entities (includes all test files in stubs directory)
@@ -613,7 +614,7 @@ func TestParsePackageRecursively(t *testing.T) {
 func TestDependencyResolution(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../internal/stubs")
+	result, err := goschema.ParseDir(noOwners, "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Check that dependencies are correctly identified
@@ -630,7 +631,7 @@ func TestDependencyResolution(t *testing.T) {
 func TestDeduplication(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../internal/stubs")
+	result, err := goschema.ParseDir(noOwners, "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Verify no duplicate tables
@@ -672,7 +673,7 @@ func TestParsePackageRecursively_ErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := goschema.ParseDir(tt.rootDir)
+			result, err := goschema.ParseDir(noOwners, tt.rootDir)
 			c.Assert(err == nil, qt.Equals, !tt.expectError, qt.Commentf("Unexpected error value: %v", err))
 			c.Assert(result, tt.resultChecker, qt.Commentf("Unexpected result value: %v", result))
 		})
@@ -822,7 +823,7 @@ func TestParseRLSPolicyComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			kv := parseutils.ParseKeyValueComment(tt.comment)
+			kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
 			policy := schemamodel.RLSPolicy{
 				StructName:          "TestStruct",
 				Name:                kv["name"],
@@ -868,7 +869,7 @@ func TestParseRLSEnableComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			kv := parseutils.ParseKeyValueComment(tt.comment)
+			kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
 			rlsEnabled := schemamodel.RLSEnabledTable{
 				StructName: "TestStruct",
 				Table:      kv["table"],
@@ -1053,7 +1054,7 @@ type Widget struct {
 			err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 			c.Assert(err, qt.IsNil)
 
-			_, err = goschema.ParseFile(testFile)
+			_, err = goschema.ParseFile(noOwners, testFile)
 			c.Assert(err, qt.ErrorMatches, ".*unknown annotation attribute.*")
 			c.Assert(err.Error(), qt.Contains, tt.mustContain)
 		})
@@ -1167,7 +1168,7 @@ type Post struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database, err := goschema.ParseDir(tmpDir)
+	database, err := goschema.ParseDir(noOwners, tmpDir)
 	c.Assert(err, qt.IsNil)
 
 	var authorField *schemamodel.Field

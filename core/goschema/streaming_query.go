@@ -5,13 +5,12 @@ import (
 	"go/ast"
 	"strconv"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbstreaming"
 )
 
 func (s *schemaParseState) parseStreamingQueryComment(comment *ast.Comment, structName string) error {
-	values := parseutils.ParseKeyValueComment(comment.Text)
+	values := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:streamingquery", structName)
 	if err := validateAttributes(values, ctx); err != nil {
 		return err

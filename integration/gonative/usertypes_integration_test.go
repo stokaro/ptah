@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/migration/schemadiff"
 )
@@ -48,7 +49,7 @@ type FloatRange struct{}
 `
 	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(model), 0o600), qt.IsNil)
 
-	desired, err := goschema.ParseDir(dir)
+	desired, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 
 	stmts, err := builtin.GetOrderedCreateStatements(desired, "postgres")

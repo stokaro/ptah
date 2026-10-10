@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -128,7 +129,7 @@ func TestTimescaleQualifiedAggregateAnnotationE2E(t *testing.T) {
 		"//ptah:schema:hypertable table=\"%s.readings\" column=\"time\"\ntype ReadingsHypertable struct{}\n\n"+
 		"//ptah:schema:continuousaggregate name=\"%s.hourly\" body=\"SELECT time_bucket('1 hour', time) AS bucket, avg(value) AS v FROM %s.readings GROUP BY 1\"\n"+
 		"type Hourly struct{}\n", schemaName, schemaName, schemaName, schemaName)
-	parsed, err := goschema.ParseSource("readings.go", source)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "readings.go", source)
 	c.Assert(err, qt.IsNil)
 	declared := &parsed
 	declared.Schemas = []schemamodel.Schema{{Name: schemaName}}

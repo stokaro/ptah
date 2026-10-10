@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 
+	"ptah.run/core/annotation"
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
 )
 
@@ -25,20 +27,24 @@ var (
 // ServerOptions configures the Ptah LSP server.
 type ServerOptions struct {
 	Version string
-}
-
-// Run serves the Ptah LSP protocol over reader/writer.
-func Run(ctx context.Context, reader io.Reader, writer io.Writer) error {
-	return RunWithOptions(ctx, reader, writer, ServerOptions{})
+	// Annotations selects the feature owners whose directives the server
+	// knows beside the frontend's own. The zero value is refused; pass
+	// annotation.None for the frontend's own directives only.
+	Annotations annotation.Set
 }
 
 // RunWithOptions serves the Ptah LSP protocol with explicit server metadata.
 func RunWithOptions(ctx context.Context, reader io.Reader, writer io.Writer, opts ServerOptions) error {
+	catalog, err := annotationmeta.NewCatalog(opts.Annotations)
+	if err != nil {
+		return fmt.Errorf("ptah-ls: %w", err)
+	}
 	server := &server{
 		reader:  bufio.NewReader(reader),
 		writer:  writer,
 		docs:    make(map[string]string),
 		version: opts.Version,
+		catalog: catalog,
 	}
 	return server.run(ctx)
 }
@@ -49,6 +55,7 @@ type server struct {
 	mu       sync.Mutex
 	docs     map[string]string
 	version  string
+	catalog  annotationmeta.Catalog
 	shutdown bool
 }
 
@@ -216,7 +223,7 @@ func (s *server) handle(msg rpcMessage) error {
 			return s.respondError(msg.ID, -32602, err.Error())
 		}
 		text := s.docs[params.TextDocument.URI]
-		value, ok := Hover(text, fromLSPPosition(text, params.Position))
+		value, ok := Hover(s.catalog, text, fromLSPPosition(text, params.Position))
 		if !ok {
 			return s.respond(msg.ID, nil)
 		}
@@ -229,7 +236,7 @@ func (s *server) handle(msg rpcMessage) error {
 			return s.respondError(msg.ID, -32602, err.Error())
 		}
 		text := s.docs[params.TextDocument.URI]
-		return s.respond(msg.ID, toCompletionItems(Complete(text, fromLSPPosition(text, params.Position))))
+		return s.respond(msg.ID, toCompletionItems(Complete(s.catalog, text, fromLSPPosition(text, params.Position))))
 	default:
 		if msg.ID == nil {
 			return nil
@@ -240,7 +247,7 @@ func (s *server) handle(msg rpcMessage) error {
 
 func (s *server) publishDiagnostics(uri string) error {
 	text := s.docs[uri]
-	diagnostics := Analyze(text)
+	diagnostics := Analyze(s.catalog, text)
 	return s.sendNotification("textDocument/publishDiagnostics", publishDiagnosticsParams{
 		URI:         uri,
 		Diagnostics: toLSPDiagnostics(text, diagnostics),

@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -40,7 +41,7 @@ func TestGoSourceStandaloneLimitsPreventRemoval(t *testing.T) {
 			} {
 				t.Run(test.name, func(t *testing.T) {
 					c := qt.New(t)
-					desired, err := goschema.ParseSource("schema.go", "package entities\n"+standaloneLimitDirective(test.directive, family)+"\ntype _ struct{}")
+					desired, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", "package entities\n"+standaloneLimitDirective(test.directive, family)+"\ntype _ struct{}")
 					c.Assert(err, qt.IsNil)
 					current := &catalog.Database{
 						FeatureCoverage: completeYDBFixtureCoverage(),
@@ -62,7 +63,7 @@ func TestGoSourceStandaloneLimitsPreventRemoval(t *testing.T) {
 
 func TestCoordinationCreationRequiresItsSchemaToBeInspected(t *testing.T) {
 	c := qt.New(t)
-	desired, err := goschema.ParseSource("schema.go", "package entities\n//ptah:schema:coordinationnode name=\"locks\" schema=\"app\"\ntype Locks struct{}")
+	desired, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", "package entities\n//ptah:schema:coordinationnode name=\"locks\" schema=\"app\"\ntype Locks struct{}")
 	c.Assert(err, qt.IsNil)
 	current := &catalog.Database{
 		FeatureCoverage: completeYDBFixtureCoverage(),

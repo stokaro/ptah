@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -798,11 +797,6 @@ type Index struct {
 	// drop the parameter it was meant to protect. See #1242 and
 	// docs/conformance.md for the ones a PostgreSQL reader deliberately omits.
 	StorageParams map[string]string `json:"storage_params,omitempty"`
-	// Partitioning is how a YDB global index's own table splits into
-	// partitions, and its read replicas. A reader reports only the settings
-	// that differ from the ones YDB gives a new index, so an index nobody
-	// tuned carries nil.
-	Partitioning *ast.IndexPartitioningSpec `json:"partitioning,omitempty"`
 
 	// RequiresExtensions names the extensions this index cannot be built
 	// without, as the catalog resolved them rather than as the DDL spells them.

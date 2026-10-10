@@ -15,7 +15,6 @@ import (
 	"strings"
 	"unicode"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -264,6 +263,7 @@ type renderContext struct {
 	familiesByTable      map[string][]ydbschema.ColumnFamily
 	partitioningByTable  map[string]*ydbschema.TablePartitioning
 	storesByTable        map[string]*ydbschema.DesiredColumnStore
+	partitioningByIndex  map[indexKey]*ydbschema.IndexPartitioning
 	changefeedsByTable   map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                   *schemamodel.Database
 	opts                 Options
@@ -639,7 +639,8 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		w.writeLine("\t" + fieldName + " " + ctx.goType(field) + structTags(field, ctx.opts))
 	}
 	for _, index := range ctx.indexesByTable[table.StructName] {
-		w.writeComment("\t" + annotation("ptah:schema:index", indexAttrs(index)...))
+		partitioning := ctx.partitioningByIndex[indexKey{table: index.StructName, name: index.Name}]
+		w.writeComment("\t" + annotation("ptah:schema:index", indexAttrs(index, partitioning)...))
 		w.writeLine("\t_ struct{}")
 	}
 	w.writeLine("}")
@@ -783,7 +784,7 @@ func tablePartitioningAttrs(spec *ydbschema.TablePartitioning) []attr {
 	if spec == nil || spec.IsZero() {
 		return nil
 	}
-	shared := partitioningAttrs(&ast.IndexPartitioningSpec{
+	shared := partitioningAttrs(&ydbschema.IndexPartitioning{
 		BySize: spec.BySize, PartitionSizeMB: spec.PartitionSizeMB, ByLoad: spec.ByLoad,
 		MinPartitions: spec.MinPartitions, MaxPartitions: spec.MaxPartitions, ReadReplicas: spec.ReadReplicas,
 	})
@@ -831,8 +832,8 @@ func fieldAttrs(field schemamodel.Field) []attr {
 	}
 }
 
-func indexAttrs(index schemamodel.Index) []attr {
-	attrs := append(indexDefinitionAttrs(index), partitioningAttrs(index.Partitioning)...)
+func indexAttrs(index schemamodel.Index, partitioning *ydbschema.IndexPartitioning) []attr {
+	attrs := append(indexDefinitionAttrs(index), partitioningAttrs(partitioning)...)
 	attrs = append(attrs, propertyAttrs(index.Overrides)...)
 	attrs = append(attrs, fullTextAttrs(index)...)
 	return append(attrs, vectorAttrs(index.Facets)...)
@@ -860,8 +861,8 @@ func vectorAttrs(facets schemaext.Facets) []attr {
 
 // partitioningAttrs writes a YDB global index's partitioning as the attributes
 // the annotation parser reads it from.
-func partitioningAttrs(spec *ast.IndexPartitioningSpec) []attr {
-	if spec.IsZero() {
+func partitioningAttrs(spec *ydbschema.IndexPartitioning) []attr {
+	if spec == nil || spec.IsZero() {
 		return nil
 	}
 	count := func(n uint64) string { return strconv.FormatUint(n, 10) }

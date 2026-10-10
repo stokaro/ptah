@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
 	"ptah.run/internal/atlashclrender"
 )
@@ -29,7 +30,7 @@ import (
 //
 // Diagnostics identify the file, line, directive and attribute, and never carry
 // the value itself: an attribute may hold a credential.
-func normalizationDiagnostics(fsys fs.FS, rendered []byte) ([]atlashclrender.Diagnostic, error) {
+func normalizationDiagnostics(catalog annotationmeta.Catalog, fsys fs.FS, rendered []byte) ([]atlashclrender.Diagnostic, error) {
 	var diagnostics []atlashclrender.Diagnostic
 
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
@@ -43,7 +44,7 @@ func normalizationDiagnostics(fsys fs.FS, rendered []byte) ([]atlashclrender.Dia
 		if err != nil {
 			return err
 		}
-		diagnostics = append(diagnostics, fileNormalizationDiagnostics(name, string(data), rendered)...)
+		diagnostics = append(diagnostics, fileNormalizationDiagnostics(catalog, name, string(data), rendered)...)
 		return nil
 	})
 	if err != nil {
@@ -59,7 +60,7 @@ func normalizationDiagnostics(fsys fs.FS, rendered []byte) ([]atlashclrender.Dia
 	return diagnostics, nil
 }
 
-func fileNormalizationDiagnostics(name, source string, rendered []byte) []atlashclrender.Diagnostic {
+func fileNormalizationDiagnostics(catalog annotationmeta.Catalog, name, source string, rendered []byte) []atlashclrender.Diagnostic {
 	var diagnostics []atlashclrender.Diagnostic
 	lines := strings.Split(source, "\n")
 
@@ -74,7 +75,7 @@ func fileNormalizationDiagnostics(name, source string, rendered []byte) []atlash
 		return nil
 	}
 
-	for _, annotation := range annotationparse.Scan(source) {
+	for _, annotation := range annotationparse.Scan(catalog, source) {
 		if !commentLines[annotation.Line+1] {
 			continue
 		}

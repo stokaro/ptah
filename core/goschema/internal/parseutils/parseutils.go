@@ -15,21 +15,41 @@ import (
 var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=("(?:\\.|[^"\\])*"|[^\s]+)`)
 var boolRe = regexp.MustCompile(`\b(\w+(?:\.\w+)*)\b`)
 
-// directiveTokens is the set of bareword tokens that appear in a
-// `//ptah:schema:<kind>` annotation header. They are never user-supplied
-// boolean attributes, so we never auto-promote them to `kv[token]="true"`.
-var directiveTokens = func() map[string]bool {
-	tokens := annotationmeta.DirectiveTokens()
+// KeyValueParser splits annotation comment options into maps. It reads the
+// directives of one catalog: which barewords are directive tokens, which are
+// boolean attributes, and which attributes a directive declares or retires.
+type KeyValueParser struct {
+	catalog annotationmeta.Catalog
+	// directiveTokens is the set of bareword tokens that appear in a
+	// `//ptah:schema:<kind>` annotation header. They are never user-supplied
+	// boolean attributes, so they are never auto-promoted to
+	// `kv[token]="true"`.
+	directiveTokens map[string]bool
+	// indexDirectiveSkip is directiveTokens plus the bareword "index", used
+	// when the comment line is a //ptah:schema:index header so the directive
+	// token "index" isn't auto-promoted to kv["index"]="true".
+	indexDirectiveSkip map[string]bool
+	// booleanAttrs is the set of bareword keys that, when written without
+	// `=`, are auto-promoted to `kv[name]="true"`.
+	booleanAttrs map[string]bool
+}
+
+// NewKeyValueParser returns a parser for the directives of catalog.
+func NewKeyValueParser(catalog annotationmeta.Catalog) KeyValueParser {
+	tokens := catalog.DirectiveTokens()
 	tokens["embed"] = true
 	delete(tokens, "index")
-	return tokens
-}()
+	skip := make(map[string]bool, len(tokens)+1)
+	maps.Copy(skip, tokens)
+	skip["index"] = true
+	return KeyValueParser{catalog: catalog, directiveTokens: tokens, indexDirectiveSkip: skip, booleanAttrs: catalog.BooleanAttributes()}
+}
 
-// booleanAttrs is the set of bareword keys that, when written without `=`,
-// are auto-promoted to `kv[name]="true"`. See ParseKeyValueComment.
-var booleanAttrs = annotationmeta.BooleanAttributes()
-
-func ParseKeyValueComment(comment string) map[string]string {
+// ParseKeyValueComment splits comment into its attributes. A quoted value is
+// unquoted. A bareword is promoted to "true" when it is a boolean attribute,
+// one the directive does not declare, or one the directive retired, so that
+// validation sees and refuses the last two.
+func (p KeyValueParser) ParseKeyValueComment(comment string) map[string]string {
 	result := make(map[string]string)
 
 	// First, handle key=value pairs (quoted and unquoted)
@@ -52,9 +72,9 @@ func ParseKeyValueComment(comment string) map[string]string {
 	// skipped when this line IS the //ptah:schema:index header, because
 	// otherwise the directive token itself would be auto-promoted to
 	// kv["index"]="true" and trip the strict-unknown-key validator.
-	skip := directiveTokens
+	skip := p.directiveTokens
 	if isIndexDirectiveHeader(comment) {
-		skip = indexDirectiveSkip
+		skip = p.indexDirectiveSkip
 	}
 
 	// Then, handle standalone boolean attributes (no =value)
@@ -69,9 +89,9 @@ func ParseKeyValueComment(comment string) map[string]string {
 		// no map at all -- never validated, never refused, dropped without a
 		// word -- which is exactly the silence retiring it was meant to end
 		// (stokaro/ptah#1625).
-		if !isAutoPromotedBoolean(attr, skip) &&
-			!isUnknownAttribute(comment, attr) &&
-			!isRetiredAttribute(comment, attr) {
+		if !p.isAutoPromotedBoolean(attr, skip) &&
+			!p.isUnknownAttribute(comment, attr) &&
+			!p.isRetiredAttribute(comment, attr) {
 			continue
 		}
 		// Only set if not already set by key=value parsing
@@ -85,18 +105,18 @@ func ParseKeyValueComment(comment string) map[string]string {
 
 // isRetiredAttribute reports whether the directive recognizes this attribute
 // and refuses it.
-func isRetiredAttribute(comment, attr string) bool {
-	directive, ok := annotationmeta.MatchCommentDirective(comment)
+func (p KeyValueParser) isRetiredAttribute(comment, attr string) bool {
+	directive, ok := p.catalog.MatchCommentDirective(comment)
 	if !ok {
 		return false
 	}
-	_, retired := annotationmeta.RetiredAttribute(directive.Name, attr)
+	_, retired := p.catalog.RetiredAttribute(directive.Name, attr)
 	return retired
 }
 
-func isUnknownAttribute(comment, attr string) bool {
-	directive, ok := annotationmeta.MatchCommentDirective(comment)
-	return ok && !annotationmeta.AllowsAttribute(directive.Name, attr)
+func (p KeyValueParser) isUnknownAttribute(comment, attr string) bool {
+	directive, ok := p.catalog.MatchCommentDirective(comment)
+	return ok && !p.catalog.AllowsAttribute(directive.Name, attr)
 }
 
 // isIndexDirectiveHeader reports whether `comment` is the
@@ -115,25 +135,15 @@ func isIndexDirectiveHeader(comment string) bool {
 	return rest == "" || rest[0] == ' ' || rest[0] == '\t'
 }
 
-// indexDirectiveSkip is directiveTokens plus the bareword "index" — used
-// when the comment line is a //ptah:schema:index header so the
-// directive token "index" isn't auto-promoted to kv["index"]="true".
-var indexDirectiveSkip = func() map[string]bool {
-	s := make(map[string]bool, len(directiveTokens)+1)
-	maps.Copy(s, directiveTokens)
-	s["index"] = true
-	return s
-}()
-
 // isAutoPromotedBoolean reports whether a bareword `attr` (a word appearing
 // in a directive line without an `=value`) should be promoted to
 // `kv[attr]="true"`. Tokens in `skip` are excluded; everything else has to
 // be a known boolean attribute or follow a naming convention.
-func isAutoPromotedBoolean(attr string, skip map[string]bool) bool {
+func (p KeyValueParser) isAutoPromotedBoolean(attr string, skip map[string]bool) bool {
 	if skip[attr] {
 		return false
 	}
-	return booleanAttrs[attr] ||
+	return p.booleanAttrs[attr] ||
 		strings.HasSuffix(attr, "_null") ||
 		strings.HasPrefix(attr, "is_") ||
 		strings.HasPrefix(attr, "has_")

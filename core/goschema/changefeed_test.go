@@ -78,7 +78,7 @@ func TestParseSource_Changefeed_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("items.go", changefeedSource(test.onStruct, test.onHolder))
+			db, err := goschema.ParseSource(noOwners, "items.go", changefeedSource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 2)
 			c.Assert(must.Must(ydbschema.DesiredChangefeeds(db.FeatureObjects, db.Tables[0].Schema, db.Tables[0].Name)), qt.DeepEquals, test.wantItems)
@@ -121,7 +121,7 @@ func TestParseSource_Changefeed_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("items.go", changefeedSource(test.onStruct, test.onHolder))
+			db, err := goschema.ParseSource(noOwners, "items.go", changefeedSource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 		})
@@ -132,7 +132,7 @@ func TestParseSource_Changefeed_FailurePath(t *testing.T) {
 // value the declaration cannot carry is reported with.
 func TestParseSource_Changefeed_RefusesAnInvalidValueAsSuch(t *testing.T) {
 	c := qt.New(t)
-	_, err := goschema.ParseSource("items.go",
+	_, err := goschema.ParseSource(noOwners, "items.go",
 		changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON" retention_period="1 day"
 `, ""))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
@@ -143,7 +143,7 @@ func TestParseSource_Changefeed_RefusesAnInvalidValueAsSuch(t *testing.T) {
 // both are read by one consumer grammar.
 func TestParseSource_ChangefeedConsumer_NamesTheAttribute(t *testing.T) {
 	c := qt.New(t)
-	_, err := goschema.ParseSource("items.go", changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON"
+	_, err := goschema.ParseSource(noOwners, "items.go", changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON"
 //ptah:schema:changefeed:consumer changefeed="f" name="c" important="maybe"
 `, ""))
 

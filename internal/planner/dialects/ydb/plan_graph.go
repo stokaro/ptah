@@ -131,6 +131,9 @@ func scheduleFeatures(ctx context.Context, common plangraph.Contribution[[]ast.N
 	if err := refuseDroppedSecretReads(append([]plangraph.Contribution[[]ast.Node]{common}, features.Contributions...)); err != nil {
 		return nil, err
 	}
+	if err := refuseCreationOverDirectory(append([]plangraph.Contribution[[]ast.Node]{common}, features.Contributions...)); err != nil {
+		return nil, err
+	}
 	lifecycle, err := plangraph.LifecycleDependencies(ctx, append([]plangraph.Contribution[[]ast.Node]{common}, features.Contributions...)...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
@@ -240,4 +243,56 @@ func refuseDroppedSecretReads(contributions []plangraph.Contribution[[]ast.Node]
 		}
 	}
 	return nil
+}
+
+// refuseCreationOverDirectory refuses a plan that drops an object below a
+// scheme path and creates an object at that path.
+//
+// The path is a directory in the database, and YDB keeps a directory after its
+// last object is dropped: measured on 26.2.1.14, CREATE TABLE at the path of a
+// directory a plan had just emptied fails with "Path is not a table or topic",
+// and CREATE TOPIC and CREATE SECRET with "unexpected path type". YQL has no
+// statement that removes a directory, so no order of this plan's statements
+// can apply it, and the next plan would plan the same creation again
+// (stokaro/ptah#4282). Refusing names the path before anything runs.
+func refuseCreationOverDirectory(contributions []plangraph.Contribution[[]ast.Node]) error {
+	created := make(map[objectidentity.Key]bool)
+	var dropped []objectidentity.ID
+	for _, contribution := range contributions {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				switch {
+				case effect.Subject.Kind != ydbscheme.PathKind:
+				case effect.Action == plangraph.Create:
+					created[effect.Subject.Key()] = true
+				case effect.Action == plangraph.Drop:
+					dropped = append(dropped, effect.Subject)
+				}
+			}
+		}
+	}
+	for _, drop := range dropped {
+		for _, directory := range ydbscheme.DirectoriesAbove(drop) {
+			if !created[directory.Key()] {
+				continue
+			}
+			name := schemePathDisplay(directory)
+			return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+				Code: schemavalidation.InvalidSchema, Kind: "scheme path", Object: name,
+				Message: "this plan drops " + schemePathDisplay(drop) + " and creates an object at " + name +
+					", which is a directory in the database. YDB keeps a directory after its last object is dropped, " +
+					"and YQL has no statement that removes one: drop the objects below " + name +
+					" and remove the directory first (for example with `ydb scheme rmdir`), or declare the object at another path",
+			}}}).Err(platform.YDB)
+		}
+	}
+	return nil
+}
+
+// schemePathDisplay writes a scheme path the way YQL names the object at it.
+func schemePathDisplay(id objectidentity.ID) string {
+	if id.Schema.Source == "" {
+		return id.Name.Source
+	}
+	return id.Schema.Source + "/" + id.Name.Source
 }

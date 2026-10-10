@@ -12,6 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/annotation"
 	"ptah.run/internal/fsdurable"
 	"ptah.run/internal/goannotationsource"
 )
@@ -87,9 +88,10 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 			c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
 
 			result, err := export(Options{
-				RootDir:    root,
-				OutputPath: output,
-				Cleanup:    true,
+				Annotations: annotation.None(),
+				RootDir:     root,
+				OutputPath:  output,
+				Cleanup:     true,
 			}, exportHooks{afterOutputStage: func() {
 				c.Assert(test.mutate(root, source, original), qt.IsNil)
 			}})
@@ -137,9 +139,10 @@ func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testi
 			c.Assert(test.prepare(output), qt.IsNil)
 
 			result, err := export(Options{
-				RootDir:    root,
-				OutputPath: output,
-				Cleanup:    true,
+				Annotations: annotation.None(),
+				RootDir:     root,
+				OutputPath:  output,
+				Cleanup:     true,
 			}, exportHooks{afterOutputStage: func() {
 				c.Assert(os.WriteFile(output, concurrentOutput, 0o600), qt.IsNil)
 			}})
@@ -171,9 +174,10 @@ func TestExport_FailurePath_RejectsReplacedStagedOutput(t *testing.T) {
 	c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
 
 	result, err := export(Options{
-		RootDir:    root,
-		OutputPath: output,
-		Cleanup:    true,
+		Annotations: annotation.None(),
+		RootDir:     root,
+		OutputPath:  output,
+		Cleanup:     true,
 	}, exportHooks{afterOutputStage: func() {
 		staged, err := filepath.Glob(filepath.Join(root, ".schema.hcl.tmp-*"))
 		c.Assert(err, qt.IsNil)
@@ -280,9 +284,10 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 			c.Assert(test.prepare(output), qt.IsNil)
 
 			result, err := export(Options{
-				RootDir:    root,
-				OutputPath: output,
-				Cleanup:    true,
+				Annotations: annotation.None(),
+				RootDir:     root,
+				OutputPath:  output,
+				Cleanup:     true,
 			}, test.hooks(func() {
 				c.Assert(test.inject(output), qt.IsNil)
 			}))

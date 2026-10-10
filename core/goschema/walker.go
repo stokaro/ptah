@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/goannotationsource"
 	"ptah.run/internal/ydbsource"
@@ -34,8 +35,11 @@ import (
 // Managed-data annotations record an absolute SourceDir anchored at rootDir,
 // so [ptah.run/core/manageddata.LoadRows] resolves them from any
 // working directory.
-func ParseDir(rootDir string) (*schemamodel.Database, error) {
-	result, err := ParseDirRaw(rootDir)
+//
+// annotations selects the feature owners whose directives the walk reads, as
+// it does for [ParseFile].
+func ParseDir(annotations annotation.Set, rootDir string) (*schemamodel.Database, error) {
+	result, err := ParseDirRaw(annotations, rootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -53,9 +57,13 @@ func ParseDir(rootDir string) (*schemamodel.Database, error) {
 // managed-data annotations keep the filesystem-relative SourceDir they were
 // parsed with. Resolve them by passing the host location of fsys as the
 // rootDir argument of [ptah.run/core/manageddata.LoadRows].
-func ParseFS(fsys fs.FS, rootDir string) (*schemamodel.Database, error) {
+func ParseFS(annotations annotation.Set, fsys fs.FS, rootDir string) (*schemamodel.Database, error) {
+	selection, err := selectAnnotations(annotations)
+	if err != nil {
+		return nil, err
+	}
 	result := schemamodel.NewDatabase()
-	if err := accumulateGoFiles(result, fsys, rootDir); err != nil {
+	if err := accumulateGoFiles(result, fsys, rootDir, selection); err != nil {
 		return nil, err
 	}
 	return schemamodel.MergeAccumulated(result)
@@ -76,14 +84,14 @@ func ParseFS(fsys fs.FS, rootDir string) (*schemamodel.Database, error) {
 // object that differ return a descriptive conflict error. With a single root,
 // ParseDirs delegates to ParseDir and uses the same strict collision semantics
 // without allocating a second database accumulator.
-func ParseDirs(roots ...string) (*schemamodel.Database, error) {
+func ParseDirs(annotations annotation.Set, roots ...string) (*schemamodel.Database, error) {
 	if len(roots) == 1 {
-		return ParseDir(roots[0])
+		return ParseDir(annotations, roots[0])
 	}
 
 	sources := make([]*schemamodel.Database, 0, len(roots))
 	for _, root := range roots {
-		source, err := ParseDirRaw(root)
+		source, err := ParseDirRaw(annotations, root)
 		if err != nil {
 			return nil, err
 		}
@@ -103,13 +111,17 @@ func ParseDirs(roots ...string) (*schemamodel.Database, error) {
 // policy. Merge also accepts finalized schemas, but raw roots avoid unnecessary
 // expansion and deduplication work. For a directly usable, finalized schema use
 // ParseDir or ParseDirs instead.
-func ParseDirRaw(root string) (*schemamodel.Database, error) {
+func ParseDirRaw(annotations annotation.Set, root string) (*schemamodel.Database, error) {
+	selection, err := selectAnnotations(annotations)
+	if err != nil {
+		return nil, err
+	}
 	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
 	result := schemamodel.NewDatabase()
-	if err := accumulateGoFiles(result, os.DirFS(absoluteRoot), "."); err != nil {
+	if err := accumulateGoFiles(result, os.DirFS(absoluteRoot), ".", selection); err != nil {
 		return nil, err
 	}
 	bindManagedDataSourceRoot(result, absoluteRoot)
@@ -129,9 +141,9 @@ func bindManagedDataSourceRoot(result *schemamodel.Database, root string) {
 // fsys and appends each parsed file's schema objects onto result without
 // finalizing. It is the shared, pre-finalize body of ParseFS and ParseDirs, so
 // multiple roots can accumulate into one result before a single finalize pass.
-func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string) error {
+func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string, selection parseSelection) error {
 	if result.FeatureCoverage.Representation() == "" {
-		known, err := sourceCoverage(ydbsource.Limits{})
+		known, err := sourceCoverage(ydbsource.Limits{}, selection.annotations)
 		if err != nil {
 			return err
 		}
@@ -163,7 +175,7 @@ func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string)
 			return fmt.Errorf("refuse to parse non-regular Go source %s", path)
 		}
 
-		database, err := parseDatabaseFile(fsys, path)
+		database, err := parseDatabaseFile(fsys, path, selection)
 		if err != nil {
 			parseErrors = append(parseErrors, err)
 			return nil
@@ -182,12 +194,12 @@ func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string)
 	return errors.Join(parseErrors...)
 }
 
-func parseDatabaseFile(fsys fs.FS, path string) (schemamodel.Database, error) {
+func parseDatabaseFile(fsys fs.FS, path string, selection parseSelection) (schemamodel.Database, error) {
 	file, err := fsys.Open(path)
 	if err != nil {
 		return schemamodel.Database{}, err
 	}
 	defer file.Close()
 
-	return ParseSource(path, bufio.NewReader(file))
+	return parseSource(path, bufio.NewReader(file), selection)
 }

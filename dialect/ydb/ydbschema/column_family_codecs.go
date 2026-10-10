@@ -116,6 +116,22 @@ func ColumnFamiliesCoverage(representation schemaext.Representation, knowledge s
 	return schemaext.Coverage{}, fmt.Errorf("%w: column family coverage requires a schema representation", schemaext.ErrInvalidValue)
 }
 
+// settingsCodecs completes the version-one desired and observed codecs of a
+// model whose value is one object of the settings it states, and returns them
+// in that order. Each decodes only the keys shape names and carries the
+// definition the call returns, so each call returns independent definitions.
+func settingsCodecs[D, O schemaext.Payload](definition func() json.RawMessage, shape schemaext.ObjectShape,
+	desired schemaext.ModelCodec[D], observed schemaext.ModelCodec[O],
+) []schemaext.Codec {
+	decode := func(data json.RawMessage) error {
+		_, err := schemaext.DecodeObject(data, shape)
+		return err
+	}
+	desired.Representation, desired.Version, desired.Definition, desired.Shape = schemaext.Desired, 1, definition(), decode
+	observed.Representation, observed.Version, observed.Definition, observed.Shape = schemaext.Observed, 1, definition(), decode
+	return []schemaext.Codec{desired.Codec(), observed.Codec()}
+}
+
 // wireShape derives the strict shape of T's JSON object from its tags. Every
 // tagged field is allowed. One without omitempty is required. One with
 // omitempty is NonEmpty unless it is a pointer: its encoder never writes its

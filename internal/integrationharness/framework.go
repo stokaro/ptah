@@ -568,7 +568,11 @@ func (vem *VersionedEntityManager) LoadEntityVersion(versionDir string) error {
 
 // GenerateSchemaFromEntities parses the current entities and returns the schema
 func (vem *VersionedEntityManager) GenerateSchemaFromEntities() (*schemamodel.Database, error) {
-	return goschema.ParseDir(vem.entitiesDir)
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return nil, err
+	}
+	return goschema.ParseDir(annotations, vem.entitiesDir)
 }
 
 // GenerateMigrationSQL compares current entities with database and generates migration SQL.

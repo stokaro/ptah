@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 )
 
 func TestGetDependencyInfo_EmptyResult(t *testing.T) {
@@ -38,7 +39,7 @@ func TestGetDependencyInfo_EmptyResult(t *testing.T) {
 func TestGetDependencyInfo(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../../internal/stubs")
+	result, err := goschema.ParseDir(builtintest.Annotations(), "../../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	info := getDependencyInfo(result)

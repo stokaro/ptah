@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbreplication"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -46,7 +47,7 @@ func TestRender_Replication_RoundTrip(t *testing.T) {
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 
 	c.Assert(err, qt.IsNil)
 	objects, err := parsed.FeatureObjects.All()

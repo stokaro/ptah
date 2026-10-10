@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -98,7 +99,7 @@ type User struct {
 // comparison can see what an earlier one did to the schema.
 func parsePinSchema(c *qt.C, name string) *schemamodel.Database {
 	c.Helper()
-	database, err := goschema.ParseFS(fstest.MapFS{
+	database, err := goschema.ParseFS(builtintest.Annotations(), fstest.MapFS{
 		"entities/schema.go": &fstest.MapFile{Data: []byte(outputPinSources[name])},
 	}, "entities")
 	c.Assert(err, qt.IsNil, qt.Commentf("parsing the %s schema", name))

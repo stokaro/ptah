@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/annotation"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 )
@@ -29,4 +30,10 @@ var shared = sync.OnceValues(builtin.New)
 // of builtin.New in the binary would report as well.
 func Runtime() *engine.Runtime {
 	return must.Must(shared())
+}
+
+// Annotations returns the Go annotation extensions of the shared runtime, for
+// a test that parses Go annotations the way the bundled targets read them.
+func Annotations() annotation.Set {
+	return Runtime().Annotations()
 }

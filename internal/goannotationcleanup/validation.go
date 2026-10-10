@@ -3,15 +3,15 @@ package goannotationcleanup
 import (
 	"errors"
 	"fmt"
-	"ptah.run/core/schemaext"
-	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/pgpolicysource"
 	"slices"
 	"strings"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
+	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 )
@@ -23,7 +23,7 @@ import (
 func (p *Plan) ValidateParsed(sourceDB, exportedDB *schemamodel.Database) error {
 	var validationErrors []error
 	for _, removal := range p.removals() {
-		if err := annotationAttachmentError(removal); err != nil {
+		if err := annotationAttachmentError(p.catalog, removal); err != nil {
 			validationErrors = append(validationErrors, err)
 			continue
 		}
@@ -43,7 +43,7 @@ func (p *Plan) ValidateParsed(sourceDB, exportedDB *schemamodel.Database) error 
 func (p *Plan) validateAttachments() error {
 	var validationErrors []error
 	for _, removal := range p.removals() {
-		if err := annotationAttachmentError(removal); err != nil {
+		if err := annotationAttachmentError(p.catalog, removal); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
 	}
@@ -58,8 +58,8 @@ func (p *Plan) removals() []removedLine {
 	return removals
 }
 
-func annotationAttachmentError(removal removedLine) error {
-	directive, ok := annotationmeta.Lookup(removal.annotation.Directive)
+func annotationAttachmentError(catalog annotationmeta.Catalog, removal removedLine) error {
+	directive, ok := catalog.Lookup(removal.annotation.Directive)
 	if !ok || !annotationmeta.AllowsScope(directive, removal.scope) {
 		return annotationScopeError(removal, directive)
 	}
@@ -707,8 +707,8 @@ func splitAnnotationList(value string) []string {
 	return values
 }
 
-func annotationAttributes(comment string) ([]string, map[string]string) {
-	annotations := annotationparse.Scan(comment)
+func annotationAttributes(catalog annotationmeta.Catalog, comment string) ([]string, map[string]string) {
+	annotations := annotationparse.Scan(catalog, comment)
 	if len(annotations) == 0 {
 		return nil, nil
 	}

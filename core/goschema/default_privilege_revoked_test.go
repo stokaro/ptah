@@ -39,7 +39,7 @@ func TestParseSource_DefaultPrivilegeRevoked_FailurePath(t *testing.T) {
 		`//ptah:schema:defaultprivilege for_role="o" schema="app" object_type="TABLES" grantee="r"` +
 		"\ntype AccessControl struct{}\n"
 
-	db, err := goschema.ParseSource("access.go", source)
+	db, err := goschema.ParseSource(noOwners, "access.go", source)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrMissingRequiredAttribute)
 	c.Assert(err, qt.ErrorMatches, `missing required annotation attribute "privileges" on //ptah:schema:defaultprivilege at .*: a default privilege grants privileges, revokes them, or both`)
@@ -58,7 +58,7 @@ func TestParseDir_RefusesADefaultPrivilegeBothGrantedAndRevoked(t *testing.T) {
 		`//ptah:schema:defaultprivilege for_role="o" schema="app" object_type="TABLES" grantee="r" revoked="INSERT"`+
 		"\ntype Revoked struct{}\n")
 
-	db, err := goschema.ParseDir(dir)
+	db, err := goschema.ParseDir(noOwners, dir)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*default privilege INSERT on TABLES in schema app for role o is both granted to and revoked from "r"; declare one or the other.*`)
 	c.Assert(db, qt.IsNil)

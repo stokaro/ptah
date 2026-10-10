@@ -7,7 +7,9 @@ import (
 	"strconv"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -45,7 +47,7 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 	for i, table := range forward.TablesModified {
 		count := len(table.FeatureChanges)
 		results := recovery[offset : offset+count]
-		reverse.TablesModified[i].FeatureChanges = reversedRecords(results)
+		reverse.TablesModified[i].FeatureChanges = renamedBack(reversedRecords(results), forward.IndexesRenamed, semantics)
 		current, err := reverseFeatureTableState(ctx, forward, table, results, dialect, caps, runtime)
 		if err != nil {
 			return nil, err
@@ -191,4 +193,25 @@ func accountForViewReplacement(results []schemaext.Reversal) {
 			results[i].Limitations = append(slices.Clone(results[i].Limitations), replacedViewLimitation)
 		}
 	}
+}
+
+// renamedBack names each reversed change of an index the forward plan renames
+// by the name the index had. The forward plan renames an index before an owner
+// step changes it, so a forward change names the index by its new name; the
+// reverse plan renames it back first in the same way, so the step that undoes
+// the change finds it under its old name.
+func renamedBack(records []schemaext.ChangeRecord, renames []difftypes.IndexRename, semantics identifier.Semantics) []schemaext.ChangeRecord {
+	builder := objectidentity.NewBuilder(semantics)
+	for i, record := range records {
+		if record.Subject.Kind != objectidentity.KindIndex {
+			continue
+		}
+		for _, rename := range renames {
+			if builder.Index(rename.TableName, rename.To).Key() == record.Subject.Key() {
+				records[i].Subject = builder.Index(rename.TableName, rename.From)
+				break
+			}
+		}
+	}
+	return records
 }

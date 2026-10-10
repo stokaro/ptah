@@ -49,9 +49,6 @@ func unresolvedIndexHost(diff *difftypes.SchemaDiff) bool {
 
 func changedTableChildren(diff *difftypes.SchemaDiff) []string {
 	var hosts []string
-	for _, value := range diff.IndexPartitioningChanged {
-		hosts = append(hosts, value.TableName)
-	}
 	for _, value := range diff.ConstraintCommentsChanged {
 		if value.TableName == "" {
 			hosts = append(hosts, "")

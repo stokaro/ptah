@@ -774,8 +774,8 @@ func BenchmarkValidateDeclared_LargeDuplicateNameSchema(b *testing.B) {
 	c.Assert(err, qt.IsNil)
 }
 
-// TestValidate_MalformedIndexChangeInPlaceRejected refuses a rename or a change
-// of partitioning that names no index or no table, which a plan could not act
+// TestValidate_MalformedIndexChangeInPlaceRejected refuses a rename or an
+// index comment that names no index or no table, which a plan could not act
 // on.
 func TestValidate_MalformedIndexChangeInPlaceRejected(t *testing.T) {
 	tests := []struct {
@@ -789,9 +789,6 @@ func TestValidate_MalformedIndexChangeInPlaceRejected(t *testing.T) {
 		{name: "a rename to no name",
 			diff:    &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "t", From: "a"}}},
 			wantErr: `invalid schema diff: rename target index reference at position 0 requires a name and owning table`},
-		{name: "a change of partitioning on no table",
-			diff:    &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{Name: "a"}}},
-			wantErr: `invalid schema diff: repartitioned index reference at position 0 requires a name and owning table`},
 		{name: "a comment on no index",
 			diff:    &difftypes.SchemaDiff{IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "t", Desired: "x"}}},
 			wantErr: `invalid schema diff: commented index reference at position 0 requires a name and owning table`},

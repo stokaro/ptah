@@ -187,6 +187,7 @@ var recordedDepartures = []Departure{
 	{Node: "DropTransferNode", Successors: []ExtensionKind{payload(ydbAST, "Transfer")}},
 	{Node: "ModifyTTLOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AlterTTL")}},
 	{Node: "ResetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
+	{Node: "SetIndexPartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterIndexPartitioning")}},
 	{Node: "SetRowDeletionPolicyOperation", Successors: []ExtensionKind{payload(spannerAST, "AlterRowDeletion"), payload(ydbAST, "AlterTTL")}},
 	{Node: "SetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "SetYDBColumnFamiliesOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterColumnFamilies")}},

@@ -96,6 +96,13 @@ that assigns the same path to more than one of these kinds is refused before
 rendering or planning. Different directories and case-distinct names remain
 different paths; a dot inside a quoted name remains part of that name.
 
+YDB keeps a directory after its last object is dropped, and YQL has no
+statement that removes one. A plan that drops the objects below a path and
+creates an object at that path could not apply, so it is refused before
+anything runs, naming the path. Drop what is below the path and remove the
+directory first, for example with `ydb scheme rmdir`, or declare the object at
+another path.
+
 ## Tables and types
 
 This schema:
@@ -1847,14 +1854,14 @@ statement needs one that has not run yet:
    increment.
 6. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
-7. Rename the indexes the declaration renames, then change the partitioning of
-   the indexes that keep their definition.
+7. Rename the indexes the declaration renames.
 8. Per table: add columns, then change columns in place, then change the
    column families, then the table's partitioning, read replicas and key
    bloom filter, then set or reset the TTL, then drop columns. YDB refuses to
    drop the column a TTL reads.
 9. Change the start and the increment of the Serial columns of existing tables.
-10. Add the new indexes of existing tables.
+10. Add the new indexes of existing tables. The partitioning of an index that
+    keeps its definition changes after them, under the name a rename gave it.
 11. Per table: drop changefeeds, then add changefeeds with their consumers,
     then change topics in place. Drops come first, so a table that swaps one
     changefeed for another stays within YDB's limit.

@@ -634,6 +634,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-annotation",
+      "kind": "public-package",
+      "surface": "ptah.run/core/annotation",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-ast",
       "kind": "public-package",
       "surface": "ptah.run/core/ast",
@@ -1111,6 +1117,12 @@
       "id": "gopkg-dialect-timescaledb-tsschema",
       "kind": "public-package",
       "surface": "ptah.run/dialect/timescaledb/tsschema",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tssource",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tssource",
       "claimed_by": null
     },
     {

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaload"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -33,7 +34,7 @@ tables:
 		qt.IsNil,
 	)
 
-	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -43,6 +44,7 @@ func TestOptionsSourcesRedactsExternalCommandArguments(t *testing.T) {
 	c := qt.New(t)
 
 	got := (schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		Commands: []schemasource.Command{{
 			Args: []string{"/usr/local/bin/schema-loader", "--token", "secret-value"},
 		}},
@@ -67,7 +69,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -85,7 +87,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -98,6 +100,7 @@ func TestLoadResult_LocalSchemaHasNoOCIProvenance(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
 	result, err := schemaload.LoadResult(context.Background(), schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		SchemaFiles: []string{path},
 	})
 
@@ -112,7 +115,7 @@ func TestLoad_RejectsUnsupportedExtension(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.json")
 	c.Assert(os.WriteFile(path, []byte(`{}`), 0o600), qt.IsNil)
 
-	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
 	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, .hcl, .sql, and .dbml are supported`)
 }
 
@@ -138,7 +141,7 @@ type Order struct {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{RootDirs: []string{rootA, rootB}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{rootA, rootB}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(schemamodel.ExportMetadataIn(db), qt.DeepEquals, []schemamodel.ExportMetadata{
@@ -149,7 +152,7 @@ type Order struct {
 func TestLoad_RejectsMissingRoot(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemaload.Load(schemaload.Options{RootDirs: []string{filepath.Join(t.TempDir(), "does-not-exist")}})
+	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{filepath.Join(t.TempDir(), "does-not-exist")}})
 	c.Assert(err, qt.ErrorMatches, `directory does not exist: .*does-not-exist`)
 }
 
@@ -174,7 +177,7 @@ tables:
       id: { type: SERIAL, primary: true }
 `), 0o600), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{RootDirs: []string{root}, SchemaFiles: []string{yamlPath}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{root}, SchemaFiles: []string{yamlPath}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
 }
@@ -216,6 +219,7 @@ table "products" {
 `), 0o600), qt.IsNil)
 
 	db, err := schemaload.Load(schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		RootDirs:    []string{root},
 		SchemaFiles: []string{yamlPath, hclPath},
 	})
@@ -249,7 +253,7 @@ CREATE TABLE orders (
 );
 `), 0o600), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{usersPath, ordersPath}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{usersPath, ordersPath}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
 }
@@ -267,6 +271,7 @@ tables:
 
 	var messages []string
 	_, err := schemaload.Load(schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		SchemaFiles: []string{path},
 		Logf:        func(format string, args ...any) { messages = append(messages, format) },
 	})
@@ -297,7 +302,8 @@ func TestLoad_RunsSchemaCommand(t *testing.T) {
 	c := qt.New(t)
 
 	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{
-		Commands: []schemasource.Command{schemaCommand()},
+		Annotations: builtintest.Annotations(),
+		Commands:    []schemasource.Command{schemaCommand()},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -318,8 +324,9 @@ type User struct {
 `), 0o600), qt.IsNil)
 
 	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{
-		RootDirs: []string{root},
-		Commands: []schemasource.Command{schemaCommand()},
+		Annotations: builtintest.Annotations(),
+		RootDirs:    []string{root},
+		Commands:    []schemasource.Command{schemaCommand()},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
@@ -337,6 +344,7 @@ func TestLoadContext_OCIReferenceFailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		SchemaFiles: []string{"oci://registry.invalid"},
 	})
 
@@ -368,6 +376,7 @@ tables:
 `), 0o600), qt.IsNil)
 
 	db, err := schemaload.Load(schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		RootDirs:    []string{root},
 		SchemaFiles: []string{yamlPath},
 	})
@@ -404,7 +413,7 @@ tables:
 `), 0o600), qt.IsNil)
 
 	for _, files := range [][]string{{first, second}, {second, first}} {
-		db, err := schemaload.Load(schemaload.Options{SchemaFiles: files})
+		db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: files})
 
 		c.Assert(err, qt.ErrorMatches,
 			`error merging composite schema: conflicting table "users" definitions`)
@@ -431,7 +440,7 @@ tables:
       id: { type: SERIAL, primary: true }
 `), 0o600), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{plain, metadata}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{plain, metadata}})
 
 	c.Assert(err, qt.ErrorMatches,
 		`error merging composite schema: conflicting table "users" definitions`)
@@ -456,7 +465,7 @@ tables:
       id: { type: SERIAL, primary: true, api_name: id }
 `), 0o600), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{first, second}})
+	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{first, second}})
 
 	c.Assert(err, qt.ErrorMatches,
 		`error merging composite schema: conflicting field "id" definitions on table "users"`)
@@ -485,6 +494,7 @@ tables:
 `), 0o600), qt.IsNil)
 
 	db, err := schemaload.Load(schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		RootDirs:    []string{root},
 		SchemaFiles: []string{yamlPath},
 	})
@@ -531,10 +541,12 @@ tables:
 `), 0o600), qt.IsNil)
 
 	composite, err := schemaload.Load(schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		SchemaFiles: []string{usersPath, ordersPath},
 	})
 	c.Assert(err, qt.IsNil)
 	handMerged, err := schemaload.Load(schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		SchemaFiles: []string{handMergedPath},
 	})
 	c.Assert(err, qt.IsNil)

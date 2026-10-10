@@ -28,6 +28,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `atlascompat` | Stable wrappers for Atlas-compatible schema, SQL, and migration-sum behavior. |
 | `config` | Project-level config loading helpers. |
 | `config/projectconfig` | Typed Ptah/Atlas project config IR, including validated online-DDL policy. |
+| `core/annotation` | The Go annotation contract: directive metadata, owner decoders, and the owner set a parse selects. |
 | `core/ast` | Typed schema DDL AST nodes. |
 | `core/astbuilder` | Fluent builders that construct `core/ast` DDL nodes without hand-written struct literals. |
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
@@ -110,6 +111,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/timescaledb/tsreport` | TimescaleDB reports. |
 | `dialect/timescaledb/tsreverse` | TimescaleDB reversal. |
 | `dialect/timescaledb/tsschema` | TimescaleDB models and codecs. |
+| `dialect/timescaledb/tssource` | TimescaleDB Go annotation directives. |
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |

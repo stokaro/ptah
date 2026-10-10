@@ -56,7 +56,7 @@ type User struct {
 	var previousSQL string
 	for i := range 5 {
 		// Parse the directory
-		database, err := goschema.ParseDir(tmpDir)
+		database, err := goschema.ParseDir(noOwners, tmpDir)
 		c.Assert(err, qt.IsNil)
 
 		// Create a schema diff for table creation
@@ -168,7 +168,7 @@ type Post struct {
 	var previousSQL string
 	for i := range 3 {
 		// Parse the directory
-		database, err := goschema.ParseDir(tmpDir)
+		database, err := goschema.ParseDir(noOwners, tmpDir)
 		c.Assert(err, qt.IsNil)
 
 		// Create a schema diff for table creation
@@ -266,7 +266,7 @@ type Post struct {
 	var previousSQL []string
 	for i := range 3 {
 		// Parse the directory
-		database, err := goschema.ParseDir(tmpDir)
+		database, err := goschema.ParseDir(noOwners, tmpDir)
 		c.Assert(err, qt.IsNil)
 
 		// Create a schema diff for table creation

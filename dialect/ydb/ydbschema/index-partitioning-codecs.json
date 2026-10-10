@@ -1,0 +1,30 @@
+{
+  "$id": "ptah.run/ydb/index-partitioning/v1",
+  "description": "A YDB global index's settings: each key states one, and an absent key states nothing. An observed value names the settings that differ from YDB's documented defaults for a new index.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "by_size": {
+      "type": "boolean"
+    },
+    "partition_size_mb": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "by_load": {
+      "type": "boolean"
+    },
+    "min_partitions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_partitions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "read_replicas": {
+      "type": "string",
+      "pattern": "^(PER_AZ|ANY_AZ):(0|[1-9][0-9]*)$"
+    }
+  }
+}

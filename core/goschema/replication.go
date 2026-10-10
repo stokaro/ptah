@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbreplication"
 )
@@ -39,7 +38,7 @@ type pendingReplicationItem struct {
 // refuses one.
 func (s *schemaParseState) parseAsyncReplicationComment(comment *ast.Comment, structName string) error {
 	const directive = "ptah:schema:async_replication"
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//"+directive, structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -65,7 +64,7 @@ func (s *schemaParseState) parseAsyncReplicationComment(comment *ast.Comment, st
 // replication once the whole file is read.
 func (s *schemaParseState) parseAsyncReplicationItemComment(comment *ast.Comment, structName string) error {
 	const directive = "ptah:schema:async_replication:item"
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//"+directive, structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -89,7 +88,7 @@ func (s *schemaParseState) parseAsyncReplicationItemComment(comment *ast.Comment
 // parseTransferComment reads a YDB transfer declaration.
 func (s *schemaParseState) parseTransferComment(comment *ast.Comment, structName string) error {
 	const directive = "ptah:schema:transfer"
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//"+directive, structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err

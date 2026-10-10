@@ -3,6 +3,7 @@ package builtin
 import (
 	"slices"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
@@ -86,4 +87,32 @@ func registerYDBColumnStoreServices(provider *engine.Provider, target string) {
 		reports:    ydbreport.ColumnStoreDefinitions(),
 		reporting:  ydbreport.ColumnStoreService{},
 	})
+}
+
+// A YDB global index's partitioning is an index facet of the YDB owner. A Go
+// annotation, YAML, YQL and HCL declare it through the index's own
+// attributes, not properties.
+func registerYDBIndexPartitioningServices(provider *engine.Provider, target string) {
+	provider.Codecs = append(provider.Codecs, ydbschema.IndexPartitioningCodecs()...)
+	provider.Codecs = append(provider.Codecs, ydbdiff.IndexPartitioningCodec(), ydbast.IndexPartitioningCodec())
+	provider.Conversions = append(provider.Conversions, engine.Conversion{
+		Target: target, Kinds: []schemaext.Kind{ydbschema.IndexPartitioningKind}, Service: ydbconvert.IndexPartitioningService{},
+	})
+	provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{
+		Target: target, OwnerKinds: []objectidentity.Kind{objectidentity.KindIndex},
+		Kinds: []schemaext.Kind{ydbschema.IndexPartitioningKind}, ChangeKinds: []schemaext.Kind{ydbdiff.IndexPartitioningKind},
+		Service: ydbcompare.IndexPartitioningService{},
+	})
+	provider.Reversals = append(provider.Reversals, engine.Reversal{
+		Target: target, Kinds: []schemaext.Kind{ydbdiff.IndexPartitioningKind}, Service: ydbreverse.IndexPartitioningService{},
+	})
+	provider.Planning = append(provider.Planning, engine.Planning{
+		Target: target, Kinds: []schemaext.Kind{ydbdiff.IndexPartitioningKind}, ParentKinds: []schemaext.Kind{ydbschema.IndexPartitioningKind},
+		OperationKinds: []schemaext.Kind{ydbast.AlterIndexPartitioningKind}, Service: ydbplan.IndexPartitioningService{},
+	})
+	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Reporting = append(provider.Reporting, engine.Reporting{
+			Representation: representation, Definitions: ydbreport.IndexPartitioningDefinitions(), Service: ydbreport.IndexPartitioningService{},
+		})
+	}
 }

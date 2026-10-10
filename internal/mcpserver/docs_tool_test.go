@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/mcpserver"
 )
 
@@ -98,7 +99,7 @@ func docsSession(c *qt.C, docs agentpolicy.Verdict) *mcp.ClientSession {
 		Rules:  []agentpolicy.Rule{{Capability: agentpolicy.DocsRead, Verdict: docs}},
 	})
 	c.Assert(err, qt.IsNil)
-	gates, err := agentgate.New(agentgate.Options{Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
+	gates, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Broker: agentpolicy.NewBroker(policy),

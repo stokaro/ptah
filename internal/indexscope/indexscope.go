@@ -41,13 +41,6 @@ func validateDiff(dialect string, semantics identifier.Semantics, diff *difftype
 	if err := validateRefs(dialect, semantics, "rename target", renamedTo); err != nil {
 		return err
 	}
-	repartitioned := make([]difftypes.IndexRef, 0, len(diff.IndexPartitioningChanged))
-	for _, change := range diff.IndexPartitioningChanged {
-		repartitioned = append(repartitioned, difftypes.IndexRef{Name: change.Name, TableName: change.TableName})
-	}
-	if err := validateRefs(dialect, semantics, "repartitioned", repartitioned); err != nil {
-		return err
-	}
 	commented := make([]difftypes.IndexRef, 0, len(diff.IndexCommentsChanged))
 	for _, change := range diff.IndexCommentsChanged {
 		commented = append(commented, difftypes.IndexRef{Name: change.Name, TableName: change.TableName})

@@ -8,12 +8,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
-	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -316,7 +314,7 @@ func reverseSchemaDiffWithPrior(
 		change.Invisible = !change.Invisible
 		reversed.IndexVisibilityChanged = append(reversed.IndexVisibilityChanged, change)
 	}
-	reversed.IndexesRenamed, reversed.IndexPartitioningChanged = reverseIndexChangesInPlace(diff)
+	reversed.IndexesRenamed = reverseIndexRenames(diff.IndexesRenamed)
 	reversed.IndexCommentsChanged = reverseIndexComments(diff.IndexCommentsChanged)
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
@@ -331,12 +329,10 @@ func reverseSchemaDiffWithPrior(
 	// A rollback runs against the same database, whose read declined the same
 	// settings.
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
-	// The same database's path, grants and YDB table settings: a rollback
-	// names an object by the same absolute path, and a table it rebuilds held
-	// the same grants and settings.
+	// The same database's path and grants: a rollback names an object by the
+	// same absolute path, and a table it rebuilds held the same grants.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	reversed.CurrentGrants = diff.CurrentGrants
-	reversed.CurrentYDBSettings = diff.CurrentYDBSettings
 	return reversed
 }
 
@@ -469,20 +465,6 @@ func reverseCommentChange(change *difftypes.CommentChange) *difftypes.CommentCha
 	return &difftypes.CommentChange{Current: change.Desired, Desired: change.Current}
 }
 
-// reverseIndexPartitioning is the rollback of an index's partitioning change,
-// written to name every setting for the reason the YDB owner's table
-// partitioning reversal gives
-// gives: back to the settings the index held, from the ones the change left it
-// with.
-func reverseIndexPartitioning(change difftypes.IndexPartitioningChange) (partitioning, previous *ast.IndexPartitioningSpec) {
-	held, heldErr := ydbindex.Held(change.Previous)
-	after, afterErr := ydbindex.Resolve(change.Partitioning, held)
-	if heldErr != nil || afterErr != nil {
-		return change.Previous.Clone(), change.Partitioning.Clone()
-	}
-	return ydbindex.Explicit(held), ydbindex.Explicit(after)
-}
-
 // priorTableDependencies is the dependency graph of the pre-change database.
 //
 // nil is a real input: a reversal without a database read passes none, and the
@@ -556,34 +538,16 @@ func reverseRLSForceChanges(changes difftypes.RLSForceChanges) difftypes.RLSForc
 	return reversed
 }
 
-// reverseIndexChangesInPlace is the rollback of the renames and the changes of
-// partitioning a forward diff makes in place: each rename back to the name the
-// index had, and each index back to the settings it held, under the name it
-// has once the renames are undone. A forward change names the index as the
-// declaration does, after its rename; the rollback renames first too, so the
-// index it sets is the one the database held before the change.
-func reverseIndexChangesInPlace(diff *difftypes.SchemaDiff) ([]difftypes.IndexRename, []difftypes.IndexPartitioningChange) {
-	var renames []difftypes.IndexRename
-	formerName := make(map[difftypes.IndexRef]string, len(diff.IndexesRenamed))
-	for _, rename := range diff.IndexesRenamed {
-		renames = append(renames, difftypes.IndexRename{TableName: rename.TableName, From: rename.To, To: rename.From})
-		formerName[difftypes.IndexRef{TableName: rename.TableName, Name: rename.To}] = rename.From
+// reverseIndexRenames is the rollback of the renames a forward diff makes:
+// each index back to the name it had. A change of a renamed index's
+// partitioning is the YDB owner's, and its rollback names the index by that
+// name too; see [renamedBack].
+func reverseIndexRenames(renames []difftypes.IndexRename) []difftypes.IndexRename {
+	var reversed []difftypes.IndexRename
+	for _, rename := range renames {
+		reversed = append(reversed, difftypes.IndexRename{TableName: rename.TableName, From: rename.To, To: rename.From})
 	}
-	var changes []difftypes.IndexPartitioningChange
-	for _, change := range diff.IndexPartitioningChanged {
-		name := change.Name
-		if former, renamed := formerName[difftypes.IndexRef{TableName: change.TableName, Name: change.Name}]; renamed {
-			name = former
-		}
-		partitioning, previous := reverseIndexPartitioning(change)
-		changes = append(changes, difftypes.IndexPartitioningChange{
-			TableName:    change.TableName,
-			Name:         name,
-			Partitioning: partitioning,
-			Previous:     previous,
-		})
-	}
-	return renames, changes
+	return reversed
 }
 
 // reverseIndexComments is the rollback of the index comments a forward diff

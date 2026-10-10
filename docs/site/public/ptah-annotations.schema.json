@@ -2986,12 +2986,6 @@
       "$ref": "#/$defs/ptah.schema.matview"
     },
     {
-      "$ref": "#/$defs/ptah.schema.continuousaggregate"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.hypertable"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.synonym"
     },
     {
@@ -3047,6 +3041,12 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.data"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.continuousaggregate"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.hypertable"
     }
   ],
   "title": "Ptah Go Annotation Directives"

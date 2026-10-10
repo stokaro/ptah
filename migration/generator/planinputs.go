@@ -119,7 +119,7 @@ func resolveDesiredSchema(opts GenerateMigrationOptions) (*schemamodel.Database,
 		entitiesFS = os.DirFS(filepath.Dir(absPath))
 		entitiesDir = filepath.Base(absPath)
 	}
-	desired, err := goschema.ParseFS(entitiesFS, entitiesDir)
+	desired, err := goschema.ParseFS(opts.Runtime.Annotations(), entitiesFS, entitiesDir)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Go entities: %w", err)
 	}

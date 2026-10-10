@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/engine"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -29,7 +30,7 @@ func TestRenderPreservesIndexSourceProperties(t *testing.T) {
 	for _, single := range []bool{true, false} {
 		t.Run(map[bool]string{true: "single", false: "per table"}[single], func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("input.go", `package models
+			db, err := goschema.ParseSource(builtintest.Annotations(), "input.go", `package models
 //ptah:schema:table name="events"
 type Event struct {
   //ptah:schema:field name="id" type="UInt64"
@@ -46,7 +47,7 @@ type Event struct {
 			files, err := goschematogo.Render(t.Context(), &db, goschematogo.Options{SingleFile: single})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
-			parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+			parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, db.Indexes[0].Overrides)
 			again, err := goschematogo.Render(t.Context(), &parsed, goschematogo.Options{SingleFile: single})
@@ -72,7 +73,7 @@ func TestRenderEncodesSelectedIndexFacets(t *testing.T) {
 	files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ch", Runtime: runtime})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Indexes[0].Overrides["clickhouse"], qt.DeepEquals, map[string]string{"type.state": "default", "granularity": "18446744073709551615"})
 	decoded, err := schemaproperties.DecodeIndexes(t.Context(), &parsed, "ch", runtime)

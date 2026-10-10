@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemaload"
 )
@@ -181,6 +182,7 @@ func loadedColumnNames(c *qt.C, ddl, dialect string) []string {
 	c.Assert(os.WriteFile(path, []byte(ddl+";\n"), 0o600), qt.IsNil)
 
 	db, err := schemaload.LoadContext(c.Context(), schemaload.Options{
+		Annotations: builtintest.Annotations(),
 		SchemaFiles: []string{path},
 		Dialect:     dialect,
 	})

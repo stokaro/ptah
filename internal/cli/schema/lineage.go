@@ -118,8 +118,13 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	database, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:        opts.rootDirs,
+		Annotations:     annotations,
 		SchemaFiles:     opts.schemaFiles,
 		ProjectEnv:      schemaSourceEnv,
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),

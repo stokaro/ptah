@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"ptah.run/core/annotation"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -13,6 +14,7 @@ import (
 // planning, and AST or whole-schema rendering workflows. Narrower stages may
 // accept only the individual service they call. Both in-process runtimes and transport adapters can satisfy it.
 type SchemaRuntime interface {
+	annotation.Runtime
 	schemapreparation.Runtime
 	schemaprojection.TableCreationService
 	featureplan.Runtime

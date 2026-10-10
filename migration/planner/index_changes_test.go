@@ -7,19 +7,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestEveryPlannerButYDBRefusesIndexChangesInPlace drives a hand-built diff
-// that renames an index, and one that changes an index's partitioning, through
-// every registered planner but YDB's. The comparison records neither on those
-// targets, so only such a diff reaches them, and a planner that read neither
-// list would plan nothing and report the database synced.
+// that renames an index, one that writes an index comment, and one that
+// changes a YDB index's partitioning through every registered planner but
+// YDB's. The comparison records none of them on those targets, so only such a
+// diff reaches them, and a planner that read none of them would plan nothing
+// and report the database synced.
 func TestEveryPlannerButYDBRefusesIndexChangesInPlace(t *testing.T) {
 	c := qt.New(t)
 	dialects, err := planner.RegisteredDialects()
@@ -29,9 +34,12 @@ func TestEveryPlannerButYDBRefusesIndexChangesInPlace(t *testing.T) {
 
 	diffs := map[string]*difftypes.SchemaDiff{
 		"rename": {IndexesRenamed: []difftypes.IndexRename{{TableName: "users", From: "a", To: "b"}}},
-		"partitioning": {IndexPartitioningChanged: []difftypes.IndexPartitioningChange{
-			{TableName: "users", Name: "a", Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2}},
-		}},
+		"partitioning": {FeatureChanges: []schemaext.ChangeRecord{{
+			Subject: objectidentity.NewBuilder(identifier.ForDialect(platform.YDB)).IndexParts("", "users", "a"),
+			Value: &ydbdiff.IndexPartitioning{After: &ydbschema.DesiredIndexPartitioning{
+				IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 2},
+			}},
+		}}},
 		"comment": {IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "users", Name: "a", Desired: "x"}}},
 	}
 	for _, dialect := range dialects {

@@ -57,7 +57,7 @@ func TestParseRLSStrengthAnnotations_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			dir := writeRLSStrengthPackage(c, row.enableAttrs, row.policyAttrs)
 
-			db, err := goschema.ParseDir(dir)
+			db, err := goschema.ParseDir(noOwners, dir)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(ownerSwitches(c, db)["docs"].Forced, qt.Equals, row.wantForced)
@@ -76,7 +76,7 @@ func TestParseRLSPolicyAsRefusesAnythingElse_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	dir := writeRLSStrengthPackage(c, ``, `as="restrictiv"`)
 
-	db, err := goschema.ParseDir(dir)
+	db, err := goschema.ParseDir(noOwners, dir)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*must be PERMISSIVE or RESTRICTIVE, got "restrictiv".*`)

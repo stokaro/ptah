@@ -31,7 +31,7 @@ func TestParseFunctionAnnotation_Strict(t *testing.T) {
 			path := filepath.Join(c.TempDir(), "routine.go")
 			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-			database, err := goschema.ParseFile(path)
+			database, err := goschema.ParseFile(noOwners, path)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Functions, qt.HasLen, 1)

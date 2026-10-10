@@ -71,7 +71,7 @@ type ProductIndexes struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse directory
-	result, err := goschema.ParseDir(modelsDir)
+	result, err := goschema.ParseDir(noOwners, modelsDir)
 	c.Assert(err, qt.IsNil)
 
 	// Verify extensions are merged correctly (sorted alphabetically)
@@ -171,7 +171,7 @@ type User struct {
 			}
 
 			// Parse directory
-			result, err := goschema.ParseDir(tmpDir)
+			result, err := goschema.ParseDir(noOwners, tmpDir)
 			c.Assert(err, qt.IsNil)
 
 			// Verify filtering worked correctly
@@ -227,7 +227,7 @@ type Product struct {
 	}
 
 	// Parse directory recursively
-	result, err := goschema.ParseDir(tmpDir)
+	result, err := goschema.ParseDir(noOwners, tmpDir)
 	c.Assert(err, qt.IsNil)
 
 	// Verify all entity types are merged correctly
@@ -275,7 +275,7 @@ func TestParseDir_ErrorHandling(t *testing.T) {
 				rootDir = c.TempDir() // Empty directory
 			}
 
-			result, err := goschema.ParseDir(rootDir)
+			result, err := goschema.ParseDir(noOwners, rootDir)
 
 			if tt.expectError {
 				c.Assert(err, qt.IsNotNil)
@@ -307,7 +307,7 @@ type User struct {
 	err := os.WriteFile(filepath.Join(rootDir, "user.go"), []byte(source), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goschema.ParseDir(rootDir)
+	result, err := goschema.ParseDir(noOwners, rootDir)
 	c.Assert(result, qt.IsNil)
 	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "bogus" on //ptah:schema:field at User.ID`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
@@ -345,7 +345,7 @@ type Post struct {
 	err = os.WriteFile(filepath.Join(rootDir, "post.go"), []byte(second), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goschema.ParseDir(rootDir)
+	result, err := goschema.ParseDir(noOwners, rootDir)
 	c.Assert(result, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
 	c.Assert(err.Error(), qt.Contains, `unknown annotation attribute "bogus"`)
@@ -359,7 +359,7 @@ func TestParseDir_SyntaxErrorReturnsError(t *testing.T) {
 	err := os.WriteFile(filepath.Join(rootDir, "broken.go"), []byte("package models\nfunc broken("), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goschema.ParseDir(rootDir)
+	result, err := goschema.ParseDir(noOwners, rootDir)
 	c.Assert(result, qt.IsNil)
 	c.Assert(err, qt.ErrorMatches, `.*parse Go source "broken.go":.*`)
 }
@@ -395,7 +395,7 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse directory
-	result, err := goschema.ParseDir(tmpDir)
+	result, err := goschema.ParseDir(noOwners, tmpDir)
 	c.Assert(err, qt.IsNil)
 
 	// Verify deduplication worked
@@ -507,7 +507,7 @@ type Model%03d struct {
 
 	fsys := &countingFS{fsys: createTestFS(files)}
 
-	result, err := goschema.ParseFS(fsys, ".")
+	result, err := goschema.ParseFS(noOwners, fsys, ".")
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Tables, qt.HasLen, 100)
 	c.Assert(fsys.openGoFiles, qt.Equals, 0)
@@ -656,7 +656,7 @@ type Product struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(fsys, tt.rootDir)
+			result, err := goschema.ParseFS(noOwners, fsys, tt.rootDir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
@@ -810,7 +810,7 @@ type User struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(fsys, ".")
+			result, err := goschema.ParseFS(noOwners, fsys, ".")
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
@@ -855,7 +855,7 @@ func TestParseDir_HappyPath_UsesSharedFileFiltering(t *testing.T) {
 		c.Assert(os.WriteFile(path, []byte(file.data), 0o600), qt.IsNil)
 	}
 
-	result, err := goschema.ParseDir(root)
+	result, err := goschema.ParseDir(noOwners, root)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Tables, qt.HasLen, 2)
@@ -880,7 +880,7 @@ func TestParseFS_HappyPath_ParsesCapturedSourceBytes(t *testing.T) {
 		0o600,
 	), qt.IsNil)
 
-	result, err := goschema.ParseFS(snapshot.FS(), ".")
+	result, err := goschema.ParseFS(noOwners, snapshot.FS(), ".")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Tables, qt.HasLen, 1)
@@ -911,7 +911,7 @@ func TestParseFS_FailurePath_RejectsSelectedNonRegularSources(t *testing.T) {
 				"model.go": &fstest.MapFile{Mode: test.mode},
 			}
 
-			result, err := goschema.ParseFS(fsys, ".")
+			result, err := goschema.ParseFS(noOwners, fsys, ".")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(result, qt.IsNil)
@@ -940,7 +940,7 @@ func TestParseFS_ErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := goschema.ParseFS(tt.fsys, tt.rootDir)
+			result, err := goschema.ParseFS(noOwners, tt.fsys, tt.rootDir)
 
 			if tt.expectError {
 				c.Assert(err, qt.IsNotNil)
@@ -981,7 +981,7 @@ type User struct {
 			// Create test filesystem
 			fsys := createTestFS(tt.files)
 
-			result, err := goschema.ParseFS(fsys, ".")
+			result, err := goschema.ParseFS(noOwners, fsys, ".")
 			c.Assert(result, qt.IsNil)
 			c.Assert(err, qt.ErrorMatches, `.*parse Go source "invalid.go":.*`)
 		})
@@ -1098,7 +1098,7 @@ type Order struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(fsys, ".")
+			result, err := goschema.ParseFS(noOwners, fsys, ".")
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
@@ -1161,7 +1161,7 @@ type User struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(fsys, ".")
+			result, err := goschema.ParseFS(noOwners, fsys, ".")
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
@@ -1226,7 +1226,7 @@ type User struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(fsys, ".")
+			result, err := goschema.ParseFS(noOwners, fsys, ".")
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
@@ -1243,7 +1243,7 @@ func TestParseFS_RealFilesystem(t *testing.T) {
 	c := qt.New(t)
 
 	// Test using the existing stubs directory which we know works
-	result, err := goschema.ParseFS(os.DirFS("../../internal/stubs"), ".")
+	result, err := goschema.ParseFS(noOwners, os.DirFS("../../internal/stubs"), ".")
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.IsNotNil)
 
@@ -1301,7 +1301,7 @@ type User struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(fsys, ".")
+			result, err := goschema.ParseFS(noOwners, fsys, ".")
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
@@ -1442,7 +1442,7 @@ type OtherTable struct {
 			fsys := createTestFS(tt.files)
 
 			// Parse filesystem
-			result, err := goschema.ParseFS(fsys, tt.rootDir)
+			result, err := goschema.ParseFS(noOwners, fsys, tt.rootDir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 
@@ -1458,11 +1458,11 @@ func TestParseFS_CompareWithParseDir(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse using ParseDir (existing functionality)
-	resultDir, err := goschema.ParseDir("../../internal/stubs")
+	resultDir, err := goschema.ParseDir(noOwners, "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Parse using ParseFS with os.DirFS
-	resultFS, err := goschema.ParseFS(os.DirFS("../../internal/stubs"), ".")
+	resultFS, err := goschema.ParseFS(noOwners, os.DirFS("../../internal/stubs"), ".")
 	c.Assert(err, qt.IsNil)
 
 	// Results should be identical
@@ -1518,7 +1518,7 @@ type Product struct {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := goschema.ParseFS(fsys, ".")
+		_, err := goschema.ParseFS(noOwners, fsys, ".")
 		if err != nil {
 			b.Fatalf("ParseFS failed: %v", err)
 		}
@@ -1534,7 +1534,7 @@ func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 
 	fixtureDir := "../../integration/internal/fixtures/entities/023-go-annotations-objects"
 
-	result, err := goschema.ParseDir(fixtureDir)
+	result, err := goschema.ParseDir(noOwners, fixtureDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.IsNotNil)
 
@@ -1592,7 +1592,7 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 	for _, fixtureDir := range fixtureDirs {
 		t.Run(filepath.Base(fixtureDir), func(t *testing.T) {
 			c := qt.New(t)
-			result, err := goschema.ParseDir(fixtureDir)
+			result, err := goschema.ParseDir(noOwners, fixtureDir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)
 		})
@@ -1647,7 +1647,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 			appendSlices(&merged, db)
 		}
 
-		dirDb, err := goschema.ParseDir(fixtureDir)
+		dirDb, err := goschema.ParseDir(noOwners, fixtureDir)
 		c.Assert(err, qt.IsNil)
 		appendSlices(&dirMerged, *dirDb)
 	}
@@ -1750,7 +1750,7 @@ func TestParseFS_ConflictingDuplicateSchemaObjectsFail(t *testing.T) {
 				"b.go": {Data: []byte("package fixtures\n\n" + tt.sourceB + "\ntype " + secondHost + " struct{}\n")},
 			}
 
-			_, err := goschema.ParseFS(fsys, ".")
+			_, err := goschema.ParseFS(noOwners, fsys, ".")
 
 			c.Assert(err, qt.ErrorMatches, tt.err)
 		})
@@ -1773,7 +1773,7 @@ type Second struct{}
 `)},
 	}
 
-	result, err := goschema.ParseFS(fsys, ".")
+	result, err := goschema.ParseFS(noOwners, fsys, ".")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Views, qt.HasLen, 1)
@@ -1796,7 +1796,7 @@ type Second struct{}
 `)},
 	}
 
-	result, err := goschema.ParseFS(fsys, ".")
+	result, err := goschema.ParseFS(noOwners, fsys, ".")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Schemas, qt.DeepEquals, []schemamodel.Schema{{
@@ -1838,7 +1838,7 @@ type Model%d struct {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := goschema.ParseFS(fsys, ".")
+		_, err := goschema.ParseFS(noOwners, fsys, ".")
 		if err != nil {
 			b.Fatalf("ParseFS failed: %v", err)
 		}

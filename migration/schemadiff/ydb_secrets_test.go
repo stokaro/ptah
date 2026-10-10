@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -196,7 +197,7 @@ func TestCompare_YDBSecretRotationFailurePath(t *testing.T) {
 // still described, so a secret only the database holds is dropped.
 func TestCompare_YDBSecretLimitKeepsADottedRootSecret(t *testing.T) {
 	c := qt.New(t)
-	desired, err := goschema.ParseSource("limits.go", "package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\"pg.pw\"\ntype Unmanaged struct{}\n")
+	desired, err := goschema.ParseSource(builtintest.Annotations(), "limits.go", "package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\"pg.pw\"\ntype Unmanaged struct{}\n")
 	c.Assert(err, qt.IsNil)
 	held := heldSecrets(ydbsecret.ObservedObject("", "pg.pw"), ydbsecret.ObservedObject("pg", "pw"))
 

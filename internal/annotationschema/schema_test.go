@@ -7,13 +7,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationschema"
+	"ptah.run/internal/builtintest"
 )
 
 func TestGenerateMatchesCommittedSchema(t *testing.T) {
 	c := qt.New(t)
 
-	desired, err := annotationschema.Generate()
+	desired, err := annotationschema.Generate(bundledCatalog(c))
 	c.Assert(err, qt.IsNil)
 	committed, err := os.ReadFile("../../" + annotationschema.SchemaPath)
 	c.Assert(err, qt.IsNil)
@@ -24,7 +26,7 @@ func TestGenerateMatchesCommittedSchema(t *testing.T) {
 func TestGenerateFieldSchemaRejectsUnknownAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	desired, err := annotationschema.Generate()
+	desired, err := annotationschema.Generate(bundledCatalog(c))
 	c.Assert(err, qt.IsNil)
 
 	var doc map[string]any
@@ -46,7 +48,7 @@ func TestGenerateFieldSchemaRejectsUnknownAttributes(t *testing.T) {
 func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 	c := qt.New(t)
 
-	desired, err := annotationschema.Generate()
+	desired, err := annotationschema.Generate(bundledCatalog(c))
 	c.Assert(err, qt.IsNil)
 
 	var doc map[string]any
@@ -88,7 +90,7 @@ func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 func TestGenerateIncludesIndexCoveringColumns(t *testing.T) {
 	c := qt.New(t)
 
-	desired, err := annotationschema.Generate()
+	desired, err := annotationschema.Generate(bundledCatalog(c))
 	c.Assert(err, qt.IsNil)
 
 	var doc map[string]any
@@ -114,7 +116,7 @@ func TestGenerateIncludesIndexCoveringColumns(t *testing.T) {
 func TestGenerateAcceptsIndexPlatformPropertiesWithoutBareGranularity(t *testing.T) {
 	c := qt.New(t)
 
-	desired, err := annotationschema.Generate()
+	desired, err := annotationschema.Generate(bundledCatalog(c))
 	c.Assert(err, qt.IsNil)
 
 	var doc map[string]any
@@ -136,7 +138,7 @@ func TestGenerateAcceptsIndexPlatformPropertiesWithoutBareGranularity(t *testing
 func TestGenerateRefusesRetiredAttributesAndSaysWhy(t *testing.T) {
 	c := qt.New(t)
 
-	desired, err := annotationschema.Generate()
+	desired, err := annotationschema.Generate(bundledCatalog(c))
 	c.Assert(err, qt.IsNil)
 
 	var doc map[string]any
@@ -159,4 +161,13 @@ func TestGenerateRefusesRetiredAttributesAndSaysWhy(t *testing.T) {
 	body := properties["body"].(map[string]any)
 	c.Assert(body["not"], qt.IsNil)
 	c.Assert(body["type"], qt.Equals, "string")
+}
+
+// bundledCatalog is the catalog the `ptah schema annotations` command renders:
+// the frontend's own directives and those of every bundled owner.
+func bundledCatalog(c *qt.C) annotationmeta.Catalog {
+	c.Helper()
+	catalog, err := annotationmeta.NewCatalog(builtintest.Annotations())
+	c.Assert(err, qt.IsNil)
+	return catalog
 }

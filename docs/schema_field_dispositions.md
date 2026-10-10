@@ -65,12 +65,6 @@ None.
 
 | Field | Disposition | Why it is not rendered |
 | --- | --- | --- |
-| `ast.IndexPartitioningSpec.ByLoad` | `ddl` | — |
-| `ast.IndexPartitioningSpec.BySize` | `ddl` | — |
-| `ast.IndexPartitioningSpec.MaxPartitions` | `ddl` | — |
-| `ast.IndexPartitioningSpec.MinPartitions` | `ddl` | — |
-| `ast.IndexPartitioningSpec.PartitionSizeMB` | `ddl` | — |
-| `ast.IndexPartitioningSpec.ReadReplicas` | `ddl` | — |
 | `chschema.DesiredIndex.Granularity` | `ddl` | — |
 | `chschema.DesiredIndex.IndexType` | `ddl` | — |
 | `chschema.DesiredRefresh.Schedule` | `ddl` | — |
@@ -356,7 +350,6 @@ None.
 | `schemamodel.Index.Operator` | `ddl` | — |
 | `schemamodel.Index.Overrides` | `ddl` | — |
 | `schemamodel.Index.Parser` | `ddl` | — |
-| `schemamodel.Index.Partitioning` | `ddl` | — |
 | `schemamodel.Index.Parts` | `ddl` | — |
 | `schemamodel.Index.RequiresExtensions` | `planning` | the same ordering fact for an index |
 | `schemamodel.Index.StorageParams` | `ddl` | — |
@@ -607,6 +600,7 @@ None.
 | `ydbschema.DesiredChangefeed.Spec` | `ddl` | — |
 | `ydbschema.DesiredColumnFamilies.Families` | `ddl` | — |
 | `ydbschema.DesiredColumnStore.ColumnStore` | `ddl` | — |
+| `ydbschema.DesiredIndexPartitioning.IndexPartitioning` | `ddl` | — |
 | `ydbschema.DesiredTTL.Policy` | `ddl` | — |
 | `ydbschema.DesiredTablePartitioning.TablePartitioning` | `ddl` | — |
 | `ydbschema.DesiredVectorIndex.Clusters` | `ddl` | — |
@@ -615,6 +609,12 @@ None.
 | `ydbschema.DesiredVectorIndex.Levels` | `ddl` | — |
 | `ydbschema.DesiredVectorIndex.Similarity` | `ddl` | — |
 | `ydbschema.DesiredVectorIndex.VectorType` | `ddl` | — |
+| `ydbschema.IndexPartitioning.ByLoad` | `ddl` | — |
+| `ydbschema.IndexPartitioning.BySize` | `ddl` | — |
+| `ydbschema.IndexPartitioning.MaxPartitions` | `ddl` | — |
+| `ydbschema.IndexPartitioning.MinPartitions` | `ddl` | — |
+| `ydbschema.IndexPartitioning.PartitionSizeMB` | `ddl` | — |
+| `ydbschema.IndexPartitioning.ReadReplicas` | `ddl` | — |
 | `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
 | `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |
 | `ydbschema.ReplicationBinding.SupportsTopicAutopartitioning` | `planning` | preserves observed controller behavior through snapshots and codecs |

@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -29,7 +30,7 @@ func TestRender_StreamingQuery_RoundTrip(t *testing.T) {
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 1)
 	original, found, err := db.FeatureObjects.Get(ydbstreaming.Ref("jobs", "copy"))

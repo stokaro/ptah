@@ -25,7 +25,7 @@ type Order struct {
 }
 `
 
-	db, err := goschema.ParseSource("orders.go", source)
+	db, err := goschema.ParseSource(noOwners, "orders.go", source)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Indexes, qt.HasLen, 1)

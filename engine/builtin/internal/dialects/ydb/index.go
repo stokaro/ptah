@@ -8,13 +8,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbindex"
-	"ptah.run/internal/ydbpartition"
 )
 
 // indexClause is an index as YQL writes it after the table, in CREATE TABLE
@@ -93,19 +93,15 @@ func alterIndexSet(table, index string, settings []string) string {
 }
 
 // indexSettings writes the settings a new index's declared partitioning
-// names, refusing it on a target without [capability.IndexPartitioning] and
-// refusing what YDB would refuse whatever the index holds.
-func (r *Renderer) indexSettings(subject string, spec *ast.IndexPartitioningSpec) ([]string, error) {
-	if spec.IsZero() {
-		return nil, nil
-	}
-	if !r.caps.Has(capability.IndexPartitioning) {
-		return nil, refuseKey(capability.IndexPartitioning, subject+" declares its partitioning")
-	}
-	if _, err := ydbindex.Resolve(spec, ydbpartition.DefaultSettings()); err != nil {
-		return nil, refuseFact(subject, err.Error())
-	}
-	return ydbindex.CreateClause(spec), nil
+// names, from the YDB owner's facet; see [ydbrender.CreateIndexPartitioning].
+func (r *Renderer) indexSettings(subject string, facets schemaext.Facets) ([]string, error) {
+	return ydbrender.CreateIndexPartitioning(r.caps, subject, facets)
+}
+
+// declaresPartitioning reports whether an index's facets declare its
+// partitioning.
+func declaresPartitioning(index *ast.IndexNode) bool {
+	return slices.Contains(index.Facets.Kinds(), ydbschema.IndexPartitioningKind)
 }
 
 // indexClauseOf reads an index node into the clause YDB takes, refusing what
@@ -161,7 +157,7 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 		clause.fullText, err = r.fullTextSettings(subject, index)
 		return clause, err
 	}
-	clause.settings, err = r.indexSettings(subject, index.Partitioning)
+	clause.settings, err = r.indexSettings(subject, index.Facets)
 	if err != nil {
 		return indexClause{}, err
 	}
@@ -178,7 +174,7 @@ func (r *Renderer) vectorSettings(subject string, index *ast.IndexNode) (ydbsche
 	case index.Unique:
 		return ydbschema.VectorSettings{}, refuseFact(subject,
 			"a vector index is not unique (`VECTOR_KMEANS_TREE index can only be GLOBAL [SYNC]`)")
-	case !index.Partitioning.IsZero():
+	case declaresPartitioning(index):
 		return ydbschema.VectorSettings{}, refuseFact(subject, "a vector index keeps the partitioning YDB gives it "+
 			"(`ALTER INDEX ... SET` answers `Only index with one impl table is supported`)")
 	}
@@ -334,32 +330,6 @@ func (r *Renderer) addIndexStatements(index *ast.IndexNode) ([]string, error) {
 	return statements, nil
 }
 
-// setIndexPartitioning writes the ALTER INDEX that changes an existing index's
-// partitioning in place: the settings op.Partitioning names, over the ones
-// op.Previous says the index holds.
-func (r *Renderer) setIndexPartitioning(table string, op *ast.SetIndexPartitioningOperation) ([]string, error) {
-	subject := fmt.Sprintf("index %q of %s", op.IndexName, tableref.Phrase(table))
-	if strings.TrimSpace(op.IndexName) == "" {
-		return nil, refuseFact(tableref.Phrase(table), "ALTER INDEX ... SET names no index")
-	}
-	if !r.caps.Has(capability.IndexPartitioning) {
-		return nil, refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
-	}
-	previous, err := ydbindex.Held(op.Previous)
-	if err != nil {
-		return nil, refuseFact(subject, "the settings it holds: "+err.Error())
-	}
-	desired, err := ydbindex.Resolve(op.Partitioning, previous)
-	if err != nil {
-		return nil, refuseFact(subject, err.Error())
-	}
-	clause := ydbpartition.Clause(desired, previous)
-	if len(clause) == 0 {
-		return nil, nil
-	}
-	return []string{alterIndexSet(table, op.IndexName, clause)}, nil
-}
-
 // renderDropIndex drops an index through its table, which is the only spelling
 // YDB has: `DROP INDEX` is a parse error. There is no IF EXISTS on it
 // (`mismatched input 'EXISTS'`).
@@ -386,7 +356,7 @@ func (r *Renderer) fullTextSettings(subject string, index *ast.IndexNode) (map[s
 		return nil, refuseFact(subject, "a YDB full-text index cannot be unique")
 	case len(index.EffectiveParts()) != 1:
 		return nil, refuseFact(subject, "a YDB full-text index requires exactly one text column; this release does not support prefix columns")
-	case !index.Partitioning.IsZero():
+	case declaresPartitioning(index):
 		return nil, refuseFact(subject, "Ptah does not alter a full-text index's internal table partitioning")
 	}
 	options, err := ydbindex.ResolveFullText(index.StorageParams)
@@ -400,7 +370,7 @@ func (r *Renderer) localIndexSettings(subject string, kind ydbindex.Kind, index 
 	if !r.caps.Has(kind.LocalCapability()) {
 		return nil, refuseKey(kind.LocalCapability(), subject)
 	}
-	if index.Unique || len(index.IncludeColumns) > 0 || !index.Partitioning.IsZero() {
+	if index.Unique || len(index.IncludeColumns) > 0 || declaresPartitioning(index) {
 		return nil, refuseFact(subject, "local indexes cannot be unique, covering or independently partitioned")
 	}
 	return ydbindex.ResolveLocal(kind, index.StorageParams)

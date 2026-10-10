@@ -8,7 +8,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -60,12 +59,13 @@ func TestYDBRules_LeavePtahsPartitioningPlans(t *testing.T) {
 							Before: &ydbschema.ObservedTablePartitioning{TablePartitioning: *test.current},
 							After:  &ydbschema.DesiredTablePartitioning{TablePartitioning: *test.desired},
 						},
+					}, {
+						Subject: objectidentity.NewBuilder(identifier.ForDialect("ydb")).IndexParts("", "t", "t_v"),
+						Value: &ydbdiff.IndexPartitioning{
+							Before: &ydbschema.ObservedIndexPartitioning{IndexPartitioning: ydbschema.IndexPartitioning{BySize: new(false)}},
+							After:  &ydbschema.DesiredIndexPartitioning{IndexPartitioning: ydbschema.IndexPartitioning{PartitionSizeMB: 100, ByLoad: new(true)}},
+						},
 					}},
-				}},
-				IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{
-					TableName: "t", Name: "t_v",
-					Partitioning: &ast.IndexPartitioningSpec{PartitionSizeMB: 100, ByLoad: new(true)},
-					Previous:     &ast.IndexPartitioningSpec{BySize: new(false)},
 				}},
 				DeclaredTables: []schemamodel.Table{{Name: "t"}},
 			}

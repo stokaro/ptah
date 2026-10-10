@@ -565,3 +565,10 @@ v0.13.0 ptah.run/migration/safety
 # a partial migration directory. This changes behavior; pre-v1, so no
 # compatibility is owed under the authorized #4140/#4204 policy.
 v0.13.0 ptah.run/migration/importer
+
+# #4140 moves a feature's Go annotation directives to the package that owns the
+# feature. Every goschema entry point takes the annotation.Set its caller
+# selected, so a parse never reads or drops an owner's directives without the
+# caller choosing them. This changes behavior; pre-v1, so no compatibility is
+# owed under the authorized #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/core/goschema

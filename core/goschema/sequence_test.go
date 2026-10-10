@@ -60,7 +60,7 @@ func TestParseSequenceAnnotation_MissingNameRejected(t *testing.T) {
 type S struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:sequence")
@@ -73,7 +73,7 @@ func TestParseSequenceAnnotation_InvalidIntegerRejected(t *testing.T) {
 type S struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Attribute, qt.Equals, "increment")
@@ -86,7 +86,7 @@ func TestParseSequenceAnnotation_UnknownAttributeRejected(t *testing.T) {
 type S struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:sequence")
@@ -111,7 +111,7 @@ func TestParseSequenceAnnotation_InvalidTypeRejected(t *testing.T) {
 type S struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Attribute, qt.Equals, "as")

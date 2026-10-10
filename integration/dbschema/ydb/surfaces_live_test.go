@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentpolicy"
 	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/introspect"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/dbtarget"
@@ -66,7 +67,7 @@ func TestYDBIntrospect_ModelsPlanNothingAgainstTheirDatabase(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("introspect:\n%s", stdout))
 			c.Assert(stdout, qt.Contains, "Imported 4 table(s)")
-			models, err := goschema.ParseDir(out)
+			models, err := goschema.ParseDir(builtintest.Annotations(), out)
 			c.Assert(err, qt.IsNil)
 			c.Assert(planAgainst(c, conn, models, roundTripSchemas), qt.HasLen, 0)
 

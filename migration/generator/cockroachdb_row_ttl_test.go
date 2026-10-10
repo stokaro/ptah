@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -26,7 +27,7 @@ import (
 // platform.cockroachdb properties on its directive.
 func rowTTLSource(c *qt.C, properties string) *schemamodel.Database {
 	c.Helper()
-	database := must.Must(goschema.ParseSource("sessions.go", `package entities
+	database := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", `package entities
 
 //ptah:schema:table name="sessions"`+properties+`
 type Session struct {
@@ -159,7 +160,7 @@ func TestCockroachDBRowTTLTableCreationCarriesThePolicy(t *testing.T) {
 func TestCockroachDBRowTTLPlansBothDirectionsBesideAnRLSToggle(t *testing.T) {
 	c := qt.New(t)
 	runtime := must.Must(builtin.New())
-	source := must.Must(goschema.ParseSource("sessions.go", `package entities
+	source := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", `package entities
 
 //ptah:schema:rls:enable table="sessions"
 //ptah:schema:table name="sessions" platform.cockroachdb.ttl_expire_after="3 days"

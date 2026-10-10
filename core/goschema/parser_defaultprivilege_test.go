@@ -195,7 +195,7 @@ func TestDefaultPrivilegeAnnotationParsing_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, err := goschema.ParseSource("schema.go", "package test\n\n"+test.annotation+"\ntype AccessControl struct{}\n")
+			database, err := goschema.ParseSource(noOwners, "schema.go", "package test\n\n"+test.annotation+"\ntype AccessControl struct{}\n")
 
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			c.Assert(err.Error(), qt.Contains, test.wantText)

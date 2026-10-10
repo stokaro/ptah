@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -113,8 +114,13 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return nil, err
+	}
 	loadOpts := schemaload.Options{
 		RootDirs:        opts.RootDirs,
+		Annotations:     annotations,
 		SchemaFiles:     opts.SchemaFiles,
 		ProjectEnv:      opts.ProjectEnv,
 		EnvSelectorFlag: opts.EnvSelectorFlag,

@@ -53,7 +53,7 @@ type Event struct {
 }
 `
 	c := qt.New(t)
-	db, err := goschema.ParseSource("fixture.go", src)
+	db, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Attribute, qt.Equals, "granularity")
@@ -78,7 +78,7 @@ type Event struct {
 }
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:index")

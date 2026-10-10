@@ -136,7 +136,7 @@ type BlogPost struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse the directory
-	database, err := goschema.ParseDir(tmpDir)
+	database, err := goschema.ParseDir(noOwners, tmpDir)
 	c.Assert(err, qt.IsNil)
 
 	// Should have 2 tables: users and blog_posts

@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/datamigrate"
 )
 
@@ -81,7 +82,7 @@ func TestGenerate_ComputesReversibleDataMigration(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, driftDesiredRows)
 
-	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 
 	// Up reaches the desired state.
@@ -110,7 +111,7 @@ func TestGenerate_NoDriftYieldsEmpty(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, driftDesiredRows)
 
-	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
@@ -132,7 +133,7 @@ func TestGenerate_RoundTripApply(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, driftDesiredRows)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 
 	apply := func(script string) {
@@ -204,7 +205,7 @@ type Region struct {
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftDesiredRows), 0o600), qt.IsNil)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 	// The live rows were read from reference.regions (main has no regions table),
 	// and the generated DML targets the schema-qualified table.
@@ -284,6 +285,7 @@ type Region struct {
 	// A qualified protected entry refuses and reports the qualified name.
 	conn, root := setup()
 	_, _, err := datamigrate.Generate(ctx, conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"reference.regions"},
 	})
@@ -294,6 +296,7 @@ type Region struct {
 	// preserving the pre-schema behavior.
 	conn, root = setup()
 	_, _, err = datamigrate.Generate(ctx, conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"regions"},
 	})
@@ -303,6 +306,7 @@ type Region struct {
 	// --allow-prod clears the gate and the insert-only migration is generated.
 	conn, root = setup()
 	up, _, err := datamigrate.Generate(ctx, conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"reference.regions"},
 		AllowProd:       true,
@@ -372,7 +376,7 @@ type regionData struct{ _ int }
 	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"),
 		[]byte("- code: CA\n  country_code: US\n  name: California\n- code: BY\n  country_code: DE\n  name: Bavaria\n"), 0o600), qt.IsNil)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 
 	// Parent INSERT before child INSERT; child DELETE before parent DELETE.
@@ -435,14 +439,14 @@ func TestGenerate_EmptyDesiredWithLiveRowsGeneratesFullDelete(t *testing.T) {
 	writeRegionsFixture(t, root, "[]\n")
 
 	// Without the flag, the all-delete change is still refused as destructive.
-	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "destructive")
 
 	// With the flag, the full-fidelity delete is generated: up deletes the row and
 	// down re-inserts it with the full non-key columns (code and name), so the
 	// rollback restores the whole row rather than the key alone.
-	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `DELETE FROM "regions" WHERE "code" = 'US';`)
 	c.Assert(down, qt.Contains, `INSERT INTO "regions" ("code", "name") VALUES ('US', 'United States');`)
@@ -455,7 +459,7 @@ func TestGenerate_EmptyDesiredEmptyTableIsNoOp(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, "[]\n")
 
-	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
@@ -506,7 +510,7 @@ type widgetData struct{ _ int }
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(root, "widgets.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 	// up deletes every live row; down re-inserts the full non-generated columns
 	// and never names the generated column.
@@ -588,7 +592,7 @@ type eventData struct{ _ int }
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(root, "events.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `DELETE FROM "events" WHERE "id" = 'A';`)
 	c.Assert(down, qt.Contains, `INSERT INTO "events" ("created_at", "id") VALUES ('2024-03-05 06:07:08+00:00', 'A');`)
@@ -652,7 +656,7 @@ type ticketData struct{ _ int }
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(root, "tickets.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 	// The key is re-inserted with its explicit original value.
 	c.Assert(down, qt.Contains, `INSERT INTO "tickets" ("id", "label") VALUES (1, 'alpha');`)
@@ -714,7 +718,7 @@ type regionData struct{ _ int }
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `DELETE FROM "main"."regions" WHERE "code" = 'US';`)
 	c.Assert(down, qt.Contains, `INSERT INTO "main"."regions" ("code", "name") VALUES ('US', 'United States');`)
@@ -723,7 +727,7 @@ type regionData struct{ _ int }
 func TestGenerate_NilConnection(t *testing.T) {
 	c := qt.New(t)
 
-	_, _, err := datamigrate.Generate(context.Background(), nil, datamigrate.Options{RootDir: t.TempDir()})
+	_, _, err := datamigrate.Generate(context.Background(), nil, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: t.TempDir()})
 	c.Assert(err, qt.ErrorMatches, `datamigrate: a database connection is required`)
 }
 
@@ -748,7 +752,7 @@ func TestGenerate_DestructiveRefusedByDefault(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, driftDesiredRows)
 
-	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "destructive")
 	c.Assert(err.Error(), qt.Contains, "--allow-destructive")
@@ -765,7 +769,7 @@ func TestGenerate_InsertOnlyAllowedWithoutFlag(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, insertOnlyDesiredRows)
 
-	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `INSERT INTO "regions" ("code", "name") VALUES ('DE', 'Germany');`)
 	c.Assert(down, qt.Contains, `DELETE FROM "regions" WHERE "code" = 'DE';`)
@@ -784,6 +788,7 @@ func TestGenerate_ProtectedTableRefused(t *testing.T) {
 	writeRegionsFixture(t, root, insertOnlyDesiredRows)
 
 	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"regions"},
 	})
@@ -800,6 +805,7 @@ func TestGenerate_ProtectedTableMatchIsCaseInsensitive(t *testing.T) {
 	writeRegionsFixture(t, root, insertOnlyDesiredRows)
 
 	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"REGIONS"},
 	})
@@ -823,6 +829,7 @@ func TestGenerate_ProtectedTablePrecedesDestructiveGate(t *testing.T) {
 	writeRegionsFixture(t, root, driftDesiredRows)
 
 	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"regions"},
 	})
@@ -843,6 +850,7 @@ func TestGenerate_ProtectedAndDestructiveAllowed(t *testing.T) {
 	writeRegionsFixture(t, root, driftDesiredRows)
 
 	up, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:      builtintest.Annotations(),
 		RootDir:          root,
 		ProtectedTables:  []string{"regions"},
 		AllowProd:        true,
@@ -865,6 +873,7 @@ func TestGenerate_ProtectedTableWithNoDriftIsNoOp(t *testing.T) {
 	writeRegionsFixture(t, root, insertOnlyDesiredRows)
 
 	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"regions"},
 	})
@@ -887,6 +896,7 @@ func TestGenerate_AllowProdAloneStillRefusesDestructive(t *testing.T) {
 	writeRegionsFixture(t, root, driftDesiredRows)
 
 	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"regions"},
 		AllowProd:       true,
@@ -909,6 +919,7 @@ func TestGenerate_AllowDestructiveAloneStillRefusesProtected(t *testing.T) {
 	writeRegionsFixture(t, root, driftDesiredRows)
 
 	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:      builtintest.Annotations(),
 		RootDir:          root,
 		ProtectedTables:  []string{"regions"},
 		AllowDestructive: true,
@@ -996,14 +1007,14 @@ func TestGenerate_MultiTableDestructiveSummaryNamesOnlyChangedTable(t *testing.T
 	root := t.TempDir()
 	writeMultiTableFixture(t, root, insertOnlyDesiredRows, countriesUpdateRows)
 
-	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `"countries" (1 update(s), 0 delete(s))`)
 	// regions is insert-only, so it must not be named as destructive.
 	c.Assert(err.Error(), qt.Not(qt.Contains), "regions")
 
 	// With the flag, both tables' changes are generated.
-	up, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	up, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `INSERT INTO "regions" ("code", "name") VALUES ('DE', 'Germany');`)
 	c.Assert(up, qt.Contains, `UPDATE "countries" SET "name" = 'Czechia' WHERE "code" = 'CZ';`)
@@ -1022,6 +1033,7 @@ func TestGenerate_MultiTableProtectedNamesOnlyProtectedTable(t *testing.T) {
 	writeMultiTableFixture(t, root, insertOnlyDesiredRows, countriesUpdateRows)
 
 	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:     builtintest.Annotations(),
 		RootDir:         root,
 		ProtectedTables: []string{"countries"},
 	})

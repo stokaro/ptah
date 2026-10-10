@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -66,7 +67,7 @@ func TestRender_EveryReadableFamilyRoundTrips(t *testing.T) {
 		source.Write(file.Data)
 	}
 
-	parsed, err := goschema.ParseSource("schema.go", source.String())
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 	c.Assert(err, qt.IsNil, qt.Commentf("the exported source does not parse:\n%s", source.String()))
 
 	c.Assert(parsed.Domains, qt.HasLen, 1)
@@ -109,7 +110,7 @@ func TestRender_AProcedureDoesNotComeBackAFunction(t *testing.T) {
 		source.Write(file.Data)
 	}
 
-	parsed, err := goschema.ParseSource("schema.go", source.String())
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(parsed.Functions, qt.HasLen, 1)
@@ -137,7 +138,7 @@ func TestRender_AFunctionStaysAFunction(t *testing.T) {
 		source.Write(file.Data)
 	}
 
-	parsed, err := goschema.ParseSource("schema.go", source.String())
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(parsed.Functions, qt.HasLen, 1)
@@ -183,7 +184,7 @@ func TestRender_AUserTypeAloneStillGetsTheStructItHangsOff(t *testing.T) {
 				source.Write(file.Data)
 			}
 
-			parsed, err := goschema.ParseSource("schema.go", source.String())
+			parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", source.String())
 			c.Assert(err, qt.IsNil)
 
 			total := len(parsed.Domains) + len(parsed.CompositeTypes) + len(parsed.Ranges) + len(parsed.Sequences)

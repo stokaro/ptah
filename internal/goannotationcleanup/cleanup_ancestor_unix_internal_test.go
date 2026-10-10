@@ -13,6 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/goannotationsource"
 	"ptah.run/internal/pathguard"
 )
@@ -34,7 +35,7 @@ func TestApplyPlans_FailurePath_AncestorSwapAbortsCleanup(t *testing.T) {
 	c.Assert(os.WriteFile(outsidePath, outsideData, 0o600), qt.IsNil)
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
-	plan, err := NewPlan(snapshot)
+	plan, err := NewPlan(annotationmeta.Common(), snapshot)
 	c.Assert(err, qt.IsNil)
 
 	err = applyPlans(plan.changes, applyHooks{

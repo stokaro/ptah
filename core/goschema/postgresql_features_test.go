@@ -238,7 +238,7 @@ type TestEntity struct {
 }
 `
 
-			_, err := goschema.ParseSource("index.go", source)
+			_, err := goschema.ParseSource(noOwners, "index.go", source)
 
 			var parseErr *ptaherr.ParseError
 			c.Assert(err, qt.ErrorAs, &parseErr)

@@ -33,10 +33,11 @@ type Completion struct {
 	Documentation string
 }
 
-// Analyze returns diagnostics for Ptah annotations in text.
-func Analyze(text string) []Diagnostic {
+// Analyze returns diagnostics for Ptah annotations in text. catalog decides
+// which directives and attributes are known, the selected owners' among them.
+func Analyze(catalog annotationmeta.Catalog, text string) []Diagnostic {
 	var diagnostics []Diagnostic
-	for _, annotation := range annotationparse.Scan(text) {
+	for _, annotation := range annotationparse.Scan(catalog, text) {
 		if !annotation.Known {
 			diagnostics = append(diagnostics, Diagnostic{
 				Range:    annotation.DirectiveRange,
@@ -47,11 +48,11 @@ func Analyze(text string) []Diagnostic {
 			})
 			continue
 		}
-		spec, _ := annotationmeta.Lookup(annotation.Directive)
+		spec, _ := catalog.Lookup(annotation.Directive)
 		seen := make(map[string]bool, len(annotation.Attributes))
 		for _, attr := range annotation.Attributes {
 			seen[attr.Name] = true
-			if annotationmeta.AllowsAttribute(annotation.Directive, attr.Name) {
+			if catalog.AllowsAttribute(annotation.Directive, attr.Name) {
 				continue
 			}
 			diagnostics = append(diagnostics, Diagnostic{
@@ -79,23 +80,23 @@ func Analyze(text string) []Diagnostic {
 }
 
 // Hover returns Markdown documentation for the annotation at pos.
-func Hover(text string, pos annotationparse.Position) (string, bool) {
-	for _, annotation := range annotationparse.Scan(text) {
+func Hover(catalog annotationmeta.Catalog, text string, pos annotationparse.Position) (string, bool) {
+	for _, annotation := range annotationparse.Scan(catalog, text) {
 		if annotation.Line != pos.Line || !annotation.Known {
 			continue
 		}
 		if !contains(annotation.CommentRange, pos) {
 			continue
 		}
-		spec, _ := annotationmeta.Lookup(annotation.Directive)
+		spec, _ := catalog.Lookup(annotation.Directive)
 		return annotationmeta.Markdown(spec), true
 	}
 	return "", false
 }
 
 // Complete returns attribute completions for the annotation at pos.
-func Complete(text string, pos annotationparse.Position) []Completion {
-	for _, annotation := range annotationparse.Scan(text) {
+func Complete(catalog annotationmeta.Catalog, text string, pos annotationparse.Position) []Completion {
+	for _, annotation := range annotationparse.Scan(catalog, text) {
 		if annotation.Line != pos.Line || !annotation.Known {
 			continue
 		}
@@ -107,7 +108,7 @@ func Complete(text string, pos annotationparse.Position) []Completion {
 				return nil
 			}
 		}
-		spec, _ := annotationmeta.Lookup(annotation.Directive)
+		spec, _ := catalog.Lookup(annotation.Directive)
 		used := make(map[string]bool, len(annotation.Attributes))
 		for _, attr := range annotation.Attributes {
 			used[attr.Name] = true

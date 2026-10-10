@@ -3,7 +3,6 @@ package schemacensus
 import (
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -1140,9 +1139,9 @@ func indexPartitioningFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-		Partitioning: &ast.IndexPartitioningSpec{
+		Facets: indexSettings(ydbschema.IndexPartitioning{
 			PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
-		},
+		}),
 	}}
 	return db
 }
@@ -1151,7 +1150,7 @@ func indexPartitioningUnsplitFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-		Partitioning: &ast.IndexPartitioningSpec{BySize: new(false)},
+		Facets: indexSettings(ydbschema.IndexPartitioning{BySize: new(false)}),
 	}}
 	return db
 }
@@ -1200,6 +1199,11 @@ func tablePartitionAtKeysFixture() schemamodel.Database {
 // tableSettings is a YDB row table's settings as the YDB owner's facet.
 func tableSettings(settings ydbschema.TablePartitioning) schemaext.Facets {
 	return must.Must(schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: settings}))
+}
+
+// indexSettings is a YDB global index's settings as the YDB owner's facet.
+func indexSettings(settings ydbschema.IndexPartitioning) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&ydbschema.DesiredIndexPartitioning{IndexPartitioning: settings}))
 }
 
 func indexConcurrentFixture() schemamodel.Database {

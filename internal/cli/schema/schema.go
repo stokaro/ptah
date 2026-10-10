@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationschema"
 	"ptah.run/internal/cli/compare"
 	"ptah.run/internal/cli/drift"
@@ -198,7 +199,15 @@ func runAnnotations(cmd *cobra.Command, format, outPath string) error {
 	if strings.TrimSpace(format) != "json-schema" {
 		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --format %q: expected json-schema", format))
 	}
-	data, err := annotationschema.Generate()
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	catalog, err := annotationmeta.NewCatalog(annotations)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	data, err := annotationschema.Generate(catalog)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -572,12 +581,17 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 
 // runHCLExport adapts the reusable Go-to-HCL workflow to Cobra streams.
 func runHCLExport(cmd *cobra.Command, opts exportOptions, rootDir string) error {
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		RootDir:    rootDir,
-		OutputPath: opts.outPath,
-		Cleanup:    opts.cleanupAnnotations,
-		DryRun:     opts.cleanupDryRun,
-		Diff:       opts.cleanupDiff,
+		Annotations: annotations,
+		RootDir:     rootDir,
+		OutputPath:  opts.outPath,
+		Cleanup:     opts.cleanupAnnotations,
+		DryRun:      opts.cleanupDryRun,
+		Diff:        opts.cleanupDiff,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

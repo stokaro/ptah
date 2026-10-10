@@ -30,17 +30,17 @@ func TestRender_ReportsTheSecretsItCannotRecord(t *testing.T) {
 		{name: "a declared secret", declared: []schemaext.Object{ydbsecret.DesiredObject("ext", "pg.pw", "", "PTAH_SECRET_PW")},
 			want: []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning,
 				Path:    `features["ptah.run/ydb/secret"][""]["ext"][""]["pg.pw"][""]`,
-				Message: "feature object ptah.run/ydb/secret ext.pg.pw of kind ptah.run/ydb/secret is not represented in HCL"}}},
+				Message: "feature object ptah.run/ydb/secret ext.\"pg.pw\" of kind ptah.run/ydb/secret is not represented in HCL"}}},
 		{name: "an unmanaged secret", limits: unmanaged,
 			want: []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning,
 				Path: `features["ptah.run/ydb/secret"][""]["ext"][""]["pg.pw"][""]`,
-				Message: "feature object ptah.run/ydb/secret ext.pg.pw of kind ptah.run/ydb/secret is not described " +
+				Message: "feature object ptah.run/ydb/secret ext.\"pg.pw\" of kind ptah.run/ydb/secret is not described " +
 					"(target capability secrets is unavailable, so Ptah leaves the secret unmanaged), and HCL cannot record that"}}},
 		{name: "a declared secret the source also limits", declared: []schemaext.Object{ydbsecret.DesiredObject("ext", "pg.pw", "", "PTAH_SECRET_PW")},
 			limits: unmanaged,
 			want: []atlashclrender.Diagnostic{{Severity: atlashclrender.SeverityWarning,
 				Path:    `features["ptah.run/ydb/secret"][""]["ext"][""]["pg.pw"][""]`,
-				Message: "feature object ptah.run/ydb/secret ext.pg.pw of kind ptah.run/ydb/secret is not represented in HCL"}}},
+				Message: "feature object ptah.run/ydb/secret ext.\"pg.pw\" of kind ptah.run/ydb/secret is not represented in HCL"}}},
 		{name: "no secret"},
 	}
 	for _, test := range tests {

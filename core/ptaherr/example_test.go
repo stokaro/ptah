@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 // Example shows the package's two-layer branching contract on one returned
@@ -48,7 +49,7 @@ type Product struct {
 }
 `
 
-	_, err := goschema.ParseSource("models.go", source)
+	_, err := goschema.ParseSource(builtintest.Annotations(), "models.go", source)
 
 	if parseErr, ok := errors.AsType[*ptaherr.ParseError](err); ok {
 		fmt.Printf("%s:%d on %s: attribute %q\n",
