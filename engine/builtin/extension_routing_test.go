@@ -37,6 +37,7 @@ var extensionOwners = map[schemaext.Kind][]string{
 	"ptah.run/ydb/add-changefeed":                         {"ydb/alter-table"},
 	"ptah.run/ydb/alter-changefeed-topic":                 {"ydb/alter-table"},
 	"ptah.run/ydb/alter-column-families":                  {"ydb/alter-table"},
+	"ptah.run/ydb/alter-column-store-ttl":                 {"ydb/alter-table"},
 	"ptah.run/ydb/alter-table-partitioning":               {"ydb/alter-table"},
 	"ptah.run/ydb/alter-ttl":                              {"ydb/alter-table"},
 	"ptah.run/ydb/async-replication-operation":            {"ydb/statement"},

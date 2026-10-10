@@ -75,7 +75,6 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
