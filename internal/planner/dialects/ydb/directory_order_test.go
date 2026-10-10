@@ -1,15 +1,21 @@
 package ydb_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/engine/builtin"
+	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -82,6 +88,49 @@ func TestGenerateMigrationAST_OwnersTradeAPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(render(c, capability.YDB262(), &difftypes.SchemaDiff{FeatureChanges: test.changes}), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestGenerateMigrationAST_CreationOverAnEmptiedDirectory_FailurePath pins
+// the refusal of a plan that drops every object below a path and creates an
+// object at the path.
+//
+// YDB keeps the directory after its last object is dropped and YQL has no
+// statement that removes one, so the creation failed at apply with "Path is
+// not a table or topic" after the drops had run, and the next plan planned the
+// same creation again (stokaro/ptah#4282).
+func TestGenerateMigrationAST_CreationOverAnEmptiedDirectory_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+		want string
+	}{
+		{name: "a table over a dropped coordination node",
+			diff: &difftypes.SchemaDiff{
+				TablesAdded:    difftypes.TableChanges{{Name: "ext", Table: schemamodel.Table{StructName: "S", Name: "ext"}, Fields: []schemamodel.Field{keyField("id")}}},
+				FeatureChanges: []schemaext.ChangeRecord{coordinationDropped("ext", "lock")},
+			},
+			want: "drops ext/lock and creates an object at ext,"},
+		{name: "a table over a dropped table",
+			diff: &difftypes.SchemaDiff{
+				TablesAdded:   difftypes.TableChanges{{Name: "ext", Table: schemamodel.Table{StructName: "S", Name: "ext"}, Fields: []schemamodel.Field{keyField("id")}}},
+				TablesRemoved: difftypes.TableRemovals{{Name: "ext.t", Current: observedFeeds(t, "ext", "t")}},
+			},
+			want: "drops ext/t and creates an object at ext,"},
+		{name: "a secret over a coordination node two levels down",
+			diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{
+				secretCreated("", "ext", "PTAH_SECRET_EXT"), coordinationDropped("ext/locks", "lock"),
+			}},
+			want: "drops ext/locks/lock and creates an object at ext,"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(t.Context(), must.Must(builtin.New()), test.diff)
+			c.Assert(err, qt.ErrorAs, new(*schemavalidation.RefusalError))
+			c.Assert(err, qt.ErrorMatches, `(?s).*this plan `+regexp.QuoteMeta(test.want)+` which is a directory in the database.*`)
+			c.Assert(nodes, qt.IsNil)
 		})
 	}
 }

@@ -96,6 +96,13 @@ that assigns the same path to more than one of these kinds is refused before
 rendering or planning. Different directories and case-distinct names remain
 different paths; a dot inside a quoted name remains part of that name.
 
+YDB keeps a directory after its last object is dropped, and YQL has no
+statement that removes one. A plan that drops the objects below a path and
+creates an object at that path could not apply, so it is refused before
+anything runs, naming the path. Drop what is below the path and remove the
+directory first, for example with `ydb scheme rmdir`, or declare the object at
+another path.
+
 ## Tables and types
 
 This schema:
