@@ -94,6 +94,9 @@ ptah_schema_changefeeds{dialect="sqlite"} 0
 # HELP ptah_schema_changefeed_consumers Consumers of table changefeeds.
 # TYPE ptah_schema_changefeed_consumers gauge
 ptah_schema_changefeed_consumers{dialect="sqlite"} 0
+# HELP ptah_schema_ydb_column_families YDB column families a table states, without a default family that states nothing.
+# TYPE ptah_schema_ydb_column_families gauge
+ptah_schema_ydb_column_families{dialect="sqlite"} 0
 # HELP ptah_schema_coordination_nodes Standalone coordination nodes.
 # TYPE ptah_schema_coordination_nodes gauge
 ptah_schema_coordination_nodes{dialect="sqlite"} 0
