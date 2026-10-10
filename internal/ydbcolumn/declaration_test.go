@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbcolumn"
 )
 
@@ -13,13 +13,13 @@ func TestParse_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   *ast.YDBColumnTableSpec
+		want   *ydbschema.ColumnStore
 	}{
 		{name: "row default"},
 		{name: "explicit row", values: map[string]string{"store": "ROW"}},
-		{name: "column defaults", values: map[string]string{"store": "column"}, want: &ast.YDBColumnTableSpec{}},
-		{name: "hash and shards", values: map[string]string{"store": "column", "partition_by_hash": "tenant, id", "column_shards": "8"}, want: &ast.YDBColumnTableSpec{HashColumns: []string{"tenant", "id"}, Partitions: 8}},
-		{name: "retention", values: map[string]string{"store": "column", "column_ttl": `{"column":"at","tiers":[{"interval":"P1D","external_source":"/local/archive"},{"interval":"P7D"}]}`}, want: &ast.YDBColumnTableSpec{TTL: &ast.YDBTieredTTLSpec{Column: "at", Tiers: []ast.YDBTTLTierSpec{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}}},
+		{name: "column defaults", values: map[string]string{"store": "column"}, want: &ydbschema.ColumnStore{}},
+		{name: "hash and shards", values: map[string]string{"store": "column", "partition_by_hash": "tenant, id", "column_shards": "8"}, want: &ydbschema.ColumnStore{HashColumns: []string{"tenant", "id"}, Partitions: 8}},
+		{name: "retention", values: map[string]string{"store": "column", "column_ttl": `{"column":"at","tiers":[{"interval":"P1D","external_source":"/local/archive"},{"interval":"P7D"}]}`}, want: &ydbschema.ColumnStore{TTL: &ydbschema.TieredTTL{Column: "at", Tiers: []ydbschema.TTLTier{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -630,6 +630,11 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	if err != nil {
 		return &ptaherr.ParseError{File: s.filename, Directive: "ptah:schema:table", Err: ptaherr.ErrInvalidAttributeValue, Message: err.Error()}
 	}
+	if columnTable != nil {
+		if facets, err = facets.With(&ydbschema.DesiredColumnStore{ColumnStore: *columnTable}); err != nil {
+			return err
+		}
+	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
 		StructName:          structName,
 		Name:                tableName,
@@ -644,7 +649,6 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Checks:              splitCSVAttribute(kv["checks"]),
 		DependsOn:           splitDependsOn(kv["depends_on"]),
 		CustomSQL:           kv["custom"],
-		YDBColumnTable:      columnTable,
 		Facets:              facets,
 		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})

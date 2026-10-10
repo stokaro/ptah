@@ -87,6 +87,8 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	if err != nil {
 		return err
 	}
+	// withSettings refused a facet that is not a declaration.
+	store, _ := ydbschema.DeclaredColumnStore(node.Facets)
 	quotedKey := make([]string, 0, len(keyColumns))
 	for _, column := range keyColumns {
 		quotedKey = append(quotedKey, quote(column))
@@ -130,7 +132,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.w.WriteLinef("CREATE TABLE%s %s (", guard, tablePath(node.Name))
 	r.w.WriteLine("    " + strings.Join(lines, ",\n    "))
-	closing := ")" + columnHashClause(node.YDBColumnTable)
+	closing := ")" + columnHashClause(store)
 	if len(settings) > 0 {
 		closing += " WITH (" + strings.Join(settings, ", ") + ")"
 	}
@@ -285,8 +287,12 @@ func (r *Renderer) withSettings(node *ast.CreateTableNode, keyColumns []string, 
 	if err != nil {
 		return nil, err
 	}
-	if node.YDBColumnTable != nil {
-		columnSettings, err := r.columnTableSettings(node, keyColumns, columnTypes)
+	store, err := ydbschema.DeclaredColumnStore(node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		columnSettings, err := r.columnTableSettings(node, store, keyColumns, columnTypes)
 		return append(settings, columnSettings...), err
 	}
 	partitioning, err := r.partitioningSettings(node, keyColumns, columnTypes)
@@ -704,8 +710,12 @@ func terminated(statement string) string {
 }
 
 func columnIndexStorage(table *ast.CreateTableNode, index *ast.IndexNode) error {
+	store, err := ydbschema.DeclaredColumnStore(table.Facets)
+	if err != nil {
+		return err
+	}
 	kind, err := ydbindex.KindOf(index.Type)
-	if err == nil && kind.IsLocal() && table.YDBColumnTable == nil {
+	if err == nil && kind.IsLocal() && store == nil {
 		return refuseFact(table.Name, "LOCAL indexes require a column table on this YDB release")
 	}
 	return nil

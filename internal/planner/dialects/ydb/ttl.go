@@ -13,14 +13,11 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbttl"
-	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -41,12 +38,21 @@ import (
 // place, through the owners the runtime selects, and returns each table's
 // statements keyed by its identity. A rebuilt table writes its declared TTL
 // into its new CREATE TABLE, so its facet changes are not planned here.
+//
+// The owners of one table's facets are ordered against each other by their
+// effects, as the shared graph orders any two owners: the TTL that only
+// deletes and a column table's tiered TTL are one setting on the server, so
+// the statement that lets go of one runs before the one that sets the other.
+// What a facet statement reads beyond its table, such as the external data
+// sources a tiered TTL names, is recorded in reads, early where the owner
+// placed the step early, so the plan orders those objects' owners around it.
 func (p *Planner) planTableFacets(
 	ctx context.Context,
 	runtime featureplan.Runtime,
 	diff *difftypes.SchemaDiff,
 	rebuilds map[string]*tableRebuild,
 	semantics identifier.Semantics,
+	reads commonReads,
 ) (map[string][]ast.Node, error) {
 	nodes := make(map[string][]ast.Node)
 	builder := objectidentity.NewBuilder(semantics)
@@ -69,12 +75,28 @@ func (p *Planner) planTableFacets(
 		if len(features.Rewrites) != 0 {
 			return nil, fmt.Errorf("%w: a table facet has no common step to rewrite", schemaext.ErrInvalidValue)
 		}
+		lifecycle, err := plangraph.LifecycleDependencies(ctx, features.Contributions...)
+		if err != nil {
+			return nil, err
+		}
+		if len(lifecycle) > 0 {
+			features.Contributions[0].Dependencies = append(features.Contributions[0].Dependencies, lifecycle...)
+		}
 		plan, err := plangraph.Schedule(ctx, features.Contributions...)
 		if err != nil {
 			return nil, err
 		}
 		for _, step := range plan.Steps {
 			nodes[key] = append(nodes[key], step.Payload...)
+			var beyond []plangraph.Effect
+			for _, effect := range step.Effects {
+				if effect.Action == plangraph.Read && effect.Subject.Key() != subject.Key() {
+					beyond = append(beyond, effect)
+				}
+			}
+			for _, node := range step.Payload {
+				reads.add(node, beyond, step.Placement == plangraph.PlacementEarly)
+			}
 		}
 	}
 	return nodes, nil
@@ -118,33 +140,6 @@ func refuseDroppingTheTTLColumn(tableDiff difftypes.TableDiff) error {
 	return refuseFact(fmt.Sprintf("dropping column %q of table %q", column, tableDiff.TableName),
 		"the table's TTL reads it, and YDB refuses to drop the column a TTL reads (`Can't drop TTL column`); "+
 			"remove the TTL, or move it to another column, first")
-}
-
-// refuseTTLColumn holds the column a column table's tiered TTL reads to the
-// types YDB reads a TTL from, through the type map the renderer writes the
-// column with. A modification that carries no declaration of the table is
-// left to the server, which refuses the statement by itself.
-func (p *Planner) refuseTTLColumn(subject string, declaration schemacapture.TableDeclaration, column, unit string) error {
-	if !declaration.HasTable() {
-		return nil
-	}
-	index := slices.IndexFunc(declaration.Fields, func(field schemamodel.Field) bool { return field.Name == column })
-	if index < 0 {
-		return refuseFact(subject, fmt.Sprintf("it reads column %q, which the table does not declare "+
-			"(`Cannot enable TTL on unknown column`)", column))
-	}
-	canonical, err := ydbttl.Unit(unit)
-	if err != nil {
-		return refuseFact(subject, err.Error())
-	}
-	// A type the map refuses is the column's refusal, which is reported where
-	// the column is written.
-	if mapping, mapErr := ydbtype.Map(declaration.Fields[index].Type, p.caps); mapErr == nil {
-		if reason := ydbttl.ColumnRefusal(column, mapping.Type, canonical); reason != "" {
-			return refuseFact(subject, reason)
-		}
-	}
-	return nil
 }
 
 // recordsSetting reports whether the read of the database recorded a setting

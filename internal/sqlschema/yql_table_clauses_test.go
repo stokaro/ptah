@@ -5,7 +5,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlschema"
@@ -15,10 +14,14 @@ func TestReadYQLTieredTTL(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE TABLE events (ts Timestamp NOT NULL, id Uint64, PRIMARY KEY (ts)) WITH (STORE = COLUMN, TTL = Interval('PT1H') TO EXTERNAL DATA SOURCE `/local/archive/cold`, Interval('P7D') DELETE ON ts);"), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Tables[0].YDBColumnTable.TTL, qt.DeepEquals, &ast.YDBTieredTTLSpec{Column: "ts", Tiers: []ast.YDBTTLTierSpec{
+	store, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnStore](database.Tables[0].Facets, ydbschema.ColumnStoreKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(store.TTL, qt.DeepEquals, &ydbschema.TieredTTL{Column: "ts", Tiers: []ydbschema.TTLTier{
 		{Interval: "PT1H", ExternalSource: "/local/archive/cold"}, {Interval: "P7D"},
 	}})
-	c.Assert(database.Tables[0].Facets.Len(), qt.Equals, 0)
+	// A TTL that moves rows is the column storage's, not the table's TTL.
+	c.Assert(database.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{ydbschema.ColumnStoreKind})
 }
 
 func TestReadYQLColumnFamilies(t *testing.T) {

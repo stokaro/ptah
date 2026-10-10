@@ -687,7 +687,7 @@ func prepareCreateTableNode(
 	if err := requirePrimaryKey(dialect, caps, &cloned); err != nil {
 		return nil, err
 	}
-	if node.YDBColumnTable != nil && !caps.Has(capability.ColumnStoreTables) {
+	if slices.Contains(node.Facets.Kinds(), ydbschema.ColumnStoreKind) && !caps.Has(capability.ColumnStoreTables) {
 		return nil, &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
 	}
 	return &cloned, nil
@@ -733,7 +733,7 @@ func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, 
 // as a facet no owner of it registers.
 func validateDeclaredPartitioning(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
 	for _, table := range tables {
-		if table.YDBColumnTable != nil && !caps.Has(capability.ColumnStoreTables) {
+		if slices.Contains(table.Facets.Kinds(), ydbschema.ColumnStoreKind) && !caps.Has(capability.ColumnStoreTables) {
 			return &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
 		}
 		if platform.NormalizeDialect(dialect) != platform.YDB {

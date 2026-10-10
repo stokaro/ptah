@@ -1,0 +1,100 @@
+{
+  "$id": "ptah.run/ydb/column-store/v1",
+  "$defs": {
+    "tier": {
+      "type": "object",
+      "required": [
+        "interval"
+      ],
+      "properties": {
+        "interval": {
+          "type": "string",
+          "minLength": 1
+        },
+        "external_source": {
+          "type": "string",
+          "pattern": "^/"
+        }
+      },
+      "additionalProperties": false,
+      "meaning": "interval is an ISO 8601 duration with whole-second precision after which a row moves. external_source is the absolute path of the external data source it moves to; a tier without one deletes the row."
+    },
+    "ttl": {
+      "type": "object",
+      "required": [
+        "column",
+        "tiers"
+      ],
+      "properties": {
+        "column": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "unit": {
+          "enum": [
+            "SECONDS",
+            "MILLISECONDS",
+            "MICROSECONDS",
+            "NANOSECONDS"
+          ]
+        },
+        "tiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tier"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "meaning": "column is the column a row's age is measured from. unit is what an integer column counts since the Unix epoch, omitted for a date column. tiers apply in increasing order of age."
+    },
+    "store": {
+      "type": "object",
+      "properties": {
+        "hash_columns": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "partitions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "ttl": {
+          "$ref": "#/$defs/ttl"
+        }
+      },
+      "additionalProperties": false,
+      "meaning": "hash_columns are the primary-key columns rows are hashed by, in order. partitions is the number of column shards. ttl is the tiered retention policy."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/ydb/column-store": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/store"
+          }
+        ],
+        "constraint": "The table is a column table. A hash key or a shard count the value leaves out takes the server's choice. Intervals grow strictly, only the last tier may delete, and at least one tier moves rows. The value's absence under complete source coverage requests row storage."
+      }
+    },
+    "observed": {
+      "ptah.run/ydb/column-store": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/store"
+          }
+        ],
+        "constraint": "The table is a column table, with the hash key and the shard count YDB reports; a value projected from a declaration holds the ones it states. A TTL that only deletes is the table's TTL value, not part of this one."
+      }
+    }
+  },
+  "canonicalization": "Fields are written in declaration order, hash columns and tiers in the order they apply. Strings must be valid UTF-8 and are kept verbatim; an interval is compared by the seconds it denotes."
+}

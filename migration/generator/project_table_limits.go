@@ -12,7 +12,7 @@ import (
 // that would claim a reverse input the forward plan did not leave behind.
 func pendingTableProjection(diff *difftypes.SchemaDiff, table difftypes.TableDiff, semantics identifier.Semantics) bool {
 	if len(table.ConstraintsAdded)+len(table.ConstraintsRemoved) > 0 ||
-		table.YDBColumnTableChange != nil || unresolvedIndexHost(diff) ||
+		unresolvedIndexHost(diff) ||
 		pendingConstraintProjection(diff, table.TableName, semantics) {
 		return true
 	}

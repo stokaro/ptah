@@ -89,6 +89,21 @@ func (TTLService) PlanFeatures(ctx context.Context, request featureplan.Request)
 	return result, nil
 }
 
+// settingAction is what a TTL change does to the table's TTL setting, which a
+// column table's tiered TTL writes too: a RESET drops it and a SET on a table
+// without one creates it, so the statement letting go of one policy runs
+// before the one installing the other (see [ColumnStoreService]).
+func settingAction(change *ydbdiff.TTL) plangraph.Action {
+	switch {
+	case change.After == nil:
+		return plangraph.Drop
+	case change.Before == nil:
+		return plangraph.Create
+	default:
+		return plangraph.Alter
+	}
+}
+
 func ttlRefusal(kind schemaext.Kind, err error, change, parent *int) featureplan.Result {
 	code := schemavalidation.UnsupportedFeature
 	if errors.Is(err, schemaext.ErrInvalidValue) {
@@ -133,7 +148,7 @@ func planTTLChange(request featureplan.Request, record schemaext.ChangeRecord, i
 		// transaction.
 		Payload:     featureplan.Operation{Role: ast.AlterExtension, Parent: table.Subject, Payload: payload},
 		Transaction: plangraph.TransactionForbidden,
-		Effects:     []plangraph.Effect{{Subject: table.Subject, Action: plangraph.Read}, {Subject: ttl, Action: plangraph.Alter}},
+		Effects:     []plangraph.Effect{{Subject: table.Subject, Action: plangraph.Read}, {Subject: ttl, Action: settingAction(change)}},
 		Impact:      payload.Effect(),
 	}}
 	return result, nil

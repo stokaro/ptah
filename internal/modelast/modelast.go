@@ -729,7 +729,6 @@ func fromTableWithFieldConverter(
 	// that must not be able to reach back through a pointer into the schema
 	// this was built from (stokaro/ptah#2236).
 	createTable.Facets = newTable.Facets
-	createTable.YDBColumnTable = newTable.YDBColumnTable.Clone()
 	// Raw SQL the author asked to be appended to CREATE TABLE. It is carried
 	// verbatim; see [ptah.run/core/ast.CreateTableNode.CustomSQL] for why
 	// it is not an Options entry (stokaro/ptah#2590).

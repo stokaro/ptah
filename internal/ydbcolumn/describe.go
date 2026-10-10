@@ -8,14 +8,15 @@ import (
 	"slices"
 	"strconv"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbindex"
 )
 
 // Description preserves the column-table properties omitted by DescribeTable.
 type Description struct {
-	// Spec contains the storage kind, hash key and shard count.
-	Spec *ast.YDBColumnTableSpec
+	// Spec contains the hash key, the shard count and a tiered TTL. A TTL
+	// that only deletes is left out: it is the table's TTL value.
+	Spec *ydbschema.ColumnStore
 	// Indexes contains the local indexes DescribeTable omits entirely.
 	Indexes []LocalIndex
 	// PrimaryKey is the ordered key used to check the table-service description.
@@ -123,7 +124,7 @@ func Decode(body []byte, path string) (*Description, error) {
 			return nil, fmt.Errorf("column table %s: configured column families are not modeled", path)
 		}
 	}
-	result := &Description{PrimaryKey: slices.Clone(table.Schema.KeyColumnNames), Spec: &ast.YDBColumnTableSpec{HashColumns: table.Sharding.HashSharding.Columns, Partitions: table.ColumnShardCount}}
+	result := &Description{PrimaryKey: slices.Clone(table.Schema.KeyColumnNames), Spec: &ydbschema.ColumnStore{HashColumns: table.Sharding.HashSharding.Columns, Partitions: table.ColumnShardCount}}
 	if table.TTLSettings.Enabled != nil {
 		policy, err := decodeColumnTTL(table.TTLSettings.Enabled)
 		if err != nil {
@@ -296,7 +297,7 @@ type columnTTLDescription struct {
 	}
 }
 
-func decodeColumnTTL(raw []byte) (*ast.YDBTieredTTLSpec, error) {
+func decodeColumnTTL(raw []byte) (*ydbschema.TieredTTL, error) {
 	var description columnTTLDescription
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -310,12 +311,12 @@ func decodeColumnTTL(raw []byte) (*ast.YDBTieredTTLSpec, error) {
 	if description.ColumnUnit >= uint64(len(units)) {
 		return nil, fmt.Errorf("unknown column TTL unit %d", description.ColumnUnit)
 	}
-	policy := &ast.YDBTieredTTLSpec{Column: description.ColumnName, Unit: units[description.ColumnUnit]}
+	policy := &ydbschema.TieredTTL{Column: description.ColumnName, Unit: units[description.ColumnUnit]}
 	for _, tier := range description.Tiers {
 		if (tier.Delete == nil) == (tier.EvictToExternalStorage == nil) {
 			return nil, fmt.Errorf("TTL tier must have exactly one action")
 		}
-		out := ast.YDBTTLTierSpec{Interval: "PT" + strconv.FormatUint(tier.ApplyAfterSeconds, 10) + "S"}
+		out := ydbschema.TTLTier{Interval: "PT" + strconv.FormatUint(tier.ApplyAfterSeconds, 10) + "S"}
 		if tier.EvictToExternalStorage != nil {
 			out.ExternalSource = tier.EvictToExternalStorage.Storage
 			if out.ExternalSource == "" {
@@ -324,7 +325,7 @@ func decodeColumnTTL(raw []byte) (*ast.YDBTieredTTLSpec, error) {
 		}
 		policy.Tiers = append(policy.Tiers, out)
 	}
-	if err := validateTTL(policy); err != nil {
+	if err := ydbschema.CheckColumnStore(ydbschema.ColumnStore{TTL: policy}); err != nil {
 		return nil, err
 	}
 	return policy, nil

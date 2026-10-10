@@ -2084,9 +2084,6 @@ type TableDiff struct {
 	// FeatureChanges carries owner-defined changes to individual table-owned subjects.
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 
-	// YDBColumnTableChange distinguishes storage, hash layout and tiered TTL changes.
-	YDBColumnTableChange *YDBColumnTableChange `json:"ydb_column_table_change,omitzero"`
-
 	// ColumnKeyNames holds the name each column that gains its own UNIQUE
 	// takes on the target, keyed by column name: a column added with UNIQUE,
 	// and a column whose uniqueness changes to UNIQUE.

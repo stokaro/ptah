@@ -1951,8 +1951,9 @@ func streamingQueryFixture() schemamodel.Database {
 }
 
 func tableColumnStoreFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t", YDBColumnTable: &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 8,
-		TTL: &ast.YDBTieredTTLSpec{Column: "id", Unit: "SECONDS", Tiers: []ast.YDBTTLTierSpec{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}}})
+	store := &ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{HashColumns: []string{"id"}, Partitions: 8,
+		TTL: &ydbschema.TieredTTL{Column: "id", Unit: "SECONDS", Tiers: []ydbschema.TTLTier{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}}}
+	db := oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(store))})
 	db.Fields[0].Type = "BIGINT UNSIGNED"
 	return db
 }

@@ -7,16 +7,18 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-func columnRetention() *ast.YDBColumnTableSpec {
-	return &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, TTL: &ast.YDBTieredTTLSpec{Column: "ts", Tiers: []ast.YDBTTLTierSpec{{Interval: "P1D", ExternalSource: "/local/ext/bucket"}, {Interval: "P7D"}}}}
+func columnRetention() *ydbschema.DesiredColumnStore {
+	return &ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{HashColumns: []string{"id"}, TTL: &ydbschema.TieredTTL{Column: "ts", Tiers: []ydbschema.TTLTier{{Interval: "P1D", ExternalSource: "/local/ext/bucket"}, {Interval: "P7D"}}}}}
 }
 
 // Replacing a source must detach an unchanged policy too. The source cannot
@@ -43,7 +45,7 @@ func TestGenerateMigrationAST_ColumnTTLSourceReplacement(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{
 				CurrentDatabasePath: "/local",
-				DeclaredTables:      []schemamodel.Table{{Name: "events", YDBColumnTable: columnRetention()}},
+				DeclaredTables:      []schemamodel.Table{{Name: "events", Facets: must.Must(schemaext.NewFacets(columnRetention()))}},
 				FeatureChanges:      []schemaext.ChangeRecord{sourceChange("ext", "bucket", &plannedBucket, movedBucket())},
 			}
 			got := render(c, externalPlanCaps(test.replace).With(capability.TieredTTL, true), diff)
@@ -57,7 +59,7 @@ func TestGenerateMigrationAST_ColumnTTLSourceReplacement(t *testing.T) {
 func capturedColumnRemoval() difftypes.TableRemoval {
 	removal := difftypes.TableRemoval{Name: "events"}
 	removal.Current.Table.Name = "events"
-	removal.Current.Table.YDBColumnTable = columnRetention()
+	removal.Current.Table.Facets = must.Must(schemaext.NewFacets(&ydbschema.ObservedColumnStore{ColumnStore: columnRetention().ColumnStore}))
 	removal.Current.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil))
 	return removal
 }
@@ -95,11 +97,13 @@ func TestGenerateMigrationAST_ColumnTableRemovedBeforeItsSourceIsRecreated(t *te
 func TestGenerateMigrationAST_ColumnTTLFromRowPolicy(t *testing.T) {
 	c := qt.New(t)
 	declaration := itemsDeclaration(field("ts", "TIMESTAMP", true))
-	declaration.Table.YDBColumnTable = columnRetention()
+	declaration.Table.Facets = must.Must(schemaext.NewFacets(columnRetention()))
 	declaration.Table.PrimaryKey = []string{"ts", "id"}
+	subject := objectidentity.NewBuilder(identifier.ForDialect("ydb")).Table("items")
+	store := &ydbdiff.ColumnStore{Before: &ydbschema.ObservedColumnStore{ColumnStore: ydbschema.ColumnStore{HashColumns: []string{"id"}, Partitions: 4}}, After: columnRetention()}
 	diff := addTTLChange(modified(t, difftypes.TableDiff{
 		TableName: "items", Desired: declaration,
-		YDBColumnTableChange: &difftypes.YDBColumnTableChange{Desired: columnRetention(), Current: &ast.YDBColumnTableSpec{HashColumns: []string{"id"}}},
+		FeatureChanges: []schemaext.ChangeRecord{{Subject: subject, Value: store}},
 	}), nil, &ydbschema.TTL{Column: "ts", Interval: "P7D"})
 	got := render(c, capability.YDB262().With(capability.TieredTTL, true), diff)
 	c.Assert(got, qt.Equals, "ALTER TABLE `items` RESET (TTL);\nALTER TABLE `items` SET (TTL = Interval(\"PT86400S\") TO EXTERNAL DATA SOURCE `/local/ext/bucket`, Interval(\"PT604800S\") DELETE ON `ts`);\n")

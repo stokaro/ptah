@@ -1129,7 +1129,24 @@ The TTL services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse` and
 `ydbast.AlterTTL` lowers through `ydbrender.TTLHandler` to
 `SET (TTL = ...)` or `RESET (TTL)`. `ydbplan.TTLService` refuses a change that
 would reset a run interval and allows its removal. A column table's tiered TTL
-stays in `schemamodel.Table.YDBColumnTable`.
+belongs to its column storage, below.
+
+`ydbschema` owns a YDB table's column storage as a table facet under
+`ColumnStoreKind`; a table without the value is a row table.
+`DesiredColumnStore` and `ObservedColumnStore` hold a `ColumnStore` of hash
+columns, a shard count and a `TieredTTL`, whose `TTLTier` values move rows to an
+external data source named by its absolute path or delete them.
+`CheckColumnStore` and the validators refuse repeated hash columns, intervals
+that do not grow, deletion before the last tier, and a policy that moves no row.
+`LayoutSatisfied` and `TieredTTLEqual` are the comparison's equality, and
+`ColumnStoreCoverage` builds coverage under `Owner`.
+
+`ydbdiff.ColumnStore` carries a column storage change, and `ydbast.AlterColumnStoreTTL` lowers through
+`ydbrender.ColumnStoreTTLHandler` to `SET (TTL = ...)` or `RESET (TTL)`.
+`ydbplan.ColumnStoreService` refuses a change of storage kind, hash key or shard
+count, and plans a TTL change as a RESET that reads the old policy's sources
+early and a SET that reads the new one's, both acting on the TTL setting the
+row TTL's owner writes too.
 
 `ydbschema` owns a YDB row table's column families as a table facet under
 `ColumnFamiliesKind`. `DesiredColumnFamilies` and `ObservedColumnFamilies` hold

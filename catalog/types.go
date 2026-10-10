@@ -257,9 +257,6 @@ type Table struct {
 	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
 	Unlogged     bool `json:"unlogged,omitempty"`
 	WithoutRowID bool `json:"without_rowid,omitempty"` // SQLite WITHOUT ROWID table option
-	// YDBColumnTable selects column-oriented storage and its hash partitioning.
-	// Nil selects row storage. Other dialects refuse this declaration.
-	YDBColumnTable *ast.YDBColumnTableSpec `json:"ydb_column_table,omitzero"`
 
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,

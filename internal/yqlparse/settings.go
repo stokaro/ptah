@@ -22,6 +22,7 @@ func (p *parser) tableSettings(table *ast.CreateTableNode) {
 		}
 	}
 	values := p.tableOptions()
+	var store *ydbschema.ColumnStore
 	var err error
 	if strings.EqualFold(values["store"], "COLUMN") {
 		columnValues := map[string]string{"store": "column"}
@@ -35,10 +36,10 @@ func (p *parser) tableSettings(table *ast.CreateTableNode) {
 				p.failf("unsupported column-table setting %q", name)
 			}
 		}
-		table.YDBColumnTable, err = ydbcolumn.Parse(columnValues)
+		store, err = ydbcolumn.Parse(columnValues)
 		if err == nil {
-			table.YDBColumnTable.HashColumns = hash
-			err = ydbcolumn.Validate(table.YDBColumnTable)
+			store.HashColumns = hash
+			err = ydbschema.CheckColumnStore(*store)
 		}
 	} else {
 		if len(hash) > 0 {
@@ -51,10 +52,20 @@ func (p *parser) tableSettings(table *ast.CreateTableNode) {
 	}
 	if err != nil {
 		p.failf("%v", err)
+		return
 	}
 	if ttl, ok := values["ttl"]; ok {
-		p.applyTTL(table, ttl)
+		p.applyTTL(table, store, ttl)
 	}
+	if store == nil || p.err != nil {
+		return
+	}
+	facets, err := table.Facets.With(&ydbschema.DesiredColumnStore{ColumnStore: *store})
+	if err != nil {
+		p.failf("%v", err)
+		return
+	}
+	table.Facets = facets
 }
 
 func (p *parser) tableOptions() map[string]string {

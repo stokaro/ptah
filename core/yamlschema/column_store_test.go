@@ -5,8 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 func TestParse_ColumnStore(t *testing.T) {
@@ -29,5 +30,9 @@ func TestParse_ColumnStore(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Schema, qt.Equals, "analytics")
-	c.Assert(db.Tables[0].YDBColumnTable, qt.DeepEquals, &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 8, TTL: &ast.YDBTieredTTLSpec{Column: "at", Tiers: []ast.YDBTTLTierSpec{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}})
+	store, held, err := schemaext.FacetAs[*ydbschema.DesiredColumnStore](db.Tables[0].Facets, ydbschema.ColumnStoreKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(held, qt.IsTrue)
+	c.Assert(store, qt.DeepEquals, &ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{HashColumns: []string{"id"}, Partitions: 8,
+		TTL: &ydbschema.TieredTTL{Column: "at", Tiers: []ydbschema.TTLTier{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}}})
 }

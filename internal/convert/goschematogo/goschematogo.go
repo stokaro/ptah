@@ -258,6 +258,7 @@ type renderContext struct {
 	hypertablesByTable   map[string]*tsschema.DesiredHypertable
 	familiesByTable      map[string][]ydbschema.ColumnFamily
 	partitioningByTable  map[string]*ydbschema.TablePartitioning
+	storesByTable        map[string]*ydbschema.DesiredColumnStore
 	changefeedsByTable   map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                   *schemamodel.Database
 	opts                 Options
@@ -613,7 +614,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, constraint := range ctx.constraintsByTable[table.StructName] {
 		w.writeComment(constraintAnnotation(constraint))
 	}
-	w.writeComment(tableAnnotation(table, ctx.partitioningByTable[table.QualifiedName()]))
+	w.writeComment(tableAnnotation(table, ctx.partitioningByTable[table.QualifiedName()], ctx.storesByTable[table.QualifiedName()]))
 	if hypertable := ctx.hypertablesByTable[table.QualifiedName()]; hypertable != nil {
 		w.writeComment(hypertableAnnotation(table, hypertable))
 	}
@@ -703,8 +704,8 @@ func dialectsAttr(scope []string) attr {
 }
 
 // tableAnnotation writes a table's directive, with the YDB settings
-// partitioning states, or none.
-func tableAnnotation(table schemamodel.Table, partitioning *ydbschema.TablePartitioning) string {
+// partitioning states and the column storage store declares, or none.
+func tableAnnotation(table schemamodel.Table, partitioning *ydbschema.TablePartitioning, store *ydbschema.DesiredColumnStore) string {
 	attrs := []attr{
 		{name: "name", value: table.Name, set: true},
 		{name: "schema", value: table.Schema, set: table.Schema != ""},
@@ -716,7 +717,7 @@ func tableAnnotation(table schemamodel.Table, partitioning *ydbschema.TableParti
 		{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
 		{name: "comment", value: table.Comment, set: table.Comment != ""},
 	}
-	attrs = append(attrs, columnStoreAttrs(table.YDBColumnTable)...)
+	attrs = append(attrs, columnStoreAttrs(store)...)
 	attrs = append(attrs, propertyAttrs(table.Overrides)...)
 	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(partitioning)...)...)
 }

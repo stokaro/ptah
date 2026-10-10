@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbcolumn"
 )
 
@@ -60,7 +60,7 @@ func TestDecode_TieredTTL(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			got, err := ydbcolumn.Decode(body, test.path)
 			c.Assert(err, qt.IsNil)
-			c.Assert(got.Spec.TTL, qt.DeepEquals, &ast.YDBTieredTTLSpec{Column: "at", Unit: test.unit, Tiers: []ast.YDBTTLTierSpec{{Interval: "PT86400S", ExternalSource: "/local/col_archive"}, {Interval: "PT604800S"}}})
+			c.Assert(got.Spec.TTL, qt.DeepEquals, &ydbschema.TieredTTL{Column: "at", Unit: test.unit, Tiers: []ydbschema.TTLTier{{Interval: "PT86400S", ExternalSource: "/local/col_archive"}, {Interval: "PT604800S"}}})
 		})
 	}
 }

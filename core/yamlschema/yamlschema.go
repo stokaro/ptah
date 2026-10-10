@@ -74,7 +74,6 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbsource"
@@ -87,7 +86,6 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/ydbchangefeed"
-	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
@@ -174,7 +172,7 @@ type document struct {
 
 type tableSpec struct {
 	Schema      stringScalar               `yaml:"schema"`
-	ColumnStore *ast.YDBColumnTableSpec    `yaml:"column_store"`
+	ColumnStore *columnStoreSpec           `yaml:"column_store"`
 	StructName  stringScalar               `yaml:"struct_name"`
 	Name        stringScalar               `yaml:"name"`
 	APIName     stringScalar               `yaml:"api_name"`
@@ -894,9 +892,6 @@ func (d document) addTables(db *schemamodel.Database) error {
 		structName := valueOrDefault(table.StructName, tableKey)
 		tableName := valueOrDefault(table.Name, tableKey)
 
-		if err := ydbcolumn.Validate(table.ColumnStore); err != nil {
-			return fmt.Errorf("table %q: %w", tableKey, err)
-		}
 		changefeeds, err := buildChangefeeds(tableName, table.Changefeeds)
 		if err != nil {
 			return err
@@ -910,6 +905,9 @@ func (d document) addTables(db *schemamodel.Database) error {
 		facets, err := table.ydbFacets(tableKey, tableName)
 		if err != nil {
 			return err
+		}
+		if facets, err = table.ColumnStore.declare(facets); err != nil {
+			return fmt.Errorf("table %q: %w", tableKey, err)
 		}
 		db.Tables = append(db.Tables, schemamodel.Table{
 			StructName: structName,
@@ -928,8 +926,7 @@ func (d document) addTables(db *schemamodel.Database) error {
 			CustomSQL:  string(table.CustomSQL),
 			Overrides:  mergePlatform(table.Platform, table.Overrides),
 
-			Facets:         facets,
-			YDBColumnTable: table.ColumnStore.Clone(),
+			Facets: facets,
 		})
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {

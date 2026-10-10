@@ -3,7 +3,6 @@ package yqlparse
 import (
 	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbttl"
 )
 
@@ -22,8 +21,8 @@ func (p *parser) tableOptionValue(name string) string {
 	return p.text[start:end]
 }
 
-func (p *parser) ttl() (*ast.YDBTieredTTLSpec, bool) {
-	spec := &ast.YDBTieredTTLSpec{}
+func (p *parser) ttl() (*ydbschema.TieredTTL, bool) {
+	spec := &ydbschema.TieredTTL{}
 	explicit := false
 	for !p.done() {
 		p.wantWord("Interval")
@@ -34,7 +33,7 @@ func (p *parser) ttl() (*ast.YDBTieredTTLSpec, bool) {
 			p.failf("TTL interval must be a string literal")
 		}
 		p.want(")")
-		tier := ast.YDBTTLTierSpec{Interval: value}
+		tier := ydbschema.TTLTier{Interval: value}
 		switch {
 		case p.word("DELETE"):
 			p.pos++
@@ -61,7 +60,10 @@ func (p *parser) ttl() (*ast.YDBTieredTTLSpec, bool) {
 	return spec, explicit
 }
 
-func (p *parser) applyTTL(table *ast.CreateTableNode, text string) {
+// applyTTL reads the TTL setting of table, whose column storage is store, or
+// nil for a row table. A TTL that moves rows is the column storage's, and one
+// that only deletes them is the table's own TTL.
+func (p *parser) applyTTL(table *ast.CreateTableNode, store *ydbschema.ColumnStore, text string) {
 	value := newParser(text)
 	spec, explicit := value.ttl()
 	if !value.done() {
@@ -74,14 +76,20 @@ func (p *parser) applyTTL(table *ast.CreateTableNode, text string) {
 	deletionOnly := len(spec.Tiers) == 1 && spec.Tiers[0].ExternalSource == ""
 	var err error
 	if !deletionOnly {
-		if table.YDBColumnTable == nil {
+		if store == nil {
 			p.failf("tiered TTL requires STORE = COLUMN")
 			return
 		}
-		table.YDBColumnTable.TTL = spec
-		err = ydbcolumn.Validate(table.YDBColumnTable)
+		unit, unitErr := ydbttl.Unit(spec.Unit)
+		if unitErr != nil {
+			p.failf("%v", unitErr)
+			return
+		}
+		spec.Unit = unit
+		store.TTL = spec
+		err = ydbschema.CheckColumnStore(*store)
 	} else {
-		if explicit && table.YDBColumnTable == nil {
+		if explicit && store == nil {
 			p.failf("TTL DELETE requires STORE = COLUMN")
 			return
 		}
@@ -95,7 +103,7 @@ func (p *parser) applyTTL(table *ast.CreateTableNode, text string) {
 // applyRowTTL records a TTL that only deletes rows as the YDB owner's
 // declaration, whether the table stores rows or columns. The unit is kept in
 // capitals.
-func (p *parser) applyRowTTL(table *ast.CreateTableNode, spec *ast.YDBTieredTTLSpec) error {
+func (p *parser) applyRowTTL(table *ast.CreateTableNode, spec *ydbschema.TieredTTL) error {
 	unit, err := ydbttl.Unit(spec.Unit)
 	if err != nil {
 		return err

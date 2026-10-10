@@ -215,7 +215,12 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 	if !ok {
 		return refuseFact(subject, "the plan carries no declaration of the table to write the new one from")
 	}
-	if declaration.Table.YDBColumnTable != nil || (rebuild.tableDiff != nil && rebuild.tableDiff.YDBColumnTableChange != nil) {
+	declared, err := ydbschema.DeclaredColumnStore(declaration.Table.Facets)
+	if err != nil {
+		return err
+	}
+	held := rebuild.tableDiff != nil && slices.Contains(rebuild.tableDiff.Current.Table.Facets.Kinds(), ydbschema.ColumnStoreKind)
+	if declared != nil || held {
 		return refuseFact(subject, "column-table rebuilds require an explicit data migration")
 	}
 	rebuild.declaration = declaration

@@ -105,6 +105,7 @@ func New() (*engine.Runtime, error) {
 			registerYDBTTLServices(&provider, name)
 			registerYDBColumnFamilyServices(&provider, name)
 			registerYDBTablePartitioningServices(&provider, name)
+			registerYDBColumnStoreServices(&provider, name)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

@@ -202,22 +202,3 @@ func RefuseReplications(dialect string, diff *difftypes.SchemaDiff) error {
 			"only a YDB plan creates, drops or changes an async replication or a transfer", subject, key, dialect),
 	}
 }
-
-// RefuseYDBTableSettingChanges refuses a diff that changes a YDB column
-// table's storage, for a planner of dialect that plans none. Every planner but
-// YDB's asks it, once. A change of a row table's own settings -- its column
-// families, partitioning, read replicas or key bloom filter -- is the YDB
-// owner's, and a planner with no such owner refuses it as an owned change it
-// cannot plan.
-func RefuseYDBTableSettingChanges(dialect string, diff *difftypes.SchemaDiff) error {
-	if diff == nil {
-		return nil
-	}
-	for _, table := range diff.TablesModified {
-		if table.YDBColumnTableChange != nil {
-			return fmt.Errorf("%w: column-table changes require a YDB planner; the %s planner plans none of table %q",
-				ptaherr.ErrUnsupportedFeature, dialect, table.TableName)
-		}
-	}
-	return nil
-}
