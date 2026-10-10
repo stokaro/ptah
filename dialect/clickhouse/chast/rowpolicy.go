@@ -34,9 +34,13 @@ func (*RowPolicy) Kind() schemaext.Kind { return RowPolicyKind }
 
 // CloneExtension returns an independent operation and both operands. A nil
 // receiver remains typed nil.
-func (v *RowPolicy) CloneExtension() ast.ExtensionPayload {
+func (v *RowPolicy) CloneExtension() ast.ExtensionPayload { return v.Copy() }
+
+// Copy is [RowPolicy.CloneExtension] without the interface: it shares no
+// operand with v, and a nil receiver returns nil.
+func (v *RowPolicy) Copy() *RowPolicy {
 	if v == nil {
-		return (*RowPolicy)(nil)
+		return nil
 	}
 	return &RowPolicy{Database: v.Database, Table: v.Table, Name: v.Name, Change: *v.Change.Copy()}
 }
@@ -96,83 +100,29 @@ func (v *RowPolicy) SchemaChange() ast.ExtensionChange {
 	}
 }
 
-// rowPolicyFields are the operation's wire properties, all required.
-var rowPolicyFields = []string{"database", "table", "name", "change"}
+// rowPolicyShape is the operation object's keys, each required. The database
+// may be empty, for the connection's.
+var rowPolicyShape = schemaext.ObjectShape{Name: "ClickHouse row policy operation",
+	Allowed: []string{"database", "table", "name", "change"}, Required: []string{"database", "table", "name", "change"}}
 
+// rowPolicyCodec is the operation codec. The change takes its own codec's
+// wire form, checked by that codec. Every refusal is a
+// [schemaext.InvalidModelError].
 func rowPolicyCodec() schemaext.Codec {
 	change := chdiff.RowPolicyCodecs()[0]
-	value := func(payload schemaext.Payload) (*RowPolicy, error) {
-		v, ok := payload.(*RowPolicy)
-		if !ok {
-			return nil, fmt.Errorf("%w: expected ClickHouse row policy operation, got %T", schemaext.ErrInvalidValue, payload)
-		}
-		return v, v.Validate()
-	}
-	encode := func(payload schemaext.Payload) (json.RawMessage, error) {
-		v, err := value(payload)
-		if err != nil {
-			return nil, err
-		}
-		encoded, err := change.Canonical(&v.Change)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(struct {
-			Database string          `json:"database"`
-			Table    string          `json:"table"`
-			Name     string          `json:"name"`
-			Change   json.RawMessage `json:"change"`
-		}{v.Database, v.Table, v.Name, encoded})
-	}
-	return schemaext.Codec{
+	return schemaext.ModelCodec[*RowPolicy]{
 		Prototype: &RowPolicy{}, Representation: schemaext.Operation, Version: 1,
 		Definition: json.RawMessage(fmt.Sprintf(`{"database":"the table's database, or empty for the connection's",`+
 			`"table":"the table the policy filters","name":"the policy's own name","change":%s}`, change.Definition)),
-		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			v, err := value(payload)
+		Shape: func(data json.RawMessage) error {
+			fields, err := schemaext.DecodeObject(data, rowPolicyShape)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			return v.CloneExtension(), nil
+			_, err = change.Decode(fields["change"])
+			return err
 		},
-		Encode: encode, Canonical: encode,
-		Decode: func(data json.RawMessage) (schemaext.Payload, error) {
-			fields, err := schemaext.DecodeJSON[map[string]json.RawMessage](data)
-			if err != nil {
-				return nil, err
-			}
-			if len(fields) != len(rowPolicyFields) {
-				return nil, fmt.Errorf("%w: ClickHouse row policy operation requires exactly database, table, name and change", schemaext.ErrInvalidValue)
-			}
-			names := make([]string, 0, 3)
-			for _, key := range rowPolicyFields[:3] {
-				raw, found := fields[key]
-				if !found || string(raw) == "null" {
-					return nil, fmt.Errorf("%w: ClickHouse row policy operation requires %s as a string", schemaext.ErrInvalidValue, key)
-				}
-				name, err := schemaext.DecodeJSON[string](raw)
-				if err != nil {
-					return nil, err
-				}
-				names = append(names, name)
-			}
-			raw, found := fields["change"]
-			if !found {
-				return nil, fmt.Errorf("%w: ClickHouse row policy operation requires change", schemaext.ErrInvalidValue)
-			}
-			decoded, err := change.Decode(raw)
-			if err != nil {
-				return nil, err
-			}
-			typed, ok := decoded.(*chdiff.RowPolicy)
-			if !ok {
-				return nil, fmt.Errorf("%w: unexpected ClickHouse row policy change %T", schemaext.ErrInvalidValue, decoded)
-			}
-			v, err := value(&RowPolicy{Database: names[0], Table: names[1], Name: names[2], Change: *typed})
-			if err != nil {
-				return nil, err
-			}
-			return v, nil
-		},
-	}
+		Validate: (*RowPolicy).Validate,
+		Clone:    (*RowPolicy).Copy,
+	}.Codec()
 }

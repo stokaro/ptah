@@ -17,14 +17,29 @@ var rowPolicyDefinition []byte
 func RowPolicyWireDefinition() json.RawMessage { return slices.Clone(rowPolicyDefinition) }
 
 // RowPolicyCodecs returns strict versioned codecs for desired and observed row
-// policies, in that order. Both encode each role list in byte order, so equal
-// policies encode to the same bytes. Registration understands the model but
-// grants no target or server support.
+// policies, in that order. Both encode each role list in byte order, through
+// [RoleSelection.MarshalJSON], so equal policies encode to the same bytes,
+// alone or inside a change or an operation. Every refusal is a
+// [schemaext.InvalidModelError]. Registration understands the model but grants
+// no target or server support.
 func RowPolicyCodecs() []schemaext.Codec {
 	return []schemaext.Codec{
-		rowPolicyCodec(&DesiredRowPolicy{}, schemaext.Desired, decodeDesiredRowPolicy, validateDesiredRowPolicyPayload, canonicalDesiredRowPolicy),
-		rowPolicyCodec(&ObservedRowPolicy{}, schemaext.Observed, decodeObservedRowPolicy, validateObservedRowPolicyPayload, canonicalObservedRowPolicy),
+		schemaext.ModelCodec[*DesiredRowPolicy]{
+			Prototype: &DesiredRowPolicy{}, Representation: schemaext.Desired, Version: 1, Definition: RowPolicyWireDefinition(),
+			Shape: desiredRowPolicyShape, Validate: ValidateDesiredRowPolicy,
+		}.Codec(),
+		schemaext.ModelCodec[*ObservedRowPolicy]{
+			Prototype: &ObservedRowPolicy{}, Representation: schemaext.Observed, Version: 1, Definition: RowPolicyWireDefinition(),
+			Shape: observedRowPolicyShape, Validate: ValidateObservedRowPolicy,
+		}.Codec(),
 	}
+}
+
+// MarshalJSON writes the canonical encoding: each role list in byte order.
+// It does not validate; the codecs do.
+func (s RoleSelection) MarshalJSON() ([]byte, error) {
+	type wire RoleSelection
+	return json.Marshal(wire(s.canonical()))
 }
 
 // RowPolicyCoverage records knowledge of row policies for one representation:
@@ -48,94 +63,25 @@ func RowPolicyCoverage(representation schemaext.Representation, knowledge schema
 	return schemaext.Coverage{}, fmt.Errorf("%w: row policy coverage requires a schema representation", schemaext.ErrInvalidValue)
 }
 
-// rowPolicyCodec validates at every boundary, so a clone, an encoding and a
-// decoding of an invalid value are refused, and encodes the canonical form.
-func rowPolicyCodec[T schemaext.Value](prototype T, representation schemaext.Representation,
-	decode func(json.RawMessage) (schemaext.Payload, error), validate func(schemaext.Payload) error, canonical func(T) T,
-) schemaext.Codec {
-	encode := func(payload schemaext.Payload) (json.RawMessage, error) {
-		if err := validate(payload); err != nil {
-			return nil, err
-		}
-		value, _ := payload.(T)
-		return json.Marshal(canonical(value))
-	}
-	return schemaext.Codec{
-		Prototype: prototype, Representation: representation, Version: 1, Definition: RowPolicyWireDefinition(),
-		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			if err := validate(payload); err != nil {
-				return nil, err
-			}
-			value, _ := payload.(T)
-			return value.Clone(), nil
-		},
-		Encode: encode, Decode: decode, Canonical: encode,
-	}
-}
-
-func canonicalDesiredRowPolicy(value *DesiredRowPolicy) *DesiredRowPolicy {
-	canonical := value.Copy()
-	canonical.Roles = canonical.Roles.canonical()
-	return canonical
-}
-
-func canonicalObservedRowPolicy(value *ObservedRowPolicy) *ObservedRowPolicy {
-	canonical := value.Copy()
-	canonical.Roles = canonical.Roles.canonical()
-	return canonical
-}
-
-func validateDesiredRowPolicyPayload(payload schemaext.Payload) error {
-	v, ok := payload.(*DesiredRowPolicy)
-	if !ok {
-		return fmt.Errorf("%w: expected a desired ClickHouse row policy, got %T", schemaext.ErrInvalidValue, payload)
-	}
-	return ValidateDesiredRowPolicy(v)
-}
-
-func validateObservedRowPolicyPayload(payload schemaext.Payload) error {
-	v, ok := payload.(*ObservedRowPolicy)
-	if !ok {
-		return fmt.Errorf("%w: expected an observed ClickHouse row policy, got %T", schemaext.ErrInvalidValue, payload)
-	}
-	return ValidateObservedRowPolicy(v)
-}
-
-func decodeDesiredRowPolicy(data json.RawMessage) (schemaext.Payload, error) {
+func desiredRowPolicyShape(data json.RawMessage) error {
 	selection, err := rowPolicyShape(data, []string{"filter", "composition", "roles", "struct_name", "normalized_filter"}, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// A declaration that names nobody omits its roles: the encoder never
 	// writes an empty selection for one.
 	if selection != nil && len(selection) == 0 {
-		return nil, fmt.Errorf("%w: ClickHouse row policy property %q cannot be empty; omit it for a policy that applies to nobody",
+		return fmt.Errorf("%w: ClickHouse row policy property %q cannot be empty; omit it for a policy that applies to nobody",
 			schemaext.ErrInvalidValue, "roles")
 	}
-	value, err := schemaext.DecodeJSON[*DesiredRowPolicy](data)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateDesiredRowPolicy(value); err != nil {
-		return nil, err
-	}
-	return value, nil
+	return nil
 }
 
-func decodeObservedRowPolicy(data json.RawMessage) (schemaext.Payload, error) {
-	// An observation always states its selection, so one that names nobody is
-	// written as an empty object.
-	if _, err := rowPolicyShape(data, []string{"filter", "composition", "roles"}, []string{"composition", "roles"}); err != nil {
-		return nil, err
-	}
-	value, err := schemaext.DecodeJSON[*ObservedRowPolicy](data)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateObservedRowPolicy(value); err != nil {
-		return nil, err
-	}
-	return value, nil
+// observedRowPolicyShape checks an observation, which always states its
+// selection, so one that names nobody is written as an empty object.
+func observedRowPolicyShape(data json.RawMessage) error {
+	_, err := rowPolicyShape(data, []string{"filter", "composition", "roles"}, []string{"composition", "roles"})
+	return err
 }
 
 // rowPolicyShape checks the policy object's keys and the role selection's, and

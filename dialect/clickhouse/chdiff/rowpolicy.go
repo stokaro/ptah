@@ -1,7 +1,6 @@
 package chdiff
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -209,115 +208,48 @@ func ValidateRowPolicy(v *RowPolicy) error {
 	return nil
 }
 
+// changeShape is the change object's keys: each is required, and an operand
+// is null where the policy is absent.
+var changeShape = schemaext.ObjectShape{Name: "ClickHouse row policy change",
+	Allowed: []string{"before", "after", "access"}, Required: []string{"before", "after", "access"}, Nullable: []string{"before", "after"}}
+
 // RowPolicyCodecs returns the versioned row-policy change codec. Each operand
-// uses the strict row policy wire model for its representation; an absent
-// policy is null, and a change with null on both sides is refused. The access
-// assessment is the record [schemaext.AccessEffectSchema] describes.
+// takes the strict row policy wire form for its representation, checked by
+// that model's codec, and null where the policy is absent; a change with null
+// on both sides is refused. The access assessment is the record
+// [schemaext.AccessEffectSchema] describes. Every refusal is a
+// [schemaext.InvalidModelError].
 func RowPolicyCodecs() []schemaext.Codec {
-	return []schemaext.Codec{{
+	return []schemaext.Codec{schemaext.ModelCodec[*RowPolicy]{
 		Prototype: &RowPolicy{}, Representation: schemaext.Change, Version: 1,
 		Definition: json.RawMessage(fmt.Sprintf(`{"operands":%s,"access":%s,`+
 			`"before":"observed row policy, or null for a policy that does not exist yet",`+
 			`"after":"desired row policy, or null for a policy the change drops",`+
 			`"constraint":"at least one side is non-null; access is required"}`, chschema.RowPolicyWireDefinition(), schemaext.AccessEffectSchema())),
-		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			v, err := rowPolicyChange(payload)
-			if err != nil {
-				return nil, err
-			}
-			return v.CloneChange(), nil
-		},
-		Encode: encodeRowPolicyChange, Canonical: encodeRowPolicyChange, Decode: decodeRowPolicyChange,
-	}}
+		Shape:    rowPolicyChangeShape,
+		Validate: ValidateRowPolicy,
+		Clone:    (*RowPolicy).Copy,
+	}.Codec()}
 }
 
-// rowPolicyChange returns payload as a valid row policy change.
-func rowPolicyChange(payload schemaext.Payload) (*RowPolicy, error) {
-	v, ok := payload.(*RowPolicy)
-	if !ok {
-		return nil, fmt.Errorf("%w: expected ClickHouse row policy change, got %T", schemaext.ErrInvalidValue, payload)
+// rowPolicyChangeShape checks the change's keys and decodes each operand
+// through its model's codec, which holds it to the strict wire form.
+func rowPolicyChangeShape(data json.RawMessage) error {
+	fields, err := schemaext.DecodeObject(data, changeShape)
+	if err != nil {
+		return err
 	}
-	return v, ValidateRowPolicy(v)
-}
-
-// rowPolicyOperandCodecs returns the row policy codecs of the observed
-// operand, before, and of the desired one, after.
-func rowPolicyOperandCodecs() (observed, desired schemaext.Codec) {
 	for _, codec := range chschema.RowPolicyCodecs() {
+		key := "after"
 		if codec.Representation == schemaext.Observed {
-			observed = codec
-		} else {
-			desired = codec
+			key = "before"
+		}
+		if string(fields[key]) == "null" {
+			continue
+		}
+		if _, err := codec.Decode(fields[key]); err != nil {
+			return err
 		}
 	}
-	return observed, desired
-}
-
-func encodeRowPolicyChange(payload schemaext.Payload) (json.RawMessage, error) {
-	v, err := rowPolicyChange(payload)
-	if err != nil {
-		return nil, err
-	}
-	observed, desired := rowPolicyOperandCodecs()
-	fields := map[string]json.RawMessage{"before": json.RawMessage("null"), "after": json.RawMessage("null")}
-	if v.Before != nil {
-		if fields["before"], err = observed.Canonical(v.Before); err != nil {
-			return nil, err
-		}
-	}
-	if v.After != nil {
-		if fields["after"], err = desired.Canonical(v.After); err != nil {
-			return nil, err
-		}
-	}
-	if fields["access"], err = json.Marshal(v.Access); err != nil {
-		return nil, err
-	}
-	return json.Marshal(fields)
-}
-
-func decodeRowPolicyChange(data json.RawMessage) (schemaext.Payload, error) {
-	fields, err := schemaext.DecodeJSON[map[string]json.RawMessage](data)
-	if err != nil {
-		return nil, err
-	}
-	before, hasBefore := fields["before"]
-	after, hasAfter := fields["after"]
-	access, hasAccess := fields["access"]
-	if len(fields) != 3 || !hasBefore || !hasAfter || !hasAccess {
-		return nil, fmt.Errorf("%w: ClickHouse row policy change requires exactly before, after and access", schemaext.ErrInvalidValue)
-	}
-	result := &RowPolicy{}
-	if err := json.Unmarshal(access, &result.Access); err != nil {
-		return nil, err
-	}
-	observed, desired := rowPolicyOperandCodecs()
-	if result.Before, err = decodeOperand[*chschema.ObservedRowPolicy](observed, before); err != nil {
-		return nil, err
-	}
-	if result.After, err = decodeOperand[*chschema.DesiredRowPolicy](desired, after); err != nil {
-		return nil, err
-	}
-	if err := ValidateRowPolicy(result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// decodeOperand decodes one operand through its codec; null is an absent
-// policy.
-func decodeOperand[T schemaext.Value](codec schemaext.Codec, data json.RawMessage) (T, error) {
-	var zero T
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return zero, nil
-	}
-	decoded, err := codec.Decode(data)
-	if err != nil {
-		return zero, err
-	}
-	typed, ok := decoded.(T)
-	if !ok {
-		return zero, fmt.Errorf("%w: ClickHouse row policy operand decoded as %T", schemaext.ErrInvalidValue, decoded)
-	}
-	return typed, nil
+	return nil
 }

@@ -67,6 +67,8 @@ func TestRowPolicyOperationCodecRefusesIncompleteOperations(t *testing.T) {
 			decoded, err := codec.Decode(json.RawMessage(data))
 
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			var invalid *schemaext.InvalidModelError
+			c.Assert(err, qt.ErrorAs, &invalid)
 			c.Assert(decoded, qt.IsNil)
 		})
 	}
