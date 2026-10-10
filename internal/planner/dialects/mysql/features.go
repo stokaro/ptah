@@ -14,16 +14,20 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// featureOwner is the contribution owner of the common steps a SQL Server or
-// Oracle plan joins feature operations to.
+// featureOwner is the contribution owner of the common steps a plan of this
+// planner joins feature operations to, on every dialect it serves.
 const featureOwner = "ptah.run/sqlserver"
 
 // hostsFeatures reports whether this planner dispatches feature changes to
-// their owners. SQL Server and Oracle do; MySQL and MariaDB have no feature
-// owner and refuse every feature change.
+// their owners. Every dialect it serves does: SQL Server, Oracle, MySQL and
+// MariaDB, whose owner plans the changes of its index options.
 func (p *Planner) hostsFeatures() bool {
-	target := p.targetDialect()
-	return target == platform.SQLServer || target == platform.Oracle
+	switch p.targetDialect() {
+	case platform.SQLServer, platform.Oracle, platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }
 
 // dropsRoutinesLate reports whether routines are dropped after the tables and
@@ -35,7 +39,7 @@ func (p *Planner) dropsRoutinesLate() bool { return p.targetDialect() == platfor
 
 // refuseUnhostedFeatureChanges refuses the feature changes this planner has
 // no window for: every one on a target without owners, and the settings of a
-// materialized view on SQL Server, which has none.
+// materialized view, which no dialect of this planner has a window for.
 func (p *Planner) refuseUnhostedFeatureChanges(diff *difftypes.SchemaDiff) error {
 	if p.hostsFeatures() {
 		return schemaprecondition.RefuseMaterializedViewFeatureChanges(p.targetDialect(), diff)
@@ -43,7 +47,7 @@ func (p *Planner) refuseUnhostedFeatureChanges(diff *difftypes.SchemaDiff) error
 	return schemaprecondition.RefuseFeatureChanges(p.targetDialect(), diff)
 }
 
-// scheduleFeatures dispatches a SQL Server diff's feature changes, standalone
+// scheduleFeatures dispatches a diff's feature changes, standalone
 // and attached to surviving tables, to their owners and joins the operations
 // to the common sequence in the windows recorded while it was planned. A diff
 // with no feature change is returned as it was planned, without asking the
