@@ -5,10 +5,9 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/importer"
 )
 
@@ -18,7 +17,7 @@ func parseLiquibaseFor(c *qt.C, dialect string, files fstest.MapFS) (*importer.P
 	c.Helper()
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithRendering(parser, dialect, capability.ForDialect(dialect), must.Must(builtin.New()))
+	rendering, err := importer.WithRendering(parser, dialect, capability.ForDialect(dialect), builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 	return rendering.Parse(c.Context(), files)
 }
@@ -595,7 +594,7 @@ func TestWithRendering_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := importer.WithRendering(test.parser, test.dialect, capability.ForDialect(test.dialect), must.Must(builtin.New()))
+			got, err := importer.WithRendering(test.parser, test.dialect, capability.ForDialect(test.dialect), builtintest.Runtime())
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(got, qt.IsNil)
@@ -611,7 +610,7 @@ func TestWithRendering_LeavesItsArgumentUnchanged_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	files := liquibaseXMLOneChangeSet(`<createTable tableName="t"><column name="id" type="int"/></createTable>`)
 
-	rendering, err := importer.WithRendering(parser, "postgres", capability.ForDialect("postgres"), must.Must(builtin.New()))
+	rendering, err := importer.WithRendering(parser, "postgres", capability.ForDialect("postgres"), builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 	_, renderedErr := rendering.Parse(c.Context(), files)
 	_, originalErr := parser.Parse(c.Context(), files)
@@ -645,7 +644,7 @@ func TestWithRendering_RendersAgainstItsPreset_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithRendering(parser, "postgres", postgresWithoutForeignKeys(), must.Must(builtin.New()))
+	rendering, err := importer.WithRendering(parser, "postgres", postgresWithoutForeignKeys(), builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 
 	parsed, err := rendering.Parse(c.Context(), liquibaseForeignKeyChangelog())
@@ -661,7 +660,7 @@ func TestWithRendering_KeepsItsOwnCopy_FailurePath(t *testing.T) {
 	caps := postgresWithoutForeignKeys()
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithRendering(parser, "postgres", caps, must.Must(builtin.New()))
+	rendering, err := importer.WithRendering(parser, "postgres", caps, builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 	caps[capability.ForeignKeys] = true
 	caps[capability.ForeignKeysRequireUniqueReference] = true
@@ -680,7 +679,7 @@ func TestWithRendering_InvalidPreset_FailurePath(t *testing.T) {
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 
-	got, err := importer.WithRendering(parser, "postgres", caps, must.Must(builtin.New()))
+	got, err := importer.WithRendering(parser, "postgres", caps, builtintest.Runtime())
 
 	c.Assert(err, qt.ErrorMatches, `invalid capabilities for postgres: .*requires "foreign_keys".*`)
 	c.Assert(got, qt.IsNil)

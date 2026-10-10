@@ -8,15 +8,13 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/dbtest"
 )
 
 func selectedRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	return runtime
+	return builtintest.Runtime()
 }
 
 func TestRunners_RequireRuntimeBeforeDatabaseAccess(t *testing.T) {

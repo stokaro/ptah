@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -54,7 +53,7 @@ func TestEveryPlannerButYDBRefusesTopicChanges(t *testing.T) {
 			t.Run(test.dialect+"/"+name, func(t *testing.T) {
 				c := qt.New(t)
 				diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("", "events"), Value: change}}}
-				nodes, err := planner.GenerateSchemaDiffAST(context.Background(), must.Must(builtin.New()), diff, test.dialect)
+				nodes, err := planner.GenerateSchemaDiffAST(context.Background(), builtintest.Runtime(), diff, test.dialect)
 				c.Assert(err, qt.ErrorMatches, test.wantErr)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(nodes, qt.IsNil)

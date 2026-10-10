@@ -8,15 +8,13 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/builtintest"
 )
 
 func inspectRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	return runtime
+	return builtintest.Runtime()
 }
 
 func newInspectReport(c *qt.C, db *schemamodel.Database, schema *catalog.Database, info catalog.ServerInfo, diagnostics io.Writer, opts atlasreport.SchemaInspectReportOptions) *atlasreport.SchemaInspectReport {

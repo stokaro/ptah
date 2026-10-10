@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -150,9 +151,9 @@ func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) stri
 // against an empty database: the comparator's diff, through the dialect planner
 // and the same renderer.
 func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), &database, &catalog.Database{}, dialect, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), &database, &catalog.Database{}, dialect, builtintest.Runtime()))
 	sql, err := planner.GenerateSchemaDiffSQL(
-		context.Background(), must.Must(builtin.New()),
+		context.Background(), builtintest.Runtime(),
 		diff, dialect,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", dialect))
@@ -171,9 +172,9 @@ func renderedOrRefusal(database schemamodel.Database, dialect string) string {
 }
 
 func plannedOrRefusal(database schemamodel.Database, dialect string) string {
-	diff := must.Must(schemadiff.CompareWithDialect(context.Background(), &database, &catalog.Database{}, dialect, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(context.Background(), &database, &catalog.Database{}, dialect, builtintest.Runtime()))
 	sql, err := planner.GenerateSchemaDiffSQL(
-		context.Background(), must.Must(builtin.New()),
+		context.Background(), builtintest.Runtime(),
 		diff, dialect,
 	)
 	return fmt.Sprintf("%s | err=%v", sql, err)

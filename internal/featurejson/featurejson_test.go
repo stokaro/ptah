@@ -17,13 +17,13 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/featurejson"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func codecs() schemaext.Registry {
-	return must.Must(builtin.New()).Codecs()
+	return builtintest.Runtime().Codecs()
 }
 
 // ttlChange is a ClickHouse TTL change on table events, as the comparison

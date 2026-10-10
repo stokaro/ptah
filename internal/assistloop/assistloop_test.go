@@ -7,16 +7,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpolicy"
 	"ptah.run/internal/agentworkspace"
 	"ptah.run/internal/aiprovider"
 	"ptah.run/internal/assistloop"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/mcpserver"
 	"ptah.run/internal/migrateops"
 	"ptah.run/migration/migrationfile"
@@ -53,7 +52,7 @@ func toolSession(c *qt.C) *mcp.ClientSession {
 
 	policy, err := agentpolicy.Assemble()
 	c.Assert(err, qt.IsNil)
-	gates, err := agentgate.New(agentgate.Options{Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
+	gates, err := agentgate.New(agentgate.Options{Validation: builtintest.Runtime(), Rendering: builtintest.Runtime(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Workspace: workspace,

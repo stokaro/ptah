@@ -121,19 +121,13 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 				c := qt.New(t)
 				dialectGen, dialectDB := determinismInputsForDialect(gen, scenario.db, dialect)
 
-				first, err := planner.GenerateSchemaDiffSQL(
-					context.Background(), must.Must(builtin.New()),
-					must.Must(schemadiff.CompareWithDialect(t.Context(), dialectGen, dialectDB, dialect, must.Must(builtin.New()))), dialect,
-				)
+				first, err := planWithFreshRuntime(t.Context(), dialectGen, dialectDB, dialect)
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(first, qt.Not(qt.Equals), "")
 
 				for i := range 100 {
-					sql, err := planner.GenerateSchemaDiffSQL(
-						context.Background(), must.Must(builtin.New()),
-						must.Must(schemadiff.CompareWithDialect(t.Context(), dialectGen, dialectDB, dialect, must.Must(builtin.New()))), dialect,
-					)
+					sql, err := planWithFreshRuntime(t.Context(), dialectGen, dialectDB, dialect)
 
 					c.Assert(err, qt.IsNil)
 					c.Assert(sql, qt.Equals, first, qt.Commentf("iteration %d produced different SQL", i))
@@ -141,6 +135,17 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 			})
 		}
 	}
+}
+
+// planWithFreshRuntime compares and plans with a runtime built for this call.
+// Every iteration builds its own, so the test samples runtimes assembled apart
+// as well as map order; the comparison and the plan of one iteration share it.
+func planWithFreshRuntime(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, dialect string) (string, error) {
+	runtime := must.Must(builtin.New())
+	return planner.GenerateSchemaDiffSQL(
+		ctx, runtime,
+		must.Must(schemadiff.CompareWithDialect(ctx, desired, current, dialect, runtime)), dialect,
+	)
 }
 
 func determinismInputsForDialect(desired *schemamodel.Database, current *catalog.Database, dialect string) (*schemamodel.Database, *catalog.Database) {

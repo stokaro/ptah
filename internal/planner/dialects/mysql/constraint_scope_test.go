@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -40,7 +40,7 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
 	diff = withDeclaredObjects(diff, desired)
 	nodes, err := mysql.New().GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
+		context.Background(), builtintest.Runtime(),
 		withDeclaredObjects(diff, desired),
 	)
 	c.Assert(err, qt.IsNil)
@@ -876,7 +876,7 @@ func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
 	}
 
 	nodes, err := mysql.New().GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
+		context.Background(), builtintest.Runtime(),
 		diff,
 	)
 

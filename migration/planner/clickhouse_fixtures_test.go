@@ -9,13 +9,13 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 // Common-column fixtures describe an inspected MergeTree table with no key or
 // TTL dependencies. The planner must not infer that fact from missing facets.
 func clickhouseTableCapture(schema, name string) schemacapture.TableObservation {
-	models := must.Must(builtin.New()).Codecs().Definitions()
+	models := builtintest.Runtime().Codecs().Definitions()
 	model := models[slices.IndexFunc(models, func(v schemaext.CodecIdentity) bool {
 		return v.Kind == chschema.TableKind && v.Representation == schemaext.Observed
 	})]

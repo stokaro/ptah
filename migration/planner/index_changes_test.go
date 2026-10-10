@@ -6,12 +6,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -40,7 +39,7 @@ func TestEveryPlannerButYDBRefusesIndexChangesInPlace(t *testing.T) {
 			t.Run(dialect+"/"+name, func(t *testing.T) {
 				c := qt.New(t)
 				nodes, err := planner.GenerateSchemaDiffAST(
-					context.Background(), must.Must(builtin.New()),
+					context.Background(), builtintest.Runtime(),
 					diff, dialect,
 				)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
