@@ -208,44 +208,6 @@ func (s *IndexPartitioningSpec) Clone() *IndexPartitioningSpec {
 	return &out
 }
 
-// VectorIndexSpec is what a YDB vector index, `GLOBAL USING
-// vector_kmeans_tree`, is built with: the settings of its WITH (...) clause.
-// Each field names the setting it carries, in lower case as YQL spells it.
-//
-// Exactly one of Distance and Similarity names the metric. Every other
-// setting is required as well: YDB 25.3 and later refuse an index that leaves
-// one out (`levels should be set`), so a spec is complete or it is refused,
-// and no field has a default. No statement changes a setting of a built index
-// (`ALTER INDEX ... SET (levels = 2)` answers `Unknown table setting:
-// levels`), so a different spec is a different index.
-type VectorIndexSpec struct {
-	// Distance is the distance the index orders by: cosine, euclidean or
-	// manhattan.
-	Distance string `json:"distance,omitempty"`
-	// Similarity is the similarity the index orders by: inner_product or
-	// cosine.
-	Similarity string `json:"similarity,omitempty"`
-	// VectorType is the type of a stored vector's elements: float, uint8,
-	// int8 or bit.
-	VectorType string `json:"vector_type,omitempty"`
-	// Dimension is vector_dimension, the number of elements in a vector.
-	Dimension uint64 `json:"vector_dimension,omitempty"`
-	// Levels is the depth of the k-means tree.
-	Levels uint64 `json:"levels,omitempty"`
-	// Clusters is the number of clusters each level splits into.
-	Clusters uint64 `json:"clusters,omitempty"`
-}
-
-// Clone returns an independent copy, for the reason
-// [IndexPartitioningSpec.Clone] gives. Nil stays nil.
-func (s *VectorIndexSpec) Clone() *VectorIndexSpec {
-	if s == nil {
-		return nil
-	}
-	out := *s
-	return &out
-}
-
 // SQLite virtual-table option keys for CreateTableNode.Options.
 //
 // A SQLite virtual table is not a CREATE TABLE with an extra keyword: it has
@@ -915,9 +877,6 @@ type IndexNode struct {
 	// partitions, and its read replicas; nil declares none. See
 	// [IndexPartitioningSpec].
 	Partitioning *IndexPartitioningSpec
-	// Vector is the settings of a YDB vector index, the one Type
-	// vector_kmeans_tree names; nil declares none. See [VectorIndexSpec].
-	Vector *VectorIndexSpec
 	// Concurrently requests CREATE INDEX CONCURRENTLY, PostgreSQL's
 	// non-locking index build. Set by planners only when the target
 	// capability set includes capability.CreateIndexConcurrently and the

@@ -39,26 +39,8 @@ func (ctx *renderContext) captureFeatureObjects() error {
 			annotation("ptah:schema:notdescribed", attr{name: "kind", value: string(limit.Kind), set: true},
 				attr{name: "name", value: limit.Name, set: limit.Name != ""}))
 	}
-	tables := make(map[*schemaext.Facets]bool, len(ctx.db.Tables))
-	for i := range ctx.db.Tables {
-		tables[&ctx.db.Tables[i].Facets] = true
-	}
-	// A materialized view's refresh schedule is its `refresh` attribute, and
-	// Render has refused any other view setting already.
-	views := make(map[*schemaext.Facets]bool, len(ctx.db.MaterializedViews))
-	for i := range ctx.db.MaterializedViews {
-		views[&ctx.db.MaterializedViews[i].Facets] = true
-	}
-	for _, facets := range ctx.db.FacetSlots() {
-		if views[facets] {
-			continue
-		}
-		for _, kind := range facets.DeclaredKinds() {
-			if tables[facets] && isAnnotatedFacet(kind) && slices.Contains(facets.Kinds(), kind) {
-				continue
-			}
-			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, kind)
-		}
+	if err := ctx.refuseUnwrittenFacets(); err != nil {
+		return err
 	}
 	if err := ctx.captureColumnFamilies(); err != nil {
 		return err
@@ -234,4 +216,42 @@ func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, erro
 	default:
 		return false, nil
 	}
+}
+
+// refuseUnwrittenFacets refuses a facet no annotation writes, so it cannot
+// disappear from a successful export: a table facet with an annotation of its
+// own, a YDB vector index's settings, which the index annotation writes, and
+// a materialized view's refresh schedule, its `refresh` attribute, are the
+// ones written. Render has refused any other view setting already.
+func (ctx *renderContext) refuseUnwrittenFacets() error {
+	tables := make(map[*schemaext.Facets]bool, len(ctx.db.Tables))
+	for i := range ctx.db.Tables {
+		tables[&ctx.db.Tables[i].Facets] = true
+	}
+	indexes := make(map[*schemaext.Facets]bool, len(ctx.db.Indexes))
+	for i := range ctx.db.Indexes {
+		indexes[&ctx.db.Indexes[i].Facets] = true
+	}
+	views := make(map[*schemaext.Facets]bool, len(ctx.db.MaterializedViews))
+	for i := range ctx.db.MaterializedViews {
+		views[&ctx.db.MaterializedViews[i].Facets] = true
+	}
+	for _, facets := range ctx.db.FacetSlots() {
+		if views[facets] {
+			continue
+		}
+		for _, kind := range facets.DeclaredKinds() {
+			active := slices.Contains(facets.Kinds(), kind)
+			switch {
+			case tables[facets] && isAnnotatedFacet(kind) && active:
+			case indexes[facets] && isAnnotatedIndexFacet(kind) && active:
+				if err := validateVectorDeclaration(*facets); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, kind)
+			}
+		}
+	}
+	return nil
 }

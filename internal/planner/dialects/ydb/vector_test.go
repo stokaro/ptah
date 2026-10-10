@@ -7,10 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -19,7 +20,9 @@ import (
 // plannedVector is the vector index a plan below adds, over column.
 func plannedVector(name, column string, clusters uint64) schemamodel.Index {
 	return schemamodel.Index{Name: name, Fields: []string{column}, Type: "vector_kmeans_tree",
-		Vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: clusters}}
+		Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredVectorIndex{
+			Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: clusters,
+		}))}
 }
 
 // TestGenerateMigrationAST_VectorIndex_HappyPath pins where a vector index

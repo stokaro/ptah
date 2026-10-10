@@ -56,8 +56,14 @@ func (p *parser) indexSettings(index *ast.IndexNode, raw map[string]string) {
 	if index.Partitioning, err = ydbindex.ParseDeclaration(values); err != nil {
 		p.failf("%v", err)
 	}
-	if index.Vector, err = ydbindex.ParseVectorDeclaration(values); err != nil {
+	vector, err := ydbindex.DeclareVector(values, index.Type, index.Operator)
+	if err != nil {
 		p.failf("%v", err)
+	}
+	if vector != nil {
+		if index.Facets, err = index.Facets.With(vector); err != nil {
+			p.failf("%v", err)
+		}
 	}
 	values["type"] = strings.ToLower(index.Type)
 	if index.StorageParams, err = ydbindex.ParseOptionsDeclaration(values); err != nil {

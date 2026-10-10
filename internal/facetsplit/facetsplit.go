@@ -1,6 +1,6 @@
-// Package facetsplit takes the table facets an exporter writes itself out of a
-// schema before the platform property encoder sees it, and puts them back
-// afterwards.
+// Package facetsplit takes the table and index facets an exporter writes
+// itself out of a schema before the platform property encoder sees it, and
+// puts them back afterwards.
 //
 // [ptah.run/core/schemaproperties.EncodeTables] refuses a whole schema when one table facet
 // has no property spelling. An exporter that writes some facets in a form of
@@ -25,16 +25,7 @@ func SetAside(db *schemamodel.Database, own func(schemaext.Kind) bool) (*schemam
 	result.Tables = slices.Clone(db.Tables)
 	aside := make([]schemaext.Facets, len(result.Tables))
 	for i := range result.Tables {
-		facets := result.Tables[i].Facets
-		kept, taken := facets, facets
-		for _, kind := range facets.DeclaredKinds() {
-			if own(kind) {
-				kept = kept.Without(kind)
-				continue
-			}
-			taken = taken.Without(kind)
-		}
-		result.Tables[i].Facets, aside[i] = kept, taken
+		result.Tables[i].Facets, aside[i] = split(result.Tables[i].Facets, own)
 	}
 	return &result, aside
 }
@@ -57,4 +48,49 @@ func Restore(db *schemamodel.Database, aside []schemaext.Facets) (*schemamodel.D
 		result.Tables[i].Facets = merged
 	}
 	return &result, nil
+}
+
+// SetAsideIndexes is [SetAside] for index facets: it returns a copy of db
+// whose indexes keep only the facets own rejects, and the facets it took
+// from each index, in index order. db is not changed.
+func SetAsideIndexes(db *schemamodel.Database, own func(schemaext.Kind) bool) (*schemamodel.Database, []schemaext.Facets) {
+	result := *db
+	result.Indexes = slices.Clone(db.Indexes)
+	aside := make([]schemaext.Facets, len(result.Indexes))
+	for i := range result.Indexes {
+		result.Indexes[i].Facets, aside[i] = split(result.Indexes[i].Facets, own)
+	}
+	return &result, aside
+}
+
+// RestoreIndexes is [Restore] for the facets [SetAsideIndexes] took. An index
+// count that changed in between is an error wrapping
+// schemaext.ErrInvalidValue. db is not changed.
+func RestoreIndexes(db *schemamodel.Database, aside []schemaext.Facets) (*schemamodel.Database, error) {
+	if len(db.Indexes) != len(aside) {
+		return nil, fmt.Errorf("%w: index property encoder changed the index count", schemaext.ErrInvalidValue)
+	}
+	result := *db
+	result.Indexes = slices.Clone(db.Indexes)
+	for i := range result.Indexes {
+		merged, err := result.Indexes[i].Facets.Merge(aside[i])
+		if err != nil {
+			return nil, err
+		}
+		result.Indexes[i].Facets = merged
+	}
+	return &result, nil
+}
+
+// split returns the facets own rejects and the facets it takes.
+func split(facets schemaext.Facets, own func(schemaext.Kind) bool) (kept, taken schemaext.Facets) {
+	kept, taken = facets, facets
+	for _, kind := range facets.DeclaredKinds() {
+		if own(kind) {
+			kept = kept.Without(kind)
+			continue
+		}
+		taken = taken.Without(kind)
+	}
+	return kept, taken
 }

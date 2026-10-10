@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -834,15 +835,18 @@ func indexAttrs(index schemamodel.Index) []attr {
 	attrs := append(indexDefinitionAttrs(index), partitioningAttrs(index.Partitioning)...)
 	attrs = append(attrs, propertyAttrs(index.Overrides)...)
 	attrs = append(attrs, fullTextAttrs(index)...)
-	return append(attrs, vectorAttrs(index.Vector)...)
+	return append(attrs, vectorAttrs(index.Facets)...)
 }
 
-// vectorAttrs writes a YDB vector index's settings as the attributes the
-// annotation parser reads them from.
-func vectorAttrs(spec *ast.VectorIndexSpec) []attr {
-	if spec == nil {
+// vectorAttrs writes a YDB vector index's settings, the owner's facet, as the
+// attributes the annotation parser reads them from. The Go export receives a
+// declaration, so a read index's settings arrive converted.
+func vectorAttrs(facets schemaext.Facets) []attr {
+	declared, found, err := schemaext.FacetAs[*ydbschema.DesiredVectorIndex](facets, ydbschema.VectorIndexKind)
+	if err != nil || !found {
 		return nil
 	}
+	spec := declared.Settings()
 	count := func(n uint64) string { return strconv.FormatUint(n, 10) }
 	return []attr{
 		{name: ydbindex.AttributeDistance, value: spec.Distance, set: spec.Distance != ""},

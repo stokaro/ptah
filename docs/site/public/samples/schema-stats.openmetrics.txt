@@ -148,4 +148,7 @@ ptah_schema_transfers{dialect="sqlite"} 0
 # HELP ptah_schema_ydb_ttl_tables Tables with a captured YDB TTL.
 # TYPE ptah_schema_ydb_ttl_tables gauge
 ptah_schema_ydb_ttl_tables{dialect="sqlite"} 0
+# HELP ptah_schema_ydb_vector_indexes YDB vector indexes with captured settings.
+# TYPE ptah_schema_ydb_vector_indexes gauge
+ptah_schema_ydb_vector_indexes{dialect="sqlite"} 0
 # EOF

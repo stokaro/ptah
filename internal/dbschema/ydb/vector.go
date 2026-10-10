@@ -8,7 +8,12 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
-	"ptah.run/core/ast"
+	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 )
@@ -63,7 +68,7 @@ var kmeansUnread = map[protowire.Number]string{
 
 // vectorMetrics are VectorIndexSettings.Metric's values, as the setting that
 // names each.
-var vectorMetrics = map[uint64]ast.VectorIndexSpec{
+var vectorMetrics = map[uint64]ydbschema.VectorSettings{
 	1: {Similarity: "inner_product"},
 	2: {Similarity: "cosine"},
 	3: {Distance: "cosine"},
@@ -123,7 +128,7 @@ func splitFields(data []byte) ([]wireField, error) {
 // pinned protocol buffers do not model, and reports false for a description
 // that carries none, which is an index of another kind the reader does not
 // read. A field beside it that the reader does not know is refused by number.
-func vectorIndex(described *Ydb_Table.TableIndexDescription) (*ast.VectorIndexSpec, bool, error) {
+func vectorIndex(described *Ydb_Table.TableIndexDescription) (*ydbschema.VectorSettings, bool, error) {
 	fields, err := splitFields(described.ProtoReflect().GetUnknown())
 	if err != nil {
 		return nil, false, fmt.Errorf("its description does not parse: %w", err)
@@ -150,12 +155,12 @@ func vectorIndex(described *Ydb_Table.TableIndexDescription) (*ast.VectorIndexSp
 // partitioning YDB gives them, because no statement Ptah writes changes it
 // (`ALTER INDEX ... SET` answers `Only index with one impl table is
 // supported`) and none of it is in the model.
-func kmeansTreeIndex(data []byte) (*ast.VectorIndexSpec, error) {
+func kmeansTreeIndex(data []byte) (*ydbschema.VectorSettings, error) {
 	fields, err := splitFields(data)
 	if err != nil {
 		return nil, fmt.Errorf("its vector index does not parse: %w", err)
 	}
-	var spec *ast.VectorIndexSpec
+	var spec *ydbschema.VectorSettings
 	for _, field := range fields {
 		if field.kind != protowire.BytesType {
 			return nil, fmt.Errorf("its vector index carries field %d as wire type %d, which this build of Ptah "+
@@ -225,12 +230,12 @@ func implementationTable(name string, data []byte) error {
 // type and the dimension, and the clusters and the levels of the tree. A
 // setting the line leaves unreported reads as zero, as 25.1 leaves the
 // clusters and the levels of an index declared without them.
-func kmeansTreeSettings(data []byte) (*ast.VectorIndexSpec, error) {
+func kmeansTreeSettings(data []byte) (*ydbschema.VectorSettings, error) {
 	fields, err := splitFields(data)
 	if err != nil {
 		return nil, fmt.Errorf("its vector settings do not parse: %w", err)
 	}
-	var spec ast.VectorIndexSpec
+	var spec ydbschema.VectorSettings
 	for _, field := range fields {
 		if name, unread := kmeansUnread[field.number]; unread {
 			return nil, fmt.Errorf("its vector index sets %s, which this build of Ptah does not read", name)
@@ -253,7 +258,7 @@ func kmeansTreeSettings(data []byte) (*ast.VectorIndexSpec, error) {
 }
 
 // vectorSettings reads a VectorIndexSettings into spec.
-func vectorSettings(spec *ast.VectorIndexSpec, data []byte) error {
+func vectorSettings(spec *ydbschema.VectorSettings, data []byte) error {
 	fields, err := splitFields(data)
 	if err != nil {
 		return fmt.Errorf("its vector settings do not parse: %w", err)
@@ -283,4 +288,40 @@ func vectorSettings(spec *ast.VectorIndexSpec, data []byte) error {
 		}
 	}
 	return nil
+}
+
+// vectorFacets records a vector index's settings as the YDB owner's
+// observation, bound to YDB. Settings the owner cannot hold refuse the read
+// rather than becoming a value that claims another index.
+func vectorFacets(settings ydbschema.VectorSettings) (schemaext.Facets, error) {
+	observed := new(ydbschema.ObservedVectorIndex(settings))
+	if err := ydbschema.ValidateObservedVectorIndex(observed); err != nil {
+		return schemaext.Facets{}, err
+	}
+	facets, err := schemaext.NewFacets(observed)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return facets.WithTargetScope(ydbschema.VectorIndexKind, platform.YDB)
+}
+
+// vectorCoverage records complete knowledge of the vector settings of every
+// index the read returned: a vector index carries its settings, and an index
+// of another kind has none. An index the read did not return is not known.
+func vectorCoverage(db *catalog.Database) error {
+	identities := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB))
+	subjects := make([]schemaext.SubjectCoverage, 0, len(db.Indexes))
+	for _, index := range db.Indexes {
+		subjects = append(subjects, schemaext.SubjectCoverage{
+			Kind: ydbschema.VectorIndexKind, Subject: identities.IndexParts(index.Schema, index.TableName, index.Name),
+			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+		})
+	}
+	known, err := ydbschema.VectorIndexCoverage(schemaext.Observed,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned indexes have inspected YDB vector settings"}, subjects)
+	if err != nil {
+		return fmt.Errorf("failed to record vector index coverage: %w", err)
+	}
+	db.FeatureCoverage, err = db.FeatureCoverage.Combine(known)
+	return err
 }

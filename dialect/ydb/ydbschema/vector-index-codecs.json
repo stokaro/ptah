@@ -1,0 +1,68 @@
+{
+  "$id": "ptah.run/ydb/vector-index/v1",
+  "$defs": {
+    "settings": {
+      "type": "object",
+      "properties": {
+        "distance": {
+          "enum": [
+            "cosine",
+            "euclidean",
+            "manhattan"
+          ]
+        },
+        "similarity": {
+          "enum": [
+            "inner_product",
+            "cosine"
+          ]
+        },
+        "vector_type": {
+          "enum": [
+            "float",
+            "uint8",
+            "int8",
+            "bit"
+          ]
+        },
+        "vector_dimension": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "levels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "clusters": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "meaning": "Each key is the vector index setting of the same name in YQL's WITH (...) clause. distance or similarity names the metric, vector_type the element type, vector_dimension the number of elements in a vector, levels the depth of the k-means tree and clusters the clusters each level splits into. A setting left out is not stated."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/ydb/vector-index": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/settings"
+          }
+        ],
+        "constraint": "The settings the declaration states. Any of them may be missing, and the stage that builds the index refuses a declaration YDB would refuse. The value is present on every index the declaration makes a vector index."
+      }
+    },
+    "observed": {
+      "ptah.run/ydb/vector-index": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/settings"
+          }
+        ],
+        "constraint": "Exactly one of distance and similarity, a vector_type and a vector_dimension are present. levels and clusters are what the server reported, left out where it reported none."
+      }
+    }
+  },
+  "canonicalization": "Keys are written in the order above. Names are in lower case."
+}

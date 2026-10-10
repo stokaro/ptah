@@ -152,10 +152,12 @@ func HCLCoverage(limits Limits) (schemaext.Coverage, error) {
 }
 
 // Coverage enrolls only namespaces these source formats can declare,
-// including a table's TTL, column families, settings and column storage,
-// which each of them can write. HCL enrolls coordination separately and leaves
-// the TTL, the families, the settings and the storage unmanaged. Runtime
-// registration never expands a source's vocabulary.
+// including a table's TTL, column families, settings and column storage, and
+// a vector index's settings, which each of them can write. HCL enrolls
+// coordination separately and leaves the TTL, the families, the settings and
+// the storage unmanaged, and a vector index that states no settings there
+// keeps the ones it holds. Runtime registration never expands a source's
+// vocabulary.
 func Coverage(limits Limits) (schemaext.Coverage, error) {
 	feeds, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
 	if err != nil {
@@ -172,6 +174,13 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 		if feeds, err = feeds.Combine(known); err != nil {
 			return schemaext.Coverage{}, err
 		}
+	}
+	vectors, err := ydbschema.VectorIndexCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if feeds, err = feeds.Combine(vectors); err != nil {
+		return schemaext.Coverage{}, err
 	}
 	nodes, err := namespaceCoverage(limits.Coordination, ydbcoordination.Kind, schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
 	if err != nil {

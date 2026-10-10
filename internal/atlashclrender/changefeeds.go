@@ -55,10 +55,14 @@ func (r *renderer) reportFeatureObjects() {
 	for i := range r.db.Tables {
 		tables[&r.db.Tables[i].Facets] = "table." + r.db.Tables[i].QualifiedName()
 	}
+	indexes := make(map[*schemaext.Facets]bool, len(r.db.Indexes))
+	for i := range r.db.Indexes {
+		indexes[&r.db.Indexes[i].Facets] = true
+	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
 			path, held := tables[facets]
-			if held && WritesTableFacet(kind) {
+			if (held && WritesTableFacet(kind)) || (indexes[facets] && WritesIndexFacet(kind)) {
 				continue
 			}
 			if !held {

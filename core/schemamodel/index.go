@@ -15,7 +15,6 @@ func (i Index) Clone() Index {
 	i.Overrides = cloneOverrides(i.Overrides)
 	i.RequiresExtensions = slices.Clone(i.RequiresExtensions)
 	i.Partitioning = i.Partitioning.Clone()
-	i.Vector = i.Vector.Clone()
 	if i.NullsDistinct != nil {
 		i.NullsDistinct = new(*i.NullsDistinct)
 	}

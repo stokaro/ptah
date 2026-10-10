@@ -4,25 +4,36 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
+// vectorFacets carries spec as the YDB owner's facet, or none for nil.
+func vectorFacets(spec *ydbschema.DesiredVectorIndex) schemaext.Facets {
+	if spec == nil {
+		return schemaext.Facets{}
+	}
+	return must.Must(schemaext.NewFacets(spec))
+}
+
 // vectorSpec is a vector index's settings every line with vector indexes
 // builds.
-func vectorSpec() *ast.VectorIndexSpec {
-	return &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}
+func vectorSpec() *ydbschema.DesiredVectorIndex {
+	return &ydbschema.DesiredVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}
 }
 
 // vectorIndex is an index over the vector column emb with spec.
-func vectorIndex(spec *ast.VectorIndexSpec, columns ...string) *ast.IndexNode {
+func vectorIndex(spec *ydbschema.DesiredVectorIndex, columns ...string) *ast.IndexNode {
 	if len(columns) == 0 {
 		columns = []string{"emb"}
 	}
-	return &ast.IndexNode{Name: "by_emb", Columns: columns, Type: "vector_kmeans_tree", Vector: spec}
+	return &ast.IndexNode{Name: "by_emb", Columns: columns, Type: "vector_kmeans_tree", Facets: vectorFacets(spec)}
 }
 
 // TestRender_VectorIndex_HappyPath pins how a vector index is written: its
@@ -53,7 +64,7 @@ func TestRender_VectorIndex_HappyPath(t *testing.T) {
 			name: "a prefix and a cover",
 			caps: capability.YDB262(),
 			node: withIndex(&ast.IndexNode{Name: "by_emb", Columns: []string{"gen", "emb"}, IncludeColumns: []string{"body"},
-				Type: "vector_kmeans_tree", Vector: vectorSpec()},
+				Type: "vector_kmeans_tree", Facets: vectorFacets(vectorSpec())},
 				ast.NewColumn("gen", "BIGINT"), ast.NewColumn("emb", "BYTEA"), ast.NewColumn("body", "TEXT")),
 			want: "CREATE TABLE `t` (\n" +
 				"    `id` Int64 NOT NULL,\n" +
@@ -66,10 +77,10 @@ func TestRender_VectorIndex_HappyPath(t *testing.T) {
 				");\n",
 		},
 		{
-			name: "a metric named by pgvector's operator class",
+			name: "a metric pgvector's operator class names too, as a source folds it",
 			caps: capability.YDB262(),
 			node: &ast.IndexNode{Name: "by_emb", Table: "dir.t", Columns: []string{"emb"}, Type: "vector_kmeans_tree",
-				Operator: "vector_ip_ops", Vector: &ast.VectorIndexSpec{VectorType: "int8", Dimension: 8, Levels: 2, Clusters: 4}},
+				Operator: "vector_ip_ops", Facets: vectorFacets(&ydbschema.DesiredVectorIndex{Similarity: "inner_product", VectorType: "int8", Dimension: 8, Levels: 2, Clusters: 4})},
 			want: "ALTER TABLE `dir/t` ADD INDEX `by_emb` GLOBAL USING vector_kmeans_tree ON (`emb`) " +
 				"WITH (similarity=inner_product, vector_type=int8, vector_dimension=8, levels=2, clusters=4);\n",
 		},
@@ -77,7 +88,7 @@ func TestRender_VectorIndex_HappyPath(t *testing.T) {
 			name: "bit vectors where the line builds them",
 			caps: capability.YDB261(),
 			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree",
-				Vector: &ast.VectorIndexSpec{Distance: "manhattan", VectorType: "bit", Dimension: 64, Levels: 1, Clusters: 2}},
+				Facets: vectorFacets(&ydbschema.DesiredVectorIndex{Distance: "manhattan", VectorType: "bit", Dimension: 64, Levels: 1, Clusters: 2})},
 			want: "ALTER TABLE `t` ADD INDEX `by_emb` GLOBAL USING vector_kmeans_tree ON (`emb`) " +
 				"WITH (distance=manhattan, vector_type=bit, vector_dimension=64, levels=1, clusters=2);\n",
 		},
@@ -104,7 +115,7 @@ func TestRender_VectorIndex_HappyPath(t *testing.T) {
 // build, by its key, and one YDB refuses, with the server's reason or the
 // method YDB has instead.
 func TestRender_VectorIndex_FailurePath(t *testing.T) {
-	bits := &ast.VectorIndexSpec{Distance: "manhattan", VectorType: "bit", Dimension: 64, Levels: 1, Clusters: 2}
+	bits := &ydbschema.DesiredVectorIndex{Distance: "manhattan", VectorType: "bit", Dimension: 64, Levels: 1, Clusters: 2}
 	tests := []struct {
 		name    string
 		caps    capability.Capabilities
@@ -114,13 +125,13 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 		{
 			name:    "a vector index on 25.1 with its flag off",
 			caps:    capability.YDB251(),
-			node:    &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Vector: vectorSpec()},
+			node:    &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(vectorSpec())},
 			wantErr: `index "by_emb" is a vector index, which requires target capability vector_indexes, unavailable on this ydb target`,
 		},
 		{
 			name: "bit vectors on a line that does not build them",
 			caps: capability.YDB254(),
-			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Vector: bits},
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(bits)},
 			wantErr: `index "by_emb" stores bit vectors, which requires target capability vector_bit_type, ` +
 				`unavailable on this ydb target`,
 		},
@@ -139,7 +150,7 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 		{
 			name: "hnsw's build parameter",
 			caps: capability.YDB262(),
-			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Vector: vectorSpec(),
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(vectorSpec()),
 				StorageParams: map[string]string{"m": "16", "ef_construction": "64"}},
 			wantErr: `index "by_emb": storage parameter "ef_construction" belongs to pgvector's hnsw index; ` +
 				`a vector_kmeans_tree index is shaped by its levels and clusters`,
@@ -147,15 +158,22 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 		{
 			name: "ivfflat's build parameter",
 			caps: capability.YDB262(),
-			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Vector: vectorSpec(),
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(vectorSpec()),
 				StorageParams: map[string]string{"lists": "100"}},
 			wantErr: `index "by_emb": storage parameter "lists" belongs to pgvector's ivfflat index; .*`,
+		},
+		{
+			name: "a metric named by the operator class alone",
+			caps: capability.YDB262(),
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree",
+				Operator: "vector_ip_ops", Facets: vectorFacets(&ydbschema.DesiredVectorIndex{VectorType: "int8", Dimension: 8, Levels: 2, Clusters: 4})},
+			wantErr: `index "by_emb": a vector index names its metric with distance or similarity .*`,
 		},
 		{
 			name: "a half-precision operator class",
 			caps: capability.YDB262(),
 			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree",
-				Operator: "halfvec_cosine_ops", Vector: &ast.VectorIndexSpec{VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}},
+				Operator: "halfvec_cosine_ops", Facets: vectorFacets(&ydbschema.DesiredVectorIndex{VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2})},
 			wantErr: `index "by_emb": operator class "halfvec_cosine_ops" has no YDB counterpart: .*`,
 		},
 		{
@@ -174,20 +192,20 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 			name: "a vector index missing its depth",
 			caps: capability.YDB262(),
 			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree",
-				Vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Clusters: 2}},
+				Facets: vectorFacets(&ydbschema.DesiredVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Clusters: 2})},
 			wantErr: `index "by_emb": a vector index's levels are between 1 and 16 \(.Invalid levels: 0 should be between 1 and 16.\)`,
 		},
 		{
 			name: "a unique vector index",
 			caps: capability.YDB262(),
 			node: withIndex(&ast.IndexNode{Name: "by_emb", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Unique: true,
-				Vector: vectorSpec()}, ast.NewColumn("emb", "BYTEA")),
+				Facets: vectorFacets(vectorSpec())}, ast.NewColumn("emb", "BYTEA")),
 			wantErr: `index "by_emb": a vector index is not unique \(.VECTOR_KMEANS_TREE index can only be GLOBAL \[SYNC\].\)`,
 		},
 		{
 			name: "a vector index's partitioning",
 			caps: capability.YDB262(),
-			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Vector: vectorSpec(),
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(vectorSpec()),
 				Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 3}},
 			wantErr: `index "by_emb": a vector index keeps the partitioning YDB gives it ` +
 				`\(.ALTER INDEX \.\.\. SET. answers .Only index with one impl table is supported.\)`,
@@ -195,7 +213,7 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 		{
 			name: "vector settings on a global index",
 			caps: capability.YDB262(),
-			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Vector: vectorSpec()},
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Facets: vectorFacets(vectorSpec())},
 			wantErr: `index "by_emb": it declares vector settings and is a sync index; ` +
 				`declare type "vector_kmeans_tree" for a vector index`,
 		},

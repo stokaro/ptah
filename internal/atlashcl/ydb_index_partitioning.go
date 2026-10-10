@@ -11,9 +11,14 @@ import (
 // YDB attributes extend HCL for a dialect Atlas does not implement. Their
 // validation is shared with Go and YAML declarations.
 func (p *parser) indexYDBSettings(block *hclsyntax.Block, index schemamodel.Index) (schemamodel.Index, error) {
-	vector, err := p.indexVector(block)
+	vector, err := p.indexVector(block, index)
 	if err != nil {
 		return schemamodel.Index{}, err
+	}
+	if vector != nil {
+		if index.Facets, err = index.Facets.With(vector); err != nil {
+			return schemamodel.Index{}, p.blockError(block, "index %q: %v", block.Labels[0], err)
+		}
 	}
 	values := make(map[string]string)
 	for _, name := range ydbpartition.Attributes() {
@@ -25,7 +30,6 @@ func (p *parser) indexYDBSettings(block *hclsyntax.Block, index schemamodel.Inde
 	if err != nil {
 		return schemamodel.Index{}, p.blockError(block, "index %q: %v", block.Labels[0], err)
 	}
-	index.Vector = vector
 	index.Partitioning = partitioning
 	return index, nil
 }

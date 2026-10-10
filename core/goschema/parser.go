@@ -365,11 +365,18 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
+	var facets schemaext.Facets
+	if vector != nil {
+		if facets, err = facets.With(vector); err != nil {
+			return err
+		}
+	}
 	fullText, err := ydbindex.ParseOptionsDeclaration(kv)
 	if err != nil {
 		return fmt.Errorf("index %q at %s: %w", kv["name"], structName, err)
 	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
+		Facets:         facets,
 		StructName:     structName,
 		Name:           kv["name"],
 		Fields:         fields,
@@ -385,7 +392,6 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
 		TableName:      tableName, // Target table name
 		Partitioning:   partitioning,
-		Vector:         vector,
 		StorageParams:  fullText,
 	})
 	return nil
@@ -406,9 +412,9 @@ func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.
 }
 
 // indexVector reads the settings of a YDB vector index from an index
-// directive; see [ydbindex.ParseVectorDeclaration].
-func (s *schemaParseState) indexVector(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.VectorIndexSpec, error) {
-	vector, err := ydbindex.ParseVectorDeclaration(kv)
+// directive as the YDB owner's facet value; see [ydbindex.DeclareVector].
+func (s *schemaParseState) indexVector(kv map[string]string, comment *ast.Comment, structName string) (*ydbschema.DesiredVectorIndex, error) {
+	vector, err := ydbindex.DeclareVector(kv, kv["type"], kv["ops"])
 	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
 		return nil, &ptaherr.ParseError{
 			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
@@ -416,7 +422,10 @@ func (s *schemaParseState) indexVector(kv map[string]string, comment *ast.Commen
 			Message: fmt.Sprintf("%s on //ptah:schema:index at %s", declaration.Error(), structName),
 		}
 	}
-	return vector, err
+	if err != nil {
+		return nil, fmt.Errorf("index %q at %s: %w", kv["name"], structName, err)
+	}
+	return vector, nil
 }
 
 func firstNonEmpty(values ...string) string {

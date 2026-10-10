@@ -579,6 +579,11 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			Message: "index node is nil",
 		}
 	}
+	if ydbschema.HasVectorIndex(node.Facets) {
+		if err := refuseVectorIndex(dialect, caps, node.Name); err != nil {
+			return nil, err
+		}
+	}
 	facets, err := prepareIndexFacets(dialect, node.Facets)
 	if err != nil {
 		return nil, err
@@ -600,11 +605,6 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	}
 	if !node.Partitioning.IsZero() {
 		if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", node.Name)); err != nil {
-			return nil, err
-		}
-	}
-	if node.Vector != nil {
-		if err := refuseVectorIndex(dialect, caps, node.Name); err != nil {
 			return nil, err
 		}
 	}
@@ -1049,6 +1049,16 @@ func validateDeclaredFeatures(dialect string, caps capability.Capabilities, data
 	if err := validateDeclaredRowSecurity(dialect, database); err != nil {
 		return err
 	}
+	// A vector index is refused by the key it needs before its facet is
+	// refused as one the target's owners do not register, so every target
+	// without vector indexes gives the same answer.
+	for _, index := range database.Indexes {
+		if ydbschema.HasVectorIndex(index.Facets) {
+			if err := refuseVectorIndex(dialect, caps, index.Name); err != nil {
+				return err
+			}
+		}
+	}
 	if err := validateDeclaredFacets(dialect, database); err != nil {
 		return err
 	}
@@ -1167,11 +1177,6 @@ func validateDeclaredIndexOptions(
 		}
 		if !index.Partitioning.IsZero() {
 			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
-				return err
-			}
-		}
-		if index.Vector != nil {
-			if err := refuseVectorIndex(dialect, caps, index.Name); err != nil {
 				return err
 			}
 		}

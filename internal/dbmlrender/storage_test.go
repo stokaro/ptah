@@ -78,7 +78,7 @@ func storageSchema(c *qt.C) *schemamodel.Database {
 				IncludeColumns: []string{"created_at"}, StorageParams: map[string]string{"tokenizer": "standard"},
 				Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2},
 			},
-			{StructName: "Events", Name: "vector", Fields: []string{"id"}, Vector: &ast.VectorIndexSpec{Dimension: 3}},
+			{StructName: "Events", Name: "vector", Fields: []string{"id"}, Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredVectorIndex{Dimension: 3}))},
 		},
 	}
 }

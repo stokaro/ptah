@@ -72,6 +72,7 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 	// Hypertable settings and YDB column families have annotations of their
 	// own, written beside the table, and no property spelling.
 	properties, annotated := facetsplit.SetAside(db, isAnnotatedFacet)
+	properties, annotatedIndexes := facetsplit.SetAsideIndexes(properties, isAnnotatedIndexFacet)
 	if slices.ContainsFunc(properties.Tables, func(table schemamodel.Table) bool { return !table.Facets.IsZero() }) {
 		var err error
 		properties, err = schemaproperties.EncodeTables(requestContext, properties, opts.Dialect, opts.Runtime)
@@ -85,6 +86,10 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 		if err != nil {
 			return nil, err
 		}
+	}
+	properties, err := facetsplit.RestoreIndexes(properties, annotatedIndexes)
+	if err != nil {
+		return nil, err
 	}
 	return facetsplit.Restore(properties, annotated)
 }

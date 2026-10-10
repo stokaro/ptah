@@ -4,25 +4,27 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/convert/goschematogo"
 )
 
-// TestRender_VectorIndex writes a YDB vector index's settings as the
-// attributes the annotation parser reads them back from, so a schema read from
-// a database and written as Go builds the same index.
+// TestRender_VectorIndex writes a YDB vector index's settings, the owner's
+// facet, as the attributes the annotation parser reads them back from, so a
+// schema read from a database and written as Go builds the same index.
 func TestRender_VectorIndex(t *testing.T) {
 	tests := []struct {
 		name   string
-		vector *ast.VectorIndexSpec
+		vector *ydbschema.DesiredVectorIndex
 		want   string
 	}{
-		{name: "a distance", vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 2, Clusters: 128},
+		{name: "a distance", vector: &ydbschema.DesiredVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 2, Clusters: 128},
 			want: `distance="cosine" vector_type="float" vector_dimension="3" levels="2" clusters="128"`},
-		{name: "a similarity", vector: &ast.VectorIndexSpec{Similarity: "inner_product", VectorType: "bit", Dimension: 64, Levels: 1, Clusters: 2},
+		{name: "a similarity", vector: &ydbschema.DesiredVectorIndex{Similarity: "inner_product", VectorType: "bit", Dimension: 64, Levels: 1, Clusters: 2},
 			want: `similarity="inner_product" vector_type="bit" vector_dimension="64" levels="1" clusters="2"`},
 	}
 	for _, test := range tests {
@@ -36,7 +38,7 @@ func TestRender_VectorIndex(t *testing.T) {
 				},
 				Indexes: []schemamodel.Index{{
 					StructName: "Doc", Name: "idx_docs_emb", TableName: "docs", Fields: []string{"emb"},
-					Type: "GLOBAL USING vector_kmeans_tree", Vector: test.vector,
+					Type: "GLOBAL USING vector_kmeans_tree", Facets: must.Must(schemaext.NewFacets(test.vector)),
 				}},
 			}
 
@@ -48,7 +50,9 @@ func TestRender_VectorIndex(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(files[0].Data), qt.Contains, test.want)
 			c.Assert(reparsed.Indexes, qt.HasLen, 1)
-			c.Assert(reparsed.Indexes[0].Vector, qt.DeepEquals, test.vector)
+			vector, _, err := schemaext.FacetAs[*ydbschema.DesiredVectorIndex](reparsed.Indexes[0].Facets, ydbschema.VectorIndexKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(vector, qt.DeepEquals, test.vector)
 			c.Assert(reparsed.Indexes[0].Type, qt.Equals, "GLOBAL USING vector_kmeans_tree")
 		})
 	}

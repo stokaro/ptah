@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/modelast"
 )
 
@@ -38,7 +39,6 @@ func fullyDeclaredIndex() schemamodel.Index {
 		})),
 		Concurrently: true,
 		Partitioning: &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3},
-		Vector:       &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2},
 	}
 }
 
@@ -61,20 +61,20 @@ func TestFromIndex_CarriesThePartitioning(t *testing.T) {
 }
 
 // TestFromIndex_CarriesTheVectorSettings holds the hop from the schema model
-// to the renderer to a YDB vector index's settings: dropped here, the renderer
-// refuses the index as one that declares none. The node carries a copy, so a
-// renderer cannot change the declaration it came from.
+// to the renderer to a YDB vector index's settings, the owner's facet:
+// dropped here, the renderer refuses the index as one that declares none.
 func TestFromIndex_CarriesTheVectorSettings(t *testing.T) {
 	c := qt.New(t)
+	vector := &ydbschema.DesiredVectorIndex{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}
 	index := schemamodel.Index{
 		StructName: "Doc", TableName: "docs", Name: "idx_docs_emb", Fields: []string{"emb"}, Type: "vector_kmeans_tree",
-		Vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2},
+		Facets: must.Must(schemaext.NewFacets(vector)),
 	}
 
 	node := modelast.FromIndex(index)
-	c.Assert(node.Vector, qt.DeepEquals, index.Vector)
-	node.Vector.Levels = 2
-	c.Assert(index.Vector.Levels, qt.Equals, uint64(1))
+	carried, _, err := schemaext.FacetAs[*ydbschema.DesiredVectorIndex](node.Facets, ydbschema.VectorIndexKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(carried, qt.DeepEquals, vector)
 }
 
 // TestIndexConverters_CarryTheSameDeclaration is the guard the fix for
