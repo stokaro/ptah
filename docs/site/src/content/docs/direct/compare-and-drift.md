@@ -543,6 +543,42 @@ CI check reads the same fields either way. Within `changes`, a collection with
 no members encodes as `null` or `[]` — read both as empty. `format_version`
 rises when a field's meaning changes, not when one is added.
 
+A change an engine-specific setting owns, such as a ClickHouse TTL or a YDB
+coordination node's settings, appears under `feature_changes`: at the top of
+`changes` for a standalone object, and inside the table's entry in
+`tables_modified` for a table setting. Each entry names its subject and carries
+the change in an envelope. This is a ClickHouse TTL change, with each side of
+the payload trimmed to `ttl`:
+
+```json
+{
+  "subject": {
+    "Kind": "table",
+    "Catalog": {"Source": "", "Normalized": "", "Quoted": false, "Defaulted": false},
+    "Schema": {"Source": "ptah_test", "Normalized": "ptah_test", "Quoted": false, "Defaulted": true},
+    "Parent": {"Source": "", "Normalized": "", "Quoted": false, "Defaulted": false},
+    "Name": {"Source": "events", "Normalized": "events", "Quoted": false, "Defaulted": false},
+    "Signature": ""
+  },
+  "value": {
+    "format": 1,
+    "owner": "ptah.run/clickhouse",
+    "kind": "ptah.run/clickhouse/table-change",
+    "representation": "change",
+    "version": 1,
+    "definition": "sha256:364c86469f029305bf63c6d00c8638535f52fb02c9e732f88eac11d0b32181b3",
+    "payload": {
+      "after": {"ttl": {"state": "explicit", "value": "at + INTERVAL 2 DAY"}},
+      "before": {"ttl": "at + toIntervalDay(1)"}
+    }
+  }
+}
+```
+
+`kind` and `version` say which owner wrote `payload` and in which form, so a
+reader can rely on the fields of a kind it knows and skip the rest. The
+`schema drift --format json` report carries the same entries in its `diff`.
+
 An explicit `--include` selection that matches neither side is invalid. The
 command prints no diff and exits 2 instead of reporting a synced schema. This
 is outcome-based: a matching top-level identifier that contains a dot remains

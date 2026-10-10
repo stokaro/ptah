@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/atlasreport"
 )
 
@@ -14,7 +15,7 @@ func TestSchemaDiffDefaultFormatReportsSyncedSchemas(t *testing.T) {
 	var out bytes.Buffer
 	report := atlasreport.NewSchemaDiff(nil, nil, nil)
 
-	err := atlasreport.WriteSchemaDiff(&out, atlasreport.NormalizeSchemaDiffFormat(""), report)
+	err := atlasreport.WriteSchemaDiff(t.Context(), &out, atlasreport.NormalizeSchemaDiffFormat(""), report, schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "Schemas are synced, no changes to be made.\n")
@@ -27,7 +28,7 @@ func TestSchemaDiffCustomSQLTemplate(t *testing.T) {
 		`CREATE TABLE "users" ("id" integer);`,
 	})
 
-	err := atlasreport.WriteSchemaDiff(&out, `{{ len .Changes }}|{{ .MarshalSQL }}|{{ sql . "  " }}`, report)
+	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ len .Changes }}|{{ .MarshalSQL }}|{{ sql . "  " }}`, report, schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "1|CREATE TABLE \"users\" (\"id\" integer);\n|  CREATE TABLE \"users\" (\"id\" integer);\n")
@@ -55,7 +56,7 @@ func TestSchemaDiffTemplateExecutionErrorDoesNotWritePartialOutput(t *testing.T)
 		`CREATE TABLE "users" ("id" integer);`,
 	})
 
-	err := atlasreport.WriteSchemaDiff(&out, `before {{ sql . "  " "extra" }}`, report)
+	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `before {{ sql . "  " "extra" }}`, report, schemaext.Registry{})
 
 	c.Assert(err, qt.ErrorMatches, `template: format:.*unexpected number of arguments: 2.*`)
 	c.Assert(out.String(), qt.Equals, "")
@@ -80,7 +81,7 @@ func TestSchemaDiffTemplateHelpers_OpenTheSharedSet(t *testing.T) {
 		`CREATE TABLE "users" ("id" integer);`,
 	})
 
-	err := atlasreport.WriteSchemaDiff(&out, `{{ json .Changes }}`, report)
+	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ json .Changes }}`, report, schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, `[{"Cmd":"CREATE TABLE \"users\" (\"id\" integer)"}]`)
@@ -99,7 +100,7 @@ func TestSchemaDiffTemplateHelpers_KeepSQL(t *testing.T) {
 		`CREATE TABLE "users" ("id" integer);`,
 	})
 
-	err := atlasreport.WriteSchemaDiff(&out, `{{ sql . }}`, report)
+	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ sql . }}`, report, schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "CREATE TABLE \"users\" (\"id\" integer);\n")

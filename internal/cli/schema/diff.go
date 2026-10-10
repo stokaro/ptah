@@ -1,13 +1,13 @@
 package schema
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/featurejson"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -163,9 +164,9 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	if format == "json" {
-		return writeSchemaDiffJSON(cmd, report, changes)
+		return writeSchemaDiffJSON(cmd, report, changes, runtime.Codecs())
 	}
-	if err := atlasreport.WriteSchemaDiff(cmd.OutOrStdout(), atlasreport.NormalizeSchemaDiffFormat(""), report); err != nil {
+	if err := atlasreport.WriteSchemaDiff(cmd.Context(), cmd.OutOrStdout(), atlasreport.NormalizeSchemaDiffFormat(""), report, runtime.Codecs()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	return nil
@@ -223,7 +224,10 @@ type schemaDiffDocument struct {
 	// that did not run.
 	Statements []string `json:"statements"`
 
-	// Changes is the comparator's own model, serialized as it stands.
+	// Changes is the comparator's own model, serialized as it stands. An owner
+	// change in it is written through the runtime's codecs as a
+	// [schemaext.EncodedChange]: its subject and an envelope naming the owner,
+	// the namespaced kind and the codec version.
 	Changes *difftypes.SchemaDiff `json:"changes"`
 }
 
@@ -231,13 +235,14 @@ type schemaDiffDocument struct {
 const schemaDiffFormatVersion = 1
 
 // writeSchemaDiffJSON renders the diff as a stable JSON document for machine
-// consumption in CI.
-func writeSchemaDiffJSON(cmd *cobra.Command, report atlasreport.SchemaDiff, changes *difftypes.SchemaDiff) error {
+// consumption in CI. Feature data is encoded through codecs, the registry of
+// the runtime that compared the schemas.
+func writeSchemaDiffJSON(cmd *cobra.Command, report atlasreport.SchemaDiff, changes *difftypes.SchemaDiff, codecs schemaext.Registry) error {
 	statements := make([]string, 0, len(report.Changes))
 	for _, change := range report.Changes {
 		statements = append(statements, change.Cmd)
 	}
-	document, err := json.MarshalIndent(schemaDiffDocument{
+	document, err := featurejson.MarshalIndent(cmd.Context(), codecs, schemaext.Desired, schemaDiffDocument{
 		FormatVersion: schemaDiffFormatVersion,
 		Statements:    statements,
 		Changes:       changes,

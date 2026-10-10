@@ -274,7 +274,9 @@ By default, `ptah-compat schema diff
 offers there; `{{ json . }}` exits 1 with `function "json" not defined`. Set the
 variable to `1` and the shared helper set `schema apply` already registers
 becomes available on this verb too, so `{{ json . }}` renders a
-document carrying `From`, `To` and `Changes`. The default stays narrow because
+document carrying `From`, `To` and `Changes`. `json` writes the
+engine-specific settings of `From` and `To`, such as a ClickHouse table's TTL,
+through the codecs of the runtime that compared them. The default stays narrow because
 registering more would let ptah-compat accept a template the community binary
 refuses. Native `ptah schema diff` needs no variable: `--format json` emits a
 machine-readable diff there already.

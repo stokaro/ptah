@@ -4,7 +4,7 @@
 package drift
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -21,6 +22,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/datamigrate"
+	"ptah.run/internal/featurejson"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -246,7 +248,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	// writes its document to stdout and exits 1. Both are the same contract --
 	// exit 1 is an expected negative result, per docs/exit_codes.md -- so both
 	// put the document in the same place (stokaro/ptah#852).
-	if err := writeReport(cmd.OutOrStdout(), opts.format, report); err != nil {
+	if err := writeReport(cmd.Context(), cmd.OutOrStdout(), opts.format, report, runtime.Codecs()); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, err.Error())
 	}
 	if report.Failed {
@@ -321,7 +323,8 @@ func writeError(w io.Writer, format, msg string) error {
 		HighestSeverity:  safety.Safe,
 		Error:            msg,
 	}
-	_ = writeReport(w, format, report)
+	// An error report carries no diff, so it needs no feature codecs.
+	_ = writeReport(context.Background(), w, format, report, schemaext.Registry{})
 	return exitcode.New(2, errors.New(msg))
 }
 
@@ -375,12 +378,18 @@ func shouldFailDrift(highest safety.Severity, severity string) bool {
 	}
 }
 
-func writeReport(w io.Writer, format string, report driftReport) error {
+// writeReport writes the report in format. The JSON form encodes the owner
+// changes of the diff through codecs, the registry of the runtime that
+// compared the schemas.
+func writeReport(ctx context.Context, w io.Writer, format string, report driftReport, codecs schemaext.Registry) error {
 	switch format {
 	case formatJSON:
-		encoder := json.NewEncoder(w)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(report)
+		document, err := featurejson.MarshalIndent(ctx, codecs, schemaext.Desired, report, "", "  ")
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(append(document, '\n'))
+		return err
 	case formatGitHubActions:
 		return writeGitHubActionsReport(w, report)
 	default:

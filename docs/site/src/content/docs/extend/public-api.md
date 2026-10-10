@@ -314,6 +314,11 @@ conversion preserve the binding. `EncodedFacet` carries it separately from the
 owner's payload. An excluded payload needs no codec. Select from the original
 source when another target needs a value already excluded from a capture.
 
+`Registry.EncodeChanges` writes change records as `EncodedChange`: the subject
+beside an envelope naming the owner, the change kind and the codec version.
+`DecodeChanges` reads them back with the same codecs and refuses a kind the
+registry does not hold.
+
 `schemaext.Coverage` records only definitions the source explicitly enrolled.
 Its empty value is uninspected, so a newly installed provider cannot turn an
 older document's omission into a removal request. Subject claims distinguish
