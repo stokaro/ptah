@@ -96,10 +96,15 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 				return err
 			}
 			contribution.Steps = append(contribution.Steps, plangraph.Step[[]ast.Node]{ID: step.ID,
-				Payload: payload, Effects: step.Effects, Transaction: step.Transaction, Impact: step.Impact})
+				Payload: payload, Effects: step.Effects, Transaction: step.Transaction, Impact: step.Impact, Placement: step.Placement})
 		}
 		contributions = append(contributions, contribution)
 	}
+	lifecycle, err := plangraph.LifecycleDependencies(lowering.Context, contributions...)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
+	}
+	contributions[0].Dependencies = append(contributions[0].Dependencies, lifecycle...)
 	plan, err := plangraph.Schedule(lowering.Context, contributions...)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)

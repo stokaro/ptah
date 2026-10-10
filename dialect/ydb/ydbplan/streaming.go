@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // StreamingService plans complete query changes around the captured common
@@ -29,6 +30,9 @@ type streamingChange struct {
 	input int
 	ref   objectidentity.ID
 	steps []*ydbast.StreamingQuery
+	// before is the body of the query the change replaces or drops, empty
+	// for a creation.
+	before string
 }
 
 // PlanFeatures contributes scheme operations with explicit checkpoint effects
@@ -86,11 +90,7 @@ func (StreamingService) PlanFeatures(ctx context.Context, request featureplan.Re
 			if len(plan.Steps) > 0 {
 				contribution.Dependencies = append(contribution.Dependencies, plangraph.Dependency{Before: plan.Steps[len(plan.Steps)-1], After: id})
 			}
-			contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
-				Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: operation},
-				Effects:     []plangraph.Effect{{Subject: change.ref, Action: action}, {Subject: slot, Action: action}},
-				Transaction: plangraph.TransactionForbidden, Impact: operation.Effect(),
-			})
+			contribution.Steps = append(contribution.Steps, streamingStep(id, change, operation, slot, action))
 			plan.Steps = append(plan.Steps, id)
 		}
 		result.Changes[change.input] = plan
@@ -129,7 +129,11 @@ func streamingOperations(ctx context.Context, request featureplan.Request) ([]st
 			diagnostics = append(diagnostics, streamingDiagnostic(index, record.Subject, err))
 			continue
 		}
-		changes = append(changes, streamingChange{input: index, ref: record.Subject, steps: steps})
+		var before string
+		if change.Before != nil {
+			before = change.Before.Spec.Text
+		}
+		changes = append(changes, streamingChange{input: index, ref: record.Subject, steps: steps, before: before})
 	}
 	return changes, diagnostics, nil
 }
@@ -166,6 +170,46 @@ func lowerStreaming(ref objectidentity.ID, change *ydbdiff.StreamingQuery) ([]*y
 	}
 	operation.Previous = stopped.Clone()
 	return []*ydbast.StreamingQuery{stop, operation}, nil
+}
+
+// streamingStep is one statement of the change and its effects. A statement
+// that runs before the plan's other changes is early, so it runs before a
+// topic its query reads changes, and it reads the topics of the body it stops
+// or drops; any other statement reads the topics of the body it leaves.
+func streamingStep(id plangraph.StepID, change streamingChange, operation *ydbast.StreamingQuery, slot objectidentity.ID,
+	action plangraph.Action,
+) plangraph.Step[featureplan.Operation] {
+	step := plangraph.Step[featureplan.Operation]{ID: id,
+		Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: operation},
+		Effects:     []plangraph.Effect{{Subject: change.ref, Action: action}, {Subject: slot, Action: action}},
+		Transaction: plangraph.TransactionForbidden, Impact: operation.Effect(),
+	}
+	body := operation.Spec.Text
+	if operation.RunsBeforeChanges() {
+		step.Placement, body = plangraph.PlacementEarly, change.before
+	}
+	step.Effects = append(step.Effects, streamingTopicReads(body)...)
+	return step
+}
+
+// streamingTopicReads is a read of each topic a query body names by a path
+// relative to the database root. A statement that leaves the query running
+// reads the topics of its new body, so a topic the plan creates or changes
+// comes first; one that stops or drops the query is early and reads the
+// topics of the body it stops, so it runs before a topic it reads changes or
+// goes. A name that is not a topic's path reads nothing the plan changes.
+func streamingTopicReads(body string) []plangraph.Effect {
+	var effects []plangraph.Effect
+	seen := make(map[objectidentity.Key]bool)
+	for _, path := range ydbstreaming.NamedPaths(body) {
+		ref, err := ydbtopic.ParsePath(path)
+		if err != nil || seen[ref.Key()] {
+			continue
+		}
+		seen[ref.Key()] = true
+		effects = append(effects, plangraph.Effect{Subject: ref, Action: plangraph.Read})
+	}
+	return effects
 }
 
 func streamingAction(operation *ydbast.StreamingQuery) plangraph.Action {

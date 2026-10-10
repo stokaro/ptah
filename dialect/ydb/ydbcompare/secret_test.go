@@ -45,6 +45,58 @@ func secretRequest(c *qt.C, desired, current schemaext.ObjectState) schemaext.Ob
 		Capabilities: capability.YDB262(), Kinds: []schemaext.Kind{ydbsecret.Kind}, Desired: desired, Current: current}
 }
 
+// dottedSecretLimit is a source that describes every secret but the root
+// secret ext.pw.
+func dottedSecretLimit(c *qt.C) schemaext.ObjectState {
+	c.Helper()
+	return secretState(c, schemaext.Desired, schemaext.Complete, nil, schemaext.SubjectCoverage{Kind: ydbsecret.Kind,
+		Subject: ydbsecret.Ref("", "ext.pw"), Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not described"}})
+}
+
+// TestSecretComparison_FailurePath_ADottedLimitBesideItsDirectoryForm refuses
+// a plan that drops the secret ext/pw when the source's limit is "ext.pw" and
+// the database holds no root secret ext.pw: the source most likely means the
+// secret the plan would drop, and its value cannot be read back.
+func TestSecretComparison_FailurePath_ADottedLimitBesideItsDirectoryForm(t *testing.T) {
+	c := qt.New(t)
+	request := secretRequest(c, dottedSecretLimit(c), secretState(c, schemaext.Observed, schemaext.Complete, &ydbsecret.Observed{}))
+
+	result, err := secretRuntime(c).CompareObjects(t.Context(), request)
+
+	c.Assert(err, qt.ErrorMatches, `.*the secret limit "ext\.pw" names ext\.pw at the database root, which the database does not hold, `+
+		`while this plan would drop ext/pw, which the same name written with a slash names\. Write the limit as "ext/pw" to keep that secret.*`)
+	c.Assert(result, qt.DeepEquals, schemaext.ObjectComparisonResult{})
+}
+
+// TestSecretComparison_ADottedLimitNamingAHeldRootSecret reads a dotted limit
+// as written when the database holds the root secret it names: that secret
+// is kept, and ext/pw, which the source does not describe, is dropped.
+func TestSecretComparison_ADottedLimitNamingAHeldRootSecret(t *testing.T) {
+	c := qt.New(t)
+	current := secretState(c, schemaext.Observed, schemaext.Complete, &ydbsecret.Observed{})
+	current.Objects = must.Must(current.Objects.With(schemaext.Object{Ref: ydbsecret.Ref("", "ext.pw"), Value: &ydbsecret.Observed{}}))
+
+	result, err := secretRuntime(c).CompareObjects(t.Context(), secretRequest(c, dottedSecretLimit(c), current))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.DeepEquals, []schemaext.ChangeRecord{{Subject: ydbsecret.Ref("ext", "pw"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}}})
+}
+
+// TestSecretComparison_ADottedLimitBesideADeclaredSecret creates the declared
+// secret ext/pw beside the limit "ext.pw": only a planned drop beside a
+// dotted limit is refused.
+func TestSecretComparison_ADottedLimitBesideADeclaredSecret(t *testing.T) {
+	c := qt.New(t)
+	declared := &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_EXT_PW"}
+	desired := dottedSecretLimit(c)
+	desired.Objects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: ydbsecret.Ref("ext", "pw"), Value: declared}))
+
+	result, err := secretRuntime(c).CompareObjects(t.Context(), secretRequest(c, desired, secretState(c, schemaext.Observed, schemaext.Complete, nil)))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.DeepEquals, []schemaext.ChangeRecord{{Subject: ydbsecret.Ref("ext", "pw"), Value: &ydbdiff.Secret{After: declared}}})
+}
+
 // TestSecretComparison_ComparesByPresenceAndEvidence compares a secret by its
 // path alone. A changed value cannot be observed, so a secret both sides hold
 // is equal unless the caller requests a rotation; a creation is planned only

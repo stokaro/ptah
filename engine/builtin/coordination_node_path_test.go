@@ -118,7 +118,7 @@ func TestValidateSchema_YDBRefusesACoordinationNodeOnATopicsPath(t *testing.T) {
 	c := qt.New(t)
 	declared := nodeBesideTopic("app", "locks")
 	want := `invalid schema diff: conflicting plan effects: unordered effects on ptah\.run/ydb/scheme-path app\.locks ` +
-		`in \{ptah\.run/ydb coordination/000000/create\} and \{ptah\.run/ydb topic/000000/create\}`
+		`in \{ptah\.run/ydb topic/000000/create\} and \{ptah\.run/ydb coordination/000000/create\}`
 
 	statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(declared, platform.YDB, capability.YDB262())
 	runtime, err := builtin.New()

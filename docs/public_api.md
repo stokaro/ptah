@@ -283,6 +283,16 @@ missing steps, cycles, competing writers, unordered reads and writes, and
 inconsistent declared lifecycles. Cancellation returns no partial plan.
 Ordering preserves unknown effects and transaction requirements as unknown.
 The scheduler copies metadata slices; payload ownership stays with the caller.
+A step's `Placement` is a preference, never a dependency: among the steps ready
+to run, `PlacementEarly` steps come first, so an owner keeps a step ahead of the
+host's statements without depending on one of them.
+
+`LifecycleDependencies` orders effects of different contributions on one
+subject the only way a lifecycle allows: a drop before another contribution's
+creation, a creation before a read, a read before a drop, and an alteration
+before a read unless the reader is early. A host passes every contribution
+before rewrites merge them; a pair the contributions already order is left to
+`Schedule`.
 
 `ScheduleRewritten` lets a target owner replace explicitly named host steps with
 one contributed ordering unit. It transfers incoming and outgoing dependencies

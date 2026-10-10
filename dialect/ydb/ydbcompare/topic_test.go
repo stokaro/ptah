@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -99,6 +100,121 @@ func TestTopicComparison_ComparesResolvedSettingsAndEvidence(t *testing.T) {
 			c.Assert(result.Changes, qt.DeepEquals, test.want)
 			c.Assert(result.Undecided, qt.HasLen, test.undecided)
 			c.Assert(result.Desired.Objects.Len(), qt.Equals, test.objects)
+		})
+	}
+}
+
+// heldTopics is a complete read that holds a default topic at each path.
+func heldTopics(c *qt.C, refs ...objectidentity.ID) schemaext.ObjectState {
+	c.Helper()
+	objects := make([]schemaext.Object, len(refs))
+	for i, ref := range refs {
+		objects[i] = schemaext.Object{Ref: ref, Value: &ydbtopic.Observed{}}
+	}
+	coverage, err := ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	c.Assert(err, qt.IsNil)
+	return schemaext.ObjectState{Objects: must.Must(schemaext.NewObjects(objects...)), Coverage: coverage}
+}
+
+// limitedTopics is a source that describes every topic but the one each limit
+// names by path.
+func limitedTopics(c *qt.C, limits ...string) schemaext.ObjectState {
+	c.Helper()
+	subjects := make([]schemaext.SubjectCoverage, len(limits))
+	for i, limit := range limits {
+		subjects[i] = schemaext.SubjectCoverage{Kind: ydbtopic.Kind, Subject: must.Must(ydbtopic.ParsePath(limit)),
+			Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not described"}}
+	}
+	coverage, err := ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, subjects)
+	c.Assert(err, qt.IsNil)
+	return schemaext.ObjectState{Coverage: coverage}
+}
+
+// TestTopicComparison_FailurePath_ADottedLimitBesideItsDirectoryForm refuses a
+// plan that drops app/events when the source's limit is "app.events" and the
+// database holds no root topic app.events: the source most likely means the
+// topic the plan would drop, with its messages and consumer positions.
+func TestTopicComparison_FailurePath_ADottedLimitBesideItsDirectoryForm(t *testing.T) {
+	tests := []struct{ name, limit, held, wantErr string }{
+		{name: "a directory", limit: "app.events", held: "app/events",
+			wantErr: `.*the topic limit "app\.events" names app\.events at the database root, which the database does not hold, ` +
+				`while this plan would drop app/events, which the same name written with a slash names\. ` +
+				`Write the limit as "app/events" to keep that topic.*`},
+		{name: "a nested directory", limit: "a/b.events", held: "a/b/events",
+			wantErr: `.*the topic limit "a/b\.events" names a/b\.events at the database root, .* Write the limit as "a/b/events" .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := topicRequest(limitedTopics(c, test.limit), heldTopics(c, must.Must(ydbtopic.ParsePath(test.held))))
+			result, err := topicRuntime(c).CompareObjects(t.Context(), request)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(result, qt.DeepEquals, schemaext.ObjectComparisonResult{})
+		})
+	}
+}
+
+// TestTopicComparison_ALimitReadAsAPath keeps a limit's own topic and still
+// drops another where the limit is unambiguous: one written with a slash, and
+// a dotted one that names a root topic the database holds.
+func TestTopicComparison_ALimitReadAsAPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		limit string
+		held  []string
+		want  []schemaext.ChangeRecord
+	}{
+		{name: "written with a slash", limit: "app/events", held: []string{"app/events"}},
+		{name: "a root topic the database holds", limit: "app.events", held: []string{"app.events", "app/events"},
+			want: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("app", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}}},
+		{name: "a leading dot names no directory", limit: ".events", held: []string{"events"},
+			want: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			refs := make([]objectidentity.ID, len(test.held))
+			for i, path := range test.held {
+				refs[i] = must.Must(ydbtopic.ParsePath(path))
+			}
+			result, err := topicRuntime(c).CompareObjects(t.Context(), topicRequest(limitedTopics(c, test.limit), heldTopics(c, refs...)))
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestTopicComparison_ADottedLimitBesideAPlannedTopic plans the creation and
+// the change of the topic a dotted limit's directory form names, and the drop
+// where the source asserts the dotted root topic absent rather than limiting
+// it: only a planned drop beside a limit is refused.
+func TestTopicComparison_ADottedLimitBesideAPlannedTopic(t *testing.T) {
+	declared := &ydbtopic.Desired{Spec: ydbtopic.Spec{RetentionPeriod: "PT3H"}}
+	events := ydbtopic.Ref("app", "events")
+	tests := []struct {
+		name     string
+		state    schemaext.KnowledgeState
+		declared []schemaext.Object
+		held     []objectidentity.ID
+		want     []schemaext.ChangeRecord
+	}{
+		{name: "a creation", state: schemaext.Uninspected, declared: []schemaext.Object{{Ref: events, Value: declared}},
+			want: []schemaext.ChangeRecord{{Subject: events, Value: &ydbdiff.Topic{After: declared}}}},
+		{name: "a change", state: schemaext.Uninspected, declared: []schemaext.Object{{Ref: events, Value: declared}}, held: []objectidentity.ID{events},
+			want: []schemaext.ChangeRecord{{Subject: events, Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}, After: declared}}}},
+		{name: "an absent root topic", state: schemaext.Absent, held: []objectidentity.ID{events},
+			want: []schemaext.ChangeRecord{{Subject: events, Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := schemaext.ObjectState{Objects: must.Must(schemaext.NewObjects(test.declared...)),
+				Coverage: must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+					[]schemaext.SubjectCoverage{{Kind: ydbtopic.Kind, Subject: ydbtopic.Ref("", "app.events"),
+						Knowledge: schemaext.Knowledge{State: test.state, Reason: "the source says so"}}}))}
+			result, err := topicRuntime(c).CompareObjects(t.Context(), topicRequest(desired, heldTopics(c, test.held...)))
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.DeepEquals, test.want)
 		})
 	}
 }

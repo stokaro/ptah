@@ -11,7 +11,8 @@ import (
 )
 
 // Schedule validates all contributions before returning a complete topological
-// order. Ties use owner and step name, independently of contribution order.
+// order. Among the steps ready to run, early steps come first; ties use owner
+// and step name, independently of contribution order.
 // It rejects missing dependencies, cycles, competing writers, unordered uses
 // involving a write, and inconsistent declared object lifecycles. These checks
 // cover supplied effects only; a missing effect remains an unknown footprint.
@@ -62,6 +63,9 @@ func collect[T any](ctx context.Context, contributions []Contribution[T]) ([]Ste
 			if !slices.Contains([]Transaction{TransactionUnknown, TransactionAllowed, TransactionRequired, TransactionForbidden}, step.Transaction) {
 				return nil, nil, fmt.Errorf("%w: unknown transaction requirement %q", ErrInvalid, step.Transaction)
 			}
+			if step.Placement != PlacementDefault && step.Placement != PlacementEarly {
+				return nil, nil, fmt.Errorf("%w: unknown placement %q", ErrInvalid, step.Placement)
+			}
 			seen[step.ID] = true
 			step.Effects = slices.Clone(step.Effects)
 			steps = append(steps, step)
@@ -91,25 +95,38 @@ func order[T any](ctx context.Context, steps []Step[T], edges []Dependency) ([]S
 		pending[after]++
 		children[before] = append(children[before], after)
 	}
-	var ready []int
+	// Ready steps wait in two queues, each sorted by position, which is owner
+	// and name order: early steps leave first.
+	var early, ready []int
+	enqueue := func(i int) {
+		queue := &ready
+		if steps[i].Placement == PlacementEarly {
+			queue = &early
+		}
+		position, _ := slices.BinarySearch(*queue, i)
+		*queue = slices.Insert(*queue, position, i)
+	}
 	for i, count := range pending {
 		if count == 0 {
-			ready = append(ready, i)
+			enqueue(i)
 		}
 	}
 	var result []Step[T]
-	for len(ready) > 0 {
+	for len(early)+len(ready) > 0 {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		next := ready[0]
-		ready = ready[1:]
+		var next int
+		if len(early) > 0 {
+			next, early = early[0], early[1:]
+		} else {
+			next, ready = ready[0], ready[1:]
+		}
 		result = append(result, steps[next])
 		for _, child := range children[next] {
 			pending[child]--
 			if pending[child] == 0 {
-				position, _ := slices.BinarySearch(ready, child)
-				ready = slices.Insert(ready, position, child)
+				enqueue(child)
 			}
 		}
 	}

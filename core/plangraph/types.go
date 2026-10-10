@@ -63,6 +63,23 @@ const (
 	TransactionForbidden Transaction = "forbidden"
 )
 
+// Placement is an owner's preference for where a step runs among the steps
+// its dependencies leave unordered. It never overrides a dependency, and a
+// host step placed after it still runs after it.
+type Placement string
+
+const (
+	// PlacementDefault orders the step by owner and name among the steps
+	// ready to run. It is the zero value.
+	PlacementDefault Placement = ""
+	// PlacementEarly runs the step as soon as its dependencies allow: among
+	// the steps ready to run, early steps come first, by owner and name. An
+	// owner uses it to keep a step ahead of the host's statements without a
+	// dependency on one of them, which another owner's dependency could
+	// require the step to follow.
+	PlacementEarly Placement = "early"
+)
+
 // Step is one indivisible ordering unit. Payload is interpreted by its owner;
 // a scheduler never renders or executes it. Empty Effects means no footprint
 // was supplied, not proof that the operation changes nothing. Consumers must
@@ -78,6 +95,9 @@ type Step[T any] struct {
 	// Impact retains the owner's conservative safety assessment. Its zero value
 	// is unknown; scheduling never infers safety from the action or payload.
 	Impact schemaext.Effect
+	// Placement is where the step prefers to run among the steps ready with
+	// it. It does not order the step against a step it depends on.
+	Placement Placement
 }
 
 // Dependency requires Before to finish before After may start. Both steps must

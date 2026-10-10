@@ -45,6 +45,19 @@ func (TopicService) CompareObjects(ctx context.Context, request schemaext.Object
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	held := make(map[objectidentity.Key]bool)
+	for key, value := range topics {
+		held[key] = value.current != nil
+	}
+	var drops []objectidentity.ID
+	for _, change := range result.Changes {
+		if value, ok := change.Value.(*ydbdiff.Topic); ok && value.After == nil {
+			drops = append(drops, change.Subject)
+		}
+	}
+	if err := refuseDottedLimits(request.Desired.Coverage, "topic", held, drops, ydbtopic.Display); err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
 	// The changes come out in path order, so the refusal names the first
 	// topic a statement would create, change or drop. The planner holds each
 	// statement to the rest of the target's rules.

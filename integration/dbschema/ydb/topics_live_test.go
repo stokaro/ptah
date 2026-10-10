@@ -16,7 +16,9 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
+	"ptah.run/migration/schemadiff"
 )
 
 // topicSchema is the directory the topic tests write into.
@@ -261,6 +263,63 @@ func TestYDBTopics_ATopicAndATableTradeAPath(t *testing.T) {
 				"CREATE TOPIC `ptah_ydb_topics/swap`",
 			})
 			c.Assert(planAgainst(c, conn, asTopic, topicSchemas), qt.HasLen, 0)
+		})
+	}
+}
+
+// dottedLimitDeclaration declares no topic in the topic directory, from a
+// source that describes every topic but the one limit names by path.
+func dottedLimitDeclaration(limit string) *schemamodel.Database {
+	db := topicDeclaration()
+	db.FeatureCoverage = must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: ydbtopic.Kind, Subject: must.Must(ydbtopic.ParsePath(limit)),
+			Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not described"}}}))
+	return db
+}
+
+// TestYDBTopics_FailurePath_ADottedLimitBesideItsDirectoryForm refuses to
+// compare a source whose limit "ptah_ydb_topics.events" names no topic the
+// database holds while ptah_ydb_topics/events stays claimed and undeclared:
+// planned, the comparison would drop the topic the source most likely means
+// to keep.
+func TestYDBTopics_FailurePath_ADottedLimitBesideItsDirectoryForm(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropTopics(c, conn)
+			c.Cleanup(func() { dropTopics(c, conn) })
+			apply(c, conn, []string{"CREATE TOPIC `ptah_ydb_topics/events`"})
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), dottedLimitDeclaration("ptah_ydb_topics.events"),
+				readScoped(c, conn, topicSchemas), conn.Info(), nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.ErrorMatches, `.*the topic limit "ptah_ydb_topics\.events" names ptah_ydb_topics\.events at the database root, `+
+				`.* Write the limit as "ptah_ydb_topics/events" to keep that topic.*`)
+			c.Assert(diff, qt.IsNil)
+			c.Assert(liveTopics(c, readScoped(c, conn, topicSchemas)), qt.DeepEquals, []string{"ptah_ydb_topics/events"})
+		})
+	}
+}
+
+// TestYDBTopics_ALimitWithASlashKeepsTheTopic keeps the topic a limit names
+// by its path: the plan creates the declared table and leaves the topic.
+func TestYDBTopics_ALimitWithASlashKeepsTheTopic(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropTopics(c, conn)
+			c.Cleanup(func() { dropTopics(c, conn) })
+			apply(c, conn, []string{"CREATE TOPIC `ptah_ydb_topics/events`"})
+			declared := dottedLimitDeclaration("ptah_ydb_topics/events")
+
+			plan := planAgainst(c, conn, declared, topicSchemas)
+			apply(c, conn, plan)
+
+			c.Assert(plan, qt.DeepEquals, []string{"CREATE TABLE `ptah_ydb_topics/notes` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n)"})
+			c.Assert(liveTopics(c, readScoped(c, conn, topicSchemas)), qt.DeepEquals, []string{"ptah_ydb_topics/events"})
+			c.Assert(planAgainst(c, conn, declared, topicSchemas), qt.HasLen, 0)
 		})
 	}
 }

@@ -4,12 +4,14 @@ package ydb_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -116,4 +118,38 @@ func editStreamingDeclaration(c *qt.C, declared *schemamodel.Database, edit func
 	edit(query)
 	declared.FeatureObjects, err = declared.FeatureObjects.Replace(object)
 	c.Assert(err, qt.IsNil)
+}
+
+// TestYDBStreamingQueries_RenderCreatesTheTopicsFirst writes a whole schema of
+// two topics and a running query that reads one and writes the other, and runs
+// the script: YDB compiles the query when it creates it, so the query has to
+// follow both topics. The schema has no table, so nothing else orders the two
+// owners. 25.1 has no streaming queries, so only 26.2 runs it.
+func TestYDBStreamingQueries_RenderCreatesTheTopicsFirst(t *testing.T) {
+	c := qt.New(t)
+	line := lineNamed(c, "26.2")
+	setClusterFlags(c, line, externalSourcesOn, clusterFlag{yaml: "enable_streaming_queries", page: "EnableStreamingQueries", on: true})
+	conn := openYDB(c, line)
+	schemas := []string{streamingSchema}
+	declared := streamingDeclaration()
+	editStreamingDeclaration(c, declared, func(query *ydbstreaming.Desired) { query.Spec.Run = nil })
+	dropper, ok := conn.SchemaWriter().(interface {
+		DropDirectory(context.Context, string) error
+	})
+	c.Assert(ok, qt.IsTrue)
+	// Cleanup runs after the test's context ends. The running query goes
+	// before the directory that holds the topics it reads.
+	c.Cleanup(func() { c.Check(dropper.DropDirectory(context.Background(), streamingSchema), qt.IsNil) })
+
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(declared, platform.YDB, conn.Info().Capabilities)
+	c.Assert(err, qt.IsNil)
+	applyScript(c, conn, strings.Join(statements, ""))
+	c.Cleanup(func() {
+		c.Check(conn.Writer().ExecuteSQL(context.Background(), "DROP STREAMING QUERY `ptah_ydb_streaming/copy`"), qt.IsNil)
+	})
+
+	c.Assert(statements, qt.HasLen, 3)
+	c.Assert(statements[:2], qt.DeepEquals, []string{"CREATE TOPIC `ptah_ydb_streaming/input`;\n", "CREATE TOPIC `ptah_ydb_streaming/output`;\n"})
+	c.Assert(statements[2], qt.Contains, "CREATE STREAMING QUERY `ptah_ydb_streaming/copy`")
+	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 }

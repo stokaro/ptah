@@ -108,6 +108,23 @@ func TestCompare_TopicKeptWhereTheDesiredStateCannotNameIt(t *testing.T) {
 	}
 }
 
+// TestCompare_FailurePath_ADottedTopicLimit refuses to compare a source whose
+// limit "app.events" names no topic the database holds while app/events stays
+// claimed and undeclared: the plan would drop the topic the source most
+// likely means to keep, with its messages and its consumers' positions.
+func TestCompare_FailurePath_ADottedTopicLimit(t *testing.T) {
+	c := qt.New(t)
+	limits := []schemaext.SubjectCoverage{{Kind: ydbtopic.Kind, Subject: must.Must(ydbtopic.ParsePath("app.events")),
+		Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not described"}}}
+	desired := &schemamodel.Database{FeatureCoverage: must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, limits))}
+
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, heldTopics(ydbtopic.ObservedObject("app", "events", readTopicSpec())),
+		platform.YDB, must.Must(builtin.New()))
+
+	c.Assert(err, qt.ErrorMatches, `.*the topic limit "app\.events" names app\.events at the database root, .* Write the limit as "app/events" to keep that topic.*`)
+	c.Assert(diff, qt.IsNil)
+}
+
 // TestCompare_TopicNotCreatedWhereTheReadDidNotLook withholds the creation of
 // a declared topic when the read recorded that it could not read the topic at
 // its path: CREATE TOPIC carries no guard Ptah writes, so planning it over a

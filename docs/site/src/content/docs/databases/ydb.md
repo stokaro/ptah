@@ -1666,7 +1666,10 @@ Every spelling of a secret is its path relative to the database root, as YDB
 writes it: a slash separates directories and a dot is part of a name. `pg.pw`
 is the secret `pg.pw` at the root, never `pw` in a directory `pg`. A
 declaration, a `notdescribed` limit, `--rotate-secret` and every message read
-and write a secret that way.
+and write a secret that way. A limit `pg.pw` differs from `pg/pw` only in the
+separator, so a plan that would drop `pg/pw` while the database holds no root
+secret `pg.pw` is refused, and the refusal names the spelling `pg/pw` that
+keeps it. Topic limits follow the same rule.
 
 A changed value is planned only when asked for. `--rotate-secret <dir/name>`
 on `schema apply`, `schema plan`, `schema diff`, `schema compare`, `migrations
@@ -1855,26 +1858,36 @@ statement needs one that has not run yet:
 
 Secrets are planned by their owner, around these steps rather than in one of
 them. A secret depends on nothing but its path, so the plan drops, creates and
-rotates secrets before step 1, except that a secret created at a path a
-dropped table frees, or below such a path, follows that drop: every directory
-above a secret must hold nothing else. A dropped secret precedes a statement
+rotates a secret as early as it can, before step 1, unless the secret has to
+follow a statement that frees its path: a secret created where a dropped table
+or another dropped object stood, or below such a path, follows that drop, since
+every directory above a secret must hold nothing else. A dropped secret precedes a statement
 that creates an object at its path or at a directory above it. Every external
 data source, async replication and transfer that names a secret by its path,
 relative or absolute, comes after the secret's creation or rotation, and a plan
 that drops a secret one of its own statements still names is refused.
 
-Topics are planned by their owner the same way. A topic statement runs before
-step 1, except that a topic created at a path the plan frees, or below such a
-path, follows the drop, and a dropped topic precedes a statement that creates
-an object at its path or at a directory above it. A transfer of a topic of this
-database comes after the topic's creation or change, and a dropped transfer
-before the topic's drop. A streaming query reads topics, so one the plan stops
-or drops before its other changes stops before every topic statement, and one
-it creates or starts again after them starts after every topic statement.
+Topics are planned by their owner the same way. A topic statement runs as
+early as it can, before step 1, unless a topic created at a path the plan frees,
+or below such a path, has to follow the drop; a dropped topic precedes a
+statement that creates an object at its path or at a directory above it. A
+transfer of a topic of this database comes after the topic's creation or
+change, and a dropped transfer before the topic's drop.
+
+A streaming query reads the topics its body names after `FROM`, `JOIN` or
+`INTO` by a path relative to the database root. A query the plan stops or drops
+before its other changes stops before such a topic is changed or dropped, and
+one it creates or starts again after them starts after such a topic is created
+or changed. A schema render writes a streaming query after the topics it reads
+in the same way. A name a data source qualifies, such as `` `source`.`topic` ``,
+reads no topic of this database, and a body that sets `TablePathPrefix` names
+none that Ptah resolves.
 
 Two standalone objects of different kinds that trade one path, such as a topic
-dropped where a coordination node is created, are handed over in the plan: the
-drop runs first. Two that would both hold one path are refused.
+dropped where a secret is created, are handed over in the plan: the drop runs
+first, and the creation follows it even when the drop waits for another
+statement, such as the drop of a transfer that reads the topic. Two that would
+both hold one path are refused.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
