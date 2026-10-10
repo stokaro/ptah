@@ -35,6 +35,18 @@ func TestRenderedPlanPlannedStatements(t *testing.T) {
 			want:      []planner.PlannedStatement{{SQL: "-- note\nCREATE TABLE a (id int)", Node: 1}},
 		},
 		{
+			name:      "a comment keeps its trailing spaces",
+			dialect:   "postgres",
+			fragments: []string{"-- default: false -> \n", "ALTER TABLE t ALTER COLUMN c DROP DEFAULT;\n"},
+			want:      []planner.PlannedStatement{{SQL: "-- default: false -> \nALTER TABLE t ALTER COLUMN c DROP DEFAULT", Node: 1}},
+		},
+		{
+			name:      "a comment after a fragment's last statement joins the next fragment",
+			dialect:   "postgres",
+			fragments: []string{"CREATE TABLE a (id int);\n-- note \n", "DROP TABLE b;\n"},
+			want:      []planner.PlannedStatement{{SQL: "CREATE TABLE a (id int)", Node: 0}, {SQL: "-- note \nDROP TABLE b", Node: 1}},
+		},
+		{
 			name:      "a comment no statement follows belongs to no node",
 			dialect:   "postgres",
 			fragments: []string{"CREATE TABLE a (id int);\n", "-- tail\n"},
