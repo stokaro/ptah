@@ -104,6 +104,19 @@ func TestAccessEffect_JSON_HappyPath(t *testing.T) {
 	c.Assert(decoded, qt.Equals, effect)
 }
 
+// A record with several unknown fields is refused with one message, naming
+// the first in sorted order, however the decoder happened to read them.
+func TestAccessEffect_JSON_FailurePath_NamesTheSameUnknownFieldEveryTime(t *testing.T) {
+	c := qt.New(t)
+	data := []byte(`{"access":"narrows","reason":"r","zone":1,"scope":"all","mode":2,"area":3}`)
+	for range 50 {
+		var decoded schemaext.AccessEffect
+		err := decoded.UnmarshalJSON(data)
+		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+		c.Assert(err, qt.ErrorMatches, `.*access assessment has an unknown field "area"`)
+	}
+}
+
 func TestAccessEffect_JSON_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	_, err := json.Marshal(schemaext.AccessEffect{Access: schemaext.AccessWidens})

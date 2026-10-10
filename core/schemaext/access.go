@@ -3,6 +3,8 @@ package schemaext
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -93,7 +95,9 @@ func (e *AccessEffect) UnmarshalJSON(data []byte) error {
 	if record == nil {
 		return fmt.Errorf("%w: access assessment is not an object", ErrInvalidValue)
 	}
-	for key := range record {
+	// Sorted, so a record with several unknown fields is refused with the
+	// same message every time.
+	for _, key := range slices.Sorted(maps.Keys(record)) {
 		if key != "access" && key != "reason" {
 			return fmt.Errorf("%w: access assessment has an unknown field %q", ErrInvalidValue, key)
 		}
