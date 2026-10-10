@@ -182,6 +182,11 @@ func rules() []rule {
 			Summary:    "selected rendering consumers must not link built-in rendering factories",
 			violations: rendererConsumerImports,
 		},
+		{
+			ID:         "neutral-packages-link-owners",
+			Summary:    "models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner",
+			violations: neutralOwnerLinks,
+		},
 	}
 }
 
@@ -312,7 +317,7 @@ func measure(root string) ([]ruleReport, error) {
 		return nil, fmt.Errorf("packages failed to load")
 	}
 
-	for _, required := range slices.Concat(providerContractRoots, rendererConsumerRoots) {
+	for _, required := range slices.Concat(providerContractRoots, rendererConsumerRoots, requiredNeutralPackages) {
 		if !slices.ContainsFunc(loaded, func(pkg *packages.Package) bool { return relative(pkg.PkgPath) == required }) {
 			return nil, fmt.Errorf("architecture root %q was not loaded", required)
 		}
