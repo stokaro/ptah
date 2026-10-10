@@ -922,6 +922,60 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mssql-mssqlast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlast",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlcompare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlcompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqldiff",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqldiff",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlplan",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlrelation",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlrelation",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlrender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlreport",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlreverse",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mssql-mssqlschema",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mssql/mssqlschema",

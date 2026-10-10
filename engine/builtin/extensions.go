@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/mssql/mssqlrender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
@@ -70,14 +71,17 @@ type renderOwners struct {
 // ownersFor selects a target's feature owners. Neutral contracts and
 // non-owning backends know no payload types. TimescaleDB and row security are
 // owners on every PostgreSQL-family target, and their renderers refuse or skip
-// what a target without the capability cannot hold; row-level TTL is CockroachDB's alone and
-// the row deletion policy Spanner's.
+// what a target without the capability cannot hold; row-level TTL is
+// CockroachDB's alone, the row deletion policy Spanner's, and the security
+// policy SQL Server's.
 func ownersFor(dialect string) renderOwners {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.YDB:
 		return renderOwners{extensions: ydbextensions.Registry}
 	case platform.ClickHouse:
 		return renderOwners{extensions: chrender.Registry}
+	case platform.SQLServer:
+		return renderOwners{extensions: mssqlrender.Registry}
 	case platform.CockroachDB:
 		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause,
 			lowerTableFacets: lowerPostgresFamilyFacets}

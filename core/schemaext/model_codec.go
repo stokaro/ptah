@@ -6,9 +6,10 @@ import (
 	"fmt"
 )
 
-// ModelCodec describes the codec of one owner model whose wire form is its Go
-// value as encoding/json writes it. [ModelCodec.Codec] builds the [Codec].
-type ModelCodec[T Value] struct {
+// ModelCodec describes the codec of one owner payload whose wire form is its Go
+// value as encoding/json writes it: a model value, a change or an operation.
+// [ModelCodec.Codec] builds the [Codec].
+type ModelCodec[T Payload] struct {
 	// Prototype is a value of the model's concrete type, as [Codec.Prototype].
 	Prototype T
 	// Representation is the representation the codec encodes.
@@ -27,6 +28,11 @@ type ModelCodec[T Value] struct {
 	// Canonical returns the value as it is encoded, without changing its
 	// argument; an owner orders sets here. Nil encodes the value as it is.
 	Canonical func(T) T
+	// Clone returns an independent copy of a valid value. Nil uses the
+	// value's own Clone method when T is a [Value]; a codec for another
+	// payload, such as a change or an operation, must set it, or every clone
+	// is refused.
+	Clone func(T) T
 }
 
 // Codec returns the codec m describes. Every boundary validates first:
@@ -79,7 +85,13 @@ func (m ModelCodec[T]) Codec() Codec {
 			if err != nil {
 				return nil, err
 			}
-			return value.Clone(), nil
+			if m.Clone != nil {
+				return m.Clone(value), nil
+			}
+			if model, ok := any(value).(Value); ok {
+				return model.Clone(), nil
+			}
+			return nil, fmt.Errorf("the %s codec of %q has no clone function", m.Representation, m.Prototype.Kind())
 		},
 		Decode: func(data json.RawMessage) (Payload, error) {
 			if m.Shape != nil {

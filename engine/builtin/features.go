@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -35,7 +36,29 @@ func validateNamedFeatures(dialect string, caps capability.Capabilities, objects
 	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
 		return validateRowPolicyObjects(dialect, objects)
 	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		return validateSecurityPolicies(dialect, objects)
+	}
 	return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+}
+
+// validateSecurityPolicies accepts the security policies the SQL Server owner
+// plans and refuses every other named object.
+func validateSecurityPolicies(dialect string, objects schemaext.Objects) error {
+	all, err := objects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range all {
+		value, ok := object.Value.(*mssqlschema.DesiredSecurityPolicy)
+		if !ok {
+			return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+		}
+		if _, err := mssqlschema.DesiredSecurityPolicyObject(object.Ref, *value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateRowPolicyObjects accepts the row policies a ClickHouse table

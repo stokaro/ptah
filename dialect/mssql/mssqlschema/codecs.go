@@ -40,10 +40,8 @@ var (
 )
 
 // Codecs returns the version-one desired and observed security policy codecs,
-// in that order. Each call returns independent definitions. Both encode the
-// predicates in their canonical order, so equal policies encode to the same
-// bytes, and a policy with no predicate encodes an empty list rather than
-// null. A decoder accepts only the spelling the encoder writes: an omitted
+// in that order. Each call returns independent definitions. Both encode with
+// the types' MarshalJSON, so equal policies encode to the same bytes. A decoder accepts only the spelling the encoder writes: an omitted
 // value written out, such as an empty struct name or argument list, is
 // refused. Every refusal is a [schemaext.InvalidModelError] wrapping
 // [schemaext.ErrInvalidValue]. The codecs validate representation invariants;
@@ -52,13 +50,29 @@ func Codecs() []schemaext.Codec {
 	return []schemaext.Codec{
 		schemaext.ModelCodec[*DesiredSecurityPolicy]{
 			Prototype: &DesiredSecurityPolicy{}, Representation: schemaext.Desired, Version: 1, Definition: json.RawMessage(desiredDefinition),
-			Shape: policyShape(desiredShape), Validate: ValidateDesiredSecurityPolicy, Canonical: canonicalDesired,
+			Shape: policyShape(desiredShape), Validate: ValidateDesiredSecurityPolicy,
 		}.Codec(),
 		schemaext.ModelCodec[*ObservedSecurityPolicy]{
 			Prototype: &ObservedSecurityPolicy{}, Representation: schemaext.Observed, Version: 1, Definition: json.RawMessage(observedDefinition),
-			Shape: policyShape(observedShape), Validate: ValidateObservedSecurityPolicy, Canonical: canonicalObserved,
+			Shape: policyShape(observedShape), Validate: ValidateObservedSecurityPolicy,
 		}.Codec(),
 	}
+}
+
+// MarshalJSON writes the canonical encoding: the predicates in their canonical
+// order, and no predicate as an empty list rather than null. Equal policies
+// encode to the same bytes, alone or inside a change or an operation. It does
+// not validate; the codecs do.
+func (v DesiredSecurityPolicy) MarshalJSON() ([]byte, error) {
+	type wire DesiredSecurityPolicy
+	return json.Marshal(wire(*canonicalDesired(&v)))
+}
+
+// MarshalJSON writes the canonical encoding, as
+// [DesiredSecurityPolicy.MarshalJSON] does.
+func (v ObservedSecurityPolicy) MarshalJSON() ([]byte, error) {
+	type wire ObservedSecurityPolicy
+	return json.Marshal(wire(*canonicalObserved(&v)))
 }
 
 func canonicalDesired(value *DesiredSecurityPolicy) *DesiredSecurityPolicy {

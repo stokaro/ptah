@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-592 fields are reachable from the desired schema, and each one carries
+604 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 512 | reaches rendered SQL on at least one target |
+| `ddl` | 523 | reaches rendered SQL on at least one target |
 | `comparison` | 12 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 26 | identifies the source text the declaration was read from |
+| `source` | 27 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -164,6 +164,18 @@ None.
 | `crdbschema.Policy.RowStatsPollInterval` | `ddl` | — |
 | `crdbschema.Policy.SelectBatchSize` | `ddl` | — |
 | `crdbschema.Policy.SelectRateLimit` | `ddl` | — |
+| `mssqlschema.DesiredSecurityPolicy.Enabled` | `ddl` | — |
+| `mssqlschema.DesiredSecurityPolicy.NotForReplication` | `ddl` | — |
+| `mssqlschema.DesiredSecurityPolicy.Predicates` | `ddl` | — |
+| `mssqlschema.DesiredSecurityPolicy.SchemaBinding` | `ddl` | — |
+| `mssqlschema.DesiredSecurityPolicy.StructName` | `source` | the Go struct the declaration was read from; the policy's schema and name are its identity |
+| `mssqlschema.ObjectName.Name` | `ddl` | — |
+| `mssqlschema.ObjectName.Schema` | `ddl` | — |
+| `mssqlschema.Predicate.Arguments` | `ddl` | — |
+| `mssqlschema.Predicate.Function` | `ddl` | — |
+| `mssqlschema.Predicate.Operation` | `ddl` | — |
+| `mssqlschema.Predicate.Table` | `ddl` | — |
+| `mssqlschema.Predicate.Type` | `ddl` | — |
 | `schemamodel.AsyncReplication.Name` | `ddl` | — |
 | `schemamodel.AsyncReplication.Schema` | `ddl` | — |
 | `schemamodel.AsyncReplication.Spec` | `ddl` | — |

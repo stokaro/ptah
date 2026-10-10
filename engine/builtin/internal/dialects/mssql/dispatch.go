@@ -28,7 +28,9 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 	// each statement decides its own output. The wrapper above this renderer
 	// prepares a whole list before any of it renders; a list reaching here has
 	// already been through that.
-	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+	case *ast.ExtensionStatement:
+		return r.renderExtensionNode(n)
+	case *ast.ExtensionAlterOperation:
 		return nodedispatch.RefuseExtension(r.GetDialect(), node)
 	case *ast.StatementList:
 		return r.renderStatementList(n)

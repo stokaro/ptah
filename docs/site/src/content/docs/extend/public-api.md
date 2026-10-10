@@ -90,6 +90,15 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/spanner/spannerconvert` | Conversion between row deletion policy declarations and observations. |
 | `dialect/spanner/spannerreport` | Captured row deletion policy counts and export omission labels. |
 | `dialect/mssql/mssqlschema` | SQL Server security policy model, with every predicate binding, and codecs. |
+| `dialect/mssql/mssqlcompare` | Security policy comparison with access assessment and the one-enabled-policy-per-table refusal. |
+| `dialect/mssql/mssqldiff` | Directional security policy changes, their access effect, and the statements each needs. |
+| `dialect/mssql/mssqlast` | Typed security policy operation with an explicit codec. |
+| `dialect/mssql/mssqlrender` | Owner-selected security policy rendering for SQL Server. |
+| `dialect/mssql/mssqlplan` | Security policy planning, table hand-offs and declarations. |
+| `dialect/mssql/mssqlrelation` | Tables and predicate functions a security policy binds. |
+| `dialect/mssql/mssqlreverse` | Reverse security policy changes with recovery limits. |
+| `dialect/mssql/mssqlconvert` | Conversion between security policy declarations and observations. |
+| `dialect/mssql/mssqlreport` | Captured security policy and predicate counts. |
 | `dialect/timescaledb/tsast` | TimescaleDB operations and codecs. |
 | `dialect/timescaledb/tscompare` | TimescaleDB comparison. |
 | `dialect/timescaledb/tsconvert` | TimescaleDB conversion. |

@@ -22,6 +22,10 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbdiff"
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/cockroachdb/crdbschema"
+	"ptah.run/dialect/mssql/mssqlast"
+	"ptah.run/dialect/mssql/mssqldiff"
+	"ptah.run/dialect/mssql/mssqlrender"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/spanner/spannerast"
 	"ptah.run/dialect/spanner/spannerdiff"
 	"ptah.run/dialect/spanner/spannerrender"
@@ -157,7 +161,21 @@ func continuousAggregateFixture() extensionFixture {
 
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture())
+		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture())
+}
+
+func securityPolicyFixture() extensionFixture {
+	tenant, orders := mssqlschema.ObjectName{Schema: "rls", Name: "fn_tenant"}, mssqlschema.ObjectName{Schema: "app", Name: "orders"}
+	return extensionFixture{payload: &mssqlast.SecurityPolicy{Schema: "rls", Name: "tenancy", Change: mssqldiff.SecurityPolicy{
+		After: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{
+			{Type: mssqlschema.Filter, Function: tenant, Arguments: []string{"tenant_id"}, Table: orders},
+			{Type: mssqlschema.Block, Function: tenant, Arguments: []string{"tenant_id"}, Table: orders, Operation: mssqlschema.AfterInsert},
+		}},
+		Access: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "the policy starts filtering reads or blocking writes on its tables"}}},
+		wantSQL: "CREATE SECURITY POLICY [rls].[tenancy]\n" +
+			"    ADD BLOCK PREDICATE [rls].[fn_tenant](tenant_id) ON [app].[orders] AFTER INSERT,\n" +
+			"    ADD FILTER PREDICATE [rls].[fn_tenant](tenant_id) ON [app].[orders]\n" +
+			"    WITH (STATE = ON, SCHEMABINDING = ON);\n"}
 }
 
 func policyFixture() extensionFixture {
@@ -211,9 +229,11 @@ func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	policyRegistry, err := policyrender.Registry()
 	c.Assert(err, qt.IsNil)
+	securityPolicyRegistry, err := mssqlrender.Registry()
+	c.Assert(err, qt.IsNil)
 	var registered, fixtures []string
 	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes(), timescaleRegistry.PayloadTypes(),
-		spannerRegistry.PayloadTypes(), policyRegistry.PayloadTypes()) {
+		spannerRegistry.PayloadTypes(), policyRegistry.PayloadTypes(), securityPolicyRegistry.PayloadTypes()) {
 		registered = append(registered, payloadType.Elem().PkgPath()+"."+payloadType.Elem().Name())
 	}
 	for _, fixture := range allExtensionFixtures() {
@@ -313,6 +333,36 @@ func TestCockroachDBExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			sql, err := builtin.RenderSQL(dialect, parent())
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(fmt.Sprint(err), qt.Contains, string(crdbast.AlterRowTTLKind))
+			c.Assert(sql, qt.Equals, "")
+		})
+	}
+}
+
+// TestSQLServerExtensionOwnerRendersAndNonownersRefuse renders the security
+// policy operation on SQL Server and refuses it, without partial SQL, on every
+// other target, and as an ALTER TABLE operation on SQL Server too, since a
+// policy belongs to its schema rather than to a table.
+func TestSQLServerExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	fixture := securityPolicyFixture()
+	t.Run("owner", func(t *testing.T) {
+		c := qt.New(t)
+		sql, err := builtin.RenderSQL("sqlserver", &ast.ExtensionStatement{Payload: fixture.payload})
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, fixture.wantSQL)
+	})
+	t.Run("owner, inside ALTER TABLE", func(t *testing.T) {
+		c := qt.New(t)
+		sql, err := builtin.RenderSQL("sqlserver", &ast.AlterTableNode{Name: "orders",
+			Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(sql, qt.Equals, "")
+	})
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "mysql", "mariadb", "sqlite", "oracle", "clickhouse", "ydb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			sql, err := builtin.RenderSQL(dialect, &ast.ExtensionStatement{Payload: fixture.payload})
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(fmt.Sprint(err), qt.Contains, string(mssqlast.SecurityPolicyKind))
 			c.Assert(sql, qt.Equals, "")
 		})
 	}
