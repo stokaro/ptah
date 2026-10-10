@@ -57,7 +57,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 
 	wantRecord := suppressedBlocks(coverage.Extension, coverage.Policy, coverage.Sequence)
 	wantDrops := []string{
-		`DROP POLICY IF EXISTS "p" ON "guarded"`,
+		`DROP POLICY "p" ON "guarded"`,
 		`DROP SEQUENCE IF EXISTS "order_seq"`,
 		`DROP EXTENSION IF EXISTS "pgcrypto"`,
 	}

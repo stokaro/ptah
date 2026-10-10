@@ -2412,6 +2412,17 @@ looked at becomes a `DROP`.
 Feature models use `schemaext.Coverage`, whose zero value is unknown.
 Resource pools and classifiers have no common coverage kind.
 
+A common kind can also limit an owner's model: a document whose header says
+it does not describe policies describes none of the row-security owner's
+policies. The owner states this in `engine.Provider.CoverageLimits` with a
+`schemaext.LimitMapping`. `schemaext.ComparisonRequest.DesiredLimits` and
+`CurrentLimits` carry each side's record, and the runtime folds the mapped
+records into the model's coverage before the owner compares
+(`schemaext.Coverage.WithLimits`). A record naming the whole kind leaves the
+model uninspected. A record naming one object leaves each subject it names
+uninspected. A mapping onto a facet model, or onto a model the provider does
+not own, is an invalid registration.
+
 The constants of `core/coverage` are the common kinds. An owner that records
 state it does not model declares its own kinds, such as `ydbschema.CoverageChangefeed`
 or `spannerschema.CoverageChangeStream`, and registers the ones a document may

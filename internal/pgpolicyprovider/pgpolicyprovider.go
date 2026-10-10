@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -39,6 +40,10 @@ func Provider() engine.Provider {
 		Codecs:      slices.Concat(pgpolicy.Codecs(), pgpolicy.ChangeCodecs(), pgpolicy.OperationCodecs()),
 		Annotations: []annotation.Extension{pgpolicysource.Annotations()},
 		YAML:        []yamlext.Extension{pgpolicysource.YAML()},
+		// A description that does not describe policies, such as a document
+		// whose policy blocks the compatibility surface left out, describes
+		// none of the owner's policies either.
+		CoverageLimits: []schemaext.LimitMapping{{Header: coverage.Policy, Model: pgpolicy.PolicyKind, Names: policyNames}},
 	}
 	models := []schemaext.Kind{pgpolicy.PolicyKind, pgpolicy.TableStateKind}
 	changes := []schemaext.Kind{pgpolicy.PolicyChangeKind, pgpolicy.TableStateChangeKind}
@@ -65,4 +70,12 @@ func Provider() engine.Provider {
 			Definitions: policyreport.Definitions(), Service: policyreport.Service{}})
 	}
 	return provider
+}
+
+// policyNames are the names a not-described record may use for a policy: its
+// own name, as the source spelled it and folded. A policy's name is scoped to
+// its table, so a record naming it limits every table's policy of that name,
+// which is what a record naming a policy has always meant.
+func policyNames(ref objectidentity.ID) []string {
+	return []string{ref.Name.Source, ref.Name.Normalized}
 }
