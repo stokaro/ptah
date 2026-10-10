@@ -48,10 +48,7 @@ const (
 )
 
 func fillStatement(column string) string {
-	return "DO $$\nBEGIN\n" +
-		"    IF EXISTS (SELECT 1 FROM \"flags\" WHERE \"" + column + "\" IS NULL LIMIT 1) THEN\n" +
-		"        UPDATE \"flags\" SET \"" + column + "\" = '9' WHERE \"" + column + "\" IS NULL;\n" +
-		"    END IF;\nEND\n$$"
+	return "UPDATE \"flags\" SET \"" + column + "\" = '9' WHERE \"" + column + "\" IS NULL"
 }
 
 // The PostgreSQL plan for a column made NOT NULL with a declared default is a
