@@ -916,6 +916,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mssql-mssqlschema",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlschema",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-postgres-pgproject",
       "kind": "public-package",
       "surface": "ptah.run/dialect/postgres/pgproject",
