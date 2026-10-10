@@ -681,6 +681,17 @@ describe concrete values; `DeclaredKinds` includes exclusions, and `IsZero`
 remains false when an exclusion is present. Reproject the source declaration
 when selecting a target that needs a previously excluded value.
 
+`Object.Targets` binds an object to target names from its source in the same
+way. A collection normalizes and sorts the names, and the binding travels with
+the object through every collection it is copied into. `Objects.ForTarget`
+keeps an unrestricted object and one whose binding names the target, and
+leaves the others out. It keeps no record of them, because an object is named:
+`schemamodel.OmissionsForTarget` reports each one with its identity in
+`ScopedObject.Ref`, and the comparison suppresses the observed object of that
+identity, bound to the connection's identifiers, so an exclusion is never read
+as a drop. `HasTargetScopes` reports whether any object is bound, and
+`Objects.Equal` ignores bindings, as `Facets.Equal` does.
+
 Built-in schema rendering and direct AST rendering resolve facet scopes before
 checking support. An excluded table facet contributes no SQL; its source
 binding remains available in the captured model. Included unknown facets are
@@ -688,8 +699,10 @@ refused, as is rendering a captured exclusion on a target that needs its value.
 Go annotation export refuses facet bindings it cannot preserve, including
 bindings whose payload was excluded.
 
-`EncodeFacets` and `DecodeFacets` carry `EncodedFacet` records with separate
-host-owned target bindings and owner-defined payload envelopes. An excluded
+`EncodeObjects` and `DecodeObjects` carry an object's binding in
+`EncodedObject.Targets`. `EncodeFacets` and `DecodeFacets` carry `EncodedFacet`
+records with separate host-owned target bindings and owner-defined payload
+envelopes. An excluded
 record has no payload and needs no model codec. `SnapshotFacets` and common
 schema conversion preserve bindings; ordinary value replacement does too.
 Changing a value's target scope does not change its local semantic equality.

@@ -107,7 +107,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		return nil, Diagnostics{}, fmt.Errorf("%w: comparison requires desired and observed schemas", ptaherr.ErrInvalidSchemaDiff)
 	}
 	merged := copyComparisonOptions(opts)
-	scoped, err := resolveComparisonScope(desired, database, info.Dialect, runtime)
+	scoped, err := resolveComparisonScope(desired, database, info.Dialect, info.IdentifierSemantics, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}

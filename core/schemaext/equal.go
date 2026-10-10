@@ -19,6 +19,8 @@ func (f Facets) Equal(other Facets) bool {
 
 // Equal compares captured object identities, source spellings, and local value
 // representations. Target-aware migration comparison uses a selected service.
+// Like [Facets.Equal], it ignores target bindings: a binding selects where a
+// declaration applies, and projection removes it before values are compared.
 func (o Objects) Equal(other Objects) bool {
 	if len(o.values) != len(other.values) {
 		return false

@@ -3,7 +3,9 @@ package schemamodel
 import (
 	"slices"
 	"sort"
+	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -23,7 +25,8 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	if db == nil {
 		return nil, nil
 	}
-	if !hasDialectScope(db) && !slices.ContainsFunc(db.FacetSlots(), func(f *schemaext.Facets) bool { return f.HasTargetScopes() }) {
+	if !hasDialectScope(db) && !db.FeatureObjects.HasTargetScopes() &&
+		!slices.ContainsFunc(db.FacetSlots(), func(f *schemaext.Facets) bool { return f.HasTargetScopes() }) {
 		// Nothing is scoped, so the projection is the identity. Returning the
 		// original pointer keeps an unscoped schema out of the clone-and-
 		// finalize path entirely, which is where every behavior difference
@@ -47,6 +50,11 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	scoped.Grants = keepScoped(db.Grants, target, func(v Grant) []string { return v.Dialects })
 	scoped.DefaultPrivileges = keepScoped(db.DefaultPrivileges, target, func(v DefaultPrivilege) []string { return v.Dialects })
 	scoped.RevokedGrants = keepScoped(db.RevokedGrants, target, func(v Grant) []string { return v.Dialects })
+	objects, err := db.FeatureObjects.ForTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	scoped.FeatureObjects = objects
 
 	// Everything the projection does not filter is still shared with the
 	// caller's database by value, so the slices it can reorder are cloned
@@ -82,11 +90,17 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 // ScopedObject names one declared object and the dialect scope it carries.
 type ScopedObject struct {
 	// Kind is the directive-facing object kind, such as "function" or "role".
+	// A feature object reports its model kind.
 	Kind string
 	// Name identifies the object within its kind, as the declaration spells it.
+	// A feature object reports its identity's parts, joined with dots.
 	Name string
 	// Dialects is the canonical scope the declaration carries.
 	Dialects []string
+	// Ref is a feature object's structured identity, which is what a
+	// comparison matches an observed object by. It is zero for every other
+	// declaration.
+	Ref objectidentity.ID
 }
 
 // ScopedObjects returns every object in db that carries a `dialects=` scope,
@@ -179,6 +193,7 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 		// keeps an object by name alone.
 		collect("default privilege", defaultPrivilegeScopeName(v), v.Dialects)
 	}
+	found = append(found, scopedFeatureObjects(db.FeatureObjects, want)...)
 	sort.SliceStable(found, func(i, j int) bool {
 		if found[i].Kind != found[j].Kind {
 			return found[i].Kind < found[j].Kind
@@ -224,6 +239,37 @@ func keepScoped[T any](values []T, target schemaext.TargetSelection, scopeOf fun
 		}
 	}
 	return kept
+}
+
+// scopedFeatureObjects reports the feature objects whose binding want selects.
+func scopedFeatureObjects(objects schemaext.Objects, want func(scope []string) bool) []ScopedObject {
+	var found []ScopedObject
+	for _, ref := range objects.Refs() {
+		object, _, err := objects.Get(ref)
+		if err != nil || len(object.Targets) == 0 || !want(object.Targets) {
+			continue
+		}
+		found = append(found, ScopedObject{Kind: string(ref.Kind), Name: featureObjectScopeName(ref),
+			Dialects: slices.Clone(object.Targets), Ref: ref})
+	}
+	return found
+}
+
+// featureObjectScopeName joins the parts of a feature object's identity, as the
+// source spelled them, for the scope report. The report's Ref is what a
+// comparison matches.
+func featureObjectScopeName(ref objectidentity.ID) string {
+	var parts []string
+	for _, part := range []objectidentity.Part{ref.Catalog, ref.Schema, ref.Parent, ref.Name} {
+		if source := part.Authored(); source != "" {
+			parts = append(parts, source)
+		}
+	}
+	name := strings.Join(parts, ".")
+	if ref.Signature != "" {
+		name += "(" + ref.Signature + ")"
+	}
+	return name
 }
 
 // defaultPrivilegeScopeName names one default privilege for the scope report.

@@ -4,7 +4,11 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/migration/internal/tableidentity"
 )
 
 // suppressScopedAway removes from the current schema every object a scope kept
@@ -23,10 +27,16 @@ import (
 // still an ordinary removal -- which is what keeps this from being read as
 // "never drop anything".
 //
+// A feature object is matched by its identity, bound to the target's
+// identifiers on both sides first, because that is how the comparison pairs a
+// declared object with an observed one: a policy declared on `orders` in a
+// source that left the schema out matches the one the read found in the
+// connection's default schema.
+//
 // The current schema is cloned rather than filtered in place. Callers hand over
 // a snapshot they may still be holding, and a comparison is not entitled to
 // edit it.
-func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedObject) *catalog.Database {
+func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedObject, target string, semantics identifier.Semantics) *catalog.Database {
 	if current == nil || len(omitted) == 0 {
 		return current
 	}
@@ -60,7 +70,25 @@ func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedO
 		names["default privilege"],
 		catalog.DefaultPrivilege.QualifiedName,
 	)
+	filtered.FeatureObjects = keepUnscopedObjects(current, omitted, target, semantics)
 	return &filtered
+}
+
+// keepUnscopedObjects returns the current feature objects no scoped-away
+// declaration names, matched by bound identity.
+func keepUnscopedObjects(current *catalog.Database, omitted []schemamodel.ScopedObject, target string, semantics identifier.Semantics) schemaext.Objects {
+	scopedAway := make(map[objectidentity.Key]bool)
+	for _, object := range omitted {
+		if object.Ref.Kind != "" {
+			scopedAway[tableidentity.BindRef(object.Ref, target, semantics).Key()] = true
+		}
+	}
+	if len(scopedAway) == 0 {
+		return current.FeatureObjects
+	}
+	return current.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return !scopedAway[tableidentity.BindRef(ref, target, semantics).Key()]
+	})
 }
 
 // keepUnscoped returns the values whose identity is not among the scoped-away
