@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -19,14 +20,22 @@ import (
 // Creation and Removal are the windows of [featureplan.PhaseDefault]: an
 // object created after the tables and columns it may read and before the
 // views that may read it, and dropped after those views and before the
-// tables. DependentCreation and DependentRemoval are the windows of
-// [featureplan.PhaseDependent]: an object that names objects of every family
-// and that nothing common reads, created after the host creates and changes
-// them and dropped before the host removes any of them. The indexes are
-// nondecreasing in that order, so windows at one index nest in that order and
-// a dependent object replaced under a new name exists throughout.
+// tables. The two are apart, so a default operation that replaces an object
+// is one step.
+//
+// Dependent is the window of [featureplan.PhaseDependent]: an object that
+// names objects of every family and that nothing common reads, such as a
+// row-security policy. It lies after the host creates and changes those
+// objects and before the host removes any of them, and creations and drops
+// share it. Which of a replacement's halves runs first is the owner's
+// decision: a policy replaced under its own name is dropped first, and
+// whether one renamed keeps both for a moment or neither depends on what it
+// admits, which only its owner knows.
+//
+// The indexes are nondecreasing in the order Creation, Dependent, Removal, so
+// windows at one index nest in that order.
 type Windows struct {
-	Creation, DependentCreation, DependentRemoval, Removal int
+	Creation, Dependent, Removal int
 }
 
 // Graph is a host's common sequence as graph units, one per node, with an
@@ -36,13 +45,12 @@ type Windows struct {
 type Graph struct {
 	contribution plangraph.Contribution[[]ast.Node]
 	steps        []featureplan.CommonStep
-	windows      [4][2]plangraph.StepID
+	windows      [3][2]plangraph.StepID
 }
 
 const (
 	creationWindow = iota
-	dependentCreationWindow
-	dependentRemovalWindow
+	dependentWindow
 	removalWindow
 )
 
@@ -51,15 +59,15 @@ const (
 // footprint orders nothing beyond its position. Windows outside the sequence
 // or out of order are refused.
 func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, windows Windows) (*Graph, error) {
-	positions := []int{windows.Creation, windows.DependentCreation, windows.DependentRemoval, windows.Removal}
-	if !slices.IsSorted(positions) || positions[0] < 0 || positions[3] > len(nodes) {
+	positions := []int{windows.Creation, windows.Dependent, windows.Removal}
+	if !slices.IsSorted(positions) || positions[0] < 0 || positions[2] > len(nodes) {
 		return nil, fmt.Errorf("%w: feature windows %v are out of order or outside a sequence of %d nodes", schemaext.ErrInvalidValue, positions, len(nodes))
 	}
 	if effects != nil && len(effects) != len(nodes) {
 		return nil, fmt.Errorf("%w: %d effect lists for %d common nodes", schemaext.ErrInvalidValue, len(effects), len(nodes))
 	}
 	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}}
-	names := [4]string{"feature-creations", "dependent-creations", "dependent-removals", "feature-removals"}
+	names := [3]string{"feature-creations", "dependent-operations", "feature-removals"}
 	for i := 0; i <= len(nodes); i++ {
 		for window, position := range positions {
 			if position == i {
@@ -103,15 +111,21 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 }
 
 // Schedule joins the owners' contributions to the common sequence and returns
-// the nodes in plan order. Each feature step joins one window: a step that
-// drops an object joins a removal window and every other step a creation
-// window, the dependent ones when its operation asked for
-// [featureplan.PhaseDependent]. The effects of different contributions are
-// then ordered by [plangraph.LifecycleDependencies], so an owner that creates
-// an object precedes another owner that reads it. The complete graph is
-// validated before any node is returned, so a conflict leaves no prefix; it
-// is refused with [ptaherr.ErrInvalidSchemaDiff]. g is not changed.
+// the nodes in plan order. Each feature step joins one window: a step whose
+// operation asked for [featureplan.PhaseDependent] joins the dependent
+// window, and any other the removal window when it drops an object and the
+// creation window otherwise. A step that creates an object another step drops
+// is refused unless both are dependent, because the windows would run the
+// creation first. The effects of different contributions are then ordered by
+// [plangraph.LifecycleDependencies], so an owner that creates an object
+// precedes another owner that reads it. The complete graph is validated before
+// any node is returned, so a conflict leaves no prefix, including a dependent
+// replacement its owner left unordered; it is refused with
+// [ptaherr.ErrInvalidSchemaDiff]. g is not changed.
 func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, error) {
+	if err := refuseSplitReplacements(features); err != nil {
+		return nil, err
+	}
 	common := plangraph.Contribution[[]ast.Node]{Owner: g.contribution.Owner,
 		Steps: slices.Clone(g.contribution.Steps), Dependencies: slices.Clone(g.contribution.Dependencies)}
 	for _, contribution := range features.Contributions {
@@ -141,13 +155,50 @@ func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, erro
 
 func (g *Graph) window(phase featureplan.Phase, drops bool) [2]plangraph.StepID {
 	switch {
-	case phase == featureplan.PhaseDependent && drops:
-		return g.windows[dependentRemovalWindow]
 	case phase == featureplan.PhaseDependent:
-		return g.windows[dependentCreationWindow]
+		return g.windows[dependentWindow]
 	case drops:
 		return g.windows[removalWindow]
 	default:
 		return g.windows[creationWindow]
 	}
+}
+
+// refuseSplitReplacements refuses a step that creates an object another step
+// drops, unless both ask for the dependent phase. The default windows run
+// every creation before every drop, and the dependent window is not ordered
+// against them by object, so the creation would meet the object it replaces.
+// Such a replacement is one step, or both halves ask for the dependent phase,
+// whose owner orders them.
+func refuseSplitReplacements(features Result) error {
+	type use struct {
+		step  plangraph.StepID
+		phase featureplan.Phase
+	}
+	dropped := make(map[objectidentity.Key]use)
+	for _, contribution := range features.Contributions {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				if effect.Action == plangraph.Drop {
+					dropped[effect.Subject.Key()] = use{step: step.ID, phase: features.Phases[step.ID]}
+				}
+			}
+		}
+	}
+	for _, contribution := range features.Contributions {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				other, found := dropped[effect.Subject.Key()]
+				if !found || effect.Action != plangraph.Create || other.step == step.ID {
+					continue
+				}
+				if features.Phases[step.ID] == featureplan.PhaseDependent && other.phase == featureplan.PhaseDependent {
+					continue
+				}
+				return fmt.Errorf("%w: feature step %s/%s creates %s, which step %s/%s drops; a replacement is one step, or both halves ask for the dependent phase",
+					ptaherr.ErrInvalidSchemaDiff, step.ID.Owner, step.ID.Name, effect.Subject, other.step.Owner, other.step.Name)
+			}
+		}
+	}
+	return nil
 }

@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/planner/columnchange"
+	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
@@ -1794,15 +1795,15 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		}
 	}()
 
-	var positions featurePositions
-	nodes, err := p.generateMigrationAST(ctx, runtime, diff, &positions)
+	var windows featurehost.Windows
+	nodes, err := p.generateMigrationAST(ctx, runtime, diff, &windows)
 	if err != nil {
 		return nil, err
 	}
-	return p.scheduleFeatures(ctx, runtime, diff, nodes, positions)
+	return p.scheduleFeatures(ctx, runtime, diff, nodes, windows)
 }
 
-func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, positions *featurePositions) ([]ast.Node, error) {
+func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, windows *featurehost.Windows) ([]ast.Node, error) {
 	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
 		return nil, err
 	}
@@ -1960,7 +1961,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// and materialized views that may read them. A TimescaleDB continuous
 	// aggregate reads a hypertable or another aggregate, and a view can read
 	// an aggregate.
-	positions.creation = len(result)
+	windows.Creation = len(result)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their
 	// tables/functions exist. The routines that name a relation this plan
@@ -2004,11 +2005,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 
-	// Feature operations of the dependent phase that create or change objects
-	// join the plan here: after the views, role changes, row-security switches
-	// and policies they may name, and before the comments and grants that may
-	// name them.
-	positions.dependentCreation = len(result)
+	// Feature operations of the dependent phase join the plan here: after the
+	// views, role changes, row-security switches and policies they may name,
+	// and before every removal step. Their owner orders its creations and
+	// drops among themselves.
+	windows.Dependent = len(result)
 
 	// 9.1. Comments on objects that already existed, after every step that
 	// creates, replaces or recreates one of them. The policies are the last
@@ -2057,12 +2058,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff, released.IndexSet())
 
-	// Feature operations of the dependent phase that drop objects join the
-	// plan here, ahead of the removal steps: before row security is disabled
-	// and before the columns, constraints, views, tables, routines and roles
-	// those steps drop.
-	positions.dependentRemoval = len(result)
-
 	// 12. Remove RLS policies (must be done before disabling RLS and before dropping columns)
 	result = p.removeRLSPolicies(result, diff)
 
@@ -2097,7 +2092,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
 	// tables they may read.
-	positions.removal = len(result)
+	windows.Removal = len(result)
 	result = p.removeExtendedProperties(result, diff)
 	result = p.removeSynonyms(result, diff)
 

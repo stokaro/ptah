@@ -19,7 +19,8 @@ import (
 // Result retains lowered contributions and explicit common-step rewrites.
 // The caller must apply the rewrites while scheduling the complete graph.
 // Phases holds the phase of every contributed step whose owner asked for one
-// other than [featureplan.PhaseDefault].
+// other than [featureplan.PhaseDefault]; it is nil when none did. A caller
+// that merges two results merges their phases too.
 type Result struct {
 	Contributions []plangraph.Contribution[[]ast.Node]
 	Rewrites      []plangraph.Rewrite
@@ -55,7 +56,7 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 		return Result{}, err
 	}
 	contributions := make([]plangraph.Contribution[[]ast.Node], len(result.Contributions))
-	phases := make(map[plangraph.StepID]featureplan.Phase)
+	var phases map[plangraph.StepID]featureplan.Phase
 	for i, feature := range result.Contributions {
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: feature.Owner, Dependencies: slices.Clone(feature.Dependencies)}
 		for _, step := range feature.Steps {
@@ -71,6 +72,9 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 				if !slices.Contains(accepted, step.Payload.Phase) {
 					return Result{}, fmt.Errorf("%w: feature step %s/%s asks for the %q phase, which this host has no window for",
 						schemaext.ErrInvalidValue, step.ID.Owner, step.ID.Name, step.Payload.Phase)
+				}
+				if phases == nil {
+					phases = make(map[plangraph.StepID]featureplan.Phase)
 				}
 				phases[step.ID] = step.Payload.Phase
 			}

@@ -1487,11 +1487,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// a new body uses exist and before the columns an old body reads go away.
 	result = p.planTriggers(result, diff)
 
-	// 4.7. Drop the columns step 4 held back. A dependent feature object is
-	// created and dropped just before them: after the tables, columns,
-	// routines, views and triggers it may name are created or changed, and
-	// before any column, view, table or routine it names is removed.
-	windows.DependentCreation, windows.DependentRemoval = len(result), len(result)
+	// 4.7. Drop the columns step 4 held back. Dependent feature operations
+	// join the plan just before them: after the tables, columns, routines,
+	// views and triggers a dependent object may name are created or changed,
+	// and before any column, view, table or routine it names is removed. Their
+	// owner orders its creations and drops among themselves.
+	windows.Dependent = len(result)
 	result = append(result, columnDrops...)
 
 	// 5. Add new indexes

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/internal/routineargs"
 )
 
 // Sequence returns the effects of each statement in order. A statement can
@@ -36,10 +37,14 @@ func Sequence(builder objectidentity.Builder, nodes []ast.Node) [][]plangraph.Ef
 // keeps an unknown footprint, and the result is nil; so does an object with no
 // name, which names nothing an owner could order itself against.
 //
-// A routine's identity carries the argument list the statement names, where it
-// names one. A routine dropped by name alone has no signature, so it is a
-// different identity from its creation: an owner orders itself against the
-// kind of effect rather than matching the two.
+// A routine's identity carries its input argument types, the list that tells
+// PostgreSQL's overloads apart: parameter names, modes, defaults and OUT
+// arguments are not part of it, and a type modifier is not either, so a
+// creation and a drop of one routine name one identity whichever way each
+// spells its arguments. CREATE OR REPLACE changes a routine that exists. A
+// routine dropped by name alone names whichever overload the server resolves,
+// so the statement keeps an unknown footprint rather than claiming the
+// zero-argument one.
 func Statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect {
 	effects := statement(builder, node)
 	if slices.ContainsFunc(effects, func(effect plangraph.Effect) bool { return effect.Subject.Name.Normalized == "" }) {
@@ -76,13 +81,16 @@ func statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect
 		}
 		return dedupe(effects)
 	case *ast.CreateFunctionNode:
-		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, typed.Parameters), Action: plangraph.Create}}
-	case *ast.DropFunctionNode:
-		signature := ""
-		if typed.Parameters != nil {
-			signature = *typed.Parameters
+		action := plangraph.Create
+		if typed.Replace {
+			action = plangraph.Alter
 		}
-		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, signature), Action: plangraph.Drop}}
+		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, typed.Parameters), Action: action}}
+	case *ast.DropFunctionNode:
+		if typed.Parameters == nil {
+			return nil
+		}
+		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, *typed.Parameters), Action: plangraph.Drop}}
 	case *ast.CreateRoleNode:
 		return []plangraph.Effect{{Subject: builder.Role(typed.Name), Action: plangraph.Create}}
 	case *ast.AlterRoleNode:
@@ -130,9 +138,10 @@ func lifecycle(writes map[objectidentity.Key]plangraph.Action, effects []plangra
 	return result
 }
 
-// routine is the identity of the function or the procedure a statement names.
-func routine(builder objectidentity.Builder, node interface{ IsProcedure() bool }, name, signature string) objectidentity.ID {
-	ref := builder.Function(name, signature)
+// routine is the identity of the function or the procedure a statement names,
+// by its input argument types.
+func routine(builder objectidentity.Builder, node interface{ IsProcedure() bool }, name, arguments string) objectidentity.ID {
+	ref := builder.Function(name, routineargs.InputTypes(arguments))
 	if node.IsProcedure() {
 		ref.Kind = objectidentity.KindProcedure
 	}

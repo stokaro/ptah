@@ -249,10 +249,12 @@ including changes that need no operation. Its step references, together with par
 receipts, account for every emitted operation. Operations retain typed payloads, grammatical placement,
 single-line notes, and parent identities. A service reply must join the complete
 host graph before its operations can be used; dependencies may refer to other
-owners' steps. An operation's `Phase` selects the host window its step joins:
-`PhaseDefault` beside the relations it reads, and `PhaseDependent` after the
-host's creations and changes of every common family and before the host removes
-any of them. The runtime refuses a phase the contract does not define.
+owners' steps. An operation's `Phase` selects the host window its step joins.
+Every host accepts `PhaseDefault`. The migration planners of the PostgreSQL
+family and of SQL Server accept `PhaseDependent`: each places the operation
+after its creations and changes and before its removals, in one window whose
+creations and drops the owner orders. Every other host, and a whole-schema
+render, refuses it. The runtime refuses a phase the contract does not define.
 
 `core/featureplan.DeclarationService` plans authored standalone objects for
 schema creation. `Provider.Declarations` assigns desired model kinds and allowed

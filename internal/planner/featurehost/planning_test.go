@@ -208,7 +208,7 @@ func TestHostCarriesTheOperationPhase(t *testing.T) {
 	}{
 		{name: "dependent", phase: featureplan.PhaseDependent,
 			want: map[plangraph.StepID]featureplan.Phase{{Owner: "example.org/host-operation", Name: "change"}: featureplan.PhaseDependent}},
-		{name: "default", phase: featureplan.PhaseDefault, want: make(map[plangraph.StepID]featureplan.Phase)},
+		{name: "default", phase: featureplan.PhaseDefault},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
