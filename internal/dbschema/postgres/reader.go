@@ -5227,7 +5227,6 @@ func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *catalog
 	if err != nil {
 		return fmt.Errorf("failed to read continuous aggregates: %w", err)
 	}
-	schema.ContinuousAggregates = aggregates
 	schema.Views = withoutContinuousAggregates(views, aggregates)
 
 	// Read from the same extension list and for the same reason: a hypertable
@@ -5237,7 +5236,9 @@ func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *catalog
 	if err != nil {
 		return fmt.Errorf("failed to read hypertables: %w", err)
 	}
-	schema.Hypertables = hypertables
+	if err := r.attachTimescale(schema, hypertables, aggregates); err != nil {
+		return fmt.Errorf("failed to record TimescaleDB objects: %w", err)
+	}
 
 	if r.caps.Has(capability.MaterializedViews) {
 		matViews, err := r.readMaterializedViews(ctx)

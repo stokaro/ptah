@@ -261,6 +261,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 	if opts.attach {
 		report, err := planartifact.NewReport(
+			cmd.Context(), runtime,
 			loadResult.OCI.Descriptor,
 			dbSchema,
 			info.Dialect,

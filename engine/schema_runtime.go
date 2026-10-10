@@ -3,6 +3,7 @@ package engine
 import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
@@ -18,4 +19,5 @@ type SchemaRuntime interface {
 	renderer.Service
 	renderer.SchemaService
 	schemavalidation.Service
+	schemaext.NormalizationService
 }

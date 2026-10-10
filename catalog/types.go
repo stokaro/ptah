@@ -88,25 +88,10 @@ type Database struct {
 	// [ExtendedProperty] for what is deliberately not in it.
 	ExtendedProperties []ExtendedProperty `json:"extended_properties,omitempty"`
 
-	// ContinuousAggregates are the TimescaleDB continuous aggregates this read
-	// found. See [ContinuousAggregate] for why they are not views.
-	ContinuousAggregates []ContinuousAggregate `json:"continuous_aggregates,omitempty"`
-
-	// Hypertables are the TimescaleDB hypertables among the tables above.
-	//
-	// They are recorded BESIDE the tables rather than instead of them, because
-	// a hypertable is an ordinary PostgreSQL table as far as this description
-	// goes: pg_class reports relkind 'r', the columns are the columns, and
-	// every statement Ptah renders for it is correct. What is missing is that
-	// it is partitioned, and no declaration syntax can say so yet -- so this
-	// list exists to be REPORTED rather than compared, and its consumer is the
-	// note that tells an operator the description they are reading is not the
-	// whole truth about these tables (stokaro/ptah#1026).
-	Hypertables []Hypertable `json:"hypertables,omitempty"`
-	Triggers    []Trigger    `json:"triggers"`     // Database triggers
-	RLSPolicies []RLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
-	Roles       []Role       `json:"roles"`        // PostgreSQL roles
-	Grants      []Grant      `json:"grants"`       // PostgreSQL privilege grants
+	Triggers    []Trigger   `json:"triggers"`     // Database triggers
+	RLSPolicies []RLSPolicy `json:"rls_policies"` // PostgreSQL RLS policies
+	Roles       []Role      `json:"roles"`        // PostgreSQL roles
+	Grants      []Grant     `json:"grants"`       // PostgreSQL privilege grants
 	// DefaultPrivileges are the pg_default_acl entries this read found, one
 	// row per granted privilege. omitempty keeps the serialization of every
 	// dialect that has no such catalog byte-identical.
@@ -1564,83 +1549,6 @@ type ExternalColumn struct {
 	Name    string `json:"name"`
 	Type    string `json:"type"`
 	NotNull bool   `json:"not_null,omitempty"`
-}
-
-// ContinuousAggregate is one TimescaleDB continuous aggregate.
-//
-// To PostgreSQL it is a view: pg_class reports relkind 'v', and a reader that
-// asks only PostgreSQL describes it as one. That is wrong in both directions,
-// and both were measured on TimescaleDB 2.29.2 / PostgreSQL 17.11.
-//
-// A plan that drops it emits DROP VIEW, and the server answers
-// `cannot drop continuous aggregate using DROP VIEW`, hinting at DROP
-// MATERIALIZED VIEW. So the plan cannot apply, and the next run reports the
-// same pending change.
-//
-// A plan that creates it emits CREATE VIEW with the body pg_get_viewdef
-// answers, which is not the body anybody wrote: TimescaleDB rewrites the
-// definition to select from the materialization hypertable, so the emitted
-// view names a relation in a schema the extension owns.
-//
-// Definition is therefore the catalog's own view_definition -- the SELECT as
-// it was written -- and not pg_get_viewdef's.
-type ContinuousAggregate struct {
-	Schema string `json:"schema"` // Schema holding the aggregate
-	Name   string `json:"name"`   // Aggregate name, which is also the view name
-
-	// HypertableSchema and HypertableName name the hypertable the aggregate
-	// materializes from, which is the object it depends on.
-	HypertableSchema string `json:"hypertable_schema"`
-	HypertableName   string `json:"hypertable_name"`
-
-	// MaterializedOnly reports whether the aggregate reads only materialized
-	// data, rather than combining it with the raw rows since the last refresh.
-	MaterializedOnly bool `json:"materialized_only"`
-
-	// Definition is the SELECT the aggregate was declared with.
-	Definition string `json:"definition"`
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (a ContinuousAggregate) QualifiedName() string {
-	return QualifyTableName(a.Schema, a.Name)
-}
-
-// Hypertable is a TimescaleDB hypertable, as the extension's own catalog
-// describes it.
-//
-// It carries the primary dimension and nothing else about the partitioning,
-// which is a scope decision rather than an oversight: this description is read
-// to be NAMED, not to be replayed, and the column a hypertable is partitioned
-// on is what makes the note concrete enough to act on. Representing the full
-// dimension set is what a declaration syntax would need, and that is the slice
-// after this one.
-type Hypertable struct {
-	Schema string `json:"schema"` // Schema holding the hypertable
-	Name   string `json:"name"`   // Table name, which is an ordinary table name
-
-	// PrimaryDimension is the column the hypertable partitions on first, and
-	// PrimaryDimensionType is that column's type as the catalog spells it.
-	PrimaryDimension     string `json:"primary_dimension"`
-	PrimaryDimensionType string `json:"primary_dimension_type"`
-
-	// ChunkInterval is the width of one chunk on the primary dimension, in the
-	// server's own spelling -- `7 days`, `1 day`. It is empty for a dimension
-	// the catalog reports no time interval for, which is every hash dimension
-	// and an integer range one.
-	//
-	// The server's spelling is what a declaration has to carry: a value
-	// converted to compare would differ from the catalog on every run.
-	ChunkInterval string `json:"chunk_interval,omitempty"`
-
-	// Dimensions counts the partitioning dimensions, so a note can say that a
-	// table has more than the one it names.
-	Dimensions int `json:"dimensions"`
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (h Hypertable) QualifiedName() string {
-	return QualifyTableName(h.Schema, h.Name)
 }
 
 // ExtendedProperty is one SQL Server extended property read from

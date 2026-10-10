@@ -1,6 +1,9 @@
 package atlashcl
 
 import (
+	"cmp"
+	"errors"
+	"fmt"
 	"maps"
 	"math/big"
 	"slices"
@@ -12,7 +15,12 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/tableref"
@@ -2070,14 +2078,16 @@ func (p *parser) rejectUnsupportedExtendedPropertyAttrs(block *hclsyntax.Block) 
 	}, "extended_property")
 }
 
-// parseHypertable parses a top-level hypertable block into a
-// schemamodel.Hypertable.
+// parseHypertable parses a top-level hypertable block into the hypertable
+// settings of the table it names.
 //
 // The block's label is the TABLE it partitions, not a name of its own: a
 // hypertable has no name, and `timescaledb_information.hypertables` is keyed by
-// the relation. `column` is required for the same reason `target` is required
-// on a synonym — a hypertable with no dimension is not one, and the server has
-// no default to fall back on.
+// the relation. The settings attach to that table's declaration once the whole
+// document is read, because the table block may come later in the file.
+// `column` is required for the same reason `target` is required on a synonym:
+// a hypertable with no dimension is not one, and the server has no default to
+// fall back on.
 //
 // `chunk_interval` is optional and is kept as the string it was written as. An
 // omitted interval takes TimescaleDB's own default, which the catalog then
@@ -2105,19 +2115,97 @@ func (p *parser) parseHypertable(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.Hypertables = append(p.db.Hypertables, schemamodel.Hypertable{
-		Table:         qualifyHypertableName(schema, table),
-		Column:        column,
-		ChunkInterval: chunkInterval,
-		IfNotExists:   p.optionalBool(block.Body.Attributes["if_not_exists"], false),
-		Comment:       p.optionalString(block.Body.Attributes["comment"]),
-	})
+	p.tableSettings = append(p.tableSettings, TableSetting{Schema: schema, Table: table, Block: "hypertable", Position: block.TypeRange.String(),
+		Value: &tsschema.DesiredHypertable{
+			Column:        column,
+			ChunkInterval: chunkInterval,
+			IfNotExists:   p.optionalBool(block.Body.Attributes["if_not_exists"], false),
+			Comment:       p.optionalString(block.Body.Attributes["comment"]),
+		}})
 	return nil
 }
 
-// qualifyHypertableName folds the schema back into the table name, which is how
-// [ptah.run/core/schemamodel.Hypertable] carries it: the declaration names a
-// TABLE, and a table is named the way every other reference to one is.
+// TableSetting is a table setting a document declares in a block of its own,
+// such as `hypertable`, waiting for the table it names. Schema is the schema
+// the block named, empty when it named none. Block is the block's type and
+// Position its place in the source, for a refusal.
+type TableSetting struct {
+	Schema, Table string
+	Value         schemaext.Value
+	Block         string
+	Position      string
+}
+
+// AttachTableSettings gives each table of db the settings a block named it
+// with. It is what [ParseWithOptions] does at the end of one document, and
+// what a caller that assembles one schema from several documents does once all
+// of them are read: a block and its table may sit in different files of one
+// schema directory.
+//
+// A block that names a schema matches the table in that schema. A block that
+// names none matches the one table with that name in any schema, and is
+// refused when several schemas declare one, because the block does not say
+// which it partitions. A block naming a table the schema does not declare is
+// refused rather than dropped: the setting belongs to a table, and a schema
+// that partitions a table it never describes asks for something no plan can
+// carry. A second block for one table is refused the same way. Names compare
+// the way PostgreSQL folds an unquoted name, the only engine these settings
+// exist on. db is changed in place; on error it may hold some settings.
+func AttachTableSettings(db *schemamodel.Database, settings []TableSetting) error {
+	builder := objectidentity.NewBuilder(identifier.ForDialect(platform.Postgres))
+	for _, setting := range settings {
+		named := qualifyHypertableName(setting.Schema, setting.Table)
+		matches := tableMatches(builder, db.Tables, setting.Schema, setting.Table)
+		switch {
+		case len(matches) == 0:
+			return settingError(setting, "%s %q names a table this schema does not declare", setting.Block, named)
+		case len(matches) > 1:
+			return settingError(setting, "%s %q names a table that schemas %s each declare; name the schema it belongs to",
+				setting.Block, named, strings.Join(matchSchemas(db.Tables, matches), " and "))
+		}
+		index := matches[0]
+		facets, err := db.Tables[index].Facets.With(setting.Value)
+		if errors.Is(err, schemaext.ErrDuplicate) {
+			return settingError(setting, "table %q declares two %s blocks", named, setting.Block)
+		}
+		if err != nil {
+			return settingError(setting, "%s %q: %v", setting.Block, named, err)
+		}
+		db.Tables[index].Facets = facets
+	}
+	return nil
+}
+
+// tableMatches returns the positions of the tables a setting names: the table
+// in the named schema, or every table with the name when no schema is named.
+func tableMatches(builder objectidentity.Builder, tables []schemamodel.Table, schema, table string) []int {
+	name := builder.TableParts("", table).Name.Normalized
+	key := builder.TableParts(schema, table).Key()
+	var matches []int
+	for i, declared := range tables {
+		ref := builder.TableParts(declared.Schema, declared.Name)
+		if (strings.TrimSpace(schema) == "" && ref.Name.Normalized == name) || (strings.TrimSpace(schema) != "" && ref.Key() == key) {
+			matches = append(matches, i)
+		}
+	}
+	return matches
+}
+
+// matchSchemas names the schemas of the matched tables, for a refusal.
+func matchSchemas(tables []schemamodel.Table, matches []int) []string {
+	schemas := make([]string, 0, len(matches))
+	for _, index := range matches {
+		schemas = append(schemas, strconv.Quote(cmp.Or(tables[index].Schema, "(default)")))
+	}
+	return schemas
+}
+
+func settingError(setting TableSetting, format string, args ...any) error {
+	return fmt.Errorf("parse HCL schema at %s: %w", setting.Position, fmt.Errorf(format, args...))
+}
+
+// qualifyHypertableName folds the schema back into the table name for a
+// refusal, which is how a reader of the document names the table.
 func qualifyHypertableName(schema, table string) string {
 	if strings.TrimSpace(schema) == "" {
 		return table
@@ -2136,7 +2224,7 @@ func (p *parser) rejectUnsupportedHypertableAttrs(block *hclsyntax.Block) error 
 }
 
 // parseContinuousAggregate parses a top-level continuous_aggregate block into a
-// schemamodel.ContinuousAggregate.
+// continuous aggregate the TimescaleDB model owns.
 //
 // Unlike a hypertable this object has a name of its own, so the block's label
 // is that name and `schema` says where it lives -- the same shape a view block
@@ -2148,6 +2236,11 @@ func (p *parser) parseContinuousAggregate(block *hclsyntax.Block) error {
 	schema, name, err := p.objectSchemaAndName(block, "continuous_aggregate")
 	if err != nil {
 		return err
+	}
+	// A dotted label without a schema names the schema too: `app.hourly` is
+	// hourly in app, not a relation whose name holds a dot.
+	if ref, ok := tableref.Parse(name); ok && ref.Qualified && strings.TrimSpace(schema) == "" {
+		schema, name = ref.Schema, ref.Name
 	}
 	if err := p.rejectNestedBlocks(block, "continuous_aggregate"); err != nil {
 		return err
@@ -2163,13 +2256,15 @@ func (p *parser) parseContinuousAggregate(block *hclsyntax.Block) error {
 		return p.blockError(block,
 			"continuous_aggregate %q requires an `as` body; a continuous aggregate is its SELECT", name)
 	}
-	p.db.ContinuousAggregates = append(p.db.ContinuousAggregates, schemamodel.ContinuousAggregate{
-		Name:             name,
-		Schema:           schema,
+	object := tsschema.DesiredContinuousAggregateObject(schema, name, tsschema.DesiredContinuousAggregate{
 		Body:             body,
 		MaterializedOnly: p.optionalBoolPtr(block.Body.Attributes["materialized_only"]),
 		Comment:          p.optionalString(block.Body.Attributes["comment"]),
 	})
+	p.db.FeatureObjects, err = p.db.FeatureObjects.With(object)
+	if err != nil {
+		return p.blockError(block, "continuous_aggregate %q: %v", name, err)
+	}
 	return nil
 }
 

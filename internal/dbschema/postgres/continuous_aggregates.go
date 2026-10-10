@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/dialect/timescaledb/tsschema"
 )
 
 // timescaleExtension is the extension whose presence decides whether the
@@ -64,6 +65,12 @@ func hasTimescaleExtension(extensions []catalog.Extension) bool {
 	return false
 }
 
+// readAggregate is one continuous aggregate a read found.
+type readAggregate struct {
+	schema, name string
+	observed     tsschema.ObservedContinuousAggregate
+}
+
 // readContinuousAggregates reads the continuous aggregates of the schemas this
 // read covers, and asks nothing at all where the extension is absent.
 //
@@ -73,11 +80,11 @@ func hasTimescaleExtension(extensions []catalog.Extension) bool {
 // are exactly the ones a plan must not treat as views.
 func (r *Reader) readContinuousAggregates(ctx context.Context,
 	extensions []catalog.Extension,
-) ([]catalog.ContinuousAggregate, error) {
+) ([]readAggregate, error) {
 	if !hasTimescaleExtension(extensions) {
 		return nil, nil
 	}
-	var aggregates []catalog.ContinuousAggregate
+	var aggregates []readAggregate
 	for _, schemaName := range r.schemasToRead() {
 		schemaAggregates, err := r.readContinuousAggregatesForSchema(ctx, schemaName)
 		if err != nil {
@@ -90,25 +97,27 @@ func (r *Reader) readContinuousAggregates(ctx context.Context,
 
 func (r *Reader) readContinuousAggregatesForSchema(ctx context.Context,
 	schemaName string,
-) ([]catalog.ContinuousAggregate, error) {
+) ([]readAggregate, error) {
 	rows, err := r.db.QueryContext(ctx, continuousAggregateQuery, schemaName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var aggregates []catalog.ContinuousAggregate
+	var aggregates []readAggregate
 	for rows.Next() {
-		var aggregate catalog.ContinuousAggregate
+		var aggregate readAggregate
+		var materializedOnly bool
 		if err := rows.Scan(
-			&aggregate.Schema, &aggregate.Name,
-			&aggregate.HypertableSchema, &aggregate.HypertableName,
-			&aggregate.MaterializedOnly, &aggregate.Definition,
+			&aggregate.schema, &aggregate.name,
+			&aggregate.observed.HypertableSchema, &aggregate.observed.HypertableName,
+			&materializedOnly, &aggregate.observed.Definition,
 		); err != nil {
 			return nil, err
 		}
-		aggregate.Schema = r.outputSchema(aggregate.Schema)
-		aggregate.Definition = strings.TrimSpace(aggregate.Definition)
+		aggregate.schema = r.outputSchema(aggregate.schema)
+		aggregate.observed.MaterializedOnly = &materializedOnly
+		aggregate.observed.Definition = strings.TrimSpace(aggregate.observed.Definition)
 		aggregates = append(aggregates, aggregate)
 	}
 	return aggregates, rows.Err()
@@ -130,14 +139,14 @@ func (r *Reader) readContinuousAggregatesForSchema(ctx context.Context,
 // the other side.
 func withoutContinuousAggregates(
 	views []catalog.View,
-	aggregates []catalog.ContinuousAggregate,
+	aggregates []readAggregate,
 ) []catalog.View {
 	if len(aggregates) == 0 {
 		return views
 	}
 	excluded := make(map[string]bool, len(aggregates))
 	for _, aggregate := range aggregates {
-		excluded[continuousAggregateKey(aggregate.Schema, aggregate.Name)] = true
+		excluded[continuousAggregateKey(aggregate.schema, aggregate.name)] = true
 	}
 	kept := make([]catalog.View, 0, len(views))
 	for _, view := range views {

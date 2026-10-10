@@ -78,6 +78,17 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/cockroachdb/crdbreverse` | Reverse row-level TTL changes with recovery limits. |
 | `dialect/cockroachdb/crdbconvert` | Conversion between row-level TTL declarations and observations. |
 | `dialect/cockroachdb/crdbreport` | Captured row-level TTL counts and export omission labels. |
+| `dialect/timescaledb/tsast` | TimescaleDB operations and codecs. |
+| `dialect/timescaledb/tscompare` | TimescaleDB comparison. |
+| `dialect/timescaledb/tsconvert` | TimescaleDB conversion. |
+| `dialect/timescaledb/tsdiff` | TimescaleDB changes. |
+| `dialect/timescaledb/tsplan` | TimescaleDB planning and refusals. |
+| `dialect/timescaledb/tsprobe` | Server-normalized aggregate bodies. |
+| `dialect/timescaledb/tsrelation` | Aggregate-to-hypertable dependencies. |
+| `dialect/timescaledb/tsrender` | TimescaleDB rendering. |
+| `dialect/timescaledb/tsreport` | TimescaleDB reports. |
+| `dialect/timescaledb/tsreverse` | TimescaleDB reversal. |
+| `dialect/timescaledb/tsschema` | TimescaleDB models and codecs. |
 | `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
 | `dialect/ydb/ydbconvert` | YDB feature representation conversion. |

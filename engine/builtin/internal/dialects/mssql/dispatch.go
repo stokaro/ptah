@@ -96,12 +96,6 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderDropView(n)
 	case *ast.CreateSynonymNode:
 		return r.renderCreateSynonym(n)
-	case *ast.CreateHypertableNode:
-		return r.renderCreateHypertable(n)
-	case *ast.CreateContinuousAggregateNode:
-		return r.renderCreateContinuousAggregate(n)
-	case *ast.DropContinuousAggregateNode:
-		return r.renderDropContinuousAggregate(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
 	case *ast.ExtendedPropertyNode:

@@ -179,12 +179,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return refuseFact("DROP EXTENSION "+n.Name, "YDB has no extensions")
 	case *ast.ExtendedPropertyNode:
 		return refuseFact("extended property "+n.Name, "extended properties are SQL Server's")
-	case *ast.CreateHypertableNode:
-		return r.keyed(capability.Hypertables, "hypertable", "hypertable "+n.Table)
-	case *ast.CreateContinuousAggregateNode:
-		return r.keyed(capability.ContinuousAggregates, "continuous aggregate", "continuous aggregate "+n.Name)
-	case *ast.DropContinuousAggregateNode:
-		return r.keyed(capability.ContinuousAggregates, "continuous aggregate", "DROP continuous aggregate "+n.Name)
 
 	// An upsert node carries the match columns, update assignments and
 	// predicates of a MERGE as SQL fragments. YDB's own upsert, UPSERT INTO,

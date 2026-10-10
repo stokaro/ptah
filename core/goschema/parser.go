@@ -737,8 +737,7 @@ type schemaParseState struct {
 	triggers              []schemamodel.Trigger
 	rlsPolicies           []schemamodel.RLSPolicy
 	rlsEnabledTables      []schemamodel.RLSEnabledTable
-	hypertables           []schemamodel.Hypertable
-	continuousAggregates  []schemamodel.ContinuousAggregate
+	hypertables           []pendingHypertable
 	roles                 []schemamodel.Role
 	grants                []schemamodel.Grant
 	revokedGrants         []schemamodel.Grant
@@ -1042,6 +1041,9 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	if err := state.attachColumnFamilies(); err != nil {
 		return schemamodel.Database{}, err
 	}
+	if err := state.attachHypertables(); err != nil {
+		return schemamodel.Database{}, err
+	}
 
 	enums := make([]schemamodel.Enum, 0, len(state.globalEnumsMap))
 	keys := make([]string, 0, len(state.globalEnumsMap))
@@ -1059,41 +1061,39 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	})
 
 	result := schemamodel.Database{
-		FeatureObjects:       state.featureObjects,
-		FeatureCoverage:      state.featureCoverage,
-		Schemas:              state.schemas,
-		Tables:               state.tableDirectives,
-		Fields:               state.schemaFields,
-		Indexes:              state.schemaIndexes,
-		Constraints:          state.schemaConstraints,
-		Enums:                enums,
-		EmbeddedFields:       state.embeddedFields,
-		Extensions:           state.extensions,
-		Functions:            state.functions,
-		Sequences:            state.sequences,
-		Domains:              state.domains,
-		CompositeTypes:       state.compositeTypes,
-		Ranges:               state.ranges,
-		Views:                state.views,
-		Synonyms:             state.synonyms,
-		AsyncReplications:    state.asyncReplications,
-		Transfers:            state.transfers,
-		ExternalDataSources:  state.externalDataSources,
-		ExternalTables:       state.externalTables,
-		ExtendedProperties:   state.extendedProperties,
-		MaterializedViews:    state.materializedViews,
-		Triggers:             state.triggers,
-		RLSPolicies:          state.rlsPolicies,
-		RLSEnabledTables:     state.rlsEnabledTables,
-		Hypertables:          state.hypertables,
-		ContinuousAggregates: state.continuousAggregates,
-		Roles:                state.roles,
-		Grants:               state.grants,
-		RevokedGrants:        state.revokedGrants,
-		DefaultPrivileges:    state.defaultPrivileges,
-		ManagedData:          state.managedData,
-		NotDescribed:         coverage.Set{}.With(state.notDescribed...),
-		Dependencies:         make(map[string][]string),
+		FeatureObjects:      state.featureObjects,
+		FeatureCoverage:     state.featureCoverage,
+		Schemas:             state.schemas,
+		Tables:              state.tableDirectives,
+		Fields:              state.schemaFields,
+		Indexes:             state.schemaIndexes,
+		Constraints:         state.schemaConstraints,
+		Enums:               enums,
+		EmbeddedFields:      state.embeddedFields,
+		Extensions:          state.extensions,
+		Functions:           state.functions,
+		Sequences:           state.sequences,
+		Domains:             state.domains,
+		CompositeTypes:      state.compositeTypes,
+		Ranges:              state.ranges,
+		Views:               state.views,
+		Synonyms:            state.synonyms,
+		AsyncReplications:   state.asyncReplications,
+		Transfers:           state.transfers,
+		ExternalDataSources: state.externalDataSources,
+		ExternalTables:      state.externalTables,
+		ExtendedProperties:  state.extendedProperties,
+		MaterializedViews:   state.materializedViews,
+		Triggers:            state.triggers,
+		RLSPolicies:         state.rlsPolicies,
+		RLSEnabledTables:    state.rlsEnabledTables,
+		Roles:               state.roles,
+		Grants:              state.grants,
+		RevokedGrants:       state.revokedGrants,
+		DefaultPrivileges:   state.defaultPrivileges,
+		ManagedData:         state.managedData,
+		NotDescribed:        coverage.Set{}.With(state.notDescribed...),
+		Dependencies:        make(map[string][]string),
 	}
 	schemamodel.NormalizeTableScopedNames(&result)
 	schemamodel.BuildDependencyGraph(&result)
@@ -1750,78 +1750,6 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		Dialects:   scope,
 	})
 	return nil
-}
-
-// parseHypertableComment reads a TimescaleDB hypertable declaration.
-//
-// There is no dialect scope here, for the reason [schemaParseState.parseSynonymComment]
-// gives: a hypertable belongs to TimescaleDB and to nothing else.
-//
-// `chunk_interval` is kept as the string it was written as. The catalog reports
-// the server's own spelling -- `7 days`, `1 day` -- and a declaration converted
-// to something else to compare would differ from it on every run.
-func (s *schemaParseState) parseHypertableComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:hypertable", structName)
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-	s.hypertables = append(s.hypertables, schemamodel.Hypertable{
-		StructName:    structName,
-		Table:         kv["table"],
-		Column:        kv["column"],
-		ChunkInterval: kv["chunk_interval"],
-		IfNotExists:   kv["if_not_exists"] == "true",
-		Comment:       kv["comment"],
-	})
-	return nil
-}
-
-// parseContinuousAggregateComment reads a TimescaleDB continuous aggregate
-// declaration.
-//
-// The body is kept as it was written. The catalog stores a rewritten SELECT,
-// and the comparison puts the declaration through the same rewrite rather than
-// folding either text -- so a declaration normalized here would be normalized
-// twice and match nothing.
-//
-// There is no dialect scope here, for the reason
-// [schemaParseState.parseSynonymComment] gives.
-func (s *schemaParseState) parseContinuousAggregateComment(
-	comment *ast.Comment,
-	structName string,
-) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:continuousaggregate", structName)
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-	s.continuousAggregates = append(s.continuousAggregates, schemamodel.ContinuousAggregate{
-		StructName:       structName,
-		Name:             kv["name"],
-		Schema:           kv["schema"],
-		Body:             kv["body"],
-		MaterializedOnly: optionalBoolAttribute(kv, "materialized_only"),
-		Comment:          kv["comment"],
-	})
-	return nil
-}
-
-// optionalBoolAttribute answers nil for an attribute the annotation did not
-// write, so a caller can tell "unset" from "set to false".
-func optionalBoolAttribute(kv map[string]string, name string) *bool {
-	written, present := kv[name]
-	if !present {
-		return nil
-	}
-	value := written == "true"
-	return &value
 }
 
 // parseSynonymComment reads a SQL Server synonym declaration.

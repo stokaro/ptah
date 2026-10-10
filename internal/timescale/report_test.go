@@ -6,8 +6,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/timescale"
 )
 
@@ -38,19 +44,13 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		{
 			// A declaration carries this one, so the description is complete
 			// and there is nothing to report.
-			name: "one hypertable on one dimension",
-			schema: &catalog.Database{
-				Tables:      []catalog.Table{{Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 1}},
-			},
+			name:      "one hypertable on one dimension",
+			schema:    &catalog.Database{Tables: []catalog.Table{partitioned("", "conditions", "time", 1)}},
 			wantLines: 0,
 		},
 		{
-			name: "one hypertable on two dimensions",
-			schema: &catalog.Database{
-				Tables:      []catalog.Table{{Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 2}},
-			},
+			name:      "one hypertable on two dimensions",
+			schema:    &catalog.Database{Tables: []catalog.Table{partitioned("", "conditions", "time", 2)}},
 			wantLines: 1,
 			want: []string{
 				"1 hypertable is described with the first partitioning dimension only",
@@ -59,13 +59,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		},
 		{
 			name: "two hypertables are named in order",
-			schema: &catalog.Database{
-				Tables: []catalog.Table{{Name: "metrics"}, {Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{
-					{Name: "metrics", PrimaryDimension: "ts", Dimensions: 2},
-					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
-				},
-			},
+			schema: &catalog.Database{Tables: []catalog.Table{
+				partitioned("", "metrics", "ts", 2), partitioned("", "conditions", "time", 2),
+			}},
 			wantLines: 1,
 			want: []string{
 				"2 hypertables are",
@@ -73,23 +69,18 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			},
 		},
 		{
+			// Selection removes a table with its settings, and the limit the read
+			// recorded for it stays behind in the coverage.
 			name: "a hypertable the selection removed is not named",
 			schema: &catalog.Database{
-				Tables: []catalog.Table{{Name: "users"}},
-				Hypertables: []catalog.Hypertable{
-					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
-				},
+				Tables:          []catalog.Table{{Name: "users"}},
+				FeatureCoverage: undimensioned("", "conditions"),
 			},
 			wantLines: 0,
 		},
 		{
-			name: "a hypertable in a named schema",
-			schema: &catalog.Database{
-				Tables: []catalog.Table{{Schema: "app", Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{
-					{Schema: "app", Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
-				},
-			},
+			name:      "a hypertable in a named schema",
+			schema:    &catalog.Database{Tables: []catalog.Table{partitioned("app", "conditions", "time", 2)}},
 			wantLines: 1,
 			want:      []string{"app.conditions (on time and 1 more dimension)"},
 		},
@@ -97,20 +88,15 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			// The aggregate is described now, by a block of its own, so there
 			// is nothing to warn about. A note here would send an operator
 			// looking for what is missing from a document that has it.
-			name: "one continuous aggregate",
-			schema: &catalog.Database{
-				ContinuousAggregates: []catalog.ContinuousAggregate{{Name: "conditions_hourly"}},
-			},
+			name:      "one continuous aggregate",
+			schema:    &catalog.Database{FeatureObjects: aggregate("conditions_hourly")},
 			wantLines: 0,
 		},
 		{
 			name: "an aggregate over an incompletely described hypertable",
 			schema: &catalog.Database{
-				Tables: []catalog.Table{{Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{
-					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
-				},
-				ContinuousAggregates: []catalog.ContinuousAggregate{{Name: "conditions_hourly"}},
+				Tables:         []catalog.Table{partitioned("", "conditions", "time", 2)},
+				FeatureObjects: aggregate("conditions_hourly"),
 			},
 			wantLines: 1,
 			want:      []string{"1 hypertable is"},
@@ -121,24 +107,14 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			// a note naming one would say less than the truth about what the
 			// description drops -- the same failure this note exists to
 			// prevent, one level down.
-			name: "a hypertable with a second dimension",
-			schema: &catalog.Database{
-				Tables: []catalog.Table{{Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{
-					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
-				},
-			},
+			name:      "a hypertable with a second dimension",
+			schema:    &catalog.Database{Tables: []catalog.Table{partitioned("", "conditions", "time", 2)}},
 			wantLines: 1,
 			want:      []string{"conditions (on time and 1 more dimension)"},
 		},
 		{
-			name: "a hypertable with three dimensions",
-			schema: &catalog.Database{
-				Tables: []catalog.Table{{Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{
-					{Name: "conditions", PrimaryDimension: "time", Dimensions: 3},
-				},
-			},
+			name:      "a hypertable with three dimensions",
+			schema:    &catalog.Database{Tables: []catalog.Table{partitioned("", "conditions", "time", 3)}},
 			wantLines: 1,
 			want:      []string{"conditions (on time and 2 more dimensions)"},
 		},
@@ -146,25 +122,23 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			// The control on the threshold: one dimension is a complete
 			// description, so the note that names an incomplete one must not
 			// fire for it.
-			name: "the ordinary single dimension is not named",
-			schema: &catalog.Database{
-				Tables: []catalog.Table{{Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{
-					{Name: "conditions", PrimaryDimension: "time", Dimensions: 1},
-				},
-			},
+			name:      "the ordinary single dimension is not named",
+			schema:    &catalog.Database{Tables: []catalog.Table{partitioned("", "conditions", "time", 1)}},
 			wantLines: 0,
 			notWant:   []string{"conditions"},
 		},
 		{
 			name: "a hypertable whose dimension the catalog did not report",
 			schema: &catalog.Database{
-				Tables:      []catalog.Table{{Name: "conditions"}},
-				Hypertables: []catalog.Hypertable{{Name: "conditions"}},
+				Tables:          []catalog.Table{{Name: "conditions"}},
+				FeatureCoverage: undimensioned("", "conditions"),
 			},
+			// Named the way the read left it: the reader leaves the
+			// connection's own schema off, and the note does not put back the
+			// default the identity was built with.
 			wantLines: 1,
-			want:      []string{"conditions."},
-			notWant:   []string{"(on )"},
+			want:      []string{": conditions."},
+			notWant:   []string{"(on )", "public."},
 		},
 	}
 
@@ -191,10 +165,7 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 // panics fails a read that succeeded.
 func TestReportUndescribed_DropsTheNoteWithNowhereToWriteIt(t *testing.T) {
 	c := qt.New(t)
-	schema := &catalog.Database{
-		Tables:      []catalog.Table{{Name: "conditions"}},
-		Hypertables: []catalog.Hypertable{{Name: "conditions", PrimaryDimension: "time"}},
-	}
+	schema := &catalog.Database{Tables: []catalog.Table{partitioned("", "conditions", "time", 2)}}
 
 	timescale.ReportUndescribed(nil, schema)
 	var out bytes.Buffer
@@ -212,4 +183,25 @@ func noteLines(output string) []string {
 		return nil
 	}
 	return strings.Split(trimmed, "\n")
+}
+
+// partitioned is a table carrying the hypertable settings a read records.
+func partitioned(schema, name, column string, dimensions int) catalog.Table {
+	return catalog.Table{Schema: schema, Name: name,
+		Facets: must.Must(schemaext.NewFacets(&tsschema.ObservedHypertable{Column: column, Dimensions: dimensions}))}
+}
+
+// undimensioned is the coverage a read records for a hypertable whose
+// dimension the catalog did not report: no settings on the table, and a limit
+// that says why.
+func undimensioned(schema, name string) schemaext.Coverage {
+	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.Postgres)).TableParts(schema, name)
+	return must.Must(schemaext.NewCoverage(schemaext.Observed, must.Must(tsschema.CompleteCoverage(schemaext.Observed)).KindRecords(),
+		[]schemaext.SubjectCoverage{{Kind: tsschema.HypertableKind, Subject: subject,
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the catalog reported no dimension for this hypertable"}}}))
+}
+
+func aggregate(name string) schemaext.Objects {
+	return must.Must(schemaext.NewObjects(tsschema.ObservedContinuousAggregateObject("", name,
+		tsschema.ObservedContinuousAggregate{Definition: "SELECT 1", HypertableName: "conditions"})))
 }

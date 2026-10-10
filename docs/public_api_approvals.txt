@@ -487,6 +487,19 @@ v0.13.0 ptah.run/migration/schemadiff/difftypes
 # lowering, so a ClickHouse index's `type` reaches its owner on this path too.
 v0.13.0 ptah.run/atlascompat
 
+# #4140 moves TimescaleDB hypertables and continuous aggregates to the
+# dialect/timescaledb owner packages. Hypertable settings are a tsschema table
+# facet and continuous aggregates are tsschema named objects; the common
+# Hypertable and ContinuousAggregate models, Database collections, AST nodes,
+# coverage kinds and diff buckets are removed under the approvals above, and
+# objectidentity names no continuous-aggregate kind. A live comparison
+# normalizes declared aggregate bodies
+# through the owner's probe on its own connection, so CompareOptions no longer
+# carries ContinuousAggregateBodies and ContinuousAggregateBody is removed.
+# This changes behavior; pre-v1, so no compatibility is owed under the
+# authorized #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/config
+
 # #4140 makes comparison context-aware and runtime-selected. All entry points
 # return errors; reporting variants retain structured common/feature limits.
 # Non-reporting calls refuse incomplete evidence instead of returning a partial

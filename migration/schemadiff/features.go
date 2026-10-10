@@ -55,13 +55,21 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 		return schemaext.ComparisonResult{}, err
 	}
 	if target == "" {
+		// Without a target no owner can compare anything, so any owner value,
+		// any limit a source recorded about one subject, and any change the
+		// caller asks for is refused. A kind-level knowledge claim with no
+		// value on either side is not: a read records what it knows about a
+		// model even when it found none, and with nothing declared and nothing
+		// found there is nothing to compare. A schema that uses no owner model
+		// compares as it did before the model had an owner.
 		if declared.Objects.Len() != 0 || observed.Objects.Len() != 0 || len(declared.Facets) != 0 || len(observed.Facets) != 0 ||
-			!declared.Coverage.IsZero() || !observed.Coverage.IsZero() || len(requests) != 0 {
+			len(declared.Coverage.SubjectRecords()) != 0 || len(observed.Coverage.SubjectRecords()) != 0 || len(requests) != 0 {
 			return schemaext.ComparisonResult{}, fmt.Errorf("%w: feature comparison requires an explicit target", ptaherr.ErrUnsupportedDialect)
 		}
 		return schemaext.ComparisonResult{Complete: true, Desired: declared}, nil
 	}
-	result, err := runtime.CompareFeatures(ctx, schemaext.ComparisonRequest{Target: target, Identifiers: semantics, Capabilities: caps, Desired: declared, Current: observed, Owners: parents, Requests: requests})
+	result, err := runtime.CompareFeatures(ctx, schemaext.ComparisonRequest{Target: target, Identifiers: semantics, Capabilities: caps,
+		Desired: declared, Current: observed, Owners: parents, Requests: requests, DeclaredRelations: declaredRelations(desired, semantics)})
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
@@ -69,6 +77,28 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 		return schemaext.ComparisonResult{}, fmt.Errorf("%w: feature comparison did not complete", schemaext.ErrInvalidValue)
 	}
 	return result, ctx.Err()
+}
+
+// declaredRelations names the views and materialized views the desired
+// schema declares, for owners whose objects share their namespace.
+func declaredRelations(desired *schemamodel.Database, semantics identifier.Semantics) []objectidentity.ID {
+	builder := objectidentity.NewBuilder(semantics)
+	relations := make([]objectidentity.ID, 0, len(desired.Views)+len(desired.MaterializedViews))
+	relation := func(kind objectidentity.Kind, name string) {
+		ref := builder.Table(name)
+		if ref.Name.Source == "" || ref.Name.Normalized == "" {
+			return
+		}
+		ref.Kind = kind
+		relations = append(relations, ref)
+	}
+	for _, view := range desired.Views {
+		relation(objectidentity.KindView, view.Name)
+	}
+	for _, view := range desired.MaterializedViews {
+		relation(objectidentity.KindMatView, view.Name)
+	}
+	return relations
 }
 
 func featureParents(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) ([]schemaext.ParentState, error) {

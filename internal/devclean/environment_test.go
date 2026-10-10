@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/devclean"
 )
 
@@ -79,4 +82,43 @@ func TestBaselineWithoutStartingPointOfAClaimedURL(t *testing.T) {
 	got := devclean.Baseline{}.WithoutStartingPoint(current, nil, "public")
 
 	c.Assert(got, qt.Equals, current)
+}
+
+// TestWithoutKeptStateMatchesFeatureObjectsInTheDefaultSchema pins that a
+// named feature object is matched the way every other family is: one read
+// without a schema is in the caller's default schema. The read's identity
+// fills in PostgreSQL's own default, so a dev database whose schema is app held
+// `daily` under public and a declaration of app.daily did not match it; the
+// comparison then planned a CREATE of an object the replay already had.
+func TestWithoutKeptStateMatchesFeatureObjectsInTheDefaultSchema(t *testing.T) {
+	aggregate := func(schema, name string) schemaext.Object {
+		return tsschema.ObservedContinuousAggregateObject(schema, name, tsschema.ObservedContinuousAggregate{Definition: "SELECT 1"})
+	}
+	tests := []struct {
+		name     string
+		declared []schemaext.Object
+		want     []string
+	}{
+		{name: "declared under the default schema's name", declared: []schemaext.Object{aggregate("app", "daily")}, want: []string{"daily"}},
+		{name: "declared without a schema", declared: []schemaext.Object{aggregate("", "daily")}, want: []string{"daily"}},
+		{name: "declared in another schema", declared: []schemaext.Object{aggregate("public", "daily")}},
+		{name: "not declared"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			env := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(aggregate("", "daily")))}
+			current := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(aggregate("", "daily")))}
+			declared := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(test.declared...))}
+
+			got := devclean.WithoutKeptState(current, env, declared, "app")
+
+			var names []string
+			for _, ref := range got.FeatureObjects.Refs() {
+				names = append(names, tsschema.QualifiedName(ref))
+			}
+			c.Assert(names, qt.DeepEquals, test.want)
+		})
+	}
 }

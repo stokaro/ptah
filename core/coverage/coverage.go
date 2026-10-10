@@ -63,9 +63,9 @@ import (
 // Source adapters can handle owner-defined kinds through [HeaderExtension]
 // without adding those records to a common [Set].
 //
-// Three declared kinds sit outside that serialized grammar: [Hypertable],
-// [ContinuousAggregate] and [ReplicaTable] are built and consulted in process
-// only, and their comments carry the consequence for a [Set] that holds one.
+// One declared kind sits outside that serialized grammar: [ReplicaTable] is
+// built and consulted in process only, and its comment carries the consequence
+// for a [Set] that holds one.
 type Kind string
 
 // The kinds a description can decline to describe. Each one names a comparator
@@ -117,40 +117,6 @@ const (
 	Schema Kind = "schema"
 	// Sequence is a standalone sequence (CREATE SEQUENCE).
 	Sequence Kind = "sequence"
-	// Hypertable is a TimescaleDB hypertable: an ordinary table partitioned on
-	// a range dimension.
-	//
-	// It is declined for the reason [Synonym] is, with one difference that
-	// makes it worse: the table IS in the description and only its
-	// partitioning is missing, so a format that cannot say a table is
-	// partitioned describes a table that looks complete. Reading that silence
-	// as intent would plan nothing at all -- there is no statement that undoes
-	// create_hypertable -- while a replay of the same description creates an
-	// ordinary table and a diff between the two reports no difference
-	// (stokaro/ptah#1026).
-	//
-	// Hypertable is consulted in process rather than serialized: it is not
-	// part of the directive grammar this package encodes and decodes, so a
-	// [Set] carrying this kind does not survive a round trip through a
-	// document. Hold the record in memory and consult it there.
-	Hypertable Kind = "hypertable"
-
-	// ContinuousAggregate is a TimescaleDB continuous aggregate: a
-	// materialized view over a hypertable the extension keeps up to date.
-	//
-	// It is declined for the reason [Hypertable] is, and the failure it
-	// prevents is louder. A description that cannot express one still describes
-	// the hypertable underneath it, so the aggregate reads as an object the
-	// document deliberately omits -- and the plan that follows is not a no-op
-	// but a DROP. Measured on 2.29.2, that drop cannot even apply: the server
-	// refuses DROP VIEW on a continuous aggregate and the run reports the same
-	// pending change forever (stokaro/ptah#1026).
-	//
-	// ContinuousAggregate is consulted in process rather than serialized,
-	// exactly as [Hypertable] is; see that constant for what this means for a
-	// [Set] carrying it.
-	ContinuousAggregate Kind = "continuous_aggregate"
-
 	// ChangeStream is a Spanner change stream (CREATE CHANGE STREAM): a
 	// database object with its own lifecycle that publishes row changes to a
 	// reader outside the schema.
@@ -214,9 +180,10 @@ const (
 	// rather than describing it as a table, so no plan drops, changes or
 	// creates a table at its path; the replication owns it.
 	//
-	// ReplicaTable is consulted in process rather than serialized, exactly
-	// as [Hypertable] is; see that constant for what this means for a [Set]
-	// carrying it.
+	// ReplicaTable is consulted in process rather than serialized: it is not
+	// part of the directive grammar this package encodes and decodes, so a
+	// [Set] carrying this kind does not survive a round trip through a
+	// document. Hold the record in memory and consult it there.
 	ReplicaTable Kind = "replica_table"
 	// ExternalDataSource is a YDB external data source. The reader describes
 	// one on a server with the external_data_sources capability, and records
@@ -258,9 +225,8 @@ const (
 )
 
 // kinds is every [Kind] the serialized directive grammar accepts, in the order
-// [ParseKind]'s refusal message lists them. [Hypertable],
-// [ContinuousAggregate] and [ReplicaTable] are not in it; each constant says
-// what that costs a serialized [Set].
+// [ParseKind]'s refusal message lists them. [ReplicaTable] is not in it; its
+// constant says what that costs a serialized [Set].
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,

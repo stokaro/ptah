@@ -14,7 +14,10 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/timescale"
 )
@@ -77,12 +80,12 @@ func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 	// keeps this test honest: a note about an incomplete description would be
 	// pointless if the description were empty.
 	c.Assert(describedTableNames(schema), qt.Contains, table)
-	c.Assert(describedHypertableNames(schema), qt.Contains, table)
+	c.Assert(describedHypertableNames(c, schema), qt.Contains, table)
 
 	// The continuous aggregate is in NEITHER the views nor the materialized
-	// views, and is reported on its own list. A description that carried it as
-	// a view would render CREATE VIEW over a body naming a relation in a schema
-	// the extension owns.
+	// views, and is described as an object of its own. A description that
+	// carried it as a view would render CREATE VIEW over a body naming a
+	// relation in a schema the extension owns.
 	c.Assert(describedViewNames(schema), qt.Not(qt.Contains), aggregate)
 	c.Assert(describedMatViewNames(schema), qt.Not(qt.Contains), aggregate)
 	c.Assert(describedAggregateNames(schema), qt.Contains, aggregate)
@@ -169,7 +172,7 @@ func TestTimescaleReportIsSilentOnOrdinaryPostgresE2E(t *testing.T) {
 	timescale.ReportUndescribed(&out, schema)
 
 	c.Assert(out.String(), qt.Equals, "")
-	c.Assert(schema.Hypertables, qt.HasLen, 0)
+	c.Assert(describedHypertableNames(c, schema), qt.HasLen, 0)
 }
 
 func execTimescale(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnection, statement string) {
@@ -197,10 +200,24 @@ func describedTableNames(schema *catalog.Database) []string {
 	return names
 }
 
-func describedHypertableNames(schema *catalog.Database) []string {
-	names := make([]string, 0, len(schema.Hypertables))
-	for _, hypertable := range schema.Hypertables {
-		names = append(names, strings.ToLower(hypertable.Name))
+// describedHypertableNames names the tables the read describes as hypertables:
+// the ones carrying settings, and the ones it recorded as hypertables it could
+// not describe. A malformed facet fails the test rather than reading as an
+// ordinary table.
+func describedHypertableNames(c *qt.C, schema *catalog.Database) []string {
+	c.Helper()
+	names := make([]string, 0, len(schema.Tables))
+	for _, table := range schema.Tables {
+		_, found, err := schemaext.FacetAs[*tsschema.ObservedHypertable](table.Facets, tsschema.HypertableKind)
+		c.Assert(err, qt.IsNil, qt.Commentf("hypertable settings of %s", table.Name))
+		if found {
+			names = append(names, strings.ToLower(table.Name))
+		}
+	}
+	for _, record := range schema.FeatureCoverage.SubjectRecords() {
+		if record.Kind == tsschema.HypertableKind && record.Knowledge.State != schemaext.Complete {
+			names = append(names, strings.ToLower(record.Subject.Name.Source))
+		}
 	}
 	return names
 }
@@ -222,9 +239,11 @@ func describedMatViewNames(schema *catalog.Database) []string {
 }
 
 func describedAggregateNames(schema *catalog.Database) []string {
-	names := make([]string, 0, len(schema.ContinuousAggregates))
-	for _, aggregate := range schema.ContinuousAggregates {
-		names = append(names, strings.ToLower(aggregate.Name))
+	names := make([]string, 0, schema.FeatureObjects.Len())
+	for _, ref := range schema.FeatureObjects.Refs() {
+		if ref.Kind == objectidentity.Kind(tsschema.ContinuousAggregateKind) {
+			names = append(names, strings.ToLower(ref.Name.Source))
+		}
 	}
 	return names
 }
@@ -235,11 +254,16 @@ func describedAggregateNames(schema *catalog.Database) []string {
 // It returns the definition rather than a found flag so a caller asserts on the
 // value: a helper that answered "absent" quietly would let a comparison test
 // pass over an aggregate nobody read.
-func describedAggregateDefinition(schema *catalog.Database, name string) string {
-	for _, aggregate := range schema.ContinuousAggregates {
-		if strings.EqualFold(aggregate.Name, name) {
+func describedAggregateDefinition(c *qt.C, schema *catalog.Database, name string) string {
+	c.Helper()
+	objects, err := schema.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	for _, object := range objects {
+		aggregate, ok := object.Value.(*tsschema.ObservedContinuousAggregate)
+		if ok && strings.EqualFold(object.Ref.Name.Source, name) {
 			return aggregate.Definition
 		}
 	}
+	c.Fatalf("the read describes no continuous aggregate named %s", name)
 	return ""
 }

@@ -201,6 +201,9 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if err := r.captureCoordinationNodes(); err != nil {
 		return Result{}, err
 	}
+	if err := r.captureTimescale(); err != nil {
+		return Result{}, err
+	}
 	r.render()
 	return Result{
 		Data:         []byte(r.builder.String()),
@@ -212,6 +215,8 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 type renderer struct {
 	coordinationNodes      []coordinationNode
 	coordinationDirectives []string
+	hypertables            []hypertableBlock
+	aggregates             []aggregateBlock
 	db                     *schemamodel.Database
 	dialect                string
 	// defaultSchema owns every object that arrived without one. Empty means the

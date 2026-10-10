@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -248,6 +249,8 @@ type renderContext struct {
 	streamingAnnotations    []string
 	workloadAnnotations     []string
 	secretAnnotations       []string
+	aggregateAnnotations    []string
+	hypertablesByTable      map[string]*tsschema.DesiredHypertable
 	changefeedsByTable      map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                      *schemamodel.Database
 	opts                    Options
@@ -404,6 +407,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
+		len(ctx.aggregateAnnotations) > 0 ||
 		ctx.hasYDBObjects() || ctx.hasExternalObjects()
 }
 
@@ -537,6 +541,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	ctx.writeResourcePools(w)
 	ctx.writeCoordinationNodes(w)
+	ctx.writeContinuousAggregates(w)
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
 		w.writeLine("")
@@ -587,6 +592,9 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		w.writeComment(constraintAnnotation(constraint))
 	}
 	w.writeComment(tableAnnotation(table))
+	if hypertable := ctx.hypertablesByTable[table.QualifiedName()]; hypertable != nil {
+		w.writeComment(hypertableAnnotation(table, hypertable))
+	}
 	for _, family := range ydbfamily.Stated(table.YDBColumnFamilies) {
 		w.writeComment(annotation("ptah:schema:columnfamily", columnFamilyAttrs(family)...))
 	}

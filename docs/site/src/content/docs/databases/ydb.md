@@ -792,7 +792,8 @@ A changefeed is YDB's stream of a row table's changes, kept in a topic at
 `<table>/<changefeed>` that readers read through consumers. A table declares
 one with `//ptah:schema:changefeed`, on its struct or on a holder field naming
 the table with `table` in the same file, and a consumer of its topic with
-`//ptah:schema:changefeed:consumer`:
+`//ptah:schema:changefeed:consumer`. A `table` without a directory that the file
+declares in two directories is refused; name the directory.
 
 ```go
 //ptah:schema:table name="orders"

@@ -326,7 +326,11 @@ can still include OCI schema artifacts in a composite desired schema.
 
 The plan records the desired artifact digest, a SHA-256 fingerprint of the
 complete live schema used as current state, the dialect, selected schemas,
-effective capabilities, and statement assessments.
+effective capabilities, and statement assessments. The fingerprint covers what
+feature owners read too, such as hypertable settings and what the read knows
+about each owner model, encoded through the owners' versioned codecs: the
+same schema always gives the same fingerprint, and a change to owner state
+changes it.
 
 Lint and plan attachments are not best-effort. If publication fails, the
 command fails.

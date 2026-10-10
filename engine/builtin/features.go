@@ -9,6 +9,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/timescaledb/tsrender"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/internal/ydbextensions"
 )
@@ -22,7 +24,33 @@ func validateNamedFeatures(dialect string, caps capability.Capabilities, objects
 	if platform.NormalizeDialect(dialect) == platform.YDB {
 		return ydbextensions.ValidateObjects(dialect, caps, objects)
 	}
+	if platform.IsPostgresFamily(dialect) {
+		return validateTimescaleObjects(dialect, objects)
+	}
 	return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+}
+
+// validateTimescaleObjects accepts the continuous aggregates a PostgreSQL-family
+// target's owner plans and refuses every other named object. Capability gating
+// stays with rendering, which writes the skip line on a target without the key.
+func validateTimescaleObjects(dialect string, objects schemaext.Objects) error {
+	all, err := objects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range all {
+		value, ok := object.Value.(*tsschema.DesiredContinuousAggregate)
+		if !ok {
+			return fmt.Errorf("%w: feature objects are not registered for target %q", ptaherr.ErrUnsupportedFeature, dialect)
+		}
+		if err := tsschema.ValidateContinuousAggregateRef(object.Ref); err != nil {
+			return err
+		}
+		if err := tsschema.ValidateDesiredContinuousAggregate(value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func prepareFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
@@ -56,16 +84,13 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	if err != nil {
 		return schemaext.Facets{}, err
 	}
-	var validate func(schemaext.Facets) error
-	switch platform.NormalizeDialect(dialect) {
-	case platform.ClickHouse:
-		validate = clickhouse.ValidateTableFacets
-	case platform.CockroachDB:
-		validate = crdbrender.ValidateTableFacets
-	default:
+	if platform.IsPostgresFamily(dialect) {
+		return preparePostgresTableFacets(dialect, projected)
+	}
+	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
 		return refuseActiveFacets(dialect, projected)
 	}
-	if err := validate(projected); err != nil {
+	if err := clickhouse.ValidateTableFacets(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
 	return projected, nil
@@ -80,6 +105,27 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 		return refuseActiveFacets(dialect, projected)
 	}
 	if err := clickhouse.ValidateIndexFacets(projected); err != nil {
+		return schemaext.Facets{}, err
+	}
+	return projected, nil
+}
+
+// preparePostgresTableFacets accepts the TimescaleDB settings every
+// PostgreSQL-family renderer writes after CREATE TABLE, and the row-level TTL a
+// CockroachDB CREATE TABLE carries. Every other kind is refused: no owner
+// composed for this family renders it.
+func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (schemaext.Facets, error) {
+	if err := tsrender.ValidateTableFacets(projected); err != nil {
+		return schemaext.Facets{}, err
+	}
+	rest := projected.Without(tsschema.HypertableKind)
+	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
+		if err := crdbrender.ValidateTableFacets(rest); err != nil {
+			return schemaext.Facets{}, err
+		}
+		return projected, nil
+	}
+	if _, err := refuseActiveFacets(dialect, rest); err != nil {
 		return schemaext.Facets{}, err
 	}
 	return projected, nil

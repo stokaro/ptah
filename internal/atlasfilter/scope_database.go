@@ -33,6 +33,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectTimescaleFeatures(out.FeatureObjects, out.FeatureCoverage)
 	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
@@ -115,14 +116,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 			}
 			return s.selected(typeList("extended_property"), property.Schema, property.Name) ||
 				(property.Table != "" && s.tableKept(keptTables, property.Schema, property.Table))
-		})
-	// A continuous aggregate is selected on its own name, in the schema that
-	// holds it. It is not managed, so nothing rides on it the way a sequence
-	// rides on its owning table; it is here so a narrowed description still
-	// carries the aggregates of the schemas it does describe.
-	out.ContinuousAggregates = keep(db.ContinuousAggregates,
-		func(aggregate catalog.ContinuousAggregate) bool {
-			return s.selected(typeList("continuous_aggregate"), aggregate.Schema, aggregate.Name)
 		})
 	out.Functions = keep(db.Functions, func(function catalog.Function) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)

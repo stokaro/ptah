@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
@@ -188,24 +189,6 @@ func roundTripRows() []roundTripRow {
 			count: func(d *schemamodel.Database) int { return len(d.DefaultPrivileges) },
 		},
 		{
-			field: "Hypertables",
-			seed: func(d *schemamodel.Database) {
-				d.Hypertables = append(d.Hypertables, schemamodel.Hypertable{
-					Table: "users", Column: "created_at",
-				})
-			},
-			count: func(d *schemamodel.Database) int { return len(d.Hypertables) },
-		},
-		{
-			field: "ContinuousAggregates",
-			seed: func(d *schemamodel.Database) {
-				d.ContinuousAggregates = append(d.ContinuousAggregates, schemamodel.ContinuousAggregate{
-					Name: "hourly", Body: "SELECT time_bucket('1 hour', created_at) AS bucket FROM users GROUP BY bucket",
-				})
-			},
-			count: func(d *schemamodel.Database) int { return len(d.ContinuousAggregates) },
-		},
-		{
 			field: "Synonyms",
 			seed: func(d *schemamodel.Database) {
 				d.Synonyms = append(d.Synonyms, schemamodel.Synonym{Name: "s1", Target: "other.dbo.users"})
@@ -276,10 +259,8 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Ranges":         coverage.Range,
 	// HCL gained a block for these two (stokaro/ptah#1031) and the sweep above
 	// measures that they survive it; YAML still has no key, so here they stay.
-	"Hypertables":          coverage.Hypertable,
-	"ContinuousAggregates": coverage.ContinuousAggregate,
-	"Synonyms":             coverage.Synonym,
-	"ExtendedProperties":   coverage.ExtendedProperty,
+	"Synonyms":           coverage.Synonym,
+	"ExtendedProperties": coverage.ExtendedProperty,
 }
 
 // The YAML surface has a topics key, so a YAML document that leaves a topic
@@ -387,6 +368,33 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 				qt.Commentf("%s did not survive the document Ptah itself wrote", row.field))
 		})
 	}
+}
+
+// TestRoundTrip_TimescaleStateSurvives is the sweep's row for the TimescaleDB
+// models, which are a facet of a table and a named feature object rather than
+// families of the common model: both have an HCL block, so the document Ptah
+// writes carries them back unchanged.
+func TestRoundTrip_TimescaleStateSurvives(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	hypertable := &tsschema.DesiredHypertable{Column: "created_at", ChunkInterval: "1 day", IfNotExists: true, Comment: "time series"}
+	db.Tables[0].Facets = must.Must(schemaext.NewFacets(hypertable))
+	aggregate := tsschema.DesiredContinuousAggregateObject("public", "hourly", tsschema.DesiredContinuousAggregate{
+		Body: "SELECT time_bucket('1 hour', created_at) AS bucket FROM users GROUP BY bucket", MaterializedOnly: new(true), Comment: "hourly",
+	})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(aggregate))
+
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+
+	parsedHypertable, found, err := schemaext.FacetAs[*tsschema.DesiredHypertable](parsed.Tables[0].Facets, tsschema.HypertableKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(parsedHypertable, qt.DeepEquals, hypertable)
+	parsedAggregate, found, err := parsed.FeatureObjects.Get(aggregate.Ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(parsedAggregate.Value, qt.DeepEquals, aggregate.Value)
+	c.Assert(parsed.FeatureCoverage.Lookup(tsschema.ContinuousAggregateKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 }
 
 // hclUnwritableFields are the object families the HCL document has no block

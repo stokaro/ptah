@@ -29,16 +29,20 @@ type ParentState struct {
 // assigned to a comparison service. Parents includes common table lifecycles,
 // including tables whose child namespace is empty. Requests holds the
 // [ChangeRequest] values whose subjects have one of those kinds, ordered by
-// subject and then action. Inputs are snapshots.
+// subject and then action. DeclaredRelations names the views and materialized
+// views the desired schema declares, so an owner whose objects hold their
+// names as relations can refuse a declaration that collides with one it
+// observes. Inputs are snapshots.
 type ObjectComparisonRequest struct {
-	Target       string
-	Identifiers  identifier.Semantics
-	Capabilities capability.Capabilities
-	Kinds        []Kind
-	Desired      ObjectState
-	Current      ObjectState
-	Parents      []ParentState
-	Requests     []ChangeRequest
+	Target            string
+	Identifiers       identifier.Semantics
+	Capabilities      capability.Capabilities
+	Kinds             []Kind
+	Desired           ObjectState
+	Current           ObjectState
+	Parents           []ParentState
+	Requests          []ChangeRequest
+	DeclaredRelations []objectidentity.ID
 }
 
 // UndecidedChange is a requested state the available evidence cannot safely

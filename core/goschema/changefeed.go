@@ -1,10 +1,13 @@
 package goschema
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"go/ast"
 	"slices"
+	"strconv"
+	"strings"
 
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
@@ -157,23 +160,40 @@ func (s *schemaParseState) changefeedTable(structName, table string, ctx annotat
 // ownerTable finds the table an annotation declaring one of the table's parts
 // belongs to: the one its table attribute names, or the one its struct maps
 // to. object names the part, as the refusal reads it.
+//
+// A table attribute that names no schema matches a table of that name in any
+// schema of the file, and is refused when the file declares it in more than
+// one: attaching the part to whichever came first would partition, or stream
+// from, a table the author may not have meant.
 func (s *schemaParseState) ownerTable(structName, table string, ctx annotationErrorContext, directive, object string) (int, error) {
-	schemaName, tableName := tableDirectiveName("", table)
-	index := slices.IndexFunc(s.tableDirectives, func(declared schemamodel.Table) bool {
-		if table == "" {
-			return declared.StructName == structName
-		}
-		return declared.Name == tableName && (schemaName == "" || declared.Schema == schemaName)
-	})
-	if index >= 0 {
-		return index, nil
-	}
 	if table == "" {
+		index := slices.IndexFunc(s.tableDirectives, func(declared schemamodel.Table) bool { return declared.StructName == structName })
+		if index >= 0 {
+			return index, nil
+		}
 		return -1, s.placementError(ctx, directive,
 			fmt.Sprintf("struct %s maps to no table in this file; name the table with the table attribute", structName))
 	}
+	schemaName, tableName := tableDirectiveName("", table)
+	var matches []int
+	for i, declared := range s.tableDirectives {
+		if declared.Name == tableName && (schemaName == "" || declared.Schema == schemaName) {
+			matches = append(matches, i)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return -1, s.placementError(ctx, directive,
+			fmt.Sprintf("table %q is not declared in this file, and %s is declared beside its table", table, object))
+	}
+	schemas := make([]string, 0, len(matches))
+	for _, index := range matches {
+		schemas = append(schemas, strconv.Quote(cmp.Or(s.tableDirectives[index].Schema, "(default)")))
+	}
 	return -1, s.placementError(ctx, directive,
-		fmt.Sprintf("table %q is not declared in this file, and %s is declared beside its table", table, object))
+		fmt.Sprintf("table %q is declared in schemas %s; name the schema in the table attribute", table, strings.Join(schemas, " and ")))
 }
 
 // placementError reports an annotation that cannot be placed: one whose table

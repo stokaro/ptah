@@ -3,8 +3,14 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 )
 
 // hypertableCatalog is the view TimescaleDB publishes its hypertables through.
@@ -69,19 +75,24 @@ const hypertableQuery = `
 	WHERE h.hypertable_schema = $1
 	ORDER BY h.hypertable_name`
 
+// readHypertable is one hypertable a read found, before it is attached to its
+// table. observed is nil when the catalog reported no dimension for it.
+type readHypertable struct {
+	schema, outputSchema, table string
+	observed                    *tsschema.ObservedHypertable
+}
+
 // readHypertables reads the hypertables of the schemas this read covers, and
 // asks nothing at all where the extension is absent.
 //
 // A failure once the extension IS installed is surfaced rather than swallowed,
 // for the reason the aggregate read gives: an empty answer would say "no table
-// here is partitioned", and that is a claim a failed read cannot make. The
-// consequence of getting it wrong is not a wrong statement but a MISSING note,
-// which is the failure this whole read exists to prevent.
-func (r *Reader) readHypertables(ctx context.Context, extensions []catalog.Extension) ([]catalog.Hypertable, error) {
+// here is partitioned", and that is a claim a failed read cannot make.
+func (r *Reader) readHypertables(ctx context.Context, extensions []catalog.Extension) ([]readHypertable, error) {
 	if !hasTimescaleExtension(extensions) {
 		return nil, nil
 	}
-	var hypertables []catalog.Hypertable
+	var hypertables []readHypertable
 	for _, schemaName := range r.schemasToRead() {
 		schemaHypertables, err := r.readHypertablesForSchema(ctx, schemaName)
 		if err != nil {
@@ -92,28 +103,83 @@ func (r *Reader) readHypertables(ctx context.Context, extensions []catalog.Exten
 	return hypertables, nil
 }
 
-func (r *Reader) readHypertablesForSchema(ctx context.Context, schemaName string) ([]catalog.Hypertable, error) {
+func (r *Reader) readHypertablesForSchema(ctx context.Context, schemaName string) ([]readHypertable, error) {
 	rows, err := r.db.QueryContext(ctx, hypertableQuery, schemaName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var hypertables []catalog.Hypertable
+	var hypertables []readHypertable
 	for rows.Next() {
-		var hypertable catalog.Hypertable
+		var hypertable readHypertable
 		var dimension, dimensionType, interval sql.NullString
+		var dimensions int
 		if err := rows.Scan(
-			&hypertable.Schema, &hypertable.Name,
-			&dimension, &dimensionType, &interval, &hypertable.Dimensions,
+			&hypertable.schema, &hypertable.table,
+			&dimension, &dimensionType, &interval, &dimensions,
 		); err != nil {
 			return nil, err
 		}
-		hypertable.Schema = r.outputSchema(hypertable.Schema)
-		hypertable.PrimaryDimension = dimension.String
-		hypertable.PrimaryDimensionType = dimensionType.String
-		hypertable.ChunkInterval = interval.String
+		hypertable.outputSchema = r.outputSchema(hypertable.schema)
+		if dimension.String != "" {
+			hypertable.observed = &tsschema.ObservedHypertable{Column: dimension.String, ColumnType: dimensionType.String,
+				ChunkInterval: interval.String, Dimensions: max(dimensions, 1)}
+		}
 		hypertables = append(hypertables, hypertable)
 	}
 	return hypertables, rows.Err()
+}
+
+// attachTimescale records what the TimescaleDB catalog reported on the read
+// it belongs to: hypertable settings on their tables, continuous aggregates as
+// named objects, and complete coverage of both, because the read asked the
+// extension's own catalog -- or established that the extension, and with it
+// every hypertable and aggregate, is absent.
+//
+// A hypertable whose dimension the catalog did not report is recorded as a
+// knowledge limit on its table rather than as settings, because a declaration
+// needs the column and there is none to carry. A comparison then decides
+// nothing about that table's partitioning, and an export refuses it.
+func (r *Reader) attachTimescale(schema *catalog.Database, hypertables []readHypertable, aggregates []readAggregate) error {
+	builder := objectidentity.NewBuilder(identifier.ForDialect(platform.Postgres))
+	var limits []schemaext.SubjectCoverage
+	for _, hypertable := range hypertables {
+		index := slices.IndexFunc(schema.Tables, func(table catalog.Table) bool {
+			return table.Schema == hypertable.outputSchema && table.Name == hypertable.table
+		})
+		if index < 0 {
+			continue
+		}
+		if hypertable.observed == nil {
+			limits = append(limits, schemaext.SubjectCoverage{Kind: tsschema.HypertableKind,
+				Subject:   builder.TableParts(hypertable.outputSchema, hypertable.table),
+				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the catalog reported no dimension for this hypertable"}})
+			continue
+		}
+		facets, err := schema.Tables[index].Facets.With(hypertable.observed)
+		if err != nil {
+			return err
+		}
+		schema.Tables[index].Facets = facets
+	}
+	for _, aggregate := range aggregates {
+		var err error
+		schema.FeatureObjects, err = schema.FeatureObjects.With(tsschema.ObservedContinuousAggregateObject(aggregate.schema, aggregate.name, aggregate.observed))
+		if err != nil {
+			return err
+		}
+	}
+	known, err := tsschema.CompleteCoverage(schemaext.Observed)
+	if err != nil {
+		return err
+	}
+	if len(limits) > 0 {
+		known, err = schemaext.NewCoverage(schemaext.Observed, known.KindRecords(), limits)
+		if err != nil {
+			return err
+		}
+	}
+	schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(known)
+	return err
 }

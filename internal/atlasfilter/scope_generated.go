@@ -32,6 +32,7 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectTimescaleFeatures(out.FeatureObjects, out.FeatureCoverage)
 	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {

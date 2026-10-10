@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/schemafile"
 )
@@ -54,8 +55,8 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
-				coverage.ContinuousAggregate, coverage.ExtendedProperty, coverage.ExternalDataSource, coverage.ExternalTable,
-				coverage.Hypertable, coverage.Replication, coverage.Synonym, coverage.Transfer),
+				coverage.ExtendedProperty, coverage.ExternalDataSource, coverage.ExternalTable,
+				coverage.Replication, coverage.Synonym, coverage.Transfer),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -67,13 +68,12 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// also the control on the replication and the transfer and
 			// external objects: YAML has a key for each, so a loader that
 			// recorded them for every format fails here.
-			name:     "YAML cannot name nine families",
+			name:     "YAML cannot name seven families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
 			want: unsupportedRecords(
-				coverage.Composite, coverage.ContinuousAggregate, coverage.Domain,
-				coverage.ExtendedProperty, coverage.Hypertable, coverage.Range,
-				coverage.Sequence, coverage.Synonym, coverage.VirtualTable),
+				coverage.Composite, coverage.Domain, coverage.ExtendedProperty,
+				coverage.Range, coverage.Sequence, coverage.Synonym, coverage.VirtualTable),
 		},
 		{
 			// DBML declares the widest boundary of any format here, and that is
@@ -87,8 +87,8 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
-				coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.Composite, coverage.ContinuousAggregate,
-				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Hypertable,
+				coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.Composite,
+				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.ExternalDataSource, coverage.ExternalTable,
 				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Sequence,
 				coverage.Synonym, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
@@ -154,6 +154,39 @@ func TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "held")).State, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestTimescaleCoverageFollowsWhatAFormatCanName pins which formats claim to
+// describe TimescaleDB state. HCL has a block for each model, so a document
+// naming neither describes a database without either. The other formats have
+// no syntax for them, and claim nothing: a comparison then keeps what the
+// server holds rather than planning its removal.
+func TestTimescaleCoverageFollowsWhatAFormatCanName(t *testing.T) {
+	tests := []struct {
+		file     string
+		contents string
+		want     schemaext.KnowledgeState
+	}{
+		{file: "schema.hcl", contents: "schema \"main\" {\n}\n", want: schemaext.Complete},
+		{file: "schema.sql", contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n", want: schemaext.Uninspected},
+		{file: "schema.yaml", contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n", want: schemaext.Uninspected},
+		{file: "schema.dbml", contents: "Table users {\n  id integer [pk]\n}\n", want: schemaext.Uninspected},
+	}
+
+	for _, test := range tests {
+		t.Run(test.file, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(t.TempDir(), test.file)
+			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
+
+			database, err := schemafile.LoadPath(path, schemafile.Options{})
+
+			c.Assert(err, qt.IsNil)
+			for _, kind := range []schemaext.Kind{tsschema.HypertableKind, tsschema.ContinuousAggregateKind} {
+				c.Assert(database.FeatureCoverage.Lookup(kind, tsschema.ContinuousAggregateRef("", "users")).State, qt.Equals, test.want, qt.Commentf("%s", kind))
+			}
 		})
 	}
 }

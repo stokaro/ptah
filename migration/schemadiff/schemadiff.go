@@ -23,7 +23,6 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/systemschema"
-	"ptah.run/internal/timescale"
 	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -212,12 +211,6 @@ func compareReportingUndecidedAdditions(
 	compare.Replications(desired, database, diff, cov)
 
 	compare.ExternalObjects(desired, database, diff, cov)
-
-	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
-	compare.Hypertables(desired, database, diff, cov)
-	compare.ContinuousAggregates(
-		desired, database, diff, cov, opts.ContinuousAggregateBodies, identifierSemantics,
-	)
 
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(desired, database, diff, cov)
@@ -517,12 +510,6 @@ func validateDeclaredBeforeComparison(
 	// nothing to plan and report convergence. Refuse instead, here, where
 	// an error can still travel.
 	if err := clickhouserbac.ValidateLive(info.Dialect, desired, database); err != nil {
-		return err
-	}
-	// A declared relation whose name a continuous aggregate already occupies.
-	// The server would answer `relation ... already exists` halfway through
-	// the script; this says which object it is (stokaro/ptah#1026).
-	if err := timescale.ValidateLive(info.Dialect, desired, database); err != nil {
 		return err
 	}
 	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(

@@ -7,11 +7,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasreport"
 )
@@ -144,6 +147,8 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 }
 
 // Keeping all common objects cannot grant knowledge of an unenrolled feature.
+// The only claim a member makes is the one every HCL document makes by its
+// format: it has a block for each TimescaleDB model.
 func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 	c := qt.New(t)
 
@@ -154,7 +159,7 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
 		parsed, err := atlashcl.Parse([]byte(data), path)
 		c.Assert(err, qt.IsNil)
-		c.Assert(parsed.FeatureCoverage.IsZero(), qt.IsTrue)
+		c.Assert(parsed.FeatureCoverage.Equal(must.Must(tsschema.CompleteCoverage(schemaext.Desired))), qt.IsTrue)
 	}
 }
 

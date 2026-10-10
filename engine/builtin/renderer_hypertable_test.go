@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -27,7 +30,7 @@ func TestRender_ADeclaredExtensionIsTheOfflineEvidence(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	script := strings.Join(statements, "\n")
 	c.Assert(script, qt.Contains, `CREATE EXTENSION "timescaledb"`)
-	c.Assert(script, qt.Contains, "SELECT create_hypertable('public.readings'")
+	c.Assert(script, qt.Contains, `SELECT create_hypertable('"public"."readings"'`)
 	c.Assert(script, qt.Not(qt.Contains), "hypertable public.readings is not supported")
 }
 
@@ -61,12 +64,34 @@ func hypertableDocumentDeclaringTheExtension() *schemamodel.Database {
 func hypertableDocument() *schemamodel.Database {
 	return &schemamodel.Database{
 		Schemas: []schemamodel.Schema{{Name: "public"}},
-		Tables:  []schemamodel.Table{{StructName: "T", Name: "readings", Schema: "public"}},
+		Tables: []schemamodel.Table{{StructName: "T", Name: "readings", Schema: "public",
+			Facets: must.Must(schemaext.NewFacets(&tsschema.DesiredHypertable{Column: "time"}))}},
 		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "time", Type: "TIMESTAMPTZ", Primary: true},
 		},
-		Hypertables: []schemamodel.Hypertable{{
-			StructName: "T", Table: "public.readings", Column: "time",
-		}},
 	}
+}
+
+// TestRender_AnAggregateComesBetweenItsTableAndTheViewsThatReadIt pins the
+// whole-schema order: the aggregate after the table and the call that
+// partitions it, and before a view that reads it. A script that created the
+// view first would answer `relation "hourly" does not exist`.
+func TestRender_AnAggregateComesBetweenItsTableAndTheViewsThatReadIt(t *testing.T) {
+	c := qt.New(t)
+	database := hypertableDocumentDeclaringTheExtension()
+	database.FeatureObjects = must.Must(schemaext.NewObjects(tsschema.DesiredContinuousAggregateObject("public", "hourly",
+		tsschema.DesiredContinuousAggregate{Body: "SELECT time_bucket('1 hour', time) AS bucket FROM public.readings GROUP BY bucket"})))
+	database.FeatureCoverage = must.Must(tsschema.CompleteCoverage(schemaext.Desired))
+	database.Views = []schemamodel.View{{StructName: "Recent", Name: "public.recent", Body: "SELECT bucket FROM public.hourly"}}
+
+	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	script := strings.Join(statements, "\n")
+	table := strings.Index(script, `CREATE TABLE "public"."readings"`)
+	hypertable := strings.Index(script, "SELECT create_hypertable(")
+	aggregate := strings.Index(script, `CREATE MATERIALIZED VIEW "public"."hourly"`)
+	view := strings.Index(script, `CREATE VIEW "public"."recent"`)
+	c.Assert([]bool{table >= 0, hypertable > table, aggregate > hypertable, view > aggregate}, qt.DeepEquals, []bool{true, true, true, true},
+		qt.Commentf("script:\n%s", script))
 }

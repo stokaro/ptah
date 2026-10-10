@@ -2,12 +2,14 @@ package goschematogo
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -34,10 +36,20 @@ func (ctx *renderContext) captureFeatureObjects() error {
 			annotation("ptah:schema:notdescribed", attr{name: "kind", value: string(limit.Kind), set: true},
 				attr{name: "name", value: limit.Name, set: limit.Name != ""}))
 	}
+	tables := make(map[*schemaext.Facets]bool, len(ctx.db.Tables))
+	for i := range ctx.db.Tables {
+		tables[&ctx.db.Tables[i].Facets] = true
+	}
 	for _, facets := range ctx.db.FacetSlots() {
-		if !facets.IsZero() {
-			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, facets.DeclaredKinds()[0])
+		for _, kind := range facets.DeclaredKinds() {
+			if tables[facets] && isTimescaleFacet(kind) && slices.Contains(facets.Kinds(), kind) {
+				continue
+			}
+			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, kind)
 		}
+	}
+	if err := ctx.captureHypertables(); err != nil {
+		return err
 	}
 	parents := make(map[objectidentity.Key]struct{}, len(ctx.db.Tables))
 	for _, table := range ctx.db.Tables {
@@ -87,6 +99,9 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 		ctx.streamingAnnotations = append(ctx.streamingAnnotations, streamingQueryAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, query))
 		return nil
 	}
+	if aggregate, ok := object.Value.(*tsschema.DesiredContinuousAggregate); ok && isTimescaleObject(object.Ref) {
+		return ctx.captureContinuousAggregate(object, aggregate)
+	}
 	if node, ok := object.Value.(*ydbcoordination.Desired); ok {
 		if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
 			return err
@@ -101,6 +116,12 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 	if !ok {
 		return fmt.Errorf("%w: Go annotations cannot represent feature object %s with value %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
 	}
+	return ctx.captureChangefeed(object, feed, parents)
+}
+
+// captureChangefeed records a changefeed under the declared table it belongs
+// to, refusing what a Go annotation cannot preserve.
+func (ctx *renderContext) captureChangefeed(object schemaext.Object, feed *ydbschema.DesiredChangefeed, parents map[objectidentity.Key]struct{}) error {
 	if err := ydbschema.ValidateChangefeed(feed.Spec); err != nil {
 		return err
 	}

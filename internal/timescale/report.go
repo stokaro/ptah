@@ -1,3 +1,6 @@
+// Package timescale holds the note the read surfaces write for TimescaleDB
+// state a description cannot carry: hypertables partitioned on more than the
+// one dimension a declaration states.
 package timescale
 
 import (
@@ -9,6 +12,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 )
 
 // ReportUndescribed writes a note naming the TimescaleDB objects the
@@ -67,7 +72,8 @@ func ReportUndescribed(w io.Writer, schema *catalog.Database) {
 // both carry the dimension and the chunk interval, and the round trip converges.
 //
 // One whose dimension the catalog did not report is named even though it counts
-// as one, because a declaration needs the column and there is none to carry.
+// as one, because a declaration needs the column and there is none to carry;
+// the read records it as a knowledge limit on its table rather than as settings.
 //
 // Only the tables the document contains, because selection runs before this:
 // `--exclude conditions` removes the table from the document, and naming it
@@ -76,15 +82,21 @@ func ReportUndescribed(w io.Writer, schema *catalog.Database) {
 func reportHypertables(w io.Writer, schema *catalog.Database) {
 	described := describedTables(schema)
 	var named []string
-	for _, hypertable := range schema.Hypertables {
-		key := tableKey(hypertable.Schema, hypertable.Name)
-		if _, ok := described[key]; !ok {
+	for _, table := range schema.Tables {
+		hypertable, found, err := schemaext.FacetAs[*tsschema.ObservedHypertable](table.Facets, tsschema.HypertableKind)
+		if err != nil || !found || hypertable.Dimensions <= 1 {
 			continue
 		}
-		if hypertable.PrimaryDimension != "" && hypertable.Dimensions <= 1 {
+		named = append(named, describeHypertable(table.QualifiedName(), hypertable))
+	}
+	for _, record := range schema.FeatureCoverage.SubjectRecords() {
+		if record.Kind != tsschema.HypertableKind || record.Knowledge.State != schemaext.Unrepresentable {
 			continue
 		}
-		named = append(named, describeHypertable(hypertable))
+		if _, ok := described[tableKey(record.Subject.Schema.Authored(), record.Subject.Name.Source)]; !ok {
+			continue
+		}
+		named = append(named, catalog.QualifyTableName(record.Subject.Schema.Authored(), record.Subject.Name.Source))
 	}
 	if len(named) == 0 {
 		return
@@ -102,31 +114,16 @@ func reportHypertables(w io.Writer, schema *catalog.Database) {
 // table, the column it is partitioned on, and how many further dimensions there
 // are. A note that named only the table would leave the reader to go and look
 // up what was lost.
-//
-// The count is why [catalog.Hypertable.Dimensions] is read at all. A hypertable
-// partitioned by range on `time` AND by hash on `device` reports two, and a note
-// naming only `time` would say less than the truth about what a replay drops --
-// the failure this note exists to prevent, one level down.
-func describeHypertable(hypertable catalog.Hypertable) string {
-	if hypertable.PrimaryDimension == "" {
-		return hypertable.QualifiedName()
-	}
-	return fmt.Sprintf("%s (on %s%s)",
-		hypertable.QualifiedName(), hypertable.PrimaryDimension,
-		furtherDimensions(hypertable.Dimensions))
+func describeHypertable(table string, hypertable *tsschema.ObservedHypertable) string {
+	return fmt.Sprintf("%s (on %s%s)", table, hypertable.Column, furtherDimensions(hypertable.Dimensions))
 }
 
-// furtherDimensions names the partitioning the note does not spell out, and
-// says nothing for the ordinary single-dimension hypertable.
+// furtherDimensions names the partitioning the note does not spell out.
 func furtherDimensions(dimensions int) string {
-	switch {
-	case dimensions > 2:
+	if dimensions > 2 {
 		return fmt.Sprintf(" and %d more dimensions", dimensions-1)
-	case dimensions == 2:
-		return " and 1 more dimension"
-	default:
-		return ""
 	}
+	return " and 1 more dimension"
 }
 
 // describedTables keys the tables this description carries, folded the way

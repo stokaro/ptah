@@ -91,20 +91,6 @@ func TestCompare_NotInspectedNeverBecomesAbsent(t *testing.T) {
 			},
 			removed: func(d *difftypes.SchemaDiff) int { return len(d.ExtendedPropertiesRemoved) },
 		},
-		{
-			name:    "hypertable",
-			kind:    coverage.Hypertable,
-			current: func(db *catalog.Database) { db.Hypertables = []catalog.Hypertable{{Name: "metrics"}} },
-			removed: func(d *difftypes.SchemaDiff) int { return len(d.HypertablesRemoved) },
-		},
-		{
-			name: "continuous aggregate",
-			kind: coverage.ContinuousAggregate,
-			current: func(db *catalog.Database) {
-				db.ContinuousAggregates = []catalog.ContinuousAggregate{{Name: "daily"}}
-			},
-			removed: func(d *difftypes.SchemaDiff) int { return len(d.ContinuousAggregatesRemoved) },
-		},
 	}
 
 	for _, test := range tests {

@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-585 fields are reachable from the desired schema, and each one carries
+581 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 508 | reaches rendered SQL on at least one target |
-| `comparison` | 9 | read when two schemas are compared, and written into no statement |
+| `ddl` | 503 | reaches rendered SQL on at least one target |
+| `comparison` | 11 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 26 | identifies the source text the declaration was read from |
+| `source` | 25 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -197,16 +197,9 @@ None.
 | `schemamodel.Constraint.Type` | `ddl` | — |
 | `schemamodel.Constraint.UsingMethod` | `ddl` | — |
 | `schemamodel.Constraint.WhereCondition` | `ddl` | — |
-| `schemamodel.ContinuousAggregate.Body` | `ddl` | — |
-| `schemamodel.ContinuousAggregate.Comment` | `ddl` | — |
-| `schemamodel.ContinuousAggregate.MaterializedOnly` | `ddl` | — |
-| `schemamodel.ContinuousAggregate.Name` | `ddl` | — |
-| `schemamodel.ContinuousAggregate.Schema` | `ddl` | — |
-| `schemamodel.ContinuousAggregate.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Database.AsyncReplications` | `ddl` | — |
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
-| `schemamodel.Database.ContinuousAggregates` | `ddl` | — |
 | `schemamodel.Database.DatabasePath` | `ddl` | — |
 | `schemamodel.Database.DefaultPrivileges` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |
@@ -225,7 +218,6 @@ None.
 | `schemamodel.Database.FunctionDependencies` | `derived` | function creation order, derived by Finalize from the declared bodies |
 | `schemamodel.Database.Functions` | `ddl` | — |
 | `schemamodel.Database.Grants` | `ddl` | — |
-| `schemamodel.Database.Hypertables` | `ddl` | — |
 | `schemamodel.Database.Indexes` | `ddl` | — |
 | `schemamodel.Database.ManagedData` | `data` | reference and seed rows; `ptah seed` writes them and `ptah schema render` does not |
 | `schemamodel.Database.MaterializedViews` | `ddl` | — |
@@ -389,12 +381,6 @@ None.
 | `schemamodel.Grant.RoutineKind` | `ddl` | — |
 | `schemamodel.Grant.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Grant.WithOption` | `ddl` | — |
-| `schemamodel.Hypertable.ChunkInterval` | `ddl` | — |
-| `schemamodel.Hypertable.Column` | `ddl` | — |
-| `schemamodel.Hypertable.Comment` | `ddl` | — |
-| `schemamodel.Hypertable.IfNotExists` | `ddl` | — |
-| `schemamodel.Hypertable.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.Hypertable.Table` | `ddl` | — |
 | `schemamodel.Index.Comment` | `ddl` | — |
 | `schemamodel.Index.Concurrently` | `planning` | asks that the index be BUILT without locking when added to a live table; internal/concurrentindex owns that decision, and only a plan carries it into DDL |
 | `schemamodel.Index.Condition` | `ddl` | — |
@@ -585,6 +571,16 @@ None.
 | `schemamodel.View.Name` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.View.WithCheck` | `ddl` | — |
+| `tsschema.DesiredContinuousAggregate.Body` | `ddl` | — |
+| `tsschema.DesiredContinuousAggregate.Comment` | `ddl` | — |
+| `tsschema.DesiredContinuousAggregate.MaterializedOnly` | `ddl` | — |
+| `tsschema.DesiredContinuousAggregate.Normalized` | `comparison` | a connected server's rewrite of the declared body, attached before a live comparison; a statement writes the body as declared |
+| `tsschema.DesiredContinuousAggregate.StructName` | `source` | the Go struct the declaration was read from; the aggregate's schema and name are its identity |
+| `tsschema.DesiredHypertable.ChunkInterval` | `ddl` | — |
+| `tsschema.DesiredHypertable.Column` | `ddl` | — |
+| `tsschema.DesiredHypertable.Comment` | `ddl` | — |
+| `tsschema.DesiredHypertable.IfNotExists` | `ddl` | — |
+| `tsschema.NormalizedBody.Body` | `comparison` | the server's spelling of a declared body, compared with the catalog definition and never rendered |
 | `ydbcoordination.Desired.Spec` | `ddl` | — |
 | `ydbcoordination.Desired.StructName` | `source` | the Go holder recorded by the source; node identity is independent of the holder |
 | `ydbcoordination.Spec.AttachConsistencyMode` | `ddl` | — |

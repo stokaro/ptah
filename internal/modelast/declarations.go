@@ -72,6 +72,11 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	names := make(map[objectidentity.Key]string, len(database.Tables))
 	builder := objectidentity.NewBuilder(semantics)
 	for _, table := range database.Tables {
+		// A table without a name is no relation an owner can order itself
+		// against, and the common render answers for it on its own.
+		if table.Name == "" {
+			continue
+		}
 		request.Tables = append(request.Tables, schemacapture.DeclareTable(&database, table, semantics))
 		names[builder.TableParts(table.Schema, table.Name).Key()] = renderTableName(table, target)
 	}

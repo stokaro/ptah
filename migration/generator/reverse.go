@@ -223,27 +223,6 @@ func reverseSchemaDiffWithPrior(
 		ExternalTablesChanged:      reverseExternalTableChanges(diff.ExternalTablesChanged),
 		DeclaredExternalTables:     priorExternalTables(prior),
 
-		// A hypertable reverses like a synonym in the diff and unlike one in
-		// the plan. The swap is the same -- what the up direction partitioned,
-		// the down direction stops declaring -- but the DOWN plan is a refusal
-		// rather than a statement: TimescaleDB has no drop_hypertable, so a
-		// rollback of a create_hypertable is a table the operator has to drop
-		// and recreate. The swap belongs here anyway, because refusing is what
-		// the planner does with a removal and refusing loudly is the point.
-		HypertablesAdded:    slices.Clone(diff.HypertablesRemoved),
-		HypertablesRemoved:  slices.Clone(diff.HypertablesAdded),
-		HypertablesModified: reverseHypertableDiffs(diff.HypertablesModified),
-
-		// A continuous aggregate reverses like a view and unlike the
-		// hypertable above it: both directions are statements the server
-		// accepts. What the up direction created, the down direction drops
-		// with DROP MATERIALIZED VIEW; what it dropped, the down direction
-		// creates from the body the pre-change read carried, which is why the
-		// down plan's desired schema is the introspected one.
-		ContinuousAggregatesAdded:    slices.Clone(diff.ContinuousAggregatesRemoved),
-		ContinuousAggregatesRemoved:  slices.Clone(diff.ContinuousAggregatesAdded),
-		ContinuousAggregatesModified: reverseContinuousAggregateDiffs(diff.ContinuousAggregatesModified, prior, semantics),
-
 		// An extended property is a name, an address and a value, and the
 		// reversal needs no schema side because all three are already in the
 		// diff: the down direction drops what the up direction added, adds

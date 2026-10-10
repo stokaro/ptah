@@ -20,22 +20,22 @@ import (
 
 // topicRefusals is what each planner but YDB's answers a topic change with.
 // The topic owner is registered for YDB alone, so a planner without a feature
-// host refuses the change by its subject and ClickHouse's host refuses it by
-// its kind.
+// host refuses the change by its subject, and the hosts of ClickHouse and the
+// PostgreSQL family refuse it by its kind.
 var topicRefusals = []struct {
 	dialect string
 	wantErr string
 }{
 	{dialect: platform.ClickHouse, wantErr: `unsupported feature: no planning service for "clickhouse"/"ptah\.run/ydb/topic-change"`},
-	{dialect: platform.CockroachDB, wantErr: `unsupported feature: the cockroachdb planner has no feature handler for ptah\.run/ydb/topic events`},
+	{dialect: platform.CockroachDB, wantErr: `unsupported feature: no planning service for "cockroachdb"/"ptah\.run/ydb/topic-change"`},
 	{dialect: platform.MariaDB, wantErr: `unsupported feature: the mariadb planner has no feature handler for ptah\.run/ydb/topic events`},
 	{dialect: platform.MySQL, wantErr: `unsupported feature: the mysql planner has no feature handler for ptah\.run/ydb/topic events`},
 	{dialect: platform.Oracle, wantErr: `unsupported feature: the oracle planner has no feature handler for ptah\.run/ydb/topic events`},
-	{dialect: platform.Postgres, wantErr: `unsupported feature: the postgres planner has no feature handler for ptah\.run/ydb/topic events`},
-	{dialect: platform.Spanner, wantErr: `unsupported feature: the spanner planner has no feature handler for ptah\.run/ydb/topic events`},
+	{dialect: platform.Postgres, wantErr: `unsupported feature: no planning service for "postgres"/"ptah\.run/ydb/topic-change"`},
+	{dialect: platform.Spanner, wantErr: `unsupported feature: no planning service for "spanner"/"ptah\.run/ydb/topic-change"`},
 	{dialect: platform.SQLite, wantErr: `unsupported feature: the sqlite planner has no feature handler for ptah\.run/ydb/topic events`},
 	{dialect: platform.SQLServer, wantErr: `unsupported feature: the sqlserver planner has no feature handler for ptah\.run/ydb/topic events`},
-	{dialect: platform.YugabyteDB, wantErr: `unsupported feature: the yugabytedb planner has no feature handler for ptah\.run/ydb/topic events`},
+	{dialect: platform.YugabyteDB, wantErr: `unsupported feature: no planning service for "yugabytedb"/"ptah\.run/ydb/topic-change"`},
 }
 
 // TestEveryPlannerButYDBRefusesTopicChanges drives a hand-built diff that

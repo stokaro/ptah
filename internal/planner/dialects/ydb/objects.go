@@ -86,10 +86,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 			keyed(capability.RowLevelSecurity, "row-level security", "the plan changes row-level security")},
 		{len(diff.SynonymsAdded)+len(diff.SynonymsRemoved)+len(diff.SynonymsModified) > 0,
 			func() error { return refuseFact("the plan changes a synonym", "YDB has no synonyms") }},
-		{len(diff.HypertablesAdded)+len(diff.HypertablesRemoved)+len(diff.HypertablesModified) > 0,
-			keyed(capability.Hypertables, "hypertable", "the plan changes a hypertable")},
-		{len(diff.ContinuousAggregatesAdded)+len(diff.ContinuousAggregatesRemoved)+len(diff.ContinuousAggregatesModified) > 0,
-			keyed(capability.ContinuousAggregates, "continuous aggregate", "the plan changes a continuous aggregate")},
 		{len(diff.ExtendedPropertiesAdded)+len(diff.ExtendedPropertiesRemoved)+len(diff.ExtendedPropertiesModified) > 0,
 			func() error {
 				return refuseFact("the plan changes an extended property", "extended properties are SQL Server's")

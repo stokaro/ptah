@@ -289,3 +289,9 @@ func QuotePostgresQualified(name string) string {
 	}
 	return strings.Join(parts, ".")
 }
+
+// StringLiteral returns value as a SQL string literal: single quotes around
+// it, and each single quote inside doubled, which is the standard's escape.
+func StringLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}

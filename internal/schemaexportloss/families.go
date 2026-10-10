@@ -26,7 +26,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 	families := []familyCount{
 		{"async replications", len(db.AsyncReplications)},
 		{"composite types", len(db.CompositeTypes)},
-		{"continuous aggregates", len(db.ContinuousAggregates)},
 		{"domains", len(db.Domains)},
 		{"external data sources", len(db.ExternalDataSources)},
 		{"external tables", len(db.ExternalTables)},
@@ -34,7 +33,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 		{"extensions", len(db.Extensions)},
 		{"functions", len(db.Functions)},
 		{"grants", len(db.Grants)},
-		{"hypertables", len(db.Hypertables)},
 		{"managed data", len(db.ManagedData)},
 		{"materialized views", len(db.MaterializedViews)},
 		{"ranges", len(db.Ranges)},
