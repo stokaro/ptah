@@ -28,7 +28,7 @@ func TestClickHouseRenderer_RefusesSharedRowSecurityNodes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			err := renderErr(test.node)
-			c.Assert(err, qt.ErrorMatches, `unsupported feature: clickhouse: \*ast\.\w+ has no handler in this renderer`)
+			c.Assert(err, qt.ErrorMatches, `unsupported feature: clickhouse: \*ast\.\w+ is shared row-level security; declare a ClickHouse row policy with //ptah:schema:rowpolicy`)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		})
 	}

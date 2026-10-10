@@ -817,7 +817,7 @@
     },
     "ptah.schema.extendedproperty": {
       "additionalProperties": false,
-      "description": "Declares a SQL Server extended property on a schema, a table, or a column.",
+      "description": "Declares a SQL Server extended property on the database, a schema, a table, or a column.",
       "properties": {
         "attributes": {
           "additionalProperties": false,
@@ -2194,6 +2194,50 @@
       ],
       "type": "object"
     },
+    "ptah.schema.rowpolicy": {
+      "additionalProperties": false,
+      "description": "Declares a ClickHouse row policy: a filter on the rows of one table that the users and roles it names may read.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "as": {
+              "description": "PERMISSIVE, combined with the other permissive policies by OR, or RESTRICTIVE, combined with the rest by AND. Omit it for PERMISSIVE.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Policy name, unique on its table.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Table the policy filters, optionally database-qualified.",
+              "type": "string"
+            },
+            "to": {
+              "description": "Users and roles the policy applies to: names, ALL, ALL EXCEPT names, or NONE. Omit it to apply the policy to nobody.",
+              "type": "string"
+            },
+            "using": {
+              "description": "Filter condition. Omit it to admit every row to the users the policy names.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "table"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:rowpolicy"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.schema": {
       "additionalProperties": false,
       "description": "Declares a database schema or namespace.",
@@ -3016,9 +3060,6 @@
       "$ref": "#/$defs/ptah.schema.externaltable"
     },
     {
-      "$ref": "#/$defs/ptah.schema.extendedproperty"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.trigger"
     },
     {
@@ -3046,7 +3087,13 @@
       "$ref": "#/$defs/ptah.schema.continuousaggregate"
     },
     {
+      "$ref": "#/$defs/ptah.schema.extendedproperty"
+    },
+    {
       "$ref": "#/$defs/ptah.schema.hypertable"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.rowpolicy"
     }
   ],
   "title": "Ptah Go Annotation Directives"

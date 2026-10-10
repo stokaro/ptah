@@ -10,10 +10,8 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbworkload"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasreport"
@@ -92,7 +90,7 @@ func TestSplitPreservesExplicitHCLModelsInEveryFile(t *testing.T) {
 			for _, file := range output.Files {
 				parsed, err := atlashcl.Parse([]byte(file.Data), file.Path)
 				c.Assert(err, qt.IsNil)
-				c.Assert(parsed.FeatureCoverage.Equal(must.Must(must.Must(known.Combine(must.Must(tsschema.CompleteCoverage(schemaext.Desired)))).Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))))), qt.IsTrue)
+				c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, known)), qt.IsTrue)
 			}
 		})
 	}
