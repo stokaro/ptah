@@ -1864,7 +1864,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// plans it through the runtime. A shared row-security entry reaches this
 	// planner only in a diff built by hand, and planning nothing for it
 	// would report an access-control change applied.
-	if err := refuseSharedRowSecurity(p.targetDialect(), diff); err != nil {
+	if err := schemaprecondition.RefuseSharedRowSecurity(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 
@@ -3028,18 +3028,6 @@ func findMaterializedView(
 	semantics identifier.Semantics,
 ) *schemamodel.MaterializedView {
 	return objectlookup.MaterializedView(views, name, semantics)
-}
-
-// refuseSharedRowSecurity refuses every shared row-level security entry. The
-// PostgreSQL family plans row-level security through the owner of package
-// pgpolicy, whose sources and reader never fill these lists.
-func refuseSharedRowSecurity(dialect string, diff *difftypes.SchemaDiff) error {
-	if len(diff.RLSPoliciesAdded)+len(diff.RLSPoliciesRemoved)+len(diff.RLSPoliciesModified)+len(diff.RLSEnabledTablesAdded)+
-		len(diff.RLSEnabledTablesRemoved)+len(diff.RLSForceChanged)+len(diff.RLSPolicyIdentityConflicts) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%w: shared row-level security entries on %s; the row-security owner plans "+
-		"row-level security on this target from its own models", ptaherr.ErrUnsupportedFeature, dialect)
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.

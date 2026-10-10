@@ -32,17 +32,6 @@ func unhostableSchema() *schemamodel.Database {
 		},
 		Views:             []schemamodel.View{{StructName: "V", Name: "v1", Body: "SELECT id FROM t"}},
 		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "mv1", Body: "SELECT id FROM t"}},
-		RLSEnabledTables:  []schemamodel.RLSEnabledTable{{StructName: "S", Table: "t"}},
-		// FOR ALL rather than FOR SELECT, which is what an annotation without
-		// `for=` parses to. ClickHouse stores the two identically and answers
-		// SELECT to both, so a declaration naming SELECT explicitly cannot
-		// converge and this renderer names it instead of creating it
-		// (stokaro/ptah#1736). The refusal has its own row in
-		// clickhouse/rowpolicy_test.go; this fixture is about the created path.
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			StructName: "S", Name: "p1", Table: "t", PolicyFor: "ALL",
-			ToRoles: "app_role", UsingExpression: "true",
-		}},
 		// Qualified because a ClickHouse grant scope is a two-part pattern and
 		// an offline render has no current database to attach a bare table to.
 		// See internal/clickhouserbac (stokaro/ptah#1025).
@@ -71,18 +60,7 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		// The declared view-like objects a comparison fills. Rendering a view
 		// back reads its body from here, so a diff carrying none plans no views
 		// at all -- which is the opposite of what this test asserts.
-		DeclaredViewLikes:     difftypes.ViewLikeVocabularyOf(unhostableSchema()),
-		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "t"}},
-		RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
-			PolicyName: "p1", TableName: "t",
-			// An addition carries the declaration it renders from
-			// (stokaro/ptah#2315); an entry without one is refused, which would
-			// end the plan rather than contribute a diagnostic.
-			Desired: schemamodel.RLSPolicy{
-				StructName: "T", Name: "p1", Table: "t",
-				PolicyFor: "ALL", UsingExpression: "true",
-			},
-		}},
+		DeclaredViewLikes: difftypes.ViewLikeVocabularyOf(unhostableSchema()),
 		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
@@ -114,10 +92,9 @@ func diagnosticLines(statements []string) []string {
 			// The marker is the renderer's own `-- <DIALECT>:` prefix rather
 			// than the words "not supported". A declaration this target
 			// declines for a reason that is not the engine lacking the feature
-			// says so in its own words -- ClickHouse names the absent
-			// table-level RLS switch rather than claiming it has no row-level
-			// security -- and a phrase filter would drop exactly those lines
-			// from the agreement this test enforces (stokaro/ptah#1736).
+			// says so in its own words, and a phrase filter would drop exactly
+			// those lines from the agreement this test enforces
+			// (stokaro/ptah#1736).
 			if strings.HasPrefix(trimmed, "-- CLICKHOUSE:") {
 				lines = append(lines, trimmed)
 			}
@@ -165,12 +142,6 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: "CREATE ROLE IF NOT EXISTS `app_role`"},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "bump" is not supported`},
-		// Row policies are planned as real DDL now (stokaro/ptah#1736). The
-		// enable half stays a diagnostic, because ClickHouse has no
-		// table-level switch to render -- but the sentence names the absent
-		// switch instead of claiming the engine lacks row-level security.
-		{name: "rls enable", want: `-- CLICKHOUSE: table "t" needs no ENABLE ROW LEVEL SECURITY`},
-		{name: "rls policy", want: "CREATE ROW POLICY IF NOT EXISTS `p1` ON `t` AS PERMISSIVE FOR SELECT USING true"},
 		{name: "grant", want: "GRANT SELECT ON `app`.`t` TO `app_role`"},
 		{name: "trigger", want: `-- CLICKHOUSE: CREATE TRIGGER "trg1" is not supported`},
 	}
@@ -203,15 +174,13 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
 	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
-	// Five: extensions, sequences, functions and triggers, which this target
-	// does not host, plus the table-level ENABLE ROW LEVEL SECURITY, which has
-	// no ClickHouse spelling even though the policy itself is real DDL now
-	// (stokaro/ptah#1736). The DISABLE half belongs to the removal path and is
-	// counted by TestPlan_ClickHouseNamesRemovedObjectsToo. Roles and grants
-	// left this list when ClickHouse gained real RBAC (stokaro/ptah#1025). The
-	// count is asserted so that a kind silently ceasing to be diagnosed is a
-	// failure rather than a shorter slice nobody reads.
-	c.Assert(rendered, qt.HasLen, 5)
+	// Four: extensions, sequences, functions and triggers, which this target
+	// does not host. Roles and grants left this list when ClickHouse gained
+	// real RBAC (stokaro/ptah#1025), and row policies when they became the
+	// ClickHouse owner's objects. The count is asserted so that a kind
+	// silently ceasing to be diagnosed is a failure rather than a shorter
+	// slice nobody reads.
+	c.Assert(rendered, qt.HasLen, 4)
 	c.Assert(planned, qt.DeepEquals, rendered)
 }
 
@@ -247,8 +216,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		FunctionsRemoved:         difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
 		ViewsRemoved:             difftypes.ViewChanges{{Name: "v1"}},
 		MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv1"}},
-		RLSEnabledTablesRemoved:  difftypes.RLSEnabledTableChanges{{Table: "t"}},
-		RLSPoliciesRemoved:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
 		GrantsRemoved: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
@@ -277,8 +244,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		// situation instead of silently ignoring the diff category.
 		{name: "role", want: `role "app_role" exists on the server and not in the schema`},
 		{name: "function", want: `-- CLICKHOUSE: DROP FUNCTION "bump" is not supported`},
-		{name: "rls disable", want: `-- CLICKHOUSE: table "t" has no row-level security switch to disable`},
-		{name: "rls policy", want: "DROP ROW POLICY IF EXISTS `p1` ON `t`"},
 		{name: "grant", want: "REVOKE SELECT ON `app`.`t` FROM `app_role`"},
 		{name: "trigger", want: `-- CLICKHOUSE: DROP TRIGGER "trg1" is not supported`},
 	}
@@ -302,7 +267,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 	c := qt.New(t)
 
-	planned := strings.Join(planStatements(c, withoutSharedRowSecurity(unhostableCreationDiff()), unhostableSchema(), platform.Postgres), "\n")
+	planned := strings.Join(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.Postgres), "\n")
 
 	tests := []struct {
 		name string
@@ -326,7 +291,7 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 
 	t.Run("no diagnostics", func(t *testing.T) {
 		c := qt.New(t)
-		c.Assert(diagnosticLines(planStatements(c, withoutSharedRowSecurity(unhostableCreationDiff()), unhostableSchema(), platform.Postgres)),
+		c.Assert(diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.Postgres)),
 			qt.HasLen, 0)
 	})
 }
@@ -864,11 +829,4 @@ func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
 			c.Assert(nodes, qt.HasLen, 1)
 		})
 	}
-}
-
-// withoutSharedRowSecurity leaves out the shared row-level security entries,
-// which the PostgreSQL family plans through its owner and refuses here.
-func withoutSharedRowSecurity(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
-	diff.RLSEnabledTablesAdded, diff.RLSPoliciesAdded = nil, nil
-	return diff
 }

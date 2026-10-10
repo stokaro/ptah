@@ -159,9 +159,11 @@ type Tenant struct {
 
 // TestParse_RowSecurityScopeSelectsTheModel pins which model holds a
 // row-level security annotation. PostgreSQL-family scopes and no scope at all
-// reach the row-security owner; a scope naming only ClickHouse stays a shared
-// declaration, which ClickHouse plans as a row policy. SQL Server's security
-// policy owner is pinned by TestParse_SQLServerScopedPolicyIsASecurityPolicy.
+// reach the row-security owner; a scope naming a target no owner holds row
+// security for, such as MySQL, stays a shared declaration. SQL Server's
+// security policy owner is pinned by
+// TestParse_SQLServerScopedPolicyIsASecurityPolicy, and ClickHouse's refusal
+// by TestParse_RowSecurityScopedToClickHouseIsRefused.
 func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -172,7 +174,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 	}{
 		{name: "no scope", dialects: "", wantOwned: 1, wantSwitches: 1},
 		{name: "PostgreSQL family", dialects: `dialects="postgres,cockroachdb,yugabytedb"`, wantOwned: 1, wantSwitches: 1},
-		{name: "ClickHouse", dialects: `dialects="clickhouse"`, wantShared: 1},
+		{name: "MySQL", dialects: `dialects="mysql"`, wantShared: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -297,6 +299,44 @@ type Tenant struct {
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*scoped to postgres,sqlserver mixes PostgreSQL-family targets with others.*declare one scoped to postgres and another scoped to sqlserver.*`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
+}
+
+// TestParse_RowSecurityScopedToClickHouseIsRefused refuses a row-level
+// security annotation scoped to ClickHouse, alone or beside another target, naming
+// what to write instead: a ClickHouse row policy is its owner's directive, and
+// ClickHouse has no table switch.
+func TestParse_RowSecurityScopedToClickHouseIsRefused(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+		wantErr    string
+	}{
+		{name: "a policy", annotation: `//ptah:schema:rls:policy name="isolation" table="tenants" using="true" dialects="clickhouse"`,
+			wantErr: `(?s).*a ClickHouse row policy is not a row-level security policy; declare it with //ptah:schema:rowpolicy instead.*`},
+		{name: "a policy beside MySQL", annotation: `//ptah:schema:rls:policy name="isolation" table="tenants" using="true" dialects="clickhouse,mysql"`,
+			wantErr: `(?s).*declare it with //ptah:schema:rowpolicy instead.*`},
+		{name: "an enablement", annotation: `//ptah:schema:rls:enable table="tenants" dialects="clickhouse"`,
+			wantErr: `(?s).*ClickHouse has no row-level security switch.*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, err := goschema.ParseSource(noOwners, "models.go", `package test
+
+//ptah:schema:table name="tenants"
+`+test.annotation+`
+type Tenant struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+}
+`)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
+		})
+	}
 }
 
 // TestParse_ADialectScopeThatNamesNothingIsRefused pins the fail-closed half.

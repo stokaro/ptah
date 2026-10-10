@@ -161,3 +161,18 @@ func RefuseRoleMemberships(dialect string, diff *difftypes.SchemaDiff) error {
 		return nil
 	}
 }
+
+// RefuseSharedRowSecurity refuses every shared row-level security entry, for
+// a planner of dialect whose row-level security an owner plans from its own
+// models: the PostgreSQL family's row-security owner and ClickHouse's row
+// policies. Their sources and readers never fill these lists, so an entry was
+// built by hand; planning it would bypass the owner, and planning nothing
+// would report a control applied that is not.
+func RefuseSharedRowSecurity(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil || len(diff.RLSPoliciesAdded)+len(diff.RLSPoliciesRemoved)+len(diff.RLSPoliciesModified)+len(diff.RLSEnabledTablesAdded)+
+		len(diff.RLSEnabledTablesRemoved)+len(diff.RLSForceChanged)+len(diff.RLSPolicyIdentityConflicts) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: shared row-level security entries on %s; the owner plans "+
+		"row-level security on this target from its own models", ptaherr.ErrUnsupportedFeature, dialect)
+}

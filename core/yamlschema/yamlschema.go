@@ -83,6 +83,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/chpolicysource"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/pgpolicysource"
@@ -698,7 +699,8 @@ type rlsPolicySpec struct {
 	WithCheckExpression stringScalar `yaml:"with_check"`
 	Comment             stringScalar `yaml:"comment"`
 	// Dialects scopes the policy, as it scopes a default privilege. A scope
-	// naming only SQL Server or ClickHouse keeps it a shared declaration.
+	// naming only ClickHouse makes it the ClickHouse owner's row policy, and
+	// one naming only SQL Server keeps it a shared declaration.
 	Dialects yaml.Node `yaml:"dialects"`
 }
 
@@ -1402,14 +1404,17 @@ func (d document) addTriggers(db *schemamodel.Database) error {
 	return nil
 }
 
-// addRLS hands the document's row-level security to the PostgreSQL
-// row-security owner: a policy becomes an object, and an enablement the
-// switches facet of its table, which the document must declare. A YAML
-// document has no dialect scope for row-level security, so every declaration
-// is PostgreSQL's. Two entries that declare one policy, or one table's
-// switches, are refused, naming both (stokaro/ptah#2440).
+// addRLS hands the document's row-level security to its owners: an entry
+// without `dialects`, or scoped to the PostgreSQL family, is the PostgreSQL
+// row-security owner's, a policy becoming an object and an enablement the
+// switches facet of its table, which the document must declare. A policy
+// scoped to ClickHouse is the ClickHouse owner's row policy, and an enablement
+// scoped to ClickHouse is refused, since ClickHouse has no switch. An entry
+// scoped to other targets stays shared. Two entries that declare one policy,
+// or one table's switches, are refused, naming both (stokaro/ptah#2440).
 func (d document) addRLS(db *schemamodel.Database) error {
 	var collector pgpolicysource.Collector
+	var rowPolicies chpolicysource.Collector
 	for _, key := range sortedKeys(d.Tables) {
 		table := d.Tables[key]
 		if table.RLSEnabled {
@@ -1431,6 +1436,9 @@ func (d document) addRLS(db *schemamodel.Database) error {
 				return err
 			}
 			if !owned {
+				if err := chpolicysource.RefuseSwitches(scope); err != nil {
+					return fmt.Errorf("%s: %w", origin, err)
+				}
 				db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{StructName: string(spec.StructName),
 					Table: valueOrDefault(spec.Table, key), Comment: string(spec.Comment), Dialects: scope})
 				continue
@@ -1441,7 +1449,7 @@ func (d document) addRLS(db *schemamodel.Database) error {
 		}
 	}
 	for _, key := range sortedKeys(d.RLSPolicies) {
-		if err := addRLSPolicy(db, &collector, key, d.RLSPolicies[key]); err != nil {
+		if err := addRLSPolicy(db, &collector, &rowPolicies, key, d.RLSPolicies[key]); err != nil {
 			return err
 		}
 	}
@@ -1449,7 +1457,9 @@ func (d document) addRLS(db *schemamodel.Database) error {
 	if err != nil {
 		return err
 	}
-	db.FeatureObjects = objects
+	if db.FeatureObjects, err = objects.Merge(rowPolicies.Objects()); err != nil {
+		return err
+	}
 	db.FeatureCoverage, err = pgpolicysource.Claim(db.FeatureCoverage, db.FeatureObjects)
 	return err
 }
@@ -1473,11 +1483,20 @@ func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collecto
 	return nil
 }
 
-func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector, key string, spec rlsPolicySpec) error {
+func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector, rowPolicies *chpolicysource.Collector,
+	key string, spec rlsPolicySpec,
+) error {
 	origin := "rls_policies." + key
 	scope, owned, err := rowSecurityScope(origin, spec.Dialects)
 	if err != nil {
 		return err
+	}
+	clickhouse, err := chpolicysource.Owns(scope)
+	if err != nil {
+		return fmt.Errorf("%s: %w", origin, err)
+	}
+	if clickhouse {
+		return addRowPolicy(db, rowPolicies, origin, key, spec, scope)
 	}
 	if !owned {
 		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
@@ -1510,6 +1529,34 @@ func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector,
 		return fmt.Errorf("%s: %w", origin, err)
 	}
 	return collector.AddPolicy(origin, pgpolicysource.Ref(schemaName, tableName, valueOrDefault(spec.Name, key)), policy, scope)
+}
+
+// addRowPolicy reads one entry scoped to ClickHouse as the ClickHouse owner's
+// row policy, on the table it names or its struct maps to.
+func addRowPolicy(db *schemamodel.Database, collector *chpolicysource.Collector, origin, key string, spec rlsPolicySpec, scope []string) error {
+	index, err := pgpolicysource.DeclaredTable(db.Tables, string(spec.StructName), string(spec.Table))
+	if err != nil {
+		return fmt.Errorf("%s: %w", origin, err)
+	}
+	var database, tableName string
+	switch {
+	case index >= 0:
+		database, tableName = db.Tables[index].Schema, db.Tables[index].Name
+	case spec.Table == "":
+		return fmt.Errorf("%s: %w: a row policy names its table", origin, ptaherr.ErrInvalidAttributeValue)
+	default:
+		if database, tableName, err = pgpolicysource.TableParts(string(spec.Table)); err != nil {
+			return fmt.Errorf("%s: %w", origin, err)
+		}
+	}
+	policy, err := chpolicysource.Attributes{
+		For: string(spec.PolicyFor), To: string(spec.ToRoles), Using: string(spec.UsingExpression),
+		WithCheck: string(spec.WithCheckExpression), Comment: string(spec.Comment), StructName: string(spec.StructName),
+	}.Policy()
+	if err != nil {
+		return fmt.Errorf("%s: %w", origin, err)
+	}
+	return collector.AddPolicy(origin, chpolicysource.Ref(database, tableName, valueOrDefault(spec.Name, key)), policy, scope)
 }
 
 // rowSecurityScope reads a row-level security entry's `dialects` and reports

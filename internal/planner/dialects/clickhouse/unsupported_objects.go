@@ -67,8 +67,6 @@ func planObjectsAfterTables(
 	if err != nil {
 		return nil, nil, err
 	}
-	result = reportRowLevelSecurity(result, diff, caps)
-	result = planRowPolicies(result, diff, caps)
 	result = planGrants(result, diff)
 	result = reportDefaultPrivileges(result, diff)
 	result = reportTriggers(result, diff)
@@ -400,35 +398,6 @@ func clickHouseMaterializedViewChangeFor(
 	}
 	node := modelast.FromMaterializedView(view)
 	return deporder.ViewLike{Name: node.Name, Body: node.Body, Materialized: true}, node
-}
-
-func reportRowLevelSecurity(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	caps capability.Capabilities,
-) []ast.Node {
-	if caps.Has(capability.RowLevelSecurity) {
-		// planRowPolicies emits the real DDL for this target. Reporting here as
-		// well would put a skip comment beside the statement it says was
-		// skipped.
-		return result
-	}
-	for _, table := range diff.RLSEnabledTablesAdded.Names() {
-		result = append(result, ast.NewAlterTableEnableRLS(table))
-	}
-	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
-		result = append(result, ast.NewAlterTableDisableRLS(table))
-	}
-	for _, policy := range diff.RLSPoliciesAdded {
-		result = append(result, ast.NewCreatePolicy(policy.PolicyName, policy.TableName))
-	}
-	for _, policy := range diff.RLSPoliciesModified {
-		result = append(result, ast.NewCreatePolicy(policy.PolicyName, policy.TableName))
-	}
-	for _, policy := range diff.RLSPoliciesRemoved {
-		result = append(result, ast.NewDropPolicy(policy.PolicyName, policy.TableName))
-	}
-	return result
 }
 
 func reportTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {

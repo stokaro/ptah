@@ -23,11 +23,13 @@ import (
 // services together, so no stage can accept a model another stage would
 // refuse or ignore.
 //
-// Row policies are registered dormant: no source or reader produces the model
-// yet, and the common path still carries ClickHouse policies, so the services
-// run only for objects a caller builds itself (ADR 0020).
+// Row policies are the owner's alone (ADR 0020): a source reads a declaration
+// scoped to ClickHouse as one, the reader reports each policy on a table of the
+// database as one, and a shared row-level security declaration is refused on
+// this target.
 func registerClickHouseServices(provider *engine.Provider, name string) {
 	provider.Annotations = append(provider.Annotations, chsource.Annotations())
+	provider.YAML = append(provider.YAML, chsource.YAML())
 	provider.Targets[0].Preparation = chprepare.Service{}
 	provider.Targets[0].Creations = chprepare.Service{}
 	provider.Codecs = append(provider.Codecs, chschema.Codecs()...)

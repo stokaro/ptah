@@ -432,7 +432,7 @@ access control:
 | --- | --- |
 | Users | No user is created, altered, or read, so no credential enters a description, a plan, or a log. Provision users outside Ptah and grant them a managed role. |
 | Role membership | `GRANT <role> TO <role>` is not modeled. Ptah reads and writes privilege grants only. |
-| Quotas, row policies, settings profiles | Outside the schema model entirely; a declaration cannot express them and a read does not report them. |
+| Quotas, settings profiles | Outside the schema model entirely; a declaration cannot express them and a read does not report them. |
 | Column-scoped grants | `GRANT SELECT(id) ON db.t` is refused when declared and excluded when read. Grants are managed at database and table scope. |
 | Wildcard and global scopes | `*.*` and a wildcard database are refused. Such a grant reaches objects no declared schema describes. |
 | Privilege names the server rewrites | `ALL`, `CREATE`, `DROP`, `SYSTEM`, `SYSTEM FLUSH`, `ACCESS MANAGEMENT`, `SHOW ACCESS`, `SHOW FILESYSTEM CACHES`, and — at table scope only — `SHOW` and `ALTER`. See below. |
@@ -518,6 +518,47 @@ The connected account needs the privileges these statements require —
 `ROLE ADMIN` plus `GRANT OPTION` on what it grants. The `docker-compose.yaml`
 in this repository configures `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`, which
 is what gives its `ptah_user` that authority.
+
+## Row policies
+
+A row policy filters the rows of one table that the users and roles it names
+may read. Declare one with its own directive:
+
+```go
+//ptah:schema:table name="orders"
+//ptah:schema:rowpolicy name="tenant_rows" table="orders" using="tenant_id = 1" to="ALL EXCEPT admin" as="RESTRICTIVE"
+type Order struct {
+	//ptah:schema:field name="id" type="UInt64" primary="true"
+	ID uint64
+	//ptah:schema:field name="tenant_id" type="UInt64"
+	TenantID uint64
+}
+```
+
+- `using` is the filter. Without one, the policy admits every row to the
+  users it names.
+- `to` names users and roles, `ALL`, `ALL EXCEPT` names, or `NONE`. Without
+  one, the policy applies to nobody, as ClickHouse's own default does.
+- `as` is `PERMISSIVE`, the default, or `RESTRICTIVE`. A user reads the rows
+  that pass at least one permissive policy and every restrictive one.
+
+The directive binds the policy to ClickHouse, so another target leaves it out.
+In YAML, an `rls_policies` entry scoped with `dialects: [clickhouse]` declares
+the same policy; it takes no `as`. A `//ptah:schema:rls:policy` scoped to
+ClickHouse is refused, since it declares PostgreSQL's row-level security, and
+so is an `rls:enable` scoped to ClickHouse: ClickHouse has no table switch.
+
+A plan creates, alters in place or drops each policy, and a read reports every
+policy on a table of the database, restrictive ones included. These are
+refused rather than dropped:
+
+- A write check. ClickHouse parses `WITH CHECK` and discards it, so the policy
+  would filter reads and leave writes open.
+- A command other than `SELECT`. A row policy filters reads only.
+- A comment, which a row policy cannot hold.
+
+A policy written `ON db.*` applies to every table of a database. Ptah does
+not read or plan it.
 
 ## The revision table's storage engine
 

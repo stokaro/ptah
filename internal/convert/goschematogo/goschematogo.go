@@ -272,10 +272,12 @@ type renderContext struct {
 	indexesByTable       map[string][]schemamodel.Index
 	constraintsByTable   map[string][]schemamodel.Constraint
 	rlsByTable           map[string][]schemamodel.RLSPolicy
-	// policyTables names each table by the identity a row-level security
-	// policy names its table by; policyAnnotations and switchAnnotations hold
+	// policyTables names each table by the identity a PostgreSQL row-level
+	// security policy names its table by, and rowPolicyTables by the one a
+	// ClickHouse row policy does; policyAnnotations and switchAnnotations hold
 	// what is written beside each table, by its qualified name.
 	policyTables      map[objectidentity.Key]string
+	rowPolicyTables   map[objectidentity.Key]string
 	policyAnnotations map[string][]string
 	switchAnnotations map[string]string
 	rlsEnabledByTable map[string][]schemamodel.RLSEnabledTable
@@ -604,6 +606,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, enabled := range ctx.rlsEnabledByTable[table.StructName] {
 		w.writeComment(annotation("ptah:schema:rls:enable",
 			attr{name: "table", value: enabled.Table, set: true},
+			attr{name: "force", value: "true", set: enabled.Forced},
 			attr{name: "comment", value: enabled.Comment, set: enabled.Comment != ""},
 			dialectsAttr(enabled.Dialects),
 		))
@@ -1049,6 +1052,7 @@ func rlsPolicyAnnotation(policy schemamodel.RLSPolicy) string {
 		attr{name: "to", value: policy.ToRoles, set: policy.ToRoles != ""},
 		attr{name: "using", value: policy.UsingExpression, set: policy.UsingExpression != ""},
 		attr{name: "with_check", value: policy.WithCheckExpression, set: policy.WithCheckExpression != ""},
+		attr{name: "as", value: "RESTRICTIVE", set: policy.Restrictive},
 		attr{name: "comment", value: policy.Comment, set: policy.Comment != ""},
 		dialectsAttr(policy.Dialects),
 	)

@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
@@ -17,14 +18,16 @@ import (
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// The row policy owner is registered dormant: nothing in this repository's
-// sources or readers produces the model yet, so these tests build it
-// themselves and drive it through the bundled runtime the commands use.
+// These tests build the owner's model themselves and drive it through the
+// bundled runtime the commands use; the Go directive that declares one is
+// read through the runtime's annotation set in
+// TestClickHouseRowPolicyDirectiveRendersOnClickHouseAlone.
 
 var heldPolicy = chschema.ObservedRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Permissive,
 	Roles: chschema.RoleSelection{Names: []string{"alice"}}}
@@ -235,4 +238,32 @@ func completeClickHouseObservation() schemaext.Coverage {
 		}
 	}
 	return must.Must(schemaext.NewCoverage(schemaext.Observed, kinds, nil))
+}
+
+// TestClickHouseRowPolicyDirectiveRendersOnClickHouseAlone reads the owner's
+// directive through the bundled runtime's annotation set and renders the
+// policy on ClickHouse, restrictive as declared (stokaro/ptah#4343), after
+// its table. Another target leaves it out, because the directive binds it to
+// ClickHouse.
+func TestClickHouseRowPolicyDirectiveRendersOnClickHouseAlone(t *testing.T) {
+	c := qt.New(t)
+	database := must.Must(goschema.ParseSource(builtintest.Annotations(), "orders.go", `package models
+
+//ptah:schema:table name="orders"
+//ptah:schema:rowpolicy name="tenant" table="orders" using="tenant_id = 1" to="ALL EXCEPT admin" as="RESTRICTIVE"
+type Order struct {
+	//ptah:schema:field name="id" type="UInt64" primary="true"
+	ID uint64
+	//ptah:schema:field name="tenant_id" type="UInt64"
+	TenantID uint64
+}
+`))
+
+	clickhouse := strings.Join(must.Must(builtin.GetOrderedCreateStatements(&database, platform.ClickHouse)), "\n")
+	postgres := strings.Join(must.Must(builtin.GetOrderedCreateStatements(&database, platform.Postgres)), "\n")
+
+	c.Assert(clickhouse, qt.Contains, "CREATE ROW POLICY `tenant` ON `orders` USING (tenant_id = 1) AS RESTRICTIVE TO ALL EXCEPT `admin`")
+	c.Assert(strings.Index(clickhouse, "CREATE TABLE"), qt.Not(qt.Equals), -1)
+	c.Assert(strings.Index(clickhouse, "CREATE TABLE") < strings.Index(clickhouse, "CREATE ROW POLICY"), qt.IsTrue)
+	c.Assert(postgres, qt.Not(qt.Contains), "POLICY")
 }

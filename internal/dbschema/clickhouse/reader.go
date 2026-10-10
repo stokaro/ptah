@@ -82,9 +82,10 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 
 // ReadSchemaContext returns tables, columns, data-skipping indexes, plain
 // views and materialized views for the configured database, plus roles and
-// grants when the target carries [capability.RoleManagement]. Constraints, RLS,
-// functions, and other shapes with no direct equivalent in Ptah's ClickHouse
-// model remain empty.
+// grants when the target carries [capability.RoleManagement], and the row
+// policies on its tables, as the ClickHouse owner's objects, when it carries
+// [capability.RowLevelSecurity]. Constraints, functions, and other shapes with
+// no direct equivalent in Ptah's ClickHouse model remain empty.
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	dbName, err := r.resolveDatabaseName(ctx)
 	if err != nil {
@@ -150,19 +151,28 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		// Reading system.row_policies needs a privilege of its own, exactly as
 		// system.roles and system.grants do, so the same degradation applies:
 		// an account that may not see the access catalog keeps its description
-		// of everything else, and the policy collection is recorded as not
-		// described rather than as empty. The comparator refuses to conclude
-		// "this policy is missing" from a read that admits it did not look, so
-		// a declared policy becomes an undecided addition instead of a CREATE
-		// nothing verified.
-		policies, err := r.readRowPolicies(ctx, dbName)
-		switch {
-		case err == nil:
-			schema.RLSPolicies = policies
-		case isAccessDenied(err):
-			schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Policy))
-		default:
-			return nil, fmt.Errorf("clickhouse: read row policies: %w", err)
+		// of everything else, and the row policies are recorded as not
+		// inspected rather than as none. The owner's comparison refuses to
+		// conclude "this policy is missing" from a read that admits it did not
+		// look, so a declared policy becomes an undecided addition instead of
+		// a CREATE nothing verified.
+		policies, readErr := r.readRowPolicies(ctx, dbName)
+		if readErr != nil && !isAccessDenied(readErr) {
+			return nil, fmt.Errorf("clickhouse: read row policies: %w", readErr)
+		}
+		read, err := schemaext.NewObjects(policies...)
+		if err != nil {
+			return nil, err
+		}
+		if schema.FeatureObjects, err = schema.FeatureObjects.Merge(read); err != nil {
+			return nil, err
+		}
+		known, err := rowPolicyCoverage(readErr == nil)
+		if err != nil {
+			return nil, err
+		}
+		if schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(known); err != nil {
+			return nil, err
 		}
 	}
 	return schema, nil

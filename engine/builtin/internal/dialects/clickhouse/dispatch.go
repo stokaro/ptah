@@ -127,19 +127,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.RevokeDefaultPrivilegeNode:
 		return r.renderRevokeDefaultPrivilege(n)
 
-	// Row-level security. A row policy is a ClickHouse object; the table-level
-	// switch the two RLS kinds describe is not.
-	case *ast.CreatePolicyNode:
-		return r.renderCreatePolicy(n)
-	case *ast.DropPolicyNode:
-		return r.renderDropPolicy(n)
-	case *ast.AlterTableEnableRLSNode:
-		return r.renderAlterTableEnableRLS(n)
-	case *ast.AlterTableDisableRLSNode:
-		return r.renderAlterTableDisableRLS(n)
-	case *ast.AlterTableForceRLSNode:
-		return r.renderAlterTableForceRLS(n)
-
 	// Objects another engine owns. Each is named and skipped so the reader of
 	// a render sees what the target left out.
 	case *ast.ExtensionNode:

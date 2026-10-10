@@ -3,7 +3,6 @@
 package clickhouse_test
 
 import (
-	"database/sql"
 	"slices"
 	"testing"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -23,10 +23,8 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// The row policy owner is registered dormant: no source or reader produces
-// the model yet. These tests build both sides themselves -- the declaration,
-// and the observation from system.row_policies -- and drive them through the
-// shipping comparison, planner and renderer, then check what the server
+// These tests drive the ClickHouse row policy owner through the shipping
+// reader, comparison, planner and renderer, then check what the server
 // enforces by querying as the users the policies name.
 
 // rowPolicyFixture is a table with three tenants' rows and two users allowed
@@ -103,39 +101,23 @@ func (f rowPolicyFixture) declaration(policy *chschema.DesiredRowPolicy) *schema
 	return declared
 }
 
-// current reads the table the way the shipping reader does and the policies
-// on it from system.row_policies, which no shipping reader turns into the
-// owner's model yet. The common policy list is left out, so the common path
-// plans nothing for them.
+// current is what the shipping reader reports for the fixture's table: the
+// table and the row policies on it, which the reader reports as the owner's
+// observed objects. Another table's policies are left out, so a test does not
+// plan against the shared database's leftovers.
 func (f rowPolicyFixture) current(c *qt.C) *catalog.Database {
 	c.Helper()
 	live := readLive(c, f.conn)
 	at := slices.IndexFunc(live.Tables, func(table catalog.Table) bool { return table.Name == f.table })
 	c.Assert(at, qt.Not(qt.Equals), -1)
-	rows, err := f.conn.QueryContext(c.Context(), `
-		SELECT short_name, select_filter, is_restrictive, apply_to_all, apply_to_list, apply_to_except
-		FROM system.row_policies WHERE database = currentDatabase() AND table = ?`, f.table)
-	c.Assert(err, qt.IsNil)
-	defer rows.Close()
 	var objects []schemaext.Object
-	for rows.Next() {
-		var name string
-		var filter sql.NullString
-		var restrictive, all bool
-		var names, except []string
-		c.Assert(rows.Scan(&name, &filter, &restrictive, &all, &names, &except), qt.IsNil)
-		observed := chschema.ObservedRowPolicy{Composition: chschema.Permissive, Roles: chschema.RoleSelection{All: all, Names: names, Except: except}}
-		if restrictive {
-			observed.Composition = chschema.Restrictive
+	for _, object := range must.Must(live.FeatureObjects.All()) {
+		if object.Ref.Kind == objectidentity.Kind(chschema.RowPolicyKind) && object.Ref.Parent.Source == f.table {
+			objects = append(objects, object)
 		}
-		if filter.Valid {
-			observed.Filter = new(filter.String)
-		}
-		objects = append(objects, must.Must(chschema.ObservedRowPolicyObject(chschema.RowPolicyRef(f.conn.Info().Schema, f.table, name), observed)))
 	}
-	c.Assert(rows.Err(), qt.IsNil)
-	coverage := must.Must(live.FeatureCoverage.Combine(must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
-	return &catalog.Database{Tables: []catalog.Table{live.Tables[at]}, FeatureObjects: must.Must(schemaext.NewObjects(objects...)), FeatureCoverage: coverage}
+	return &catalog.Database{Tables: []catalog.Table{live.Tables[at]}, FeatureObjects: must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: live.FeatureCoverage}
 }
 
 // plan compares the declaration with the server through the connection, so
