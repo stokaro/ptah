@@ -80,6 +80,20 @@ func TestGuardSeesACountInTheSubjectPosition(t *testing.T) {
 			want: 1,
 		},
 		{
+			// The regexp folds case, and it folds the s of things to the long
+			// s, which is not ASCII. These two rows hold the shortcut that skips
+			// a file which cannot match to that folding rather than to English:
+			// the second is not prose, it is the regexp's own reading of `s`.
+			name: "in capitals",
+			src:  "package p\n\n// TWO THINGS FOLLOW:\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "with a long s",
+			src:  "package p\n\n// Two thing\u017fs follow:\nconst x = 1\n",
+			want: 1,
+		},
+		{
 			// Emphatic English, not a list. The rule asks for a cardinal of two
 			// or more, so the singular is out of reach by construction; this row
 			// records the construction rather than discriminating between rules.
@@ -216,10 +230,18 @@ func TestGuardNamesTheLineTheCountIsOn(t *testing.T) {
 
 // countsInSubjectPosition names every comment line in one file that puts a
 // count where the noun belongs, as "path:line: phrase".
+//
+// Only the comments are read, so the parse skips object resolution, and a file
+// that cannot hold the phrase is not parsed at all; see [mayCountThings].
 func countsInSubjectPosition(c *qt.C, root, rel string) []string {
 	c.Helper()
+	source, err := os.ReadFile(filepath.Join(root, rel))
+	c.Assert(err, qt.IsNil)
+	if !mayCountThings(source) {
+		return nil
+	}
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filepath.Join(root, rel), nil, parser.ParseComments)
+	file, err := parser.ParseFile(fset, filepath.Join(root, rel), source, parser.ParseComments|parser.SkipObjectResolution)
 	c.Assert(err, qt.IsNil, qt.Commentf("parse %s", rel))
 
 	var found []string
@@ -233,6 +255,19 @@ func countsInSubjectPosition(c *qt.C, root, rel string) []string {
 		}
 	}
 	return found
+}
+
+// mayCountThings reports whether a source can hold a match of countAsSubject.
+//
+// Every match spells "things" under the regexp's case folding. Of those
+// letters only the s folds outside ASCII, to the long s, and lowercasing maps
+// every other spelling onto the two below, so a source that holds neither
+// holds no match. Turning comment markers and quotes into spaces cannot add a
+// letter. Most files fail this, and parsing and matching them is most of what
+// the rule costs under -race.
+func mayCountThings(source []byte) bool {
+	lowered := bytes.ToLower(source)
+	return bytes.Contains(lowered, []byte("things")) || bytes.Contains(lowered, []byte("thing\u017f"))
 }
 
 // paragraph is one run of comment lines with no blank line in it, and the line

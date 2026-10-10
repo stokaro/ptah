@@ -1,6 +1,7 @@
 package risk_test
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -112,9 +113,17 @@ func skipUninterestingDir(root, path string, entry fs.DirEntry) error {
 
 // declaresOwnSeverity reports whether a file declares `type Severity` as its
 // own definition rather than an alias.
+//
+// A file whose text never spells Severity cannot declare it, and that is
+// nearly every file in the tree, so only the rest is parsed.
 func declaresOwnSeverity(c *qt.C, path string) bool {
 	c.Helper()
-	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	source, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	if !bytes.Contains(source, []byte("Severity")) {
+		return false
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), path, source, parser.SkipObjectResolution)
 	if err != nil {
 		return false
 	}
