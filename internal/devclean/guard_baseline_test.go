@@ -22,10 +22,9 @@ const ownedServerRemedy = `; if nothing else uses this server, declare it dispos
 // statement a baseline holds when the target holds the object: on a dev
 // server the run does not own, each is refused as a migration replay refuses
 // it, in the baseline's own words. A routine or a trigger body can write
-// outside the dev database when it runs, a comment on an extension is not
-// restored by the cleanup, and a role, a user and a grant outlive it. Each
-// refusal that owning the server lifts names the remedy; the comment on an
-// extension stays refused on a server the run owns, so its refusal names none.
+// outside the dev database when it runs, a comment on an extension or a schema
+// is not restored by the cleanup, and a role, a user and a grant outlive it.
+// Owning the server lifts each, so each refusal names the remedy.
 func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 	postgres := catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@shared-dev:5432/ptah_dev"}
 	mysql := catalog.ServerInfo{Dialect: platform.MySQL, Schema: "ptah_dev", URL: "mysql://dev@shared-dev:3306/ptah_dev"}
@@ -56,8 +55,14 @@ func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 		{
 			name:      "a comment on an extension",
 			info:      postgres,
-			statement: "COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions'",
-			wantErr:   `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm`,
+			statement: "COMMENT ON EXTENSION pgcrypto IS 'hashing'",
+			wantErr:   `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+		},
+		{
+			name:      "a comment on a schema",
+			info:      postgres,
+			statement: `COMMENT ON SCHEMA "app" IS 'application'`,
+			wantErr:   `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
 		},
 		{
 			name:      "a PostgreSQL role",
@@ -101,6 +106,10 @@ func TestBaselineGuard_OwnedServer(t *testing.T) {
 			"CREATE FUNCTION item_count() RETURNS bigint LANGUAGE sql AS $$ SELECT count(*) FROM items $$"},
 		{"a MySQL trigger", catalog.ServerInfo{Dialect: platform.MySQL, Schema: "ptah_dev", URL: "mysql://dev@owned-baseline-mysql:3306/ptah_dev"},
 			"CREATE TRIGGER items_touch BEFORE INSERT ON items FOR EACH ROW SET NEW.n = 1"},
+		{"a comment on an extension", catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@owned-baseline-pg-extension:5432/ptah_dev"},
+			"COMMENT ON EXTENSION pgcrypto IS 'hashing'"},
+		{"a comment on a schema", catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@owned-baseline-pg-schema:5432/ptah_dev"},
+			`COMMENT ON SCHEMA "app" IS 'application'`},
 		{"a YDB user", catalog.ServerInfo{Dialect: platform.YDB, URL: "ydb://owned-baseline-ydb:2136/local"}, "CREATE USER `reader`;"},
 	}
 	for _, test := range tests {
@@ -108,6 +117,37 @@ func TestBaselineGuard_OwnedServer(t *testing.T) {
 			c := qt.New(t)
 			declareDisposable(c, test.info.URL)
 			c.Assert(devclean.NewBaselineGuard(test.info).ValidateStatement(test.statement), qt.IsNil)
+		})
+	}
+}
+
+// TestBaselineGuard_OwnedServerKeepsOtherComments pins how far the comment
+// lift reaches on a server the run owns: a comment on a language, a cast or an
+// event trigger changes how the run's later SQL is read, and a comment on a
+// protected namespace mutates it, so each stays refused there.
+func TestBaselineGuard_OwnedServerKeepsOtherComments(t *testing.T) {
+	tests := []struct {
+		statement string
+		wantErr   string
+	}{
+		{statement: "COMMENT ON LANGUAGE plpgsql IS 'x'",
+			wantErr: `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm`},
+		{statement: "COMMENT ON CAST (int AS text) IS 'x'",
+			wantErr: `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm`},
+		{statement: "COMMENT ON EVENT TRIGGER audit IS 'x'",
+			wantErr: `postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm`},
+		{statement: "COMMENT ON SCHEMA pg_catalog IS 'x'",
+			wantErr: `postgres rehearsal baseline refuses protected namespace "pg_catalog" mutation because its effects cannot be confined to the dev database realm`},
+	}
+	for _, test := range tests {
+		t.Run(test.statement, func(t *testing.T) {
+			c := qt.New(t)
+			owned := catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@owned-baseline-pg-comments:5432/ptah_dev"}
+			declareDisposable(c, owned.URL)
+
+			err := devclean.NewBaselineGuard(owned).ValidateStatement(test.statement)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
 }

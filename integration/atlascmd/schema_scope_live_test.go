@@ -220,11 +220,10 @@ table "users" {
 // selects one table of a target that also holds an extension: the plan drops
 // the table and keeps the extension.
 //
-// The rehearsal rebuilds the target on the dev database first, and a rebuild
-// that sets an extension's comment is refused on every dev server, since the
-// cleanup does not restore a comment on an extension it keeps. The target's
-// extension carries none, so the rebuild writes none; the refusal is
-// TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres's.
+// The rehearsal rebuilds the target on a dev database of a server the run does
+// not own. The extension carries the comment its control file sets, which
+// CREATE EXTENSION writes by itself, so the rebuild writes no COMMENT ON
+// EXTENSION, which the baseline guard would refuse there.
 func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres(t *testing.T) {
 	c := qt.New(t)
 	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
@@ -235,7 +234,6 @@ func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres
 		`CREATE SCHEMA app`,
 		`CREATE TABLE app.users (id bigint PRIMARY KEY)`,
 		`CREATE EXTENSION pgcrypto`,
-		`COMMENT ON EXTENSION pgcrypto IS NULL`,
 	)
 	schemaPath := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(schemaPath, []byte(`schema "elsewhere" {}`), 0o600), qt.IsNil)
@@ -260,17 +258,13 @@ func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres
 	c.Assert(out.String(), qt.Not(qt.Contains), "DROP EXTENSION")
 }
 
-// TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres holds the
-// rehearsal's rebuild of the target to the dev database's realm. The target's
-// extension carries the comment its control file sets, which the rebuild
-// writes after creating the extension. The cleanup does not restore such a
-// comment, so the rehearsal refuses before any statement of the rebuild runs
-// and names the statement. Owning the server does not lift the refusal, so it
-// names no remedy.
-func TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres(t *testing.T) {
-	c := qt.New(t)
-	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
-	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+// extensionCommentApply applies a scope that leaves app.users out to a target
+// whose pgcrypto extension carries a comment of its own, rehearsing it on a
+// scratch dev database of the same server, and returns what the command
+// printed and its error.
+func extensionCommentApply(c *qt.C) (string, error) {
+	c.Helper()
+	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	targetURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_comment_target_"+suffix)
 	devURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_comment_dev_"+suffix)
@@ -278,8 +272,9 @@ func TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres(t *testin
 		`CREATE SCHEMA app`,
 		`CREATE TABLE app.users (id bigint PRIMARY KEY)`,
 		`CREATE EXTENSION pgcrypto`,
+		`COMMENT ON EXTENSION pgcrypto IS 'hashing for app.users'`,
 	)
-	schemaPath := filepath.Join(t.TempDir(), "schema.hcl")
+	schemaPath := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(schemaPath, []byte(`schema "elsewhere" {}`), 0o600), qt.IsNil)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -294,13 +289,42 @@ func TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres(t *testin
 		"--include", "app.users",
 		"--dry-run",
 	})
-
 	err := cmd.Execute()
+	return out.String(), err
+}
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*baseline statement \d+ \(COMMENT ON EXTENSION "pgcrypto" IS .*\) cannot be rehearsed: `+
+// TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres holds the
+// rehearsal's rebuild of the target to the dev database's realm. The target's
+// extension carries a comment of its own, which the rebuild writes after
+// creating the extension. The cleanup does not restore such a comment, so on a
+// server the run does not own the rehearsal refuses before any statement of the
+// rebuild runs, names the statement, and names the two ways to a server the
+// run owns.
+func TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+
+	_, err := extensionCommentApply(c)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*baseline statement \d+ \(COMMENT ON EXTENSION "pgcrypto" IS 'hashing for app.users'\) cannot be rehearsed: `+
 		`postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm; `+
+		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL; `+
 		`the plan was not applied to the target database`)
-	c.Assert(err.Error(), qt.Not(qt.Contains), devdocker.DisposableServerEnvVar)
+}
+
+// TestSchemaApplyWritesAnExtensionCommentOnADisposableDevServerLivePostgres is
+// the control for the refusal above: on a server declared disposable the run
+// owns the server, which it does not share, and the rebuild writes the
+// comment.
+func TestSchemaApplyWritesAnExtensionCommentOnADisposableDevServerLivePostgres(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
+
+	out, err := extensionCommentApply(c)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `DROP TABLE IF EXISTS "app"."users" CASCADE`)
+	c.Assert(out, qt.Not(qt.Contains), "DROP EXTENSION")
 }
 
 // createScopeInspectSchema provisions one uniquely named schema holding the

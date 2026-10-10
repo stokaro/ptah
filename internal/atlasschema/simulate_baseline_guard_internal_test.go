@@ -20,8 +20,8 @@ import (
 const ydbTable = "CREATE TABLE items (id Int64 NOT NULL, PRIMARY KEY (id));"
 
 // TestRehearsalBaselineRefusesAPlannedBaseline drives the guard with what the
-// planner writes for a target holding a routine, a trigger and a comment on an
-// extension, on a dev database the run does not own. The whole baseline is
+// planner writes for a target holding a routine, a trigger and a changed
+// comment on an extension, on a dev database the run does not own. The whole baseline is
 // refused before its first statement runs, and the refusal names the statement
 // by its number and its first line.
 func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
@@ -37,7 +37,8 @@ func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
 				"COMMENT ON EXTENSION pg_trgm IS 'trigram matching';\n",
 			info: catalog.ServerInfo{Dialect: "postgres", Capabilities: capability.Postgres18()},
 			wantErr: `baseline statement 2 \(COMMENT ON EXTENSION "pg_trgm" IS 'trigram matching'\) cannot be rehearsed: ` +
-				`postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm`,
+				`postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm; ` +
+				`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1.*`,
 		},
 		{
 			name: "a PostgreSQL routine",

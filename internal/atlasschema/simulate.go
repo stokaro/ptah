@@ -511,6 +511,11 @@ func recreateCurrentSchema(
 	}
 	devCurrent = baseline.WithoutEnvironment(devCurrent, catalogExtensionNames(current))
 	devCurrent = baseline.WithoutStartingPoint(devCurrent, current, defaultSchemaOf(devConn.Info()))
+	controlComments, err := extensionControlComments(ctx, devConn, current)
+	if err != nil {
+		return err
+	}
+	omitControlComments(target, devCurrent.Extensions, controlComments)
 	info := devConn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil, runtime)
 	if err != nil {

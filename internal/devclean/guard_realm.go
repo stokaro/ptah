@@ -32,6 +32,12 @@ import (
 // They are lifted because a migration that defines a function or creates its
 // role in a DO block is ordinary, and on a server the run owns the body can
 // only change what the run owns.
+//
+// A comment on an extension or a schema of the dev database is lifted too. On
+// a named server it is refused because the cleanup does not restore it, so a
+// later run on the same dev database would read it; a server the run owns is
+// discarded, or declared to hold nothing anybody else reads. A comment on a
+// protected namespace such as pg_catalog stays refused, as its mutation is.
 func postgresServerWideOperation(tokens []lexer.Token) string {
 	if len(tokens) == 0 {
 		return ""
@@ -101,14 +107,15 @@ func postgresServerWideAlter(tokens []lexer.Token) string {
 	return ""
 }
 
-// postgresServerWideComment names a comment on a role or a database.
+// postgresServerWideComment names a comment on a role, a database, an
+// extension or a schema.
 func postgresServerWideComment(tokens []lexer.Token) string {
 	onIndex := findPostgresKeyword(tokens, "ON", 1)
 	if onIndex == mutationTargetNotFound || onIndex+1 >= len(tokens) {
 		return ""
 	}
 	switch normalizedIdentifier(tokens[onIndex+1]) {
-	case "ROLE", "DATABASE":
+	case "ROLE", "DATABASE", "EXTENSION", "SCHEMA":
 		return "COMMENT ON " + normalizedIdentifier(tokens[onIndex+1])
 	}
 	return ""

@@ -283,7 +283,8 @@ reaches past the dev database:
   without `SET` or `RESET`, role membership, privileges on a role, database,
   schema, language or parameter, CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`, `DROP OWNED`,
-  `REASSIGN OWNED`, and `COMMENT ON ROLE` or `DATABASE`.
+  `REASSIGN OWNED`, and `COMMENT ON` a role, a database, or an extension or
+  schema of the dev database.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, and writes to another database.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
@@ -349,10 +350,13 @@ trigger body can write outside the dev database when it runs, and a role, a
 user or a privilege the cleanup does not remove outlives it, so a target that
 holds one is rehearsed only on a server the run owns: one Ptah provisions from
 a docker URL, or one declared with `PTAH_DEV_SERVER_DISPOSABLE=1`. The refusal
-names the baseline statement and these two remedies. A comment on a table or a
-column is written. A comment on an extension or a schema is refused on every
-dev server, because the cleanup does not restore it, and that refusal names no
-remedy.
+names the baseline statement and these two remedies.
+
+Comments follow the same rule. A comment on a table or a column is written.
+The comment an extension's control file gives is not written, because `CREATE
+EXTENSION` sets it; Ptah reads that comment from the dev server. A comment the
+target gave an extension itself, or a comment on a schema, is refused unless
+the run owns the server, because the cleanup does not restore it.
 
 One baseline statement is accepted that a replay refuses. In a YDB dev realm,
 a single `GRANT` or `REVOKE` whose every path is the realm's own absolute path
