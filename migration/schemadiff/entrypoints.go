@@ -191,11 +191,18 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	if err := compare.ValidateMySQLFunctionDefinerReplacements(
+	// A comparison given no capability set assumes the dialect's preset, as
+	// the comparison itself does.
+	caps := info.Capabilities
+	if len(caps) == 0 {
+		caps = comparisonCapabilities(info.Dialect)
+	}
+	if err := compare.ValidateRoutineDefinerReplacements(
 		desired,
 		database,
 		diff,
 		info.Dialect,
+		caps,
 		semantics,
 	); err != nil {
 		return nil, Diagnostics{}, err

@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -49,23 +50,90 @@ func TestCompareWithDatabaseInfoRefusesAForeignDefinerReplacement(t *testing.T) 
 }
 
 // TestCompareWithDatabaseInfoRefusesAReplacementWithoutOwnershipFacts keeps
-// the safety rule fail closed for programmatic callers that build a live-like
-// Function without the reader-only ownership fields. Treating missing facts
+// the safety rule fail closed when the read did not record a fact: a
+// programmatic caller that builds a live-like Function without the reader-only
+// fields, a description rather than a live read (neither fact is serialized),
+// or a reading account the server did not answer for. Treating missing facts
 // as same-owner would recreate the exact silent principal change this guard
 // exists to prevent.
 func TestCompareWithDatabaseInfoRefusesAReplacementWithoutOwnershipFacts(t *testing.T) {
+	tests := []struct {
+		name           string
+		definer        string
+		currentAccount string
+	}{
+		{name: "neither fact, as a description has", definer: "", currentAccount: ""},
+		{name: "a definer and no reading account", definer: "owner_a@%", currentAccount: ""},
+		{name: "a reading account and no definer", definer: "", currentAccount: "migrator_a@%"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(
+				t.Context(), mysqlDefinerDesired("RETURN 2", "DEFINER"),
+				mysqlDefinerCurrent("RETURN 1", "DEFINER", test.definer, test.currentAccount),
+				mysqlDefinerInfo("mysql"),
+				nil, must.Must(builtin.New()),
+			)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `.*cannot safely replace.*ownership facts are incomplete.*`)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}
+
+// TestCompareWithDatabaseInfoGatesDefinerReplacementOnTheCapability proves
+// the gate is the capability, not the dialect: a PostgreSQL comparison whose
+// capability set says the plan replaces a routine by DROP and CREATE refuses
+// the replacement, and a MySQL one whose set says otherwise allows it.
+func TestCompareWithDatabaseInfoGatesDefinerReplacementOnTheCapability(t *testing.T) {
 	c := qt.New(t)
+	postgres := mysqlDefinerInfo("postgres")
+	postgres.Capabilities = capability.Postgres18().With(capability.RoutineReplacementResetsDefiner, true)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
 		t.Context(), mysqlDefinerDesired("RETURN 2", "DEFINER"),
-		mysqlDefinerCurrent("RETURN 1", "DEFINER", "", ""),
-		mysqlDefinerInfo("mysql"),
-		nil, must.Must(builtin.New()),
+		mysqlDefinerCurrent("RETURN 1", "DEFINER", "owner_a", "migrator_a"),
+		postgres, nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `.*cannot safely replace.*ownership facts are incomplete.*`)
+	c.Assert(err, qt.ErrorMatches, `.*cannot safely replace postgres function "f".*definer "owner_a".*connected account "migrator_a".*`)
 	c.Assert(diff, qt.IsNil)
+}
+
+// TestCompareWithDatabaseInfoAllowsDefinerReplacementWithoutTheCapability is
+// the other half: the dialect alone does not fire the check.
+func TestCompareWithDatabaseInfoAllowsDefinerReplacementWithoutTheCapability(t *testing.T) {
+	tests := []struct {
+		name string
+		info catalog.ServerInfo
+	}{
+		{name: "postgres preset", info: mysqlDefinerInfo("postgres")},
+		{name: "mysql with the capability off", info: withCapabilities(mysqlDefinerInfo("mysql"),
+			capability.MySQL84().With(capability.RoutineReplacementResetsDefiner, false))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(
+				t.Context(), mysqlDefinerDesired("RETURN 2", "DEFINER"),
+				mysqlDefinerCurrent("RETURN 1", "DEFINER", "owner_a", "migrator_a"),
+				test.info, nil, must.Must(builtin.New()),
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.FunctionsModified, qt.HasLen, 1)
+		})
+	}
+}
+
+func withCapabilities(info catalog.ServerInfo, caps capability.Capabilities) catalog.ServerInfo {
+	info.Capabilities = caps
+	return info
 }
 
 // TestCompareWithDatabaseInfoAllowsAForeignDefinerLanguageThisTargetSkips
@@ -165,10 +233,10 @@ func mysqlDefinerDesired(body, security string) *schemamodel.Database {
 }
 
 func mysqlDefinerCurrent(body, security, definer, currentAccount string) *catalog.Database {
-	return &catalog.Database{Functions: []catalog.Function{{
+	return &catalog.Database{CurrentAccount: currentAccount, Functions: []catalog.Function{{
 		Name: "f", Schema: "app", Returns: "int", Language: "sql",
 		Security: security, Volatility: "IMMUTABLE", Body: body,
-		Definer: definer, CurrentAccount: currentAccount,
+		Definer: definer,
 	}}}
 }
 

@@ -72,7 +72,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(live.Functions, qt.HasLen, 1)
 			c.Assert(live.Functions[0].Definer, qt.Contains, owner+"@")
-			c.Assert(live.Functions[0].CurrentAccount, qt.Not(qt.Equals), live.Functions[0].Definer)
+			c.Assert(live.CurrentAccount, qt.Not(qt.Equals), live.Functions[0].Definer)
 
 			desired := &schemamodel.Database{Functions: []schemamodel.Function{{
 				Name: "f", Returns: "int", Language: "sql", Security: "DEFINER",
