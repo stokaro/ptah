@@ -60,7 +60,7 @@ func diffWithChanges() *difftypes.SchemaDiff {
 		FeatureChanges: []schemaext.ChangeRecord{coordinationChange()},
 		TablesModified: []difftypes.TableDiff{{TableName: "events", FeatureChanges: []schemaext.ChangeRecord{ttlChange()}}},
 		MaterializedViewsModified: []difftypes.MaterializedViewDiff{
-			{ViewName: "hourly", Changes: map[string]string{}, FeatureChanges: []schemaext.ChangeRecord{refreshChange()}},
+			{ViewName: "hourly", Changes: make(map[string]string), FeatureChanges: []schemaext.ChangeRecord{refreshChange()}},
 		},
 	}
 }

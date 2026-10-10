@@ -24,7 +24,7 @@ func TestMaterializedViewFeatureChange_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	subject := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts(objectidentity.KindMatView, "", "hourly")
 	diff := &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
-		ViewName: "hourly", Changes: map[string]string{},
+		ViewName: "hourly", Changes: make(map[string]string),
 		FeatureChanges: []schemaext.ChangeRecord{{Subject: subject, Value: &chdiff.Refresh{
 			Before: &chschema.ObservedRefresh{Schedule: chschema.Schedule{Mode: chschema.RefreshEvery, Interval: "1 HOUR"}},
 			After:  &chschema.DesiredRefresh{Schedule: chschema.Schedule{Mode: chschema.RefreshEvery, Interval: "2 HOUR"}},
