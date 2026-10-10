@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	qt "github.com/frankban/quicktest"
@@ -165,66 +166,67 @@ func TestMigrateGenerateReplayRecoversPendingPublicationBeforeIntegrityGate(t *t
 	}
 }
 
+// TestMigrateGenerateReplayConnectTimeoutStartsAfterDirectoryLock runs on the
+// fake clock of testing/synctest. The clock moves only when every goroutine in
+// the test waits, so the lock is held for the full fifteen seconds of test time
+// without the test taking them, and the real time the connect spends cannot
+// use up its budget however loaded the machine is.
 func TestMigrateGenerateReplayConnectTimeoutStartsAfterDirectoryLock(t *testing.T) {
-	c := qt.New(t)
-	migrationsDir, schemaPath := writeReplayFixture(t)
-	devPath := filepath.Join(t.TempDir(), "dev.db")
-	lockHeld := make(chan struct{})
-	releaseLock := make(chan struct{})
-	lockResult := make(chan error, 1)
-	go func() {
-		lockResult <- atlasmigrate.WithMigrationDirectoryLock(
-			t.Context(),
-			migrationsDir,
-			0,
-			func(context.Context) error {
-				close(lockHeld)
-				<-releaseLock
-				return nil
-			},
+	synctest.Test(t, func(t *testing.T) {
+		c := qt.New(t)
+		migrationsDir, schemaPath := writeReplayFixture(t)
+		devPath := filepath.Join(t.TempDir(), "dev.db")
+		lockHeld := make(chan struct{})
+		releaseLock := make(chan struct{})
+		lockResult := make(chan error, 1)
+		go func() {
+			lockResult <- atlasmigrate.WithMigrationDirectoryLock(
+				t.Context(),
+				migrationsDir,
+				0,
+				func(context.Context) error {
+					close(lockHeld)
+					<-releaseLock
+					return nil
+				},
+			)
+		}()
+		<-lockHeld
+		// Only the ORDER of these two durations carries the assertion: the
+		// connect timeout has to be shorter than the lock is held, so a run that
+		// started the clock before waiting for the lock would have spent it
+		// before the lock was free.
+		//
+		// The budget is the only lever there is. An observable wait -- release
+		// the lock once the command is seen to be waiting for it -- would not
+		// test this: the assertion is that an early clock EXPIRES, so the hold
+		// has to outlast the timeout, and a hold that ends as soon as the wait
+		// is observed is exactly the hold that lets an early clock survive.
+		//
+		// On a real clock the connect itself spent the budget on a loaded
+		// runner, which read as the ordering being wrong (stokaro/ptah#1749).
+		// On the fake one it cannot, so the margin between the two durations
+		// is only about their order.
+		const (
+			lockHeldFor    = 15 * time.Second
+			connectTimeout = 10 * time.Second
 		)
-	}()
-	<-lockHeld
-	// Only the ORDER of these two durations carries the assertion: the connect
-	// timeout has to be shorter than the lock is held, so a run that started
-	// the clock before waiting for the lock would have spent it before the lock
-	// was free. Everything else about them is headroom for the connect itself.
-	//
-	// The budget is the only lever there is. An observable wait -- release the
-	// lock once the command is seen to be waiting for it -- would not test this:
-	// the assertion is that an early clock EXPIRES, so the hold has to outlast
-	// the timeout, and a hold that ends as soon as the wait is observed is
-	// exactly the hold that lets an early clock survive. Whatever the mechanism,
-	// this test holds a lock for longer than a timeout it then expects to be
-	// honored.
-	//
-	// So the failures are read as what they say. 250ms/100ms failed twice on
-	// master, 1s/2s failed again on stokaro/ptah#2010 -- every time with
-	// `connect to --dev-url: failed to ping database: context deadline
-	// exceeded`, which is the CONNECT running out of budget, never the ordering
-	// being wrong. Opening and pinging a SQLite file is microseconds of work; a
-	// loaded Windows runner is what turns that into a second. Ten seconds is not
-	// a guess about scheduling, it is a refusal to keep guessing
-	// (stokaro/ptah#1749).
-	const (
-		lockHeldFor    = 15 * time.Second
-		connectTimeout = 10 * time.Second
-	)
-	time.AfterFunc(lockHeldFor, func() { close(releaseLock) })
+		time.AfterFunc(lockHeldFor, func() { close(releaseLock) })
 
-	out, err := runGenerate(
-		"--replay",
-		"--connect-timeout", connectTimeout.String(),
-		"--dev-url", "sqlite://"+devPath,
-		"--migrations-dir", migrationsDir,
-		"--schema-file", schemaPath,
-		"--name", "add_orders",
-	)
+		out, err := runGenerate(
+			"--replay",
+			"--connect-timeout", connectTimeout.String(),
+			"--dev-url", "sqlite://"+devPath,
+			"--migrations-dir", migrationsDir,
+			"--schema-file", schemaPath,
+			"--name", "add_orders",
+		)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(<-lockResult, qt.IsNil)
-	c.Assert(out, qt.Contains, "UP:")
-	assertGenerateReplayDevEmpty(c, devPath)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(<-lockResult, qt.IsNil)
+		c.Assert(out, qt.Contains, "UP:")
+		assertGenerateReplayDevEmpty(c, devPath)
+	})
 }
 
 func TestMigrateGenerateShadowRefusesDriftBeforeConnectingToTarget(t *testing.T) {
