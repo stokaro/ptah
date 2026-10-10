@@ -20,7 +20,8 @@ func (p *Planner) planFeatureChanges(
 	rebuilds map[string]*tableRebuild, semantics identifier.Semantics, common []featureplan.CommonStep,
 ) (featurehost.Result, error) {
 	names := make(map[objectidentity.Key]string)
-	request := featureplan.Request{Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: slices.Clone(diff.FeatureChanges), CommonSteps: common}
+	request := featureplan.Request{Target: platform.YDB, Identifiers: semantics, Capabilities: p.caps, Changes: slices.Clone(diff.FeatureChanges),
+		CommonSteps: common, DatabasePath: diff.CurrentDatabasePath}
 	for _, table := range diff.TablesModified {
 		// A table's own facets are planned at the table's place in the plan;
 		// see [Planner.planTableFacets].

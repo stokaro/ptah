@@ -34,6 +34,11 @@ type ComparisonRequest struct {
 	// named-object kind; see [ChangeRequest].
 	Requests          []ChangeRequest
 	DeclaredRelations []objectidentity.ID
+	// DatabasePath is the absolute path of the database the current state
+	// describes, such as /local, and empty when the target has none or the
+	// caller does not know it. An owner whose objects name other objects by
+	// path reads an absolute one against it. See [ObjectComparisonRequest].
+	DatabasePath string
 }
 
 // ComparisonResult joins the selected object and facet owners' replies. No

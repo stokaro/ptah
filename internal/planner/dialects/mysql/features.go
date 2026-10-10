@@ -51,7 +51,8 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	target := p.targetDialect()
 	semantics := diff.EffectiveIdentifierSemantics(target)
 	builder := objectidentity.NewBuilder(semantics)
-	request := featureplan.Request{Target: target, Identifiers: semantics, Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges)}
+	request := featureplan.Request{Target: target, Identifiers: semantics, Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges),
+		DatabasePath: diff.CurrentDatabasePath}
 	names := make(map[objectidentity.Key]string)
 	for _, table := range diff.TablesModified {
 		if len(table.FeatureChanges) == 0 {

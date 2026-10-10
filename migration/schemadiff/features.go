@@ -88,7 +88,8 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 		return schemaext.ComparisonResult{Complete: true, Desired: declared}, nil
 	}
 	result, err := runtime.CompareFeatures(ctx, schemaext.ComparisonRequest{Target: target, Identifiers: semantics, Capabilities: caps,
-		Desired: declared, Current: observed, Owners: parents, Requests: requests, DeclaredRelations: declaredRelations(desired, semantics)})
+		Desired: declared, Current: observed, Owners: parents, Requests: requests, DeclaredRelations: declaredRelations(desired, semantics),
+		DatabasePath: current.DatabasePath})
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}

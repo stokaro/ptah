@@ -1339,6 +1339,17 @@ entry that is not a named view or materialized view with
 `schemaext.ErrInvalidValue`, sends the owner a copy in identity order, and
 leaves the caller's slice unchanged. A nil list declares none.
 
+`schemaext.ComparisonRequest.DatabasePath`,
+`schemaext.ObjectComparisonRequest.DatabasePath` and
+`featureplan.Request.DatabasePath` carry the absolute path of the database the
+state describes, such as `/local`, so an owner can read a path an object or a
+statement writes absolute against it. The comparison host takes it from the
+read (`catalog.Database.DatabasePath`) and the planning hosts from the diff
+(`difftypes.SchemaDiff.CurrentDatabasePath`); the runtime sends every batch the
+caller's value. It is empty when the target has none or the caller does not
+know it, as for a declaration rendered without a database, and an owner then
+cannot tell an absolute path of this database from one of another.
+
 `atlascompat.DBSchemaToGoSchema` requires a context, target name, and selected
 feature runtime. It returns a schema and an error. `FacetSlots` on the desired
 and observed database models enumerates the mutable slots holding immutable
