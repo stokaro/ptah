@@ -22,10 +22,25 @@ import (
 // query pairs a constraint's local and foreign columns at all
 // (stokaro/ptah#942).
 //
-// The key columns come from key_column_usage, the referenced side from
-// referential_constraints joined to constraint_column_usage, and the clause
-// from check_constraints. A constraint with no key columns -- every CHECK --
-// still has to arrive, so the join to key_column_usage is a LEFT one.
+// The key columns come from key_column_usage, one row each. A foreign key's
+// referenced column is the column of the key it references at the position
+// position_in_unique_constraint names, as the SQL standard defines it:
+// referential_constraints names that key, and its own key_column_usage rows
+// name its columns. The clause comes from check_constraints.
+//
+// The Cloud Spanner emulator behind PGAdapter 0.56.1 answers that position in
+// the order the foreign key listed its referenced columns rather than in the
+// referenced key's, so a key that lists them in another order than the
+// referenced key, `FOREIGN KEY (y, x) REFERENCES parent (b, a)` against a key
+// (a, b), reads back paired y to a. Its pg_constraint answers confkey {2,1}
+// for both orders, so it cannot settle the question either. A constraint with no key columns -- every CHECK -- still
+// has to arrive, so the join to key_column_usage is a LEFT one.
+//
+// constraint_column_usage is not read. It lists every column a constraint
+// uses, a primary key's own columns included, and in no order, so joining it
+// beside key_column_usage gave a key of n columns n x n rows: Spanner read a
+// composite primary key back with every column twice, and each plan rebuilt
+// it (stokaro/ptah#4292).
 const informationSchemaConstraintQuery = `
 		SELECT
 			tc.constraint_name,
@@ -33,8 +48,8 @@ const informationSchemaConstraintQuery = `
 			tc.constraint_type,
 			kcu.column_name,
 			kcu.ordinal_position,
-			ccu.table_name AS referenced_table,
-			ccu.column_name AS referenced_column,
+			rkcu.table_name AS referenced_table,
+			rkcu.column_name AS referenced_column,
 			rc.delete_rule,
 			rc.update_rule,
 			cc.check_clause
@@ -46,9 +61,10 @@ const informationSchemaConstraintQuery = `
 		LEFT JOIN information_schema.referential_constraints AS rc
 			ON rc.constraint_schema = tc.constraint_schema
 			AND rc.constraint_name = tc.constraint_name
-		LEFT JOIN information_schema.constraint_column_usage AS ccu
-			ON ccu.constraint_schema = tc.constraint_schema
-			AND ccu.constraint_name = tc.constraint_name
+		LEFT JOIN information_schema.key_column_usage AS rkcu
+			ON rkcu.constraint_schema = rc.unique_constraint_schema
+			AND rkcu.constraint_name = rc.unique_constraint_name
+			AND rkcu.ordinal_position = kcu.position_in_unique_constraint
 		LEFT JOIN information_schema.check_constraints AS cc
 			ON cc.constraint_schema = tc.constraint_schema
 			AND cc.constraint_name = tc.constraint_name
