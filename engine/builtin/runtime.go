@@ -116,6 +116,7 @@ func New() (*engine.Runtime, error) {
 			registerYDBVectorIndexServices(&provider, name)
 			registerYDBIndexPartitioningServices(&provider, name)
 			provider.Annotations = append(provider.Annotations, ydbsource.Annotations())
+			provider.YAML = append(provider.YAML, ydbsource.YAML())
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

@@ -1,4 +1,4 @@
-package yamlschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -12,7 +12,7 @@ import (
 
 func TestParse_ColumnStore(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse(noOwners, []byte(`tables:
+	db, err := yamlschema.Parse(ydbYAMLOwners, []byte(`tables:
   events:
     schema: analytics
     fields:

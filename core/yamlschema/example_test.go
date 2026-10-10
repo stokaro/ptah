@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/go-extras/go-kit/must"
 
@@ -142,16 +141,10 @@ func ExampleParseFile() {
 // render this table without the comment its author wrote.
 func ExampleParse_unknownKey() {
 	_, err := yamlschema.Parse(noOwners, []byte("tables:\n  accounts:\n    commnet: Customer accounts\n"))
-
-	// The decoder closes the sentence by naming the Go type it was filling.
-	// That type is Ptah's internal representation of a table, not part of
-	// this package's API, so cut the clause instead of printing it.
-	message, _, _ := strings.Cut(err.Error(), " in type ")
-	fmt.Println(message)
+	fmt.Println(err)
 
 	// Output:
-	// parse YAML schema: yaml: unmarshal errors:
-	//   line 3: field commnet not found
+	// parse YAML schema: line 3: unknown key "commnet" of table "accounts"
 }
 
 // ExampleParse_strictness shows the second strict refusal: a schema split

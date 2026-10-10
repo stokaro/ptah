@@ -14,9 +14,9 @@ import (
 
 // TestParse_RowDeletionPolicyIsAPlatformGroup pins the YAML spelling: the
 // Spanner policy and the YDB TTL sit in the table's spanner and ydb platform
-// groups. The document claims complete knowledge of the YDB TTL, so a table
-// without it requests none; the Spanner claim belongs to the Spanner owner,
-// which spannersource tests.
+// groups. The claims belong to their owners, which spannersource and
+// ydbsource test; a parse that selects neither claims no knowledge of the YDB
+// TTL.
 func TestParse_RowDeletionPolicyIsAPlatformGroup(t *testing.T) {
 	c := qt.New(t)
 
@@ -45,7 +45,7 @@ tables:
 		"ydb":     {"row_deletion_column": "expires", "row_deletion_interval": "PT1H", "row_deletion_unit": "nanoseconds"},
 	})
 	ydb := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "plain")
-	c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, ydb).State, qt.Equals, schemaext.Complete)
+	c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, ydb).State, qt.Not(qt.Equals), schemaext.Complete)
 }
 
 // TestParse_RowDeletionPolicyHasNoBareKey pins that the policy is not a key of

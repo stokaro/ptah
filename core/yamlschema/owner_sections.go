@@ -13,21 +13,34 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlext"
+	"ptah.run/internal/yamlvalue"
 )
 
 // ownKeys are the top-level keys the frontend reads itself, from the yaml tags
 // of [document]. An owner section that took one of them would never be
 // handed to its owner.
-var ownKeys = sync.OnceValue(func() []string {
+var ownKeys = sync.OnceValue(func() []string { return yamlKeys(reflect.TypeFor[document]()) })
+
+// entryKeys are the keys the frontend reads itself in each entry an owner
+// adds keys to.
+var entryKeys = sync.OnceValue(func() map[string][]string {
+	return map[string][]string{
+		yamlext.EntryTable: yamlKeys(reflect.TypeFor[tableSpec]()),
+		yamlext.EntryIndex: yamlKeys(reflect.TypeFor[indexSpec]()),
+	}
+})
+
+// yamlKeys are the keys the yaml tags of a struct type name.
+func yamlKeys(structType reflect.Type) []string {
 	var keys []string
-	for field := range reflect.TypeFor[document]().Fields() {
+	for field := range structType.Fields() {
 		name, _, _ := strings.Cut(field.Tag.Get("yaml"), ",")
 		if name != "" {
 			keys = append(keys, name)
 		}
 	}
 	return keys
-})
+}
 
 // checkOwnedKeys refuses a top-level key the frontend does not read and no
 // selected owner reads, naming its line, as the decoder refuses an unknown key
@@ -40,11 +53,94 @@ func checkOwnedKeys(owners yamlext.Set, data []byte, owned map[string]yaml.Node)
 			return fmt.Errorf("parse YAML schema: YAML key %q of %s takes the name of one of the frontend's own", key, owner)
 		}
 	}
+	for entry, own := range entryKeys() {
+		for _, key := range owners.EntryKeys(entry) {
+			if slices.Contains(own, key) {
+				return fmt.Errorf("parse YAML schema: key %q an owner adds to %s takes the name of one of the frontend's own", key, entry)
+			}
+		}
+	}
 	for _, key := range sortedKeys(owned) {
 		if _, read := owners.Section(key); !read {
 			return fmt.Errorf("parse YAML schema: line %d: unknown key %q", keyLine(data, key), key)
 		}
 	}
+	return nil
+}
+
+// ownedKeys sorts the keys an entry holds that the frontend does not read
+// itself: the scalars of an owner, keyed by name, and the keys whose value an
+// owner reads as a section. A key no selected owner reads is refused as
+// unknown, naming the line of its value. origin names the entry.
+func ownedKeys(owners yamlext.Set, entry, origin string, owned map[string]yaml.Node) (map[string]string, []string, error) {
+	scalars := make(map[string]string)
+	var sections []string
+	for _, key := range sortedKeys(owned) {
+		node := owned[key]
+		found, scalar := owners.EntryKey(entry, key)
+		switch {
+		case !found:
+			return nil, nil, fmt.Errorf("parse YAML schema: line %d: unknown key %q of %s", node.Line, key, origin)
+		case !scalar:
+			sections = append(sections, key)
+		default:
+			var value yamlvalue.Scalar
+			if err := node.Decode(&value); err != nil {
+				return nil, nil, fmt.Errorf("%s: line %d: key %q: %w", origin, node.Line, key, err)
+			}
+			scalars[key] = string(value)
+		}
+	}
+	return scalars, sections, nil
+}
+
+// addTableSections hands each owner key of a table entry whose value is not a
+// scalar to its owner, and joins what the owner declares: an object to the
+// document's feature objects, a facet to the table, the last one db holds.
+func addTableSections(db *schemamodel.Database, owners yamlext.Set, data []byte, table yamlext.Table, keys []string) error {
+	for _, key := range keys {
+		contributions, err := owners.DecodeEntrySection(key, func(target any) error {
+			return decodeTableSection(data, table.Key, key, target)
+		}, table)
+		if err != nil {
+			return err
+		}
+		for _, contribution := range contributions {
+			contribution.Table = len(db.Tables) - 1
+			if err := contribute(db, fmt.Sprintf("table %q", table.Key), contribution); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// decodeTableSection unmarshals the value of key in the entry tableKey of the
+// tables key into target, refusing a key target's type does not declare. It
+// decodes the whole document again, so a refusal names the line the author
+// wrote.
+func decodeTableSection(data []byte, tableKey, key string, target any) error {
+	value := reflect.ValueOf(target)
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return fmt.Errorf("decode key %q of table %q: the target is not a non-nil pointer", key, tableKey)
+	}
+	rest := reflect.StructField{Name: "Rest", Type: reflect.TypeFor[map[string]yaml.Node](), Tag: `yaml:",inline"`}
+	entry := reflect.StructOf([]reflect.StructField{
+		{Name: "Section", Type: value.Type().Elem(), Tag: reflect.StructTag(fmt.Sprintf("yaml:%q", key))}, rest,
+	})
+	wrapper := reflect.New(reflect.StructOf([]reflect.StructField{
+		{Name: "Tables", Type: reflect.MapOf(reflect.TypeFor[string](), entry), Tag: `yaml:"tables"`}, rest,
+	}))
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(wrapper.Interface()); err != nil {
+		return fmt.Errorf("parse YAML schema: %w", err)
+	}
+	found := wrapper.Elem().Field(0).MapIndex(reflect.ValueOf(tableKey))
+	if !found.IsValid() {
+		return fmt.Errorf("decode key %q of table %q: the document declares no such table", key, tableKey)
+	}
+	value.Elem().Set(found.Field(0))
 	return nil
 }
 
@@ -79,7 +175,7 @@ func decodeSection(data []byte, key string, target any) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(wrapper.Interface()); err != nil {
-		return err
+		return fmt.Errorf("parse YAML schema: %w", err)
 	}
 	value.Elem().Set(wrapper.Elem().Field(0))
 	return nil

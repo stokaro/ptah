@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/yamlext"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/ydbsource"
@@ -19,6 +20,11 @@ import (
 // ydbOwners selects the YDB owner alone, so each test reads YDB's directives
 // through the frontend the way a runtime that registers the owner does.
 var ydbOwners = must.Must(annotation.NewSet(ydbsource.Annotations()))
+
+// ydbYAMLOwners selects the YDB owner alone for a YAML document, so each test
+// reads YDB's keys through the frontend the way a runtime that registers the
+// owner does.
+var ydbYAMLOwners = must.Must(yamlext.NewSet(ydbsource.YAML()))
 
 const ownedSource = `package entities
 

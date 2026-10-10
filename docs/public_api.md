@@ -2309,6 +2309,14 @@ reaches the owner as the attribute map the Go annotation of the same
 declaration carries, so one reader serves both frontends. `Extension.Cover`
 narrows the document's claim by what it declares of the owner's models.
 
+An owner may add keys to the frontend's table and index entries too. An
+`EntryAttributes` names scalar keys and the entry's own keys it reads, such
+as an index's type, in the shape of `annotation.DirectiveAttributes`, so the
+YDB owner reads an index's partitioning from Go and from YAML with one
+decoder. An `EntrySection` reads a table key whose value is not a scalar,
+such as a table's changefeeds, through the same strict decode callback a
+`Section` gets.
+
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
