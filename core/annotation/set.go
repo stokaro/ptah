@@ -69,10 +69,22 @@ type DirectiveAttributes struct {
 	// Attributes are the owner's attributes of the directive. An attribute
 	// name belongs to one owner, and never to the directive itself.
 	Attributes []Attribute
-	// Decode reads the owner's attributes a declaration wrote, keyed by name.
-	// It is called only when the declaration wrote at least one of them, and
-	// it returns facets of the owner's models, with their target scopes.
+	// Reads are attributes of the directive itself that the owner's decoders
+	// read beside its own, such as an index's type. A declaration that
+	// writes one of them is decoded even where it writes none of the owner's
+	// attributes, since the directive's own attribute may be what makes the
+	// object one of the owner's.
+	Reads []string
+	// Decode reads the owner's attributes a declaration wrote, and the ones
+	// of Reads it wrote, keyed by name. It is called only when the
+	// declaration wrote at least one of them, and it returns facets of the
+	// owner's models, with their target scopes.
 	Decode func(attributes map[string]string) (schemaext.Facets, error)
+	// Parameters reads the same attributes into options of the object the
+	// directive declares, such as the WITH options of an index, for an owner
+	// whose attributes spell options the common model already carries. It is
+	// optional, and it is called when Decode is.
+	Parameters func(attributes map[string]string) (map[string]string, error)
 }
 
 // Extension is what one feature owner contributes to the Go annotation
@@ -183,7 +195,7 @@ func NewSet(extensions ...Extension) (Set, error) {
 
 func (s *Set) claimAttributes(index int, extension Extension) error {
 	for _, group := range extension.Attributes {
-		if strings.TrimSpace(group.Directive) == "" || group.Decode == nil {
+		if strings.TrimSpace(group.Directive) == "" || (group.Decode == nil && group.Parameters == nil) {
 			return fmt.Errorf("annotation extension of %s declares attributes without a directive or a decoder", extension.Owner)
 		}
 		claimed := s.attributes[group.Directive]
@@ -247,23 +259,15 @@ func (s Set) AttributedDirectives() []string {
 }
 
 // DecodeAttributes hands each owner the attributes it adds to directive that
-// attributes holds, and joins the facets they return. An owner none of whose
-// attributes was written is not called. A facet of a model the owner does not
-// declare, and one two owners return, are errors.
+// attributes holds, with the ones of its Reads, and joins the facets they
+// return. An owner that reads none of them is not called. A facet of a model
+// the owner does not declare, and one two owners return, are errors.
 func (s Set) DecodeAttributes(directive string, attributes map[string]string) (schemaext.Facets, error) {
 	var joined schemaext.Facets
 	for _, extension := range s.extensions {
 		for _, group := range extension.Attributes {
-			if group.Directive != directive {
-				continue
-			}
-			written := make(map[string]string)
-			for _, attribute := range group.Attributes {
-				if value, found := attributes[attribute.Name]; found {
-					written[attribute.Name] = value
-				}
-			}
-			if len(written) == 0 {
+			written := group.written(directive, attributes)
+			if len(written) == 0 || group.Decode == nil {
 				continue
 			}
 			facets, err := group.Decode(written)
@@ -282,6 +286,56 @@ func (s Set) DecodeAttributes(directive string, attributes map[string]string) (s
 		}
 	}
 	return joined, nil
+}
+
+// DecodeParameters hands each owner whose attributes of directive spell
+// options the same attributes [Set.DecodeAttributes] does, and joins the
+// options they return. It returns nil where no owner returns one. An option
+// two owners return is an error.
+func (s Set) DecodeParameters(directive string, attributes map[string]string) (map[string]string, error) {
+	var joined map[string]string
+	for _, extension := range s.extensions {
+		for _, group := range extension.Attributes {
+			written := group.written(directive, attributes)
+			if len(written) == 0 || group.Parameters == nil {
+				continue
+			}
+			options, err := group.Parameters(written)
+			if err != nil {
+				return nil, err
+			}
+			for name, value := range options {
+				if _, taken := joined[name]; taken {
+					return nil, fmt.Errorf("%w: option %q of %q is returned by two owners", schemaext.ErrDuplicate, name, directive)
+				}
+				if joined == nil {
+					joined = make(map[string]string, len(options))
+				}
+				joined[name] = value
+			}
+		}
+	}
+	return joined, nil
+}
+
+// written returns the attributes of directive a declaration wrote that the
+// group reads: its own, and its Reads where it wrote at least one of either.
+func (g DirectiveAttributes) written(directive string, attributes map[string]string) map[string]string {
+	if g.Directive != directive {
+		return nil
+	}
+	written := make(map[string]string)
+	for _, attribute := range g.Attributes {
+		if value, found := attributes[attribute.Name]; found {
+			written[attribute.Name] = value
+		}
+	}
+	for _, name := range g.Reads {
+		if value, found := attributes[name]; found {
+			written[name] = value
+		}
+	}
+	return written
 }
 
 // Selected reports whether the set was built by [NewSet] or [None].
@@ -396,6 +450,7 @@ func cloneExtension(extension Extension) Extension {
 	groups := make([]DirectiveAttributes, 0, len(extension.Attributes))
 	for _, group := range extension.Attributes {
 		group.Attributes = slices.Clone(group.Attributes)
+		group.Reads = slices.Clone(group.Reads)
 		groups = append(groups, group)
 	}
 	extension.Attributes = groups

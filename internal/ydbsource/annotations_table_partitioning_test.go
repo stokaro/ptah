@@ -1,4 +1,4 @@
-package goschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -66,7 +66,7 @@ func TestParseSource_TablePartitioning_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "items.go", partitionedTableSource(test.attributes))
+			db, err := goschema.ParseSource(ydbOwners, "items.go", partitionedTableSource(test.attributes))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
 			c.Assert(declaredPartitioning(c, db.Tables[0]), qt.DeepEquals, test.want)
@@ -95,7 +95,7 @@ func TestParseSource_TablePartitioning_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "items.go", partitionedTableSource(test.attributes))
+			db, err := goschema.ParseSource(ydbOwners, "items.go", partitionedTableSource(test.attributes))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})

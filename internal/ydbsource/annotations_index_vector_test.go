@@ -1,4 +1,4 @@
-package goschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -71,7 +71,7 @@ func TestParseSource_VectorIndex_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "docs.go", vectorIndexSource(test.attributes))
+			db, err := goschema.ParseSource(ydbOwners, "docs.go", vectorIndexSource(test.attributes))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Indexes, qt.HasLen, 1)
 			c.Assert(declaredVector(c, db.Indexes[0]), qt.DeepEquals, test.want)
@@ -100,7 +100,7 @@ func TestParseSource_VectorIndex_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "docs.go", vectorIndexSource(test.attributes))
+			db, err := goschema.ParseSource(ydbOwners, "docs.go", vectorIndexSource(test.attributes))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
@@ -118,15 +118,16 @@ func TestParseSource_VectorIndexOperatorClass_FailurePath(t *testing.T) {
 		wantErr    string
 	}{
 		{name: "a half-precision class", attributes: `type="vector_kmeans_tree" ops="halfvec_cosine_ops" vector_type="float"`,
-			wantErr: `index "idx_docs_emb" at Doc: operator class "halfvec_cosine_ops" has no YDB counterpart: .*`},
+			wantErr: `operator class "halfvec_cosine_ops" has no YDB counterpart: .* on //ptah:schema:index at Doc`},
 		{name: "a class naming another metric", attributes: `type="vector_kmeans_tree" ops="vector_ip_ops" distance="cosine"`,
-			wantErr: `index "idx_docs_emb" at Doc: operator class "vector_ip_ops" names similarity=inner_product, and the index's settings name distance=cosine`},
+			wantErr: `operator class "vector_ip_ops" names similarity=inner_product, and the index's settings name distance=cosine ` +
+				`on //ptah:schema:index at Doc`},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource(noOwners, "docs.go", vectorIndexSource(test.attributes))
+			db, err := goschema.ParseSource(ydbOwners, "docs.go", vectorIndexSource(test.attributes))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 		})

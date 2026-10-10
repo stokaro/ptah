@@ -166,19 +166,17 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	attributes, err := AttributeCoverage()
+	attributes, err := attributeCoverage()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
 	return objects.Combine(attributes)
 }
 
-// AttributeCoverage enrolls the settings a table and an index declare in
+// attributeCoverage enrolls the settings a table and an index declare in
 // their own directives: a table's partitioning and column storage, and a
-// global index's partitioning and vector settings. A Go annotation source
-// claims them apart from [Annotations], since the frontend still reads the
-// attributes that declare them.
-func AttributeCoverage() (schemaext.Coverage, error) {
+// global index's partitioning and vector settings.
+func attributeCoverage() (schemaext.Coverage, error) {
 	var combined schemaext.Coverage
 	for _, facet := range []func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error){
 		ydbschema.TablePartitioningCoverage, ydbschema.ColumnStoreCoverage, ydbschema.IndexPartitioningCoverage,

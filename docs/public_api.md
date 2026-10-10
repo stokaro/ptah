@@ -229,7 +229,10 @@ do not import a parser to carry a declaration.
 `core/goschema`, and the feature owners. An `Extension` holds:
 
 - an owner's directives and their decoder;
-- the attributes it adds to the frontend's own directives, and their decoder;
+- the attributes it adds to the frontend's own directives, the directive's
+  own attributes it reads beside them, such as an index's type, and the
+  decoders that turn them into facets and into options the common model
+  carries, such as an index's WITH options;
 - the models it produces;
 - the `ptah:schema:notdescribed` kinds it reads;
 - the coverage a Go annotation source holds about those models, given the

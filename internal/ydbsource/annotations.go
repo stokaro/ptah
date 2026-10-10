@@ -22,6 +22,7 @@ import (
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbfamily"
+	"ptah.run/internal/ydbpartition"
 )
 
 // The YDB directives of the Go annotation frontend.
@@ -46,15 +47,19 @@ const (
 // Annotations is the YDB owner's contribution to the Go annotation frontend:
 // the directives of its standalone objects, of a table's changefeeds and
 // column families, and of the consumers and items those declare in the same
-// file; the not-described kinds that leave a namespace of those objects
+// file; the settings a table and an index declare in the frontend's own
+// directives; the not-described kinds that leave a namespace of those objects
 // unmanaged; and the claim that a Go annotation source describes each of
 // them, and a table's TTL, completely.
 func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner:      ydbschema.Owner,
 		Directives: directives(),
+		Attributes: attributes(),
 		Kinds: []schemaext.Kind{
 			ydbschema.ChangefeedKind, ydbschema.ColumnFamiliesKind, ydbschema.TTLKind,
+			ydbschema.TablePartitioningKind, ydbschema.ColumnStoreKind, ydbschema.IndexPartitioningKind,
+			ydbschema.VectorIndexKind,
 			ydbcoordination.Kind, ydbstreaming.Kind, ydbworkload.PoolKind, ydbworkload.ClassifierKind,
 			ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind,
 			ydbreplication.ReplicationKind, ydbreplication.TransferKind,
@@ -85,7 +90,7 @@ func annotationCoverage(limits []coverage.Object) (schemaext.Coverage, error) {
 			return schemaext.Coverage{}, fmt.Errorf("YDB reads no not-described kind %q", limit.Kind)
 		}
 	}
-	return objectCoverage(recorded)
+	return Coverage(recorded)
 }
 
 // fileDecoder reads the YDB declarations of one file. A standalone object is
@@ -613,6 +618,7 @@ var refusedAttributes = []func(error) (string, bool){
 	attributeOf(func(e *ydbexternal.DeclarationError) string { return e.Attribute }),
 	attributeOf(func(e *ydbreplication.DeclarationError) string { return e.Attribute }),
 	attributeOf(func(e *ydbcoordination.SettingError) string { return e.Setting }),
+	attributeOf(func(e *ydbpartition.DeclarationError) string { return e.Attribute }),
 	attributeOf(func(*ydbsecret.DuplicateError) string { return ydbsecret.AttributeName }),
 	attributeOf(func(*ydbtopic.DuplicateError) string { return ydbtopic.AttributeName }),
 	attributeOf(func(*ydbexternal.DuplicateError) string { return ydbexternal.AttributeName }),
