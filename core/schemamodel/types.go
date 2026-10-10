@@ -335,11 +335,7 @@ type Field struct {
 	GeneratedExpression string
 	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
 	GeneratedKind string
-	// UpdateExpression stores MySQL/MariaDB ON UPDATE expressions such as CURRENT_TIMESTAMP(6).
-	UpdateExpression string
-	// Charset stores the column character set for MySQL-compatible dialects.
-	Charset string
-	// Collate stores the column collation for MySQL-compatible dialects.
+	// Collate stores the column collation.
 	Collate   string
 	Comment   string                       // Column comment
 	Overrides map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)

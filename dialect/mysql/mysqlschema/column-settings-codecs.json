@@ -1,0 +1,30 @@
+{
+  "$id": "ptah.run/mysql/column-settings/v1",
+  "$defs": {
+    "settings": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "charset": {"type": "string", "minLength": 1, "pattern": "^\\S(.*\\S)?$"},
+        "on_update": {"type": "string", "minLength": 1, "pattern": "^\\S(.*\\S)?$"}
+      },
+      "additionalProperties": false,
+      "meaning": "charset is the column's CHARACTER SET. on_update is the expression of its ON UPDATE clause. A setting left out is not stated."
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/mysql/column-settings": {
+        "$ref": "#/$defs/settings",
+        "constraint": "At least one setting is present. Values are trimmed text without NUL. The value states the clauses a CREATE TABLE, ADD COLUMN or MODIFY COLUMN writes; it never becomes a change on its own."
+      }
+    },
+    "observed": {
+      "ptah.run/mysql/column-settings": {
+        "$ref": "#/$defs/settings",
+        "constraint": "At least one setting is present. charset is what information_schema.COLUMNS reports, including a character set the column inherits from its table. on_update is the expression EXTRA names."
+      }
+    }
+  },
+  "canonicalization": "Strings are UTF-8 and kept verbatim, including case. Property order carries no meaning."
+}

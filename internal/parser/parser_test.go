@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 )
@@ -77,6 +78,17 @@ func TestParser_ParseCreateTable_Basic(t *testing.T) {
 	c.Assert(nameColumn.Nullable, qt.IsFalse) // NOT NULL specified
 }
 
+// columnSettings returns the MySQL owner's settings the parser declared on
+// column, and asserts it bound them to the MySQL family.
+func columnSettings(c *qt.C, column *ast.ColumnNode) mysqlschema.ColumnSettings {
+	c.Helper()
+	settings, found, err := mysqlschema.Settings(column.Facets)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(column.Facets.TargetScope(mysqlschema.ColumnSettingsKind), qt.DeepEquals, mysqlschema.Targets())
+	return settings
+}
+
 func TestParser_ParseCreateTable_ColumnCharsetCollate(t *testing.T) {
 	c := qt.New(t)
 
@@ -89,7 +101,7 @@ func TestParser_ParseCreateTable_ColumnCharsetCollate(t *testing.T) {
 	createTable, ok := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(createTable.Columns, qt.HasLen, 1)
-	c.Assert(createTable.Columns[0].Charset, qt.Equals, "hebrew")
+	c.Assert(columnSettings(c, createTable.Columns[0]).Charset, qt.Equals, "hebrew")
 	c.Assert(createTable.Columns[0].Collate, qt.Equals, "hebrew_general_ci")
 	c.Assert(createTable.Columns[0].Nullable, qt.IsFalse)
 }
@@ -599,9 +611,9 @@ func TestParser_ParseCreateTable_MySQLColumnModifiers(t *testing.T) {
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Columns, qt.HasLen, 3)
 	c.Assert(createTable.Columns[0].Comment, qt.Equals, "column1")
-	c.Assert(createTable.Columns[1].Charset, qt.Equals, "utf8")
+	c.Assert(columnSettings(c, createTable.Columns[1]).Charset, qt.Equals, "utf8")
 	c.Assert(createTable.Columns[1].Nullable, qt.IsFalse)
-	c.Assert(createTable.Columns[2].Charset, qt.Equals, "utf8")
+	c.Assert(columnSettings(c, createTable.Columns[2]).Charset, qt.Equals, "utf8")
 	c.Assert(createTable.Columns[2].Collate, qt.Equals, "utf8_unicode_ci")
 	c.Assert(createTable.Columns[2].Nullable, qt.IsTrue)
 }
@@ -5301,7 +5313,7 @@ func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
 	c.Assert(createTable.Columns, qt.HasLen, 1)
-	c.Assert(createTable.Columns[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP")
+	c.Assert(columnSettings(c, createTable.Columns[0]).OnUpdate, qt.Equals, "CURRENT_TIMESTAMP")
 	c.Assert(createTable.Columns[0].Comment, qt.Equals, "")
 }
 
@@ -5316,7 +5328,7 @@ func TestParser_MariaDBOnUpdateBeforeComment(t *testing.T) {
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Columns, qt.HasLen, 1)
-	c.Assert(createTable.Columns[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP")
+	c.Assert(columnSettings(c, createTable.Columns[0]).OnUpdate, qt.Equals, "CURRENT_TIMESTAMP")
 	c.Assert(createTable.Columns[0].Comment, qt.Equals, "Updated timestamp")
 }
 

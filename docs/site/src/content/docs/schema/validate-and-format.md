@@ -269,15 +269,18 @@ The rest of a column's properties are reported wherever the target drops them:
 
 | Property | Kept by | Dropped by |
 | --- | --- | --- |
-| Character set | the MySQL family | every other target |
 | Collation | the MySQL family | every other target |
-| `ON UPDATE` expression | the MySQL family | every other target |
 | NOT NULL constraint name | PostgreSQL 18 and later | the MySQL family, SQLite, SQL Server, Oracle, ClickHouse |
 | Column `UNIQUE` | every target but ClickHouse | ClickHouse |
 
 Two of these are worth more than their storage. A dropped collation changes
 which values a comparison and a unique index treat as equal, and a dropped
 `UNIQUE` lets the database accept rows the author meant to exclude.
+
+A column's character set and `ON UPDATE` clause are not in the table. Every
+source binds them to MySQL and MariaDB, so another target leaves them out
+without a report; see
+[column character set and ON UPDATE](../../databases/mysql/#column-character-set-and-on-update).
 
 A NOT NULL constraint name is the one case where a target refuses instead of
 reporting. The PostgreSQL family accepts the syntax on a server that stores no

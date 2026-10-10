@@ -141,10 +141,11 @@ func fieldFromColumn(column *ast.ColumnNode, structName, sourcePlatform string) 
 		Check:               column.Check,
 		GeneratedExpression: column.GeneratedExpression,
 		GeneratedKind:       column.GeneratedKind,
-		UpdateExpression:    column.UpdateExpression,
-		Charset:             column.Charset,
 		Collate:             column.Collate,
-		Comment:             column.Comment,
+		// The MySQL family's character set and ON UPDATE clause arrive as the
+		// owner's facet, bound to that family by the parser.
+		Facets:  column.Facets,
+		Comment: column.Comment,
 	}
 
 	// PostgreSQL identity columns are implicitly NOT NULL, even when the SQL
@@ -1552,10 +1553,9 @@ func MergeFieldOverrides(baseField schemamodel.Field, platformFields map[string]
 			platformOverrides["comment"] = platformField.Comment
 		}
 
-		// Check for column charset/collation differences
-		if platformField.Charset != baseField.Charset {
-			platformOverrides["charset"] = platformField.Charset
-		}
+		// Check for column collation differences. A character set is the
+		// MySQL owner's facet, which the base field carries bound to the MySQL
+		// family, not a per-platform override.
 		if platformField.Collate != baseField.Collate {
 			platformOverrides["collate"] = platformField.Collate
 		}

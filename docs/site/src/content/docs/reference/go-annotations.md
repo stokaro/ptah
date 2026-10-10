@@ -280,6 +280,13 @@ Maps a Go struct field to a database column.
 
 Platform overrides: yes.
 
+A column's MySQL-family character set and `ON UPDATE` clause are platform
+properties of the field: `platform.mysql.charset="latin1"` and
+`platform.mysql.on_update="CURRENT_TIMESTAMP(6)"`, with the same keys under
+`platform.mariadb` for MariaDB. The bare `on_update` attribute is the foreign
+key action. See
+[column character set and ON UPDATE](../../databases/mysql/#column-character-set-and-on-update).
+
 ### `//ptah:embedded`
 
 Controls how an embedded Go field contributes schema objects.

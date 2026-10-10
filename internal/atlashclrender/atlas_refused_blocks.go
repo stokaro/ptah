@@ -540,7 +540,6 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 	for _, field := range db.Fields {
 		add(field.Type)
 		add(field.DefaultExpr)
-		add(field.UpdateExpression)
 		add(field.GeneratedExpression)
 		add(field.Check)
 		add(field.UniqueExpr)

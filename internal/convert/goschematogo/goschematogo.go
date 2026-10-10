@@ -805,7 +805,7 @@ func switchValue(on *bool) string {
 }
 
 func fieldAttrs(field schemamodel.Field) []attr {
-	return []attr{
+	return append([]attr{
 		{name: "name", value: field.Name, set: true},
 		{name: "type", value: field.Type, set: true},
 		{name: "not_null", value: strconv.FormatBool(!field.Nullable), set: !field.Nullable},
@@ -828,7 +828,7 @@ func fieldAttrs(field schemamodel.Field) []attr {
 		{name: "generated", value: field.GeneratedExpression, set: field.GeneratedExpression != ""},
 		{name: "generated_kind", value: field.GeneratedKind, set: field.GeneratedKind != ""},
 		{name: "comment", value: field.Comment, set: field.Comment != ""},
-	}
+	}, columnSettingsAttrs(field.Facets)...)
 }
 
 func indexAttrs(index schemamodel.Index, partitioning *ydbschema.IndexPartitioning) []attr {

@@ -22,6 +22,12 @@ const TablePlatformProperties PropertyFormat = "ptah.run/source/table-platform-p
 // and state selectors; property ownership belongs to the selected provider.
 const IndexPlatformProperties PropertyFormat = "ptah.run/source/index-platform-properties"
 
+// ColumnPlatformProperties is the string-valued platform property group on a
+// column declaration, such as `platform.mysql.charset` in a Go annotation. The
+// group also carries common per-target column overrides with readers of their
+// own, so a key no owner claims stays for them.
+const ColumnPlatformProperties PropertyFormat = "ptah.run/source/column-platform-properties"
+
 // PropertyDefinition declares the keys one feature owns in a source format.
 // Registration grants no meaning to missing keys, no source coverage, and no
 // permission to consume a key owned by another feature.

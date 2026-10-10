@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/dialect/mysql/mysqlschema"
 )
 
 // TestMySQLUpdateExpression_ReadsTheClauseOutOfExtra is the defect.
@@ -120,13 +121,16 @@ func TestApplyMySQLColumnMetadata_PutsTheClauseOnTheColumn(t *testing.T) {
 			c := qt.New(t)
 			column := catalog.Column{Name: "updated_at"}
 
-			applyMySQLColumnMetadata(&column,
+			err := applyMySQLColumnMetadata(&column,
 				sql.NullString{}, sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
 				sql.NullString{}, sql.NullString{},
 				sql.NullString{String: test.extra, Valid: true},
 				sql.NullString{})
 
-			c.Assert(column.UpdateExpression, qt.Equals, test.wantExpression)
+			c.Assert(err, qt.IsNil)
+			settings, _, err := mysqlschema.Settings(column.Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(settings.OnUpdate, qt.Equals, test.wantExpression)
 			c.Assert(column.IsAutoIncrement, qt.Equals, test.wantAutoIncrement)
 			c.Assert(column.GeneratedKind, qt.Equals, test.wantGeneratedKind)
 		})

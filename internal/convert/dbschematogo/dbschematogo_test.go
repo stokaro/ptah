@@ -7,7 +7,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -1002,18 +1004,22 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 					{
 						Name:     "name",
 						DataType: "varchar(255)",
-						Charset:  "hebrew",
-						Collate:  "hebrew_general_ci",
+						Facets: must.Must(mysqlschema.WithObservedColumnSettings(schemaext.Facets{},
+							mysqlschema.ColumnSettings{Charset: "hebrew"})),
+						Collate: "hebrew_general_ci",
 					},
 				},
 			},
 		},
 	}
 
-	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "postgres", must.Must(builtin.New())))
+	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "mysql", must.Must(builtin.New())))
 
 	c.Assert(result.Fields, qt.HasLen, 1)
-	c.Assert(result.Fields[0].Charset, qt.Equals, "hebrew")
+	declared, found, err := schemaext.FacetAs[*mysqlschema.DesiredColumnSettings](result.Fields[0].Facets, mysqlschema.ColumnSettingsKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(*declared, qt.Equals, mysqlschema.DesiredColumnSettings{Charset: "hebrew"})
 	c.Assert(result.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
 }
 

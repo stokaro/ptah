@@ -491,7 +491,7 @@ table "users" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Fields, qt.HasLen, 1)
-	c.Assert(db.Fields[0].Charset, qt.Equals, "hebrew")
+	c.Assert(db.Fields[0].Overrides, qt.DeepEquals, map[string]map[string]string{"mysql": {"charset": "hebrew"}, "mariadb": {"charset": "hebrew"}})
 	c.Assert(db.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
@@ -1122,7 +1122,8 @@ table "users" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Fields, qt.HasLen, 1)
 	c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "CURRENT_TIMESTAMP(6)")
-	c.Assert(db.Fields[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP(6)")
+	c.Assert(db.Fields[0].Overrides, qt.DeepEquals, map[string]map[string]string{
+		"mysql": {"on_update": "CURRENT_TIMESTAMP(6)"}, "mariadb": {"on_update": "CURRENT_TIMESTAMP(6)"}})
 }
 
 func TestParseRejectsInvalidGeneratedColumnForms(t *testing.T) {

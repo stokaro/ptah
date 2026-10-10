@@ -355,12 +355,6 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	if field.GeneratedExpression != "" {
 		column.SetGenerated(field.GeneratedExpression, defaultGeneratedKind(field, targetPlatform))
 	}
-	if field.UpdateExpression != "" {
-		column.SetUpdateExpression(field.UpdateExpression)
-	}
-	if field.Charset != "" {
-		column.SetCharset(field.Charset)
-	}
 	if field.Collate != "" {
 		column.SetCollate(field.Collate)
 	}
@@ -463,12 +457,6 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	}
 	if field.GeneratedExpression != "" {
 		column.SetGenerated(field.GeneratedExpression, defaultGeneratedKind(field, targetPlatform))
-	}
-	if field.UpdateExpression != "" {
-		column.SetUpdateExpression(field.UpdateExpression)
-	}
-	if field.Charset != "" {
-		column.SetCharset(field.Charset)
 	}
 	if field.Collate != "" {
 		column.SetCollate(field.Collate)

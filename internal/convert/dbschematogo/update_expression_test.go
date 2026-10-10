@@ -7,6 +7,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -26,14 +28,18 @@ func TestConvert_TheUpdateExpressionSurvivesTheConversion(t *testing.T) {
 			Name: "person", Schema: "sweep",
 			Columns: []catalog.Column{{
 				Name: "updated_at", DataType: "datetime", IsNullable: "YES",
-				UpdateExpression: "CURRENT_TIMESTAMP",
+				Facets: must.Must(mysqlschema.WithObservedColumnSettings(schemaext.Facets{},
+					mysqlschema.ColumnSettings{OnUpdate: "CURRENT_TIMESTAMP"})),
 			}},
 		}},
-	}, "postgres", must.Must(builtin.New())))
+	}, "mysql", must.Must(builtin.New())))
 
 	c.Assert(converted.Fields, qt.HasLen, 1)
 	c.Assert(converted.Fields[0].Name, qt.Equals, "updated_at")
-	c.Assert(converted.Fields[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP")
+	declared, found, err := schemaext.FacetAs[*mysqlschema.DesiredColumnSettings](converted.Fields[0].Facets, mysqlschema.ColumnSettingsKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(*declared, qt.Equals, mysqlschema.DesiredColumnSettings{OnUpdate: "CURRENT_TIMESTAMP"})
 }
 
 // TestConvert_AColumnWithoutTheClauseCarriesNothing is the control: a field
@@ -49,8 +55,8 @@ func TestConvert_AColumnWithoutTheClauseCarriesNothing(t *testing.T) {
 				Name: "created_at", DataType: "timestamp", IsNullable: "NO",
 			}},
 		}},
-	}, "postgres", must.Must(builtin.New())))
+	}, "mysql", must.Must(builtin.New())))
 
 	c.Assert(converted.Fields, qt.HasLen, 1)
-	c.Assert(converted.Fields[0].UpdateExpression, qt.Equals, "")
+	c.Assert(converted.Fields[0].Facets.IsZero(), qt.IsTrue)
 }

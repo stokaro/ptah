@@ -24,10 +24,22 @@ type facetOwnerSlot struct {
 // A materialized view is named the way the view comparison pairs it: a
 // schema-scoped identity, read from the declaration's possibly qualified name.
 func declaredFacetSlots(db *schemamodel.Database, target string, semantics identifier.Semantics) ([]facetOwnerSlot, error) {
-	slots := make([]facetOwnerSlot, 0, len(db.Tables)+len(db.Indexes)+len(db.MaterializedViews))
+	slots := make([]facetOwnerSlot, 0, len(db.Tables)+len(db.Fields)+len(db.Indexes)+len(db.MaterializedViews))
+	tables := make(map[string]objectidentity.ID, len(db.Tables))
 	for i := range db.Tables {
 		table := &db.Tables[i]
-		slots = append(slots, facetOwnerSlot{tableidentity.Subject(table.Schema, table.Name, target, semantics), &table.Facets})
+		subject := tableidentity.Subject(table.Schema, table.Name, target, semantics)
+		slots = append(slots, facetOwnerSlot{subject, &table.Facets})
+		tables[table.StructName] = subject
+	}
+	// A field is a column of the table its struct declares. A field of a
+	// struct that declares no table has no column identity, and a facet on it
+	// is refused by the caller's capture check.
+	for i := range db.Fields {
+		field := &db.Fields[i]
+		if table, found := tables[field.StructName]; found {
+			slots = append(slots, facetOwnerSlot{columnSubject(table, field.Name, semantics), &field.Facets})
+		}
 	}
 	owners := schemamodel.ResolveIndexOwners(db.Indexes, db.Tables, db.MaterializedViews)
 	for i := range db.Indexes {
@@ -44,6 +56,31 @@ func declaredFacetSlots(db *schemamodel.Database, target string, semantics ident
 		slots = append(slots, facetOwnerSlot{declaredMaterializedViewSubject(view.Name, semantics), &view.Facets})
 	}
 	return slots, nil
+}
+
+// tablelessFieldFacets addresses the facets of every field whose struct
+// declares no table.
+func tablelessFieldFacets(db *schemamodel.Database) []*schemaext.Facets {
+	tables := make(map[string]bool, len(db.Tables))
+	for _, table := range db.Tables {
+		tables[table.StructName] = true
+	}
+	var result []*schemaext.Facets
+	for i := range db.Fields {
+		if !tables[db.Fields[i].StructName] {
+			result = append(result, &db.Fields[i].Facets)
+		}
+	}
+	return result
+}
+
+// columnSubject is the identity of a column of table, under the schema and
+// name the table's own identity holds, so a column pairs with its table on
+// every target, SQLite's verbatim schema included.
+func columnSubject(table objectidentity.ID, column string, semantics identifier.Semantics) objectidentity.ID {
+	subject := objectidentity.NewBuilder(semantics).ColumnParts(table.Schema.Source, table.Name.Source, column)
+	subject.Schema, subject.Parent = table.Schema, table.Name
+	return subject
 }
 
 // standingMaterializedViews returns the positions of the declarations that
@@ -75,7 +112,12 @@ func observedFacetSlots(db *catalog.Database, target string, semantics identifie
 	slots := make([]facetOwnerSlot, 0, len(db.Tables)+len(db.Indexes)+len(db.MatViews))
 	for i := range db.Tables {
 		table := &db.Tables[i]
-		slots = append(slots, facetOwnerSlot{tableidentity.Subject(table.Schema, table.Name, target, semantics), &table.Facets})
+		subject := tableidentity.Subject(table.Schema, table.Name, target, semantics)
+		slots = append(slots, facetOwnerSlot{subject, &table.Facets})
+		for j := range table.Columns {
+			column := &table.Columns[j]
+			slots = append(slots, facetOwnerSlot{columnSubject(subject, column.Name, semantics), &column.Facets})
+		}
 	}
 	builder := objectidentity.NewBuilder(semantics)
 	for i := range db.Indexes {

@@ -122,6 +122,8 @@ None.
 | `mssqlschema.Predicate.Operation` | `ddl` | — |
 | `mssqlschema.Predicate.Table` | `ddl` | — |
 | `mssqlschema.Predicate.Type` | `ddl` | — |
+| `mysqlschema.DesiredColumnSettings.Charset` | `ddl` | — |
+| `mysqlschema.DesiredColumnSettings.OnUpdate` | `ddl` | — |
 | `mysqlschema.DesiredTable.AutoIncrement` | `ddl` | — |
 | `mysqlschema.DesiredTable.Charset` | `ddl` | — |
 | `mysqlschema.DesiredTable.Engine` | `ddl` | — |
@@ -270,7 +272,6 @@ None.
 | `schemamodel.Field.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |
 | `schemamodel.Field.APIType` | `export` | the type an exported document should project the column as, which changes no stored value |
 | `schemamodel.Field.AutoInc` | `ddl` | — |
-| `schemamodel.Field.Charset` | `ddl` | — |
 | `schemamodel.Field.Check` | `ddl` | — |
 | `schemamodel.Field.CheckName` | `ddl` | — |
 | `schemamodel.Field.CheckNotEnforced` | `ddl` | — |
@@ -308,7 +309,6 @@ None.
 | `schemamodel.Field.TypeRawSQL` | `ddl` | — |
 | `schemamodel.Field.Unique` | `ddl` | — |
 | `schemamodel.Field.UniqueExpr` | `ddl` | — |
-| `schemamodel.Field.UpdateExpression` | `ddl` | — |
 | `schemamodel.Function.Body` | `ddl` | — |
 | `schemamodel.Function.Comment` | `ddl` | — |
 | `schemamodel.Function.Dialects` | `ddl` | — |

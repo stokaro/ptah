@@ -57,6 +57,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -1251,7 +1252,7 @@ func prepareColumnNode(
 	if node == nil {
 		return nil, nilNodeError(dialect, "column node")
 	}
-	facets, err := prepareFacets(dialect, node.Facets)
+	facets, err := prepareColumnFacets(dialect, node.Facets)
 	if err != nil {
 		return nil, err
 	}
@@ -3636,9 +3637,17 @@ func validateMySQLForeignKeyTextMetadata(
 	target schemamodel.Table,
 	referenced schemamodel.Field,
 ) error {
-	localCharset := effectiveColumnMetadata(local.Charset, effectiveTableMetadata(owner, dialect, "charset"))
+	localColumnCharset, _, err := mysqlrender.ColumnClauses(local.Facets)
+	if err != nil {
+		return err
+	}
+	referencedColumnCharset, _, err := mysqlrender.ColumnClauses(referenced.Facets)
+	if err != nil {
+		return err
+	}
+	localCharset := effectiveColumnMetadata(localColumnCharset, effectiveTableMetadata(owner, dialect, "charset"))
 	referencedCharset := effectiveColumnMetadata(
-		referenced.Charset,
+		referencedColumnCharset,
 		effectiveTableMetadata(target, dialect, "charset"),
 	)
 	if localCharset != referencedCharset {

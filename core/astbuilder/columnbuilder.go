@@ -195,18 +195,6 @@ func (cb *ColumnBuilder) Generated(expression, kind string) *ColumnBuilder {
 	return cb
 }
 
-// UpdateExpression sets the MySQL/MariaDB ON UPDATE expression and returns the ColumnBuilder for chaining.
-func (cb *ColumnBuilder) UpdateExpression(expression string) *ColumnBuilder {
-	cb.column.SetUpdateExpression(expression)
-	return cb
-}
-
-// Charset sets the column character set and returns the ColumnBuilder for chaining.
-func (cb *ColumnBuilder) Charset(charset string) *ColumnBuilder {
-	cb.column.SetCharset(charset)
-	return cb
-}
-
 // Collate sets the column collation and returns the ColumnBuilder for chaining.
 func (cb *ColumnBuilder) Collate(collate string) *ColumnBuilder {
 	cb.column.SetCollate(collate)
@@ -457,18 +445,6 @@ func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 //	column := schema.Table("orders").Column("total", "NUMERIC(10,2)").Generated("price * quantity", "STORED")
 func (scb *SchemaColumnBuilder) Generated(expression, kind string) *SchemaColumnBuilder {
 	scb.column.SetGenerated(expression, kind)
-	return scb
-}
-
-// UpdateExpression sets the MySQL/MariaDB ON UPDATE expression and returns the SchemaColumnBuilder for chaining.
-func (scb *SchemaColumnBuilder) UpdateExpression(expression string) *SchemaColumnBuilder {
-	scb.column.SetUpdateExpression(expression)
-	return scb
-}
-
-// Charset sets the column character set and returns the SchemaColumnBuilder for chaining.
-func (scb *SchemaColumnBuilder) Charset(charset string) *SchemaColumnBuilder {
-	scb.column.SetCharset(charset)
 	return scb
 }
 

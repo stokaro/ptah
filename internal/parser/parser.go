@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
@@ -2872,24 +2873,26 @@ func (p *Parser) parseIdentityOptionValue(optionalKeyword string) string {
 	return value
 }
 
-func (p *Parser) handleCharacter(column *ast.ColumnNode) {
+func (p *Parser) handleCharacter(column *ast.ColumnNode) error {
 	// Handle MySQL/MariaDB CHARACTER SET
 	p.advance()
 	p.skipWhitespace()
 	if p.current.Type != lexer.TokenIdentifier {
-		return
+		return nil
 	}
 
 	if strings.ToUpper(p.current.Value) != "SET" {
-		return
+		return nil
 	}
 
 	p.advance()
 	p.skipWhitespace()
-	if p.current.Type == lexer.TokenIdentifier {
-		column.Charset = p.current.Value
-		p.advance()
+	if p.current.Type != lexer.TokenIdentifier {
+		return nil
 	}
+	charset := p.current.Value
+	p.advance()
+	return setColumnSettings(column, func(settings *mysqlschema.ColumnSettings) { settings.Charset = charset })
 }
 
 func (p *Parser) handleCharset(column *ast.ColumnNode) error {
@@ -2900,8 +2903,20 @@ func (p *Parser) handleCharset(column *ast.ColumnNode) error {
 	if err != nil {
 		return fmt.Errorf("expected charset name: %w", err)
 	}
-	column.Charset = value
-	return nil
+	return setColumnSettings(column, func(settings *mysqlschema.ColumnSettings) { settings.Charset = value })
+}
+
+// setColumnSettings records a column's character set or ON UPDATE clause as
+// the MySQL owner's settings, bound to the MySQL family. A clause written
+// twice keeps the last, as MySQL does.
+func setColumnSettings(column *ast.ColumnNode, update func(*mysqlschema.ColumnSettings)) error {
+	settings, _, err := mysqlschema.Settings(column.Facets)
+	if err != nil {
+		return err
+	}
+	update(&settings)
+	column.Facets, err = mysqlschema.WithColumnSettings(column.Facets.Without(mysqlschema.ColumnSettingsKind), settings)
+	return err
 }
 
 func (p *Parser) handleCollate(column *ast.ColumnNode) error {
@@ -2942,12 +2957,12 @@ func (p *Parser) handleColumnComment(column *ast.ColumnNode) error {
 	return nil
 }
 
-func (p *Parser) handleOn(column *ast.ColumnNode) {
+func (p *Parser) handleOn(column *ast.ColumnNode) error {
 	// Handle MySQL/MariaDB ON UPDATE syntax
 	p.advance()
 	p.skipWhitespace()
 	if !p.current.MatchIdentifierValue("UPDATE") {
-		return
+		return nil
 	}
 
 	p.advance()
@@ -2955,9 +2970,9 @@ func (p *Parser) handleOn(column *ast.ColumnNode) {
 
 	updateExpr := p.parseOnUpdateExpression()
 	if updateExpr == "" {
-		return
+		return nil
 	}
-	column.SetUpdateExpression(updateExpr)
+	return setColumnSettings(column, func(settings *mysqlschema.ColumnSettings) { settings.OnUpdate = updateExpr })
 }
 
 func (p *Parser) parseOnUpdateExpression() string {
@@ -3084,7 +3099,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "GENERATED":
 		return p.handleGenerated(column)
 	case "CHARACTER":
-		p.handleCharacter(column)
+		return p.handleCharacter(column)
 	case "CHARSET":
 		return p.handleCharset(column)
 	case "COLLATE":
@@ -3092,7 +3107,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "COMMENT":
 		return p.handleColumnComment(column)
 	case "ON":
-		p.handleOn(column)
+		return p.handleOn(column)
 	default:
 		return fmt.Errorf("unsupported column attribute: %s at position %d", keyword, p.current.Start)
 	}

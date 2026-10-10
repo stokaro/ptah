@@ -8,7 +8,10 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -40,31 +43,30 @@ func lostProperties(c *qt.C, database *schemamodel.Database, dialect string) []s
 	return properties
 }
 
-// TestGetOrderedCreateStatementsReportingOmissions_NamesALostCharacterSetAndCollation
-// pins which targets carry a column's character set and collation.
+// TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation pins
+// which targets carry a column's collation.
 //
-// Only the MySQL family has a per-column CHARACTER SET. The collation is the
-// half with a consequence: it decides which values a comparison and a unique
-// index treat as equal, and four of the five targets that drop it here do have
-// a column COLLATE clause, so the declaration is lost passing through Ptah
-// rather than by the server's incapacity (stokaro/ptah#2983).
-func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCharacterSetAndCollation(t *testing.T) {
+// It decides which values a comparison and a unique index treat as equal, and
+// four of the five targets that drop it here do have a column COLLATE clause,
+// so the declaration is lost passing through Ptah rather than by the server's
+// incapacity (stokaro/ptah#2983).
+func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
 		want    []string
 	}{
-		{name: "mysql writes both", dialect: platform.MySQL, want: nil},
-		{name: "mariadb writes both", dialect: platform.MariaDB, want: nil},
-		{name: "postgres writes neither", dialect: platform.Postgres, want: []string{"character set", "collation"}},
-		{name: "sqlite writes neither", dialect: platform.SQLite, want: []string{"character set", "collation"}},
-		{name: "sql server writes neither", dialect: platform.SQLServer, want: []string{"character set", "collation"}},
-		{name: "oracle writes neither", dialect: platform.Oracle, want: []string{"character set", "collation"}},
-		{name: "clickhouse writes neither", dialect: platform.ClickHouse, want: []string{"character set", "collation"}},
+		{name: "mysql writes it", dialect: platform.MySQL, want: nil},
+		{name: "mariadb writes it", dialect: platform.MariaDB, want: nil},
+		{name: "postgres drops it", dialect: platform.Postgres, want: []string{"collation"}},
+		{name: "sqlite drops it", dialect: platform.SQLite, want: []string{"collation"}},
+		{name: "sql server drops it", dialect: platform.SQLServer, want: []string{"collation"}},
+		{name: "oracle drops it", dialect: platform.Oracle, want: []string{"collation"}},
+		{name: "clickhouse drops it", dialect: platform.ClickHouse, want: []string{"collation"}},
 	}
 
 	database := columnSchema(schemamodel.Field{
-		Name: "title", Type: "VARCHAR(80)", Charset: "utf8mb4", Collate: "utf8mb4_bin",
+		Name: "title", Type: "VARCHAR(80)", Collate: "utf8mb4_bin",
 	})
 
 	for _, test := range tests {
@@ -75,34 +77,68 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCharacterSetAndC
 	}
 }
 
-// TestGetOrderedCreateStatementsReportingOmissions_NamesALostOnUpdateExpression
-// pins the ON UPDATE expression, which only the MySQL family spells.
-//
-// A target without it leaves the column at whatever the insert wrote, on every
-// later update, which is the opposite of what the author declared.
-func TestGetOrderedCreateStatementsReportingOmissions_NamesALostOnUpdateExpression(t *testing.T) {
-	tests := []struct {
-		name    string
-		dialect string
-		want    []string
-	}{
-		{name: "mysql writes it", dialect: platform.MySQL, want: nil},
-		{name: "mariadb writes it", dialect: platform.MariaDB, want: nil},
-		{name: "postgres drops it", dialect: platform.Postgres, want: []string{"on update expression"}},
-		{name: "sqlite drops it", dialect: platform.SQLite, want: []string{"on update expression"}},
-		{name: "sql server drops it", dialect: platform.SQLServer, want: []string{"on update expression"}},
-		{name: "oracle drops it", dialect: platform.Oracle, want: []string{"on update expression"}},
-		{name: "clickhouse drops it", dialect: platform.ClickHouse, want: []string{"on update expression"}},
-	}
+// mysqlSettingsSchema declares one column with the MySQL owner's character
+// set and ON UPDATE clause, bound to targets; every source binds them to the
+// MySQL family, and none binds them to nothing.
+func mysqlSettingsSchema(c *qt.C, targets ...string) *schemamodel.Database {
+	c.Helper()
+	settings := &mysqlschema.DesiredColumnSettings{Charset: "utf8mb4", OnUpdate: "CURRENT_TIMESTAMP"}
+	facets, err := schemaext.NewFacets(settings)
+	c.Assert(err, qt.IsNil)
+	facets, err = facets.WithTargetScope(mysqlschema.ColumnSettingsKind, targets...)
+	c.Assert(err, qt.IsNil)
+	return columnSchema(schemamodel.Field{Name: "seen", Type: "TIMESTAMP", Nullable: true, Facets: facets})
+}
 
-	database := columnSchema(schemamodel.Field{
-		Name: "seen", Type: "TIMESTAMP", UpdateExpression: "CURRENT_TIMESTAMP",
-	})
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+// TestRenderSQL_WritesMySQLColumnSettingsOnTheFamily pins that the MySQL family
+// writes the owner's settings into the column definition.
+func TestRenderSQL_WritesMySQLColumnSettingsOnTheFamily(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(lostProperties(c, database, test.dialect), qt.DeepEquals, test.want)
+
+			statements, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(
+				mysqlSettingsSchema(c, mysqlschema.Targets()...), dialect, capability.ForDialect(dialect))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(omissions, qt.HasLen, 0)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, "`seen` TIMESTAMP CHARACTER SET utf8mb4 ON UPDATE CURRENT_TIMESTAMP")
+		})
+	}
+}
+
+// TestRenderSQL_LeavesBoundMySQLColumnSettingsOutElsewhere pins that another
+// target leaves out the settings a source bound to the MySQL family, without
+// a report: the binding says they are not meant for it.
+func TestRenderSQL_LeavesBoundMySQLColumnSettingsOutElsewhere(t *testing.T) {
+	for _, dialect := range []string{platform.Postgres, platform.SQLite, platform.SQLServer, platform.Oracle, platform.ClickHouse} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(
+				mysqlSettingsSchema(c, mysqlschema.Targets()...), dialect, capability.ForDialect(dialect))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(omissions, qt.HasLen, 0)
+			c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "CURRENT_TIMESTAMP")
+		})
+	}
+}
+
+// TestRenderSQL_RefusesUnboundMySQLColumnSettingsElsewhere pins that a value
+// bound to no target reaches another target's renderer only to be refused, as
+// a facet no owner of that target registers.
+func TestRenderSQL_RefusesUnboundMySQLColumnSettingsElsewhere(t *testing.T) {
+	for _, dialect := range []string{platform.Postgres, platform.YDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, _, err := builtin.GetOrderedCreateStatementsReportingOmissions(
+				mysqlSettingsSchema(c), dialect, capability.ForDialect(dialect))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `(?s).*feature facet "ptah.run/mysql/column-settings" is not registered for target.*`)
+			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
@@ -319,16 +355,10 @@ func TestGetOrderedCreateStatementsReportingOmissions_ATargetWritesWhatItKeeps(t
 		want    string
 	}{
 		{
-			name:    "mysql writes the character set and collation",
+			name:    "mysql writes the collation",
 			dialect: platform.MySQL,
-			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Charset: "utf8mb4", Collate: "utf8mb4_bin"},
-			want:    "CHARACTER SET utf8mb4 COLLATE utf8mb4_bin",
-		},
-		{
-			name:    "mysql writes the on update expression",
-			dialect: platform.MySQL,
-			field:   schemamodel.Field{Name: "seen", Type: "TIMESTAMP", UpdateExpression: "CURRENT_TIMESTAMP"},
-			want:    "ON UPDATE CURRENT_TIMESTAMP",
+			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Collate: "utf8mb4_bin"},
+			want:    "COLLATE utf8mb4_bin",
 		},
 		{
 			name:    "postgres writes a unique column",

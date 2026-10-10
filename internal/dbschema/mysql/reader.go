@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/revisiontable"
@@ -485,7 +486,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 		// therefore the same thing, and reads as though it were not.
 		col.Comment = comment.String
 
-		applyMySQLColumnMetadata(
+		if err := applyMySQLColumnMetadata(
 			&col,
 			defaultValue,
 			characterMaxLength,
@@ -495,7 +496,9 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 			collate,
 			extra,
 			generatedExpression,
-		)
+		); err != nil {
+			return nil, fmt.Errorf("column %s.%s: %w", tableName, col.Name, err)
+		}
 		columnsByTable[tableName] = append(columnsByTable[tableName], col)
 	}
 	if err := rows.Err(); err != nil {
@@ -515,7 +518,7 @@ func applyMySQLColumnMetadata(
 	collate,
 	extra,
 	generatedExpression sql.NullString,
-) {
+) error {
 	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String) {
 		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String)
 		col.ColumnDefault = &defaultSQL
@@ -532,8 +535,12 @@ func applyMySQLColumnMetadata(
 		scale := int(numericScale.Int64)
 		col.NumericScale = &scale
 	}
+	// The character set and the ON UPDATE clause are the MySQL owner's
+	// settings, recorded as its observation. The server reports a character
+	// set for every text column, inherited ones included.
+	var settings mysqlschema.ColumnSettings
 	if charset.Valid {
-		col.Charset = charset.String
+		settings.Charset = strings.TrimSpace(charset.String)
 	}
 	if collate.Valid {
 		col.Collate = collate.String
@@ -547,12 +554,15 @@ func applyMySQLColumnMetadata(
 		case strings.Contains(extraValue, "virtual generated"):
 			col.GeneratedKind = "VIRTUAL"
 		}
-		col.UpdateExpression = mysqlUpdateExpression(extra.String)
+		settings.OnUpdate = mysqlUpdateExpression(extra.String)
 	}
 	if generatedExpression.Valid && generatedExpression.String != "" {
 		expression := generatedExpression.String
 		col.GeneratedExpression = &expression
 	}
+	var err error
+	col.Facets, err = mysqlschema.WithObservedColumnSettings(col.Facets, settings)
+	return err
 }
 
 // mysqlUpdateExpression reads the `ON UPDATE` clause out of a column's EXTRA.

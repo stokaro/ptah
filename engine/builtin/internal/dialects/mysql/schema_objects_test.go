@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin/internal/dialects/mysql"
 )
 
@@ -100,11 +101,11 @@ func TestMySQLRenderer_TypedLiteralDefaults(t *testing.T) {
 func TestMySQLRenderer_ColumnCharsetCollate(t *testing.T) {
 	c := qt.New(t)
 
-	table := ast.NewCreateTable("users").
-		AddColumn(ast.NewColumn("name", "varchar(255)").
-			SetCharset("hebrew").
-			SetCollate("hebrew_general_ci").
-			SetNotNull())
+	column := ast.NewColumn("name", "varchar(255)").SetCollate("hebrew_general_ci").SetNotNull()
+	facets, err := mysqlschema.WithColumnSettings(column.Facets, mysqlschema.ColumnSettings{Charset: "hebrew"})
+	c.Assert(err, qt.IsNil)
+	column.Facets = facets
+	table := ast.NewCreateTable("users").AddColumn(column)
 
 	sql := renderMySQL(t, table)
 

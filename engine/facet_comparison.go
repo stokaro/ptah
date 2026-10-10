@@ -14,6 +14,11 @@ import (
 // FacetComparison assigns attached models and their directional change codecs
 // to one contextual owner. A model cannot also be a named-object model on the
 // same target. A service may compare several related facet kinds in one batch.
+//
+// ChangeKinds may be empty: the owner then accounts for its settings, keeping
+// or adopting them in the effective declaration, and never reports a change.
+// A reply that carries one is refused, since every change payload must be one
+// of ChangeKinds.
 type FacetComparison struct {
 	Target      string
 	Kinds       []schemaext.Kind
@@ -26,7 +31,7 @@ type FacetComparison struct {
 
 func (r *Runtime) registerFacetComparison(owner string, declaration FacetComparison) error {
 	target, found := r.targets[declaration.Target]
-	if !found || target.name != declaration.Target || len(declaration.Kinds) == 0 || len(declaration.ChangeKinds) == 0 || declaration.Service == nil || nilService(declaration.Service) {
+	if !found || target.name != declaration.Target || len(declaration.Kinds) == 0 || declaration.Service == nil || nilService(declaration.Service) {
 		return fmt.Errorf("%w: incomplete facet comparison for %q", ErrInvalidRegistration, declaration.Target)
 	}
 	if err := validateFacetOwnerKinds(declaration.OwnerKinds); err != nil {
