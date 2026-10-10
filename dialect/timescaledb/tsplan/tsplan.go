@@ -119,6 +119,7 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 // DROP TABLE removes a hypertable and its chunks with the table, so a removal
 // needs no statement of its own. A table that survives keeps its hypertable
 // unless a change in the same plan says otherwise, which is refused there. A
+// created table is partitioned by the call that follows its CREATE TABLE. A
 // rebuild would recreate the table as an ordinary one, and has no plan here.
 func assessParent(index int, table featureplan.Table) (string, *featureplan.Diagnostic) {
 	switch table.Action {
@@ -126,6 +127,8 @@ func assessParent(index int, table featureplan.Table) (string, *featureplan.Diag
 		return "remove any hypertable and its chunks with the table", nil
 	case featureplan.AlterTable:
 		return "keep any hypertable unless a planned change in this plan replaces it", nil
+	case featureplan.CreateTable:
+		return "partition the table with the create_hypertable call that follows its CREATE TABLE", nil
 	default:
 		return "", &featureplan.Diagnostic{Parent: new(index), Problem: schemavalidation.Diagnostic{
 			Code: schemavalidation.UnsupportedFeature, Kind: string(tsschema.HypertableKind), Object: tsschema.QualifiedName(table.Subject),

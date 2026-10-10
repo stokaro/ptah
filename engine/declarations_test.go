@@ -230,3 +230,27 @@ func TestDeclarationsRejectMalformedRepliesAtomically(t *testing.T) {
 		})
 	}
 }
+
+// TestDeclarationsAcceptChildrenOfDeclaredTables pins that a declaration may
+// be a child of a table the request declares, as a whole-schema render sends a
+// table's child its owner creates in steps of its own, and that the runtime
+// says which kinds it declares.
+func TestDeclarationsAcceptChildrenOfDeclaredTables(t *testing.T) {
+	c := qt.New(t)
+	var received featureplan.DeclarationRequest
+	runtime := mustRuntime(c, declarationProvider(declarationFunc(func(ctx context.Context, request featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
+		received = request
+		return declaredFixture(ctx, request)
+	})))
+	request := declarationRequest()
+	request.Objects[2].Ref.Parent = objectidentity.NewBuilder(request.Identifiers).TableParts("", "items").Name
+
+	result, err := runtime.PlanDeclarations(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.IsNil)
+	c.Assert(received.Objects[2].Ref.Parent.Source, qt.Equals, "items")
+	c.Assert(runtime.DeclaresKind("alternate", conversionFirst), qt.IsTrue)
+	c.Assert(runtime.DeclaresKind("custom", planningOperationKind), qt.IsFalse)
+	c.Assert(runtime.DeclaresKind("missing", conversionFirst), qt.IsFalse)
+}

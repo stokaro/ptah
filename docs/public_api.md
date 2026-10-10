@@ -239,6 +239,12 @@ error identities. The common planning host performs this conversion before
 lowering operations. Transport adapters carry the diagnostic data.
 
 A captured table's `Action` requests `DropTable` or `RebuildTable` assessment.
+`CreateTable` asks owners about a table the plan creates: its CREATE TABLE
+carries the settings attached to it, and each owner creates the table's named
+children in steps of its own. The PostgreSQL-family planner sends every
+created table that has a named child, and a child no owner accounts for is
+refused rather than dropped.
+
 The zero action supplies context only. The runtime calls every assigned parent
 model for the target even without child changes, concrete feature values, or
 source coverage. Callers cannot narrow the registered `ParentKinds`. Concrete
@@ -268,15 +274,22 @@ after its creations and changes and before its removals, in one window whose
 creations and drops the owner orders. Every other host, and a whole-schema
 render, refuses it. The runtime refuses a phase the contract does not define.
 
-`core/featureplan.DeclarationService` plans authored standalone objects for
-schema creation. `Provider.Declarations` assigns desired model kinds and allowed
-operation kinds to an owner. This service requires no observed or change codec:
+`core/featureplan.DeclarationService` plans authored standalone objects, and
+the named children of a declared table, for schema creation.
+`Provider.Declarations` assigns desired model kinds and allowed operation kinds
+to an owner. This service requires no observed or change codec:
 an authored CREATE request does not claim that a live object was inspected and
 found absent. Declared tables and common-step metadata provide dependency context.
 Each service receives one isolated batch, and each `DeclarationPlan` preserves
 the input identity and accounts for the operations that create it. The runtime
-refuses duplicate objects, table-bound input objects, unregistered kinds, missing
-receipts, and unaccounted operations before returning a successful reply.
+refuses duplicate objects, a child of a table the request does not declare,
+unregistered kinds, missing receipts, and unaccounted operations before
+returning a successful reply.
+
+`DeclarationRuntime.DeclaresKind` says which
+kinds a target declares: a whole-schema render plans a table's child of such a
+kind through its owner, scheduled against the common creation steps, and
+creates any other child with its table.
 
 `DeclarationResult.Diagnostics` records completed refusals with optional object
 indexes. Any refusal discards every operation and receipt; provider failures

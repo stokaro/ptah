@@ -135,13 +135,16 @@ func planChange(request featureplan.Request, record schemaext.ChangeRecord, inde
 
 // assessParent accounts for the policy through a table operation. Dropping a
 // table removes its policy with it. A table that survives keeps its policy
-// unless a change in the same plan replaces it. A rebuild has no plan here.
+// unless a change in the same plan replaces it, and a created table's CREATE
+// TABLE carries it. A rebuild has no plan here.
 func assessParent(table featureplan.Table) (string, error) {
 	switch table.Action {
 	case featureplan.DropTable:
 		return "remove the row-level TTL with the table", nil
 	case featureplan.AlterTable:
 		return "retain the row-level TTL unless a planned change in this plan replaces it", nil
+	case featureplan.CreateTable:
+		return "create the row-level TTL with the table; its CREATE TABLE carries the storage parameters", nil
 	default:
 		return "", fmt.Errorf("%w: CockroachDB row-level TTL has no plan for parent action %q", ptaherr.ErrUnsupportedFeature, table.Action)
 	}

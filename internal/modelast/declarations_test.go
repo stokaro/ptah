@@ -3,6 +3,7 @@ package modelast_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -20,7 +21,8 @@ import (
 
 type failedDeclarationRuntime struct{ failure error }
 
-func (failedDeclarationRuntime) Codecs() schemaext.Registry { return schemaext.Registry{} }
+func (failedDeclarationRuntime) Codecs() schemaext.Registry               { return schemaext.Registry{} }
+func (failedDeclarationRuntime) DeclaresKind(string, schemaext.Kind) bool { return false }
 
 func (r failedDeclarationRuntime) PlanDeclarations(context.Context, featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
 	return featureplan.DeclarationResult{}, r.failure
@@ -54,7 +56,8 @@ func (p *probeStatement) CloneExtension() ast.ExtensionPayload { return &probeSt
 // reader's name sorts first.
 type handoffRuntime struct{}
 
-func (handoffRuntime) Codecs() schemaext.Registry { return schemaext.Registry{} }
+func (handoffRuntime) Codecs() schemaext.Registry               { return schemaext.Registry{} }
+func (handoffRuntime) DeclaresKind(string, schemaext.Kind) bool { return false }
 
 func (handoffRuntime) PlanDeclarations(context.Context, featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
 	subject := objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("public", "shared")
@@ -117,7 +120,8 @@ func TestCommonWalkHonorsCancellationDuringVisitors(t *testing.T) {
 // phase.
 type phasedDeclarationRuntime struct{}
 
-func (phasedDeclarationRuntime) Codecs() schemaext.Registry { return schemaext.Registry{} }
+func (phasedDeclarationRuntime) Codecs() schemaext.Registry               { return schemaext.Registry{} }
+func (phasedDeclarationRuntime) DeclaresKind(string, schemaext.Kind) bool { return false }
 
 func (phasedDeclarationRuntime) PlanDeclarations(context.Context, featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
 	step := plangraph.Step[featureplan.Operation]{ID: plangraph.StepID{Owner: "example.org/lowering", Name: "late"},
@@ -150,4 +154,83 @@ func TestStandaloneLoweringRefusesAPhase(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(err, qt.ErrorMatches, `.*declaration step example.org/lowering/late asks for the "dependent" phase.*`)
 	c.Assert(visited, qt.Equals, 0)
+}
+
+// childRuntime plans each declaration as one statement after every common
+// step, and declares the child kind when declares is set.
+type childRuntime struct{ declares bool }
+
+func (childRuntime) Codecs() schemaext.Registry { return schemaext.Registry{} }
+func (r childRuntime) DeclaresKind(_ string, kind schemaext.Kind) bool {
+	return r.declares && kind == loweringKind
+}
+
+func (childRuntime) PlanDeclarations(_ context.Context, request featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
+	contribution := plangraph.Contribution[featureplan.Operation]{Owner: "example.org/lowering"}
+	result := featureplan.DeclarationResult{Complete: true}
+	for _, object := range request.Objects {
+		id := plangraph.StepID{Owner: contribution.Owner, Name: object.Ref.Name.Source}
+		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
+			Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &probeStatement{Name: object.Ref.Name.Source}}})
+		for _, common := range request.CommonSteps {
+			contribution.Dependencies = append(contribution.Dependencies, plangraph.Dependency{Before: common.ID, After: id})
+		}
+		result.Declarations = append(result.Declarations, featureplan.DeclarationPlan{Subject: object.Ref, Strategy: "create the child", Steps: []plangraph.StepID{id}})
+	}
+	result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
+	return result, nil
+}
+
+// visitedShape names the statements a walk visits: a table with the number of
+// children its CREATE TABLE carries, and an owner's statement by its name.
+func visitedShape(nodes []ast.Node) []string {
+	var shape []string
+	for _, node := range nodes {
+		switch typed := node.(type) {
+		case *ast.CreateTableNode:
+			shape = append(shape, fmt.Sprintf("create table %s carrying %d", typed.Name, typed.OwnedObjects.Len()))
+		case *ast.ExtensionStatement:
+			shape = append(shape, "statement "+typed.Payload.(*probeStatement).Name)
+		}
+	}
+	return shape
+}
+
+// TestTableChildLowering pins where a whole-schema render puts a table's named
+// child. A child whose kind the runtime declares is its owner's to create: it
+// is planned as a declaration, scheduled after the common steps it follows,
+// and its table's CREATE TABLE does not carry it. Any other child is created
+// with its table.
+func TestTableChildLowering(t *testing.T) {
+	tests := []struct {
+		name     string
+		declares bool
+		want     []string
+	}{
+		{name: "a declared child", declares: true, want: []string{"create table public.orders carrying 0", "statement tenant"}},
+		{name: "any other child", want: []string{"create table public.orders carrying 1"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			table := objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("public", "orders")
+			child := objectidentity.ID{Kind: objectidentity.Kind(loweringKind), Schema: table.Schema, Parent: table.Name,
+				Name: objectidentity.Part{Source: "tenant", Normalized: "tenant"}}
+			database := schemamodel.Database{
+				Tables:         []schemamodel.Table{{StructName: "Order", Name: "orders", Schema: "public"}},
+				Fields:         []schemamodel.Field{{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true}},
+				FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: child, Value: &loweringValue{Name: "tenant"}})),
+			}
+			var visited []ast.Node
+
+			err := modelast.WalkDatabase(database, "postgres", func(node ast.Node) error {
+				visited = append(visited, node)
+				return nil
+			}, modelast.Lowering{Context: t.Context(), Runtime: childRuntime{declares: test.declares}})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(visitedShape(visited), qt.DeepEquals, test.want)
+		})
+	}
 }

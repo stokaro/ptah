@@ -42,7 +42,7 @@ func (e *DeclarationServiceError) Error() string { return e.Cause.Error() }
 func (e *DeclarationServiceError) Unwrap() error { return e.Cause }
 
 func walkDeclarations(database schemamodel.Database, target string, lowering Lowering, visit func(ast.Node) error) error {
-	objects, err := database.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Parent.Empty() }).All()
+	objects, tables, err := declaredObjects(database, target, lowering)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	// position before, between, or after them; streaming SQL before scheduling
 	// would make a late conflict leave a successful prefix.
 	var nodes []ast.Node
-	if err := walkCommonDatabase(database, target, func(node ast.Node) error {
+	if err := walkCommonDatabase(tables, target, func(node ast.Node) error {
 		nodes = append(nodes, node)
 		return lowering.Context.Err()
 	}); err != nil {
@@ -124,6 +124,25 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		}
 	}
 	return lowering.Context.Err()
+}
+
+// declaredObjects selects the objects their owners plan as declarations, and
+// returns the schema the common walk renders: the standalone objects, and a
+// table's child whose kind the runtime declares. Such a child is its owner's to
+// create, in a step scheduled against the common ones, so the schema left for
+// the common walk does not hold it and its CREATE TABLE does not carry it; any
+// other child is created with its table.
+func declaredObjects(database schemamodel.Database, target string, lowering Lowering) ([]schemaext.Object, schemamodel.Database, error) {
+	child := func(ref objectidentity.ID) bool {
+		return !ref.Parent.Empty() && lowering.Runtime != nil && lowering.Runtime.DeclaresKind(target, schemaext.Kind(ref.Kind))
+	}
+	objects, err := database.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Parent.Empty() || child(ref) }).All()
+	if err != nil {
+		return nil, schemamodel.Database{}, err
+	}
+	tables := database
+	tables.FeatureObjects = database.FeatureObjects.Select(func(ref objectidentity.ID) bool { return !child(ref) })
+	return objects, tables, nil
 }
 
 func declarationCommonGraph(lowering Lowering, nodes []ast.Node) (plangraph.Contribution[[]ast.Node], []featureplan.CommonStep, error) {

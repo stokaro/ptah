@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
@@ -84,6 +85,38 @@ func TestPlanningAccountsForStepsOwnedByAParentStrategy(t *testing.T) {
 	reply.Parents[0].Steps[0].Name = "changed"
 	c.Assert(result.Parents[0].Steps, qt.DeepEquals, []plangraph.StepID{step})
 	c.Assert(result.Contributions[0].Steps[0].Payload.Payload.(*planningOperation).Values, qt.DeepEquals, []int{42})
+}
+
+// TestPlanningAssessesCreatedTables pins a table the plan creates: its owner
+// receives the declaration and no observation, and answers with a receipt
+// that names the step creating the table's child.
+func TestPlanningAssessesCreatedTables(t *testing.T) {
+	c := qt.New(t)
+	step := plangraph.StepID{Owner: "example.org/converter", Name: "create-child"}
+	request := parentPlanningRequest()
+	request.Tables[0].Action = featureplan.CreateTable
+	request.Tables[0].Desired, request.Tables[0].Current = planningRequest().Tables[0].Desired, schemacapture.TableObservation{}
+	var received featureplan.Request
+	p := parentPlanningProvider(planningFunc(func(ctx context.Context, input featureplan.Request) (featureplan.Result, error) {
+		received = input
+		result := must.Must(plannedParents(ctx, input))
+		result.Parents[0].Steps = []plangraph.StepID{step}
+		result.Contributions = []plangraph.Contribution[featureplan.Operation]{{Owner: step.Owner, Steps: []plangraph.Step[featureplan.Operation]{{ID: step,
+			Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &planningOperation{Values: []int{7}}, Phase: featureplan.PhaseDependent},
+		}}}}
+		return result, nil
+	}))
+
+	result, err := mustRuntime(c, p).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(received.Tables[0].Action, qt.Equals, featureplan.CreateTable)
+	c.Assert(received.Tables[0].Desired.HasTable(), qt.IsTrue)
+	c.Assert(received.Tables[0].Current.HasTable(), qt.IsFalse)
+	c.Assert(result.Parents, qt.HasLen, 2)
+	c.Assert(result.Parents[0].Action, qt.Equals, featureplan.CreateTable)
+	c.Assert(result.Parents[0].Steps, qt.DeepEquals, []plangraph.StepID{step})
+	c.Assert(result.Contributions[0].Steps[0].Payload.Phase, qt.Equals, featureplan.PhaseDependent)
 }
 
 func TestPlanningAssessesSurvivingParentsWithoutFeatureChanges(t *testing.T) {
@@ -198,6 +231,12 @@ func TestPlanningPreflightsParentOperandsBeforeDispatch(t *testing.T) {
 		{"missing surviving declaration", func(r *featureplan.Request) { r.Tables[0].Action = featureplan.AlterTable }},
 		{"drop with declaration", func(r *featureplan.Request) { r.Tables[0].Desired = planningRequest().Tables[0].Desired }},
 		{"unknown action", func(r *featureplan.Request) { r.Tables[0].Action = "destroy" }},
+		{"creation with an observation", func(r *featureplan.Request) {
+			r.Tables[0].Action, r.Tables[0].Desired = featureplan.CreateTable, planningRequest().Tables[0].Desired
+		}},
+		{"creation without a declaration", func(r *featureplan.Request) {
+			r.Tables[0].Action, r.Tables[0].Current = featureplan.CreateTable, schemacapture.TableObservation{}
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

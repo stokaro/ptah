@@ -32,12 +32,20 @@ func (r *Runtime) snapshotDeclarations(ctx context.Context, request featureplan.
 	}
 	values := make([]schemaext.Value, len(request.Objects))
 	seen := make(map[objectidentity.Key]bool)
+	declared := make(map[objectidentity.Key]bool, len(planning.Tables))
+	for _, table := range planning.Tables {
+		declared[table.Subject.Key()] = true
+	}
 	for i, object := range request.Objects {
 		if err := schemaext.ValidatePayload(object.Value); err != nil {
 			return featureplan.DeclarationRequest{}, err
 		}
-		if seen[object.Ref.Key()] || object.Ref.Kind != objectidentity.Kind(object.Value.Kind()) || object.Ref.Parent != (objectidentity.Part{}) {
-			return featureplan.DeclarationRequest{}, fmt.Errorf("%w: duplicate or non-standalone declaration", schemaext.ErrInvalidValue)
+		if seen[object.Ref.Key()] || object.Ref.Kind != objectidentity.Kind(object.Value.Kind()) {
+			return featureplan.DeclarationRequest{}, fmt.Errorf("%w: duplicate declaration", schemaext.ErrInvalidValue)
+		}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: object.Ref.Catalog, Schema: object.Ref.Schema, Name: object.Ref.Parent}
+		if !object.Ref.Parent.Empty() && !declared[parent.Key()] {
+			return featureplan.DeclarationRequest{}, fmt.Errorf("%w: declaration %s is a child of a table the request does not declare", schemaext.ErrInvalidValue, object.Ref)
 		}
 		if _, err := objectidentity.Resolve(objectidentity.Reference{Kind: object.Ref.Kind, ID: object.Ref}, []objectidentity.ID{object.Ref}); err != nil {
 			return featureplan.DeclarationRequest{}, fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
