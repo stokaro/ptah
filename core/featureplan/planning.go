@@ -83,12 +83,38 @@ type ParentPlan struct {
 // An alter-table operation names a captured table in Parent. A standalone
 // statement has a zero Parent. Notes are preserved as comments before the
 // operation. Payload remains typed data; it cannot render or perform I/O.
+// Phase selects the host's window for the operation.
 type Operation struct {
 	Role    ast.ExtensionRole
 	Parent  objectidentity.ID
 	Payload ast.ExtensionPayload
 	Notes   []string
+	Phase   Phase
 }
+
+// Phase selects where a host places a feature operation among its common
+// steps. An owner orders an operation further through dependencies on the
+// common steps whose effects it can identify; the phase is the window those
+// dependencies move within. In either phase a host places the operations that
+// create or change objects before the ones that drop them, so an object
+// replaced under another name is never absent while the plan runs.
+type Phase string
+
+const (
+	// PhaseDefault places an object beside the relations it reads: created
+	// after the tables and columns it may read and before the views that may
+	// read it, and dropped after those views and before the tables.
+	PhaseDefault Phase = ""
+	// PhaseDependent places an object that depends on objects of every common
+	// family -- relations, columns, routines and roles -- and that no common
+	// object reads, such as a row-security policy: created after the host's
+	// creations and changes of those families, and dropped before the host
+	// removes any of them.
+	PhaseDependent Phase = "dependent"
+)
+
+// Valid reports whether p is a phase this contract defines.
+func (p Phase) Valid() bool { return p == PhaseDefault || p == PhaseDependent }
 
 // ChangePlan accounts for one input change, preserving its subject and kind.
 // Steps names the operations that implement it. An empty list is an explicit

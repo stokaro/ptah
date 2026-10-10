@@ -131,6 +131,9 @@ func planningParents(request featureplan.Request) []objectidentity.ID {
 }
 
 func (r *Runtime) snapshotPlannedOperation(ctx context.Context, kinds []schemaext.Kind, parents []objectidentity.ID, operation featureplan.Operation) (featureplan.Operation, error) {
+	if !operation.Phase.Valid() {
+		return featureplan.Operation{}, fmt.Errorf("%w: planning operation has an unknown phase %q", schemaext.ErrInvalidValue, operation.Phase)
+	}
 	for _, note := range operation.Notes {
 		if !reversalText(note) {
 			return featureplan.Operation{}, fmt.Errorf("%w: planning operation has an invalid note", schemaext.ErrInvalidValue)

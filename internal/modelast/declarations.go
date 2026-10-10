@@ -91,6 +91,12 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	for _, source := range reply.Contributions {
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: source.Owner, Dependencies: slices.Clone(source.Dependencies)}
 		for _, step := range source.Steps {
+			// A whole-schema render orders an owner's steps by their
+			// dependencies alone: it has no window a phase could select.
+			if step.Payload.Phase != featureplan.PhaseDefault {
+				return fmt.Errorf("%w: declaration step %s/%s asks for the %q phase, which a schema render has no window for",
+					schemaext.ErrInvalidValue, step.ID.Owner, step.ID.Name, step.Payload.Phase)
+			}
 			payload, err := featureops.Nodes(step.Payload, names)
 			if err != nil {
 				return err

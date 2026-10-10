@@ -1128,6 +1128,19 @@ table that is enabled again without it also gets `NO FORCE`. A policy whose
 kind changes is dropped and created again, because PostgreSQL cannot alter a
 policy's kind in place.
 
+A migration creates a policy after the views, the role changes and the
+enablement it may name. It drops a policy your schema no longer declares after
+the new policies are created, so renaming a policy never leaves the table with
+neither one, and before the columns, constraints, views, functions and roles
+the migration drops. Two changes run before that drop, and PostgreSQL refuses
+both while a policy uses the object they change: `ALTER COLUMN ... TYPE` on a
+column the policy names (`cannot alter type of a column used in a policy
+definition`), and a function change the server cannot make in place, which is a
+drop and a create (see [Function changes](#function-changes)). A migration that
+combines either one with removing or changing that policy stops at that
+statement and changes nothing. Change the policy in one migration and the
+column or the function in the next. Measured on PostgreSQL 17.
+
 Both ways of taking the protection away are lint findings at error severity:
 `DISABLE ROW LEVEL SECURITY` is `DS109` and `NO FORCE ROW LEVEL SECURITY` is
 `DS111P`. `ptah migrations up` refuses a pending migration that holds either

@@ -1,8 +1,9 @@
 // Package pgeffects describes what a PostgreSQL-family common statement does
-// to the relations and columns it names: which ones it creates, changes or
-// drops. Feature owners order their operations against these effects, both in
-// a migration plan and in a whole-schema render. A statement it does not know
-// keeps an unknown footprint; nothing here is invented.
+// to the relations, columns, routines and roles it names: which ones it
+// creates, changes or drops. Feature owners order their operations against
+// these effects, both in a migration plan and in a whole-schema render. A
+// statement it does not know keeps an unknown footprint; nothing here is
+// invented.
 package pgeffects
 
 import (
@@ -28,11 +29,16 @@ func Sequence(builder objectidentity.Builder, nodes []ast.Node) [][]plangraph.Ef
 	return result
 }
 
-// Statement describes the relations and columns one statement creates,
-// changes or drops, read on its own: tables, the columns an ALTER TABLE adds,
-// views and materialized views. Any other statement keeps an unknown
-// footprint, and the result is nil; so does an object with no name, which
-// names nothing an owner could order itself against.
+// Statement describes the objects one statement creates, changes or drops,
+// read on its own: tables, the columns an ALTER TABLE adds or drops, views and
+// materialized views, functions and procedures, and roles. Any other statement
+// keeps an unknown footprint, and the result is nil; so does an object with no
+// name, which names nothing an owner could order itself against.
+//
+// A routine's identity carries the argument list the statement names, where it
+// names one. A routine dropped by name alone has no signature, so it is a
+// different identity from its creation: an owner orders itself against the
+// kind of effect rather than matching the two.
 func Statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect {
 	effects := statement(builder, node)
 	if slices.ContainsFunc(effects, func(effect plangraph.Effect) bool { return effect.Subject.Name.Normalized == "" }) {
@@ -58,11 +64,30 @@ func statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect
 	case *ast.AlterTableNode:
 		effects := []plangraph.Effect{{Subject: builder.Table(typed.Name), Action: plangraph.Alter}}
 		for _, operation := range typed.Operations {
-			if add, ok := operation.(*ast.AddColumnOperation); ok && add.Column != nil {
-				effects = append(effects, plangraph.Effect{Subject: builder.Column(typed.Name, add.Column.Name), Action: plangraph.Create})
+			switch column := operation.(type) {
+			case *ast.AddColumnOperation:
+				if column.Column != nil {
+					effects = append(effects, plangraph.Effect{Subject: builder.Column(typed.Name, column.Column.Name), Action: plangraph.Create})
+				}
+			case *ast.DropColumnOperation:
+				effects = append(effects, plangraph.Effect{Subject: builder.Column(typed.Name, column.ColumnName), Action: plangraph.Drop})
 			}
 		}
 		return dedupe(effects)
+	case *ast.CreateFunctionNode:
+		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, typed.Parameters), Action: plangraph.Create}}
+	case *ast.DropFunctionNode:
+		signature := ""
+		if typed.Parameters != nil {
+			signature = *typed.Parameters
+		}
+		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, signature), Action: plangraph.Drop}}
+	case *ast.CreateRoleNode:
+		return []plangraph.Effect{{Subject: builder.Role(typed.Name), Action: plangraph.Create}}
+	case *ast.AlterRoleNode:
+		return []plangraph.Effect{{Subject: builder.Role(typed.Name), Action: plangraph.Alter}}
+	case *ast.DropRoleNode:
+		return []plangraph.Effect{{Subject: builder.Role(typed.Name), Action: plangraph.Drop}}
 	case *ast.CreateViewNode:
 		action := plangraph.Create
 		if typed.Replace {
@@ -102,6 +127,15 @@ func lifecycle(writes map[objectidentity.Key]plangraph.Action, effects []plangra
 		result = append(result, effect)
 	}
 	return result
+}
+
+// routine is the identity of the function or the procedure a statement names.
+func routine(builder objectidentity.Builder, node interface{ IsProcedure() bool }, name, signature string) objectidentity.ID {
+	ref := builder.Function(name, signature)
+	if node.IsProcedure() {
+		ref.Kind = objectidentity.KindProcedure
+	}
+	return ref
 }
 
 func relation(builder objectidentity.Builder, kind objectidentity.Kind, name string) objectidentity.ID {

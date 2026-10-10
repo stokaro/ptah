@@ -18,9 +18,12 @@ import (
 
 // Result retains lowered contributions and explicit common-step rewrites.
 // The caller must apply the rewrites while scheduling the complete graph.
+// Phases holds the phase of every contributed step whose owner asked for one
+// other than [featureplan.PhaseDefault].
 type Result struct {
 	Contributions []plangraph.Contribution[[]ast.Node]
 	Rewrites      []plangraph.Rewrite
+	Phases        map[plangraph.StepID]featureplan.Phase
 }
 
 // Plan dispatches one contextual batch and converts complete operation replies
@@ -29,7 +32,11 @@ type Result struct {
 // settings the request changes, to the host's source-spelled emission names.
 // A parent without a binding cannot receive an ALTER operation. The caller must
 // join these contributions to its common graph before returning any nodes.
-func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.Request, names map[objectidentity.Key]string) (Result, error) {
+//
+// Accepted names the phases other than [featureplan.PhaseDefault] the caller
+// has a window for. A step whose operation asks for any other phase is
+// refused: placing it in the default window would reorder it silently.
+func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.Request, names map[objectidentity.Key]string, accepted ...featureplan.Phase) (Result, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return Result{}, err
 	}
@@ -48,6 +55,7 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 		return Result{}, err
 	}
 	contributions := make([]plangraph.Contribution[[]ast.Node], len(result.Contributions))
+	phases := make(map[plangraph.StepID]featureplan.Phase)
 	for i, feature := range result.Contributions {
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: feature.Owner, Dependencies: slices.Clone(feature.Dependencies)}
 		for _, step := range feature.Steps {
@@ -59,6 +67,13 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 				ID: step.ID, Payload: nodes, Effects: slices.Clone(step.Effects), Transaction: step.Transaction, Impact: step.Impact,
 				Placement: step.Placement,
 			})
+			if step.Payload.Phase != featureplan.PhaseDefault {
+				if !slices.Contains(accepted, step.Payload.Phase) {
+					return Result{}, fmt.Errorf("%w: feature step %s/%s asks for the %q phase, which this host has no window for",
+						schemaext.ErrInvalidValue, step.ID.Owner, step.ID.Name, step.Payload.Phase)
+				}
+				phases[step.ID] = step.Payload.Phase
+			}
 		}
 		contributions[i] = contribution
 	}
@@ -69,7 +84,7 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 	for i, rewrite := range result.Rewrites {
 		rewrites[i] = rewrite.Clone()
 	}
-	return Result{Contributions: contributions, Rewrites: rewrites}, nil
+	return Result{Contributions: contributions, Rewrites: rewrites, Phases: phases}, nil
 }
 
 func validateNames(request featureplan.Request, names map[objectidentity.Key]string) error {
