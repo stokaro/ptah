@@ -11,7 +11,7 @@ import (
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // pendingReplicationItem is an item annotation waiting for the replication it

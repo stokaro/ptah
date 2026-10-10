@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // connectionSpec is how a YDB async replication or transfer reaches another

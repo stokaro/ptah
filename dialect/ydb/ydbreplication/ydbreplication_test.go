@@ -6,8 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // TestParseReplication_HappyPath reads a replication's connection and
@@ -17,12 +16,12 @@ func TestParseReplication_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.AsyncReplicationSpec
+		want   ydbreplication.ReplicationSpec
 	}{
 		{
 			name:   "a connection alone",
 			values: map[string]string{"connection_string": "grpc://primary:2136/?database=/prod"},
-			want: ast.AsyncReplicationSpec{Connection: ast.ReplicationConnectionSpec{
+			want: ydbreplication.ReplicationSpec{Connection: ydbreplication.Connection{
 				ConnectionString: "grpc://primary:2136/?database=/prod"}},
 		},
 		{
@@ -31,8 +30,8 @@ func TestParseReplication_HappyPath(t *testing.T) {
 				"connection_string": "grpcs://primary:2135/?database=/prod", "user": "replicator",
 				"password_secret_path": "secrets/replicator", "consistency_level": "GLOBAL", "commit_interval": "PT1.5S",
 			},
-			want: ast.AsyncReplicationSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpcs://primary:2135/?database=/prod",
+			want: ydbreplication.ReplicationSpec{
+				Connection: ydbreplication.Connection{ConnectionString: "grpcs://primary:2135/?database=/prod",
 					User: "replicator", PasswordSecretPath: "secrets/replicator"},
 				ConsistencyLevel: "global", CommitInterval: "PT1.5S",
 			},
@@ -43,8 +42,8 @@ func TestParseReplication_HappyPath(t *testing.T) {
 				"connection_string": "grpc://primary:2136/?database=/prod", "token_secret_name": "token",
 				"consistency_level": "row",
 			},
-			want: ast.AsyncReplicationSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+			want: ydbreplication.ReplicationSpec{
+				Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 					TokenSecretName: "token"},
 				ConsistencyLevel: "row",
 			},
@@ -116,7 +115,7 @@ func TestParseReplication_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbreplication.ParseReplication(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.DeepEquals, ast.AsyncReplicationSpec{})
+			c.Assert(got, qt.DeepEquals, ydbreplication.ReplicationSpec{})
 		})
 	}
 }
@@ -127,7 +126,7 @@ func TestParseItem_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	got, err := ydbreplication.ParseItem(map[string]string{"source": " /prod/ledger ", "target": "replica/ledger"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, ast.AsyncReplicationItem{Source: "/prod/ledger", Target: "replica/ledger"})
+	c.Assert(got, qt.Equals, ydbreplication.Item{Source: "/prod/ledger", Target: "replica/ledger"})
 }
 
 // TestParseItem_FailurePath refuses an item naming nothing, an absolute target
@@ -152,7 +151,7 @@ func TestParseItem_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbreplication.ParseItem(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.Equals, ast.AsyncReplicationItem{})
+			c.Assert(got, qt.Equals, ydbreplication.Item{})
 		})
 	}
 }
@@ -164,12 +163,12 @@ func TestParseTransfer_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   ast.TransferSpec
+		want   ydbreplication.TransferSpec
 	}{
 		{
 			name:   "a topic of its own database",
 			values: map[string]string{"source": "orders/feed", "target": "order_log", "using": lambda},
-			want:   ast.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda},
+			want:   ydbreplication.TransferSpec{Source: "orders/feed", Target: "order_log", Lambda: lambda},
 		},
 		{
 			name: "a topic of another database, every setting named",
@@ -178,8 +177,8 @@ func TestParseTransfer_HappyPath(t *testing.T) {
 				"batch_size_bytes": "1048576", "flush_interval": "PT10S",
 				"connection_string": "grpc://primary:2136/?database=/prod", "token_secret_path": "secrets/token",
 			},
-			want: ast.TransferSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+			want: ydbreplication.TransferSpec{
+				Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 					TokenSecretPath: "secrets/token"},
 				Source: "/prod/events", Target: "events", Lambda: lambda, Consumer: "ingest",
 				BatchSizeBytes: 1048576, FlushInterval: "PT10S",
@@ -236,7 +235,7 @@ func TestParseTransfer_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbreplication.ParseTransfer(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.DeepEquals, ast.TransferSpec{})
+			c.Assert(got, qt.DeepEquals, ydbreplication.TransferSpec{})
 		})
 	}
 }

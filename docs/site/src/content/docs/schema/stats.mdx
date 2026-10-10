@@ -141,12 +141,12 @@ ptah_schema_roles{dialect="sqlite"} 0
 # HELP ptah_schema_grants Privilege grants.
 # TYPE ptah_schema_grants gauge
 ptah_schema_grants{dialect="sqlite"} 0
-# HELP ptah_schema_async_replications Async replications.
-# TYPE ptah_schema_async_replications gauge
-ptah_schema_async_replications{dialect="sqlite"} 0
-# HELP ptah_schema_transfers Transfers.
-# TYPE ptah_schema_transfers gauge
-ptah_schema_transfers{dialect="sqlite"} 0
+# HELP ptah_schema_clickhouse_refreshable_materialized_views Materialized views with a captured ClickHouse refresh schedule.
+# TYPE ptah_schema_clickhouse_refreshable_materialized_views gauge
+ptah_schema_clickhouse_refreshable_materialized_views{dialect="sqlite"} 0
+# HELP ptah_schema_clickhouse_row_policies ClickHouse row policies captured as owned feature objects.
+# TYPE ptah_schema_clickhouse_row_policies gauge
+ptah_schema_clickhouse_row_policies{dialect="sqlite"} 0
 # HELP ptah_schema_clickhouse_index_settings Indexes with captured ClickHouse data-skipping settings.
 # TYPE ptah_schema_clickhouse_index_settings gauge
 ptah_schema_clickhouse_index_settings{dialect="sqlite"} 0
@@ -156,12 +156,33 @@ ptah_schema_clickhouse_table_settings{dialect="sqlite"} 0
 # HELP ptah_schema_cockroachdb_row_ttl_tables Tables with a captured CockroachDB row-level TTL.
 # TYPE ptah_schema_cockroachdb_row_ttl_tables gauge
 ptah_schema_cockroachdb_row_ttl_tables{dialect="sqlite"} 0
+# HELP ptah_schema_security_policies SQL Server security policies.
+# TYPE ptah_schema_security_policies gauge
+ptah_schema_security_policies{dialect="sqlite"} 0
+# HELP ptah_schema_security_predicates Predicates SQL Server security policies bind to tables.
+# TYPE ptah_schema_security_predicates gauge
+ptah_schema_security_predicates{dialect="sqlite"} 0
+# HELP ptah_schema_spanner_row_deletion_policy_tables Tables with a captured Spanner row deletion policy.
+# TYPE ptah_schema_spanner_row_deletion_policy_tables gauge
+ptah_schema_spanner_row_deletion_policy_tables{dialect="sqlite"} 0
+# HELP ptah_schema_continuous_aggregates TimescaleDB continuous aggregates.
+# TYPE ptah_schema_continuous_aggregates gauge
+ptah_schema_continuous_aggregates{dialect="sqlite"} 0
+# HELP ptah_schema_hypertables Tables partitioned as TimescaleDB hypertables.
+# TYPE ptah_schema_hypertables gauge
+ptah_schema_hypertables{dialect="sqlite"} 0
+# HELP ptah_schema_async_replications Async replications.
+# TYPE ptah_schema_async_replications gauge
+ptah_schema_async_replications{dialect="sqlite"} 0
 # HELP ptah_schema_changefeeds Table changefeeds.
 # TYPE ptah_schema_changefeeds gauge
 ptah_schema_changefeeds{dialect="sqlite"} 0
 # HELP ptah_schema_changefeed_consumers Consumers of table changefeeds.
 # TYPE ptah_schema_changefeed_consumers gauge
 ptah_schema_changefeed_consumers{dialect="sqlite"} 0
+# HELP ptah_schema_ydb_column_families YDB column families a table states, without a default family that states nothing.
+# TYPE ptah_schema_ydb_column_families gauge
+ptah_schema_ydb_column_families{dialect="sqlite"} 0
 # HELP ptah_schema_coordination_nodes Standalone coordination nodes.
 # TYPE ptah_schema_coordination_nodes gauge
 ptah_schema_coordination_nodes{dialect="sqlite"} 0
@@ -192,6 +213,12 @@ ptah_schema_topics{dialect="sqlite"} 0
 # HELP ptah_schema_topic_consumers Consumers of standalone topics.
 # TYPE ptah_schema_topic_consumers gauge
 ptah_schema_topic_consumers{dialect="sqlite"} 0
+# HELP ptah_schema_transfers Transfers.
+# TYPE ptah_schema_transfers gauge
+ptah_schema_transfers{dialect="sqlite"} 0
+# HELP ptah_schema_ydb_ttl_tables Tables with a captured YDB TTL.
+# TYPE ptah_schema_ydb_ttl_tables gauge
+ptah_schema_ydb_ttl_tables{dialect="sqlite"} 0
 # EOF
 ```
 

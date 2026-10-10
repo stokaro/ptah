@@ -117,6 +117,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
 | `dialect/ydb/ydbexternal` | External data source and external table declarations, observations, checks, statements, and codecs. |
 | `dialect/ydb/ydbrender` | Rendering and validation of YDB feature operations. |
+| `dialect/ydb/ydbreplication` | Async replication and transfer declarations, observations, checks, statements, and codecs. |
 | `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |
 | `dialect/ydb/ydbreverse` | Feature reversal and recovery limits. |
 | `dialect/ydb/ydbplan` | Feature declaration and migration planning. |

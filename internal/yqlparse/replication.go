@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/ydbreplication"
 )
 
 // A connection clause may contain an accidentally embedded credential. Hide

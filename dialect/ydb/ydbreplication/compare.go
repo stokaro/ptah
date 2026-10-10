@@ -3,8 +3,6 @@ package ydbreplication
 import (
 	"slices"
 	"strings"
-
-	"ptah.run/core/ast"
 )
 
 // ReplicationChanges is how two descriptions of one replication differ.
@@ -34,7 +32,7 @@ func (c ReplicationChanges) Any() bool {
 // resolved its tables, such as one whose secret YDB cannot read -- has its
 // items left out of the comparison: the description says nothing about them,
 // and reading the silence as no items would refuse every declaration of it.
-func CompareReplication(desired, current ast.AsyncReplicationSpec) ReplicationChanges {
+func CompareReplication(desired, current ReplicationSpec) ReplicationChanges {
 	var changes ReplicationChanges
 	changes.ConnectionString = CanonicalConnectionString(desired.Connection.ConnectionString) !=
 		CanonicalConnectionString(current.Connection.ConnectionString)
@@ -52,12 +50,12 @@ func CompareReplication(desired, current ast.AsyncReplicationSpec) ReplicationCh
 
 // ReplicationsEqual reports whether two descriptions of a replication
 // describe the one YDB holds.
-func ReplicationsEqual(desired, current ast.AsyncReplicationSpec) bool {
+func ReplicationsEqual(desired, current ReplicationSpec) bool {
 	return !CompareReplication(desired, current).Any()
 }
 
 // consistencyLevel is a replication's level, row where none is named.
-func consistencyLevel(spec ast.AsyncReplicationSpec) string {
+func consistencyLevel(spec ReplicationSpec) string {
 	if strings.EqualFold(spec.ConsistencyLevel, ConsistencyGlobal) {
 		return ConsistencyGlobal
 	}
@@ -67,7 +65,7 @@ func consistencyLevel(spec ast.AsyncReplicationSpec) string {
 // commitIntervalMillis is a replication's commit interval in milliseconds:
 // zero at the row level, and ten seconds at the global level where none is
 // named.
-func commitIntervalMillis(spec ast.AsyncReplicationSpec) uint64 {
+func commitIntervalMillis(spec ReplicationSpec) uint64 {
 	if consistencyLevel(spec) != ConsistencyGlobal {
 		return 0
 	}
@@ -96,14 +94,14 @@ func commitIntervalMillis(spec ast.AsyncReplicationSpec) uint64 {
 // later change of the connection string leaves those paths in the database
 // they were resolved in. 26.2.1.14 reads the items back sorted by target and
 // 25.1.4.7 in declaration order, so the order is not compared.
-func ItemsEqual(desired, current ast.AsyncReplicationSpec) bool {
+func ItemsEqual(desired, current ReplicationSpec) bool {
 	desiredDatabase := ConnectionDatabase(desired.Connection.ConnectionString)
 	currentDatabase := ConnectionDatabase(current.Connection.ConnectionString)
 	covered := make([]int, len(desired.Items))
 	for _, have := range current.Items {
 		source := absoluteSource(have.Source, currentDatabase)
 		target := cleanRelative(have.Target)
-		index := slices.IndexFunc(desired.Items, func(want ast.AsyncReplicationItem) bool {
+		index := slices.IndexFunc(desired.Items, func(want Item) bool {
 			return covers(absoluteSource(want.Source, desiredDatabase), cleanRelative(want.Target), source, target)
 		})
 		if index < 0 {
@@ -152,7 +150,7 @@ func SourceKey(source, database string) string {
 // Targets lists the paths a replication's replica tables are created at, as
 // declared: a table's path, or a directory that holds the replicas of a
 // directory's tables.
-func Targets(spec ast.AsyncReplicationSpec) []string {
+func Targets(spec ReplicationSpec) []string {
 	targets := make([]string, 0, len(spec.Items))
 	for _, item := range spec.Items {
 		targets = append(targets, cleanRelative(item.Target))
@@ -198,7 +196,7 @@ func (c TransferChanges) Any() bool {
 // YDB keeps it: the lambda as written, the batch size and the flush interval
 // at YDB's 8 MiB and minute where none is named, and the consumer as any
 // where desired names none, since YDB then creates one of its own name.
-func CompareTransfer(desired, current ast.TransferSpec) TransferChanges {
+func CompareTransfer(desired, current TransferSpec) TransferChanges {
 	var changes TransferChanges
 	changes.Lambda = strings.TrimSpace(desired.Lambda) != strings.TrimSpace(current.Lambda)
 	changes.Batch = batchSize(desired) != batchSize(current) || flushSeconds(desired) != flushSeconds(current)
@@ -220,12 +218,12 @@ func CompareTransfer(desired, current ast.TransferSpec) TransferChanges {
 
 // TransfersEqual reports whether two descriptions of a transfer describe the
 // one YDB holds.
-func TransfersEqual(desired, current ast.TransferSpec) bool {
+func TransfersEqual(desired, current TransferSpec) bool {
 	return !CompareTransfer(desired, current).Any()
 }
 
 // batchSize is a transfer's batch size, YDB's 8 MiB where none is named.
-func batchSize(spec ast.TransferSpec) uint64 {
+func batchSize(spec TransferSpec) uint64 {
 	if spec.BatchSizeBytes == 0 {
 		return DefaultBatchSizeBytes
 	}
@@ -234,7 +232,7 @@ func batchSize(spec ast.TransferSpec) uint64 {
 
 // flushSeconds is a transfer's flush interval in seconds, YDB's minute where
 // none is named.
-func flushSeconds(spec ast.TransferSpec) uint64 {
+func flushSeconds(spec TransferSpec) uint64 {
 	if strings.TrimSpace(spec.FlushInterval) == "" {
 		return DefaultFlushIntervalSeconds
 	}
@@ -246,7 +244,7 @@ func flushSeconds(spec ast.TransferSpec) uint64 {
 }
 
 // LocalSource reports a transfer that reads a topic of its own database.
-func LocalSource(spec ast.TransferSpec) bool {
+func LocalSource(spec TransferSpec) bool {
 	return spec.Connection.ConnectionString == ""
 }
 
@@ -258,4 +256,34 @@ func TablePath(schema, name string) string {
 		return schema + "/" + name
 	}
 	return name
+}
+
+// ReplicationRollbackTarget is the replication a rollback of a change from
+// before to after reaches in place: before, except that a credential after
+// holds and before does not stays, since YDB has no statement that takes a
+// credential away.
+func ReplicationRollbackTarget(before, after ReplicationSpec) ReplicationSpec {
+	target := before.Clone()
+	target.Connection = rollbackConnection(before.Connection, after.Connection)
+	return target
+}
+
+// TransferRollbackTarget is the transfer a rollback of a change from before
+// to after reaches in place, as [ReplicationRollbackTarget] reads a
+// replication's.
+func TransferRollbackTarget(before, after TransferSpec) TransferSpec {
+	target := before
+	target.Connection = rollbackConnection(before.Connection, after.Connection)
+	return target
+}
+
+// rollbackConnection is before, with after's credential where before holds
+// none and after holds one.
+func rollbackConnection(before, after Connection) Connection {
+	if HasCredentials(before) || !HasCredentials(after) {
+		return before
+	}
+	kept := after
+	kept.ConnectionString = before.ConnectionString
+	return kept
 }

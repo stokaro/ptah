@@ -6,8 +6,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-
-	"ptah.run/core/ast"
 )
 
 // Endpoint is a connection string as YDB keeps it: the scheme, the address
@@ -94,11 +92,11 @@ func ParseConnectionString(text string) (Endpoint, error) {
 // password secret, each named by an object secret's name or by a scheme
 // secret's path relative to the database the replication runs in; never a
 // value, which YDB would keep and never return.
-func ParseConnection(values map[string]string) (ast.ReplicationConnectionSpec, error) {
-	var connection ast.ReplicationConnectionSpec
+func ParseConnection(values map[string]string) (Connection, error) {
+	var connection Connection
 	if raw, ok := present(values, AttributeConnectionString); ok {
 		if _, err := ParseConnectionString(raw); err != nil {
-			return ast.ReplicationConnectionSpec{}, err
+			return Connection{}, err
 		}
 		connection.ConnectionString = raw
 	}
@@ -115,21 +113,21 @@ func ParseConnection(values map[string]string) (ast.ReplicationConnectionSpec, e
 	for _, field := range fields {
 		if raw, ok := present(values, field.attribute); ok {
 			if raw == "" {
-				return ast.ReplicationConnectionSpec{}, &DeclarationError{Attribute: field.attribute,
+				return Connection{}, &DeclarationError{Attribute: field.attribute,
 					Reason: "names nothing; leave the attribute out instead"}
 			}
 			*field.target = raw
 		}
 	}
 	if err := CheckConnection(connection); err != nil {
-		return ast.ReplicationConnectionSpec{}, err
+		return Connection{}, err
 	}
 	return connection, nil
 }
 
 // CheckConnection holds a connection to the rules [ParseConnection] reads one
 // with, so a spec built by hand is refused where a declaration would be.
-func CheckConnection(connection ast.ReplicationConnectionSpec) error {
+func CheckConnection(connection Connection) error {
 	if connection.ConnectionString != "" {
 		if _, err := ParseConnectionString(connection.ConnectionString); err != nil {
 			return err
@@ -187,12 +185,12 @@ func CheckConnection(connection ast.ReplicationConnectionSpec) error {
 }
 
 // UsesSecretPath reports a connection that names a secret by its path.
-func UsesSecretPath(connection ast.ReplicationConnectionSpec) bool {
+func UsesSecretPath(connection Connection) bool {
 	return connection.TokenSecretPath != "" || connection.PasswordSecretPath != ""
 }
 
 // HasCredentials reports a connection that names any secret or user.
-func HasCredentials(connection ast.ReplicationConnectionSpec) bool {
+func HasCredentials(connection Connection) bool {
 	return connection.TokenSecretName != "" || connection.TokenSecretPath != "" ||
 		connection.User != "" || connection.PasswordSecretName != "" || connection.PasswordSecretPath != ""
 }
@@ -221,7 +219,7 @@ func ConnectionDatabase(text string) string {
 }
 
 // credentialsEqual compares two connections' credentials as YDB keeps them.
-func credentialsEqual(a, b ast.ReplicationConnectionSpec) bool {
+func credentialsEqual(a, b Connection) bool {
 	return a.TokenSecretName == b.TokenSecretName &&
 		cleanRelative(a.TokenSecretPath) == cleanRelative(b.TokenSecretPath) &&
 		a.User == b.User &&

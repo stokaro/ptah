@@ -5,8 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // TestCreateReplicationStatement writes each item in the order declared and
@@ -16,7 +15,7 @@ func TestCreateReplicationStatement(t *testing.T) {
 	tests := []struct {
 		name string
 		repl string
-		spec ast.AsyncReplicationSpec
+		spec ydbreplication.ReplicationSpec
 		want string
 	}{
 		{
@@ -29,10 +28,10 @@ func TestCreateReplicationStatement(t *testing.T) {
 		{
 			name: "a user at the global level, in a directory",
 			repl: "replicas/mirror",
-			spec: ast.AsyncReplicationSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpcs://primary:2135/?database=/prod",
+			spec: ydbreplication.ReplicationSpec{
+				Connection: ydbreplication.Connection{ConnectionString: "grpcs://primary:2135/?database=/prod",
 					User: "o'neil", PasswordSecretPath: "secrets/password"},
-				Items:            []ast.AsyncReplicationItem{{Source: "/prod/b", Target: "rb"}, {Source: "a", Target: "ra"}},
+				Items:            []ydbreplication.Item{{Source: "/prod/b", Target: "rb"}, {Source: "a", Target: "ra"}},
 				ConsistencyLevel: "global", CommitInterval: "PT60.5S",
 			},
 			want: "CREATE ASYNC REPLICATION `replicas/mirror` FOR `/prod/b` AS `rb`, `a` AS `ra` WITH (" +
@@ -62,8 +61,8 @@ func TestAlterReplicationStatement(t *testing.T) {
 	rotated.Connection.PasswordSecretName = "password2"
 	tests := []struct {
 		name     string
-		desired  ast.AsyncReplicationSpec
-		previous ast.AsyncReplicationSpec
+		desired  ydbreplication.ReplicationSpec
+		previous ydbreplication.ReplicationSpec
 		want     string
 	}{
 		{name: "nothing", desired: mirror(), previous: mirror(), want: ""},
@@ -86,9 +85,9 @@ func TestAlterReplicationStatement(t *testing.T) {
 // TestDropReplicationStatement writes CASCADE only when asked.
 func TestDropReplicationStatement(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ydbreplication.DropReplicationStatement(ast.NewDropAsyncReplication("replicas/mirror", false)), qt.Equals,
+	c.Assert(ydbreplication.DropReplicationStatement("replicas/mirror", false), qt.Equals,
 		"DROP ASYNC REPLICATION `replicas/mirror`;")
-	c.Assert(ydbreplication.DropReplicationStatement(ast.NewDropAsyncReplication("mirror", true)), qt.Equals,
+	c.Assert(ydbreplication.DropReplicationStatement("mirror", true), qt.Equals,
 		"DROP ASYNC REPLICATION `mirror` CASCADE;")
 }
 
@@ -97,11 +96,11 @@ func TestDropReplicationStatement(t *testing.T) {
 func TestCreateTransferStatement(t *testing.T) {
 	full := ingest()
 	full.Consumer, full.BatchSizeBytes, full.FlushInterval = "ptah", 1048576, "PT30S"
-	full.Connection = ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod",
+	full.Connection = ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod",
 		TokenSecretName: "token"}
 	tests := []struct {
 		name string
-		spec ast.TransferSpec
+		spec ydbreplication.TransferSpec
 		want string
 	}{
 		{name: "a local topic", spec: ingest(),
@@ -131,7 +130,7 @@ func TestAlterTransferStatement(t *testing.T) {
 	consumer.Consumer = "other"
 	tests := []struct {
 		name    string
-		desired ast.TransferSpec
+		desired ydbreplication.TransferSpec
 		want    string
 	}{
 		{name: "nothing", desired: ingest(), want: ""},

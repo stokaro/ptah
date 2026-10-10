@@ -32,6 +32,10 @@
 // The annotation parser, the YAML reader, the renderer, the reader, the
 // comparison and the planner each ask this package, so a declaration one of
 // them accepts is one the others read the same way.
+//
+// The package also holds the owned feature models of both kinds: a desired
+// and an observed value each, with their codecs and coverage. The services of
+// the YDB owner packages compare, plan, render, reverse and report them.
 package ydbreplication
 
 import (
@@ -41,7 +45,6 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/ast"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -118,32 +121,32 @@ func (e *DeclarationError) Error() string {
 // The connection string is required, since a replication always reads
 // another database. The commit interval needs the global consistency level:
 // YDB refuses one with the row level (`Ambiguous consistency level`).
-func ParseReplication(values map[string]string) (ast.AsyncReplicationSpec, error) {
+func ParseReplication(values map[string]string) (ReplicationSpec, error) {
 	if _, ok := present(values, AttributeConnectionString); !ok {
-		return ast.AsyncReplicationSpec{}, &DeclarationError{Attribute: AttributeConnectionString,
+		return ReplicationSpec{}, &DeclarationError{Attribute: AttributeConnectionString,
 			Reason: "a replication reads another database, which YDB reaches through the connection string " +
 				"(`Neither CONNECTION_STRING nor ENDPOINT/DATABASE are provided`)"}
 	}
 	connection, err := ParseConnection(values)
 	if err != nil {
-		return ast.AsyncReplicationSpec{}, err
+		return ReplicationSpec{}, err
 	}
-	spec := ast.AsyncReplicationSpec{Connection: connection}
+	spec := ReplicationSpec{Connection: connection}
 	if raw, ok := present(values, AttributeConsistencyLevel); ok {
 		level := strings.ToLower(raw)
 		if level != ConsistencyRow && level != ConsistencyGlobal {
-			return ast.AsyncReplicationSpec{}, &DeclarationError{Attribute: AttributeConsistencyLevel, Value: raw,
+			return ReplicationSpec{}, &DeclarationError{Attribute: AttributeConsistencyLevel, Value: raw,
 				Reason: "takes " + ConsistencyRow + " or " + ConsistencyGlobal}
 		}
 		spec.ConsistencyLevel = level
 	}
 	if raw, ok := present(values, AttributeCommitInterval); ok {
 		if _, err := CommitIntervalMillis(raw); err != nil {
-			return ast.AsyncReplicationSpec{}, &DeclarationError{Attribute: AttributeCommitInterval, Value: raw,
+			return ReplicationSpec{}, &DeclarationError{Attribute: AttributeCommitInterval, Value: raw,
 				Reason: err.Error()}
 		}
 		if spec.ConsistencyLevel != ConsistencyGlobal {
-			return ast.AsyncReplicationSpec{}, &DeclarationError{Attribute: AttributeCommitInterval, Value: raw,
+			return ReplicationSpec{}, &DeclarationError{Attribute: AttributeCommitInterval, Value: raw,
 				Reason: "a commit interval belongs to the global consistency level; declare " +
 					AttributeConsistencyLevel + " as " + ConsistencyGlobal + " (YDB answers `Ambiguous consistency " +
 					"level` otherwise)"}
@@ -161,24 +164,24 @@ func ParseReplication(values map[string]string) (ast.AsyncReplicationSpec, error
 // absolute. The target is a path of this database relative to its root,
 // because an absolute one would carry the database's own name into every
 // database the declaration is applied to.
-func ParseItem(values map[string]string) (ast.AsyncReplicationItem, error) {
+func ParseItem(values map[string]string) (Item, error) {
 	source, ok := present(values, AttributeSource)
 	if !ok || source == "" {
-		return ast.AsyncReplicationItem{}, &DeclarationError{Attribute: AttributeSource,
+		return Item{}, &DeclarationError{Attribute: AttributeSource,
 			Reason: "an item names the table or directory it replicates"}
 	}
 	if err := checkPath(AttributeSource, source, relativeOrAbsolute); err != nil {
-		return ast.AsyncReplicationItem{}, err
+		return Item{}, err
 	}
 	target, ok := present(values, AttributeTarget)
 	if !ok || target == "" {
-		return ast.AsyncReplicationItem{}, &DeclarationError{Attribute: AttributeTarget,
+		return Item{}, &DeclarationError{Attribute: AttributeTarget,
 			Reason: "an item names the path its replica is created at"}
 	}
 	if err := checkPath(AttributeTarget, target, relativeOnly); err != nil {
-		return ast.AsyncReplicationItem{}, err
+		return Item{}, err
 	}
-	return ast.AsyncReplicationItem{Source: source, Target: target}, nil
+	return Item{Source: source, Target: target}, nil
 }
 
 // ParseTransfer reads a transfer out of values, keyed by attribute name, and
@@ -190,15 +193,15 @@ func ParseItem(values map[string]string) (ast.AsyncReplicationItem, error) {
 // semicolon is refused, since the statement Ptah writes ends it. A
 // connection string is optional: without one the topic is one of this
 // database, and its path is relative to its root.
-func ParseTransfer(values map[string]string) (ast.TransferSpec, error) {
+func ParseTransfer(values map[string]string) (TransferSpec, error) {
 	connection, err := ParseConnection(values)
 	if err != nil {
-		return ast.TransferSpec{}, err
+		return TransferSpec{}, err
 	}
-	spec := ast.TransferSpec{Connection: connection}
+	spec := TransferSpec{Connection: connection}
 	source, _ := present(values, AttributeSource)
 	if source == "" {
-		return ast.TransferSpec{}, &DeclarationError{Attribute: AttributeSource,
+		return TransferSpec{}, &DeclarationError{Attribute: AttributeSource,
 			Reason: "a transfer names the topic it reads"}
 	}
 	sourceForm := relativeOnly
@@ -206,26 +209,26 @@ func ParseTransfer(values map[string]string) (ast.TransferSpec, error) {
 		sourceForm = relativeOrAbsolute
 	}
 	if err := checkPath(AttributeSource, source, sourceForm); err != nil {
-		return ast.TransferSpec{}, err
+		return TransferSpec{}, err
 	}
 	spec.Source = source
 	target, _ := present(values, AttributeTarget)
 	if target == "" {
-		return ast.TransferSpec{}, &DeclarationError{Attribute: AttributeTarget,
+		return TransferSpec{}, &DeclarationError{Attribute: AttributeTarget,
 			Reason: "a transfer names the table it writes"}
 	}
 	if err := checkPath(AttributeTarget, target, relativeOnly); err != nil {
-		return ast.TransferSpec{}, err
+		return TransferSpec{}, err
 	}
 	spec.Target = target
 	lambda, _ := present(values, AttributeUsing)
 	if err := checkLambda(lambda); err != nil {
-		return ast.TransferSpec{}, err
+		return TransferSpec{}, err
 	}
 	spec.Lambda = lambda
 	if consumer, ok := present(values, AttributeConsumer); ok {
 		if consumer == "" || strings.Contains(consumer, "/") {
-			return ast.TransferSpec{}, &DeclarationError{Attribute: AttributeConsumer, Value: consumer,
+			return TransferSpec{}, &DeclarationError{Attribute: AttributeConsumer, Value: consumer,
 				Reason: "takes the name of a consumer of the topic, which holds no slash"}
 		}
 		spec.Consumer = consumer
@@ -233,14 +236,14 @@ func ParseTransfer(values map[string]string) (ast.TransferSpec, error) {
 	if raw, ok := present(values, AttributeBatchSizeBytes); ok {
 		size, err := strconv.ParseUint(raw, 10, 63)
 		if err != nil || size == 0 {
-			return ast.TransferSpec{}, &DeclarationError{Attribute: AttributeBatchSizeBytes, Value: raw,
+			return TransferSpec{}, &DeclarationError{Attribute: AttributeBatchSizeBytes, Value: raw,
 				Reason: "takes a whole number of bytes above zero (`batch_size_bytes must be greater than 0`)"}
 		}
 		spec.BatchSizeBytes = size
 	}
 	if raw, ok := present(values, AttributeFlushInterval); ok {
 		if _, err := FlushIntervalSeconds(raw); err != nil {
-			return ast.TransferSpec{}, &DeclarationError{Attribute: AttributeFlushInterval, Value: raw,
+			return TransferSpec{}, &DeclarationError{Attribute: AttributeFlushInterval, Value: raw,
 				Reason: err.Error()}
 		}
 		spec.FlushInterval = raw

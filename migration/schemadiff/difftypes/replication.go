@@ -7,7 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // AsyncReplicationChanges is a set of YDB async replications one change

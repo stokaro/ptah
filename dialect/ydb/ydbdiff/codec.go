@@ -48,7 +48,7 @@ func Codecs() []schemaext.Codec {
 			}
 			return json.Marshal(cloned)
 		},
-	}, CoordinationCodec(), StreamingCodec(), ResourcePoolCodec(), ResourcePoolClassifierCodec(), SecretCodec(), TopicCodec(), ExternalDataSourceCodec(), ExternalTableCodec()}
+	}, CoordinationCodec(), StreamingCodec(), ResourcePoolCodec(), ResourcePoolClassifierCodec(), SecretCodec(), TopicCodec(), ExternalDataSourceCodec(), ExternalTableCodec(), AsyncReplicationCodec(), TransferCodec()}
 }
 
 func changefeedValue(value schemaext.Payload) (*Changefeed, error) {

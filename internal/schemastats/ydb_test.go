@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -47,6 +48,7 @@ func TestCollect_YDBFamilies(t *testing.T) {
 	}
 	db.FeatureObjects = addStreamingMetricFixtures(c, db.FeatureObjects)
 	db.FeatureObjects = addExternalMetricFixtures(c, db.FeatureObjects)
+	db.FeatureObjects = addReplicationMetricFixtures(c, db.FeatureObjects)
 	for i := range 9 {
 		db.FeatureObjects, err = db.FeatureObjects.With(ydbsecret.DesiredObject("ext", fmt.Sprintf("secret_%d", i), "", "PTAH_SECRET_X"))
 		c.Assert(err, qt.IsNil)
@@ -57,14 +59,34 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		{"topics", "2"}, {"topic_consumers", "5"},
 		{"changefeeds", "3"}, {"changefeed_consumers", "6"},
 		{"coordination_nodes", "4"}, {"resource_pools", "5"},
-		{"resource_pool_classifiers", "6"}, {"async_replications", "7"},
-		{"transfers", "8"}, {"secrets", "9"},
+		{"resource_pool_classifiers", "6"}, {"async_replications", "9"},
+		{"transfers", "11"}, {"secrets", "9"},
 		{"external_data_sources", "10"}, {"external_tables", "3"},
 		{"external_columns", "6"}, {"streaming_queries", "11"},
 	} {
 		c.Check(metricValue(c, body, "ptah_schema_"+test.name), qt.Equals, test.want, qt.Commentf("metric %s", test.name))
 		c.Check(metricValue(c, render(c, nil, nil), "ptah_schema_"+test.name), qt.Equals, "0", qt.Commentf("empty metric %s", test.name))
 	}
+}
+
+// addReplicationMetricFixtures adds two owned async replications and three
+// owned transfers, which the owner counts beside the common ones.
+func addReplicationMetricFixtures(c *qt.C, objects schemaext.Objects) schemaext.Objects {
+	c.Helper()
+	connection := ydbreplication.Connection{ConnectionString: "grpc://primary.example.com:2136/?database=/prod"}
+	for i := range 2 {
+		var err error
+		objects, err = objects.With(ydbreplication.DesiredReplicationObject("", fmt.Sprintf("replication_%d", i), "",
+			ydbreplication.ReplicationSpec{Connection: connection, Items: []ydbreplication.Item{{Source: "t", Target: fmt.Sprintf("replica_%d", i)}}}))
+		c.Assert(err, qt.IsNil)
+	}
+	for i := range 3 {
+		var err error
+		objects, err = objects.With(ydbreplication.DesiredTransferObject("", fmt.Sprintf("transfer_%d", i), "",
+			ydbreplication.TransferSpec{Source: "events", Target: "orders", Lambda: "($m) -> { return []; }"}))
+		c.Assert(err, qt.IsNil)
+	}
+	return objects
 }
 
 func addStreamingMetricFixtures(c *qt.C, objects schemaext.Objects) schemaext.Objects {

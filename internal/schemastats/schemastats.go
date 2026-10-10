@@ -82,11 +82,12 @@ func Collect(ctx context.Context, db *schemamodel.Database, target string, runti
 		{Name: "roles", Help: "Roles", Value: len(db.Roles)},
 		{Name: "grants", Help: "Privilege grants", Value: len(db.Grants)},
 	}
-	metrics, err := appendFeatureMetrics(ctx, db, target, runtime, append(metrics, ydbMetrics(db)...))
+	common := len(metrics)
+	metrics, err := appendFeatureMetrics(ctx, db, target, runtime, metrics)
 	if err != nil {
 		return Stats{}, err
 	}
-	return Stats{Metrics: metrics}, nil
+	return Stats{Metrics: addCommonReplications(metrics, common, db)}, nil
 }
 
 // metricPrefix namespaces every metric, so a pipeline scraping several tools

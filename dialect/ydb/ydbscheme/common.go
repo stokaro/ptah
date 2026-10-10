@@ -88,12 +88,8 @@ func TieredTTLReads(root string, policy *ast.YDBTieredTTLSpec) []plangraph.Effec
 }
 
 // secretReads names each YDB secret a statement reads by its path when it
-// runs: the credentials of an async replication or a transfer. YDB looks the secret up
-// when the object is created or its connection changes (`secret ... not
-// found`), so a secret's owner orders its creation before these reads. YDB
-// stores the path absolute, so an absolute path under root names the same
-// secret as the relative one. A path outside root is refused; a path that
-// cannot name a secret is left out.
+// runs: the credentials of an async replication or a transfer. See
+// [SecretPathReads].
 func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 	var paths []string
 	switch n := node.(type) {
@@ -106,6 +102,19 @@ func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 	case *ast.AlterTransferNode:
 		paths = connectionSecretPaths(n.Spec.Connection)
 	}
+	return SecretPathReads(root, paths...)
+}
+
+// SecretPathReads is a read of each YDB secret paths name, as a statement that
+// names a secret by its path reads it when it runs: YDB looks the secret up
+// when an async replication or a transfer is created or its connection
+// changes (`secret ... not found`), so a secret's owner orders its creation
+// before these reads. YDB stores the path absolute, so an absolute path under
+// root, the absolute path of the database, names the same secret as the
+// relative one. A path outside root is refused; an empty path, one written
+// absolute where root is not known, and one that cannot name a secret read
+// nothing Ptah manages. Each secret is read once.
+func SecretPathReads(root string, paths ...string) ([]plangraph.Effect, error) {
 	var effects []plangraph.Effect
 	seen := make(map[objectidentity.Key]bool)
 	for _, written := range paths {
@@ -120,8 +129,6 @@ func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 					written, "/"+strings.Trim(root, "/")),
 			}}}).Err(platform.YDB)
 		}
-		// A path written absolute where the root is not known, or one that
-		// cannot name a secret, reads nothing Ptah manages.
 		if err != nil || seen[ref.Key()] {
 			continue
 		}
@@ -131,12 +138,8 @@ func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 	return effects, nil
 }
 
-// topicReads names the topic of this database a transfer reads, by its path:
-// the topic's owner creates or changes a topic before a statement that reads
-// it, and drops one after. A transfer from another database reads none here.
-// A source path written absolute is read against root, as a secret's is; one
-// outside root, or written absolute where root is not known, names no topic
-// this plan manages and is left out.
+// topicReads names the topic of this database a transfer reads, by its path.
+// See [TopicPathReads].
 func topicReads(root string, node ast.Node) []plangraph.Effect {
 	var source string
 	switch n := node.(type) {
@@ -151,6 +154,16 @@ func topicReads(root string, node ast.Node) []plangraph.Effect {
 	case *ast.DropTransferNode:
 		source = n.Topic
 	}
+	return TopicPathReads(root, source)
+}
+
+// TopicPathReads is a read of the standalone topic of this database at source,
+// as a transfer of a topic in its own database reads it: the topic's owner
+// creates or changes a topic before a statement that reads it, and drops one
+// after. A source written absolute is read against root, as a secret's path
+// is; an empty one, one outside root, and one written absolute where root is
+// not known name no topic this plan manages and read nothing.
+func TopicPathReads(root, source string) []plangraph.Effect {
 	if strings.TrimSpace(source) == "" {
 		return nil
 	}

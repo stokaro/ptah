@@ -104,6 +104,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbexternal`
 - `ptah.run/dialect/ydb/ydbplan`
 - `ptah.run/dialect/ydb/ydbrender`
+- `ptah.run/dialect/ydb/ydbreplication`
 - `ptah.run/dialect/ydb/ydbreport`
 - `ptah.run/dialect/ydb/ydbreverse`
 - `ptah.run/dialect/ydb/ydbschema`
@@ -1419,6 +1420,41 @@ operation. Planning places each statement early, reads the secrets a data
 source names and the source an external table names, and orders the host's
 column-table eviction policies and removed tables against the sources they
 read. `ydbscheme.TieredTTLReads` names the sources a policy reads.
+
+`dialect/ydb/ydbreplication` owns YDB async replications and transfers: the
+`Connection`, `ReplicationSpec` and `TransferSpec` specs, the desired and
+observed models of both kinds, whose observations carry the state the object
+reported, the declaration grammar, the checks a declaration and a change are
+held to, and the statements. `ReplicationsEqual` and `TransfersEqual` compare
+two specs as YDB keeps them: a directory item read back as its tables and a
+consumer YDB created for a transfer are no change. No source declares or reads
+these models yet: every source still carries replications and transfers in the
+common schema, and the specs are aliases of the `core/ast` types until the
+sources move onto the owner.
+
+The replication services in `ydbcompare`, `ydbconvert`, `ydbplan`,
+`ydbreverse` and `ydbreport` consume this model, one batch per kind.
+`ydbdiff.AsyncReplication` and `ydbdiff.Transfer` capture both change operands,
+and `AsyncReplication.Cascade` says whether a drop takes the replica tables
+along. `ydbast.AsyncReplication` and `ydbast.Transfer` are the statement
+payloads `ydbrender.AsyncReplicationHandler` and `ydbrender.TransferHandler`
+write, and `RefuseReplication` and `RefuseTransfer` are the one rule the
+planner and the renderer hold a statement to.
+
+Planning places a drop early and any other statement after the common
+statements, with these effects, which the host orders against the other
+owners' statements on the same subjects:
+
+- A creation writes a replica at each target path, and a drop with CASCADE
+  drops them.
+- A creation or a change reads the secrets its connection names by path.
+- A transfer reads its table and the topic or changefeed it reads, and its drop
+  reads what the transfer used.
+
+`ydbscheme.SecretPathReads` and `ydbscheme.TopicPathReads` name those reads for
+the common statements and the owner alike. A reversal returns a change in place
+in the state the forward change ran in, keeps a credential YDB cannot take away,
+and reports what it cannot restore.
 
 `dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
 are distinct values in `Database.FeatureObjects`, with their table recorded as

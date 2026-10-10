@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -177,6 +178,9 @@ func Fixtures() []Fixture {
 		{Name: "async-replication", Schema: asyncReplicationFixture()},
 		{Name: "async-replication-token", Schema: asyncReplicationTokenFixture()},
 		{Name: "transfer", Schema: transferFixture()},
+		{Name: "owned-async-replication", Schema: ownedAsyncReplicationFixture()},
+		{Name: "owned-async-replication-token", Schema: ownedAsyncReplicationTokenFixture()},
+		{Name: "owned-transfer", Schema: ownedTransferFixture()},
 		{Name: "owned-coordination-node", Schema: ownedCoordinationNodeFixture()},
 		{Name: "secret", Schema: secretFixture()},
 		{Name: "security-policy", Schema: securityPolicyFixture()},
@@ -1453,41 +1457,71 @@ func resourcePoolFixture() schemamodel.Database {
 // one naming its source by an absolute path.
 func asyncReplicationFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.AsyncReplications = []schemamodel.AsyncReplication{{
-		StructName: "AR", Name: "mirror", Schema: "app",
-		Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{
-				ConnectionString:   "grpcs://primary.example.com:2135/?database=/prod",
-				User:               "replicator",
-				PasswordSecretPath: "secrets/replicator",
-			},
-			Items: []ast.AsyncReplicationItem{
-				{Source: "accounts", Target: "replica/accounts"},
-				{Source: "/prod/ledger", Target: "replica/ledger"},
-			},
-			ConsistencyLevel: "global",
-			CommitInterval:   "PT30S",
-		},
-	}}
+	db.AsyncReplications = []schemamodel.AsyncReplication{{StructName: "AR", Name: "mirror", Schema: "app", Spec: mirrorReplicationSpec()}}
 	return db
+}
+
+// ownedAsyncReplicationFixture declares the replication of
+// [asyncReplicationFixture] as an owned feature object.
+func ownedAsyncReplicationFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbreplication.DesiredReplicationObject("app", "mirror", "AR", mirrorReplicationSpec())))
+	db.FeatureCoverage = must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return db
+}
+
+func mirrorReplicationSpec() ydbreplication.ReplicationSpec {
+	return ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{
+			ConnectionString:   "grpcs://primary.example.com:2135/?database=/prod",
+			User:               "replicator",
+			PasswordSecretPath: "secrets/replicator",
+		},
+		Items: []ydbreplication.Item{
+			{Source: "accounts", Target: "replica/accounts"},
+			{Source: "/prod/ledger", Target: "replica/ledger"},
+		},
+		ConsistencyLevel: "global",
+		CommitInterval:   "PT30S",
+	}
 }
 
 // asyncReplicationTokenFixture declares the two token credentials, one
 // replication each, since a connection takes one credential.
 func asyncReplicationTokenFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	connection := "grpc://primary.example.com:2136/?database=/prod"
+	byName, byPath := tokenReplicationSpecs()
 	db.AsyncReplications = []schemamodel.AsyncReplication{
-		{StructName: "AN", Name: "by_name", Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: connection, TokenSecretName: "token"},
-			Items:      []ast.AsyncReplicationItem{{Source: "orders", Target: "orders_by_name"}},
-		}},
-		{StructName: "AP", Name: "by_path", Spec: ast.AsyncReplicationSpec{
-			Connection: ast.ReplicationConnectionSpec{ConnectionString: connection, TokenSecretPath: "secrets/token"},
-			Items:      []ast.AsyncReplicationItem{{Source: "orders", Target: "orders_by_path"}},
-		}},
+		{StructName: "AN", Name: "by_name", Spec: byName},
+		{StructName: "AP", Name: "by_path", Spec: byPath},
 	}
 	return db
+}
+
+// ownedAsyncReplicationTokenFixture declares the replications of
+// [asyncReplicationTokenFixture] as owned feature objects.
+func ownedAsyncReplicationTokenFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	byName, byPath := tokenReplicationSpecs()
+	db.FeatureObjects = must.Must(schemaext.NewObjects(
+		ydbreplication.DesiredReplicationObject("", "by_name", "AN", byName),
+		ydbreplication.DesiredReplicationObject("", "by_path", "AP", byPath),
+	))
+	db.FeatureCoverage = must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return db
+}
+
+func tokenReplicationSpecs() (byName, byPath ydbreplication.ReplicationSpec) {
+	connection := "grpc://primary.example.com:2136/?database=/prod"
+	byName = ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: connection, TokenSecretName: "token"},
+		Items:      []ydbreplication.Item{{Source: "orders", Target: "orders_by_name"}},
+	}
+	byPath = ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: connection, TokenSecretPath: "secrets/token"},
+		Items:      []ydbreplication.Item{{Source: "orders", Target: "orders_by_path"}},
+	}
+	return byName, byPath
 }
 
 // transferFixture declares a YDB transfer of a topic in another database into
@@ -1495,23 +1529,33 @@ func asyncReplicationTokenFixture() schemamodel.Database {
 // user with a password secret named by name.
 func transferFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Transfers = []schemamodel.Transfer{{
-		StructName: "TF", Name: "ingest", Schema: "app",
-		Spec: ast.TransferSpec{
-			Connection: ast.ReplicationConnectionSpec{
-				ConnectionString:   "grpc://primary.example.com:2136/?database=/prod",
-				User:               "reader",
-				PasswordSecretName: "reader_password",
-			},
-			Source:         "events",
-			Target:         "t",
-			Lambda:         "($msg) -> { return [<| id: $msg._offset |>]; }",
-			Consumer:       "ingest",
-			BatchSizeBytes: 1048576,
-			FlushInterval:  "PT10S",
-		},
-	}}
+	db.Transfers = []schemamodel.Transfer{{StructName: "TF", Name: "ingest", Schema: "app", Spec: ingestTransferSpec()}}
 	return db
+}
+
+// ownedTransferFixture declares the transfer of [transferFixture] as an owned
+// feature object.
+func ownedTransferFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbreplication.DesiredTransferObject("app", "ingest", "TF", ingestTransferSpec())))
+	db.FeatureCoverage = must.Must(ydbreplication.TransferCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return db
+}
+
+func ingestTransferSpec() ydbreplication.TransferSpec {
+	return ydbreplication.TransferSpec{
+		Connection: ydbreplication.Connection{
+			ConnectionString:   "grpc://primary.example.com:2136/?database=/prod",
+			User:               "reader",
+			PasswordSecretName: "reader_password",
+		},
+		Source:         "events",
+		Target:         "t",
+		Lambda:         "($msg) -> { return [<| id: $msg._offset |>]; }",
+		Consumer:       "ingest",
+		BatchSizeBytes: 1048576,
+		FlushInterval:  "PT10S",
+	}
 }
 
 func ownedCoordinationNodeFixture() schemamodel.Database {

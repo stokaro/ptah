@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -135,6 +136,12 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 		},
 		func() (schemaext.Coverage, error) {
 			return ydbexternal.TableCoverage(schemaext.Observed, complete, nil)
+		},
+		func() (schemaext.Coverage, error) {
+			return ydbreplication.ReplicationCoverage(schemaext.Observed, complete, nil)
+		},
+		func() (schemaext.Coverage, error) {
+			return ydbreplication.TransferCoverage(schemaext.Observed, complete, nil)
 		},
 		func() (schemaext.Coverage, error) {
 			return ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Observed, complete, nil)

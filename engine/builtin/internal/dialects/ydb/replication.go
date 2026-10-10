@@ -5,7 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // renderCreateAsyncReplication writes one CREATE ASYNC REPLICATION with the
@@ -51,7 +51,7 @@ func (r *Renderer) renderDropAsyncReplication(node *ast.DropAsyncReplicationNode
 	if strings.TrimSpace(node.Name) == "" {
 		return refuseFact("DROP ASYNC REPLICATION", "it names no replication")
 	}
-	r.w.WriteLine(ydbreplication.DropReplicationStatement(node))
+	r.w.WriteLine(ydbreplication.DropReplicationStatement(node.Name, node.Cascade))
 	return nil
 }
 

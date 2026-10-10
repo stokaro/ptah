@@ -5,14 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/ydbreplication"
+	"ptah.run/dialect/ydb/ydbreplication"
 )
 
 // replicationOf is a replication of /prod with the items given.
-func replicationOf(items ...ast.AsyncReplicationItem) ast.AsyncReplicationSpec {
-	return ast.AsyncReplicationSpec{
-		Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"},
+func replicationOf(items ...ydbreplication.Item) ydbreplication.ReplicationSpec {
+	return ydbreplication.ReplicationSpec{
+		Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod"},
 		Items:      items,
 	}
 }
@@ -25,55 +24,55 @@ func replicationOf(items ...ast.AsyncReplicationItem) ast.AsyncReplicationSpec {
 func TestCompareReplication_Equal(t *testing.T) {
 	tests := []struct {
 		name    string
-		desired ast.AsyncReplicationSpec
-		current ast.AsyncReplicationSpec
+		desired ydbreplication.ReplicationSpec
+		current ydbreplication.ReplicationSpec
 	}{
 		{
 			name: "defaults named and left out",
-			desired: func() ast.AsyncReplicationSpec {
-				spec := replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"})
+			desired: func() ydbreplication.ReplicationSpec {
+				spec := replicationOf(ydbreplication.Item{Source: "a", Target: "ra"})
 				spec.ConsistencyLevel = "row"
 				return spec
 			}(),
-			current: replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"}),
+			current: replicationOf(ydbreplication.Item{Source: "a", Target: "ra"}),
 		},
 		{
 			name: "a global level's default commit interval",
-			desired: func() ast.AsyncReplicationSpec {
-				spec := replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"})
+			desired: func() ydbreplication.ReplicationSpec {
+				spec := replicationOf(ydbreplication.Item{Source: "a", Target: "ra"})
 				spec.ConsistencyLevel, spec.CommitInterval = "global", "PT10S"
 				return spec
 			}(),
-			current: func() ast.AsyncReplicationSpec {
-				spec := replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"})
+			current: func() ydbreplication.ReplicationSpec {
+				spec := replicationOf(ydbreplication.Item{Source: "a", Target: "ra"})
 				spec.ConsistencyLevel = "global"
 				return spec
 			}(),
 		},
 		{
 			name: "a connection string without the slash and an absolute source",
-			desired: ast.AsyncReplicationSpec{
-				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136?database=/prod"},
-				Items:      []ast.AsyncReplicationItem{{Source: "/prod/a", Target: "ra"}},
+			desired: ydbreplication.ReplicationSpec{
+				Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136?database=/prod"},
+				Items:      []ydbreplication.Item{{Source: "/prod/a", Target: "ra"}},
 			},
-			current: replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"}),
+			current: replicationOf(ydbreplication.Item{Source: "a", Target: "ra"}),
 		},
 		{
 			name: "items in another order",
-			desired: replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"},
-				ast.AsyncReplicationItem{Source: "b", Target: "rb"}),
-			current: replicationOf(ast.AsyncReplicationItem{Source: "b", Target: "rb"},
-				ast.AsyncReplicationItem{Source: "a", Target: "ra"}),
+			desired: replicationOf(ydbreplication.Item{Source: "a", Target: "ra"},
+				ydbreplication.Item{Source: "b", Target: "rb"}),
+			current: replicationOf(ydbreplication.Item{Source: "b", Target: "rb"},
+				ydbreplication.Item{Source: "a", Target: "ra"}),
 		},
 		{
 			name:    "a directory read back as its tables",
-			desired: replicationOf(ast.AsyncReplicationItem{Source: "src", Target: "dst"}),
-			current: replicationOf(ast.AsyncReplicationItem{Source: "src/t1", Target: "dst/t1"},
-				ast.AsyncReplicationItem{Source: "src/sub/t2", Target: "dst/sub/t2"}),
+			desired: replicationOf(ydbreplication.Item{Source: "src", Target: "dst"}),
+			current: replicationOf(ydbreplication.Item{Source: "src/t1", Target: "dst/t1"},
+				ydbreplication.Item{Source: "src/sub/t2", Target: "dst/sub/t2"}),
 		},
 		{
 			name:    "a replication that resolved no table yet",
-			desired: replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"}),
+			desired: replicationOf(ydbreplication.Item{Source: "a", Target: "ra"}),
 			current: replicationOf(),
 		},
 	}
@@ -90,31 +89,31 @@ func TestCompareReplication_Equal(t *testing.T) {
 // TestCompareReplication_Differs names what differs, and keeps apart the
 // settings YDB changes in no replication.
 func TestCompareReplication_Differs(t *testing.T) {
-	base := replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"})
-	with := func(change func(*ast.AsyncReplicationSpec)) ast.AsyncReplicationSpec {
+	base := replicationOf(ydbreplication.Item{Source: "a", Target: "ra"})
+	with := func(change func(*ydbreplication.ReplicationSpec)) ydbreplication.ReplicationSpec {
 		spec := base.Clone()
 		change(&spec)
 		return spec
 	}
 	tests := []struct {
 		name    string
-		desired ast.AsyncReplicationSpec
+		desired ydbreplication.ReplicationSpec
 		want    ydbreplication.ReplicationChanges
 	}{
-		{name: "another database", desired: with(func(s *ast.AsyncReplicationSpec) {
+		{name: "another database", desired: with(func(s *ydbreplication.ReplicationSpec) {
 			s.Connection.ConnectionString = "grpc://primary:2136/?database=/other"
 		}), want: ydbreplication.ReplicationChanges{ConnectionString: true, CreateOnly: []string{"items"}}},
-		{name: "another host", desired: with(func(s *ast.AsyncReplicationSpec) {
+		{name: "another host", desired: with(func(s *ydbreplication.ReplicationSpec) {
 			s.Connection.ConnectionString = "grpcs://standby:2135/?database=/prod"
 		}), want: ydbreplication.ReplicationChanges{ConnectionString: true}},
-		{name: "a credential", desired: with(func(s *ast.AsyncReplicationSpec) { s.Connection.TokenSecretName = "t" }),
+		{name: "a credential", desired: with(func(s *ydbreplication.ReplicationSpec) { s.Connection.TokenSecretName = "t" }),
 			want: ydbreplication.ReplicationChanges{Credentials: true}},
-		{name: "another item", desired: with(func(s *ast.AsyncReplicationSpec) {
-			s.Items = append(s.Items, ast.AsyncReplicationItem{Source: "b", Target: "rb"})
+		{name: "another item", desired: with(func(s *ydbreplication.ReplicationSpec) {
+			s.Items = append(s.Items, ydbreplication.Item{Source: "b", Target: "rb"})
 		}), want: ydbreplication.ReplicationChanges{CreateOnly: []string{"items"}}},
-		{name: "a target moved", desired: with(func(s *ast.AsyncReplicationSpec) { s.Items[0].Target = "other" }),
+		{name: "a target moved", desired: with(func(s *ydbreplication.ReplicationSpec) { s.Items[0].Target = "other" }),
 			want: ydbreplication.ReplicationChanges{CreateOnly: []string{"items"}}},
-		{name: "the global level", desired: with(func(s *ast.AsyncReplicationSpec) { s.ConsistencyLevel = "global" }),
+		{name: "the global level", desired: with(func(s *ydbreplication.ReplicationSpec) { s.ConsistencyLevel = "global" }),
 			want: ydbreplication.ReplicationChanges{CreateOnly: []string{"consistency_level"}}},
 	}
 	for _, test := range tests {
@@ -129,8 +128,8 @@ func TestCompareReplication_Differs(t *testing.T) {
 // the milliseconds they denote.
 func TestCompareReplication_CommitInterval(t *testing.T) {
 	c := qt.New(t)
-	global := func(interval string) ast.AsyncReplicationSpec {
-		spec := replicationOf(ast.AsyncReplicationItem{Source: "a", Target: "ra"})
+	global := func(interval string) ydbreplication.ReplicationSpec {
+		spec := replicationOf(ydbreplication.Item{Source: "a", Target: "ra"})
 		spec.ConsistencyLevel, spec.CommitInterval = "global", interval
 		return spec
 	}
@@ -145,9 +144,9 @@ func TestCompareReplication_CommitInterval(t *testing.T) {
 // space.
 func TestCompareTransfer_Equal(t *testing.T) {
 	c := qt.New(t)
-	desired := ast.TransferSpec{Source: "tp", Target: "t", Lambda: " ($m) -> { return []; }\n",
+	desired := ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: " ($m) -> { return []; }\n",
 		BatchSizeBytes: 8 << 20, FlushInterval: "PT1M"}
-	current := ast.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }",
+	current := ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }",
 		Consumer: "fbc17198-8229c5ec-37e45ba-fe47b6c1"}
 	c.Assert(ydbreplication.CompareTransfer(desired, current), qt.DeepEquals, ydbreplication.TransferChanges{})
 	c.Assert(ydbreplication.TransfersEqual(desired, current), qt.IsTrue)
@@ -156,30 +155,30 @@ func TestCompareTransfer_Equal(t *testing.T) {
 // TestCompareTransfer_Differs names what differs, and keeps apart the
 // settings YDB changes in no transfer.
 func TestCompareTransfer_Differs(t *testing.T) {
-	base := ast.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }", Consumer: "c"}
-	with := func(change func(*ast.TransferSpec)) ast.TransferSpec {
+	base := ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }", Consumer: "c"}
+	with := func(change func(*ydbreplication.TransferSpec)) ydbreplication.TransferSpec {
 		spec := base
 		change(&spec)
 		return spec
 	}
 	tests := []struct {
 		name    string
-		desired ast.TransferSpec
+		desired ydbreplication.TransferSpec
 		want    ydbreplication.TransferChanges
 	}{
-		{name: "the lambda", desired: with(func(s *ast.TransferSpec) { s.Lambda = "($m) -> { return [1]; }" }),
+		{name: "the lambda", desired: with(func(s *ydbreplication.TransferSpec) { s.Lambda = "($m) -> { return [1]; }" }),
 			want: ydbreplication.TransferChanges{Lambda: true}},
-		{name: "the batch size", desired: with(func(s *ast.TransferSpec) { s.BatchSizeBytes = 1024 }),
+		{name: "the batch size", desired: with(func(s *ydbreplication.TransferSpec) { s.BatchSizeBytes = 1024 }),
 			want: ydbreplication.TransferChanges{Batch: true}},
-		{name: "the flush interval", desired: with(func(s *ast.TransferSpec) { s.FlushInterval = "PT10S" }),
+		{name: "the flush interval", desired: with(func(s *ydbreplication.TransferSpec) { s.FlushInterval = "PT10S" }),
 			want: ydbreplication.TransferChanges{Batch: true}},
-		{name: "the source", desired: with(func(s *ast.TransferSpec) { s.Source = "other" }),
+		{name: "the source", desired: with(func(s *ydbreplication.TransferSpec) { s.Source = "other" }),
 			want: ydbreplication.TransferChanges{CreateOnly: []string{"source"}}},
-		{name: "the target", desired: with(func(s *ast.TransferSpec) { s.Target = "other" }),
+		{name: "the target", desired: with(func(s *ydbreplication.TransferSpec) { s.Target = "other" }),
 			want: ydbreplication.TransferChanges{CreateOnly: []string{"target"}}},
-		{name: "another consumer", desired: with(func(s *ast.TransferSpec) { s.Consumer = "d" }),
+		{name: "another consumer", desired: with(func(s *ydbreplication.TransferSpec) { s.Consumer = "d" }),
 			want: ydbreplication.TransferChanges{CreateOnly: []string{"consumer"}}},
-		{name: "a local source read through a connection", desired: with(func(s *ast.TransferSpec) {
+		{name: "a local source read through a connection", desired: with(func(s *ydbreplication.TransferSpec) {
 			s.Connection.ConnectionString = "grpc://h:2136/?database=/local"
 		}), want: ydbreplication.TransferChanges{ConnectionString: true, CreateOnly: []string{"source"}}},
 	}
@@ -196,8 +195,8 @@ func TestCompareTransfer_Differs(t *testing.T) {
 // resolves to the same path there.
 func TestCompareTransfer_AnotherHost(t *testing.T) {
 	c := qt.New(t)
-	current := ast.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }",
-		Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"}}
+	current := ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }",
+		Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod"}}
 	desired := current
 	desired.Connection.ConnectionString = "grpc://standby:2136/?database=/prod"
 	desired.Source = "/prod/tp"

@@ -1162,6 +1162,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-ydb-ydbreplication",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbreplication",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-ydb-ydbreport",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbreport",
