@@ -71,6 +71,13 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      # The cmd/* and internal/clirun tests build the shipped binaries without
+      # -race, once per test binary, and the race-instrumented tests share none
+      # of that compilation. Without this step those packages compile the same
+      # packages at the same time, each inside its own test time.
+      - name: Compile the binaries the tests build
+        run: go build ./cmd/...
+
       - name: Run unit tests
         run: |
           # Run unit tests excluding integration tests
