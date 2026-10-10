@@ -161,11 +161,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.DropTransferNode:
 		return r.renderDropTransfer(n)
 
-	// External data sources and external tables, which hold no data in YDB.
-	case *ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode,
-		*ast.DropExternalDataSourceNode, *ast.DropExternalTableNode:
-		return r.renderExternalNode(node)
-
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:
 		return refuseFact("synonym "+n.Name, "YDB has no synonyms")

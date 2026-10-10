@@ -93,30 +93,3 @@ func ReplicationSubject(node ast.Node) (capability.Capability, string) {
 		return capability.AsyncReplication, "an async replication"
 	}
 }
-
-// RefuseExternal refuses node, a YDB external data source or external table
-// statement, on a renderer whose engine has neither object as Ptah models it:
-// every renderer but YDB's. The central renderer refuses the object on a
-// target without [capability.ExternalDataSources] before a dialect sees the
-// node, so this answers a caller that visits the node with a dialect renderer
-// directly, and names the renderer that refused.
-func RefuseExternal(dialect string, node ast.Node) error {
-	subject := "an external object"
-	switch typed := node.(type) {
-	case *ast.CreateExternalDataSourceNode:
-		subject = "external data source " + typed.Name
-	case *ast.DropExternalDataSourceNode:
-		subject = "DROP EXTERNAL DATA SOURCE " + typed.Name
-	case *ast.CreateExternalTableNode:
-		subject = "external table " + typed.Name
-	case *ast.DropExternalTableNode:
-		subject = "DROP EXTERNAL TABLE " + typed.Name
-	}
-	return &ptaherr.CapabilityError{
-		Dialect: dialect,
-		Feature: string(capability.ExternalDataSources),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: the %s renderer writes no external data source or external table; each needs "+
-			"target capability %s, which only YDB has", subject, dialect, capability.ExternalDataSources),
-	}
-}

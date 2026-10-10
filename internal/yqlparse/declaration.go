@@ -54,7 +54,7 @@ func (p *parser) createDeclaration() ast.Node {
 		return p.secret()
 	case p.word("EXTERNAL"):
 		p.pos++
-		return p.external(false)
+		return p.external(ydbast.ExternalCreate)
 	case p.word("OR"):
 		p.pos++
 		return p.replacementDeclaration()
@@ -74,7 +74,7 @@ func (p *parser) replacementDeclaration() ast.Node {
 		return p.streamingQuery(true)
 	}
 	p.wantWord("EXTERNAL")
-	return p.external(true)
+	return p.external(ydbast.ExternalReplace)
 }
 
 func (p *parser) alterDeclaration() ast.Node {

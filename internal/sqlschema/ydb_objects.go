@@ -17,9 +17,6 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	if handled, err := appendYDBPrincipal(database, document, statement, sourcePlatform); handled {
 		return true, err
 	}
-	if appendYDBExternalDeclaration(database, statement) {
-		return true, nil
-	}
 	switch node := statement.(type) {
 	case *ast.AlterSequenceNode:
 		if platform.NormalizeDialect(sourcePlatform) != platform.YDB {
@@ -31,6 +28,9 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 			return true, err
 		}
 		if handled, err := appendTopicDeclaration(database, document.base, node.Payload); handled {
+			return true, err
+		}
+		if handled, err := appendExternalDeclaration(database, node.Payload); handled {
 			return true, err
 		}
 		if value, ok := node.Payload.(*ydbast.StreamingQuery); ok {

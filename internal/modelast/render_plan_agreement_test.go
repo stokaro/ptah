@@ -130,8 +130,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	}
 	// Remove refused YDB families in the order shared validation checks them,
 	// then run the census over the rest of the fixture.
-	refused := assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
-	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
+	refused := assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect, must.Must(modelast.CollectDatabase(desired, dialect, modelast.Lowering{Context: context.Background()})).Statements)
 
@@ -258,27 +257,5 @@ func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *s
 	c.Assert(planErr.Error(), qt.Contains, "requires target capability transfers")
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability transfers")
 	desired.Transfers = nil
-	return 2
-}
-
-// assertBothSurfacesRefuseTheExternalObjects checks that a target without the
-// external_data_sources key refuses the fixture's data source on both
-// surfaces, and takes the data source and the external table out of desired.
-// It returns how many routed kinds it took out.
-func assertBothSurfacesRefuseTheExternalObjects(c *qt.C, dialect string, desired *schemamodel.Database) int {
-	c.Helper()
-	if capability.ForDialect(dialect).Has(capability.ExternalDataSources) {
-		return 0
-	}
-	probe := *desired
-	_, planErr := schemadiff.CompareWithDatabaseInfo(
-		c.Context(), &probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil, must.Must(builtin.New()),
-	)
-	renderErr := builtin.ValidateSchema(&probe, dialect)
-	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "requires target capability external_data_sources")
-	c.Assert(renderErr.Error(), qt.Contains, "requires target capability external_data_sources")
-	desired.ExternalDataSources, desired.ExternalTables = nil, nil
 	return 2
 }

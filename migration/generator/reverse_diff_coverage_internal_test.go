@@ -104,17 +104,6 @@ func assertReverseCoverageField(
 		// is what holds that, since this gate structurally cannot.
 		return
 	}
-	if field.Name == "DeclaredExternalTables" {
-		// An OUTPUT of the reverse, for the reason DeclaredTables is. A
-		// rollback that replaces a YDB data source by dropping it creates
-		// again the external tables the PRE-CHANGE database held over it, so
-		// the reverse derives the list from the introspected schema and the
-		// forward value cannot reach it.
-		//
-		// TestReverseSchemaDiff_ARolledBackDataSourceTakesThePriorTables is
-		// what holds that, since this gate structurally cannot.
-		return
-	}
 	if field.Name == "DeclaredViewLikes" {
 		// An OUTPUT of the reverse, for the reason the two above are. A
 		// rollback recreates what a cascade took from the PRE-CHANGE database,
@@ -1107,42 +1096,4 @@ func TestReverseSchemaDiff_ARolledBackSequenceChangeKeepsTheRestart(t *testing.T
 	column := reversed.TablesModified[0].ColumnsModified[0]
 	c.Assert(column.Changes, qt.DeepEquals, map[string]string{"identity_increment": "10 -> 5"})
 	c.Assert(column.CurrentSequenceRestart, qt.Equals, "100")
-}
-
-// TestReverseSchemaDiff_ARolledBackDataSourceTakesThePriorTables holds the
-// rollback of YDB external objects to the database the change started from:
-// a data source and an external table the change dropped are created again as
-// the read described them, ones it created are dropped, a replaced data source
-// is replaced again by what was held, and the external tables a rollback may
-// have to create again over it are the ones the database held.
-func TestReverseSchemaDiff_ARolledBackDataSourceTakesThePriorTables(t *testing.T) {
-	c := qt.New(t)
-	schema, _ := reverseCoverageContext()
-	held := schemamodel.ExternalDataSource{Name: "s3", Schema: "ext", SourceType: "ObjectStorage",
-		Location: "https://old.example.test/", AuthMethod: "NONE"}
-	declared := held
-	declared.Location = "https://new.example.test/"
-	heldTable := catalog.ExternalTable{Name: "events", Schema: "ext", DataSource: "ext/s3", Location: "e/",
-		Columns: []catalog.ExternalColumn{{Name: "id", Type: "Int64"}}}
-	dbSchema := &catalog.Database{DatabasePath: "/local", ExternalTables: []catalog.ExternalTable{heldTable}}
-	dropped := schemamodel.ExternalTable{Name: "stale", DataSource: "old", Location: "x/",
-		Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64"}}}
-	created := schemamodel.ExternalDataSource{Name: "new", SourceType: "ObjectStorage", AuthMethod: "NONE"}
-	diff := &difftypes.SchemaDiff{
-		ExternalDataSourcesChanged: []difftypes.ExternalDataSourceChange{{Declared: declared, Current: held}},
-		ExternalDataSourcesAdded:   difftypes.ExternalDataSourceChanges{created},
-		ExternalTablesRemoved:      difftypes.ExternalTableChanges{dropped},
-	}
-
-	reversed := reverseForTest(t,
-		diff, schema, dbSchema, "ydb")
-
-	c.Assert(reversed.ExternalDataSourcesChanged, qt.DeepEquals,
-		[]difftypes.ExternalDataSourceChange{{Declared: held, Current: declared}})
-	c.Assert(reversed.ExternalDataSourcesRemoved, qt.DeepEquals, difftypes.ExternalDataSourceChanges{created})
-	c.Assert(reversed.ExternalTablesAdded, qt.DeepEquals, difftypes.ExternalTableChanges{dropped})
-	c.Assert(reversed.DeclaredExternalTables, qt.DeepEquals, []schemamodel.ExternalTable{{
-		Name: "events", Schema: "ext", DataSource: "ext/s3", Location: "e/",
-		Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64"}},
-	}})
 }

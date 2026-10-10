@@ -205,8 +205,6 @@ func compareReportingUndecidedAdditions(
 	compare.Synonyms(desired, database, diff, cov)
 	compare.Replications(desired, database, diff, cov)
 
-	compare.ExternalObjects(desired, database, diff, cov)
-
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(desired, database, diff, cov)
 	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)

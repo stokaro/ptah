@@ -113,6 +113,7 @@ func excludeDatabase(
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterExternalFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	state.excludeColumnSequences(schema.Tables)
@@ -129,8 +130,6 @@ func excludeDatabase(
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
 	filtered.AsyncReplications = state.filterAsyncReplications(filtered.AsyncReplications)
 	filtered.Transfers = state.filterTransfers(filtered.Transfers)
-	filtered.ExternalDataSources = state.filterExternalDataSources(filtered.ExternalDataSources)
-	filtered.ExternalTables = state.filterExternalTables(filtered.ExternalTables)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
@@ -233,6 +232,7 @@ func excludeGenerated(
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterExternalFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
@@ -1166,33 +1166,6 @@ func (s *exclusionState) filterTransfers(transfers []catalog.Transfer) []catalog
 	return result
 }
 
-// filterExternalDataSources drops YDB external data sources an exclusion
-// selector names, and the ones whose directory is excluded.
-func (s *exclusionState) filterExternalDataSources(sources []catalog.ExternalDataSource) []catalog.ExternalDataSource {
-	result := make([]catalog.ExternalDataSource, 0, len(sources))
-	for _, source := range sources {
-		if s.matches("external_data_source", s.nameCandidates(source.Schema, source.Name)...) ||
-			s.schemaExcluded(source.Schema) {
-			continue
-		}
-		result = append(result, source)
-	}
-	return result
-}
-
-// filterExternalTables drops YDB external tables an exclusion selector names,
-// and the ones whose directory is excluded.
-func (s *exclusionState) filterExternalTables(tables []catalog.ExternalTable) []catalog.ExternalTable {
-	result := make([]catalog.ExternalTable, 0, len(tables))
-	for _, table := range tables {
-		if s.matches("external_table", s.nameCandidates(table.Schema, table.Name)...) || s.schemaExcluded(table.Schema) {
-			continue
-		}
-		result = append(result, table)
-	}
-	return result
-}
-
 // filterExtendedProperties drops the extended properties an exclusion selector
 // names, and the ones whose owner is excluded.
 //
@@ -1880,34 +1853,32 @@ func stripGeneratedFieldForeignKey(field schemamodel.Field) schemamodel.Field {
 
 func cloneDatabase(schema *catalog.Database) *catalog.Database {
 	return &catalog.Database{
-		FeatureObjects:      schema.FeatureObjects,
-		FeatureCoverage:     schema.FeatureCoverage,
-		Schemas:             slices.Clone(schema.Schemas),
-		Tables:              slices.Clone(schema.Tables),
-		Enums:               slices.Clone(schema.Enums),
-		Indexes:             slices.Clone(schema.Indexes),
-		Constraints:         slices.Clone(schema.Constraints),
-		Extensions:          slices.Clone(schema.Extensions),
-		Functions:           slices.Clone(schema.Functions),
-		Sequences:           slices.Clone(schema.Sequences),
-		Domains:             slices.Clone(schema.Domains),
-		Composites:          slices.Clone(schema.Composites),
-		Ranges:              slices.Clone(schema.Ranges),
-		Views:               slices.Clone(schema.Views),
-		Synonyms:            slices.Clone(schema.Synonyms),
-		AsyncReplications:   slices.Clone(schema.AsyncReplications),
-		Transfers:           slices.Clone(schema.Transfers),
-		ExternalDataSources: slices.Clone(schema.ExternalDataSources),
-		ExternalTables:      slices.Clone(schema.ExternalTables),
-		ExtendedProperties:  slices.Clone(schema.ExtendedProperties),
-		MatViews:            slices.Clone(schema.MatViews),
-		Triggers:            slices.Clone(schema.Triggers),
-		RLSPolicies:         slices.Clone(schema.RLSPolicies),
-		Roles:               slices.Clone(schema.Roles),
-		Grants:              slices.Clone(schema.Grants),
-		DefaultPrivileges:   slices.Clone(schema.DefaultPrivileges),
-		RoleMemberships:     slices.Clone(schema.RoleMemberships),
-		ObjectOwners:        slices.Clone(schema.ObjectOwners),
+		FeatureObjects:     schema.FeatureObjects,
+		FeatureCoverage:    schema.FeatureCoverage,
+		Schemas:            slices.Clone(schema.Schemas),
+		Tables:             slices.Clone(schema.Tables),
+		Enums:              slices.Clone(schema.Enums),
+		Indexes:            slices.Clone(schema.Indexes),
+		Constraints:        slices.Clone(schema.Constraints),
+		Extensions:         slices.Clone(schema.Extensions),
+		Functions:          slices.Clone(schema.Functions),
+		Sequences:          slices.Clone(schema.Sequences),
+		Domains:            slices.Clone(schema.Domains),
+		Composites:         slices.Clone(schema.Composites),
+		Ranges:             slices.Clone(schema.Ranges),
+		Views:              slices.Clone(schema.Views),
+		Synonyms:           slices.Clone(schema.Synonyms),
+		AsyncReplications:  slices.Clone(schema.AsyncReplications),
+		Transfers:          slices.Clone(schema.Transfers),
+		ExtendedProperties: slices.Clone(schema.ExtendedProperties),
+		MatViews:           slices.Clone(schema.MatViews),
+		Triggers:           slices.Clone(schema.Triggers),
+		RLSPolicies:        slices.Clone(schema.RLSPolicies),
+		Roles:              slices.Clone(schema.Roles),
+		Grants:             slices.Clone(schema.Grants),
+		DefaultPrivileges:  slices.Clone(schema.DefaultPrivileges),
+		RoleMemberships:    slices.Clone(schema.RoleMemberships),
+		ObjectOwners:       slices.Clone(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is
@@ -1955,8 +1926,6 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Synonyms = slices.Clone(schema.Synonyms)
 	filtered.AsyncReplications = slices.Clone(schema.AsyncReplications)
 	filtered.Transfers = slices.Clone(schema.Transfers)
-	filtered.ExternalDataSources = slices.Clone(schema.ExternalDataSources)
-	filtered.ExternalTables = slices.Clone(schema.ExternalTables)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

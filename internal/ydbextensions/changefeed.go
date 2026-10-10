@@ -23,6 +23,8 @@ func Handlers() []renderer.ExtensionHandler {
 		ydbrender.CoordinationHandler(),
 		ydbrender.TopicHandler(),
 		ydbrender.TopicConsumerHandler(),
+		ydbrender.ExternalDataSourceHandler(),
+		ydbrender.ExternalTableHandler(),
 		ydbrender.StreamingHandler(),
 		ydbrender.ResourcePoolHandler(),
 		ydbrender.ResourcePoolClassifierHandler(),

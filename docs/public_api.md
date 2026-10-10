@@ -101,6 +101,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbconvert`
 - `ptah.run/dialect/ydb/ydbcoordination`
 - `ptah.run/dialect/ydb/ydbdiff`
+- `ptah.run/dialect/ydb/ydbexternal`
 - `ptah.run/dialect/ydb/ydbplan`
 - `ptah.run/dialect/ydb/ydbrender`
 - `ptah.run/dialect/ydb/ydbreport`
@@ -1337,6 +1338,32 @@ places a topic statement as a secret's, creates or changes a topic before a
 transfer reads it, and drops it after the transfer that reads it. A reversal
 returns a changed topic to the nearest state YDB reaches in place and reports
 what it cannot restore.
+
+`dialect/ydb/ydbexternal` owns YDB external data sources and external tables:
+the `DataSource` and `Table` specs, the desired and observed models of both
+kinds in `Database.FeatureObjects`, the declaration grammar, the checks a
+declaration is held to, and the statements. A spec keeps every setting as
+written, and `SameDataSource` and `SameTable` compare two specs with a path
+an option or a table holds read against the database root. `DeclareSource` and
+`DeclareTable` are how every source format adds a declaration and refuse a
+second one with a `DuplicateError`; `ParsePath` reads a limit by the rules a
+secret's path follows, and `ResolveSource` reads the data source an external
+table names against the database root. The common schema, catalog, AST,
+coverage and diff types contain no external object fields.
+
+The external services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`,
+and `ydbreport` consume this model for both kinds in one batch.
+`ydbdiff.ExternalDataSource` and `ydbdiff.ExternalTable` capture both change
+operands, and `ExternalDataSource.Displaces` is the one predicate the
+comparison and the planner ask whether the tables over a changed source must
+be dropped and created again. `ydbast.ExternalDataSource` and
+`ydbast.ExternalTable` are the statement payloads
+`ydbrender.ExternalDataSourceHandler` and `ydbrender.ExternalTableHandler`
+write; `ExternalRecreate` is a data source's drop and creation as one
+operation. Planning places each statement early, reads the secrets a data
+source names and the source an external table names, and orders the host's
+column-table eviction policies and removed tables against the sources they
+read. `ydbscheme.TieredTTLReads` names the sources a policy reads.
 
 `dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
 are distinct values in `Database.FeatureObjects`, with their table recorded as

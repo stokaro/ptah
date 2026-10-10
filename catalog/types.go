@@ -78,11 +78,6 @@ type Database struct {
 	AsyncReplications []AsyncReplication `json:"async_replications,omitempty"`
 	// Transfers are the YDB transfers this description covers.
 	Transfers []Transfer `json:"transfers,omitempty"`
-	// ExternalDataSources and ExternalTables are the YDB external data
-	// sources and external tables this description covers. omitempty keeps
-	// the serialization of every other dialect byte-identical.
-	ExternalDataSources []ExternalDataSource `json:"external_data_sources,omitempty"`
-	ExternalTables      []ExternalTable      `json:"external_tables,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
 	// [ExtendedProperty] for what is deliberately not in it.
@@ -1484,61 +1479,6 @@ type Transfer struct {
 // the name alone at the database root.
 func (t Transfer) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
-}
-
-// ExternalDataSource is a YDB external data source read from the database:
-// the system it names and how YDB authenticates to it. It is YDB's alone.
-//
-// Options holds every option the server describes besides SOURCE_TYPE,
-// LOCATION and AUTH_METHOD, keyed by upper-case name with its value as the
-// server keeps it, which is as it was written, except a secret's path: the
-// server stores one absolute, and the reader writes it relative to the root it
-// read where it lies under it. REFERENCES, the list of external tables over
-// the source the server maintains, is not one of them.
-type ExternalDataSource struct {
-	Name       string            `json:"name"`
-	Schema     string            `json:"schema,omitempty"`
-	SourceType string            `json:"source_type"`
-	Location   string            `json:"location,omitempty"`
-	AuthMethod string            `json:"auth_method"`
-	Options    map[string]string `json:"options,omitempty"`
-}
-
-// QualifiedName returns the data source's canonical reference: schema.name,
-// or the name alone at the database root.
-func (s ExternalDataSource) QualifiedName() string {
-	return tableref.Canonical(s.Schema, s.Name)
-}
-
-// ExternalTable is a YDB external table read from the database. It is YDB's
-// alone.
-//
-// DataSource is the data source's path, relative to the root the reader read
-// where it lies under it and absolute otherwise. Options holds every option
-// besides DATA_SOURCE and LOCATION, with the value a declaration writes: the
-// server describes each as a JSON array of one string, and PARTITIONED_BY as
-// a JSON array of column names, which is kept as one.
-type ExternalTable struct {
-	Name       string            `json:"name"`
-	Schema     string            `json:"schema,omitempty"`
-	DataSource string            `json:"data_source"`
-	Location   string            `json:"location"`
-	Columns    []ExternalColumn  `json:"columns"`
-	Options    map[string]string `json:"options,omitempty"`
-}
-
-// QualifiedName returns the external table's canonical reference:
-// schema.name, or the name alone at the database root.
-func (t ExternalTable) QualifiedName() string {
-	return tableref.Canonical(t.Schema, t.Name)
-}
-
-// ExternalColumn is one column of a YDB [ExternalTable]: its name, its YQL
-// type, and whether the server describes it as NOT NULL rather than optional.
-type ExternalColumn struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	NotNull bool   `json:"not_null,omitempty"`
 }
 
 // ExtendedProperty is one SQL Server extended property read from

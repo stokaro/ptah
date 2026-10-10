@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -29,10 +30,10 @@ func TestSchemaInspectJSON_ReportsOmittedYDBFamilies(t *testing.T) {
 			var diagnostics bytes.Buffer
 			db := &schemamodel.Database{
 				AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
-				FeatureObjects:    must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false), ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"), ydbtopic.DesiredObject("", "events", "", ydbtopic.Spec{}))),
-
-				ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "bucket"}},
-				ExternalTables:      []schemamodel.ExternalTable{{Name: "files"}},
+				FeatureObjects: must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false), ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"), ydbtopic.DesiredObject("", "events", "", ydbtopic.Spec{}),
+					ydbexternal.DesiredSourceObject("", "bucket", "", ydbexternal.DataSource{SourceType: "ObjectStorage", AuthMethod: "NONE"}),
+					ydbexternal.DesiredTableObject("", "files", "", ydbexternal.Table{DataSource: "bucket", Location: "f/",
+						Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}}))),
 
 				Transfers: []schemamodel.Transfer{{Name: "copy"}},
 				Roles:     []schemamodel.Role{{Name: "user"}},

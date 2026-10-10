@@ -9,18 +9,22 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbscheme"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func (p *Planner) scheduleFeatureChanges(
 	ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff,
-	rebuilds map[string]*tableRebuild, semantics identifier.Semantics, before, after []ast.Node,
+	rebuilds map[string]*tableRebuild, semantics identifier.Semantics, reads commonReads, before, after []ast.Node,
 ) ([]ast.Node, error) {
-	graph, err := commonGraph(semantics, diff.CurrentDatabasePath, before, after)
+	graph, err := commonGraph(semantics, diff.CurrentDatabasePath, reads, before, after)
 	if err != nil {
 		return nil, err
 	}
@@ -37,15 +41,36 @@ type commonPlan struct {
 	beforeFeatures plangraph.StepID
 	afterFeatures  plangraph.StepID
 	root           string
+	reads          commonReads
+}
+
+// commonReads records what a host statement reads that
+// [ydbscheme.CommonEffects] cannot see in it, a raw SQL statement's above all,
+// and whether it reads as an early reader: one that uses the object as it was
+// and runs before another owner alters it (see
+// [plangraph.LifecycleDependencies]).
+type commonReads map[ast.Node]commonRead
+
+type commonRead struct {
+	effects []plangraph.Effect
+	early   bool
+}
+
+// add records what node reads. A node that reads nothing is left out.
+func (r commonReads) add(node ast.Node, effects []plangraph.Effect, early bool) {
+	if len(effects) > 0 {
+		r[node] = commonRead{effects: effects, early: early}
+	}
 }
 
 // commonGraph gives each accepted statement an identity before owner planning.
 // The existing common phases retain their order. Only recognized scheme
 // operations supply footprints; other operations retain unknown metadata.
 // root is the database the plan runs in, which an absolute secret path is read
-// against; see [ydbscheme.CommonEffects].
-func commonGraph(semantics identifier.Semantics, root string, before, after []ast.Node) (commonPlan, error) {
-	graph := commonPlan{contribution: plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/ydb"}, root: root}
+// against; see [ydbscheme.CommonEffects]. reads adds what a statement reads
+// that its node does not say.
+func commonGraph(semantics identifier.Semantics, root string, reads commonReads, before, after []ast.Node) (commonPlan, error) {
+	graph := commonPlan{contribution: plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/ydb"}, root: root, reads: reads}
 	builder := objectidentity.NewBuilder(semantics)
 	if err := graph.appendNodes(builder, "before", before); err != nil {
 		return commonPlan{}, err
@@ -66,7 +91,12 @@ func (g *commonPlan) appendNodes(builder objectidentity.Builder, phase string, n
 		if err != nil {
 			return err
 		}
+		read := g.reads[node]
+		effects = append(effects, read.effects...)
 		step := plangraph.Step[[]ast.Node]{ID: plangraph.StepID{Owner: g.contribution.Owner, Name: fmt.Sprintf("common/%s/%06d", phase, i)}, Payload: []ast.Node{node}, Effects: effects}
+		if read.early {
+			step.Placement = plangraph.PlacementEarly
+		}
 		if len(effects) > 0 {
 			step.Transaction = plangraph.TransactionForbidden
 		}
@@ -98,6 +128,9 @@ func scheduleFeatures(ctx context.Context, common plangraph.Contribution[[]ast.N
 		}
 	}
 	common.Dependencies = append(common.Dependencies, ancestorEdges(common, features.Contributions)...)
+	if err := refuseDroppedSecretReads(append([]plangraph.Contribution[[]ast.Node]{common}, features.Contributions...)); err != nil {
+		return nil, err
+	}
 	lifecycle, err := plangraph.LifecycleDependencies(ctx, append([]plangraph.Contribution[[]ast.Node]{common}, features.Contributions...)...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
@@ -171,4 +204,40 @@ func schemePathUses(common plangraph.Contribution[[]ast.Node], contributions []p
 		}
 	}
 	return uses, changed
+}
+
+// refuseDroppedSecretReads refuses a plan in which one contribution drops a
+// secret that a statement of another reads by its path, such as an external
+// data source the plan creates naming a secret the plan drops. YDB records no
+// dependency on a secret (DROP SECRET succeeds while a data source names it,
+// measured on 26.2.1.14), so the plan would apply and leave the reader naming
+// a secret that is gone. The secret's owner refuses a common statement that
+// reads a secret it drops; only the host sees what other owners read.
+func refuseDroppedSecretReads(contributions []plangraph.Contribution[[]ast.Node]) error {
+	dropped := make(map[objectidentity.Key]int)
+	for index, contribution := range contributions {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				if schemaext.Kind(effect.Subject.Kind) == ydbsecret.Kind && effect.Action == plangraph.Drop {
+					dropped[effect.Subject.Key()] = index
+				}
+			}
+		}
+	}
+	for index, contribution := range contributions {
+		for _, step := range contribution.Steps {
+			for _, effect := range step.Effects {
+				owner, gone := dropped[effect.Subject.Key()]
+				if !gone || owner == index || effect.Action != plangraph.Read {
+					continue
+				}
+				name := ydbsecret.Display(effect.Subject.Schema.Source, effect.Subject.Name.Source)
+				return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+					Code: schemavalidation.InvalidSchema, Kind: "secret", Object: name,
+					Message: "secret " + name + " is dropped while a statement of this plan reads it by its path",
+				}}}).Err(platform.YDB)
+			}
+		}
+	}
+	return nil
 }

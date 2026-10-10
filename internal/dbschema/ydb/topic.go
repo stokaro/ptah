@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbtopic"
 )
@@ -267,16 +268,17 @@ var unreadTopicEntries = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_PERS_QUEUE_GROUP: ydbtopic.QueueGroupReason,
 }
 
-// unreadTopics collects the topics a walk records rather than describes, and
-// records them in the read's coverage once the walk is done.
-type unreadTopics []schemaext.SubjectCoverage
+// unreadObjects collects the feature objects a walk records rather than
+// describes, topics and external objects, and records them in the read's
+// coverage once the walk is done.
+type unreadObjects []schemaext.SubjectCoverage
 
-func (u *unreadTopics) add(schema, name, reason string) {
-	*u = append(*u, schemaext.SubjectCoverage{Kind: ydbtopic.Kind, Subject: ydbtopic.Ref(schema, name),
+func (u *unreadObjects) add(kind schemaext.Kind, ref objectidentity.ID, reason string) {
+	*u = append(*u, schemaext.SubjectCoverage{Kind: kind, Subject: ref,
 		Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: reason}})
 }
 
-func (u unreadTopics) record(db *catalog.Database) error {
+func (u unreadObjects) record(db *catalog.Database) error {
 	if len(u) == 0 {
 		return nil
 	}

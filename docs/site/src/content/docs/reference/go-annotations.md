@@ -613,17 +613,19 @@ is the usual case — declaring it instead hands Ptah the object, and that
 includes removing it.
 
 The source parser recognizes common kinds and the YDB kinds `coordination_node`,
-`streaming_query`, `resource_pool`, `resource_pool_classifier`, `secret` and
-`topic`. Dots in pool and classifier names are literal characters.
+`streaming_query`, `resource_pool`, `resource_pool_classifier`, `secret`,
+`topic`, `external_data_source` and `external_table`. Dots in pool and
+classifier names are literal characters.
 
-A secret or a topic is named by its path relative to the database root, as YDB
-writes it: a slash separates directories and a dot is part of a name.
+A secret, a topic, an external data source or an external table is named by
+its path relative to the database root, as YDB writes it: a slash separates
+directories and a dot is part of a name.
 `name="pg.pw"` is the secret `pg.pw` at the root, never `pw` in a directory
 `pg`, and `name="ext/pg.pw"` is `pg.pw` in `ext`. A path written from the
 server root, such as `/local/ext/pg.pw`, is refused. A YQL schema file takes the
 same limit in its header, as `-- ptah:not-described secret "ext/pg.pw"` or
 `-- ptah:not-described topic "app/events"`. An HCL document and an SQL file of
-another dialect refuse both kinds, since neither can declare one.
+another dialect refuse these kinds, since neither can declare one.
 
 A dotted limit such as `name="app.events"` differs from `app/events` only in
 the separator. When the database holds no root object `app.events` and the
@@ -1220,7 +1222,9 @@ other dialect refuses one. See
 | `auth_method` | Yes | `AUTH_METHOD`, such as `NONE`, `BASIC` or `SERVICE_ACCOUNT`. |
 | `options` | No | Every other option, `NAME=value` separated by `;`. `\;` writes a semicolon into a value. |
 
-A PostgreSQL source whose password the secret `ext/pg_password` holds:
+A data source declared twice, by any two declarations of any source format, is
+refused. A PostgreSQL source whose password the secret `ext/pg_password`
+holds:
 
 ```go
 //ptah:schema:externaldatasource name="warehouse" schema="ext" source_type="PostgreSQL" location="pg:5432" auth_method="BASIC" options="DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password"

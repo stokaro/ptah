@@ -163,26 +163,28 @@ func TestGenerateMigrationAST_Secrets_RefusesAMalformedChange(t *testing.T) {
 
 // TestGenerateMigrationAST_SecretReadThroughAnAbsolutePath_FailurePath reads
 // a secret path a data source writes absolute against the database the plan
-// runs in, as YDB stores it: dropping the secret it names is refused like
-// dropping one it names relative, and a path outside the database is refused.
+// runs in, as YDB stores it: dropping the secret it names is refused, though
+// the source belongs to another owner than the secret, and a path outside the
+// database is refused.
 func TestGenerateMigrationAST_SecretReadThroughAnAbsolutePath_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		path    string
 		wantErr string
 	}{
-		{name: "a dropped secret", path: "/local/ext/pw", wantErr: ".*secret ext/pw is dropped while a statement of this plan reads it by its path"},
-		{name: "another database", path: "/other/pw", wantErr: `.*secret path "/other/pw" is outside the database /local.*`},
+		{name: "a dropped secret", path: "/local/ext/pw",
+			wantErr: ".*secret ext/pw is dropped while a statement of this plan reads it by its path.*"},
+		{name: "another database", path: "/other/pw",
+			wantErr: `.*option PASSWORD_SECRET_PATH names secret "/other/pw", which is outside the database /local, so the data source cannot read it.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			source := plannedWarehouse
+			source := plannedWarehouse.Clone()
 			source.Options = map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": test.path}
 			diff := &difftypes.SchemaDiff{
-				CurrentDatabasePath:      "/local",
-				FeatureChanges:           []schemaext.ChangeRecord{secretDropped("ext", "pw")},
-				ExternalDataSourcesAdded: difftypes.ExternalDataSourceChanges{source},
+				CurrentDatabasePath: "/local",
+				FeatureChanges:      []schemaext.ChangeRecord{secretDropped("ext", "pw"), sourceChange("ext", "warehouse", nil, &source)},
 			}
 
 			nodes, err := ydb.NewWithCapabilities(externalPlanCaps(false)).GenerateMigrationAST(context.Background(), must.Must(builtin.New()), diff)

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcolumn"
-	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"

@@ -16,9 +16,9 @@ import (
 // TestCommonEffects_ReadTheSecretsAStatementNames gives each statement that
 // names a secret by its path a read of that secret, so the secret's owner can
 // order its creation first. A path written absolute names the same secret
-// relative to the database root, and reads nothing when the root is not
-// known. A deprecated object secret named by name reads nothing Ptah manages,
-// and a secret named twice is read once.
+// relative to the database root. A deprecated object secret named by name
+// reads nothing Ptah manages, and a secret named twice is read once. An
+// external data source is its owner's, and reads its secrets there.
 func TestCommonEffects_ReadTheSecretsAStatementNames(t *testing.T) {
 	builder := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
 	tests := []struct {
@@ -27,25 +27,10 @@ func TestCommonEffects_ReadTheSecretsAStatementNames(t *testing.T) {
 		node ast.Node
 		want []plangraph.Effect
 	}{
-		{name: "an external data source, the root unknown",
-			node: &ast.CreateExternalDataSourceNode{Name: "ext.pg", Options: map[string]string{ // #nosec G101 -- secret paths and an object secret's name, not credentials
-				"PASSWORD_SECRET_PATH": "ext/pg.pw", "SERVICE_ACCOUNT_SECRET_NAME": "legacy", "TOKEN_SECRET_PATH": "/local/ext/token"}},
-			want: []plangraph.Effect{{Subject: ydbscheme.Path("ext", "pg"), Action: plangraph.Create},
-				{Subject: ydbsecret.Ref("ext", "pg.pw"), Action: plangraph.Read}}},
-		{name: "an external data source in the database /local", root: "/local/",
-			node: &ast.CreateExternalDataSourceNode{Name: "ext.pg", Options: map[string]string{ // #nosec G101 -- secret paths, not credentials
-				"PASSWORD_SECRET_PATH": "/local/ext/pg.pw", "TOKEN_SECRET_PATH": "/local/./ext/token", "AWS_SECRET_PATH": "ext/pg.pw"}},
-			want: []plangraph.Effect{{Subject: ydbscheme.Path("ext", "pg"), Action: plangraph.Create},
-				{Subject: ydbsecret.Ref("ext", "pg.pw"), Action: plangraph.Read},
-				{Subject: ydbsecret.Ref("ext", "token"), Action: plangraph.Read}}},
 		{name: "an absolute replication credential", root: "/local", node: &ast.CreateAsyncReplicationNode{Name: "app.copy", Spec: ast.AsyncReplicationSpec{
 			Connection: ast.ReplicationConnectionSpec{TokenSecretPath: "/local/token"}}},
 			want: []plangraph.Effect{{Subject: ydbscheme.Path("app", "copy"), Action: plangraph.Create},
 				{Subject: ydbsecret.Ref("", "token"), Action: plangraph.Read}}},
-		{name: "a replaced data source", node: &ast.CreateExternalDataSourceNode{Name: "ext.pg", Replace: true,
-			Options: map[string]string{"PASSWORD_SECRET_PATH": "pw"}},
-			want: []plangraph.Effect{{Subject: ydbscheme.Path("ext", "pg"), Action: plangraph.Alter},
-				{Subject: ydbsecret.Ref("", "pw"), Action: plangraph.Read}}},
 		{name: "an async replication", node: &ast.CreateAsyncReplicationNode{Name: "app.copy", Spec: ast.AsyncReplicationSpec{
 			Connection: ast.ReplicationConnectionSpec{TokenSecretPath: "secrets/token", PasswordSecretPath: "secrets/token"}}},
 			want: []plangraph.Effect{{Subject: ydbscheme.Path("app", "copy"), Action: plangraph.Create},
@@ -78,7 +63,8 @@ func TestCommonEffects_RefusesASecretOutsideTheDatabase(t *testing.T) {
 		node    ast.Node
 		wantErr string
 	}{
-		{name: "another database", node: &ast.CreateExternalDataSourceNode{Name: "ext.pg", Options: map[string]string{"PASSWORD_SECRET_PATH": "/other/pw"}}, // #nosec G101 -- a secret path, not a credential
+		{name: "another database", node: &ast.CreateAsyncReplicationNode{Name: "app.copy", Spec: ast.AsyncReplicationSpec{
+			Connection: ast.ReplicationConnectionSpec{PasswordSecretPath: "/other/pw"}}}, // #nosec G101 -- a secret path, not a credential
 			wantErr: `.*secret path "/other/pw" is outside the database /local, so no statement of it can read the secret.*`},
 		{name: "a parent segment", node: &ast.AlterTransferNode{Name: "app.move", Spec: ast.TransferSpec{
 			Connection: ast.ReplicationConnectionSpec{PasswordSecretPath: "/local/../other/pw"}}}, // #nosec G101 -- a secret path, not a credential

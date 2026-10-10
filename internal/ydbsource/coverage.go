@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -27,6 +28,10 @@ type Limits struct {
 	Classifiers  []string
 	Secrets      []string
 	Topics       []string
+	// ExternalDataSources and ExternalTables name external objects by their
+	// paths, as Secrets and Topics do.
+	ExternalDataSources []string
+	ExternalTables      []string
 }
 
 const unmanagedObjectReason = "the source leaves this object unmanaged"
@@ -54,6 +59,8 @@ var sourceKinds = []sourceFamily{
 	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers", nil},
 	{ydbsecret.Kind, "secret", "secrets", []string{ydbsecret.UnsupportedReason}},
 	{ydbtopic.Kind, "topic", "topics", []string{ydbtopic.UnsupportedReason, ydbtopic.QueueGroupReason}},
+	{ydbexternal.SourceKind, "external_data_source", "external data sources", []string{ydbexternal.UnsupportedReason}},
+	{ydbexternal.TableKind, "external_table", "external tables", []string{ydbexternal.UnsupportedReason}},
 }
 
 func sourceKind(token string) schemaext.Kind {
@@ -96,6 +103,10 @@ func (l *Limits) Add(kind, name string) bool {
 		l.Secrets = append(l.Secrets, name)
 	case ydbtopic.Kind:
 		l.Topics = append(l.Topics, name)
+	case ydbexternal.SourceKind:
+		l.ExternalDataSources = append(l.ExternalDataSources, name)
+	case ydbexternal.TableKind:
+		l.ExternalTables = append(l.ExternalTables, name)
 	default:
 		return false
 	}
@@ -159,11 +170,21 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
+	sources, err := pathNamespaceCoverage(limits.ExternalDataSources, "external data source", ydbexternal.SourceKind,
+		externalPath(ydbexternal.SourceKind), ydbexternal.ValidateIdentity, ydbexternal.SourceCoverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	tables, err := pathNamespaceCoverage(limits.ExternalTables, "external table", ydbexternal.TableKind,
+		externalPath(ydbexternal.TableKind), ydbexternal.ValidateIdentity, ydbexternal.TableCoverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
 	combined, err := feeds.Combine(nodes)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, known := range []schemaext.Coverage{queries, secrets, topics} {
+	for _, known := range []schemaext.Coverage{queries, secrets, topics, sources, tables} {
 		combined, err = combined.Combine(known)
 		if err != nil {
 			return schemaext.Coverage{}, err
@@ -219,7 +240,8 @@ func namespaceCoverage(limits []string, kind schemaext.Kind,
 }
 
 // pathNamespaceCoverage records the limits of a family whose limit names the
-// object by its path, as every other spelling of a secret or a topic does: a
+// object by its path, as every other spelling of a secret, a topic or an
+// external object does: a
 // slash separates directories and a dot stays in its segment, so `pg.pw` is
 // one object at the root, never pw in a directory pg. A limit parse refuses,
 // an absolute path included, is reported with parse's reason.
@@ -237,6 +259,11 @@ func pathNamespaceCoverage(limits []string, label string, kind schemaext.Kind,
 		return ref
 	}
 	return namespaceCoverage(limits, kind, identity, validate, enroll)
+}
+
+// externalPath reads a limit on an external object of kind as its path.
+func externalPath(kind schemaext.Kind) func(string) (objectidentity.ID, error) {
+	return func(written string) (objectidentity.ID, error) { return ydbexternal.ParsePath(kind, written) }
 }
 
 // Scheme paths and database-wide workload names have different grammars. A

@@ -1748,8 +1748,10 @@ A YAML schema takes the same keys under `external_data_sources` and
 `external_tables`, with `options` as a map and each column as a `name`, a
 `type` and `not_null`. `options` holds every option of the statement besides
 the ones with an attribute of their own, `NAME=value` separated by `;`; write
-`\;` for a semicolon inside a value, as `CSV_DELIMITER=\;` does. Ptah renders
-them in this shape:
+`\;` for a semicolon inside a value, as `CSV_DELIMITER=\;` does. A path names
+one object, so declaring a data source or an external table twice is refused,
+whichever source format the two declarations come from. Ptah renders them in
+this shape:
 
 ```sql
 CREATE EXTERNAL DATA SOURCE `ext/warehouse` WITH (
@@ -1783,16 +1785,20 @@ time.
 
 YDB alters neither object, so a plan replaces one that changed. Where the
 `external_object_replace` key holds, it writes `CREATE OR REPLACE`, and the
-external tables over a replaced source stay. Without the key, and for a source
-whose type changes, the plan drops the source and creates it again, together
-with the declared external tables over it. Dropping either object loses no
-data YDB stores, so a plan reports it as a warning rather than as destructive.
+external tables over a replaced source stay. Without the key, the plan drops
+the source and creates it again, together with the external tables the
+database holds over it, which it drops first and creates again after. An
+external table reads only an object storage source, so a plan refuses a table
+over a source of another type. Dropping either object loses no data YDB
+stores, so a plan reports it as a warning rather than as destructive.
 
 A plan drops an external table before the source it reads. YDB 25.4 and later
 refuse to drop a source a table still reads (`Other entities depend on this
 data source`). 25.1 to 25.3 drop it, and the table over it then cannot be
 dropped (`path hasn't been resolved`) until a source exists at that path again.
 A plan that would drop a source a declared external table reads is refused.
+Two objects at one path are refused before anything runs, since YDB keeps one
+object at a path.
 
 The objects need the `external_data_sources` key, behind the
 `EnableExternalDataSources` flag, and `CREATE OR REPLACE` needs
@@ -1806,8 +1812,11 @@ or a view that reads one, is refused before it runs. YDB runs the check in a
 read-only transaction, and a read of an external table there still fetches the
 table's files from the object storage its source names, so Ptah describes each
 object an assertion reads first. A dev realm refuses both objects, as the
-[list below](#dev-shadow-and-scratch-databases) says. HCL, DBML and SQL
-documents cannot name either object, so their silence does not plan a drop.
+[list below](#dev-shadow-and-scratch-databases) says. A Go schema, YAML and
+YQL declare both objects; HCL, DBML and other SQL documents cannot name either,
+so their silence does not plan a drop. A source that leaves some objects
+unmanaged names each by its path, as
+`//ptah:schema:notdescribed kind="external_table" name="ext/events"` does.
 
 ## Planning changes
 
@@ -1823,8 +1832,7 @@ statement needs one that has not run yet:
    reads.
 3. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
-4. Drop removed or recreated external tables, then their data sources.
-   Drop the removed coordination nodes, so an object created at one's path
+4. Drop the removed coordination nodes, so an object created at one's path
    finds it free.
 5. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
@@ -1844,8 +1852,7 @@ statement needs one that has not run yet:
     changefeed for another stays within YDB's limit.
 12. Drop the removed tables.
 13. Create and change coordination nodes, so an object created at a dropped
-    table's path finds it free. Create or replace the external data sources
-    and tables.
+    table's path finds it free.
 14. Create the added async replications and change the changed ones, then
     the transfers, once the tables, changefeeds and topics a transfer uses
     exist.
@@ -1870,6 +1877,17 @@ that creates an object at its path or at a directory above it. Every external
 data source, async replication and transfer that names a secret by its path,
 relative or absolute, comes after the secret's creation or rotation, and a plan
 that drops a secret one of its own statements still names is refused.
+
+External data sources and external tables are planned by their owner the
+same way, in one batch. A statement on either runs as early as it can, unless
+it has to follow a statement that frees its path. Within the batch, an
+external table is dropped before the data source it read and created after the
+one it reads. A data source comes after the secrets its `_SECRET_PATH` options
+name, so a plan that drops such a secret is refused. A column table's
+eviction policy reads the sources its tiers name: the plan resets a policy
+before it drops or replaces a source the policy reads, sets it again after the
+source exists, and drops a removed column table before the source its policy
+read.
 
 Topics are planned by their owner the same way. A topic statement runs as
 early as it can, before step 1, unless a topic created at a path the plan frees,
@@ -2582,7 +2600,9 @@ EXTERNAL TABLE`. `WITH` settings take string literals without type suffixes;
 option names are case-insensitive. Quoted values retain their contents, including a space used
 as `CSV_DELIMITER`. External columns accept types and `NOT NULL`; defaults,
 keys and column families are refused. Credentials are references to secrets,
-such as `PASSWORD_SECRET_PATH`.
+such as `PASSWORD_SECRET_PATH`. An object's path is relative to the database
+root, a dot is part of a name, and a path written from the server root is
+refused.
 
 `CREATE OR REPLACE EXTERNAL` is accepted as a desired declaration. The planner
 chooses replacement or ordered drop and creation from the target's capabilities;

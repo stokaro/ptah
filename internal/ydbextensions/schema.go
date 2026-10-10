@@ -10,6 +10,7 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -29,40 +30,37 @@ func ValidateObjects(target string, caps capability.Capabilities, objects schema
 		return err
 	}
 	for _, object := range all {
-		switch value := object.Value.(type) {
-		case *ydbschema.DesiredChangefeed:
-			if err := validateChangefeedObject(target, caps, object, value); err != nil {
-				return err
-			}
-		case *ydbcoordination.Desired:
-			if err := validateCoordinationObject(target, caps, object, value); err != nil {
-				return err
-			}
-		case *ydbstreaming.Desired:
-			if err := validateStreamingObject(target, caps, object, value); err != nil {
-				return err
-			}
-		case *ydbworkload.DesiredPool:
-			if err := validatePoolObject(target, caps, object, value); err != nil {
-				return err
-			}
-		case *ydbworkload.DesiredClassifier:
-			if err := validateClassifierObject(target, caps, object, value); err != nil {
-				return err
-			}
-		case *ydbsecret.Desired:
-			if err := validateSecretObject(target, caps, object, value); err != nil {
-				return err
-			}
-		case *ydbtopic.Desired:
-			if err := validateTopicObject(target, caps, object, value); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("%w: YDB does not render feature object %s with payload %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
+		if err := validateObject(target, caps, object); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// validateObject holds one declared object to its owner's rules.
+func validateObject(target string, caps capability.Capabilities, object schemaext.Object) error {
+	switch value := object.Value.(type) {
+	case *ydbschema.DesiredChangefeed:
+		return validateChangefeedObject(target, caps, object, value)
+	case *ydbcoordination.Desired:
+		return validateCoordinationObject(target, caps, object, value)
+	case *ydbstreaming.Desired:
+		return validateStreamingObject(target, caps, object, value)
+	case *ydbworkload.DesiredPool:
+		return validatePoolObject(target, caps, object, value)
+	case *ydbworkload.DesiredClassifier:
+		return validateClassifierObject(target, caps, object, value)
+	case *ydbsecret.Desired:
+		return validateSecretObject(target, caps, object, value)
+	case *ydbtopic.Desired:
+		return validateTopicObject(target, caps, object, value)
+	case *ydbexternal.DesiredSource:
+		return validateExternalSourceObject(target, caps, object, value)
+	case *ydbexternal.DesiredTable:
+		return validateExternalTableObject(target, caps, object, value)
+	default:
+		return fmt.Errorf("%w: YDB does not render feature object %s with payload %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
+	}
 }
 
 func validatePoolObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbworkload.DesiredPool) error {
@@ -167,4 +165,25 @@ func validateSecretObject(target string, caps capability.Capabilities, object sc
 	operation := &ydbast.Secret{Operation: ydbast.SecretCreate, Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
 		ValueEnv: value.Variable(object.Ref)}
 	return ydbrender.SecretHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
+}
+
+// validateExternalSourceObject and validateExternalTableObject hold a declared
+// external object to the rules its creation is rendered with, so schema
+// validation and rendering refuse the same declarations.
+func validateExternalSourceObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbexternal.DesiredSource) error {
+	if err := ydbexternal.ValidateIdentity(object.Ref); err != nil || schemaext.Kind(object.Ref.Kind) != ydbexternal.SourceKind {
+		return fmt.Errorf("%w: data source %s has an invalid identity: %w", ptaherr.ErrInvalidSchemaDiff, object.Ref, err)
+	}
+	operation := &ydbast.ExternalDataSource{Operation: ydbast.ExternalCreate, Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
+		Spec: value.Spec}
+	return ydbrender.ExternalDataSourceHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
+}
+
+func validateExternalTableObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbexternal.DesiredTable) error {
+	if err := ydbexternal.ValidateIdentity(object.Ref); err != nil || schemaext.Kind(object.Ref.Kind) != ydbexternal.TableKind {
+		return fmt.Errorf("%w: external table %s has an invalid identity: %w", ptaherr.ErrInvalidSchemaDiff, object.Ref, err)
+	}
+	operation := &ydbast.ExternalTable{Operation: ydbast.ExternalCreate, Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
+		Spec: value.Spec}
+	return ydbrender.ExternalTableHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
 }

@@ -1,7 +1,6 @@
 package ydb
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -190,13 +190,24 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 	if err != nil {
 		return nil, err
 	}
+	for _, enroll := range []func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error){
+		ydbexternal.SourceCoverage, ydbexternal.TableCoverage,
+	} {
+		external, err := enroll(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return nil, err
+		}
+		if featureCoverage, err = featureCoverage.Combine(external); err != nil {
+			return nil, err
+		}
+	}
 	db := &catalog.Database{FeatureCoverage: featureCoverage, DatabasePath: "/" + strings.Trim(r.database, "/")}
 	// System views supply the settings of database-wide workload objects.
 	// The later walk retains any listed pool that those views did not describe.
 	if err := r.resourcePools(ctx, source, db, scope); err != nil {
 		return nil, err
 	}
-	var unread unreadTopics
+	var unread unreadObjects
 	if err := r.walk(ctx, source, "", db, &unread); err != nil {
 		return nil, err
 	}
@@ -212,21 +223,12 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 	if err := r.principals(ctx, source, db); err != nil {
 		return nil, err
 	}
-	// The walk descends into a directory where its name sorts, so an external
-	// object in a directory can come before one at the root; a description
-	// lists them by directory and name, as it lists tables.
-	slices.SortFunc(db.ExternalDataSources, func(a, b catalog.ExternalDataSource) int {
-		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
-	})
-	slices.SortFunc(db.ExternalTables, func(a, b catalog.ExternalTable) int {
-		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
-	})
 	return db, nil
 }
 
 // walk reads the directory schema, relative to the database root, and the
 // directories under it.
-func (r *Reader) walk(ctx context.Context, source Source, schema string, db *catalog.Database, unread *unreadTopics) error {
+func (r *Reader) walk(ctx context.Context, source Source, schema string, db *catalog.Database, unread *unreadObjects) error {
 	self, entries, err := source.ListDirectory(ctx, r.absolute(schema, ""))
 	if err != nil {
 		return err
@@ -255,7 +257,7 @@ func (r *Reader) entry(
 	schema string,
 	entry *Ydb_Scheme.Entry,
 	db *catalog.Database,
-	unread *unreadTopics,
+	unread *unreadObjects,
 ) error {
 	name := entry.GetName()
 	switch entry.GetType() {
@@ -292,7 +294,15 @@ func (r *Reader) entry(
 		return nil
 	}
 	if reason, topic := unreadTopicEntries[entry.GetType()]; topic {
-		unread.add(schema, name, reason)
+		unread.add(ydbtopic.Kind, ydbtopic.Ref(schema, name), reason)
+		return nil
+	}
+	switch entry.GetType() {
+	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
+		unread.add(ydbexternal.SourceKind, ydbexternal.SourceRef(schema, name), ydbexternal.UnsupportedReason)
+		return nil
+	case Ydb_Scheme.Entry_EXTERNAL_TABLE:
+		unread.add(ydbexternal.TableKind, ydbexternal.TableRef(schema, name), ydbexternal.UnsupportedReason)
 		return nil
 	}
 	kind, known := unmodeledEntries[entry.GetType()]
@@ -379,7 +389,7 @@ func (r *Reader) keyedEntry(
 
 // directory reads the directory name in schema, unless it belongs to the
 // server or to the dev realms.
-func (r *Reader) directory(ctx context.Context, source Source, schema, name string, db *catalog.Database, unread *unreadTopics) error {
+func (r *Reader) directory(ctx context.Context, source Source, schema, name string, db *catalog.Database, unread *unreadObjects) error {
 	if strings.HasPrefix(name, ".") {
 		// .sys, .metadata, .tmp and every other dot-directory belong to the
 		// server.
@@ -399,14 +409,12 @@ func (r *Reader) directory(ctx context.Context, source Source, schema, name stri
 // [capability.AsyncReplication] or [capability.Transfers], whose reader
 // records them rather than describing them.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
-	Ydb_Scheme.Entry_VIEW:                 coverage.View,
-	Ydb_Scheme.Entry_COLUMN_TABLE:         coverage.ColumnTable,
-	Ydb_Scheme.Entry_COLUMN_STORE:         coverage.ColumnTable,
-	Ydb_Scheme.Entry_SEQUENCE:             coverage.Sequence,
-	Ydb_Scheme.Entry_REPLICATION:          coverage.Replication,
-	Ydb_Scheme.Entry_TRANSFER:             coverage.Transfer,
-	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: coverage.ExternalDataSource,
-	Ydb_Scheme.Entry_EXTERNAL_TABLE:       coverage.ExternalTable,
+	Ydb_Scheme.Entry_VIEW:         coverage.View,
+	Ydb_Scheme.Entry_COLUMN_TABLE: coverage.ColumnTable,
+	Ydb_Scheme.Entry_COLUMN_STORE: coverage.ColumnTable,
+	Ydb_Scheme.Entry_SEQUENCE:     coverage.Sequence,
+	Ydb_Scheme.Entry_REPLICATION:  coverage.Replication,
+	Ydb_Scheme.Entry_TRANSFER:     coverage.Transfer,
 }
 
 // EntryStreamingQuery is the scheme entry type of a streaming query, which the

@@ -21,8 +21,8 @@ type objectChange struct {
 //
 // The named families come first so a refusal says what it refused. The last
 // check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables,
-// indexes, comments, views, topics, external objects, async replications, transfers,
-// feature changes and access changes this planner handles taken out,
+// indexes, comments, views, async replications, transfers, feature changes
+// and access changes this planner handles taken out,
 // a diff that still reports a change carries an unhandled family. Planning
 // nothing for it would report the database synced.
 func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
@@ -47,8 +47,6 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.DefaultPrivilegeOptionsAdded, rest.DefaultPrivilegeOptionsRevoked = nil, nil
 	rest.AsyncReplicationsAdded, rest.AsyncReplicationsRemoved, rest.AsyncReplicationsModified = nil, nil, nil
 	rest.TransfersAdded, rest.TransfersRemoved, rest.TransfersModified = nil, nil, nil
-	rest.ExternalDataSourcesAdded, rest.ExternalDataSourcesRemoved, rest.ExternalDataSourcesChanged = nil, nil, nil
-	rest.ExternalTablesAdded, rest.ExternalTablesRemoved, rest.ExternalTablesChanged = nil, nil, nil
 	if rest.HasChanges() {
 		return refuseFact("the plan", "it changes objects the YDB planner does not plan")
 	}
