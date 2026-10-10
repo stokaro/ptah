@@ -73,10 +73,14 @@ func ReadOnto(
 		return schemamodel.Database{}, nil, err
 	}
 	var limits ydbsource.Limits
+	var virtual sqliteVirtualLimits
 	var extension schemacoverage.HeaderExtension
 	yql := platform.NormalizeDialect(dialect) == platform.YDB
-	if yql {
+	switch {
+	case yql:
 		extension = limits.ConsumeDirective
+	case platform.NormalizeDialect(dialect) == platform.SQLite:
+		extension = virtual.consume
 	}
 	header, err := schemacoverage.DecodeHeader(string(data), extension)
 	if err != nil {
@@ -98,6 +102,12 @@ func ReadOnto(
 		// An index states its KEY_BLOCK_SIZE in its own definition, so an
 		// index without one declares none.
 		database.FeatureCoverage, err = mysqlsource.BlockSizeCoverage()
+	case platform.NormalizeDialect(dialect) == platform.SQLite:
+		// SQLite SQL spells a virtual table as CREATE VIRTUAL TABLE, so a
+		// table declared with CREATE TABLE is an ordinary one, and a document
+		// that leaves a live virtual table out asks for it to go, unless its
+		// header declines virtual tables.
+		database.FeatureCoverage, err = virtual.coverage()
 	}
 	if err != nil {
 		return schemamodel.Database{}, nil, err

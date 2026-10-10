@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbschema/sqlite"
@@ -199,13 +200,12 @@ func TestReadSchemaSeparatesShadowTablesFromUserTablesOfTheSameShape(t *testing.
 
 	docs := findTable(schema.Tables, "docs")
 	c.Assert(docs, qt.IsNotNil)
-	c.Assert(docs.VirtualModule, qt.Equals, "fts5")
-	c.Assert(docs.VirtualArguments, qt.Equals, "title, body")
+	c.Assert(virtualDeclaration(c, docs), qt.DeepEquals, sqlitetable.Virtual{Module: "fts5", Arguments: "title, body"})
 	c.Assert(docs.Columns, qt.HasLen, 0)
 
 	backup := findTable(schema.Tables, "docs_backup")
 	c.Assert(backup, qt.IsNotNil)
-	c.Assert(backup.VirtualModule, qt.Equals, "")
+	c.Assert(virtualDeclaration(c, backup), qt.DeepEquals, sqlitetable.Virtual{})
 	c.Assert(columnNames(backup.Columns), qt.DeepEquals, []string{"id", "payload"})
 }
 
@@ -244,8 +244,7 @@ func TestReadSchemaDescribesAVirtualTableOfAnUnavailableModule(t *testing.T) {
 
 	legacy := findTable(schema.Tables, "legacy")
 	c.Assert(legacy, qt.IsNotNil)
-	c.Assert(legacy.VirtualModule, qt.Equals, "fts4")
-	c.Assert(legacy.VirtualArguments, qt.Equals, "a, b")
+	c.Assert(virtualDeclaration(c, legacy), qt.DeepEquals, sqlitetable.Virtual{Module: "fts4", Arguments: "a, b"})
 
 	// The rest of the schema still reads. This is the half of the defect that
 	// was an outright failure rather than a wrong statement.
@@ -392,4 +391,14 @@ func columnNames(columns []catalog.Column) []string {
 		names = append(names, column.Name)
 	}
 	return names
+}
+
+// virtualDeclaration reads the module declaration the reader recorded on a
+// table as the SQLite owner's observed facet, or the zero value for an
+// ordinary table.
+func virtualDeclaration(c *qt.C, table *catalog.Table) sqlitetable.Virtual {
+	c.Helper()
+	declared, _, err := sqlitetable.VirtualOf(table.Facets)
+	c.Assert(err, qt.IsNil)
+	return declared
 }

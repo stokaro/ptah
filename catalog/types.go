@@ -147,6 +147,11 @@ type Database struct {
 	// UnregisteredVirtualTables lists the SQLite virtual tables this read found
 	// whose module the reading build does not register.
 	//
+	// It is a fact about the reading build, not about the schema: the same
+	// database read by a build that registers the module yields an empty list.
+	// So it is observation context, kept on the read beside DatabasePath, and
+	// not part of any table's SQLite owner facets, which describe the table.
+	//
 	// It is the description's own statement that part of this database could
 	// not be classified. SQLite reports a table as `shadow` only when the
 	// module that owns it is loaded and claims the name, so with the module
@@ -255,19 +260,6 @@ type Table struct {
 	// Unlogged reports pg_class.relpersistence = 'u': the table's writes skip
 	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
 	Unlogged bool `json:"unlogged,omitempty"`
-
-	// VirtualModule is the SQLite module that owns this table, from the USING
-	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
-	// `rtree`, `geopoly`, or any other module a build registers. It is empty
-	// for an ordinary table, and a non-empty value means the table cannot be
-	// described by CREATE TABLE at all: it has no column list of its own, and
-	// a plain table of the same name is a different object. See
-	// stokaro/ptah#1028.
-	VirtualModule string `json:"virtual_module,omitempty"`
-	// VirtualArguments is the text between the module's parentheses, verbatim.
-	// Module arguments are not SQL -- only the module interprets them -- so
-	// they are carried unparsed and reproduced byte for byte.
-	VirtualArguments string `json:"virtual_arguments,omitempty"`
 }
 
 // RawType is the type spelling a comparator holds a desired schema against.

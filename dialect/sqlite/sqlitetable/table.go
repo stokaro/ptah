@@ -1,13 +1,19 @@
-// Package sqlitetable owns the options a SQLite table is created with, STRICT
-// and WITHOUT ROWID. It holds the desired and observed table facets with their
-// codecs, the platform properties a declaration states them as, and every
-// stage's service, which engine/builtin registers on the sqlite target. No
-// other target has either option.
+// Package sqlitetable owns what a SQLite table is created as: the options STRICT
+// and WITHOUT ROWID, and the module declaration that makes a table virtual. It
+// holds the desired and observed table facets with their codecs, the platform
+// properties a declaration states the options as, and every stage's service,
+// which engine/builtin registers on the sqlite target. No other target has
+// either.
 //
 // Both options apply when a table is created. SQLite has no statement that
 // turns either on or off for a table that exists, so the owner's comparison
 // plans no change of an existing table's options, as no plan ever has; a
 // table created from a declaration is created with them.
+//
+// A virtual table's declaration defines the table
+// ([ptah.run/core/schemaext.TableDefinition]): SQLite has no ALTER VIRTUAL
+// TABLE, so the owner refuses a changed declaration rather than plan the
+// recreate that destroys the index.
 package sqlitetable
 
 import (

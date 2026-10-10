@@ -141,8 +141,14 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		guard = " IF NOT EXISTS"
 	}
 
-	if module := node.Options[ast.SQLiteVirtualModuleOption]; module != "" {
-		r.writeCreateVirtualTable(node, guard, module)
+	// A virtual table is a different statement, not a trailing option, so the
+	// owner's declaration decides the statement before anything is written.
+	virtual, err := sqlitetable.VirtualDeclaration(node.Facets)
+	if err != nil {
+		return fmt.Errorf("table %q: %w", node.Name, err)
+	}
+	if virtual != nil {
+		r.writeCreateVirtualTable(node, guard, virtual.Virtual)
 		return nil
 	}
 
@@ -606,14 +612,14 @@ func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 // with the real object later. The column list is deliberately not written --
 // a virtual table's columns come from the module, and the module arguments are
 // what recreate them. See stokaro/ptah#1028.
-func (r *Renderer) writeCreateVirtualTable(node *ast.CreateTableNode, guard, module string) {
+func (r *Renderer) writeCreateVirtualTable(node *ast.CreateTableNode, guard string, declaration sqlitetable.Virtual) {
 	r.w.Writef("CREATE VIRTUAL TABLE%s %s USING %s",
 		guard,
 		escapeQualifiedIdentifier(node.Name),
-		escapeModuleName(module),
+		escapeModuleName(declaration.Module),
 	)
-	if arguments := node.Options[ast.SQLiteVirtualArgumentsOption]; arguments != "" {
-		r.w.Writef("(%s)", arguments)
+	if declaration.Arguments != "" {
+		r.w.Writef("(%s)", declaration.Arguments)
 	}
 	// CustomSQL is deliberately not written here. CREATE VIRTUAL TABLE has no
 	// tail after the module arguments, and the two cannot arrive together: a

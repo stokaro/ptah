@@ -283,13 +283,6 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 	if engine, exists := table.Options["ENGINE"]; exists {
 		tableSchema.Engine = engine
 	}
-	// The inverse of what modelast writes. Reading these back keeps a
-	// goschema -> AST -> goschema trip from turning a virtual table into an
-	// ordinary one, which is the shape the whole defect took the first time.
-	// See stokaro/ptah#1028.
-	tableSchema.VirtualModule = table.Options[ast.SQLiteVirtualModuleOption]
-	tableSchema.VirtualArguments = table.Options[ast.SQLiteVirtualArgumentsOption]
-
 	// Extract composite primary key from constraints
 	for _, constraint := range table.Constraints {
 		if constraint.Type == ast.PrimaryKeyConstraint {
@@ -318,8 +311,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		platformOverrides := make(map[string]string)
 		for key, value := range table.Options {
 			switch key {
-			case "ENGINE", "STRICT", "WITHOUT_ROWID",
-				ast.SQLiteVirtualModuleOption, ast.SQLiteVirtualArgumentsOption:
+			case "ENGINE", "STRICT", "WITHOUT_ROWID":
 			default:
 				platformOverrides[strings.ToLower(key)] = value
 			}

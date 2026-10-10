@@ -103,13 +103,14 @@ succeeds.
 
 ## `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`
 
-By default, a comparison whose
-database side holds a SQLite virtual table is refused before anything is
-compared, naming the table and its module. No desired-state format can declare a
-virtual table, so its absence is not a request to drop it, and planning the
-removal deletes the index and everything in it. Measured on the pinned community
-binary v1.3.0, `schema diff` plans that drop plus one per shadow table and
-exits 0.
+By default, a comparison whose database side holds a SQLite virtual table that
+the desired side leaves out is refused before anything is compared, naming the
+table and its module. Planning the removal deletes the index and everything in
+it. Only a desired side that can declare a virtual table, a SQLite `.sql`
+document or a database URL, reaches the refusal; Go annotations, HCL and YAML
+cannot declare one, so a schema in them leaves the table in place. Measured on
+the pinned community binary v1.3.0, `schema diff` plans that drop plus one per
+shadow table and exits 0.
 
 - Set it to `1` and the removal is planned as before.
 - `--exclude <table>` is the other direction: the table is kept and the rest of

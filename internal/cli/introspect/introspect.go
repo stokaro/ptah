@@ -3,11 +3,14 @@ package introspect
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -110,6 +113,10 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("convert database schema: %w", err))
 	}
+	goSchema, err = withoutVirtualTables(goSchema, cmd.ErrOrStderr())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	files, err := goschematogo.Render(cmd.Context(), goSchema, goschematogo.Options{
 		Runtime:         runtime,
 		PackageName:     opts.packageName,
@@ -146,4 +153,28 @@ func validateOptions(opts options) error {
 		return fmt.Errorf("--single-file and --per-table are mutually exclusive")
 	}
 	return nil
+}
+
+// withoutVirtualTables leaves out the SQLite virtual tables a read found, and
+// names each on w. Go annotations have no syntax for one, and a struct for it
+// would declare an ordinary table with no columns, which is a different object
+// that cannot even be created. Left out, it is what a schema built from the
+// models leaves in place: the source makes no claim about virtual tables.
+func withoutVirtualTables(db *schemamodel.Database, w io.Writer) (*schemamodel.Database, error) {
+	result := *db
+	result.Tables = make([]schemamodel.Table, 0, len(db.Tables))
+	for _, table := range db.Tables {
+		declared, virtual, err := sqlitetable.VirtualOf(table.Facets)
+		if err != nil {
+			return nil, fmt.Errorf("table %q: %w", table.QualifiedName(), err)
+		}
+		if !virtual {
+			result.Tables = append(result.Tables, table)
+			continue
+		}
+		fmt.Fprintf(w, "note: %q is a SQLite virtual table (module %s), which Go annotations cannot declare,"+
+			" so the models leave it out and a schema built from them leaves it in place;"+
+			" ptah db read writes its CREATE VIRTUAL TABLE statement\n", table.QualifiedName(), declared.Module)
+	}
+	return &result, nil
 }

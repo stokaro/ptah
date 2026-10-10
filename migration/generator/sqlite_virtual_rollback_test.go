@@ -7,7 +7,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
@@ -135,7 +137,7 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 func rollbackFTS4Database() *catalog.Database {
 	return &catalog.Database{
 		Tables: []catalog.Table{
-			{Name: "docs", Type: "TABLE", VirtualModule: "fts4", VirtualArguments: "title, body"},
+			{Name: "docs", Type: "TABLE", Facets: must.Must(schemaext.NewFacets(&sqlitetable.ObservedVirtual{Virtual: sqlitetable.Virtual{Module: "fts4", Arguments: "title, body"}}))},
 			{Name: "docs_content", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "docid", DataType: "INTEGER", IsNullable: "YES", OrdinalPosition: 1},
 			}},
@@ -154,7 +156,7 @@ func rollbackFTS4Database() *catalog.Database {
 func rollbackDeclaredLiveTables() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
-			{StructName: "Doc", Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
+			{StructName: "Doc", Name: "docs", Facets: must.Must(schemaext.NewFacets(&sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: "fts4", Arguments: "title, body"}}))},
 			{StructName: "DocContent", Name: "docs_content"},
 			{StructName: "User", Name: "users"},
 		},

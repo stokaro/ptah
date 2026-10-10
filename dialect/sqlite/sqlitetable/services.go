@@ -314,11 +314,11 @@ func (ReportService) ReportValues(ctx context.Context, request schemaext.Reporti
 
 // TableOptions returns the options a table's facets declare, or nil for a
 // table that declares none. It is what the SQLite renderer writes after the
-// column list. Any other active kind is refused with
+// column list. A kind this package does not own is refused with
 // ptaherr.ErrUnsupportedFeature.
 func TableOptions(facets schemaext.Facets) (*DesiredTable, error) {
 	for _, kind := range facets.Kinds() {
-		if kind != TableKind {
+		if kind != TableKind && kind != VirtualKind {
 			return nil, fmt.Errorf("%w: SQLite table facet %q is not supported", ptaherr.ErrUnsupportedFeature, kind)
 		}
 	}

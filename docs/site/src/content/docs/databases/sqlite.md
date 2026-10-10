@@ -151,6 +151,11 @@ is for — but the loss is reported rather than left silent:
 - under `PTAH_ATLAS_STRICT_COMPAT=1` the same condition is refused, because
   strict mode owns the process output contract. The SQL format is unaffected.
 
+`ptah introspect` writes no Go struct for a virtual table, since Go annotations
+cannot declare one and a struct would declare an ordinary table with no
+columns. It names each one it leaves out on standard error, and a schema built
+from the models leaves the table in place.
+
 The module name and the text between its parentheses are carried verbatim, so
 tokenizer options, quoted values and commas inside quoted arguments survive.
 Applying that output to an empty database recreates the same object — a
@@ -212,6 +217,13 @@ is left untouched — no refusal, and no drop. A native `.sql` document and a
 database URL can both express one, so for those the ordinary declarative rule
 holds and silence still means removal, which Ptah refuses rather than plans
 because the drop is destructive.
+
+The module declaration belongs to the SQLite owner, `ptah.run/dialect/sqlite/sqlitetable`,
+as a table facet of a kind that defines what its table is. The common
+comparison compares no columns of such a table, and removes a live one only
+when the desired side's coverage describes virtual tables, which a SQLite
+`.sql` document and a SQLite read do. A desired side that makes no claim, a
+library caller's hand-built schema included, leaves the table in place.
 
 The module name is folded the way SQLite folds an identifier; the module
 arguments are compared verbatim, because only the module interprets them and
@@ -316,12 +328,12 @@ all, because SQLite has no enum type.
 - A user-created index on a recognized shadow table is refused rather than
   omitted. Ptah cannot replay that index without exposing the module-owned
   table as an ordinary schema object.
-- A desired side that does not name a live virtual table is refused rather than
-  planned as a drop, because removing one deletes the index and everything in
-  it. Name the table in a native `.sql` desired state, scope the comparison past
-  it, or set `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1` to plan the drop
-  deliberately. Go annotations, HCL and YAML have no virtual-table syntax, so
-  for those sources scoping past is the only way to leave one in place.
+- A native `.sql` desired state or a database URL that does not name a live
+  virtual table is refused rather than planned as a drop, because removing one
+  deletes the index and everything in it. Name the table, scope the comparison
+  past it, or set `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1` to plan the drop
+  deliberately. Go annotations, HCL and YAML have no virtual-table syntax, so a
+  schema in them leaves a live virtual table in place.
 - A changed declaration is refused rather than converged. Recreating a virtual
   table destroys its contents, and Ptah compares module arguments as written
   rather than normalizing them, so it cannot tell an equivalent declaration from

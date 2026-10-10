@@ -844,17 +844,17 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 func TestFromTablePreservesSQLiteVirtualTableIdentifierWhitespace(t *testing.T) {
 	c := qt.New(t)
 	table := schemamodel.Table{
-		StructName:       "VirtualDocs",
-		Schema:           " aux ",
-		Name:             " docs ",
-		VirtualModule:    "fts5",
-		VirtualArguments: "body",
+		StructName: "VirtualDocs",
+		Schema:     " aux ",
+		Name:       " docs ",
+		Facets: must.Must(schemaext.NewFacets(&sqlitetable.DesiredVirtual{
+			Virtual: sqlitetable.Virtual{Module: "fts5", Arguments: "body"},
+		})),
 	}
 
 	result := modelast.FromTable(table, nil, nil, platform.SQLite)
 
 	c.Assert(result.Name, qt.Equals, `" aux "." docs "`)
-	c.Assert(result.Options[ast.SQLiteVirtualModuleOption], qt.Equals, "fts5")
 	sql, err := builtin.RenderSQL(platform.SQLite, result)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, "CREATE VIRTUAL TABLE \" aux \".\" docs \" USING fts5(body);\n")

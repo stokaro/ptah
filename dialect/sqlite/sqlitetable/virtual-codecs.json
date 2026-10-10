@@ -1,0 +1,46 @@
+{
+  "$id": "ptah.run/sqlite/virtual-table/v1",
+  "values": {
+    "desired": {
+      "ptah.run/sqlite/virtual-table": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string",
+            "minLength": 1
+          },
+          "arguments": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "module"
+        ],
+        "additionalProperties": false,
+        "constraint": "The module declaration that creates a SQLite virtual table: CREATE VIRTUAL TABLE name USING module(arguments). The module is an identifier SQLite resolves without regard to ASCII letter case; the arguments are the text between the module's parentheses, kept as written, and are left out when the module takes none."
+      }
+    },
+    "observed": {
+      "ptah.run/sqlite/virtual-table": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string",
+            "minLength": 1
+          },
+          "arguments": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "module"
+        ],
+        "additionalProperties": false,
+        "constraint": "The module declaration a read found the virtual table created with, from the statement SQLite stored."
+      }
+    }
+  },
+  "canonicalization": "Keys are written in the order above, and empty arguments are omitted."
+}

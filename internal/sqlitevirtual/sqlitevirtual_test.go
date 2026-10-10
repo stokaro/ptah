@@ -5,11 +5,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
 )
@@ -49,8 +51,8 @@ func TestValidateExplicitURLToggleIgnoresOtherAndInvalidURLs(t *testing.T) {
 // (measured on the command, not here -- the exclusion happens before this
 // validator is reached).
 func TestValidateComparison(t *testing.T) {
-	fts5 := catalog.Table{Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "title, body"}
-	rtree := catalog.Table{Name: "geo", Type: "TABLE", VirtualModule: "rtree", VirtualArguments: "id, x0, x1"}
+	fts5 := catalog.Table{Name: "docs", Type: "TABLE", Facets: liveVirtual("fts5", "title, body")}
+	rtree := catalog.Table{Name: "geo", Type: "TABLE", Facets: liveVirtual("rtree", "id, x0, x1")}
 	users := catalog.Table{Name: "users", Type: "TABLE"}
 
 	tests := []struct {
@@ -221,7 +223,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("\u00e4"),
-			database:        []catalog.Table{{Name: "\u00c4", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
+			database:        []catalog.Table{{Name: "\u00c4", Type: "TABLE", Facets: liveVirtual("fts5", "body")}},
 			wantErr:         true,
 			wantUnsupported: true,
 			// The removal refusal, not the collision one: the two names are two
@@ -247,7 +249,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired:  declaring("docs"),
-			database: []catalog.Table{{Name: " docs ", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
+			database: []catalog.Table{{Name: " docs ", Type: "TABLE", Facets: liveVirtual("fts5", "body")}},
 			wantErr:  false,
 		},
 		{
@@ -258,7 +260,7 @@ func TestValidateComparison(t *testing.T) {
 			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired: &schemamodel.Database{Tables: []schemamodel.Table{{Schema: "aux", Name: "docs"}}},
 			database: []catalog.Table{{
-				Schema: " aux ", Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body",
+				Schema: " aux ", Name: "docs", Type: "TABLE", Facets: liveVirtual("fts5", "body"),
 			}},
 			wantErr: false,
 		},
@@ -367,16 +369,14 @@ func TestValidateComparison(t *testing.T) {
 			},
 		},
 		{
-			name:            "a nil desired state declares nothing and still refuses",
-			dialect:         "sqlite",
-			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
-			desired:         nil,
-			database:        []catalog.Table{fts5},
-			wantErr:         true,
-			wantUnsupported: true,
-			wantContains: []string{
-				`virtual table "docs" (module fts5)`,
-			},
+			// A nil desired state makes no claim about virtual tables, so the
+			// comparator keeps the table and there is no removal to refuse.
+			name:     "a nil desired state makes no claim and keeps the table",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:  nil,
+			database: []catalog.Table{fts5},
+			wantErr:  false,
 		},
 		{
 			// THE ROW THE DROP-POLICY FINDING ADDED. The refusal above says
@@ -468,9 +468,9 @@ func TestTables(t *testing.T) {
 		{
 			name: "the order is by schema then name, not catalog order",
 			database: &catalog.Database{Tables: []catalog.Table{
-				{Name: "zeta", VirtualModule: "rtree"},
-				{Name: "alpha", VirtualModule: "fts5", VirtualArguments: "title, body"},
-				{Name: "beta", Schema: "aux", VirtualModule: "geopoly"},
+				{Name: "zeta", Facets: liveVirtual("rtree", "")},
+				{Name: "alpha", Facets: liveVirtual("fts5", "title, body")},
+				{Name: "beta", Schema: "aux", Facets: liveVirtual("geopoly", "")},
 			}},
 			want: []sqlitevirtual.Table{
 				{Name: "alpha", Module: "fts5", Arguments: "title, body"},
@@ -484,7 +484,9 @@ func TestTables(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(sqlitevirtual.Tables(tt.database), qt.DeepEquals, tt.want)
+			tables, err := sqlitevirtual.Tables(tt.database)
+			c.Assert(err, qt.IsNil)
+			c.Assert(tables, qt.DeepEquals, tt.want)
 		})
 	}
 }
@@ -493,20 +495,37 @@ func TestTables(t *testing.T) {
 // is what a database URL on the desired side of `schema diff` produces.
 func declaringVirtual(name, module, arguments string) *schemamodel.Database {
 	return &schemamodel.Database{Tables: []schemamodel.Table{{
-		Name:             name,
-		VirtualModule:    module,
-		VirtualArguments: arguments,
-	}}}
+		Name:   name,
+		Facets: declaredVirtual(module, arguments),
+	}}, FeatureCoverage: describesVirtualTables()}
 }
 
-// declaring builds a desired state naming the given tables. Only the names
-// matter here: nothing a desired state can spell makes a table virtual.
+// declaring builds a desired state naming the given ordinary tables, as a
+// SQLite SQL document does: it describes virtual tables, so leaving a live one
+// out asks for its removal.
 func declaring(names ...string) *schemamodel.Database {
 	tables := make([]schemamodel.Table, 0, len(names))
 	for _, name := range names {
 		tables = append(tables, schemamodel.Table{Name: name})
 	}
-	return &schemamodel.Database{Tables: tables}
+	return &schemamodel.Database{Tables: tables, FeatureCoverage: describesVirtualTables()}
+}
+
+// describesVirtualTables is the coverage a SQLite SQL document and a SQLite
+// read record: they can state a virtual table, so their silence about one is
+// a statement.
+func describesVirtualTables() schemaext.Coverage {
+	return must.Must(sqlitetable.VirtualCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+}
+
+// liveVirtual is the facet the SQLite reader records on a virtual table.
+func liveVirtual(module, arguments string) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&sqlitetable.ObservedVirtual{Virtual: sqlitetable.Virtual{Module: module, Arguments: arguments}}))
+}
+
+// declaredVirtual is the facet a desired state declares a virtual table with.
+func declaredVirtual(module, arguments string) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: module, Arguments: arguments}}))
 }
 
 func errorText(err error) string {
@@ -516,9 +535,10 @@ func errorText(err error) string {
 	return err.Error()
 }
 
-// cannotDescribeVirtualTables marks a desired state the way the loaders mark
-// one produced by a format with no virtual-table construct.
+// cannotDescribeVirtualTables leaves a desired state the way the loaders leave
+// one produced by a format with no virtual-table construct: with no claim
+// about virtual tables.
 func cannotDescribeVirtualTables(db *schemamodel.Database) *schemamodel.Database {
-	db.NotDescribed = db.NotDescribed.WithKind(coverage.VirtualTable)
+	db.FeatureCoverage = schemaext.Coverage{}
 	return db
 }

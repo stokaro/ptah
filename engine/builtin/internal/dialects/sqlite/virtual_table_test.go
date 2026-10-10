@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
 )
 
@@ -26,8 +29,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "a module with arguments",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("docs")
-				table.SetOption(ast.SQLiteVirtualModuleOption, "fts5")
-				table.SetOption(ast.SQLiteVirtualArgumentsOption, "title, body")
+				table.Facets = declaredVirtual("fts5", "title, body")
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING fts5(title, body);\n",
@@ -36,8 +38,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "module owned surrounding whitespace is preserved",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("docs")
-				table.SetOption(ast.SQLiteVirtualModuleOption, "fts5")
-				table.SetOption(ast.SQLiteVirtualArgumentsOption, " body ")
+				table.Facets = declaredVirtual("fts5", " body ")
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING fts5( body );\n",
@@ -49,8 +50,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "arguments carrying quotes, commas and an option value",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("docs")
-				table.SetOption(ast.SQLiteVirtualModuleOption, "fts5")
-				table.SetOption(ast.SQLiteVirtualArgumentsOption, `"col,two", tokenize = 'porter unicode61'`)
+				table.Facets = declaredVirtual("fts5", `"col,two", tokenize = 'porter unicode61'`)
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING fts5(\"col,two\", tokenize = 'porter unicode61');\n",
@@ -59,7 +59,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "a module with no arguments",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("pages")
-				table.SetOption(ast.SQLiteVirtualModuleOption, "dbstat")
+				table.Facets = declaredVirtual("dbstat", "")
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"pages\" USING dbstat;\n",
@@ -68,8 +68,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "a schema-qualified virtual table",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("aux.docs")
-				table.SetOption(ast.SQLiteVirtualModuleOption, "fts5")
-				table.SetOption(ast.SQLiteVirtualArgumentsOption, "body")
+				table.Facets = declaredVirtual("fts5", "body")
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"aux\".\"docs\" USING fts5(body);\n",
@@ -78,8 +77,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "a guard the caller asked for",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("docs").SetIfNotExists()
-				table.SetOption(ast.SQLiteVirtualModuleOption, "fts5")
-				table.SetOption(ast.SQLiteVirtualArgumentsOption, "body")
+				table.Facets = declaredVirtual("fts5", "body")
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE IF NOT EXISTS \"docs\" USING fts5(body);\n",
@@ -90,8 +88,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "a module name needing quotes",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("docs")
-				table.SetOption(ast.SQLiteVirtualModuleOption, "my module")
-				table.SetOption(ast.SQLiteVirtualArgumentsOption, "body")
+				table.Facets = declaredVirtual("my module", "body")
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING \"my module\"(body);\n",
@@ -102,8 +99,7 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			name: "a module name that is a SQLite keyword",
 			build: func() *ast.CreateTableNode {
 				table := ast.NewCreateTable("docs")
-				table.SetOption(ast.SQLiteVirtualModuleOption, "select")
-				table.SetOption(ast.SQLiteVirtualArgumentsOption, "body")
+				table.Facets = declaredVirtual("select", "body")
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING \"select\"(body);\n",
@@ -130,4 +126,10 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 		})
 	}
+}
+
+// declaredVirtual is the facet that makes a table node a virtual table: the
+// SQLite owner's module declaration, which the parser and the lowering attach.
+func declaredVirtual(module, arguments string) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: module, Arguments: arguments}}))
 }

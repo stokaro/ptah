@@ -112,9 +112,9 @@ func TestSchemaSeamsCarryTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 
 // virtualDropPolicyFixture builds the one comparison both seams are measured
 // on: a live database holding an FTS5 index beside an ordinary table, and a
-// desired document naming only the ordinary one. No Ptah document can declare a
-// virtual table, so the index is undeclared on every desired side there is --
-// which is exactly the shape that plans the DROP.
+// desired SQLite SQL document naming only the ordinary one. That document
+// describes virtual tables, so leaving the index out is a request to drop it --
+// which is exactly the shape the guard refuses.
 func virtualDropPolicyFixture(c *qt.C, dir string) (dbPath, schemaPath string) {
 	c.Helper()
 

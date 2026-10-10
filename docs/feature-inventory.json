@@ -1006,6 +1006,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mysql-mysqlast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlast",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mysql-mysqlcompare",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mysql/mysqlcompare",

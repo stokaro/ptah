@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/parser"
 )
 
@@ -17,7 +18,7 @@ import (
 // the SQL parser refused it -- so `ptah db read` produced a file `ptah schema
 // diff --from file://...` rejected with "unsupported CREATE target: VIRTUAL".
 // Every other part of the pipeline was already in place: the AST carries the
-// module as an option and both conversions existed.
+// declaration as the SQLite owner's facet and both conversions existed.
 //
 // The arguments are compared verbatim rather than re-rendered from a parsed
 // structure. They are not a column list -- fts5 takes tokenizer settings,
@@ -89,8 +90,9 @@ func TestParseCreateVirtualTable_KeepsTheModuleAndItsArgumentsVerbatim(t *testin
 			table, ok := statements.Statements[0].(*ast.CreateTableNode)
 			c.Assert(ok, qt.IsTrue, qt.Commentf("got %T", statements.Statements[0]))
 			c.Assert(table.Name, qt.Equals, test.wantTable)
-			c.Assert(table.Options[ast.SQLiteVirtualModuleOption], qt.Equals, test.wantModule)
-			c.Assert(table.Options[ast.SQLiteVirtualArgumentsOption], qt.Equals, test.wantArguments)
+			declared, err := sqlitetable.VirtualDeclaration(table.Facets)
+			c.Assert(err, qt.IsNil)
+			c.Assert(declared, qt.DeepEquals, &sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: test.wantModule, Arguments: test.wantArguments}})
 			// A virtual table has no parsed column list: the arguments are the
 			// module's business, and inventing columns from them would plan
 			// statements SQLite refuses on a virtual table.

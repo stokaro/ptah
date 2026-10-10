@@ -121,16 +121,6 @@ const (
 	// read found some: recording only what was found would assert that the
 	// absence of every other one is authoritative.
 	ChangeStream Kind = "change_stream"
-	// VirtualTable is a SQLite virtual table (CREATE VIRTUAL TABLE ... USING).
-	//
-	// Unlike the kinds above it, a description usually declines this one by
-	// construction rather than by choice: Go annotations, HCL and YAML have no
-	// syntax for a virtual table at all, so their silence about one carries no
-	// intent and cannot be read as a request to drop it. A native `.sql`
-	// document and a database read can both express one and record nothing
-	// here, so their silence still means the table is gone
-	// (stokaro/ptah#1028).
-	VirtualTable Kind = "virtual_table"
 )
 
 // The YDB object families a YDB read records rather than describes. A read
@@ -189,7 +179,7 @@ var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, Grant, Policy, Range,
 	Role, Schema, Sequence, TableOption,
-	TTL, View, VirtualTable,
+	TTL, View,
 }
 
 // ParseKind resolves a serialized kind token. It refuses anything not in the
