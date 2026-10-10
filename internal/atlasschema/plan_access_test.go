@@ -10,57 +10,8 @@ import (
 	"ptah.run/migration/safety"
 )
 
-const editedOwnerReason = "the edit changed a statement that carried an owner verdict; " +
-	"its effect, access included, is unknown and manual review is required"
-
-// An edited plan re-reads every statement from its text, and SQL text cannot
-// say what an owner operation does. A statement the edit left alone keeps the
-// owner verdict it was planned with, whichever verdict its text earns; a
-// statement the edit introduced while every owned statement stayed has only
-// its text verdict.
-func TestPlanFileWithStatementsFromSQLKeepsTheOwnersVerdict(t *testing.T) {
-	tests := []struct {
-		name         string
-		recorded     atlasschema.PlanStatement
-		wantSeverity safety.Severity
-		wantReason   string
-	}{
-		{
-			name: "the recorded verdict is higher than the text",
-			recorded: atlasschema.PlanStatement{
-				SQL: "CREATE POLICY p ON t USING (true)", Severity: safety.Destructive, Owned: true,
-				Reason: "can widen access: admits every row", Access: schemaext.AccessWidens, AccessReason: "admits every row",
-			},
-			wantSeverity: safety.Destructive, wantReason: "can widen access: admits every row",
-		},
-		{
-			name: "the text is at least as high as the recorded verdict",
-			recorded: atlasschema.PlanStatement{
-				SQL: "DROP POLICY p ON t", Severity: safety.Warning, Owned: true,
-				Reason: "can narrow access: a permissive policy goes away", Access: schemaext.AccessNarrows, AccessReason: "a permissive policy goes away",
-			},
-			wantSeverity: safety.Destructive, wantReason: "DROP POLICY removes an access-control protection",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			c := qt.New(t)
-			plan := atlasschema.PlanFile{Dialect: "postgres", Statements: []atlasschema.PlanStatement{tc.recorded}}
-
-			edited := plan.WithStatementsFromSQL(tc.recorded.SQL + ";\nCREATE TABLE fresh (id integer);\n")
-
-			c.Assert(edited.Statements, qt.HasLen, 2)
-			c.Assert(edited.Statements[0].Severity, qt.Equals, tc.wantSeverity)
-			c.Assert(edited.Statements[0].Reason, qt.Equals, tc.wantReason)
-			c.Assert(edited.Statements[0].Owned, qt.IsTrue)
-			c.Assert(edited.Statements[0].Access, qt.Equals, tc.recorded.Access)
-			c.Assert(edited.Statements[0].AccessReason, qt.Equals, tc.recorded.AccessReason)
-			c.Assert(edited.Statements[1], qt.DeepEquals, atlasschema.PlanStatement{
-				SQL: "CREATE TABLE fresh (id integer)", Severity: safety.Safe, Reason: "does not remove data or tighten constraints",
-			})
-		})
-	}
-}
+const editedOwnerReason = "the edit changed a plan that carried an owner verdict; " +
+	"this statement's effect, access included, is unknown and manual review is required"
 
 var (
 	openPolicy = atlasschema.PlanStatement{
@@ -71,6 +22,10 @@ var (
 		SQL: "CREATE POLICY tenant ON t AS RESTRICTIVE USING (tenant = current_user)", Severity: safety.Warning, Owned: true,
 		Reason: "can narrow access: hides other tenants' rows", Access: schemaext.AccessNarrows, AccessReason: "hides other tenants' rows",
 	}
+	wideningPolicy = atlasschema.PlanStatement{
+		SQL: "CREATE POLICY everyone ON t USING (true)", Severity: safety.Destructive, Owned: true,
+		Reason: "can widen access: admits every row", Access: schemaext.AccessWidens, AccessReason: "admits every row",
+	}
 	rowTTL = atlasschema.PlanStatement{
 		SQL: "ALTER TABLE sessions SET (ttl_expiration_expression = 'expires_at')", Severity: safety.Warning, Owned: true,
 		Reason: "row-level TTL decides which rows a background job deletes",
@@ -78,14 +33,79 @@ var (
 	commonTable = atlasschema.PlanStatement{
 		SQL: "CREATE TABLE kept (id integer)", Severity: safety.Safe, Reason: "does not remove data or tighten constraints",
 	}
+	declaredRowDelete = atlasschema.PlanStatement{
+		SQL: "DELETE FROM ref WHERE id = 1", Severity: safety.Destructive, Reason: "the declaration no longer holds this row",
+	}
 )
 
-// An owner verdict cannot be read back out of SQL text, and an access verdict
-// was made beside sibling statements. Once an edit changes or removes a
-// statement that carried an owner verdict, every remaining owned statement and
-// every statement the edit introduced is raised to Destructive with an unknown
-// access effect. The raise keeps the reason the statement had.
-func TestPlanFileWithStatementsFromSQLFailsClosedWhenAnOwnedStatementIsEdited(t *testing.T) {
+// failedClosed is statement after an edit changed a plan that carried an
+// owner verdict: Destructive, its reason kept, with an unknown access effect.
+// A widening is stronger than unknown and stays; that row spells its result
+// out.
+func failedClosed(statement atlasschema.PlanStatement) atlasschema.PlanStatement {
+	statement.Severity, statement.Owned = safety.Destructive, true
+	statement.Reason += "; " + editedOwnerReason
+	statement.Access, statement.AccessReason = schemaext.AccessUnknown, editedOwnerReason
+	return statement
+}
+
+// An edit that leaves the statement sequence as it was keeps every recorded
+// verdict position for position, even where its text rates lower and where two
+// statements share a text but not a verdict. Comments and whitespace are not
+// part of the sequence, which is what lets a directive header be spliced in.
+func TestPlanFileWithStatementsFromSQLKeepsEveryVerdictWhenTheSequenceIsUnchanged(t *testing.T) {
+	sameText := []atlasschema.PlanStatement{
+		{SQL: "SELECT 1", Severity: safety.Warning, Owned: true, Reason: "can narrow access: r",
+			Access: schemaext.AccessNarrows, AccessReason: "r"},
+		{SQL: "SELECT 1", Severity: safety.Safe, Reason: "does not remove data or tighten constraints"},
+	}
+	tests := []struct {
+		name            string
+		recorded        []atlasschema.PlanStatement
+		edited          string
+		wantDestructive bool
+	}{
+		{name: "owner verdicts above their text", recorded: []atlasschema.PlanStatement{wideningPolicy, rowTTL, commonTable},
+			edited: wideningPolicy.SQL + ";\n" + rowTTL.SQL + ";\n" + commonTable.SQL + ";\n", wantDestructive: true},
+		{name: "a data-stage verdict above its text", recorded: []atlasschema.PlanStatement{declaredRowDelete},
+			edited: declaredRowDelete.SQL + ";\n", wantDestructive: true},
+		{name: "two statements with one text", recorded: sameText, edited: "SELECT 1;\nSELECT 1;\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan := atlasschema.PlanFile{Dialect: "postgres", Statements: tc.recorded}
+
+			edited := plan.WithStatementsFromSQL(tc.edited)
+
+			c.Assert(edited.Statements, qt.DeepEquals, tc.recorded)
+			c.Assert(edited.Destructive, qt.Equals, tc.wantDestructive)
+		})
+	}
+}
+
+func TestPlanFileWithStatementsFromSQLKeepsVerdictsAcrossCommentsAndWhitespace(t *testing.T) {
+	c := qt.New(t)
+	plan := atlasschema.PlanFile{Dialect: "postgres", Statements: []atlasschema.PlanStatement{wideningPolicy, commonTable}}
+
+	edited := plan.WithStatementsFromSQL("-- reviewed\nCREATE POLICY everyone\n  ON t USING (true);\n" + commonTable.SQL + ";\n")
+
+	reviewed := wideningPolicy
+	reviewed.SQL = "-- reviewed\nCREATE POLICY everyone\n  ON t USING (true)"
+	c.Assert(edited.Statements, qt.DeepEquals, []atlasschema.PlanStatement{reviewed, commonTable})
+	c.Assert(edited.Destructive, qt.IsTrue)
+}
+
+// Once an edit changes a plan that carried an owner verdict in any way, each
+// statement that carries an owner verdict and each statement the edit
+// introduced is raised to Destructive with an unknown access effect. Deciding
+// which edits leave an owner's verdict valid is not attempted: an owner judged
+// its statement beside the statements the plan held. A statement without an
+// owner verdict keeps the verdict recorded for its text.
+func TestPlanFileWithStatementsFromSQLFailsClosedWhenAPlanWithAnOwnerVerdictChanges(t *testing.T) {
+	enableRLS := atlasschema.PlanStatement{
+		SQL: "ALTER TABLE t ENABLE ROW LEVEL SECURITY", Severity: safety.Safe, Reason: "does not remove data or tighten constraints",
+	}
 	tests := []struct {
 		name     string
 		recorded []atlasschema.PlanStatement
@@ -97,30 +117,52 @@ func TestPlanFileWithStatementsFromSQLFailsClosedWhenAnOwnedStatementIsEdited(t 
 			recorded: []atlasschema.PlanStatement{restrictivePolicy, commonTable},
 			edited:   "CREATE POLICY tenant ON t AS RESTRICTIVE USING (true);\nCREATE TABLE kept (id integer);\n",
 			want: []atlasschema.PlanStatement{
-				{SQL: "CREATE POLICY tenant ON t AS RESTRICTIVE USING (true)", Severity: safety.Destructive, Owned: true,
-					Reason: "does not remove data or tighten constraints; " + editedOwnerReason,
-					Access: schemaext.AccessUnknown, AccessReason: editedOwnerReason},
+				failedClosed(atlasschema.PlanStatement{SQL: "CREATE POLICY tenant ON t AS RESTRICTIVE USING (true)",
+					Reason: "does not remove data or tighten constraints"}),
 				commonTable,
 			},
+		},
+		{
+			name:     "a statement added beside an unchanged owned one",
+			recorded: []atlasschema.PlanStatement{openPolicy},
+			edited:   openPolicy.SQL + ";\n" + enableRLS.SQL + ";\n",
+			want:     []atlasschema.PlanStatement{failedClosed(openPolicy), failedClosed(enableRLS)},
 		},
 		{
 			name:     "a sibling policy removed",
 			recorded: []atlasschema.PlanStatement{openPolicy, restrictivePolicy},
 			edited:   openPolicy.SQL + ";\n",
-			want: []atlasschema.PlanStatement{
-				{SQL: openPolicy.SQL, Severity: safety.Destructive, Owned: true,
-					Reason: openPolicy.Reason + "; " + editedOwnerReason,
-					Access: schemaext.AccessUnknown, AccessReason: editedOwnerReason},
-			},
+			want:     []atlasschema.PlanStatement{failedClosed(openPolicy)},
+		},
+		{
+			name:     "a statement no owner rendered removed",
+			recorded: []atlasschema.PlanStatement{openPolicy, commonTable},
+			edited:   openPolicy.SQL + ";\n",
+			want:     []atlasschema.PlanStatement{failedClosed(openPolicy)},
+		},
+		{
+			name:     "owned statements reordered",
+			recorded: []atlasschema.PlanStatement{openPolicy, restrictivePolicy},
+			edited:   restrictivePolicy.SQL + ";\n" + openPolicy.SQL + ";\n",
+			want:     []atlasschema.PlanStatement{failedClosed(restrictivePolicy), failedClosed(openPolicy)},
+		},
+		{
+			name:     "a widening stays a widening",
+			recorded: []atlasschema.PlanStatement{wideningPolicy, commonTable},
+			edited:   wideningPolicy.SQL + ";\n",
+			want: []atlasschema.PlanStatement{{
+				SQL: wideningPolicy.SQL, Severity: safety.Destructive, Owned: true,
+				Reason: wideningPolicy.Reason + "; " + editedOwnerReason,
+				Access: schemaext.AccessWidens, AccessReason: wideningPolicy.AccessReason,
+			}},
 		},
 		{
 			name:     "a lifecycle owner verdict rewritten",
 			recorded: []atlasschema.PlanStatement{rowTTL},
 			edited:   "ALTER TABLE sessions SET (ttl_expiration_expression = 'created_at');\n",
 			want: []atlasschema.PlanStatement{
-				{SQL: "ALTER TABLE sessions SET (ttl_expiration_expression = 'created_at')", Severity: safety.Destructive, Owned: true,
-					Reason: "does not remove data or tighten constraints; " + editedOwnerReason,
-					Access: schemaext.AccessUnknown, AccessReason: editedOwnerReason},
+				failedClosed(atlasschema.PlanStatement{SQL: "ALTER TABLE sessions SET (ttl_expiration_expression = 'created_at')",
+					Reason: "does not remove data or tighten constraints"}),
 			},
 		},
 		{
@@ -128,9 +170,7 @@ func TestPlanFileWithStatementsFromSQLFailsClosedWhenAnOwnedStatementIsEdited(t 
 			recorded: []atlasschema.PlanStatement{rowTTL},
 			edited:   "DROP TABLE sessions;\n",
 			want: []atlasschema.PlanStatement{
-				{SQL: "DROP TABLE sessions", Severity: safety.Destructive, Owned: true,
-					Reason: "DROP TABLE removes the table and all rows; " + editedOwnerReason,
-					Access: schemaext.AccessUnknown, AccessReason: editedOwnerReason},
+				failedClosed(atlasschema.PlanStatement{SQL: "DROP TABLE sessions", Reason: "DROP TABLE removes the table and all rows"}),
 			},
 		},
 	}
@@ -147,19 +187,45 @@ func TestPlanFileWithStatementsFromSQLFailsClosedWhenAnOwnedStatementIsEdited(t 
 	}
 }
 
-// Two statements with the same text pair with their own recorded statements,
-// in order, rather than both taking whichever was recorded last.
-func TestPlanFileWithStatementsFromSQLPairsDuplicatesInOrder(t *testing.T) {
-	c := qt.New(t)
-	plan := atlasschema.PlanFile{Dialect: "postgres", Statements: []atlasschema.PlanStatement{
-		{SQL: "SELECT 1", Severity: safety.Warning, Owned: true, Reason: "can narrow access: r",
-			Access: schemaext.AccessNarrows, AccessReason: "r"},
-		{SQL: "SELECT 1", Severity: safety.Safe, Reason: "does not remove data or tighten constraints"},
-	}}
+// In a plan without an owner verdict, a statement whose text the plan recorded
+// takes the strongest verdict recorded for that text, so a copy of a
+// destructive statement is destructive too. The edit introduces nothing an
+// owner judged, so nothing fails closed.
+func TestPlanFileWithStatementsFromSQLGivesACopyTheStrongestRecordedVerdict(t *testing.T) {
+	warned := atlasschema.PlanStatement{SQL: "SELECT 1", Severity: safety.Warning, Reason: "warned"}
+	plain := atlasschema.PlanStatement{SQL: "SELECT 1", Severity: safety.Safe, Reason: "does not remove data or tighten constraints"}
+	tests := []struct {
+		name            string
+		recorded        []atlasschema.PlanStatement
+		edited          string
+		want            []atlasschema.PlanStatement
+		wantDestructive bool
+	}{
+		{
+			name:            "a destructive data statement copied",
+			recorded:        []atlasschema.PlanStatement{declaredRowDelete},
+			edited:          declaredRowDelete.SQL + ";\n" + declaredRowDelete.SQL + ";\n",
+			want:            []atlasschema.PlanStatement{declaredRowDelete, declaredRowDelete},
+			wantDestructive: true,
+		},
+		{
+			name:     "one of two statements with one text removed",
+			recorded: []atlasschema.PlanStatement{plain, warned},
+			edited:   "SELECT 1;\n",
+			want:     []atlasschema.PlanStatement{warned},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan := atlasschema.PlanFile{Dialect: "postgres", Statements: tc.recorded}
 
-	edited := plan.WithStatementsFromSQL("SELECT 1;\nSELECT 1;\n")
+			edited := plan.WithStatementsFromSQL(tc.edited)
 
-	c.Assert(edited.Statements, qt.DeepEquals, plan.Statements)
+			c.Assert(edited.Statements, qt.DeepEquals, tc.want)
+			c.Assert(edited.Destructive, qt.Equals, tc.wantDestructive)
+		})
+	}
 }
 
 func TestDecodePlanFile_FailurePath_RefusesAnAccessAssessmentThePlannerCouldNotWrite(t *testing.T) {
