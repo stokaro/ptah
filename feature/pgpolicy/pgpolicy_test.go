@@ -28,9 +28,10 @@ var (
 
 // TestCodecs_RoundTripEveryModel pins that each representation survives its
 // codec unchanged. The values a policy's meaning hangs on are each present:
-// a keyword beside a role whose name is the keyword's spelling, a name with a
-// comma, an omitted clause beside a supplied one, restrictive composition, and
-// the two table switches apart from each other.
+// a keyword beside a role named in its spelling but upper case, which
+// PostgreSQL does not reserve, a name with a comma and one that is a space, an
+// omitted clause beside a supplied one, restrictive composition, and the two
+// table switches apart from each other.
 func TestCodecs_RoundTripEveryModel(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -40,7 +41,7 @@ func TestCodecs_RoundTripEveryModel(t *testing.T) {
 		{name: "a declared policy with every value", representation: schemaext.Desired, value: &pgpolicy.DesiredPolicy{
 			Command: pgpolicy.CommandUpdate,
 			Roles: []pgpolicy.RoleSelector{
-				{Keyword: pgpolicy.CurrentUser}, {Keyword: pgpolicy.Public}, {Name: "public"}, {Name: "app,reader"},
+				{Keyword: pgpolicy.CurrentUser}, {Name: "PUBLIC"}, {Name: "app,reader"}, {Name: " "},
 			},
 			Using: &tenant, WithCheck: &owner, Composition: pgpolicy.Restrictive, Comment: "tenants", StructName: "Tenant",
 		}},
@@ -48,8 +49,11 @@ func TestCodecs_RoundTripEveryModel(t *testing.T) {
 		{name: "a declared INSERT policy", representation: schemaext.Desired,
 			value: &pgpolicy.DesiredPolicy{Command: pgpolicy.CommandInsert, WithCheck: &owner}},
 		{name: "an observed policy", representation: schemaext.Observed, value: &pgpolicy.ObservedPolicy{
-			Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}, {Name: "Mixed Case"}},
+			Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: "reader"}, {Name: "Mixed Case"}},
 			Using: &tenant, Composition: pgpolicy.Permissive, Comment: "c",
+		}},
+		{name: "an observed policy for every role", representation: schemaext.Observed, value: &pgpolicy.ObservedPolicy{
+			Command: pgpolicy.CommandDelete, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}, Using: &tenant, Composition: pgpolicy.Permissive,
 		}},
 		{name: "an observed SELECT policy", representation: schemaext.Observed, value: &pgpolicy.ObservedPolicy{
 			Command: pgpolicy.CommandSelect, Roles: []pgpolicy.RoleSelector{{Name: "reader"}}, Using: &tenant, Composition: pgpolicy.Restrictive,
@@ -84,16 +88,16 @@ func TestCodecs_RoundTripEveryModel(t *testing.T) {
 func TestCodecs_EncodeRolesAsASet(t *testing.T) {
 	c := qt.New(t)
 	codecs := registry(c)
-	first := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Composition: pgpolicy.Permissive,
-		Roles: []pgpolicy.RoleSelector{{Name: "writer"}, {Keyword: pgpolicy.Public}, {Name: "reader"}}}
-	second := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Composition: pgpolicy.Permissive,
-		Roles: []pgpolicy.RoleSelector{{Name: "reader"}, {Name: "writer"}, {Keyword: pgpolicy.Public}}}
+	first := &pgpolicy.DesiredPolicy{
+		Roles: []pgpolicy.RoleSelector{{Name: "writer"}, {Keyword: pgpolicy.SessionUser}, {Name: "reader"}, {Keyword: pgpolicy.CurrentUser}}}
+	second := &pgpolicy.DesiredPolicy{
+		Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.CurrentUser}, {Name: "reader"}, {Keyword: pgpolicy.SessionUser}, {Name: "writer"}}}
 
-	encoded := must.Must(codecs.Encode(t.Context(), schemaext.Observed, []schemaext.Payload{first, second}))
+	encoded := must.Must(codecs.Encode(t.Context(), schemaext.Desired, []schemaext.Payload{first, second}))
 
 	c.Assert(string(encoded[0].Payload), qt.Equals, string(encoded[1].Payload))
 	c.Assert(string(encoded[0].Payload), qt.Equals,
-		`{"command":"ALL","composition":"permissive","roles":[{"keyword":"PUBLIC"},{"name":"reader"},{"name":"writer"}]}`)
+		`{"roles":[{"keyword":"CURRENT_USER"},{"keyword":"SESSION_USER"},{"name":"reader"},{"name":"writer"}]}`)
 	c.Assert(first.Equal(second), qt.IsTrue)
 	c.Assert(first.Roles[0], qt.Equals, pgpolicy.RoleSelector{Name: "writer"}, qt.Commentf("encoding leaves the value alone"))
 }
@@ -123,6 +127,14 @@ func TestCodecs_RefuseWhatTheModelCannotHold(t *testing.T) {
 		{name: "a role with an unknown key", codec: desired, input: `{"roles":[{"role":"reader"}]}`},
 		{name: "an unknown role keyword", codec: desired, input: `{"roles":[{"keyword":"ALL"}]}`},
 		{name: "a role listed twice", codec: desired, input: `{"roles":[{"name":"reader"},{"name":"reader"}]}`},
+		{name: "the reserved role name public", codec: desired, input: `{"roles":[{"name":"public"}]}`},
+		{name: "the reserved role name none", codec: desired, input: `{"roles":[{"name":"none"}]}`},
+		{name: "PUBLIC beside another role", codec: desired, input: `{"roles":[{"keyword":"PUBLIC"},{"name":"reader"}]}`},
+		{name: "an empty role name", codec: desired, input: `{"roles":[{"name":""}]}`},
+		{name: "an empty keyword beside a name", codec: desired, input: `{"roles":[{"keyword":"","name":"reader"}]}`},
+		{name: "a keyword beside an empty name", codec: desired, input: `{"roles":[{"keyword":"PUBLIC","name":""}]}`},
+		{name: "an empty command", codec: desired, input: `{"command":""}`},
+		{name: "an empty composition", codec: desired, input: `{"composition":""}`},
 		{name: "an empty USING expression", codec: desired, input: `{"using":" "}`},
 		{name: "an INSERT policy with USING", codec: desired, input: `{"command":"INSERT","using":"true"}`},
 		{name: "a SELECT policy with WITH CHECK", codec: desired, input: `{"command":"SELECT","with_check":"true"}`},
@@ -134,6 +146,12 @@ func TestCodecs_RefuseWhatTheModelCannotHold(t *testing.T) {
 			input: `{"command":"ALL","roles":[{"keyword":"CURRENT_USER"}],"composition":"permissive"}`},
 		{name: "an observation with a declaration's key", codec: observed,
 			input: `{"command":"ALL","roles":[{"keyword":"PUBLIC"}],"composition":"permissive","struct_name":"T"}`},
+		{name: "an observation of a role selector with both keys", codec: observed,
+			input: `{"command":"ALL","roles":[{"keyword":"PUBLIC","name":"reader"}],"composition":"permissive"}`},
+		{name: "an observation of the reserved role name", codec: observed,
+			input: `{"command":"ALL","roles":[{"name":"public"}],"composition":"permissive"}`},
+		{name: "an observation of PUBLIC beside another role", codec: observed,
+			input: `{"command":"ALL","roles":[{"name":"reader"},{"keyword":"PUBLIC"}],"composition":"permissive"}`},
 		{name: "a declared table without its forced flag", codec: desiredTable, input: `{"enabled":true}`},
 		{name: "an observed table with a declaration's key", codec: observedTable, input: `{"enabled":true,"forced":false,"comment":"c"}`},
 	}
@@ -224,8 +242,9 @@ func TestValues_EqualResolvesNoDefault(t *testing.T) {
 }
 
 // TestPolicyRef pins the identity rules: the table is part of a policy's
-// identity, and the parts are kept apart rather than joined, so a dot inside
-// a name cannot make two policies one.
+// identity, the parts are kept apart rather than joined, so a dot inside a
+// name cannot make two policies one, and no part is trimmed, because
+// PostgreSQL keeps a policy named " p" beside one named "p".
 func TestPolicyRef(t *testing.T) {
 	c := qt.New(t)
 	onOrders := pgpolicy.PolicyRef("app", "orders", "tenant")
@@ -235,6 +254,9 @@ func TestPolicyRef(t *testing.T) {
 
 	c.Assert(onOrders.Key(), qt.Not(qt.Equals), onInvoices.Key())
 	c.Assert(dotted.Key(), qt.Not(qt.Equals), split.Key())
+	c.Assert(pgpolicy.PolicyRef("app", "orders", " p").Key(), qt.Not(qt.Equals), pgpolicy.PolicyRef("app", "orders", "p").Key())
+	c.Assert(pgpolicy.PolicyRef("app", " orders", "p").Key(), qt.Not(qt.Equals), pgpolicy.PolicyRef("app", "orders", "p").Key())
+	c.Assert(pgpolicy.ValidatePolicyRef(pgpolicy.PolicyRef("app", "orders", " ")), qt.IsNil)
 	c.Assert(pgpolicy.ValidatePolicyRef(onOrders), qt.IsNil)
 	c.Assert(pgpolicy.Table(onOrders).Key(), qt.Equals, objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("app", "orders").Key())
 	c.Assert(pgpolicy.PolicyRef("", "orders", "tenant").Key(), qt.Equals,
@@ -249,6 +271,8 @@ func TestPolicyRef_FailurePath(t *testing.T) {
 	}{
 		{name: "the common policy kind", ref: builder.PolicyParts("app", "orders", "tenant")},
 		{name: "no table", ref: objectidentity.ID{Kind: objectidentity.Kind(pgpolicy.PolicyKind), Name: pgpolicy.PolicyRef("", "t", "p").Name}},
+		{name: "no schema", ref: pgpolicy.PolicyRefWith(identifier.Semantics{}, "", "t", "p")},
+		{name: "an empty name", ref: pgpolicy.PolicyRef("app", "t", "")},
 		{name: "a signature", ref: func() objectidentity.ID {
 			ref := pgpolicy.PolicyRef("", "t", "p")
 			ref.Signature = "(int)"
@@ -291,6 +315,9 @@ func TestPolicyObjects_FailurePath(t *testing.T) {
 	observedObject, observedErr := pgpolicy.ObservedPolicyObject(ref, pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll})
 
 	c.Assert(desiredErr, qt.ErrorMatches, `desired model "ptah.run/pgpolicy/policy": .*unknown policy composition "shared"`)
+	var invalid *schemaext.InvalidModelError
+	c.Assert(desiredErr, qt.ErrorAs, &invalid, qt.Commentf("the census recognizes the typed error"))
+	c.Assert(invalid.Kind, qt.Equals, pgpolicy.PolicyKind)
 	c.Assert(desiredObject, qt.DeepEquals, schemaext.Object{})
 	c.Assert(observedErr, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(observedObject, qt.DeepEquals, schemaext.Object{})

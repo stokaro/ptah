@@ -18,7 +18,8 @@ type DesiredTableState struct {
 	Enabled bool `json:"enabled"`
 	Forced  bool `json:"forced"`
 	// Comment is written before the statements. It is source documentation,
-	// not a catalog property, and never takes part in a comparison.
+	// not a catalog property: a schema comparison ignores it, while Equal,
+	// which compares values field by field, does not.
 	Comment string `json:"comment,omitempty"`
 	// StructName preserves the Go struct a declaration was read from.
 	StructName string `json:"struct_name,omitempty"`

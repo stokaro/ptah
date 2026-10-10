@@ -57,13 +57,14 @@ const (
 )
 
 // RoleSelector is one entry of a policy's TO list: exactly one of a keyword or
-// a role name. The two never collapse into each other: a role a source quoted
-// as "public" is a role named public, not the PUBLIC keyword, and a name keeps
-// its exact spelling, commas included.
+// a role name. A name keeps its exact bytes, spaces and commas included, and is
+// never a comma-separated list of names.
 //
-// The catalog records the role a CURRENT_ROLE, CURRENT_USER or SESSION_USER
-// keyword resolved to when the policy was created, so an observation carries
-// only the PUBLIC keyword and role names.
+// PostgreSQL reserves the role names public and none, and stores TO "public" as
+// PUBLIC, so neither is accepted as a name: PUBLIC is the keyword. The catalog
+// records the role a CURRENT_ROLE, CURRENT_USER or SESSION_USER keyword
+// resolved to when the policy was created, so an observation carries only the
+// PUBLIC keyword and role names.
 type RoleSelector struct {
 	Keyword RoleKeyword `json:"keyword,omitempty"`
 	Name    string      `json:"name,omitempty"`
@@ -79,7 +80,9 @@ type RoleSelector struct {
 type DesiredPolicy struct {
 	Command Command `json:"command,omitempty"`
 	// Roles is the TO list. Order carries no meaning, so equality and the
-	// canonical encoding treat it as a set.
+	// canonical encoding treat it as a set. PUBLIC stands alone: PostgreSQL
+	// keeps only PUBLIC from a list that holds it, so a list naming PUBLIC
+	// beside other roles is refused rather than reduced.
 	Roles []RoleSelector `json:"roles,omitempty"`
 	// Using is the USING expression, which filters the rows a command sees.
 	Using *string `json:"using,omitempty"`
@@ -99,7 +102,10 @@ type DesiredPolicy struct {
 // instead of filling in a default.
 type ObservedPolicy struct {
 	Command Command `json:"command"`
-	// Roles is never empty: a policy for every role reports the PUBLIC keyword.
+	// Roles is never empty: a policy for every role reports the PUBLIC keyword
+	// alone. It is a set. pg_policy.polroles can list one role twice, for a
+	// policy created TO CURRENT_USER, SESSION_USER by that user, and a reader
+	// records such a role once.
 	Roles []RoleSelector `json:"roles"`
 	// Using and WithCheck are nil for a policy without the clause.
 	Using       *string     `json:"using,omitempty"`
@@ -171,17 +177,23 @@ func (v *ObservedPolicy) Equal(other schemaext.Value) bool {
 // the identity: a policy name is scoped to its table, so two tables may each
 // hold a policy of the same name. An empty schema takes the default and is
 // marked as defaulted.
+//
+// The parts are the bare names the catalog stores and are used as they are,
+// without trimming: PostgreSQL keeps a policy named " p" beside one named "p"
+// on the same table.
 func PolicyRef(schema, table, name string) objectidentity.ID {
 	return PolicyRefWith(identifier.ForDialect(platform.Postgres), schema, table, name)
 }
 
 // PolicyRefWith builds the identity under explicit identifier rules, which is
 // how a comparison pairs a declaration and an observation that spelled the same
-// table differently.
+// table differently. Like [PolicyRef], it does not trim the parts.
 func PolicyRefWith(semantics identifier.Semantics, schema, table, name string) objectidentity.ID {
-	ref := objectidentity.NewBuilder(semantics).PolicyParts(schema, table, name)
-	ref.Kind = objectidentity.Kind(PolicyKind)
-	return ref
+	owner := objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema, table)
+	return objectidentity.ID{
+		Kind: objectidentity.Kind(PolicyKind), Schema: owner.Schema, Parent: owner.Name,
+		Name: objectidentity.Part{Source: name, Normalized: semantics.TableIdentityKey(name)},
+	}
 }
 
 // Table returns the identity of the table a policy reference is on.
@@ -189,12 +201,14 @@ func Table(ref objectidentity.ID) objectidentity.ID {
 	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 }
 
-// ValidatePolicyRef requires an identity of this kind with a name and a table,
-// and no catalog or signature.
+// ValidatePolicyRef requires an identity of this kind with a schema, a table
+// and a name, and no catalog or signature. A schema the source left out is the
+// resolved default, so [Table] always returns a qualified table identity.
 func ValidatePolicyRef(ref objectidentity.ID) error {
-	if ref.Kind != objectidentity.Kind(PolicyKind) || strings.TrimSpace(ref.Name.Source) == "" || ref.Name.Normalized == "" ||
-		strings.TrimSpace(ref.Parent.Source) == "" || ref.Parent.Normalized == "" || !ref.Catalog.Empty() || ref.Signature != "" {
-		return fmt.Errorf("%w: a row-security policy requires a table-scoped identity", schemaext.ErrInvalidValue)
+	if ref.Kind != objectidentity.Kind(PolicyKind) || ref.Name.Source == "" || ref.Name.Normalized == "" ||
+		ref.Parent.Source == "" || ref.Parent.Normalized == "" || ref.Schema.Source == "" || ref.Schema.Normalized == "" ||
+		!ref.Catalog.Empty() || ref.Signature != "" {
+		return fmt.Errorf("%w: a row-security policy requires a schema, a table and a name", schemaext.ErrInvalidValue)
 	}
 	return nil
 }
@@ -285,7 +299,9 @@ func validCommand(command Command) bool {
 }
 
 // validateRoles requires each selector to be exactly one of an accepted
-// keyword or a name, and no selector to appear twice.
+// keyword or a name that is not reserved, PUBLIC to stand alone, and no
+// selector to appear twice. A name is any non-empty text: PostgreSQL accepts a
+// role named " ".
 func validateRoles(roles []RoleSelector, keywords []RoleKeyword) error {
 	seen := make(map[RoleSelector]bool, len(roles))
 	for _, role := range roles {
@@ -294,8 +310,10 @@ func validateRoles(roles []RoleSelector, keywords []RoleKeyword) error {
 			return fmt.Errorf("%w: a role selector is a keyword or a name, not both", schemaext.ErrInvalidValue)
 		case role.Keyword != "" && !slices.Contains(keywords, role.Keyword):
 			return fmt.Errorf("%w: role keyword %q is not accepted here", schemaext.ErrInvalidValue, role.Keyword)
-		case role.Keyword == "" && strings.TrimSpace(role.Name) == "":
+		case role.Keyword == "" && role.Name == "":
 			return fmt.Errorf("%w: a role selector needs a keyword or a name", schemaext.ErrInvalidValue)
+		case role.Name == "public" || role.Name == "none":
+			return fmt.Errorf("%w: PostgreSQL reserves the role name %q; use the PUBLIC keyword for every role", schemaext.ErrInvalidValue, role.Name)
 		}
 		if err := validText("role name", role.Name); err != nil {
 			return err
@@ -304,6 +322,9 @@ func validateRoles(roles []RoleSelector, keywords []RoleKeyword) error {
 			return fmt.Errorf("%w: role selector %s appears twice", schemaext.ErrInvalidValue, role)
 		}
 		seen[role] = true
+	}
+	if len(roles) > 1 && seen[RoleSelector{Keyword: Public}] {
+		return fmt.Errorf("%w: PUBLIC stands alone: PostgreSQL keeps only PUBLIC from a list that names other roles beside it", schemaext.ErrInvalidValue)
 	}
 	return nil
 }
@@ -363,11 +384,29 @@ func sortedRoles(roles []RoleSelector) []RoleSelector {
 	return sorted
 }
 
+// sameRoles compares two role lists as sets, counting each selector on both
+// sides so an invalid list with a repeat compares correctly too. The lists are
+// short, so counting allocates nothing and costs less than sorting copies.
 func sameRoles(left, right []RoleSelector) bool {
-	if (left == nil) != (right == nil) {
+	if (left == nil) != (right == nil) || len(left) != len(right) {
 		return false
 	}
-	return slices.Equal(sortedRoles(left), sortedRoles(right))
+	for _, role := range left {
+		if count(left, role) != count(right, role) {
+			return false
+		}
+	}
+	return true
+}
+
+func count(roles []RoleSelector, role RoleSelector) int {
+	n := 0
+	for _, candidate := range roles {
+		if candidate == role {
+			n++
+		}
+	}
+	return n
 }
 
 func cloneText(value *string) *string {
