@@ -749,6 +749,9 @@ the error:
   `ptaherr.ErrUnsupportedDialect`;
 - invalid schema diffs rejected during planning should support `errors.Is` with
   `ptaherr.ErrInvalidSchemaDiff`;
+- a plan a planner built in breach of the planning contract, such as an owner
+  operation sharing a node with other work, supports `errors.Is` with
+  `migration/planner.ErrInvalidPlan`;
 - shadow candidate and baseline verification should support `errors.As` with
   `*shadow.VerificationError`;
 - command wrappers should preserve typed errors instead of replacing them with

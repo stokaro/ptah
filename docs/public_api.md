@@ -1238,49 +1238,57 @@ it cannot validate is reported as `AccessUnknown`, never as unchanged.
 operation (an `ExtensionStatement`, an `ExtensionAlterOperation`, an ALTER
 TABLE whose only operation is one, or a statement list holding only such a
 node), and `MixedExtension` for a node holding an owner operation beside other
-work or more than one. `migration/planner.GenerateSchemaDiffASTWithOptions`
-refuses a plan containing a `MixedExtension` node with an error wrapping
-`ptaherr.ErrInvalidSchemaDiff`, whichever planner built it. The bundled
-planners build every owner operation as a node of its own.
+work or more than one. `OwnerOperations` returns the owner payloads a node
+carries, read from the same node shapes.
+`migration/planner.GenerateSchemaDiffASTWithOptions` refuses a plan containing
+a `MixedExtension` node with an error wrapping
+`migration/planner.ErrInvalidPlan`, whichever planner built it. That error
+names a planner that broke the planning contract, not a defect in the diff, so
+it is not `ptaherr.ErrInvalidSchemaDiff`. The bundled planners build every
+owner operation as a node of its own.
 
 `StatementAssessment.Access` and `AccessReason` report the assessment for each
 statement an isolated owner operation rendered, and stay empty for every
 statement no owner operation rendered. Every statement of an isolated node
 takes that node's verdict, and only its own: a policy beside a `DROP TABLE` in
 the plan keeps its verdict, and two policies keep two. A statement rendered by
-a `MixedExtension` node is `Destructive`, with an unknown access effect when
-the owner operation makes an access claim, because which of its statements the
-operation wrote is not known. Nothing is rendered twice. A node carrying
-several assessed operations reports the strongest, in the order unchanged,
-narrows, unknown, widens. The text and HTML reports print it under the
-statement. `AccessSeverity` is the severity an assessment requires.
+a `MixedExtension` node takes the node's verdict raised to `Destructive`, with
+an unknown access effect when the owner operation makes an access claim,
+because which of its statements the operation wrote is not known. Raising
+keeps a widening the node established. Nothing is rendered twice. A node
+carrying several assessed operations reports the strongest, in the order
+unchanged, narrows, unknown, widens. The text and HTML reports print it under
+the statement. `AccessSeverity` is the severity an assessment requires.
 
 `ClassifySchemaDiff` counts assessed changes under
 `feature_access_widened:<kind>`, `feature_access_narrowed:<kind>`,
 `feature_access_unchanged:<kind>`, and `feature_access_unknown:<kind>`, apart
-from their `feature_changes:<kind>` lifecycle finding. A change that declares
-an assessment and cannot be snapshotted is counted under
-`feature_access_unknown`, without a kind.
+from their `feature_changes:<kind>` lifecycle finding. A change that cannot be
+snapshotted, an invalid assessment included, is counted as `Destructive` under
+`feature_changes:<kind>` and, when it declares an assessment,
+`feature_access_unknown:<kind>`; the kind is left out only when the change
+names no valid one. Encoding the same diff through the owners' codecs refuses
+that change instead. Comparison snapshots every change through its owner's
+codec, so only a diff assembled by hand carries one.
 
 `migration/planner.GenerateSchemaDiffRenderedPlan` plans and renders a diff
 once and returns a `RenderedPlan`: the rendering request, which holds the
-planned nodes, and one fragment per node. Its `SQL` and `Statements` are what
-`GenerateSchemaDiffSQLWithOptions` and
-`GenerateSchemaDiffSQLStatementsWithOptions` return for the same input.
-`safety.OwnerVerdicts` takes that request, result, and statement list and
-returns, position for position, the verdict of the owner operation that
-rendered each statement, or a zero assessment. Attribution is by position:
-the executable statements of the fragments, in node order, are matched one
-for one with the executable statements of the plan, and no statement text is
-compared. A comment-only piece of a fragment is not counted, because the plan
-joins it to the next statement.
+planned nodes, and one fragment per node. `PlannedStatements` splits it one
+fragment at a time and gives each statement the index of the node that
+rendered it, or -1 for a comment no statement follows. A comment-only piece of
+a fragment joins the next statement and takes its node, and no fragment's
+statements run into the next fragment's. `Statements` is the SQL of
+`PlannedStatements`, and `SQL` the joined script; they are what
+`GenerateSchemaDiffSQLStatementsWithOptions` and
+`GenerateSchemaDiffSQLWithOptions` return for the same input.
 
-When the counts differ, as when a fragment does not terminate its last
-statement, and the plan carries an owner operation, every statement gets a
-`Destructive` verdict, with an unknown access effect when an owner operation
-makes an access claim. `Fold` attaches a verdict to the same statement
-classified from its text: the severity only rises and the strongest access
-assessment is kept.
+`safety.OwnerVerdicts` takes the planned nodes and that provenance and returns,
+position for position, the verdict of the owner operation that rendered each
+statement, or a zero assessment. A statement an owner operation rendered always
+carries a severity. Nothing is split, counted or compared there, and an index
+outside the nodes is refused with `renderer.ErrInvalidResult`. `Fold` attaches
+a verdict to the same statement classified from its text: the severity only
+rises and the strongest access assessment is kept.
 
 A saved schema plan uses `OwnerVerdicts` and `Fold`. The JSON plan marks each
 statement an owner operation rendered with `owned` and records `access`,
@@ -1289,13 +1297,16 @@ unrecognized access value, an access value without its reason, a reason
 without a value, an access value on a statement that is not `owned`, and a
 severity below the one the access value requires.
 
-An `--edit` pairs each edited statement with a recorded one by text, in plan
-order, so identical statements keep their own verdicts. When the edit changes
-or removes an `owned` statement, every remaining `owned` statement and every
-statement the edit introduced is raised to `Destructive` with an unknown
-access effect; the raise keeps the reason the statement had and never lowers
-an access value. The Atlas `.plan.hcl` format stores SQL alone, so a plan read
-back from it has only the text verdict.
+An `--edit` that leaves the statement sequence as it was, comments and
+whitespace aside, keeps every recorded verdict by position. After any other
+edit, a statement whose text the plan recorded takes the strongest verdict
+recorded for that text. When the plan carried an `owned` statement, every
+statement that carries an owner verdict and every statement the edit
+introduced is then raised to `Destructive` with an unknown access effect; the
+raise keeps the reason the statement had and never lowers an access value. The
+edit does not try to decide which changes leave an owner's verdict valid;
+planning again gives fresh verdicts. The Atlas `.plan.hcl` format stores SQL
+alone, so a plan read back from it has only the text verdict.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table

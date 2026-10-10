@@ -407,9 +407,11 @@ reports print it beside the statement, and diff findings count it under
 `feature_access_unchanged:<kind>` or `feature_access_unknown:<kind>`; a
 widening or unknown effect is destructive, a narrowing is a warning.
 
-Plan each owner operation as a node of its own: planning refuses a node that holds one
-beside other work, because a report could not tell which statements the
-operation wrote.
+Plan each owner operation as a node of its own. Planning refuses a node that
+holds one beside other work with `migration/planner.ErrInvalidPlan`, because a
+report could not tell which statements the operation wrote. Each statement of
+a saved plan keeps the node that rendered it, so an owner's verdict reaches its
+own statements and no others.
 
 YDB inspection records unknown coordination settings as incomplete subject
 coverage. Go and HCL export refuse those limits before writing output, because

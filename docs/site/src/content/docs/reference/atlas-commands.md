@@ -1475,7 +1475,7 @@ What it is chosen to match is the sibling verb: `.Changes[].Cmd` is
 | `.Exclude` | Exclusion patterns the plan was computed with; omitted when there are none. |
 | `.Destructive` | Whether any statement was classified destructive. |
 | `.Changes` | Ordered planned statements, each with `.Cmd`, `.Severity` and `.Reason`. Always a list, so a synced schema renders an empty array rather than a sentence. |
-| `.Changes[].Access`, `.Changes[].AccessReason` | The access assessment the plan recorded for a statement a feature owner's operation rendered: `widens`, `narrows`, `unchanged` or `unknown`, and why. Empty for every other statement. |
+| `.Changes[].Access`, `.Changes[].AccessReason` | The access assessment the plan recorded for a statement a feature owner's operation rendered: `widens`, `narrows`, `unchanged` or `unknown`, and why. Empty for every other statement, and left out of `{{ json . }}`. |
 | `.MigrationBody` | The plan file's `migration` attribute exactly as written, directives included. Read this to reproduce the artifact; read `.Changes` or `sql` to describe it. |
 
 `sql` renders the statements as one script and takes the same optional indent
