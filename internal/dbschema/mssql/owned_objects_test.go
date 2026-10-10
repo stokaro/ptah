@@ -15,6 +15,20 @@ import (
 	"ptah.run/internal/dbschema/mssql"
 )
 
+// answeringPropertiesThen answers the reader's extended property query with
+// rows and hands every other query to next.
+func answeringPropertiesThen(rows [][]driver.Value, next dbtest.QueryHandler) dbtest.QueryHandler {
+	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		if strings.Contains(query, "SQL_VARIANT_PROPERTY") {
+			return dbtest.QueryResult{
+				Columns: []string{"schema_name", "table_name", "column_name", "name", "value", "base_type"},
+				Rows:    rows,
+			}, nil
+		}
+		return next(query, args)
+	}
+}
+
 // TestReader_KeepsEveryOwnersObjects reads an extended property and a security
 // policy in one pass. Each owner's objects join the read, so a read that
 // recorded one owner's and then replaced them with the next one's reported a
@@ -23,15 +37,7 @@ import (
 func TestReader_KeepsEveryOwnersObjects(t *testing.T) {
 	c := qt.New(t)
 	policies := answeringPolicies([][]driver.Value{{"rls", "dormant", false, false, false, nil, nil, nil, nil, nil}})
-	db := dbtest.Open(t, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
-		if strings.Contains(query, "SQL_VARIANT_PROPERTY") {
-			return dbtest.QueryResult{
-				Columns: []string{"schema_name", "table_name", "column_name", "name", "value", "base_type"},
-				Rows:    [][]driver.Value{{"app", "", "", "ptah_flag", "on", "nvarchar"}},
-			}, nil
-		}
-		return policies(query, args)
-	})
+	db := dbtest.Open(t, answeringPropertiesThen([][]driver.Value{{"app", "", "", "ptah_flag", "on", "nvarchar"}}, policies))
 
 	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
 
