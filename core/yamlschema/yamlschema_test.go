@@ -123,7 +123,7 @@ tables:
 func TestParse_CoversCurrentSchemaIR(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(rowSecurityOwners, []byte(`
 enums:
   account_status: [active, suspended]
 extensions:

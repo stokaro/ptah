@@ -6,9 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/targetscope"
 )
 
 func (s *Set) claimScopes(index int, extension Extension) error {
@@ -16,51 +15,29 @@ func (s *Set) claimScopes(index int, extension Extension) error {
 		if strings.TrimSpace(scope.Directive) == "" || (len(scope.Targets) == 0 && !scope.Unscoped) {
 			return fmt.Errorf("annotation extension of %s declares a scope without a directive or a target", extension.Owner)
 		}
-		claimed := s.scopes[scope.Directive]
-		if claimed == nil {
-			claimed = make(map[string]int)
-			s.scopes[scope.Directive] = claimed
+		routes := s.routes[scope.Directive]
+		if routes == nil {
+			routes = targetscope.New()
+			s.routes[scope.Directive] = routes
 		}
-		for _, target := range scope.Targets {
-			target = platform.NormalizeDialect(target)
-			if previous, taken := claimed[target]; taken {
-				return fmt.Errorf("%w: declarations of %q scoped to %s are read by %s and %s", schemaext.ErrDuplicate,
-					scope.Directive, target, s.extensionOwner(previous, extension), extension.Owner)
-			}
-			claimed[target] = index
-		}
-		if !scope.Unscoped {
+		conflict, taken := routes.Claim(index, targetscope.Scope{Targets: scope.Targets, Unscoped: scope.Unscoped, Label: scope.Label})
+		if !taken {
 			continue
 		}
-		if previous, taken := s.unscoped[scope.Directive]; taken {
+		if conflict.Target == "" {
 			return fmt.Errorf("%w: unscoped declarations of %q are read by %s and %s", schemaext.ErrDuplicate,
-				scope.Directive, s.extensionOwner(previous, extension), extension.Owner)
+				scope.Directive, s.extensions[conflict.Owner].Owner, extension.Owner)
 		}
-		s.unscoped[scope.Directive] = index
+		return fmt.Errorf("%w: declarations of %q scoped to %s are read by %s and %s", schemaext.ErrDuplicate,
+			scope.Directive, conflict.Target, s.extensions[conflict.Owner].Owner, extension.Owner)
 	}
 	return nil
-}
-
-// extensionOwner names the owner of the extension at index, which may be the
-// one being claimed and not yet frozen.
-func (s *Set) extensionOwner(index int, claiming Extension) string {
-	if index < len(s.extensions) {
-		return s.extensions[index].Owner
-	}
-	return claiming.Owner
 }
 
 // TargetScopedDirectives returns, sorted, the frontend directives whose
 // declarations an owner of the set reads by their target scope.
 func (s Set) TargetScopedDirectives() []string {
-	directives := make(map[string]bool)
-	for directive := range s.scopes {
-		directives[directive] = true
-	}
-	for directive := range s.unscoped {
-		directives[directive] = true
-	}
-	return slices.Sorted(maps.Keys(directives))
+	return slices.Sorted(maps.Keys(s.routes))
 }
 
 // TargetOwner returns the owner that reads a declaration of directive scoped
@@ -78,40 +55,7 @@ func (s Set) TargetOwner(directive string, targets []string) (string, bool, erro
 }
 
 func (s Set) scopeIndex(directive string, targets []string) (int, bool, error) {
-	if len(targets) == 0 {
-		index, found := s.unscoped[directive]
-		return index, found, nil
-	}
-	claimed := s.scopes[directive]
-	owner := -1
-	var owned, others []string
-	for _, target := range targets {
-		if index, taken := claimed[platform.NormalizeDialect(target)]; taken && (owner < 0 || owner == index) {
-			owner = index
-			owned = append(owned, target)
-			continue
-		}
-		others = append(others, target)
-	}
-	if owner < 0 {
-		return 0, false, nil
-	}
-	if len(others) > 0 {
-		return 0, false, fmt.Errorf("%w: a declaration scoped to %s mixes %s with others; they declare different objects, "+
-			"so declare one scoped to %s and another scoped to %s", ptaherr.ErrInvalidAttributeValue, strings.Join(targets, ","),
-			s.scopeLabel(owner, directive), strings.Join(owned, ","), strings.Join(others, ","))
-	}
-	return owner, true, nil
-}
-
-// scopeLabel names the targets the owner at index reads for directive.
-func (s Set) scopeLabel(index int, directive string) string {
-	for _, scope := range s.extensions[index].TargetScopes {
-		if scope.Directive == directive && scope.Label != "" {
-			return scope.Label
-		}
-	}
-	return "the targets of " + s.extensions[index].Owner
+	return s.routes[directive].Owner(targets)
 }
 
 // FileCoverage is implemented by a [FileDecoder] whose declarations narrow

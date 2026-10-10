@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgpolicy"
@@ -88,20 +89,14 @@ func (d *fileDecoder) Finish(tables annotation.Tables) ([]annotation.Contributio
 }
 
 func (d *fileDecoder) policy(tables annotation.Tables, declaration annotation.Declaration) (annotation.Contribution, error) {
-	kv := declaration.Attributes
 	schemaName, tableName, err := policyTable(tables, declaration)
 	if err != nil {
 		return annotation.Contribution{}, err
 	}
-	policy, err := Attributes{
-		For: kv["for"], To: kv["to"], Using: kv["using"], WithCheck: kv["with_check"],
-		Restrictive: strings.EqualFold(strings.TrimSpace(kv["as"]), "RESTRICTIVE"), Comment: kv["comment"],
-		StructName: declaration.Struct,
-	}.Policy()
+	ref, policy, err := policyOf(declaration.Attributes, schemaName, tableName, declaration.Struct)
 	if err != nil {
 		return annotation.Contribution{}, err
 	}
-	ref := Ref(schemaName, tableName, kv["name"])
 	if err := d.collector.AddPolicy(origin(declaration), ref, policy, declaration.Targets); err != nil {
 		return annotation.Contribution{}, err
 	}
@@ -120,7 +115,7 @@ func (d *fileDecoder) enable(tables annotation.Tables, declaration annotation.De
 		return annotation.Contribution{}, err
 	}
 	table := tables[index]
-	state := pgpolicy.DesiredTableState{Enabled: true, Forced: kv["force"] == "true", Comment: kv["comment"], StructName: table.Struct}
+	state := switchesOf(kv, table.Struct)
 	if _, err := d.collector.AddSwitches(origin(declaration), TableRef(table.Schema, table.Name), schemaext.Facets{}, state,
 		declaration.Targets); err != nil {
 		return annotation.Contribution{}, err
@@ -168,4 +163,28 @@ func policyTable(tables annotation.Tables, declaration annotation.Declaration) (
 // origin names a declaration in a refusal that has to name two.
 func origin(declaration annotation.Declaration) string {
 	return "//" + declaration.Directive + " at " + cmp.Or(declaration.File, "the file") + ":" + strconv.Itoa(declaration.Line)
+}
+
+// policyOf reads a row-level security policy declaration's attributes, keyed
+// as the Go annotation keys them, on the table schemaName.tableName, as the
+// policy and its identity. structName is the Go struct the declaration
+// belongs to, if any. Both frontends read a policy through it, so one
+// declaration decodes to one object from either.
+func policyOf(attributes map[string]string, schemaName, tableName, structName string) (objectidentity.ID, pgpolicy.DesiredPolicy, error) {
+	policy, err := Attributes{
+		For: attributes["for"], To: attributes["to"], Using: attributes["using"], WithCheck: attributes["with_check"],
+		Restrictive: strings.EqualFold(strings.TrimSpace(attributes["as"]), "RESTRICTIVE"), Comment: attributes["comment"],
+		StructName: structName,
+	}.Policy()
+	if err != nil {
+		return objectidentity.ID{}, pgpolicy.DesiredPolicy{}, err
+	}
+	return Ref(schemaName, tableName, attributes["name"]), policy, nil
+}
+
+// switchesOf reads an enablement's attributes, keyed as the Go annotation
+// keys them, as the switches of the table structName maps to.
+func switchesOf(attributes map[string]string, structName string) pgpolicy.DesiredTableState {
+	return pgpolicy.DesiredTableState{Enabled: true, Forced: attributes["force"] == "true", Comment: attributes["comment"],
+		StructName: structName}
 }

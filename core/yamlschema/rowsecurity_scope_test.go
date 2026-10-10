@@ -7,8 +7,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/pgpolicysource"
 )
 
 // rowSecurityDocument declares a table, its row-level security and one
@@ -51,7 +53,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(noOwners, rowSecurityDocument(test.dialects))
+			db, err := yamlschema.Parse(rowSecurityOwners, rowSecurityDocument(test.dialects))
 
 			c.Assert(err, qt.IsNil)
 			objects := must.Must(db.FeatureObjects.All())
@@ -68,7 +70,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 func TestParse_RowSecurityScopeSelectsTheModel_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, rowSecurityDocument("dialects: [postgres, mssql]"))
+	db, err := yamlschema.Parse(rowSecurityOwners, rowSecurityDocument("dialects: [postgres, mssql]"))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*rls_enabled_tables\.docs: .*mixes PostgreSQL-family targets with others.*`)
@@ -104,9 +106,51 @@ func TestParse_RowSecurityScopedToClickHouse_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(noOwners, []byte(test.document))
+			db, err := yamlschema.Parse(rowSecurityOwners, []byte(test.document))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(db, qt.IsNil)
+		})
+	}
+}
+
+// TestParse_WithoutTheRowSecurityOwnerAPolicyStaysShared is the control on
+// the routing: without the owner, the frontend keeps an unscoped policy in the
+// shared model and claims no knowledge of the owner's policies, so they stay
+// unknown rather than absent.
+func TestParse_WithoutTheRowSecurityOwnerAPolicyStaysShared(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := yamlschema.Parse(noOwners, rowSecurityDocument(""))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.RLSPolicies, qt.HasLen, 1)
+	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(db.FeatureCoverage.Lookup(pgpolicy.PolicyKind, pgpolicysource.Ref("", "docs", "other")).State,
+		qt.Not(qt.Equals), schemaext.Complete)
+}
+
+// TestParse_APolicyComposition_FailurePath refuses an `as` that names neither
+// composition, rather than reading it as the weaker PERMISSIVE, on every
+// route a policy takes.
+func TestParse_APolicyComposition_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialects string
+	}{
+		{name: "the owner's policy"},
+		{name: "a shared policy", dialects: "    dialects: [mysql]\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := yamlschema.Parse(rowSecurityOwners, []byte("rls_policies:\n  docs_read:\n    table: docs\n"+
+				"    using: \"true\"\n    as: restrictiv\n"+test.dialects))
+
+			c.Assert(err, qt.ErrorMatches, `rls_policies\.docs_read: .*as must be PERMISSIVE or RESTRICTIVE, got "restrictiv"`)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(db, qt.IsNil)
 		})

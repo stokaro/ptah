@@ -65,7 +65,6 @@ package yamlschema
 
 import (
 	"bytes"
-	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -83,10 +82,8 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
-	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/ydbchangefeed"
@@ -705,10 +702,12 @@ type rlsPolicySpec struct {
 	ToRoles             stringScalar `yaml:"to"`
 	UsingExpression     stringScalar `yaml:"using"`
 	WithCheckExpression stringScalar `yaml:"with_check"`
-	Comment             stringScalar `yaml:"comment"`
+	// As is PERMISSIVE or RESTRICTIVE, as the annotation's `as` is.
+	As      stringScalar `yaml:"as"`
+	Comment stringScalar `yaml:"comment"`
 	// Dialects scopes the policy, as it scopes a default privilege. A scope
-	// naming only ClickHouse makes it the ClickHouse owner's row policy, and
-	// one naming only SQL Server keeps it a shared declaration.
+	// naming ClickHouse is refused, and one naming only targets no selected
+	// owner reads keeps it a shared declaration.
 	Dialects yaml.Node `yaml:"dialects"`
 }
 
@@ -860,12 +859,19 @@ func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Data
 	if err := d.addStandaloneObjects(db); err != nil {
 		return nil, err
 	}
-	if err := d.addRLS(db); err != nil {
+	if err := d.addRLS(db, owners); err != nil {
 		return nil, err
 	}
 	if err := d.addOwnerSections(db, owners, data); err != nil {
 		return nil, err
 	}
+	// Once every owner has declared what it reads, each narrows the claim
+	// by what the document declares of its models.
+	coverage, err := owners.Cover(db.FeatureCoverage, db.FeatureObjects)
+	if err != nil {
+		return nil, err
+	}
+	db.FeatureCoverage = coverage
 	d.addRoles(db)
 	if err := d.addGrants(db); err != nil {
 		return nil, err
@@ -1408,24 +1414,21 @@ func (d document) addTriggers(db *schemamodel.Database) error {
 	return nil
 }
 
-// addRLS hands the document's row-level security to its owners: an entry
-// without `dialects`, or scoped to the PostgreSQL family, is the PostgreSQL
-// row-security owner's, a policy becoming an object and an enablement the
-// switches facet of its table, which the document must declare. An entry
-// scoped to ClickHouse is refused: a ClickHouse row policy is its owner's,
-// declared under the owner's row_policies key, and ClickHouse has no switch.
-// An entry scoped to other targets stays shared. Two entries that declare one
-// policy, or one table's switches, are refused, naming both
-// (stokaro/ptah#2440).
-func (d document) addRLS(db *schemamodel.Database) error {
-	var collector pgpolicysource.Collector
+// addRLS hands the document's row-level security to its owners. An entry a
+// selected owner reads by its target scope goes to that owner: without
+// `dialects`, or scoped to the PostgreSQL family, it is the row-security
+// owner's, a policy becoming an object and an enablement the switches facet
+// of its table, which the document must declare. An entry scoped to
+// ClickHouse is refused: a ClickHouse row policy is its owner's, declared
+// under the owner's row_policies key, and ClickHouse has no switch. An entry
+// scoped to other targets stays shared. [yamlext.Set.TargetOwner] is the one
+// place that routes an entry by its scope.
+func (d document) addRLS(db *schemamodel.Database, owners yamlext.Set) error {
+	var entries []yamlext.Entry
 	for _, key := range sortedKeys(d.Tables) {
-		table := d.Tables[key]
-		if table.RLSEnabled {
-			origin := fmt.Sprintf("tables.%s.rls_enabled", key)
-			if err := addRLSSwitches(db, &collector, origin, valueOrDefault(table.StructName, key), "", "", nil); err != nil {
-				return err
-			}
+		if d.Tables[key].RLSEnabled {
+			entries = append(entries, yamlext.Entry{Key: rlsEnabledTablesKey, Origin: fmt.Sprintf("tables.%s.rls_enabled", key),
+				Attributes: map[string]string{"struct_name": valueOrDefault(d.Tables[key].StructName, key)}})
 		}
 	}
 	for _, group := range []struct {
@@ -1435,98 +1438,115 @@ func (d document) addRLS(db *schemamodel.Database) error {
 		for _, key := range sortedKeys(group.specs) {
 			spec := group.specs[key]
 			origin := fmt.Sprintf("%s.%s", group.name, key)
-			scope, owned, err := rowSecurityScope(origin, spec.Dialects)
+			attributes := presentAttributes(map[string]string{"struct_name": string(spec.StructName),
+				"table": valueOrDefault(spec.Table, key), "comment": string(spec.Comment)})
+			entry, owned, err := routeRowSecurity(owners, rlsEnabledTablesKey, origin, spec.Dialects, attributes)
 			if err != nil {
 				return err
 			}
-			if !owned {
-				if scopesClickHouse(scope) {
-					return fmt.Errorf("%s: %w: ClickHouse has no row-level security switch: a row policy filters rows once it exists; "+
-						"leave clickhouse out of the enablement's dialects", origin, ptaherr.ErrInvalidAttributeValue)
-				}
-				db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{StructName: string(spec.StructName),
-					Table: valueOrDefault(spec.Table, key), Comment: string(spec.Comment), Dialects: scope})
+			if owned {
+				entries = append(entries, entry)
 				continue
 			}
-			if err := addRLSSwitches(db, &collector, origin, string(spec.StructName), valueOrDefault(spec.Table, key), string(spec.Comment), scope); err != nil {
-				return err
+			if scopesClickHouse(entry.Targets) {
+				return fmt.Errorf("%s: %w: ClickHouse has no row-level security switch: a row policy filters rows once it exists; "+
+					"leave clickhouse out of the enablement's dialects", origin, ptaherr.ErrInvalidAttributeValue)
 			}
+			db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{StructName: string(spec.StructName),
+				Table: valueOrDefault(spec.Table, key), Comment: string(spec.Comment), Dialects: entry.Targets})
 		}
 	}
 	for _, key := range sortedKeys(d.RLSPolicies) {
-		if err := addRLSPolicy(db, &collector, key, d.RLSPolicies[key]); err != nil {
+		spec := d.RLSPolicies[key]
+		origin := "rls_policies." + key
+		restrictive, err := policyRestrictive(origin, string(spec.As))
+		if err != nil {
 			return err
 		}
-	}
-	objects, err := db.FeatureObjects.Merge(collector.Objects())
-	if err != nil {
-		return err
-	}
-	db.FeatureObjects = objects
-	db.FeatureCoverage, err = pgpolicysource.Claim(db.FeatureCoverage, db.FeatureObjects)
-	return err
-}
-
-func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collector, origin, structName, tableName, comment string, scope []string) error {
-	index, err := pgpolicysource.DeclaredTable(db.Tables, structName, tableName)
-	if err != nil {
-		return fmt.Errorf("%s: %w", origin, err)
-	}
-	if index < 0 {
-		return fmt.Errorf("%s: %w: row-level security names table %q, which the document does not declare",
-			origin, ptaherr.ErrInvalidAttributeValue, cmp.Or(tableName, structName))
-	}
-	table := &db.Tables[index]
-	state := pgpolicy.DesiredTableState{Enabled: true, Comment: comment, StructName: table.StructName}
-	facets, err := collector.AddSwitches(origin, pgpolicysource.TableRef(table.Schema, table.Name), table.Facets, state, scope)
-	if err != nil {
-		return err
-	}
-	table.Facets = facets
-	return nil
-}
-
-func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector, key string, spec rlsPolicySpec) error {
-	origin := "rls_policies." + key
-	scope, owned, err := rowSecurityScope(origin, spec.Dialects)
-	if err != nil {
-		return err
-	}
-	if scopesClickHouse(scope) {
-		return fmt.Errorf("%s: %w: a ClickHouse row policy is not a row-level security policy; declare it under "+
-			"row_policies instead", origin, ptaherr.ErrInvalidAttributeValue)
-	}
-	if !owned {
+		attributes := presentAttributes(map[string]string{"struct_name": string(spec.StructName), "name": valueOrDefault(spec.Name, key),
+			"table": string(spec.Table), "for": string(spec.PolicyFor), "to": string(spec.ToRoles), "as": string(spec.As),
+			"using": string(spec.UsingExpression), "with_check": string(spec.WithCheckExpression), "comment": string(spec.Comment)})
+		entry, owned, err := routeRowSecurity(owners, rlsPoliciesKey, origin, spec.Dialects, attributes)
+		if err != nil {
+			return err
+		}
+		if owned {
+			entries = append(entries, entry)
+			continue
+		}
+		if scopesClickHouse(entry.Targets) {
+			return fmt.Errorf("%s: %w: a ClickHouse row policy is not a row-level security policy; declare it under "+
+				"row_policies instead", origin, ptaherr.ErrInvalidAttributeValue)
+		}
 		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
 			StructName: string(spec.StructName), Name: valueOrDefault(spec.Name, key), Table: string(spec.Table),
 			PolicyFor: string(spec.PolicyFor), ToRoles: string(spec.ToRoles), UsingExpression: string(spec.UsingExpression),
-			WithCheckExpression: string(spec.WithCheckExpression), Comment: string(spec.Comment), Dialects: scope,
+			WithCheckExpression: string(spec.WithCheckExpression), Comment: string(spec.Comment), Restrictive: restrictive,
+			Dialects: entry.Targets,
 		})
-		return nil
 	}
-	index, err := pgpolicysource.DeclaredTable(db.Tables, string(spec.StructName), string(spec.Table))
+	contributions, err := owners.ReadEntries(entries, d.documentTables(db))
 	if err != nil {
-		return fmt.Errorf("%s: %w", origin, err)
+		return err
 	}
-	var schemaName, tableName string
-	switch {
-	case index >= 0:
-		schemaName, tableName = db.Tables[index].Schema, db.Tables[index].Name
-	case spec.Table == "":
-		return fmt.Errorf("%s: %w: a row-level security policy names its table", origin, ptaherr.ErrInvalidAttributeValue)
-	default:
-		if schemaName, tableName, err = pgpolicysource.TableParts(string(spec.Table)); err != nil {
-			return fmt.Errorf("%s: %w", origin, err)
+	for _, contribution := range contributions {
+		if err := contribute(db, "row-level security", contribution); err != nil {
+			return err
 		}
 	}
-	policy, err := pgpolicysource.Attributes{
-		For: string(spec.PolicyFor), To: string(spec.ToRoles), Using: string(spec.UsingExpression),
-		WithCheck: string(spec.WithCheckExpression), Comment: string(spec.Comment), StructName: string(spec.StructName),
-	}.Policy()
-	if err != nil {
-		return fmt.Errorf("%s: %w", origin, err)
+	return nil
+}
+
+// policyRestrictive reads a policy's `as`, which decides how the policy
+// combines with the table's others. An unrecognized value is refused rather
+// than read as the default: PERMISSIVE is the weaker of the two, so folding a
+// misspelled RESTRICTIVE into it would grant the access the policy was
+// written to withhold, as the annotation refuses it (stokaro/ptah#3121).
+func policyRestrictive(origin, written string) (bool, error) {
+	switch strings.ToUpper(strings.TrimSpace(written)) {
+	case "", "PERMISSIVE":
+		return false, nil
+	case "RESTRICTIVE":
+		return true, nil
+	default:
+		return false, fmt.Errorf("%s: %w: as must be PERMISSIVE or RESTRICTIVE, got %q", origin, ptaherr.ErrInvalidAttributeValue, written)
 	}
-	return collector.AddPolicy(origin, pgpolicysource.Ref(schemaName, tableName, valueOrDefault(spec.Name, key)), policy, scope)
+}
+
+// The frontend keys whose row-level security entries an owner may read by
+// their target scope. rls_enabled and a table's rls_enabled route as
+// rls_enabled_tables.
+const (
+	rlsPoliciesKey      = "rls_policies"
+	rlsEnabledTablesKey = "rls_enabled_tables"
+)
+
+// routeRowSecurity reads a row-level security entry's `dialects` and asks
+// the owners whether one reads the entry. It returns the entry as an owner
+// reads it, with the scope it was written with either way.
+func routeRowSecurity(owners yamlext.Set, key, origin string, dialects yaml.Node, attributes map[string]string) (yamlext.Entry, bool, error) {
+	scope, err := rowSecurityScope(origin, dialects)
+	if err != nil {
+		return yamlext.Entry{}, false, err
+	}
+	entry := yamlext.Entry{Key: key, Origin: origin, Attributes: attributes, Targets: scope}
+	_, owned, err := owners.TargetOwner(key, scope)
+	if err != nil {
+		return yamlext.Entry{}, false, fmt.Errorf("%s: %w", origin, err)
+	}
+	return entry, owned, nil
+}
+
+// presentAttributes drops the attributes an entry leaves empty, so an owner
+// reads a field the entry leaves out as absent, as it does from a Go
+// annotation.
+func presentAttributes(attributes map[string]string) map[string]string {
+	for name, value := range attributes {
+		if value == "" {
+			delete(attributes, name)
+		}
+	}
+	return attributes
 }
 
 // scopesClickHouse reports whether a row-level security entry's scope names
@@ -1535,26 +1555,21 @@ func scopesClickHouse(scope []string) bool {
 	return slices.ContainsFunc(scope, func(target string) bool { return platform.NormalizeDialect(target) == platform.ClickHouse })
 }
 
-// rowSecurityScope reads a row-level security entry's `dialects` and reports
-// whether the PostgreSQL row-security owner holds the entry; see
-// [pgpolicysource.Owns].
-func rowSecurityScope(origin string, node yaml.Node) ([]string, bool, error) {
+// rowSecurityScope reads a row-level security entry's `dialects`. An entry
+// without the key names no target.
+func rowSecurityScope(origin string, node yaml.Node) ([]string, error) {
 	if node.Kind == 0 {
-		return nil, true, nil
+		return nil, nil
 	}
 	var written stringList
 	if err := node.Decode(&written); err != nil {
-		return nil, false, fmt.Errorf("%s has an invalid dialects value: %w", origin, err)
+		return nil, fmt.Errorf("%s has an invalid dialects value: %w", origin, err)
 	}
 	scope, err := dialectscope.Parse(strings.Join(cleanStrings(written), ","))
 	if err != nil {
-		return nil, false, fmt.Errorf("%s dialects: %w", origin, err)
+		return nil, fmt.Errorf("%s dialects: %w", origin, err)
 	}
-	owned, err := pgpolicysource.Owns(scope)
-	if err != nil {
-		return nil, false, fmt.Errorf("%s: %w", origin, err)
-	}
-	return scope, owned, nil
+	return scope, nil
 }
 
 func (d document) addRoles(db *schemamodel.Database) {

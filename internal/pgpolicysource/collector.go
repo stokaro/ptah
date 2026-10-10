@@ -17,30 +17,6 @@ import (
 	"ptah.run/internal/tableref"
 )
 
-// Owns decides which model holds a row-level security declaration scoped to
-// targets. A declaration with no scope, or one scoped to PostgreSQL-family
-// targets only, belongs to the row-security owner of package pgpolicy. One
-// scoped to other targets only is SQL Server's security policy or ClickHouse's
-// row policy, which the shared schema model still holds. A scope that names
-// both is refused: the two are different objects with different grammars, so
-// one declaration cannot be both, and the refusal says how to split it.
-func Owns(targets []string) (bool, error) {
-	var family, other []string
-	for _, target := range targets {
-		if platform.IsPostgresFamily(target) {
-			family = append(family, target)
-		} else {
-			other = append(other, target)
-		}
-	}
-	if len(family) > 0 && len(other) > 0 {
-		return false, fmt.Errorf("%w: row-level security scoped to %s mixes PostgreSQL-family targets with others; "+
-			"PostgreSQL row-level security and the other targets' policies are different objects, so declare one scoped to %s and another scoped to %s",
-			ptaherr.ErrInvalidAttributeValue, strings.Join(targets, ","), strings.Join(family, ","), strings.Join(other, ","))
-	}
-	return len(other) == 0, nil
-}
-
 // Attributes is a policy as a text-attribute source spells it: every part a
 // string, where an empty one is left out.
 type Attributes struct {
