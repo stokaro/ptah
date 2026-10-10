@@ -100,6 +100,14 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/mssql/mssqlrelation` | Tables and predicate functions a security policy binds. |
 | `dialect/mssql/mssqlreverse` | Reverse security policy changes with recovery limits. |
 | `dialect/mssql/mssqlconvert` | Conversion between security policy declarations and observations. |
+| `dialect/mysql/mysqlschema` | Desired and observed MySQL-family table options and column settings with versioned codecs. |
+| `dialect/mysql/mysqlsource` | Table and column platform property decoding and encoding. |
+| `dialect/mysql/mysqlcompare` | Table option and column setting comparison that keeps declared values and plans no change of them. |
+| `dialect/mysql/mysqldiff` | Table option and column setting change models that a planner and a reversal read. |
+| `dialect/mysql/mysqlplan` | Table option and column setting accounting through table creation, rebuild and removal. |
+| `dialect/mysql/mysqlrender` | Owner-selected CREATE TABLE options and column clauses. |
+| `dialect/mysql/mysqlconvert` | Conversion between table option and column setting declarations and observations. |
+| `dialect/mysql/mysqlreport` | Captured table option and column setting counts. |
 | `dialect/mssql/mssqlreport` | Captured security policy and predicate counts. |
 | `dialect/timescaledb/tsast` | TimescaleDB operations and codecs. |
 | `dialect/timescaledb/tscompare` | TimescaleDB comparison. |
