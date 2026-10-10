@@ -252,7 +252,9 @@ On a table that exists, a plan emits `ALTER TABLE ... ADD TTL` for a new policy,
 `ALTER TABLE ... ALTER TTL` for a changed one, and `ALTER TABLE ... DROP TTL`
 when the declaration names none. Spanner refuses `ADD` and `ALTER` in each
 other's place, so the plan chooses by what the table holds. A policy that moves
-to a new column is changed after the column is added. A table in a Go or YAML
+to a new column is changed after the column is added and before the column it
+named is dropped. A column drop on Spanner carries no `CASCADE`, which Spanner
+refuses. A table in a Go or YAML
 schema that names no policy declares none, so a policy on the live table is
 removed. `ptah introspect` writes a read policy back as the same properties,
 with the interval in the spelling Spanner stores.

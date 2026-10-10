@@ -149,15 +149,15 @@ func TestSpannerLiveRowDeletionPolicyRoundTrip(t *testing.T) {
 
 // TestSpannerLiveRowDeletionPolicyChangesInPlace walks a policy through each
 // transition on a table holding rows: added to a table without one, given
-// another interval, moved to a column the same plan adds, and removed. ADD and
-// ALTER are not interchangeable on Spanner, and a policy cannot name a column
-// that does not exist yet, so each plan is the statements in the order the
-// server takes them, and each ends with nothing left to plan and the rows in
-// place.
+// another interval, moved to a column the same plan adds while the column it
+// read is dropped, and removed. ADD and ALTER are not interchangeable on
+// Spanner, a policy cannot name a column that does not exist yet, and a column
+// a policy names cannot be dropped, so each plan is the statements in the
+// order the server takes them, and each ends with nothing left to plan and the
+// rows in place.
 //
-// No step drops the column the policy read: a planned column removal carries
-// CASCADE, which Spanner refuses whatever the policy (stokaro/ptah#4280). The
-// planner unit tests pin that the policy moves before its column is dropped.
+// The column drop carries no CASCADE: Spanner takes only RESTRICT, and the
+// clause made every planned column removal fail (stokaro/ptah#4280).
 func TestSpannerLiveRowDeletionPolicyChangesInPlace(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.Spanner)
 	c := qt.New(t)
@@ -189,18 +189,21 @@ func TestSpannerLiveRowDeletionPolicyChangesInPlace(t *testing.T) {
 			observed: &spannerschema.ObservedRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "7 DAYS"}},
 		},
 		{
-			name:     "another column, added in the same plan",
-			declared: spannerRowDeletionSource(c, table, spannerRowDeletionPolicy("expires_at", "7 days"), "created_at", "expires_at"),
+			name:     "another column, added in the same plan, and the old one dropped",
+			declared: spannerRowDeletionSource(c, table, spannerRowDeletionPolicy("expires_at", "7 days"), "expires_at"),
 			want: []string{
 				"-- Add/modify columns for table: " + table + "\n-- ALTER statements: --\n" +
 					`ALTER TABLE "` + table + `" ADD COLUMN "expires_at" TIMESTAMPTZ`,
 				spannerPolicyNote(table) + `ALTER TABLE "` + table + `" ALTER TTL INTERVAL '7 days' ON "expires_at"`,
+				"-- Remove columns from table: " + table + "\n-- ALTER statements: --\n" +
+					`ALTER TABLE "` + table + `" DROP COLUMN "created_at"`,
+				"-- WARNING: Dropping column " + table + ".created_at - This will delete data!",
 			},
 			observed: &spannerschema.ObservedRowDeletion{Policy: spannerschema.Policy{Column: "expires_at", Interval: "7 DAYS"}},
 		},
 		{
 			name:     "no policy",
-			declared: spannerRowDeletionSource(c, table, "", "created_at", "expires_at"),
+			declared: spannerRowDeletionSource(c, table, "", "expires_at"),
 			want:     []string{spannerPolicyNote(table) + `ALTER TABLE "` + table + `" DROP TTL`},
 		},
 	}
