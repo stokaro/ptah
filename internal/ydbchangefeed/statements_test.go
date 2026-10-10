@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -28,7 +28,7 @@ func TestAddStatements(t *testing.T) {
 				Name: "feed", Mode: "NEW_AND_OLD_IMAGES", Format: "JSON", VirtualTimestamps: true,
 				ResolvedTimestamps: "PT90M", RetentionPeriod: "pt12h", InitialScan: true, UserSIDs: true,
 				SchemaChanges: true, TopicAutoPartitioning: true, TopicMinActivePartitions: 2,
-				Consumers: []ast.TopicConsumerSpec{
+				Consumers: []ydbtopic.ConsumerSpec{
 					{Name: "audit"},
 					{Name: "billing", Important: true, ReadFrom: "2026-01-01T00:00:00Z",
 						SupportedCodecs: []string{"raw", "GZIP"}},
@@ -61,7 +61,7 @@ func TestDropStatement(t *testing.T) {
 }
 
 func TestTopicStatements(t *testing.T) {
-	spec := func(retention string, consumers ...ast.TopicConsumerSpec) ydbschema.ChangefeedSpec {
+	spec := func(retention string, consumers ...ydbtopic.ConsumerSpec) ydbschema.ChangefeedSpec {
 		return ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", RetentionPeriod: retention,
 			Consumers: consumers}
 	}
@@ -81,7 +81,7 @@ func TestTopicStatements(t *testing.T) {
 		},
 		{
 			name:    "a consumer added and one dropped",
-			desired: spec("", ast.TopicConsumerSpec{Name: "new"}), previous: spec("", ast.TopicConsumerSpec{Name: "old"}),
+			desired: spec("", ydbtopic.ConsumerSpec{Name: "new"}), previous: spec("", ydbtopic.ConsumerSpec{Name: "old"}),
 			want: []string{
 				"ALTER TOPIC `items/feed` DROP CONSUMER `old`;",
 				"ALTER TOPIC `items/feed` ADD CONSUMER `new`;",
@@ -92,22 +92,22 @@ func TestTopicStatements(t *testing.T) {
 			// codecs differ, so its outcome does not depend on what the
 			// consumer held.
 			name:     "a consumer changed in place",
-			desired:  spec("", ast.TopicConsumerSpec{Name: "c", SupportedCodecs: []string{"raw"}}),
-			previous: spec("", ast.TopicConsumerSpec{Name: "c", SupportedCodecs: []string{"raw", "gzip"}}),
+			desired:  spec("", ydbtopic.ConsumerSpec{Name: "c", SupportedCodecs: []string{"raw"}}),
+			previous: spec("", ydbtopic.ConsumerSpec{Name: "c", SupportedCodecs: []string{"raw", "gzip"}}),
 			want: []string{"ALTER TOPIC `items/feed` ALTER CONSUMER `c` SET (important = FALSE, " +
 				"read_from = Timestamp('1970-01-01T00:00:00Z'), supported_codecs = 'raw');"},
 		},
 		{
 			name:     "an availability period removed is set to zero",
-			desired:  spec("", ast.TopicConsumerSpec{Name: "c", Important: true}),
-			previous: spec("", ast.TopicConsumerSpec{Name: "c", AvailabilityPeriod: "PT1H"}),
+			desired:  spec("", ydbtopic.ConsumerSpec{Name: "c", Important: true}),
+			previous: spec("", ydbtopic.ConsumerSpec{Name: "c", AvailabilityPeriod: "PT1H"}),
 			want: []string{"ALTER TOPIC `items/feed` ALTER CONSUMER `c` SET (important = TRUE, " +
 				"read_from = Timestamp('1970-01-01T00:00:00Z'), availability_period = Interval('PT0S'));"},
 		},
 		{
 			name:     "a consumer's codecs removed drops and adds it",
-			desired:  spec("", ast.TopicConsumerSpec{Name: "c"}),
-			previous: spec("", ast.TopicConsumerSpec{Name: "c", SupportedCodecs: []string{"raw"}}),
+			desired:  spec("", ydbtopic.ConsumerSpec{Name: "c"}),
+			previous: spec("", ydbtopic.ConsumerSpec{Name: "c", SupportedCodecs: []string{"raw"}}),
 			want: []string{
 				"ALTER TOPIC `items/feed` DROP CONSUMER `c`;",
 				"ALTER TOPIC `items/feed` ADD CONSUMER `c`;",
@@ -116,7 +116,7 @@ func TestTopicStatements(t *testing.T) {
 		},
 		{
 			name:    "nothing to change",
-			desired: spec("P1D", ast.TopicConsumerSpec{Name: "c"}), previous: spec("", ast.TopicConsumerSpec{Name: "c"}),
+			desired: spec("P1D", ydbtopic.ConsumerSpec{Name: "c"}), previous: spec("", ydbtopic.ConsumerSpec{Name: "c"}),
 		},
 	}
 	for _, test := range tests {

@@ -398,8 +398,6 @@ func prepareNode(
 		return prepareExtensionNode(dialect, typed)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(dialect, typed)
-	case *ast.CreateTopicNode, *ast.AddTopicConsumerNode, *ast.AlterTopicNode, *ast.DropTopicNode:
-		return node, refuseTopicNode(dialect, caps, node)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
 	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
@@ -1377,64 +1375,21 @@ func validateDeclaredFeatures(dialect string, caps capability.Capabilities, data
 	return schemaprep.ValidateFeatureParents(database, dialect)
 }
 
-func refuseTopicNode(dialect string, caps capability.Capabilities, node ast.Node) error {
-	subject := "a topic"
-	switch typed := node.(type) {
-	case *ast.CreateTopicNode:
-		subject = "topic " + typed.Name
-	case *ast.AddTopicConsumerNode:
-		subject = "ALTER TOPIC " + typed.Name + " ADD CONSUMER " + typed.Consumer.Name
-	case *ast.AlterTopicNode:
-		subject = "ALTER TOPIC " + typed.Name
-	case *ast.DropTopicNode:
-		subject = "DROP TOPIC " + typed.Name
-	}
-	return refuseTopic(dialect, caps, subject)
-}
-
-// refuseTopic refuses subject, a topic, on a target without
-// [capability.Topics]: a topic is YDB's, and a target that built nothing for
-// it would report the declaration applied.
-func refuseTopic(dialect string, caps capability.Capabilities, subject string) error {
-	if caps.Has(capability.Topics) {
-		return nil
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.Topics),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, capability.Topics, normalized),
-	}
-}
-
-// validateDeclaredTopics refuses a topic on a target that cannot create one.
-// Shared scheme paths are checked by validateDeclaredSchemePaths.
-func validateDeclaredTopics(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	for _, topic := range database.Topics {
-		if err := refuseTopic(dialect, caps, "topic "+topic.QualifiedName()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// The kinds of declared object YDB keeps at a path of its scheme tree, as a
+// The kinds of common object YDB keeps at a path of its scheme tree, as a
 // refusal names them.
 const (
 	pathTable = "table"
 	pathView  = "view"
-	pathTopic = "topic"
 )
 
-// declaredPaths maps the qualified name of every declared table, view, topic
-// and coordination node to the kinds declared under it, in that order. It is
-// the one answer to which declared objects share a path, for
-// [validateDeclaredSchemePaths]: on YDB
-// a path names one object, so a name that carries two kinds is a declaration
-// the server cannot hold. A view's name is parsed as the YDB renderer reads
-// it, so `app.v` is the view v in the directory app.
+// declaredPaths maps the qualified name of every declared table and view to
+// the kinds declared under it, in that order. It is the one answer to which
+// declared common objects share a path, for [validateDeclaredSchemePaths]: on
+// YDB a path names one object, so a name that carries two kinds is a
+// declaration the server cannot hold. A view's name is parsed as the YDB
+// renderer reads it, so `app.v` is the view v in the directory app. A feature
+// object -- a topic, a secret, a coordination node -- refuses a path another
+// object holds through its owner's plan effects.
 func declaredPaths(database *schemamodel.Database) map[string][]string {
 	paths := make(map[string][]string)
 	add := func(name, kind string) {
@@ -1446,9 +1401,6 @@ func declaredPaths(database *schemamodel.Database) map[string][]string {
 	}
 	for _, view := range database.Views {
 		add(view.Name, pathView)
-	}
-	for _, topic := range database.Topics {
-		add(topic.QualifiedName(), pathTopic)
 	}
 	return paths
 }
@@ -1473,7 +1425,7 @@ func declaredSchemePath(name string) string {
 // validateDeclaredSchemePaths refuses declarations that assign multiple kinds
 // to one scheme path. CoordinationNodes denotes YDB's scheme objects; other
 // dialects use their own namespace rules. Check every path even when no
-// coordination node is declared, since tables, views and topics also share it.
+// coordination node is declared, since tables and views also share it.
 func validateDeclaredSchemePaths(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	if !caps.Has(capability.CoordinationNodes) {
 		return nil
@@ -2376,9 +2328,6 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredKeysAndConstraints(dialect, caps, database); err != nil {
-		return err
-	}
-	if err := validateDeclaredTopics(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredReplications(dialect, caps, database); err != nil {

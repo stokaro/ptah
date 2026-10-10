@@ -395,7 +395,6 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	// refusal every time the parser gains another object family.
 	if !slices.Contains(yamlOnlyExtensions, extension) && !yql {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Topic,
 			coverage.Replication, coverage.Transfer,
 			coverage.ExternalDataSource, coverage.ExternalTable)...)
 	}
@@ -881,7 +880,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
-	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)

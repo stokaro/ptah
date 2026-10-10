@@ -610,16 +610,17 @@ is the usual case — declaring it instead hands Ptah the object, and that
 includes removing it.
 
 The source parser recognizes common kinds and the YDB kinds `coordination_node`,
-`streaming_query`, `resource_pool`, `resource_pool_classifier` and `secret`.
-Dots in pool and classifier names are literal characters.
+`streaming_query`, `resource_pool`, `resource_pool_classifier`, `secret` and
+`topic`. Dots in pool and classifier names are literal characters.
 
-A secret is named by its path relative to the database root, as YDB writes it:
-a slash separates directories and a dot is part of a name. `name="pg.pw"` is
-the secret `pg.pw` at the root, never `pw` in a directory `pg`, and
-`name="ext/pg.pw"` is `pg.pw` in `ext`. A YQL schema file takes the same limit
-in its header, as `-- ptah:not-described secret "ext/pg.pw"`. An HCL document
-and an SQL file of another dialect refuse the `secret` kind, since neither can
-declare a secret.
+A secret or a topic is named by its path relative to the database root, as YDB
+writes it: a slash separates directories and a dot is part of a name.
+`name="pg.pw"` is the secret `pg.pw` at the root, never `pw` in a directory
+`pg`, and `name="ext/pg.pw"` is `pg.pw` in `ext`. A path written from the
+server root, such as `/local/ext/pg.pw`, is refused. A YQL schema file takes the
+same limit in its header, as `-- ptah:not-described secret "ext/pg.pw"` or
+`-- ptah:not-described topic "app/events"`. An HCL document and an SQL file of
+another dialect refuse both kinds, since neither can declare one.
 
 Go export adds whole-family annotations when those namespaces were not
 inspected. These annotations keep the generated source from claiming that

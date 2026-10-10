@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
 
@@ -25,6 +26,7 @@ type Limits struct {
 	Pools        []string
 	Classifiers  []string
 	Secrets      []string
+	Topics       []string
 }
 
 const unmanagedObjectReason = "the source leaves this object unmanaged"
@@ -37,20 +39,21 @@ type sourceFamily struct {
 	kind  schemaext.Kind
 	token string
 	label string
-	// unmanaged is a reason a database read gives an object it leaves
-	// unmanaged, which a source writes as an unmanaged object, or empty.
-	unmanaged string
+	// unmanaged are the reasons a database read gives an object it leaves
+	// unmanaged, which a source writes as an unmanaged object.
+	unmanaged []string
 }
 
 // sourceKinds is shared by limit decoding and export. A new spelling must be
 // recognized in both directions or exporting unknown coverage would grant
 // authority that the input never held.
 var sourceKinds = []sourceFamily{
-	{ydbcoordination.Kind, "coordination_node", "coordination nodes", ""},
-	{ydbstreaming.Kind, "streaming_query", "streaming queries", ""},
-	{ydbworkload.PoolKind, "resource_pool", "resource pools", ""},
-	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers", ""},
-	{ydbsecret.Kind, "secret", "secrets", ydbsecret.UnsupportedReason},
+	{ydbcoordination.Kind, "coordination_node", "coordination nodes", nil},
+	{ydbstreaming.Kind, "streaming_query", "streaming queries", nil},
+	{ydbworkload.PoolKind, "resource_pool", "resource pools", nil},
+	{ydbworkload.ClassifierKind, "resource_pool_classifier", "resource pool classifiers", nil},
+	{ydbsecret.Kind, "secret", "secrets", []string{ydbsecret.UnsupportedReason}},
+	{ydbtopic.Kind, "topic", "topics", []string{ydbtopic.UnsupportedReason, ydbtopic.QueueGroupReason}},
 }
 
 func sourceKind(token string) schemaext.Kind {
@@ -91,6 +94,8 @@ func (l *Limits) Add(kind, name string) bool {
 		l.Classifiers = append(l.Classifiers, name)
 	case ydbsecret.Kind:
 		l.Secrets = append(l.Secrets, name)
+	case ydbtopic.Kind:
+		l.Topics = append(l.Topics, name)
 	default:
 		return false
 	}
@@ -138,12 +143,11 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, name := range limits.Secrets {
-		if _, err := ydbsecret.ParsePath(name); name != "" && err != nil {
-			return schemaext.Coverage{}, fmt.Errorf("%w: secret limit: %w", schemaext.ErrInvalidValue, err)
-		}
+	secrets, err := pathNamespaceCoverage(limits.Secrets, "secret", ydbsecret.Kind, ydbsecret.ParsePath, ydbsecret.ValidateIdentity, ydbsecret.Coverage)
+	if err != nil {
+		return schemaext.Coverage{}, err
 	}
-	secrets, err := namespaceCoverage(limits.Secrets, ydbsecret.Kind, secretIdentity, ydbsecret.ValidateIdentity, ydbsecret.Coverage)
+	topics, err := pathNamespaceCoverage(limits.Topics, "topic", ydbtopic.Kind, ydbtopic.ParsePath, ydbtopic.ValidateIdentity, ydbtopic.Coverage)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
@@ -151,7 +155,7 @@ func Coverage(limits Limits) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, known := range []schemaext.Coverage{queries, secrets} {
+	for _, known := range []schemaext.Coverage{queries, secrets, topics} {
 		combined, err = combined.Combine(known)
 		if err != nil {
 			return schemaext.Coverage{}, err
@@ -206,17 +210,25 @@ func namespaceCoverage(limits []string, kind schemaext.Kind,
 	return enroll(schemaext.Desired, namespace, subjects)
 }
 
-// secretIdentity reads a secret limit as the secret's path: a slash separates
-// directories and a dot stays in its segment, as in every other spelling of a
-// secret (see [ydbsecret.ParsePath]). `pg.pw` is one secret at the root, never
-// pw in a directory pg.
-//
-// An invalid path, an absolute one included, yields an identity the
-// validation refuses; [Coverage] reports it with [ydbsecret.ParsePath]'s
-// reason first.
-func secretIdentity(name string) objectidentity.ID {
-	ref, _ := ydbsecret.ParsePath(name)
-	return ref
+// pathNamespaceCoverage records the limits of a family whose limit names the
+// object by its path, as every other spelling of a secret or a topic does: a
+// slash separates directories and a dot stays in its segment, so `pg.pw` is
+// one object at the root, never pw in a directory pg. A limit parse refuses,
+// an absolute path included, is reported with parse's reason.
+func pathNamespaceCoverage(limits []string, label string, kind schemaext.Kind,
+	parse func(string) (objectidentity.ID, error), validate func(objectidentity.ID) error,
+	enroll func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error),
+) (schemaext.Coverage, error) {
+	for _, name := range limits {
+		if _, err := parse(name); name != "" && err != nil {
+			return schemaext.Coverage{}, fmt.Errorf("%w: %s limit: %w", schemaext.ErrInvalidValue, label, err)
+		}
+	}
+	identity := func(name string) objectidentity.ID {
+		ref, _ := parse(name)
+		return ref
+	}
+	return namespaceCoverage(limits, kind, identity, validate, enroll)
 }
 
 // Scheme paths and database-wide workload names have different grammars. A

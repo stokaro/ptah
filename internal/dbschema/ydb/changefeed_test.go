@@ -14,10 +14,10 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	ydbreader "ptah.run/internal/dbschema/ydb"
 )
 
@@ -129,7 +129,7 @@ func TestReader_Changefeed_HappyPath(t *testing.T) {
 				Name: "feed", Mode: "NEW_AND_OLD_IMAGES", Format: "JSON", VirtualTimestamps: true,
 				ResolvedTimestamps: "PT1H30M", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 				TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
-				Consumers: []ast.TopicConsumerSpec{
+				Consumers: []ydbtopic.ConsumerSpec{
 					{Name: "audit"},
 					{Name: "late", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"gzip", "raw"}},
 					{Name: "limited", AvailabilityPeriod: "PT1H"},
@@ -144,7 +144,7 @@ func TestReader_Changefeed_HappyPath(t *testing.T) {
 			name: "streaming consumers as 26.2 reports them, in the order they were added",
 			feed: updates(), topic: plainTopic(withConsumerType(consumer("zeta"), 9), withConsumerType(consumer("alpha"), 9)),
 			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON",
-				Consumers: []ast.TopicConsumerSpec{{Name: "alpha"}, {Name: "zeta"}}},
+				Consumers: []ydbtopic.ConsumerSpec{{Name: "alpha"}, {Name: "zeta"}}},
 		},
 	}
 	for _, test := range tests {

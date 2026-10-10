@@ -6,23 +6,19 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
 
 func TestCollect_YDBFamilies(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
-		Topics: []schemamodel.Topic{
-			{Spec: ast.TopicSpec{Consumers: make([]ast.TopicConsumerSpec, 2)}},
-			{Spec: ast.TopicSpec{Consumers: make([]ast.TopicConsumerSpec, 3)}},
-		},
 		Tables: []schemamodel.Table{{Name: "orders"}, {Name: "users"}},
 		ExternalTables: []schemamodel.ExternalTable{
 			{Columns: make([]schemamodel.ExternalColumn, 2)},
@@ -35,13 +31,15 @@ func TestCollect_YDBFamilies(t *testing.T) {
 	}
 	var err error
 	db.FeatureObjects, err = schemaext.NewObjects(
+		ydbtopic.DesiredObject("", "events", "", ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{{Name: "a"}, {Name: "b"}}}),
+		ydbtopic.DesiredObject("app", "queue", "", ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{{Name: "a"}, {Name: "b"}, {Name: "c"}}}),
 		ydbcoordination.DesiredObject("", "a", "", ydbcoordination.Spec{}),
 		ydbcoordination.DesiredObject("", "b", "", ydbcoordination.Spec{}),
 		ydbcoordination.DesiredObject("", "c", "", ydbcoordination.Spec{}),
 		ydbcoordination.DesiredObject("", "d", "", ydbcoordination.Spec{}),
-		ydbschema.DesiredObject("", "orders", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}}}),
+		ydbschema.DesiredObject("", "orders", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "a"}, {Name: "b"}}}),
 		ydbschema.DesiredObject("", "orders", ydbschema.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}),
-		ydbschema.DesiredObject("", "users", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}}),
+		ydbschema.DesiredObject("", "users", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}}),
 	)
 	c.Assert(err, qt.IsNil)
 	for i := range 5 {

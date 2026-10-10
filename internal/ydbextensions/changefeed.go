@@ -21,6 +21,8 @@ import (
 func Handlers() []renderer.ExtensionHandler {
 	return []renderer.ExtensionHandler{
 		ydbrender.CoordinationHandler(),
+		ydbrender.TopicHandler(),
+		ydbrender.TopicConsumerHandler(),
 		ydbrender.StreamingHandler(),
 		ydbrender.ResourcePoolHandler(),
 		ydbrender.ResourcePoolClassifierHandler(),

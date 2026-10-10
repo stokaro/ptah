@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -151,7 +152,7 @@ func transferDeclaration() *schemamodel.Database {
 // transferCatalog is the database the declaration made, the changefeed
 // holding the given consumers, the transfer reading it through the consumer
 // YDB created for it.
-func transferCatalog(consumers ...ast.TopicConsumerSpec) *catalog.Database {
+func transferCatalog(consumers ...ydbtopic.ConsumerSpec) *catalog.Database {
 	read := transferFeed
 	read.Consumers = consumers
 	db := changefeedCatalog(read)
@@ -164,8 +165,8 @@ func transferCatalog(consumers ...ast.TopicConsumerSpec) *catalog.Database {
 // generated is the consumer YDB created for the transfer, and audit one
 // nothing reads through.
 var (
-	generated = ast.TopicConsumerSpec{Name: "fbc17198", ReadFrom: "1970-01-01T00:00:00Z"}
-	audit     = ast.TopicConsumerSpec{Name: "audit", ReadFrom: "1970-01-01T00:00:00Z"}
+	generated = ydbtopic.ConsumerSpec{Name: "fbc17198", ReadFrom: "1970-01-01T00:00:00Z"}
+	audit     = ydbtopic.ConsumerSpec{Name: "audit", ReadFrom: "1970-01-01T00:00:00Z"}
 )
 
 // TestCompare_YDBTransferConsumerIsAdopted keeps the consumer YDB created for
@@ -189,7 +190,7 @@ func TestTransferConsumerAdoptionPreservesReplicationBinding(t *testing.T) {
 	observed := &ydbschema.ObservedChangefeed{Spec: transferFeed.Clone(),
 		Replication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
 	retained := observed.Desired()
-	observed.Spec.Consumers = []ast.TopicConsumerSpec{generated}
+	observed.Spec.Consumers = []ydbtopic.ConsumerSpec{generated}
 	var err error
 	desired.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: retained})
 	c.Assert(err, qt.IsNil)
@@ -229,9 +230,9 @@ func TestTableChangeCapturesRetainedReplicationState(t *testing.T) {
 func TestCompare_YDBTransferConsumerAdoptionKeepsOthersCompared(t *testing.T) {
 	c := qt.New(t)
 	adopted := transferFeed
-	adopted.Consumers = []ast.TopicConsumerSpec{generated}
+	adopted.Consumers = []ydbtopic.ConsumerSpec{generated}
 	held := transferFeed
-	held.Consumers = []ast.TopicConsumerSpec{generated, audit}
+	held.Consumers = []ydbtopic.ConsumerSpec{generated, audit}
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), transferDeclaration(), transferCatalog(generated, audit), platform.YDB, must.Must(builtin.New())))
 
@@ -246,22 +247,26 @@ func TestCompare_YDBTransferConsumerIsAdoptedOnATopic(t *testing.T) {
 	c := qt.New(t)
 	transfer := ast.TransferSpec{Source: "app/events", Target: "event_log", Lambda: "($m) -> { return []; }"}
 	desired := &schemamodel.Database{
-		Topics:    []schemamodel.Topic{{Name: "events", Schema: "app"}},
-		Transfers: []schemamodel.Transfer{{Name: "ingest", Spec: transfer}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbtopic.DesiredObject("app", "events", "", ydbtopic.Spec{}))),
+		FeatureCoverage: must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		Transfers:       []schemamodel.Transfer{{Name: "ingest", Spec: transfer}},
 	}
 	held := transfer
 	held.Consumer = "fbc17198"
 	current := &catalog.Database{
-		Topics: []catalog.Topic{{Name: "events", Schema: "app", Spec: ast.TopicSpec{
-			Consumers: []ast.TopicConsumerSpec{generated}}}},
-		Transfers: []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning, Spec: held}},
+		FeatureObjects: must.Must(schemaext.NewObjects(ydbtopic.ObservedObject("app", "events", ydbtopic.Spec{
+			Consumers: []ydbtopic.ConsumerSpec{generated}}))),
+		FeatureCoverage: must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		Transfers:       []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning, Spec: held}},
 	}
 
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New())))
 
-	c.Assert(diff.TopicsModified, qt.HasLen, 0)
+	c.Assert(diff.FeatureChanges, qt.HasLen, 0)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
-	c.Assert(desired.Topics[0].Spec.Consumers, qt.HasLen, 0)
+	declared, _, err := desired.FeatureObjects.Get(ydbtopic.Ref("app", "events"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(declared.Value, qt.DeepEquals, &ydbtopic.Desired{}, qt.Commentf("the adoption must not write through to the declaration"))
 	c.Assert(diff.Replications.CurrentTopics, qt.DeepEquals, []string{"app/events"})
 	c.Assert(diff.Replications.DeclaredTopics, qt.DeepEquals, []string{"app/events"})
 }

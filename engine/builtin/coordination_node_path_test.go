@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
@@ -45,9 +46,9 @@ func nodeBesideView(name string) *schemamodel.Database {
 // nodeBesideTopic declares app.locks and the topic name in the directory
 // schema.
 func nodeBesideTopic(schema, name string) *schemamodel.Database {
-	return nodeAt(schemamodel.Database{
-		Topics: []schemamodel.Topic{{StructName: "P", Schema: schema, Name: name}},
-	})
+	declared := nodeAt(schemamodel.Database{})
+	declared.FeatureObjects = must.Must(declared.FeatureObjects.With(ydbtopic.DesiredObject(schema, name, "P", ydbtopic.Spec{})))
+	return declared
 }
 
 // A coordination node whose path a declared table, view or topic holds is
@@ -86,12 +87,6 @@ func TestValidateSchema_YDBRefusesACoordinationNodeOnAnotherObjectsPath(t *testi
 			name: "a view whose name quotes its parts", kind: "view",
 			declared: nodeBesideView(`"app"."locks"`), current: &catalog.Database{},
 		},
-		{name: "a topic, neither held", kind: "topic", declared: nodeBesideTopic("app", "locks"), current: &catalog.Database{}},
-		{
-			name: "a node added beside the topic the database holds", kind: "topic",
-			declared: nodeBesideTopic("app", "locks"),
-			current:  &catalog.Database{Topics: []catalog.Topic{{Schema: "app", Name: "locks"}}},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -114,6 +109,29 @@ func TestValidateSchema_YDBRefusesACoordinationNodeOnAnotherObjectsPath(t *testi
 			c.Assert(diff, qt.IsNil)
 		})
 	}
+}
+
+// A coordination node and a topic at one path are two owners' objects, and
+// neither owner sees the other's statement, so the plan's own check of the
+// path refuses them, on the render surface and on the plan surface alike.
+func TestValidateSchema_YDBRefusesACoordinationNodeOnATopicsPath(t *testing.T) {
+	c := qt.New(t)
+	declared := nodeBesideTopic("app", "locks")
+	want := `invalid schema diff: conflicting plan effects: unordered effects on ptah\.run/ydb/scheme-path app\.locks ` +
+		`in \{ptah\.run/ydb coordination/000000/create\} and \{ptah\.run/ydb topic/000000/create\}`
+
+	statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(declared, platform.YDB, capability.YDB262())
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	diff, planErr := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, &catalog.Database{},
+		catalog.ServerInfo{Dialect: platform.YDB, Capabilities: capability.YDB262()}, nil, runtime)
+
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(renderErr, qt.ErrorMatches, want)
+	c.Assert(statements, qt.IsNil)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(planErr, qt.ErrorMatches, want)
+	c.Assert(diff, qt.IsNil)
 }
 
 // The controls: a name only shares a path when the directory and the name

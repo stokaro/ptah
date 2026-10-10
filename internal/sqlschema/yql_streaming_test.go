@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
@@ -22,11 +23,11 @@ func TestReadYQLStreamingQuery(t *testing.T) {
 			body := "$f = ($x) -> { RETURN $x + 1; }; /* keep ; */ INSERT INTO sink SELECT $f(id) FROM source;"
 			database, _, err := sqlschema.Read([]byte("CREATE STREAMING QUERY `jobs/copy.v1` WITH (RUN=FALSE, RESOURCE_POOL="+pool+") AS DO BEGIN\n"+body+"\nEND DO; CREATE TOPIC source;"), "ydb")
 			c.Assert(err, qt.IsNil)
-			c.Assert(database.FeatureObjects.Len(), qt.Equals, 1)
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 2)
 			query := streamingValue(c, database.FeatureObjects, "jobs", "copy.v1")
 			c.Assert(query.Spec, qt.DeepEquals, ydbstreaming.Spec{Text: body, Run: new(false), ResourcePool: "default"})
 			c.Assert(query.AllowStateReset, qt.IsFalse)
-			c.Assert(database.Topics, qt.HasLen, 1)
+			c.Assert(topicObjects(c, database), qt.DeepEquals, []schemaext.Object{ydbtopic.DesiredObject("", "source", "", ydbtopic.Spec{})})
 		})
 	}
 }

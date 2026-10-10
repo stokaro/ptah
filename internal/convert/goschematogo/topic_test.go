@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -16,18 +18,19 @@ import (
 // of a YDB database keeps its topics.
 func TestRender_Topic_RoundTrip(t *testing.T) {
 	c := qt.New(t)
-	topic := schemamodel.Topic{Name: "events", Schema: "app", Spec: ast.TopicSpec{
+	spec := ydbtopic.Spec{
 		MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
 		AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
 		AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "P1DT12H",
 		PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
 		SupportedCodecs: []string{"raw", "gzip"},
-		Consumers: []ast.TopicConsumerSpec{
+		Consumers: []ydbtopic.ConsumerSpec{
 			{Name: "billing", Important: true},
 			{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"zstd"}, AvailabilityPeriod: "PT2H"},
 		},
-	}}
-	db := &schemamodel.Database{Topics: []schemamodel.Topic{topic, {Name: "plain"}}}
+	}
+	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		ydbtopic.DesiredObject("app", "events", "", spec), ydbtopic.DesiredObject("", "plain.v1", "", ydbtopic.Spec{})))}
 
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
@@ -35,8 +38,10 @@ func TestRender_Topic_RoundTrip(t *testing.T) {
 	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.Topics, qt.HasLen, 2)
-	c.Assert(parsed.Topics[0].Spec, qt.DeepEquals, topic.Spec)
-	c.Assert([]string{parsed.Topics[0].Name, parsed.Topics[0].Schema, parsed.Topics[1].Name, parsed.Topics[1].Schema},
-		qt.DeepEquals, []string{"events", "app", "plain", ""})
+	objects, err := parsed.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbtopic.DesiredObject("", "plain.v1", "PtahSchemaObjects", ydbtopic.Spec{}),
+		ydbtopic.DesiredObject("app", "events", "PtahSchemaObjects", spec),
+	})
 }

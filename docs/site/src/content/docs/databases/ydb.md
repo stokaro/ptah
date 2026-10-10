@@ -896,7 +896,12 @@ topics:
 
 The attributes carry the YQL setting names, and the
 [annotation reference](../../reference/go-annotations/#ptahschematopic) lists
-them. A setting the declaration leaves out stands for the value YDB gives a new
+them. The directory is relative to the database root, and a directory written
+from the server root, such as `/local/app`, is refused. A topic is declared
+once: a second declaration of its path, in the same file or in another source
+of the same schema, is refused. A YQL schema file declares a topic with
+`CREATE TOPIC`, and a consumer of it, or of a changefeed's topic, with `ALTER
+TOPIC ... ADD CONSUMER`. A setting the declaration leaves out stands for the value YDB gives a new
 topic: one partition, auto-partitioning disabled, a retention of 24 hours, a
 write speed of 1 MiB per second per partition, a burst equal to the write speed,
 and no codec list. A topic created with a strategy splits a partition at 90% of
@@ -937,9 +942,15 @@ loses its read position, so the safety report classifies each as destructive.
 The read describes each topic with `DescribeTopic`. A topic that holds a setting
 Ptah does not model, such as a storage limit, a partition count limit, a
 metering mode, a read speed quota or a shared consumer, is refused rather than
-read without it. YQL sets none of them outside a serverless database. Atlas HCL
-has no block for a topic, so a plan from an HCL document leaves every topic
-alone, and an HCL export reports each topic it leaves out.
+read without it. YQL sets none of them outside a serverless database. A queue of
+the older persistent queue kind is recorded, not read, and a plan neither keeps
+nor drops it; Go export writes it as a limit,
+`//ptah:schema:notdescribed kind="topic" name="app/legacy"`, which names the
+topic by its path. Atlas HCL has no block for a topic, so an HCL document makes
+no claim about topics and a plan from one leaves every topic alone; an HCL
+export reports each topic it leaves out. An exclusion selector such as
+`app.*[type=topic]` leaves a topic out of the declaration and of the read alike,
+so an excluded topic is neither dropped nor created again.
 
 ## Resource pools and classifiers
 
@@ -1799,8 +1810,8 @@ statement needs one that has not run yet:
 3. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
 4. Drop removed or recreated external tables, then their data sources.
-   Drop the removed topics, then the removed coordination nodes, so an object
-   created at one's path finds it free.
+   Drop the removed coordination nodes, so an object created at one's path
+   finds it free.
 5. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
@@ -1818,9 +1829,9 @@ statement needs one that has not run yet:
     then change topics in place. Drops come first, so a table that swaps one
     changefeed for another stays within YDB's limit.
 12. Drop the removed tables.
-13. Create the added topics, then change the changed ones, then create and
-    change coordination nodes, so an object created at a dropped table's path
-    finds it free. Create or replace the external data sources and tables.
+13. Create and change coordination nodes, so an object created at a dropped
+    table's path finds it free. Create or replace the external data sources
+    and tables.
 14. Create the added async replications and change the changed ones, then
     the transfers, once the tables, changefeeds and topics a transfer uses
     exist.
@@ -1843,10 +1854,20 @@ above a secret must hold nothing else. A dropped secret precedes a statement
 that creates an object at its path or at a directory above it. Every external
 data source, async replication and transfer that names a secret by its path,
 relative or absolute, comes after the secret's creation or rotation, and a plan
-that drops a secret one of its own statements still names is refused. So is a
-plan in which a secret and another standalone object, such as a coordination
-node, trade one path: neither owner orders its statement against the other's,
-so apply the drop on its own first.
+that drops a secret one of its own statements still names is refused.
+
+Topics are planned by their owner the same way. A topic statement runs before
+step 1, except that a topic created at a path the plan frees, or below such a
+path, follows the drop, and a dropped topic precedes a statement that creates
+an object at its path or at a directory above it. A transfer of a topic of this
+database comes after the topic's creation or change, and a dropped transfer
+before the topic's drop. A streaming query reads topics, so one the plan stops
+or drops before its other changes stops before every topic statement, and one
+it creates or starts again after them starts after every topic statement.
+
+Two standalone objects of different kinds that trade one path, such as a topic
+dropped where a coordination node is created, are handed over in the plan: the
+drop runs first. Two that would both hold one path are refused.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it

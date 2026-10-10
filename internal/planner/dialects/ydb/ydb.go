@@ -248,7 +248,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, columnTTL.before...)
 	result = append(result, removedTablesBeforeSources(diff, external)...)
 	result = append(result, external.drops...)
-	result = append(result, dropTopics(diff)...)
 	earlyTables, lateTables := splitColumnTTLCreations(p.createTables(diff, inlineIndexes, sequences.created, semantics))
 	result = append(result, earlyTables...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
@@ -265,7 +264,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	beforeChangefeeds := result
 	result = nil
 	result = append(result, removedTablesAfterSources(diff, external)...)
-	result = append(result, changeTopics(diff)...)
 	result = append(result, external.creations...)
 	result = append(result, lateTables...)
 	result = append(result, columnTTL.after...)
@@ -278,7 +276,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 }
 
 // refuseUnplannableObjectChanges refuses every index addition, in-place index
-// change, changefeed change, topic change and replication or transfer change
+// change, changefeed change and replication or transfer change
 // this planner does not plan, in the order [Planner.GenerateMigrationAST]
 // reports them.
 func (p *Planner) refuseUnplannableObjectChanges(
@@ -290,9 +288,6 @@ func (p *Planner) refuseUnplannableObjectChanges(
 		return err
 	}
 	if err := p.refuseIndexChangesInPlace(diff); err != nil {
-		return err
-	}
-	if err := p.refuseTopics(diff); err != nil {
 		return err
 	}
 	return p.refuseReplications(diff)

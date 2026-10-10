@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-588 fields are reachable from the desired schema, and each one carries
+585 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 511 | reaches rendered SQL on at least one target |
+| `ddl` | 508 | reaches rendered SQL on at least one target |
 | `comparison` | 9 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -92,22 +92,6 @@ None.
 | `ast.RowDeletionPolicySpec.Column` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Interval` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Unit` | `ddl` | — |
-| `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
-| `ast.TopicConsumerSpec.Important` | `ddl` | — |
-| `ast.TopicConsumerSpec.Name` | `ddl` | — |
-| `ast.TopicConsumerSpec.ReadFrom` | `ddl` | — |
-| `ast.TopicConsumerSpec.SupportedCodecs` | `ddl` | — |
-| `ast.TopicSpec.AutoPartitioningDownUtilizationPercent` | `ddl` | — |
-| `ast.TopicSpec.AutoPartitioningStabilizationWindow` | `ddl` | — |
-| `ast.TopicSpec.AutoPartitioningStrategy` | `ddl` | — |
-| `ast.TopicSpec.AutoPartitioningUpUtilizationPercent` | `ddl` | — |
-| `ast.TopicSpec.Consumers` | `ddl` | — |
-| `ast.TopicSpec.MaxActivePartitions` | `ddl` | — |
-| `ast.TopicSpec.MinActivePartitions` | `ddl` | — |
-| `ast.TopicSpec.PartitionWriteBurstBytes` | `ddl` | — |
-| `ast.TopicSpec.PartitionWriteSpeedBytesPerSecond` | `ddl` | — |
-| `ast.TopicSpec.RetentionPeriod` | `ddl` | — |
-| `ast.TopicSpec.SupportedCodecs` | `ddl` | — |
 | `ast.TransferSpec.BatchSizeBytes` | `ddl` | — |
 | `ast.TransferSpec.Connection` | `ddl` | — |
 | `ast.TransferSpec.Consumer` | `ddl` | — |
@@ -256,7 +240,6 @@ None.
 | `schemamodel.Database.Sequences` | `ddl` | — |
 | `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
-| `schemamodel.Database.Topics` | `ddl` | — |
 | `schemamodel.Database.Transfers` | `ddl` | — |
 | `schemamodel.Database.Triggers` | `ddl` | — |
 | `schemamodel.Database.Views` | `ddl` | — |
@@ -575,10 +558,6 @@ None.
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |
-| `schemamodel.Topic.Name` | `ddl` | — |
-| `schemamodel.Topic.Schema` | `ddl` | — |
-| `schemamodel.Topic.Spec` | `ddl` | — |
-| `schemamodel.Topic.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Transfer.Name` | `ddl` | — |
 | `schemamodel.Transfer.Schema` | `ddl` | — |
 | `schemamodel.Transfer.Spec` | `ddl` | — |
@@ -639,6 +618,24 @@ None.
 | `ydbstreaming.Spec.ResourcePool` | `ddl` | — |
 | `ydbstreaming.Spec.Run` | `ddl` | — |
 | `ydbstreaming.Spec.Text` | `ddl` | — |
+| `ydbtopic.ConsumerSpec.AvailabilityPeriod` | `ddl` | — |
+| `ydbtopic.ConsumerSpec.Important` | `ddl` | — |
+| `ydbtopic.ConsumerSpec.Name` | `ddl` | — |
+| `ydbtopic.ConsumerSpec.ReadFrom` | `ddl` | — |
+| `ydbtopic.ConsumerSpec.SupportedCodecs` | `ddl` | — |
+| `ydbtopic.Desired.Spec` | `ddl` | — |
+| `ydbtopic.Desired.StructName` | `source` | the annotation holder, independent of the topic's path |
+| `ydbtopic.Spec.AutoPartitioningDownUtilizationPercent` | `ddl` | — |
+| `ydbtopic.Spec.AutoPartitioningStabilizationWindow` | `ddl` | — |
+| `ydbtopic.Spec.AutoPartitioningStrategy` | `ddl` | — |
+| `ydbtopic.Spec.AutoPartitioningUpUtilizationPercent` | `ddl` | — |
+| `ydbtopic.Spec.Consumers` | `ddl` | — |
+| `ydbtopic.Spec.MaxActivePartitions` | `ddl` | — |
+| `ydbtopic.Spec.MinActivePartitions` | `ddl` | — |
+| `ydbtopic.Spec.PartitionWriteBurstBytes` | `ddl` | — |
+| `ydbtopic.Spec.PartitionWriteSpeedBytesPerSecond` | `ddl` | — |
+| `ydbtopic.Spec.RetentionPeriod` | `ddl` | — |
+| `ydbtopic.Spec.SupportedCodecs` | `ddl` | — |
 | `ydbworkload.ClassifierSpec.MemberName` | `ddl` | — |
 | `ydbworkload.ClassifierSpec.Rank` | `ddl` | — |
 | `ydbworkload.ClassifierSpec.ResourcePool` | `ddl` | — |

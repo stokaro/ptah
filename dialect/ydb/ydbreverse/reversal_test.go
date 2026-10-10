@@ -7,13 +7,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbreverse"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 )
 
@@ -67,16 +67,16 @@ func TestRegisteredYDBReversalRestoresDefinitionsAndReportsStateLoss(t *testing.
 		{name: "create", after: feed(nil), strategy: "drop the created changefeed", limitation: "unread messages"},
 		{name: "mode recreation", before: feed(nil), after: feed(func(s *ydbschema.ChangefeedSpec) { s.Mode = "NEW_IMAGE" }), strategy: "recreate the prior changefeed definition", limitation: "original messages or consumer positions"},
 		{name: "retention", before: feed(nil), after: feed(func(s *ydbschema.ChangefeedSpec) { s.RetentionPeriod = "PT12H" }), strategy: "restore topic settings in place", limitation: "already expired"},
-		{name: "drop consumer", before: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ast.TopicConsumerSpec{{Name: "audit"}} }), after: feed(nil), strategy: "restore topic settings in place", limitation: `"audit"`},
-		{name: "remove added consumer", before: feed(nil), after: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ast.TopicConsumerSpec{{Name: "audit"}} }), strategy: "restore topic settings in place", limitation: `"audit"`},
-		{name: "reverse codec reset", before: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ast.TopicConsumerSpec{{Name: "audit"}} }), after: feed(func(s *ydbschema.ChangefeedSpec) {
-			s.Consumers = []ast.TopicConsumerSpec{{Name: "audit", SupportedCodecs: []string{"raw"}}}
+		{name: "drop consumer", before: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit"}} }), after: feed(nil), strategy: "restore topic settings in place", limitation: `"audit"`},
+		{name: "remove added consumer", before: feed(nil), after: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit"}} }), strategy: "restore topic settings in place", limitation: `"audit"`},
+		{name: "reverse codec reset", before: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit"}} }), after: feed(func(s *ydbschema.ChangefeedSpec) {
+			s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit", SupportedCodecs: []string{"raw"}}}
 		}), strategy: "restore topic settings in place", limitation: `"audit"`},
 		{name: "forward codec reset", before: feed(func(s *ydbschema.ChangefeedSpec) {
-			s.Consumers = []ast.TopicConsumerSpec{{Name: "audit", SupportedCodecs: []string{"raw"}}}
-		}), after: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ast.TopicConsumerSpec{{Name: "audit"}} }), strategy: "restore topic settings in place", limitation: `"audit"`},
-		{name: "consumer settings in place", before: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ast.TopicConsumerSpec{{Name: "audit"}} }), after: feed(func(s *ydbschema.ChangefeedSpec) {
-			s.Consumers = []ast.TopicConsumerSpec{{Name: "audit", Important: true}}
+			s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit", SupportedCodecs: []string{"raw"}}}
+		}), after: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit"}} }), strategy: "restore topic settings in place", limitation: `"audit"`},
+		{name: "consumer settings in place", before: feed(func(s *ydbschema.ChangefeedSpec) { s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit"}} }), after: feed(func(s *ydbschema.ChangefeedSpec) {
+			s.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit", Important: true}}
 		}), strategy: "restore topic settings in place"},
 		{name: "disabled stream settings in place", before: feed(func(s *ydbschema.ChangefeedSpec) { s.Disabled = true }), after: feed(func(s *ydbschema.ChangefeedSpec) { s.Disabled = true; s.RetentionPeriod = "PT12H" }), strategy: "restore topic settings in place", limitation: "already expired"},
 	} {

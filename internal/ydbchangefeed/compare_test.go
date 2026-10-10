@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -15,7 +15,7 @@ import (
 func base() ydbschema.ChangefeedSpec {
 	return ydbschema.ChangefeedSpec{
 		Name: "feed", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H",
-		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true, SupportedCodecs: []string{"raw", "gzip"}}},
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", Important: true, SupportedCodecs: []string{"raw", "gzip"}}},
 	}
 }
 
@@ -25,7 +25,7 @@ func TestEqual_ReadsAsYDBKeeps(t *testing.T) {
 	read := base()
 	read.Mode, read.Format = "updates", "json"
 	read.RetentionPeriod = "PT720M"
-	read.Consumers = []ast.TopicConsumerSpec{{Name: "audit", Important: true, SupportedCodecs: []string{"GZIP", "raw"},
+	read.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit", Important: true, SupportedCodecs: []string{"GZIP", "raw"},
 		ReadFrom: "1970-01-01T00:00:00Z"}}
 	defaultRetention := base()
 	defaultRetention.RetentionPeriod = ""
@@ -93,7 +93,7 @@ func TestRecreated_PartitionCountBothSidesName(t *testing.T) {
 // TestTopicChanged_HappyPath pins the retention and each consumer setting as
 // changes of the topic rather than of the changefeed.
 func TestTopicChanged_HappyPath(t *testing.T) {
-	consumer := func(edit func(*ast.TopicConsumerSpec)) ydbschema.ChangefeedSpec {
+	consumer := func(edit func(*ydbtopic.ConsumerSpec)) ydbschema.ChangefeedSpec {
 		spec := base()
 		edit(&spec.Consumers[0])
 		return spec
@@ -101,9 +101,9 @@ func TestTopicChanged_HappyPath(t *testing.T) {
 	retention := base()
 	retention.RetentionPeriod = ""
 	added := base()
-	added.Consumers = append(added.Consumers, ast.TopicConsumerSpec{Name: "other"})
+	added.Consumers = append(added.Consumers, ydbtopic.ConsumerSpec{Name: "other"})
 	renamed := base()
-	renamed.Consumers = []ast.TopicConsumerSpec{{Name: "audit2", Important: true, SupportedCodecs: []string{"raw", "gzip"}}}
+	renamed.Consumers = []ydbtopic.ConsumerSpec{{Name: "audit2", Important: true, SupportedCodecs: []string{"raw", "gzip"}}}
 	tests := []struct {
 		name    string
 		current ydbschema.ChangefeedSpec
@@ -111,10 +111,10 @@ func TestTopicChanged_HappyPath(t *testing.T) {
 		{name: "retention", current: retention},
 		{name: "a consumer added", current: added},
 		{name: "a consumer under another name", current: renamed},
-		{name: "important", current: consumer(func(c *ast.TopicConsumerSpec) { c.Important = false })},
-		{name: "read_from", current: consumer(func(c *ast.TopicConsumerSpec) { c.ReadFrom = "2026-01-01T00:00:00Z" })},
-		{name: "codecs", current: consumer(func(c *ast.TopicConsumerSpec) { c.SupportedCodecs = []string{"raw"} })},
-		{name: "availability", current: consumer(func(c *ast.TopicConsumerSpec) { c.AvailabilityPeriod = "PT1H" })},
+		{name: "important", current: consumer(func(c *ydbtopic.ConsumerSpec) { c.Important = false })},
+		{name: "read_from", current: consumer(func(c *ydbtopic.ConsumerSpec) { c.ReadFrom = "2026-01-01T00:00:00Z" })},
+		{name: "codecs", current: consumer(func(c *ydbtopic.ConsumerSpec) { c.SupportedCodecs = []string{"raw"} })},
+		{name: "availability", current: consumer(func(c *ydbtopic.ConsumerSpec) { c.AvailabilityPeriod = "PT1H" })},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

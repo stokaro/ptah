@@ -14,6 +14,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
@@ -51,6 +52,10 @@ func ValidateObjects(target string, caps capability.Capabilities, objects schema
 			}
 		case *ydbsecret.Desired:
 			if err := validateSecretObject(target, caps, object, value); err != nil {
+				return err
+			}
+		case *ydbtopic.Desired:
+			if err := validateTopicObject(target, caps, object, value); err != nil {
 				return err
 			}
 		default:
@@ -131,6 +136,16 @@ func ValidateCreationObjects(target string, caps capability.Capabilities, object
 		}
 	}
 	return nil
+}
+
+// validateTopicObject holds a declared topic to the rules its creation is
+// rendered with, so schema validation and rendering refuse the same topics.
+func validateTopicObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbtopic.Desired) error {
+	if err := ydbtopic.ValidateIdentity(object.Ref); err != nil {
+		return fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
+	}
+	operation := &ydbast.Topic{Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source, Change: ydbdiff.Topic{After: value}}
+	return ydbrender.TopicHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
 }
 
 func validateStreamingObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbstreaming.Desired) error {

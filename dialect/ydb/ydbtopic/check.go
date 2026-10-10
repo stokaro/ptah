@@ -5,8 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 )
 
 // Refusal says why a topic cannot be written or changed on a target: Key is
@@ -22,16 +23,33 @@ type Refusal struct {
 	Reason string
 }
 
-// Check reports why the topic name, declared as spec, cannot be created on a
-// target holding caps, or nil when it can.
+// Err returns the refusal as the error every surface reports it with: a
+// [ptaherr.CapabilityError] naming the capability the target lacks, or the
+// reason YDB refuses it on every line. A nil refusal is no error.
+func (r *Refusal) Err(dialect string) error {
+	if r == nil {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	if r.Key != "" {
+		return &ptaherr.CapabilityError{Dialect: normalized, Feature: string(r.Key), Err: ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target", r.Subject, r.Key, normalized)}
+	}
+	return &ptaherr.CapabilityError{Dialect: normalized, Feature: r.Subject, Err: ptaherr.ErrUnsupportedFeature,
+		Message: r.Subject + ": " + r.Reason}
+}
+
+// Check reports why the topic name in the directory schema, declared as spec,
+// cannot be created on a target holding caps, or nil when it can.
 //
 // It holds what a declaration's parse cannot know -- the target, through the
 // topics key and the availability period's key -- and holds a spec built by
 // hand to the parse's rules, because nothing else checks it: the settings
 // YDB would keep differently, and the consumers, each once and each as the
 // parse takes it.
-func Check(name string, spec ast.TopicSpec, caps capability.Capabilities) *Refusal {
-	subject := "topic " + name
+func Check(schema, name string, spec Spec, caps capability.Capabilities) *Refusal {
+	path := Display(schema, name)
+	subject := "topic " + path
 	if !caps.Has(capability.Topics) {
 		return &Refusal{Subject: subject, Key: capability.Topics}
 	}
@@ -49,25 +67,25 @@ func Check(name string, spec ast.TopicSpec, caps capability.Capabilities) *Refus
 		}
 		names[consumer.Name] = true
 		if _, err := ParseConsumer(consumerValues(consumer)); err != nil {
-			return &Refusal{Subject: consumerSubject(name, consumer.Name), Reason: err.Error()}
+			return &Refusal{Subject: consumerSubject(path, consumer.Name), Reason: err.Error()}
 		}
 		if consumer.AvailabilityPeriod != "" && !caps.Has(capability.TopicConsumerAvailabilityPeriod) {
-			return &Refusal{Subject: consumerSubject(name, consumer.Name) + " takes availability_period",
+			return &Refusal{Subject: consumerSubject(path, consumer.Name) + " takes availability_period",
 				Key: capability.TopicConsumerAvailabilityPeriod}
 		}
 	}
 	return nil
 }
 
-// ChangeRefusal reports why YDB cannot move the topic name from current to
-// desired in place, or nil when it can. Measured on 25.1.4.7 and 26.2.1.14:
+// ChangeRefusal reports why YDB cannot move the topic name in the directory
+// schema from current to desired in place, or nil when it can. Measured on 25.1.4.7 and 26.2.1.14:
 // a topic keeps every partition it has (`Invalid total groups count
 // specified: 1 vs 2 (current)`), and keeps auto-partitioning once it is
 // enabled (`Can't disable auto partitioning.`). Either change drops the
 // topic and every message in it, so it is refused rather than planned.
-func ChangeRefusal(name string, desired, current ast.TopicSpec) *Refusal {
+func ChangeRefusal(schema, name string, desired, current Spec) *Refusal {
 	want, have := Resolve(desired), Resolve(current)
-	subject := "topic " + name
+	subject := "topic " + Display(schema, name)
 	switch {
 	case want.MinActivePartitions < have.MinActivePartitions:
 		return &Refusal{Subject: subject, Reason: fmt.Sprintf("it has %d partitions and is declared with %d, and YDB "+
@@ -84,7 +102,7 @@ func ChangeRefusal(name string, desired, current ast.TopicSpec) *Refusal {
 
 // checkSettings holds a spec's settings to the rules [ParseTopic] reads them
 // with.
-func checkSettings(spec ast.TopicSpec) error {
+func checkSettings(spec Spec) error {
 	if _, err := ParseTopic(settingValues(spec)); err != nil {
 		return err
 	}
@@ -93,7 +111,7 @@ func checkSettings(spec ast.TopicSpec) error {
 
 // settingValues writes a spec's settings back as the attribute values
 // [ParseTopic] reads.
-func settingValues(spec ast.TopicSpec) map[string]string {
+func settingValues(spec Spec) map[string]string {
 	values := make(map[string]string)
 	counts := []struct {
 		attribute string
@@ -132,7 +150,7 @@ func settingValues(spec ast.TopicSpec) map[string]string {
 
 // consumerValues writes a consumer back as the attribute values
 // [ParseConsumer] reads.
-func consumerValues(consumer ast.TopicConsumerSpec) map[string]string {
+func consumerValues(consumer ConsumerSpec) map[string]string {
 	values := map[string]string{AttributeName: consumer.Name}
 	if consumer.Important {
 		values[AttributeImportant] = "true"
@@ -160,7 +178,7 @@ func consumerValues(consumer ast.TopicConsumerSpec) map[string]string {
 // rollback would refuse the migration that carries it. The statement the
 // rollback renders names the partition count and the strategy it keeps, so a
 // reader of the down migration sees what it leaves.
-func RollbackTarget(target, current ast.TopicSpec) ast.TopicSpec {
+func RollbackTarget(target, current Spec) Spec {
 	reached := target.Clone()
 	want, have := Resolve(target), Resolve(current)
 	if want.MinActivePartitions < have.MinActivePartitions {

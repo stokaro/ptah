@@ -92,13 +92,13 @@ Expected output includes:
 ptah_schema_schemas{dialect="sqlite"} 0
 # HELP ptah_schema_tables Tables.
 # TYPE ptah_schema_tables gauge
-ptah_schema_tables{dialect="sqlite"} 2
+ptah_schema_tables{dialect="sqlite"} 4
 # HELP ptah_schema_columns Columns across tables, excluding external tables.
 # TYPE ptah_schema_columns gauge
-ptah_schema_columns{dialect="sqlite"} 6
+ptah_schema_columns{dialect="sqlite"} 11
 # HELP ptah_schema_indexes Indexes.
 # TYPE ptah_schema_indexes gauge
-ptah_schema_indexes{dialect="sqlite"} 1
+ptah_schema_indexes{dialect="sqlite"} 2
 # HELP ptah_schema_constraints Table-level constraints.
 # TYPE ptah_schema_constraints gauge
 ptah_schema_constraints{dialect="sqlite"} 0
@@ -125,7 +125,7 @@ ptah_schema_composite_types{dialect="sqlite"} 0
 ptah_schema_range_types{dialect="sqlite"} 0
 # HELP ptah_schema_views Views.
 # TYPE ptah_schema_views gauge
-ptah_schema_views{dialect="sqlite"} 2
+ptah_schema_views{dialect="sqlite"} 0
 # HELP ptah_schema_materialized_views Materialized views.
 # TYPE ptah_schema_materialized_views gauge
 ptah_schema_materialized_views{dialect="sqlite"} 0
@@ -141,27 +141,6 @@ ptah_schema_roles{dialect="sqlite"} 0
 # HELP ptah_schema_grants Privilege grants.
 # TYPE ptah_schema_grants gauge
 ptah_schema_grants{dialect="sqlite"} 0
-# HELP ptah_schema_topics Standalone topics.
-# TYPE ptah_schema_topics gauge
-ptah_schema_topics{dialect="sqlite"} 0
-# HELP ptah_schema_topic_consumers Consumers of standalone topics.
-# TYPE ptah_schema_topic_consumers gauge
-ptah_schema_topic_consumers{dialect="sqlite"} 0
-# HELP ptah_schema_changefeeds Table changefeeds.
-# TYPE ptah_schema_changefeeds gauge
-ptah_schema_changefeeds{dialect="sqlite"} 0
-# HELP ptah_schema_changefeed_consumers Consumers of table changefeeds.
-# TYPE ptah_schema_changefeed_consumers gauge
-ptah_schema_changefeed_consumers{dialect="sqlite"} 0
-# HELP ptah_schema_coordination_nodes Coordination nodes.
-# TYPE ptah_schema_coordination_nodes gauge
-ptah_schema_coordination_nodes{dialect="sqlite"} 0
-# HELP ptah_schema_resource_pools Resource pools.
-# TYPE ptah_schema_resource_pools gauge
-ptah_schema_resource_pools{dialect="sqlite"} 0
-# HELP ptah_schema_resource_pool_classifiers Resource pool classifiers.
-# TYPE ptah_schema_resource_pool_classifiers gauge
-ptah_schema_resource_pool_classifiers{dialect="sqlite"} 0
 # HELP ptah_schema_async_replications Async replications.
 # TYPE ptah_schema_async_replications gauge
 ptah_schema_async_replications{dialect="sqlite"} 0
@@ -177,12 +156,42 @@ ptah_schema_external_tables{dialect="sqlite"} 0
 # HELP ptah_schema_external_columns Columns across external tables.
 # TYPE ptah_schema_external_columns gauge
 ptah_schema_external_columns{dialect="sqlite"} 0
+# HELP ptah_schema_clickhouse_index_settings Indexes with captured ClickHouse data-skipping settings.
+# TYPE ptah_schema_clickhouse_index_settings gauge
+ptah_schema_clickhouse_index_settings{dialect="sqlite"} 0
+# HELP ptah_schema_clickhouse_table_settings Tables with captured ClickHouse storage settings.
+# TYPE ptah_schema_clickhouse_table_settings gauge
+ptah_schema_clickhouse_table_settings{dialect="sqlite"} 0
+# HELP ptah_schema_cockroachdb_row_ttl_tables Tables with a captured CockroachDB row-level TTL.
+# TYPE ptah_schema_cockroachdb_row_ttl_tables gauge
+ptah_schema_cockroachdb_row_ttl_tables{dialect="sqlite"} 0
+# HELP ptah_schema_changefeeds Table changefeeds.
+# TYPE ptah_schema_changefeeds gauge
+ptah_schema_changefeeds{dialect="sqlite"} 0
+# HELP ptah_schema_changefeed_consumers Consumers of table changefeeds.
+# TYPE ptah_schema_changefeed_consumers gauge
+ptah_schema_changefeed_consumers{dialect="sqlite"} 0
+# HELP ptah_schema_coordination_nodes Standalone coordination nodes.
+# TYPE ptah_schema_coordination_nodes gauge
+ptah_schema_coordination_nodes{dialect="sqlite"} 0
+# HELP ptah_schema_resource_pools Resource pools.
+# TYPE ptah_schema_resource_pools gauge
+ptah_schema_resource_pools{dialect="sqlite"} 0
+# HELP ptah_schema_resource_pool_classifiers Resource pool classifiers.
+# TYPE ptah_schema_resource_pool_classifiers gauge
+ptah_schema_resource_pool_classifiers{dialect="sqlite"} 0
 # HELP ptah_schema_secrets Secret objects, without their values.
 # TYPE ptah_schema_secrets gauge
 ptah_schema_secrets{dialect="sqlite"} 0
-# HELP ptah_schema_streaming_queries Streaming queries.
+# HELP ptah_schema_streaming_queries Standalone streaming queries.
 # TYPE ptah_schema_streaming_queries gauge
 ptah_schema_streaming_queries{dialect="sqlite"} 0
+# HELP ptah_schema_topics Standalone topics.
+# TYPE ptah_schema_topics gauge
+ptah_schema_topics{dialect="sqlite"} 0
+# HELP ptah_schema_topic_consumers Consumers of standalone topics.
+# TYPE ptah_schema_topic_consumers gauge
+ptah_schema_topic_consumers{dialect="sqlite"} 0
 # EOF
 ```
 

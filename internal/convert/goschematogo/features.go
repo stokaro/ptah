@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/ydbsource"
 )
@@ -56,6 +57,9 @@ func (ctx *renderContext) captureFeatureObjects() error {
 }
 
 func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents map[objectidentity.Key]struct{}) error {
+	if handled, err := ctx.capturePathObject(object); handled {
+		return err
+	}
 	if pool, ok := object.Value.(*ydbworkload.DesiredPool); ok {
 		if err := ydbworkload.ValidatePoolRef(object.Ref, pool.Spec); err != nil {
 			return err
@@ -81,14 +85,6 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 			return err
 		}
 		ctx.streamingAnnotations = append(ctx.streamingAnnotations, streamingQueryAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, query))
-		return nil
-	}
-	if secret, ok := object.Value.(*ydbsecret.Desired); ok {
-		annotation, err := secretAnnotation(object.Ref, secret)
-		if err != nil {
-			return err
-		}
-		ctx.secretAnnotations = append(ctx.secretAnnotations, annotation)
 		return nil
 	}
 	if node, ok := object.Value.(*ydbcoordination.Desired); ok {
@@ -123,4 +119,29 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 	}
 	ctx.changefeedsByTable[parent.Key()] = append(ctx.changefeedsByTable[parent.Key()], feed.Spec)
 	return nil
+}
+
+// capturePathObject writes a declared secret, or a declared topic and its
+// consumers, as their annotations, and reports whether object is either.
+func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, error) {
+	switch value := object.Value.(type) {
+	case *ydbsecret.Desired:
+		annotation, err := secretAnnotation(object.Ref, value)
+		if err != nil {
+			return true, err
+		}
+		ctx.secretAnnotations = append(ctx.secretAnnotations, annotation)
+		return true, nil
+	case *ydbtopic.Desired:
+		if err := ydbtopic.ValidateIdentity(object.Ref); err != nil {
+			return true, err
+		}
+		if err := ydbtopic.Validate(value.Spec); err != nil {
+			return true, err
+		}
+		ctx.topicAnnotations = append(ctx.topicAnnotations, topicAnnotations(object.Ref.Schema.Source, object.Ref.Name.Source, value.Spec)...)
+		return true, nil
+	default:
+		return false, nil
+	}
 }

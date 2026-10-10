@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/schemafile"
 )
@@ -31,9 +32,10 @@ func TestYQLSupportedFamilyCoverageSurvivesFileLoading(t *testing.T) {
 			c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id));"), 0o600), qt.IsNil)
 			database, err := load.read(path, schemafile.Options{Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
-			for _, kind := range []coverage.Kind{coverage.Replication, coverage.Transfer, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Role, coverage.Grant, coverage.Changefeed, coverage.ColumnTable, coverage.View, coverage.Topic} {
+			for _, kind := range []coverage.Kind{coverage.Replication, coverage.Transfer, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Role, coverage.Grant, coverage.Changefeed, coverage.ColumnTable, coverage.View} {
 				c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 			}
+			c.Assert(database.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }

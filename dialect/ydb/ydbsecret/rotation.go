@@ -75,6 +75,7 @@ func WithRotations(opts *config.CompareOptions, paths []string) error {
 // ErrAbsolutePath is what [ParsePath] wraps for a path that starts with a
 // slash: such a path names the database it lies in, which nothing that spells
 // a secret this way knows, so it is refused rather than read some other way.
+// A topic's path is refused with the same error.
 var ErrAbsolutePath = ydbpath.ErrAbsolute
 
 // ErrOutsideDatabase is what [ResolvePath] wraps for an absolute path outside

@@ -236,7 +236,6 @@ var convertedFamilies = map[string]string{
 	"Hypertables":          "Hypertables",
 	"ContinuousAggregates": "ContinuousAggregates",
 	"Synonyms":             "Synonyms",
-	"Topics":               "Topics",
 	"AsyncReplications":    "AsyncReplications",
 	"Transfers":            "Transfers",
 	"ExternalDataSources":  "ExternalDataSources",

@@ -460,6 +460,12 @@ v0.13.0 ptah.run/core/ast
 # (config.CompareOptions.FeatureRequests, ydbsecret.RotationRequests), never
 # part of a declaration. Duplicate secret declarations are rejected rather
 # than deduplicated.
+# YDB topics use dialect/ydb/ydbtopic desired and observed values in
+# FeatureObjects. Database.Topics, catalog Topic, schemamodel Topic, the topic
+# AST nodes with TopicSpec and TopicConsumerSpec (now ydbtopic.Spec and
+# ydbtopic.ConsumerSpec), the topic coverage kind, TopicChanges, TopicDiff,
+# NewTopicDiff and the three topic diff buckets are removed. Duplicate topic
+# declarations are rejected rather than deduplicated.
 # Consumers use the owner model, change, and operation codecs directly.
 # Index.Granularity is removed. A ClickHouse skipping index declares its type
 # and granularity as platform properties that the selected owner decodes into

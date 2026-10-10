@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -98,6 +99,7 @@ func scheduleFeatures(ctx context.Context, common plangraph.Contribution[[]ast.N
 		}
 	}
 	common.Dependencies = append(common.Dependencies, directoryEdges(common, features.Contributions)...)
+	common.Dependencies = append(common.Dependencies, streamingTopicEdges(features.Contributions)...)
 	plan, err := plangraph.ScheduleRewritten(ctx, common, features.Rewrites, features.Contributions...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
@@ -113,17 +115,29 @@ func scheduleFeatures(ctx context.Context, common plangraph.Contribution[[]ast.N
 // scheme paths: an object created below a path follows every statement that
 // drops what is at the path, and an object dropped below a path precedes every
 // statement that creates an object there, since YDB needs each directory above
-// an object to be a directory. Each standalone owner orders its own statements
-// against the common ones; these edges order owners against each other, which
-// neither can see. A plan whose other edges require the opposite order is
-// refused by scheduling as a cycle.
+// an object to be a directory. Two standalone owners that trade one path -- a
+// topic dropped where a coordination node is created -- hand it over the same
+// way, the drop first. Each standalone owner orders its own statements against
+// the common ones; these edges order owners against each other, which neither
+// can see. Any other pair of writes at one path is left to scheduling, which
+// refuses it, and so is a plan whose other edges require the opposite order.
 func directoryEdges(common plangraph.Contribution[[]ast.Node], contributions []plangraph.Contribution[[]ast.Node]) []plangraph.Dependency {
-	type pathUse struct {
-		contribution int
-		step         plangraph.StepID
-		action       plangraph.Action
-		path         objectidentity.ID
-	}
+	uses, changed := schemePathUses(common, contributions)
+	return append(handoffEdges(uses, changed), ancestorEdges(uses, changed)...)
+}
+
+// pathUse is one statement's effect on a scheme path, with the contribution
+// it belongs to: 0 for the common statements, and each owner's after them.
+type pathUse struct {
+	contribution int
+	step         plangraph.StepID
+	action       plangraph.Action
+	path         objectidentity.ID
+}
+
+// schemePathUses indexes every effect on a scheme path by the path, and lists
+// the ones that create or drop what is at a path.
+func schemePathUses(common plangraph.Contribution[[]ast.Node], contributions []plangraph.Contribution[[]ast.Node]) (map[objectidentity.Key][]pathUse, []pathUse) {
 	uses := make(map[objectidentity.Key][]pathUse)
 	var changed []pathUse
 	for index, contribution := range append([]plangraph.Contribution[[]ast.Node]{common}, contributions...) {
@@ -140,6 +154,31 @@ func directoryEdges(common plangraph.Contribution[[]ast.Node], contributions []p
 			}
 		}
 	}
+	return uses, changed
+}
+
+// handoffEdges orders an owner's creation at a path after another owner's
+// drop of what is at it. A handoff between an owner and the common statements
+// is the owner's to order.
+func handoffEdges(uses map[objectidentity.Key][]pathUse, changed []pathUse) []plangraph.Dependency {
+	var edges []plangraph.Dependency
+	for _, created := range changed {
+		if created.action != plangraph.Create || created.contribution == 0 {
+			continue
+		}
+		for _, use := range uses[created.path.Key()] {
+			if use.contribution != 0 && use.contribution != created.contribution && use.action == plangraph.Drop {
+				edges = append(edges, plangraph.Dependency{Before: use.step, After: created.step})
+			}
+		}
+	}
+	return edges
+}
+
+// ancestorEdges orders a creation below a path after another contribution's
+// drop of what is at the path, and a drop below a path before another
+// contribution's creation there.
+func ancestorEdges(uses map[objectidentity.Key][]pathUse, changed []pathUse) []plangraph.Dependency {
 	var edges []plangraph.Dependency
 	for _, child := range changed {
 		for _, directory := range ydbscheme.DirectoriesAbove(child.path) {
@@ -152,6 +191,49 @@ func directoryEdges(common plangraph.Contribution[[]ast.Node], contributions []p
 					edges = append(edges, plangraph.Dependency{Before: child.step, After: use.step})
 				}
 			}
+		}
+	}
+	return edges
+}
+
+// streamingTopicEdges places topic statements inside the bracket a streaming
+// query's statements make around the common ones: a query stopped or dropped
+// before the plan's changes is stopped before every topic statement too, and
+// one created or started again after them starts after every topic statement.
+// A streaming query reads topics, and neither owner sees the other's
+// statements, so without these edges a running query could read a topic the
+// plan is changing.
+func streamingTopicEdges(contributions []plangraph.Contribution[[]ast.Node]) []plangraph.Dependency {
+	var topics []plangraph.StepID
+	type streamingStep struct {
+		id     plangraph.StepID
+		before bool
+	}
+	var queries []streamingStep
+	for _, contribution := range contributions {
+		for _, step := range contribution.Steps {
+			for _, node := range step.Payload {
+				statement, ok := node.(*ast.ExtensionStatement)
+				if !ok {
+					continue
+				}
+				switch payload := statement.Payload.(type) {
+				case *ydbast.Topic:
+					topics = append(topics, step.ID)
+				case *ydbast.StreamingQuery:
+					queries = append(queries, streamingStep{id: step.ID, before: payload.RunsBeforeChanges()})
+				}
+			}
+		}
+	}
+	var edges []plangraph.Dependency
+	for _, query := range queries {
+		for _, topic := range topics {
+			edge := plangraph.Dependency{Before: topic, After: query.id}
+			if query.before {
+				edge = plangraph.Dependency{Before: query.id, After: topic}
+			}
+			edges = append(edges, edge)
 		}
 	}
 	return edges

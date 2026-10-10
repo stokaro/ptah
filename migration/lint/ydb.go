@@ -10,12 +10,12 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbsequence"
-	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/yqlddl"
 	"ptah.run/internal/yqlquery"
 )
@@ -1495,7 +1495,7 @@ func unknownCodec(list string) string {
 	}
 	for part := range strings.SplitSeq(list, ",") {
 		codec := strings.ToLower(strings.TrimSpace(part))
-		if !slices.Contains(ydbtopic.Codecs(), codec) {
+		if !slices.Contains(ydbtopic.CodecNames(), codec) {
 			return codec
 		}
 	}

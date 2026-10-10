@@ -144,9 +144,6 @@ func declaredYDBDirectory(database *schemamodel.Database, name string) bool {
 			directories = append(directories, ref.Schema)
 		}
 	}
-	for _, object := range database.Topics {
-		directories = append(directories, object.Schema)
-	}
 	for _, ref := range database.FeatureObjects.Refs() {
 		directories = append(directories, ref.Schema.Source)
 	}

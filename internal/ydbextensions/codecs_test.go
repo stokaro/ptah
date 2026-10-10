@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/ydbextensions"
 )
@@ -27,7 +27,7 @@ func TestCodecs_RoundTripAllChangefeedState(t *testing.T) {
 		Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", VirtualTimestamps: true,
 		ResolvedTimestamps: "PT5S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 		TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT2H", Disabled: true,
-		Consumers: []ast.TopicConsumerSpec{{Name: "worker", Important: true, ReadFrom: "2026-01-01T00:00:00Z",
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "worker", Important: true, ReadFrom: "2026-01-01T00:00:00Z",
 			SupportedCodecs: []string{"zstd", "raw"}, AvailabilityPeriod: "PT3H"}},
 	}
 	payloads := []schemaext.Payload{
@@ -55,7 +55,7 @@ func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 		Values     map[schemaext.Representation]map[string]shape `json:"values"`
 	}
 	c.Assert(json.Unmarshal(codecs[0].Definition, &definition), qt.IsNil)
-	for name, model := range map[string]any{"changefeed": ydbschema.ChangefeedSpec{}, "consumer": ast.TopicConsumerSpec{}, "replication_binding": ydbschema.ReplicationBinding{}} {
+	for name, model := range map[string]any{"changefeed": ydbschema.ChangefeedSpec{}, "consumer": ydbtopic.ConsumerSpec{}, "replication_binding": ydbschema.ReplicationBinding{}} {
 		var fields []string
 		modelType := reflect.TypeOf(model)
 		for field := range modelType.Fields() {
@@ -71,7 +71,7 @@ func TestCodecs_DefinitionsCoverConcreteFields(t *testing.T) {
 	}
 	definition.Values[schemaext.Operation] = definition.Operations
 	definition.Values[schemaext.Change] = definition.Changes
-	c.Assert(codecs, qt.HasLen, 27)
+	c.Assert(codecs, qt.HasLen, 32)
 	for _, codec := range codecs {
 		var fields, described []string
 		modelType := reflect.TypeOf(codec.Prototype).Elem()
@@ -103,9 +103,9 @@ func TestCodecs_RefuseMalformedAndLossyValues(t *testing.T) {
 		{Name: "updates", Mode: "UPDATES"},
 		{Name: "\xff", Mode: "UPDATES", Format: "JSON"},
 		{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "\xff"},
-		{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "worker"}, {Name: "worker"}}},
-		{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "worker", ReadFrom: "\xff"}}},
-		{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "worker", SupportedCodecs: []string{"\xff"}}}},
+		{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "worker"}, {Name: "worker"}}},
+		{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "worker", ReadFrom: "\xff"}}},
+		{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "worker", SupportedCodecs: []string{"\xff"}}}},
 	} {
 		encoded, err := runtime.Codecs().Encode(context.Background(), schemaext.Operation, []schemaext.Payload{&ydbast.AddChangefeed{Changefeed: feed}})
 		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
@@ -117,7 +117,7 @@ func TestCodecs_CanonicalConsumerOrderRetainsDeclarations(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{
 		{Name: "worker-b", SupportedCodecs: []string{"zstd", "raw"}}, {Name: "worker-a"},
 	}}
 	fingerprint, err := runtime.Codecs().Fingerprint(context.Background(), schemaext.Operation, []schemaext.Payload{&ydbast.AddChangefeed{Changefeed: feed}})

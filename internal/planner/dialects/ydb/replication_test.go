@@ -17,7 +17,9 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff"
@@ -176,7 +178,9 @@ func TestGenerateMigrationAST_Replications_TransferReadsARecordedTopic(t *testin
 		tables          []schemamodel.Table
 		featureCoverage schemaext.Coverage
 	}{
-		{name: "a topic", source: "events", limits: coverage.Set{}.With(coverage.Object{Kind: coverage.Topic, Name: "events"}), tables: []schemamodel.Table{table("order_log")}},
+		{name: "a topic", source: "events", tables: []schemamodel.Table{table("order_log")},
+			featureCoverage: must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{
+				{Kind: ydbtopic.Kind, Subject: ydbtopic.Ref("", "events"), Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbtopic.QueueGroupReason}}}))},
 		{name: "a changefeed in a directory", source: "app/orders/feed", tables: []schemamodel.Table{table("order_log"), {Schema: "app", Name: "orders"}},
 			featureCoverage: feedCoverage(t, schemaext.Observed, schemaext.SubjectCoverage{Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("app", "orders", "feed"), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "unsupported stream"}})},
 	}
@@ -211,7 +215,7 @@ func TestGenerateMigrationAST_Replications_TransferReadsADeclaredTopic(t *testin
 	t.Run("created after its topic", func(t *testing.T) {
 		c := qt.New(t)
 		diff := &difftypes.SchemaDiff{
-			TopicsAdded:    difftypes.TopicChanges{{Name: "events", Schema: "app"}},
+			FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("app", "events"), Value: &ydbdiff.Topic{After: &ydbtopic.Desired{}}}},
 			TransfersAdded: difftypes.TransferChanges{transfer},
 			DeclaredTables: []schemamodel.Table{table("order_log")},
 			Replications: difftypes.ReplicationContext{
@@ -228,7 +232,7 @@ func TestGenerateMigrationAST_Replications_TransferReadsADeclaredTopic(t *testin
 	t.Run("its topic dropped", func(t *testing.T) {
 		c := qt.New(t)
 		diff := &difftypes.SchemaDiff{
-			TopicsRemoved:  difftypes.TopicChanges{{Name: "events", Schema: "app"}},
+			FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("app", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}},
 			DeclaredTables: []schemamodel.Table{table("order_log")},
 			Replications: difftypes.ReplicationContext{
 				CurrentTransfers:  []catalog.Transfer{{Name: "ingest", Spec: spec}},
@@ -254,7 +258,7 @@ func TestGenerateMigrationAST_Replications_TransferDroppedBeforeItsTopic(t *test
 	c := qt.New(t)
 	spec := ast.TransferSpec{Source: "events", Target: "order_log", Lambda: lambda}
 	diff := &difftypes.SchemaDiff{
-		TopicsRemoved:    difftypes.TopicChanges{{Name: "events"}},
+		FeatureChanges:   []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}},
 		TransfersRemoved: difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
 		Replications: difftypes.ReplicationContext{
 			CurrentTransfers: []catalog.Transfer{{Name: "ingest", Spec: spec}},

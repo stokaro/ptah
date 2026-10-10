@@ -6,9 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -21,7 +21,7 @@ func TestSchemaConversion_ChangefeedRoundTripPreservesConsumersAndUnknownState(t
 	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "NEW_IMAGE", Format: "JSON",
 		VirtualTimestamps: true, ResolvedTimestamps: "PT5S", InitialScan: true, UserSIDs: true,
 		SchemaChanges: true, TopicMinActivePartitions: 2, TopicAutoPartitioning: true,
-		RetentionPeriod: "PT2H", Disabled: true, Consumers: []ast.TopicConsumerSpec{{Name: "worker",
+		RetentionPeriod: "PT2H", Disabled: true, Consumers: []ydbtopic.ConsumerSpec{{Name: "worker",
 			Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}, AvailabilityPeriod: "PT3H"}}}
 	objects, err := schemaext.NewObjects(ydbschema.ObservedObject("shop", "items", feed))
 	c.Assert(err, qt.IsNil)

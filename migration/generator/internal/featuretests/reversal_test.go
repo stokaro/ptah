@@ -8,12 +8,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
@@ -54,7 +54,7 @@ func TestGeneratorUsesOwnerReversalAndReportsRecoveryLimits(t *testing.T) {
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
 	fresh := ydbschema.ChangefeedSpec{Name: "fresh", Mode: "KEYS_ONLY", Format: "JSON"}
-	gone := ydbschema.ChangefeedSpec{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "reader"}}}
+	gone := ydbschema.ChangefeedSpec{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "reader"}}}
 	retained := ydbschema.ChangefeedSpec{Name: "retained", Mode: "UPDATES", Format: "JSON", Disabled: true}
 	after := declaration(c, fresh)
 	// Omission preserves this inspected sibling. Explicit absence still asks

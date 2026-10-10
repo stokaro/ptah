@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/internal/dbmlrender"
 )
@@ -21,12 +22,11 @@ func TestRender_ReportsYDBObjectsWithoutDBMLBlocks(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
 		AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
-		FeatureObjects:    must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false), ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"))),
+		FeatureObjects:    must.Must(schemaext.NewObjects(ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}), ydbworkload.DesiredClassifierObject("route", "", ydbworkload.ClassifierSpec{ResourcePool: "default"}), ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{}), ydbstreaming.DesiredObject("", "stream", "", ydbstreaming.Spec{Text: "SELECT 1;"}, false), ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"), ydbtopic.DesiredObject("", "events", "", ydbtopic.Spec{}), ydbtopic.DesiredObject("", "audit", "", ydbtopic.Spec{}))),
 
 		ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "bucket"}},
 		ExternalTables:      []schemamodel.ExternalTable{{Name: "files"}},
 
-		Topics:    []schemamodel.Topic{{Name: "events"}, {Name: "audit"}},
 		Transfers: []schemamodel.Transfer{{Name: "copy"}},
 	}
 

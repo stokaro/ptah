@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -41,12 +42,15 @@ func TestCoordinationFeaturesTradePathsWithTables(t *testing.T) {
 	c.Assert(createNode > dropTable, qt.IsTrue)
 }
 
+// TestCoordinationFeaturesTradePathsWithTopics trades two paths between two
+// owners, a coordination node and a topic, which neither owner sees: each
+// creation follows the drop that frees its path.
 func TestCoordinationFeaturesTradePathsWithTopics(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TopicsAdded:   difftypes.TopicChanges{{Schema: "app", Name: "was_node"}},
-		TopicsRemoved: difftypes.TopicChanges{{Schema: "app", Name: "was_topic"}},
 		FeatureChanges: []schemaext.ChangeRecord{
+			{Subject: ydbtopic.Ref("app", "was_node"), Value: &ydbdiff.Topic{After: &ydbtopic.Desired{}}},
+			{Subject: ydbtopic.Ref("app", "was_topic"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}},
 			{Subject: ydbcoordination.Ref("app", "was_topic"), Value: &ydbdiff.CoordinationNode{After: &ydbcoordination.Desired{}}},
 			{Subject: ydbcoordination.Ref("app", "was_node"), Value: &ydbdiff.CoordinationNode{Before: &ydbcoordination.Observed{}}},
 		},

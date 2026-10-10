@@ -78,7 +78,7 @@ func (StreamingService) PlanFeatures(ctx context.Context, request featureplan.Re
 			contribution.Dependencies = append(contribution.Dependencies, edges...)
 			for _, common := range request.CommonSteps {
 				edge := plangraph.Dependency{Before: common.ID, After: id}
-				if streamingBefore(operation) {
+				if operation.RunsBeforeChanges() {
 					edge = plangraph.Dependency{Before: id, After: common.ID}
 				}
 				contribution.Dependencies = append(contribution.Dependencies, edge)
@@ -166,12 +166,6 @@ func lowerStreaming(ref objectidentity.ID, change *ydbdiff.StreamingQuery) ([]*y
 	}
 	operation.Previous = stopped.Clone()
 	return []*ydbast.StreamingQuery{stop, operation}, nil
-}
-
-func streamingBefore(operation *ydbast.StreamingQuery) bool {
-	return operation.Operation == ydbast.StreamingDrop || (operation.Operation == ydbast.StreamingAlter &&
-		ydbstreaming.Running(operation.Previous) && !ydbstreaming.Running(operation.Spec) &&
-		ydbstreaming.SameBody(operation.Previous.Text, operation.Spec.Text) && ydbstreaming.Pool(operation.Previous) == ydbstreaming.Pool(operation.Spec))
 }
 
 func streamingAction(operation *ydbast.StreamingQuery) plangraph.Action {

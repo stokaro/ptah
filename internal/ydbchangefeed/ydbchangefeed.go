@@ -25,10 +25,10 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
@@ -199,34 +199,34 @@ func ParseDeclaration(values map[string]string) (ydbschema.ChangefeedSpec, error
 // `2026-01-01T00:00:00Z`); and a consumer is not both important and limited
 // by an availability period, which YDB refuses (`has both an important flag
 // and a limited availability_period, which are mutually exclusive`).
-func ParseConsumer(values map[string]string) (ast.TopicConsumerSpec, error) {
-	consumer := ast.TopicConsumerSpec{Name: strings.TrimSpace(values[AttributeName])}
+func ParseConsumer(values map[string]string) (ydbtopic.ConsumerSpec, error) {
+	consumer := ydbtopic.ConsumerSpec{Name: strings.TrimSpace(values[AttributeName])}
 	if consumer.Name == "" {
-		return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a consumer needs a name"}
+		return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a consumer needs a name"}
 	}
 	if strings.Contains(consumer.Name, "/") {
-		return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Value: consumer.Name,
+		return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Value: consumer.Name,
 			Reason: "a consumer's name cannot hold a slash (`consumer ... has illegal symbols`)"}
 	}
 	var err error
 	if consumer.Important, err = boolean(values, AttributeImportant); err != nil {
-		return ast.TopicConsumerSpec{}, err
+		return ydbtopic.ConsumerSpec{}, err
 	}
 	if raw, ok := present(values, AttributeReadFrom); ok {
 		if consumer.ReadFrom, err = NormalizeReadFrom(raw); err != nil {
-			return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeReadFrom, Value: raw, Reason: err.Error()}
+			return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeReadFrom, Value: raw, Reason: err.Error()}
 		}
 	}
 	if raw, ok := present(values, AttributeSupportedCodecs); ok {
 		if consumer.SupportedCodecs, err = parseCodecs(raw); err != nil {
-			return ast.TopicConsumerSpec{}, err
+			return ydbtopic.ConsumerSpec{}, err
 		}
 	}
 	if consumer.AvailabilityPeriod, err = interval(values, AttributeAvailabilityPeriod); err != nil {
-		return ast.TopicConsumerSpec{}, err
+		return ydbtopic.ConsumerSpec{}, err
 	}
 	if consumer.Important && consumer.AvailabilityPeriod != "" {
-		return ast.TopicConsumerSpec{}, &DeclarationError{Attribute: AttributeAvailabilityPeriod,
+		return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeAvailabilityPeriod,
 			Value: consumer.AvailabilityPeriod, Reason: "YDB keeps every unread record for an important consumer, " +
 				"so it takes no availability period as well (`has both an important flag and a limited " +
 				"availability_period, which are mutually exclusive`)"}
@@ -448,7 +448,7 @@ func shapeRefusal(spec ydbschema.ChangefeedSpec) string {
 }
 
 // consumerRefusal says why YDB refuses consumer on every line, or is empty.
-func consumerRefusal(consumer ast.TopicConsumerSpec) string {
+func consumerRefusal(consumer ydbtopic.ConsumerSpec) string {
 	values := map[string]string{AttributeName: consumer.Name}
 	if consumer.Important {
 		values[AttributeImportant] = "true"

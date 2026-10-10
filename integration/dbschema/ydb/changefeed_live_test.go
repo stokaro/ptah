@@ -16,12 +16,12 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -64,7 +64,7 @@ func lineChangefeeds(caps capability.Capabilities) []ydbschema.ChangefeedSpec {
 	audit := ydbschema.ChangefeedSpec{
 		Name: "audit", Mode: "NEW_AND_OLD_IMAGES", Format: "DEBEZIUM_JSON", RetentionPeriod: "PT12H",
 		InitialScan: true, TopicMinActivePartitions: 2,
-		Consumers: []ast.TopicConsumerSpec{
+		Consumers: []ydbtopic.ConsumerSpec{
 			{Name: "billing", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}},
 			{Name: "search"},
 		},
@@ -74,7 +74,7 @@ func lineChangefeeds(caps capability.Capabilities) []ydbschema.ChangefeedSpec {
 	keys.UserSIDs = caps.Has(capability.ChangefeedUserSIDs)
 	keys.SchemaChanges = caps.Has(capability.ChangefeedSchemaChanges)
 	keys.TopicAutoPartitioning = caps.Has(capability.ChangefeedTopicAutoPartitioning)
-	late := map[bool][]ast.TopicConsumerSpec{true: {{Name: "late", AvailabilityPeriod: "PT1H"}}}
+	late := map[bool][]ydbtopic.ConsumerSpec{true: {{Name: "late", AvailabilityPeriod: "PT1H"}}}
 	keys.Consumers = late[caps.Has(capability.TopicConsumerAvailabilityPeriod)]
 	return []ydbschema.ChangefeedSpec{audit, keys}
 }
@@ -147,7 +147,7 @@ func TestYDBChangefeeds_SwapAtLimit(t *testing.T) {
 func TestYDBChangefeeds_ChangesInPlace(t *testing.T) {
 	topic := "`" + changefeedSchema + "/events/feed`"
 	table := "`" + changefeedSchema + "/events`"
-	feed := func(mode, retention string, consumers ...ast.TopicConsumerSpec) ydbschema.ChangefeedSpec {
+	feed := func(mode, retention string, consumers ...ydbtopic.ConsumerSpec) ydbschema.ChangefeedSpec {
 		return ydbschema.ChangefeedSpec{Name: "feed", Mode: mode, Format: "JSON", RetentionPeriod: retention, Consumers: consumers}
 	}
 	steps := []struct {
@@ -156,15 +156,15 @@ func TestYDBChangefeeds_ChangesInPlace(t *testing.T) {
 		want []string
 	}{
 		{name: "the changefeed added", feed: feed("UPDATES", "PT6H",
-			ast.TopicConsumerSpec{Name: "a", SupportedCodecs: []string{"raw"}}, ast.TopicConsumerSpec{Name: "b"}),
+			ydbtopic.ConsumerSpec{Name: "a", SupportedCodecs: []string{"raw"}}, ydbtopic.ConsumerSpec{Name: "b"}),
 			want: []string{
 				"ALTER TABLE " + table + " ADD CHANGEFEED `feed` WITH (MODE = 'UPDATES', FORMAT = 'JSON', RETENTION_PERIOD = Interval('PT6H'))",
 				"ALTER TOPIC " + topic + " ADD CONSUMER `a` WITH (supported_codecs = 'raw')",
 				"ALTER TOPIC " + topic + " ADD CONSUMER `b`",
 			}},
 		{name: "the retention set back, a consumer changed, one dropped and one added", feed: feed("UPDATES", "",
-			ast.TopicConsumerSpec{Name: "a", Important: true, SupportedCodecs: []string{"raw", "zstd"}},
-			ast.TopicConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}),
+			ydbtopic.ConsumerSpec{Name: "a", Important: true, SupportedCodecs: []string{"raw", "zstd"}},
+			ydbtopic.ConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}),
 			want: []string{
 				"ALTER TOPIC " + topic + " SET (retention_period = Interval('P1D'))",
 				"ALTER TOPIC " + topic + " DROP CONSUMER `b`",
@@ -173,7 +173,7 @@ func TestYDBChangefeeds_ChangesInPlace(t *testing.T) {
 				"ALTER TOPIC " + topic + " ADD CONSUMER `c` WITH (read_from = Timestamp('2026-01-01T00:00:00Z'))",
 			}},
 		{name: "a consumer's codecs taken away", feed: feed("UPDATES", "",
-			ast.TopicConsumerSpec{Name: "a", Important: true}, ast.TopicConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}),
+			ydbtopic.ConsumerSpec{Name: "a", Important: true}, ydbtopic.ConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}),
 			want: []string{
 				"-- Consumer a of changefeed feed of table " + changefeedSchema + ".events is dropped and added again, " +
 					"because YDB keeps a consumer's codecs once it has any. It loses its position and starts again from " +
@@ -182,7 +182,7 @@ func TestYDBChangefeeds_ChangesInPlace(t *testing.T) {
 				"ALTER TOPIC " + topic + " ADD CONSUMER `a` WITH (important = TRUE)",
 			}},
 		{name: "the mode changed", feed: feed("KEYS_ONLY", "",
-			ast.TopicConsumerSpec{Name: "a", Important: true}, ast.TopicConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}),
+			ydbtopic.ConsumerSpec{Name: "a", Important: true}, ydbtopic.ConsumerSpec{Name: "c", ReadFrom: "2026-01-01T00:00:00Z"}),
 			want: []string{
 				"-- Changefeed feed of table " + changefeedSchema + ".events is dropped and added again, because YDB " +
 					"changes no option of a changefeed in place. Its stream restarts: the records nobody read are lost, " +
@@ -285,7 +285,7 @@ func TestYDBChangefeeds_LeavesWhatItDoesNotModel(t *testing.T) {
 // as declared, and nothing is left to plan.
 func TestYDBChangefeeds_RebuildCarriesThem(t *testing.T) {
 	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H",
-		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true}}}
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", Important: true}}}
 	withFeed := func(db *schemamodel.Database) {
 		table := db.Tables[0]
 		db.FeatureObjects = must.Must(schemaext.NewObjects(ydbschema.DesiredObject(table.Schema, table.Name, feed)))

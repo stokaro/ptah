@@ -4,8 +4,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"ptah.run/core/ast"
 )
 
 // Settings is a topic's settings with every one resolved: what the server
@@ -59,7 +57,7 @@ func (s Settings) AutoPartitioned() bool { return autoPartitioned(s.Strategy) }
 // strategy, and a topic that was given its strategy later and kept 80% and 20%
 // differs from that declaration: the change names the thresholds and the
 // topic converges.
-func Resolve(spec ast.TopicSpec) Settings {
+func Resolve(spec Spec) Settings {
 	settings := Settings{
 		MinActivePartitions: max(spec.MinActivePartitions, DefaultMinActivePartitions),
 		Strategy:            strings.ToLower(spec.AutoPartitioningStrategy),
@@ -91,13 +89,13 @@ func Resolve(spec ast.TopicSpec) Settings {
 // Equal reports whether two descriptions of a topic describe the one YDB
 // holds: the same resolved settings and the same consumers by name, each the
 // same as YDB keeps it.
-func Equal(desired, current ast.TopicSpec) bool {
+func Equal(desired, current Spec) bool {
 	return SettingsEqual(desired, current) && len(Compare(desired, current).Consumers()) == 0
 }
 
 // SettingsEqual reports whether two descriptions of a topic resolve to the
 // same settings, consumers aside.
-func SettingsEqual(desired, current ast.TopicSpec) bool {
+func SettingsEqual(desired, current Spec) bool {
 	a, b := Resolve(desired), Resolve(current)
 	return a.MinActivePartitions == b.MinActivePartitions &&
 		a.Strategy == b.Strategy &&
@@ -136,7 +134,7 @@ func (c ConsumerChanges) Consumers() []string {
 }
 
 // Compare reads how the consumers of desired differ from those of current.
-func Compare(desired, current ast.TopicSpec) ConsumerChanges {
+func Compare(desired, current Spec) ConsumerChanges {
 	var changes ConsumerChanges
 	for _, have := range current.Consumers {
 		if _, found := consumerNamed(desired.Consumers, have.Name); !found {
@@ -161,7 +159,7 @@ func Compare(desired, current ast.TopicSpec) ConsumerChanges {
 // ConsumerEqual compares two consumers of one name as YDB keeps them: a
 // read_from left out is the start of the epoch, codecs compare as a set, and
 // an availability period compares by the seconds it denotes.
-func ConsumerEqual(a, b ast.TopicConsumerSpec) bool {
+func ConsumerEqual(a, b ConsumerSpec) bool {
 	return a.Important == b.Important &&
 		readFromInstant(a.ReadFrom).Equal(readFromInstant(b.ReadFrom)) &&
 		slices.Equal(codecSet(a.SupportedCodecs), codecSet(b.SupportedCodecs)) &&
@@ -169,10 +167,10 @@ func ConsumerEqual(a, b ast.TopicConsumerSpec) bool {
 }
 
 // consumerNamed finds a consumer by name.
-func consumerNamed(consumers []ast.TopicConsumerSpec, name string) (ast.TopicConsumerSpec, bool) {
-	index := slices.IndexFunc(consumers, func(consumer ast.TopicConsumerSpec) bool { return consumer.Name == name })
+func consumerNamed(consumers []ConsumerSpec, name string) (ConsumerSpec, bool) {
+	index := slices.IndexFunc(consumers, func(consumer ConsumerSpec) bool { return consumer.Name == name })
 	if index < 0 {
-		return ast.TopicConsumerSpec{}, false
+		return ConsumerSpec{}, false
 	}
 	return consumers[index], true
 }

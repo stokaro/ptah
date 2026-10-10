@@ -52,12 +52,6 @@ ptah_schema_roles{dialect="sqlite"} 0
 # HELP ptah_schema_grants Privilege grants.
 # TYPE ptah_schema_grants gauge
 ptah_schema_grants{dialect="sqlite"} 0
-# HELP ptah_schema_topics Standalone topics.
-# TYPE ptah_schema_topics gauge
-ptah_schema_topics{dialect="sqlite"} 0
-# HELP ptah_schema_topic_consumers Consumers of standalone topics.
-# TYPE ptah_schema_topic_consumers gauge
-ptah_schema_topic_consumers{dialect="sqlite"} 0
 # HELP ptah_schema_async_replications Async replications.
 # TYPE ptah_schema_async_replications gauge
 ptah_schema_async_replications{dialect="sqlite"} 0
@@ -103,4 +97,10 @@ ptah_schema_secrets{dialect="sqlite"} 0
 # HELP ptah_schema_streaming_queries Standalone streaming queries.
 # TYPE ptah_schema_streaming_queries gauge
 ptah_schema_streaming_queries{dialect="sqlite"} 0
+# HELP ptah_schema_topics Standalone topics.
+# TYPE ptah_schema_topics gauge
+ptah_schema_topics{dialect="sqlite"} 0
+# HELP ptah_schema_topic_consumers Consumers of standalone topics.
+# TYPE ptah_schema_topic_consumers gauge
+ptah_schema_topic_consumers{dialect="sqlite"} 0
 # EOF

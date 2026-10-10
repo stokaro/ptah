@@ -6,16 +6,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbreport"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 func TestReportValues_CountsBothRepresentationsAndDisabledStreams(t *testing.T) {
 	c := qt.New(t)
 	spec := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true,
-		Consumers: []ast.TopicConsumerSpec{{Name: "first"}, {Name: "second"}}}
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "first"}, {Name: "second"}}}
 	for _, test := range []struct {
 		representation schemaext.Representation
 		value          schemaext.Value

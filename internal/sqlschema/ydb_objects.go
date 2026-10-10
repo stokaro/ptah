@@ -9,6 +9,7 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
 
@@ -25,11 +26,11 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 			return false, nil
 		}
 		return true, alterYDBSequence(database, document, node)
-	case *ast.CreateTopicNode:
-		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
-		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
 	case *ast.ExtensionStatement:
 		if handled, err := appendPoolDeclaration(database, node.Payload); handled {
+			return true, err
+		}
+		if handled, err := appendTopicDeclaration(database, document.base, node.Payload); handled {
 			return true, err
 		}
 		if value, ok := node.Payload.(*ydbast.StreamingQuery); ok {
@@ -48,7 +49,24 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	default:
 		return appendYDBReplication(database, document, statement, sourcePlatform)
 	}
-	return true, nil
+}
+
+// appendTopicDeclaration declares a topic a CREATE TOPIC names, and adds a
+// consumer an ALTER TOPIC ... ADD CONSUMER names to its topic or changefeed.
+func appendTopicDeclaration(database, base *schemamodel.Database, payload ast.ExtensionPayload) (bool, error) {
+	switch value := payload.(type) {
+	case *ydbast.Topic:
+		if value.Change.Before != nil || value.Change.After == nil {
+			return false, nil
+		}
+		var err error
+		database.FeatureObjects, err = ydbtopic.Declare(database.FeatureObjects, value.Schema, value.Name, "", value.Change.After.Spec)
+		return true, err
+	case *ydbast.TopicConsumer:
+		return true, appendTopicConsumer(database, base, value)
+	default:
+		return false, nil
+	}
 }
 
 func appendPoolDeclaration(database *schemamodel.Database, payload ast.ExtensionPayload) (bool, error) {

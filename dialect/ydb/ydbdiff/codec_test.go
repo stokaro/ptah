@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 func TestChangefeedChange_WireRoundTripPreservesDirectionalState(t *testing.T) {
@@ -19,7 +19,7 @@ func TestChangefeedChange_WireRoundTripPreservesDirectionalState(t *testing.T) {
 	}
 	registry, err := schemaext.NewRegistry(codecs...)
 	c.Assert(err, qt.IsNil)
-	before := ydbschema.ChangefeedSpec{Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", Disabled: true, RetentionPeriod: "PT24H", Consumers: []ast.TopicConsumerSpec{{Name: "worker", SupportedCodecs: []string{"zstd", "raw"}, AvailabilityPeriod: "PT1H"}}}
+	before := ydbschema.ChangefeedSpec{Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", Disabled: true, RetentionPeriod: "PT24H", Consumers: []ydbtopic.ConsumerSpec{{Name: "worker", SupportedCodecs: []string{"zstd", "raw"}, AvailabilityPeriod: "PT1H"}}}
 	after := before.Clone()
 	after.Disabled = false
 	after.RetentionPeriod = "PT48H"

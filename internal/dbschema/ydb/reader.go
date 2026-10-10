@@ -19,6 +19,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydburl"
@@ -181,13 +182,25 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 	if err != nil {
 		return nil, err
 	}
+	topics, err := ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return nil, err
+	}
+	featureCoverage, err = featureCoverage.Combine(topics)
+	if err != nil {
+		return nil, err
+	}
 	db := &catalog.Database{FeatureCoverage: featureCoverage, DatabasePath: "/" + strings.Trim(r.database, "/")}
 	// System views supply the settings of database-wide workload objects.
 	// The later walk retains any listed pool that those views did not describe.
 	if err := r.resourcePools(ctx, source, db, scope); err != nil {
 		return nil, err
 	}
-	if err := r.walk(ctx, source, "", db); err != nil {
+	var unread unreadTopics
+	if err := r.walk(ctx, source, "", db, &unread); err != nil {
+		return nil, err
+	}
+	if err := unread.record(db); err != nil {
 		return nil, err
 	}
 	if err := r.unmanagedSecrets(db); err != nil {
@@ -210,7 +223,7 @@ func (r *Reader) readSchemaContext(ctx context.Context, scope workloadReadScope)
 
 // walk reads the directory schema, relative to the database root, and the
 // directories under it.
-func (r *Reader) walk(ctx context.Context, source Source, schema string, db *catalog.Database) error {
+func (r *Reader) walk(ctx context.Context, source Source, schema string, db *catalog.Database, unread *unreadTopics) error {
 	self, entries, err := source.ListDirectory(ctx, r.absolute(schema, ""))
 	if err != nil {
 		return err
@@ -218,7 +231,7 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 	r.directoryAccess(schema, self, db)
 	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
 	for _, entry := range entries {
-		if err := r.entry(ctx, source, schema, entry, db); err != nil {
+		if err := r.entry(ctx, source, schema, entry, db, unread); err != nil {
 			return err
 		}
 	}
@@ -239,11 +252,12 @@ func (r *Reader) entry(
 	schema string,
 	entry *Ydb_Scheme.Entry,
 	db *catalog.Database,
+	unread *unreadTopics,
 ) error {
 	name := entry.GetName()
 	switch entry.GetType() {
 	case Ydb_Scheme.Entry_DIRECTORY:
-		return r.directory(ctx, source, schema, name, db)
+		return r.directory(ctx, source, schema, name, db, unread)
 	case Ydb_Scheme.Entry_TABLE:
 		return r.tableEntry(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_COLUMN_TABLE:
@@ -272,6 +286,10 @@ func (r *Reader) entry(
 		return r.listedResourcePool(db, name)
 	}
 	if !r.inScope(schema) {
+		return nil
+	}
+	if reason, topic := unreadTopicEntries[entry.GetType()]; topic {
+		unread.add(schema, name, reason)
 		return nil
 	}
 	kind, known := unmodeledEntries[entry.GetType()]
@@ -358,7 +376,7 @@ func (r *Reader) keyedEntry(
 
 // directory reads the directory name in schema, unless it belongs to the
 // server or to the dev realms.
-func (r *Reader) directory(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+func (r *Reader) directory(ctx context.Context, source Source, schema, name string, db *catalog.Database, unread *unreadTopics) error {
 	if strings.HasPrefix(name, ".") {
 		// .sys, .metadata, .tmp and every other dot-directory belong to the
 		// server.
@@ -369,18 +387,16 @@ func (r *Reader) directory(ctx context.Context, source Source, schema, name stri
 		// database's schema.
 		return nil
 	}
-	return r.walk(ctx, source, path.Join(schema, name), db)
+	return r.walk(ctx, source, path.Join(schema, name), db, unread)
 }
 
 // unmodeledEntries maps each scheme entry type Ptah does not model to the
-// coverage kind it is recorded under. A view, a topic, an async replication
-// and a transfer are here for a server without [capability.Views],
-// [capability.Topics], [capability.AsyncReplication] or [capability.Transfers],
-// whose reader records them rather than describing them.
+// coverage kind it is recorded under. A view, an async replication and a
+// transfer are here for a server without [capability.Views],
+// [capability.AsyncReplication] or [capability.Transfers], whose reader
+// records them rather than describing them.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_VIEW:                 coverage.View,
-	Ydb_Scheme.Entry_TOPIC:                coverage.Topic,
-	Ydb_Scheme.Entry_PERS_QUEUE_GROUP:     coverage.Topic,
 	Ydb_Scheme.Entry_COLUMN_TABLE:         coverage.ColumnTable,
 	Ydb_Scheme.Entry_COLUMN_STORE:         coverage.ColumnTable,
 	Ydb_Scheme.Entry_SEQUENCE:             coverage.Sequence,

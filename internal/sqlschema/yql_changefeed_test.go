@@ -6,9 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -27,7 +27,7 @@ func TestReadYQLChangefeedSettings(t *testing.T) {
 		Name: "updates", Mode: "NEW_AND_OLD_IMAGES", Format: "JSON", VirtualTimestamps: true,
 		ResolvedTimestamps: "PT1S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 		TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
-		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true, SupportedCodecs: []string{"raw", "gzip"}}},
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", Important: true, SupportedCodecs: []string{"raw", "gzip"}}},
 	}})
 }
 
@@ -43,9 +43,12 @@ func TestReadYQLChangefeedIdentityAcrossFiles(t *testing.T) {
 	base = *merged
 	_, _, err = sqlschema.ReadOnto([]byte("ALTER TOPIC `app.events/updates` ADD CONSUMER dotted; ALTER TOPIC `app/events/updates` ADD CONSUMER nested; ALTER TOPIC `app.events/audit` ADD CONSUMER ordinary;"), "ydb", document)
 	c.Assert(err, qt.IsNil)
-	c.Assert(must.Must(ydbschema.DesiredChangefeeds(base.FeatureObjects, base.Tables[0].Schema, base.Tables[0].Name))[0].Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "dotted"}})
-	c.Assert(must.Must(ydbschema.DesiredChangefeeds(base.FeatureObjects, base.Tables[1].Schema, base.Tables[1].Name))[0].Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "nested"}})
-	c.Assert(base.Topics[0].Spec.Consumers, qt.DeepEquals, []ast.TopicConsumerSpec{{Name: "ordinary"}})
+	c.Assert(must.Must(ydbschema.DesiredChangefeeds(base.FeatureObjects, base.Tables[0].Schema, base.Tables[0].Name))[0].Consumers, qt.DeepEquals, []ydbtopic.ConsumerSpec{{Name: "dotted"}})
+	c.Assert(must.Must(ydbschema.DesiredChangefeeds(base.FeatureObjects, base.Tables[1].Schema, base.Tables[1].Name))[0].Consumers, qt.DeepEquals, []ydbtopic.ConsumerSpec{{Name: "nested"}})
+	topic, found, err := base.FeatureObjects.Get(ydbtopic.Ref("app.events", "audit"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(topic.Value, qt.DeepEquals, &ydbtopic.Desired{Spec: ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{{Name: "ordinary"}}}})
 }
 
 func TestReadYQLChangefeedRefusals(t *testing.T) {

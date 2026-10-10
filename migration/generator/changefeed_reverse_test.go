@@ -7,13 +7,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
@@ -49,7 +49,7 @@ func TestPlanBidirectionalSchemaDiff_ChangefeedsRollBack(t *testing.T) {
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
 	added := ydbschema.ChangefeedSpec{Name: "fresh", Mode: "KEYS_ONLY", Format: "JSON"}
-	dropped := ydbschema.ChangefeedSpec{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "reader"}}}
+	dropped := ydbschema.ChangefeedSpec{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "reader"}}}
 	before, after := changefeedDeclaration(c, dropped), changefeedDeclaration(c, added)
 	current, err := goschematodb.ToDBSchema(t.Context(), before, "ydb", runtime)
 	c.Assert(err, qt.IsNil)

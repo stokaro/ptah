@@ -1,10 +1,9 @@
 package yqlparse
 
 import (
-	"strings"
-
 	"ptah.run/core/ast"
-	"ptah.run/internal/tableref"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 func (p *parser) declaration() ast.Node {
@@ -101,14 +100,13 @@ func (p *parser) alterDeclaration() ast.Node {
 		return p.changefeed()
 	case p.word("TOPIC"):
 		p.pos++
-		path := decodedName(p.path())
-		directory, name := "", path
-		if slash := strings.LastIndexByte(path, '/'); slash >= 0 {
-			directory, name = path[:slash], path[slash+1:]
+		ref, err := ydbtopic.ParsePath(decodedName(p.path()))
+		if err != nil {
+			p.failf("%v", err)
 		}
 		p.wantWord("ADD")
 		p.wantWord("CONSUMER")
-		return ast.NewAddTopicConsumer(tableref.Canonical(directory, name), p.consumer())
+		return &ast.ExtensionStatement{Payload: &ydbast.TopicConsumer{Schema: ref.Schema.Source, Name: ref.Name.Source, Consumer: p.consumer()}}
 	default:
 		return p.defaultPool()
 	}

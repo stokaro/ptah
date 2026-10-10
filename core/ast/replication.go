@@ -202,6 +202,10 @@ func (n *AlterTransferNode) Accept(visitor Visitor) error { return visitor.Visit
 type DropTransferNode struct {
 	// Name is the transfer's canonical reference.
 	Name string
+	// Topic is the path of the topic the transfer reads, as the transfer
+	// names it, or empty when it reads another database's. Nothing is
+	// rendered from it: a plan reads it to drop the transfer before the topic.
+	Topic string
 }
 
 // NewDropTransfer creates a DROP TRANSFER node.

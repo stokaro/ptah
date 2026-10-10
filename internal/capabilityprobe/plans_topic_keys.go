@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // withTopicKeys adds the question the YDB renderer, reader and planner decide
@@ -49,7 +49,7 @@ func ydbTopicExperiments() []experiment {
 			after: []check{ydbDescribedTopic("tpk",
 				"the topic with two partitions, keeping messages for 12 hours, read by important consumer c "+
 					"and by consumer d from 2026-01-01",
-				func(spec ast.TopicSpec) bool {
+				func(spec ydbtopic.Spec) bool {
 					return spec.MinActivePartitions == 2 && spec.RetentionPeriod == "PT12H" &&
 						len(spec.Consumers) == 2 && spec.Consumers[0].Name == "c" && spec.Consumers[0].Important &&
 						spec.Consumers[1].Name == "d" && spec.Consumers[1].ReadFrom == "2026-01-01T00:00:00Z"
@@ -60,7 +60,7 @@ func ydbTopicExperiments() []experiment {
 
 // ydbDescribedTopic reads the namespace through Ptah's YDB reader and holds
 // when its topic name reads back as want says.
-func ydbDescribedTopic(name, expectation string, want func(ast.TopicSpec) bool) check {
+func ydbDescribedTopic(name, expectation string, want func(ydbtopic.Spec) bool) check {
 	return check{
 		describes: expectation,
 		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
@@ -72,10 +72,13 @@ func ydbDescribedTopic(name, expectation string, want func(ast.TopicSpec) bool) 
 				return attempt, false, "was refused"
 			}
 			attempt.Accepted = true
-			for _, found := range db.Topics {
-				if found.Name == name {
-					return attempt, want(found.Spec), fmt.Sprintf("read %+v", found.Spec)
-				}
+			object, found, err := db.FeatureObjects.Get(ydbtopic.Ref(s.namespace, name))
+			if err != nil {
+				attempt.ServerErr = err.Error()
+				return attempt, false, "could not be captured"
+			}
+			if topic, observed := object.Value.(*ydbtopic.Observed); found && observed {
+				return attempt, want(topic.Spec), fmt.Sprintf("read %+v", topic.Spec)
 			}
 			return attempt, false, "found no such topic"
 		},

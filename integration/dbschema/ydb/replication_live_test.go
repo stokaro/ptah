@@ -25,7 +25,9 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -111,8 +113,8 @@ func dropReplications(c *qt.C, conn *dbschema.DatabaseConnection) {
 				qt.IsNil)
 		}
 	}
-	for _, topic := range live.Topics {
-		c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP TOPIC `"+replicationSchema+"/"+topic.Name+"`"), qt.IsNil)
+	for _, path := range liveTopics(c, live) {
+		c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP TOPIC "+sqlident.Quote("ydb", path)), qt.IsNil)
 	}
 	dropTables(c, conn, replicationSchemas)
 }
@@ -457,29 +459,33 @@ func waitForRows(c *qt.C, conn *dbschema.DatabaseConnection, count string, want 
 	}
 }
 
-// TestYDBTransfer_FromATopic creates a transfer of a declared standalone topic
-// after the topic, and plans nothing once it runs: the consumer YDB created
-// for it stays on the topic the schema declares without it.
+// TestYDBTransfer_FromATopic creates a declared standalone topic first and a
+// transfer of it last, and plans nothing once the transfer runs: the consumer
+// YDB created for it stays on the topic the schema declares without it.
 func TestYDBTransfer_FromATopic(t *testing.T) {
 	c := qt.New(t)
 	conn := openYDB(c, lineNamed(c, "26.2"))
 	dropReplications(c, conn)
 	c.Cleanup(func() { dropReplications(c, conn) })
 	declared := transferDeclaration("")
-	declared.Topics = []schemamodel.Topic{{Name: "events", Schema: replicationSchema}}
+	declared.FeatureObjects = must.Must(declared.FeatureObjects.With(ydbtopic.DesiredObject(replicationSchema, "events", "", ydbtopic.Spec{})))
+	declared.FeatureCoverage = must.Must(declared.FeatureCoverage.Combine(
+		must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 	declared.Transfers = []schemamodel.Transfer{{Name: "ingest", Schema: replicationSchema, Spec: ast.TransferSpec{
 		Source: replicationSchema + "/events", Target: replicationSchema + "/order_log", Lambda: lambdaWriting("t:"),
 	}}}
 
+	// The topic is created with the other standalone objects, ahead of the
+	// tables, and the transfer last of all.
 	first := planAgainst(c, conn, declared, replicationSchemas)
-	c.Assert(first[len(first)-2:], qt.DeepEquals, []string{
-		"CREATE TOPIC `ptah_ydb_repl/events`",
-		"CREATE TRANSFER `ptah_ydb_repl/ingest` FROM `ptah_ydb_repl/events` TO `ptah_ydb_repl/order_log` USING " +
-			lambdaWriting("t:"),
-	})
+	c.Assert(first[0], qt.Equals, "CREATE TOPIC `ptah_ydb_repl/events`")
+	c.Assert(first[len(first)-1], qt.Equals,
+		"CREATE TRANSFER `ptah_ydb_repl/ingest` FROM `ptah_ydb_repl/events` TO `ptah_ydb_repl/order_log` USING "+lambdaWriting("t:"))
 	apply(c, conn, first)
 	settledRead(c, conn, "the transfer's consumer on the topic", func(live *catalog.Database) bool {
-		return len(live.Topics) == 1 && len(live.Topics[0].Spec.Consumers) == 1
+		object, found, err := live.FeatureObjects.Get(ydbtopic.Ref(replicationSchema, "events"))
+		topic, observed := object.Value.(*ydbtopic.Observed)
+		return err == nil && found && observed && len(topic.Spec.Consumers) == 1
 	})
 	c.Assert(planAgainst(c, conn, declared, replicationSchemas), qt.HasLen, 0)
 }

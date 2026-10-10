@@ -7,12 +7,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/internal/sqlident"
 )
 
 // topicSchema is the directory the topic tests write into.
@@ -20,58 +24,77 @@ const topicSchema = "ptah_ydb_topics"
 
 var topicSchemas = []string{topicSchema}
 
-// topicDeclaration declares the topics in the topic directory, with one table
-// beside them so a read of the directory is not empty for the topics alone.
-func topicDeclaration(topics ...schemamodel.Topic) *schemamodel.Database {
-	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Note", Name: "notes", Schema: topicSchema}},
-		Fields: []schemamodel.Field{{StructName: "Note", Name: "id", Type: "BIGINT", Primary: true}},
+// topic is one topic the tests declare in the topic directory.
+type topic struct {
+	name string
+	spec ydbtopic.Spec
+}
+
+// topicDeclaration declares the topics in the topic directory, from a source
+// that describes every topic, with one table beside them so a read of the
+// directory is not empty for the topics alone.
+func topicDeclaration(topics ...topic) *schemamodel.Database {
+	objects := make([]schemaext.Object, 0, len(topics))
+	for _, declared := range topics {
+		objects = append(objects, ydbtopic.DesiredObject(topicSchema, declared.name, "", declared.spec))
 	}
-	for _, topic := range topics {
-		topic.Schema = topicSchema
-		db.Topics = append(db.Topics, topic)
+	db := &schemamodel.Database{
+		Tables:          []schemamodel.Table{{StructName: "Note", Name: "notes", Schema: topicSchema}},
+		Fields:          []schemamodel.Field{{StructName: "Note", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	}
 	schemamodel.Finalize(db)
 	return db
 }
 
-// dropTopics drops every topic and table in the topic directory.
+// liveTopics names, by path, every topic a read observed.
+func liveTopics(c *qt.C, live *catalog.Database) []string {
+	c.Helper()
+	var paths []string
+	for _, ref := range live.FeatureObjects.Select(func(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbtopic.Kind) }).Refs() {
+		paths = append(paths, ydbtopic.Display(ref.Schema.Source, ref.Name.Source))
+	}
+	return paths
+}
+
+// dropTopics drops every topic and table in the topic directory. It runs in a
+// cleanup too, where the test's context has ended.
 func dropTopics(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(context.Background(), conn, topicSchemas)
 	c.Assert(err, qt.IsNil)
-	for _, topic := range live.Topics {
-		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP TOPIC `"+topicSchema+"/"+topic.Name+"`"), qt.IsNil)
+	for _, path := range liveTopics(c, live) {
+		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP TOPIC "+sqlident.Quote("ydb", path)), qt.IsNil)
 	}
 	dropTables(c, conn, topicSchemas)
 }
 
-// topicNamed returns the topic name of the read, or fails.
-func topicNamed(c *qt.C, live *catalog.Database, name string) ast.TopicSpec {
+// topicNamed returns the settings of the topic name of the read, or fails.
+func topicNamed(c *qt.C, live *catalog.Database, name string) ydbtopic.Spec {
 	c.Helper()
-	for _, topic := range live.Topics {
-		if topic.Schema == topicSchema && topic.Name == name {
-			return topic.Spec
-		}
-	}
-	c.Fatalf("topic %s/%s is not in the read %+v", topicSchema, name, live.Topics)
-	return ast.TopicSpec{}
+	object, found, err := live.FeatureObjects.Get(ydbtopic.Ref(topicSchema, name))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue, qt.Commentf("topic %s/%s is not in the read %v", topicSchema, name, liveTopics(c, live)))
+	observed, ok := object.Value.(*ydbtopic.Observed)
+	c.Assert(ok, qt.IsTrue)
+	return observed.Spec
 }
 
 // fullTopic declares a topic naming every setting and two consumers, one
 // with an availability period on a line that takes one.
-func fullTopic(caps capability.Capabilities) schemamodel.Topic {
-	audit := ast.TopicConsumerSpec{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}
+func fullTopic(caps capability.Capabilities) topic {
+	audit := ydbtopic.ConsumerSpec{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}
 	if caps.Has(capability.TopicConsumerAvailabilityPeriod) {
 		audit.AvailabilityPeriod = "PT2H"
 	}
-	return schemamodel.Topic{Name: "orders", Spec: ast.TopicSpec{
+	return topic{name: "orders", spec: ydbtopic.Spec{
 		MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
 		AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
 		AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "PT36H",
 		PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
 		SupportedCodecs: []string{"raw", "gzip"},
-		Consumers:       []ast.TopicConsumerSpec{{Name: "billing", Important: true}, audit},
+		Consumers:       []ydbtopic.ConsumerSpec{{Name: "billing", Important: true}, audit},
 	}}
 }
 
@@ -86,10 +109,10 @@ func TestYDBTopics_RoundTrip(t *testing.T) {
 			dropTopics(c, conn)
 			c.Cleanup(func() { dropTopics(c, conn) })
 			full := fullTopic(line.preset())
-			declared := topicDeclaration(full, schemamodel.Topic{Name: "plain"})
+			declared := topicDeclaration(full, topic{name: "plain"})
 
 			first := planAgainst(c, conn, declared, topicSchemas)
-			c.Assert(first[1:], qt.DeepEquals, []string{
+			c.Assert(first[:2], qt.DeepEquals, []string{
 				"CREATE TOPIC `ptah_ydb_topics/orders` (" + consumerClauses(full) + ") WITH (" +
 					"min_active_partitions = 2, max_active_partitions = 6, auto_partitioning_strategy = 'scale_up', " +
 					"auto_partitioning_up_utilization_percent = 70, auto_partitioning_down_utilization_percent = 10, " +
@@ -104,15 +127,15 @@ func TestYDBTopics_RoundTrip(t *testing.T) {
 			c.Assert(planAgainst(c, conn, declared, topicSchemas), qt.HasLen, 0)
 
 			live := readScoped(c, conn, topicSchemas)
-			c.Assert(topicNamed(c, live, "orders"), qt.DeepEquals, ast.TopicSpec{
+			c.Assert(topicNamed(c, live, "orders"), qt.DeepEquals, ydbtopic.Spec{
 				MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
 				AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
 				AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "P1DT12H",
 				PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
 				SupportedCodecs: []string{"raw", "gzip"},
-				Consumers:       full.Spec.Consumers,
+				Consumers:       full.spec.Consumers,
 			})
-			c.Assert(topicNamed(c, live, "plain"), qt.DeepEquals, ast.TopicSpec{
+			c.Assert(topicNamed(c, live, "plain"), qt.DeepEquals, ydbtopic.Spec{
 				MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
 				PartitionWriteSpeedBytesPerSecond: 1048576, PartitionWriteBurstBytes: 1048576,
 			})
@@ -121,9 +144,9 @@ func TestYDBTopics_RoundTrip(t *testing.T) {
 }
 
 // consumerClauses is the consumer list CREATE TOPIC writes for the full topic.
-func consumerClauses(topic schemamodel.Topic) string {
+func consumerClauses(full topic) string {
 	audit := "CONSUMER `audit` WITH (read_from = Timestamp('2026-01-01T00:00:00Z'), supported_codecs = 'raw,gzip')"
-	if topic.Spec.Consumers[1].AvailabilityPeriod != "" {
+	if full.spec.Consumers[1].AvailabilityPeriod != "" {
 		audit = "CONSUMER `audit` WITH (read_from = Timestamp('2026-01-01T00:00:00Z'), supported_codecs = 'raw,gzip', " +
 			"availability_period = Interval('PT2H'))"
 	}
@@ -146,9 +169,9 @@ func TestYDBTopics_ChangesConverge(t *testing.T) {
 			conn := openYDB(c, line)
 			dropTopics(c, conn)
 			c.Cleanup(func() { dropTopics(c, conn) })
-			before := schemamodel.Topic{Name: "events", Spec: ast.TopicSpec{
+			before := topic{name: "events", spec: ydbtopic.Spec{
 				PartitionWriteSpeedBytesPerSecond: 2097152,
-				Consumers: []ast.TopicConsumerSpec{
+				Consumers: []ydbtopic.ConsumerSpec{
 					{Name: "gone"},
 					{Name: "kept", Important: true},
 					{Name: "narrowed", SupportedCodecs: []string{"raw"}},
@@ -156,10 +179,10 @@ func TestYDBTopics_ChangesConverge(t *testing.T) {
 			}}
 			apply(c, conn, planAgainst(c, conn, topicDeclaration(before), topicSchemas))
 
-			after := topicDeclaration(schemamodel.Topic{Name: "events", Spec: ast.TopicSpec{
+			after := topicDeclaration(topic{name: "events", spec: ydbtopic.Spec{
 				MinActivePartitions: 2, MaxActivePartitions: 4, AutoPartitioningStrategy: "scale_up",
 				RetentionPeriod: "PT2H", PartitionWriteSpeedBytesPerSecond: 4194304,
-				Consumers: []ast.TopicConsumerSpec{
+				Consumers: []ydbtopic.ConsumerSpec{
 					{Name: "kept", ReadFrom: "2026-01-01T00:00:00Z"},
 					{Name: "narrowed"},
 					{Name: "fresh", Important: true},
@@ -169,12 +192,12 @@ func TestYDBTopics_ChangesConverge(t *testing.T) {
 
 			c.Assert(planAgainst(c, conn, after, topicSchemas), qt.HasLen, 0)
 			live := topicNamed(c, readScoped(c, conn, topicSchemas), "events")
-			c.Assert(live, qt.DeepEquals, ast.TopicSpec{
+			c.Assert(live, qt.DeepEquals, ydbtopic.Spec{
 				MinActivePartitions: 2, MaxActivePartitions: 4, AutoPartitioningStrategy: "scale_up",
 				AutoPartitioningUpUtilizationPercent: 90, AutoPartitioningDownUtilizationPercent: 30,
 				AutoPartitioningStabilizationWindow: "PT5M", RetentionPeriod: "PT2H",
 				PartitionWriteSpeedBytesPerSecond: 4194304, PartitionWriteBurstBytes: 4194304,
-				Consumers: []ast.TopicConsumerSpec{
+				Consumers: []ydbtopic.ConsumerSpec{
 					{Name: "kept", ReadFrom: "2026-01-01T00:00:00Z"},
 					{Name: "fresh", Important: true},
 					{Name: "narrowed"},
@@ -193,13 +216,13 @@ func TestYDBTopics_DropRemovesTheTopic(t *testing.T) {
 			conn := openYDB(c, line)
 			dropTopics(c, conn)
 			c.Cleanup(func() { dropTopics(c, conn) })
-			apply(c, conn, planAgainst(c, conn, topicDeclaration(schemamodel.Topic{Name: "events"}), topicSchemas))
+			apply(c, conn, planAgainst(c, conn, topicDeclaration(topic{name: "events"}), topicSchemas))
 
 			drop := planAgainst(c, conn, topicDeclaration(), topicSchemas)
 			apply(c, conn, drop)
 
 			c.Assert(drop, qt.DeepEquals, []string{"DROP TOPIC `ptah_ydb_topics/events`"})
-			c.Assert(readScoped(c, conn, topicSchemas).Topics, qt.HasLen, 0)
+			c.Assert(liveTopics(c, readScoped(c, conn, topicSchemas)), qt.HasLen, 0)
 		})
 	}
 }
@@ -215,7 +238,7 @@ func TestYDBTopics_ATopicAndATableTradeAPath(t *testing.T) {
 			conn := openYDB(c, line)
 			dropTopics(c, conn)
 			c.Cleanup(func() { dropTopics(c, conn) })
-			asTopic := topicDeclaration(schemamodel.Topic{Name: "swap"})
+			asTopic := topicDeclaration(topic{name: "swap"})
 			asTable := topicDeclaration()
 			asTable.Tables = append(asTable.Tables, schemamodel.Table{StructName: "Swap", Name: "swap", Schema: topicSchema})
 			asTable.Fields = append(asTable.Fields, schemamodel.Field{StructName: "Swap", Name: "id", Type: "BIGINT", Primary: true})

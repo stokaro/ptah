@@ -6,9 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 )
 
 // TestParse_YDBChangefeed_HappyPath reads a table's changefeeds in YAML, keyed
@@ -47,7 +47,7 @@ tables:
 	c.Assert(must.Must(ydbschema.DesiredChangefeeds(db.FeatureObjects, db.Tables[0].Schema, db.Tables[0].Name)), qt.DeepEquals, []ydbschema.ChangefeedSpec{
 		{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON", TopicMinActivePartitions: 2},
 		{Name: "updates", Mode: "UPDATES", Format: "JSON", VirtualTimestamps: true, RetentionPeriod: "PT12H",
-			Consumers: []ast.TopicConsumerSpec{
+			Consumers: []ydbtopic.ConsumerSpec{
 				{Name: "audit", Important: true},
 				{Name: "late", SupportedCodecs: []string{"raw", "gzip"}, ReadFrom: "2026-01-01T00:00:00Z"},
 			}},

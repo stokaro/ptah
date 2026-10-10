@@ -27,6 +27,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	ydbreader "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/ydbcolumn"
@@ -500,7 +501,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.ColumnFamily, "app.t"),
 		observed(coverage.TableOption, "app.t"),
 		observed(coverage.ExternalTable, "ext"),
-		observed(coverage.Topic, "legacy_queue"),
 		observed(coverage.ColumnTable, "olap"),
 		observed(coverage.Replication, "repl"),
 		observed(coverage.Sequence, "seq"),
@@ -508,6 +508,8 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.ColumnTable, "store"),
 		observed(coverage.Transfer, "xfer"),
 	))
+	c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "legacy_queue")), qt.DeepEquals,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbtopic.QueueGroupReason})
 	c.Assert(db.FeatureCoverage.Lookup(ydbstreaming.Kind, ydbstreaming.Ref("", "stream")).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("pool")).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(db.Tables, qt.HasLen, 2)

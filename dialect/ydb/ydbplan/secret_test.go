@@ -60,11 +60,14 @@ func scheduledNames(c *qt.C, chain hostChain, result featureplan.Result) []strin
 	c.Assert(err, qt.IsNil)
 	var names []string
 	for _, step := range plan.Steps {
-		if operation, ok := step.Payload.Payload.(*ydbast.Secret); ok {
+		switch operation := step.Payload.Payload.(type) {
+		case *ydbast.Secret:
 			names = append(names, string(operation.Operation)+" "+operation.Path())
-			continue
+		case *ydbast.Topic:
+			names = append(names, topicOperationName(operation))
+		default:
+			names = append(names, step.ID.Name)
 		}
-		names = append(names, step.ID.Name)
 	}
 	return names
 }

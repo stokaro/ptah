@@ -187,20 +187,14 @@ const (
 // records each one it meets, by the path of the object or of the table that
 // carries it, so a description's silence about them is never read as their
 // absence and nothing plans their removal. Like [ChangeStream], none of them
-// but [Topic], [Replication],
-// [Transfer] and [ReplicaTable] is consulted by a comparator or a planner,
+// but [Replication], [Transfer] and [ReplicaTable] is consulted by a
+// comparator or a planner,
 // because no planner writes the others.
 const (
 	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
 	// a server without the views capability. Every YDB line Ptah measured has
 	// it, and there the reader describes each view instead.
 	View Kind = "view"
-	// Topic is a YDB topic, a persistent message queue in the scheme tree.
-	// The reader describes a topic YQL creates, and records one of the older
-	// persistent queue kind, which it does not read. The topic comparator
-	// consults it in both directions, so a description that cannot express
-	// topics does not plan their removal.
-	Topic Kind = "topic"
 	// ColumnTable is a YDB column-oriented table (STORE = COLUMN), or the
 	// column store that holds such tables.
 	ColumnTable Kind = "column_table"
@@ -271,7 +265,7 @@ var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
 	Role, Schema, Sequence, Synonym, TableOption,
-	Topic, Transfer, TTL, View, VirtualTable,
+	Transfer, TTL, View, VirtualTable,
 }
 
 // ParseKind resolves a serialized kind token. It refuses anything not in the

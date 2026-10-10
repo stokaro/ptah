@@ -13,9 +13,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbtopic"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -88,23 +89,23 @@ func TestReader_Topic_HappyPath(t *testing.T) {
 	tests := []struct {
 		name      string
 		described *Ydb_Topic.DescribeTopicResult
-		want      ast.TopicSpec
+		want      ydbtopic.Spec
 	}{
 		{name: "created without settings", described: standaloneTopic(),
-			want: ast.TopicSpec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
+			want: ydbtopic.Spec{MinActivePartitions: 1, AutoPartitioningStrategy: "disabled", RetentionPeriod: "P1D",
 				PartitionWriteSpeedBytesPerSecond: 1048576, PartitionWriteBurstBytes: 1048576}},
 		{name: "every setting and two consumers", described: scaled,
-			want: ast.TopicSpec{MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
+			want: ydbtopic.Spec{MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
 				AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
 				AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "P1DT12H",
 				PartitionWriteSpeedBytesPerSecond: 1048576, PartitionWriteBurstBytes: 1048576,
 				SupportedCodecs: []string{"raw", "gzip"},
-				Consumers: []ast.TopicConsumerSpec{
+				Consumers: []ydbtopic.ConsumerSpec{
 					{Name: "billing", Important: true},
 					{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"zstd", "custom"}, AvailabilityPeriod: "PT2H"},
 				}}},
 		{name: "auto-partitioning paused", described: paused,
-			want: ast.TopicSpec{MinActivePartitions: 1, MaxActivePartitions: 4, AutoPartitioningStrategy: "paused",
+			want: ydbtopic.Spec{MinActivePartitions: 1, MaxActivePartitions: 4, AutoPartitioningStrategy: "paused",
 				AutoPartitioningUpUtilizationPercent: 80, AutoPartitioningDownUtilizationPercent: 20,
 				AutoPartitioningStabilizationWindow: "PT5M", RetentionPeriod: "P1D",
 				PartitionWriteSpeedBytesPerSecond: 1048576, PartitionWriteBurstBytes: 1048576}},
@@ -114,8 +115,10 @@ func TestReader_Topic_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			db, err := readTopic(c, test.described)
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Topics, qt.DeepEquals, []catalog.Topic{{Name: "events", Schema: "app", Spec: test.want}})
-			c.Assert(db.NotDescribed.Describes(coverage.Topic, "app.events"), qt.IsTrue)
+			objects, err := db.FeatureObjects.Select(isTopic).All()
+			c.Assert(err, qt.IsNil)
+			c.Assert(objects, qt.DeepEquals, []schemaext.Object{ydbtopic.ObservedObject("app", "events", test.want)})
+			c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("app", "events")).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }
@@ -205,7 +208,7 @@ func TestReader_Topic_FailurePath(t *testing.T) {
 
 // A topic of the older persistent queue kind is recorded, not read: no
 // statement Ptah writes creates one, and the scheme service lists it apart
-// from a topic YQL creates.
+// from a topic YQL creates. A plan neither keeps nor drops it.
 func TestReader_PersistentQueueIsRecorded(t *testing.T) {
 	c := qt.New(t)
 	source := fakeSource{directories: map[string][]*Ydb_Scheme.Entry{
@@ -215,6 +218,10 @@ func TestReader_PersistentQueueIsRecorded(t *testing.T) {
 	db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchema()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Topics, qt.HasLen, 0)
-	c.Assert(db.NotDescribed.Describes(coverage.Topic, "legacy"), qt.IsFalse)
+	c.Assert(db.FeatureObjects.Select(isTopic).Len(), qt.Equals, 0)
+	c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "legacy")), qt.DeepEquals,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbtopic.QueueGroupReason})
 }
+
+// isTopic selects the topics of a read.
+func isTopic(ref objectidentity.ID) bool { return ref.Kind == objectidentity.Kind(ydbtopic.Kind) }

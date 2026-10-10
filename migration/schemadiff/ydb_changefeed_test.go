@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -17,6 +16,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -59,9 +59,9 @@ func changefeedCatalog(changefeeds ...ydbschema.ChangefeedSpec) *catalog.Databas
 // consumer's start as the epoch YDB reports for none.
 var (
 	declared = ydbschema.ChangefeedSpec{Name: "updates", Mode: "updates", Format: "json", RetentionPeriod: "PT720M",
-		Consumers: []ast.TopicConsumerSpec{{Name: "audit", SupportedCodecs: []string{"GZIP", "raw"}}}}
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", SupportedCodecs: []string{"GZIP", "raw"}}}}
 	read = ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H",
-		Consumers: []ast.TopicConsumerSpec{{Name: "audit", ReadFrom: "1970-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}}}
+		Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", ReadFrom: "1970-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"}}}}
 )
 
 // TestCompare_YDBChangefeedReadsBackAsDeclared holds a changefeed the database
@@ -185,6 +185,7 @@ func completeYDBFixtureCoverage() schemaext.Coverage {
 	nodes := must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	queries := must.Must(ydbstreaming.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	secrets := must.Must(ydbsecret.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	combined := must.Must(must.Must(must.Must(feeds.Combine(nodes)).Combine(queries)).Combine(secrets))
+	topics := must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	combined := must.Must(must.Must(must.Must(must.Must(feeds.Combine(nodes)).Combine(queries)).Combine(secrets)).Combine(topics))
 	return must.Must(combined.Combine(workloadCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete})))
 }
