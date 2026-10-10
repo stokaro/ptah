@@ -600,6 +600,11 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	if err := atlashcl.AttachTableSettings(merged, settings); err != nil {
 		return nil, err
 	}
+	if format == schemaDirFormatSQL {
+		if err := sqlschema.OwnRowSecurity(merged, opts.Dialect); err != nil {
+			return nil, err
+		}
+	}
 	schemamodel.Finalize(merged)
 	return merged, nil
 }
@@ -738,7 +743,7 @@ func loadSourceInto(source Source, opts Options, merged *schemamodel.Database, d
 			return err
 		}
 		withFormatLimits(merged, resolved, opts.Dialect)
-		return nil
+		return sqlschema.OwnRowSecurity(merged, opts.Dialect)
 	}
 	db, err := LoadPath(resolved, opts)
 	if err != nil {

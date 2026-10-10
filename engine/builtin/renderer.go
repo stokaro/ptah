@@ -1114,6 +1114,9 @@ func validateDeclaredTableSettings(dialect string, caps capability.Capabilities,
 }
 
 func validateDeclaredFeatures(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	if err := validateDeclaredRowSecurity(dialect, database); err != nil {
+		return err
+	}
 	if err := validateDeclaredFacets(dialect, database); err != nil {
 		return err
 	}
@@ -2035,6 +2038,9 @@ func validateDatabaseDeclarations(
 	caps capability.Capabilities,
 	database *schemamodel.Database,
 ) error {
+	if err := validateDeclaredRowSecurity(dialect, database); err != nil {
+		return err
+	}
 	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
 		return err
 	}

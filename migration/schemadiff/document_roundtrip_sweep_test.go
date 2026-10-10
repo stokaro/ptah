@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -135,7 +136,12 @@ func roundTripRows() []roundTripRow {
 					ToRoles: "app", UsingExpression: "true",
 				})
 			},
-			count: func(d *schemamodel.Database) int { return len(d.RLSPolicies) },
+			// The shared declaration reads back as the row-security owner's.
+			count: func(d *schemamodel.Database) int {
+				return len(d.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+					return ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind)
+				}).Refs())
+			},
 		},
 		{
 			field: "RLSEnabledTables",
@@ -144,7 +150,11 @@ func roundTripRows() []roundTripRow {
 					StructName: "T", Table: "users",
 				})
 			},
-			count: func(d *schemamodel.Database) int { return len(d.RLSEnabledTables) },
+			count: func(d *schemamodel.Database) int {
+				return len(slices.DeleteFunc(slices.Clone(d.Tables), func(table schemamodel.Table) bool {
+					return !slices.Contains(table.Facets.Kinds(), pgpolicy.TableStateKind)
+				}))
+			},
 		},
 		{
 			field: "Roles",
@@ -228,6 +238,9 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 			Fields: []catalog.CompositeField{{Name: "a", Type: "integer"}},
 		}},
 		Ranges: []catalog.Range{{Schema: "public", Name: "r1", Subtype: "integer"}},
+		// A read that asked the catalog about row-level security, as the
+		// PostgreSQL reader does, so the fixture's policies compare.
+		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))
@@ -432,12 +445,17 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 		AsyncReplications: []catalog.AsyncReplication{{Schema: "public", Name: "mirror"}},
 		Transfers:         []catalog.Transfer{{Schema: "public", Name: "ingest"}},
 		Sequences:         []catalog.Sequence{{Schema: "public", Name: "s1"}},
+		FeatureCoverage:   must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 
-	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
+	// Only the fixture's row-level security policies are objects the
+	// document can carry.
+	c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind != objectidentity.Kind(pgpolicy.PolicyKind)
+	}).Len(), qt.Equals, 0)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
@@ -476,7 +494,11 @@ func TestRoundTrip_ExternalObjectsMakeNoHCLClaim(t *testing.T) {
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 	yaml := loadYAMLDocument(c)
 
-	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
+	// Only the fixture's row-level security policies are objects the
+	// document can carry.
+	c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind != objectidentity.Kind(pgpolicy.PolicyKind)
+	}).Len(), qt.Equals, 0)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbexternal.SourceKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(parsed.FeatureCoverage.Lookup(ydbexternal.TableKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
 	c.Assert(yaml.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("", "undeclared")).State, qt.Equals, schemaext.Complete)

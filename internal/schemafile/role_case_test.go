@@ -1,11 +1,14 @@
 package schemafile_test
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -28,7 +31,7 @@ GRANT SELECT, INSERT ON docs TO %[1]s;
 REVOKE INSERT ON docs FROM %[1]s;
 ALTER DEFAULT PRIVILEGES FOR ROLE %[1]s IN SCHEMA public GRANT SELECT ON TABLES TO %[1]s;
 ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY p ON docs TO %[1]s, PUBLIC USING (true);
+CREATE POLICY p ON docs TO %[1]s, CURRENT_USER USING (true);
 `, role)
 }
 
@@ -53,7 +56,6 @@ func recordedRoleNames(c *qt.C, db *schemamodel.Database) roleNames {
 	c.Assert(db.Roles, qt.HasLen, 1)
 	c.Assert(db.Grants, qt.HasLen, 1)
 	c.Assert(db.DefaultPrivileges, qt.HasLen, 1)
-	c.Assert(db.RLSPolicies, qt.HasLen, 1)
 	return roleNames{
 		Role:           db.Roles[0].Name,
 		Comment:        db.Roles[0].Comment,
@@ -61,8 +63,25 @@ func recordedRoleNames(c *qt.C, db *schemamodel.Database) roleNames {
 		Granted:        strings.Join(db.Grants[0].Privileges, ", "),
 		DefaultGrantor: db.DefaultPrivileges[0].Grantor,
 		DefaultGrantee: db.DefaultPrivileges[0].Grantee,
-		Policy:         db.RLSPolicies[0].ToRoles,
+		Policy:         policyRoleNames(c, db),
 	}
+}
+
+// policyRoleNames is the single policy's TO list, in the order the file wrote
+// it: the shared model's text where the dialect keeps the policy there, and
+// the PostgreSQL row-security owner's selectors where it hands it over.
+func policyRoleNames(c *qt.C, db *schemamodel.Database) string {
+	c.Helper()
+	if len(db.RLSPolicies) == 1 {
+		return db.RLSPolicies[0].ToRoles
+	}
+	objects := must.Must(db.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 1)
+	var names []string
+	for _, role := range objects[0].Value.(*pgpolicy.DesiredPolicy).Roles {
+		names = append(names, cmp.Or(string(role.Keyword), role.Name))
+	}
+	return strings.Join(names, ", ")
 }
 
 // TestLoadAll_PostgresRoleNamesFoldLikeTheServer reads the same role in every
@@ -95,7 +114,7 @@ func TestLoadAll_PostgresRoleNamesFoldLikeTheServer(t *testing.T) {
 			db := loadRoleCaseSchema(c, test.dialect, roleCaseSchema(test.role))
 			c.Assert(recordedRoleNames(c, db), qt.DeepEquals, roleNames{
 				Role: test.want, Comment: "application", Grant: test.want, Granted: "SELECT",
-				DefaultGrantor: test.want, DefaultGrantee: test.want, Policy: test.want + ", PUBLIC",
+				DefaultGrantor: test.want, DefaultGrantee: test.want, Policy: test.want + ", CURRENT_USER",
 			})
 		})
 	}
@@ -135,7 +154,7 @@ func TestLoadAll_PostgresRoleRendersTheFoldedName(t *testing.T) {
 
 	rendered := strings.Join(renderPostgres(c, db), "\n")
 
-	c.Assert(rendered, qt.Contains, `CREATE POLICY "p" ON "docs" TO "app_a", PUBLIC`)
+	c.Assert(rendered, qt.Contains, `CREATE POLICY "p" ON "docs" TO CURRENT_USER, "app_a"`)
 	c.Assert(rendered, qt.Contains, `GRANT SELECT ON TABLE "docs" TO "app_a";`)
 	c.Assert(rendered, qt.Not(qt.Contains), `"App_A"`)
 }
@@ -148,6 +167,6 @@ func TestLoadAll_DialectNeutralRoleNamesKeepTheirCase(t *testing.T) {
 	db := loadRoleCaseSchema(c, "", roleCaseSchema("App_A"))
 	c.Assert(recordedRoleNames(c, db), qt.DeepEquals, roleNames{
 		Role: "App_A", Comment: "application", Grant: "App_A", Granted: "SELECT",
-		DefaultGrantor: "App_A", DefaultGrantee: "App_A", Policy: "App_A, PUBLIC",
+		DefaultGrantor: "App_A", DefaultGrantee: "App_A", Policy: "App_A, CURRENT_USER",
 	})
 }

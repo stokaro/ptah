@@ -678,10 +678,13 @@ indexes with `ptaherr.ErrUnsupportedFeature`.
 
 A `ChangeValue` that also implements `StateRemoval` says whether applying it
 takes state away from the database: it drops an object, or turns off a
-setting the database had on. `RemovesState` answers false for a value that
-does not implement it. `migration/dbtest` applies a desired schema
-additively: it leaves out a change that takes state away, and applies one
-whose owner says it does not even beside no structural change.
+setting the database had on. The owner whose change can remove state must
+implement it, because only the owner knows; a change that never removes
+state may leave it out. Silence reads as "removes nothing": `RemovesState`
+answers false for a value that does not implement it, so an additive apply
+such as `migration/dbtest` keeps that change. It leaves out a change that
+takes state away, and applies one whose owner says it does not even beside no
+structural change.
 
 `Facets.WithTargetScope` binds a value to target names from its source.
 `ForTarget` uses an explicit `TargetSelection`, including its registered aliases.

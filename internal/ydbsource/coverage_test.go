@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -212,6 +213,9 @@ func TestExportsPreserveOrRefuseCompleteSubjectsInUnmanagedNamespaces(t *testing
 func withHCLTimescaleCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage {
 	c.Helper()
 	combined, err := known.Combine(must.Must(tsschema.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	// An HCL document also describes PostgreSQL row-level security.
+	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	return combined
 }

@@ -124,8 +124,9 @@ func TestSpannerRefusesRowSecurity(t *testing.T) {
 		database *schemamodel.Database
 		want     string
 	}{
-		{name: "a policy", database: policyOnly, want: `unsupported feature: feature objects are not registered for target "spanner"`},
-		{name: "the switches", database: switchesOnly, want: `.*Spanner table facet "ptah.run/pgpolicy/table-state" is not supported.*`},
+		{name: "a policy", database: policyOnly, want: `unsupported feature: PostgreSQL policy "newest" on table public\.orders cannot be planned on spanner; ` +
+			`scope its declaration to the targets that host it, as dialects="postgres,cockroachdb,yugabytedb" does in a Go annotation`},
+		{name: "the switches", database: switchesOnly, want: `unsupported feature: PostgreSQL row-level security on table "orders" cannot be planned on spanner; .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

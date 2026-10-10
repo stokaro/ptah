@@ -730,8 +730,8 @@ type schemaParseState struct {
 	extendedProperties    []schemamodel.ExtendedProperty
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
-	rlsPolicies           []schemamodel.RLSPolicy
-	rlsEnabledTables      []schemamodel.RLSEnabledTable
+	rlsPolicies           []rlsPolicyDeclaration
+	rlsEnabledTables      []rlsSwitchDeclaration
 	hypertables           []pendingHypertable
 	roles                 []schemamodel.Role
 	grants                []schemamodel.Grant
@@ -1039,6 +1039,10 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	if err := state.attachHypertables(); err != nil {
 		return schemamodel.Database{}, err
 	}
+	policies, switches, err := state.attachRowSecurity()
+	if err != nil {
+		return schemamodel.Database{}, err
+	}
 
 	enums := make([]schemamodel.Enum, 0, len(state.globalEnumsMap))
 	keys := make([]string, 0, len(state.globalEnumsMap))
@@ -1078,8 +1082,8 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		ExtendedProperties: state.extendedProperties,
 		MaterializedViews:  state.materializedViews,
 		Triggers:           state.triggers,
-		RLSPolicies:        state.rlsPolicies,
-		RLSEnabledTables:   state.rlsEnabledTables,
+		RLSPolicies:        policies,
+		RLSEnabledTables:   switches,
 		Roles:              state.roles,
 		Grants:             state.grants,
 		RevokedGrants:      state.revokedGrants,
@@ -1180,7 +1184,6 @@ func (s *schemaParseState) processDeclaration(structDecl structDeclaration) erro
 // processAllFileComments scans comments for RLS annotations that are separated
 // from struct declarations by blank lines.
 func (s *schemaParseState) processAllFileComments(f *ast.File) error {
-	seen := s.newRLSCommentSet()
 	placements := annotationmeta.CommentPlacements(f)
 
 	for _, commentGroup := range f.Comments {
@@ -1188,7 +1191,7 @@ func (s *schemaParseState) processAllFileComments(f *ast.File) error {
 			if placements[comment].Scope != annotationmeta.ScopeFile {
 				continue
 			}
-			if err := s.parseFileScopedRLSComment(comment, seen); err != nil {
+			if err := s.parseFileScopedRLSComment(comment); err != nil {
 				return err
 			}
 		}
@@ -1196,52 +1199,21 @@ func (s *schemaParseState) processAllFileComments(f *ast.File) error {
 	return nil
 }
 
-// rlsPolicyKey identifies an RLS policy the way PostgreSQL does: by the table
-// that owns it together with its name. A policy name is scoped to its table,
-// not to the schema, so two tables may each carry one called
-// "tenant_isolation". Recording only the name here dropped the second of the
-// two before anything downstream could see it (stokaro/ptah#1276).
-type rlsPolicyKey struct {
-	table  string
-	policy string
-}
-
-type rlsCommentSet struct {
-	policies      map[rlsPolicyKey]struct{}
-	enabledTables map[string]struct{}
-}
-
-func (s *schemaParseState) newRLSCommentSet() rlsCommentSet {
-	seen := rlsCommentSet{
-		policies:      make(map[rlsPolicyKey]struct{}, len(s.rlsPolicies)),
-		enabledTables: make(map[string]struct{}, len(s.rlsEnabledTables)),
-	}
-
-	for _, policy := range s.rlsPolicies {
-		seen.policies[rlsPolicyKey{table: policy.Table, policy: policy.Name}] = struct{}{}
-	}
-	for _, table := range s.rlsEnabledTables {
-		seen.enabledTables[table.Table] = struct{}{}
-	}
-
-	return seen
-}
-
-func (s *schemaParseState) parseFileScopedRLSComment(comment *ast.Comment, seen rlsCommentSet) error {
+func (s *schemaParseState) parseFileScopedRLSComment(comment *ast.Comment) error {
 	directive, ok := annotationmeta.MatchCommentDirective(comment.Text)
 	if !ok {
 		return nil
 	}
 	switch directive.Name {
 	case "ptah:schema:rls:policy":
-		return s.parseFileScopedRLSPolicyComment(comment, seen)
+		return s.parseFileScopedRLSPolicyComment(comment)
 	case "ptah:schema:rls:enable":
-		return s.parseFileScopedRLSEnableComment(comment, seen)
+		return s.parseFileScopedRLSEnableComment(comment)
 	}
 	return nil
 }
 
-func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment, seen rlsCommentSet) error {
+func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:rls:policy", kv["table"])
 	if err := validateAttributes(kv, ctx); err != nil {
@@ -1256,11 +1228,6 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 	if policyName == "" || tableName == "" {
 		return nil
 	}
-	key := rlsPolicyKey{table: tableName, policy: policyName}
-	if _, exists := seen.policies[key]; exists {
-		return nil
-	}
-
 	structName, exists := s.tableNameToStructName[tableName]
 	if !exists {
 		return nil
@@ -1270,7 +1237,7 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 	if err != nil {
 		return err
 	}
-	s.rlsPolicies = append(s.rlsPolicies, schemamodel.RLSPolicy{
+	s.rlsPolicies = append(s.rlsPolicies, rlsPolicyDeclaration{ctx: ctx, policy: schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                policyName,
 		Table:               tableName,
@@ -1281,12 +1248,11 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 		Comment:             kv["comment"],
 		Restrictive:         restrictive,
 		Dialects:            scope,
-	})
-	seen.policies[key] = struct{}{}
+	}})
 	return nil
 }
 
-func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment, seen rlsCommentSet) error {
+func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:rls:enable", kv["table"])
 	if err := validateAttributes(kv, ctx); err != nil {
@@ -1300,23 +1266,18 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 	if tableName == "" {
 		return nil
 	}
-	if _, exists := seen.enabledTables[tableName]; exists {
-		return nil
-	}
-
 	structName, exists := s.tableNameToStructName[tableName]
 	if !exists {
 		return nil
 	}
 
-	s.rlsEnabledTables = append(s.rlsEnabledTables, schemamodel.RLSEnabledTable{
+	s.rlsEnabledTables = append(s.rlsEnabledTables, rlsSwitchDeclaration{ctx: ctx, enabled: schemamodel.RLSEnabledTable{
 		StructName: structName,
 		Table:      tableName,
 		Comment:    kv["comment"],
 		Forced:     kv["force"] == "true",
 		Dialects:   scope,
-	})
-	seen.enabledTables[tableName] = struct{}{}
+	}})
 	return nil
 }
 
@@ -1975,7 +1936,7 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
-	s.rlsPolicies = append(s.rlsPolicies, schemamodel.RLSPolicy{
+	s.rlsPolicies = append(s.rlsPolicies, rlsPolicyDeclaration{ctx: ctx, policy: schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                kv["name"],
 		Table:               kv["table"],
@@ -1986,7 +1947,7 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 		Comment:             kv["comment"],
 		Restrictive:         restrictive,
 		Dialects:            scope,
-	})
+	}})
 	return nil
 }
 
@@ -2035,13 +1996,13 @@ func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
-	s.rlsEnabledTables = append(s.rlsEnabledTables, schemamodel.RLSEnabledTable{
+	s.rlsEnabledTables = append(s.rlsEnabledTables, rlsSwitchDeclaration{ctx: ctx, enabled: schemamodel.RLSEnabledTable{
 		StructName: structName,
 		Table:      kv["table"],
 		Comment:    kv["comment"],
 		Forced:     kv["force"] == "true",
 		Dialects:   scope,
-	})
+	}})
 	return nil
 }
 

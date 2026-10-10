@@ -1,6 +1,9 @@
 package schemaext
 
-import "maps"
+import (
+	"maps"
+	"slices"
+)
 
 // Equal compares captured facet representations through their local value
 // contracts. It does not resolve target defaults or call a semantic service.
@@ -37,5 +40,8 @@ func (o Objects) Equal(other Objects) bool {
 // Equal compares recorded model definitions, directions, and knowledge claims.
 // Unenrolled and explicitly uninspected kinds remain distinct captured sources.
 func (c Coverage) Equal(other Coverage) bool {
-	return c.representation == other.representation && maps.Equal(c.kinds, other.kinds) && maps.Equal(c.subjects, other.subjects)
+	return c.representation == other.representation && maps.Equal(c.kinds, other.kinds) &&
+		maps.EqualFunc(c.subjects, other.subjects, func(a, b SubjectCoverage) bool {
+			return a.Kind == b.Kind && a.Subject == b.Subject && a.Knowledge == b.Knowledge && slices.Equal(a.Targets, b.Targets)
+		})
 }

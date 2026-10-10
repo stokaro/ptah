@@ -120,7 +120,7 @@ func TestGenerateSchemaDiffSQL_CreatesRoutinesAfterWhatTheyName(t *testing.T) {
 
 			sql, err := planner.GenerateSchemaDiffSQL(
 				context.Background(), must.Must(builtin.New()),
-				must.Must(schemadiff.Compare(t.Context(), &desired, &catalog.Database{}, must.Must(builtin.New()))), platform.Postgres,
+				must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New()))), platform.Postgres,
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -142,7 +142,7 @@ CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT defau
 
 	sql, err := planner.GenerateSchemaDiffSQL(
 		context.Background(), must.Must(builtin.New()),
-		must.Must(schemadiff.Compare(t.Context(), &desired, &catalog.Database{}, must.Must(builtin.New()))), platform.Postgres,
+		must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New()))), platform.Postgres,
 	)
 
 	c.Assert(err, qt.IsNil)

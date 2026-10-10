@@ -388,3 +388,51 @@ var (
 	declaredOrders = schemacapture.TableDeclaration{Table: schemamodel.Table{Schema: "app", Name: "orders"}}
 	observedOrders = schemacapture.TableObservation{Table: catalog.Table{Schema: "app", Name: "orders"}}
 )
+
+// createdOrders is a request to create orders with one policy, the given
+// switches, and the switches left to the owner's default.
+func createdOrders(c *qt.C, facets schemaext.Facets) featureplan.Request {
+	c.Helper()
+	request := planning()
+	table := declaredOrders.Table
+	table.Facets = facets
+	request.Tables = []featureplan.Table{{Subject: tableRef("orders"), Action: featureplan.CreateTable,
+		Desired: schemacapture.TableDeclaration{Table: table, OwnedObjects: objects(c, desiredPolicy(c, "orders", "tenant", permissiveDeclared)),
+			FeatureCoverage: defaultedCoverage(c)}}}
+	return request
+}
+
+// TestPlanPolicies_EnablesACreatedTableWithDefaultedSwitches pins
+// stokaro/ptah#2048 on a table the plan creates: its declaration names
+// policies and not its switches, so the owner enables it, with unchanged
+// access, beside its policies.
+func TestPlanPolicies_EnablesACreatedTableWithDefaultedSwitches(t *testing.T) {
+	c := qt.New(t)
+
+	result, err := newRuntime(c).PlanFeatures(t.Context(), createdOrders(c, schemaext.Facets{}))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(summary(result.Contributions), qt.DeepEquals, []string{
+		"created/000000/policy/000000 *pgpolicy.PolicyOperation create ptah.run/pgpolicy/policy app.orders.tenant, read table app.orders, read role reader allowed dependent",
+		"created/000000/switches *pgpolicy.TableStateOperation alter ptah.run/pgpolicy/table-state app.orders, read table app.orders allowed dependent",
+	})
+	enable := result.Contributions[0].Steps[1].Payload.Payload.(*pgpolicy.TableStateOperation)
+	c.Assert(enable.Change.After, qt.DeepEquals, &pgpolicy.DesiredTableState{Enabled: true})
+	c.Assert(enable.Change.Access, qt.Equals, pgpolicy.CreatedTableAccess())
+	c.Assert(result.Parents[1], qt.DeepEquals, featureplan.ParentPlan{Subject: tableRef("orders"), Kind: pgpolicy.TableStateKind,
+		Action: featureplan.CreateTable, Strategy: "enable row-level security, which the declaration leaves to the owner's default for a table with policies",
+		Steps: []plangraph.StepID{{Owner: pgpolicy.Owner, Name: "created/000000/switches"}}})
+}
+
+// TestPlanPolicies_LeavesDeclaredSwitchesToTheirStatements is the control:
+// switches declared for the created table, here off, take precedence over the
+// default, and the statements after its CREATE TABLE set them.
+func TestPlanPolicies_LeavesDeclaredSwitchesToTheirStatements(t *testing.T) {
+	c := qt.New(t)
+
+	result, err := newRuntime(c).PlanFeatures(t.Context(), createdOrders(c, must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{}))))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(summary(result.Contributions), qt.HasLen, 1)
+	c.Assert(result.Parents[1].Steps, qt.HasLen, 0)
+}

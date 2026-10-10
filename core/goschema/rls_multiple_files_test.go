@@ -1,6 +1,8 @@
 package goschema_test
 
 import (
+	"maps"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -11,65 +13,18 @@ import (
 func TestRLSPolicyGenerationMultipleFiles(t *testing.T) {
 	c := qt.New(t)
 
-	// Parse the directory with multiple files containing RLS annotations
 	database, err := goschema.ParseDir("../../integration/internal/fixtures/entities/016-rls-multiple-files")
 	c.Assert(err, qt.IsNil)
 
-	// Debug output
-	t.Logf("Found %d tables", len(database.Tables))
-	for _, table := range database.Tables {
-		t.Logf("Table: %s", table.Name)
-	}
-
-	t.Logf("Found %d RLS policies", len(database.RLSPolicies))
-	for _, policy := range database.RLSPolicies {
-		t.Logf("RLS Policy: %s for table %s", policy.Name, policy.Table)
-	}
-
-	t.Logf("Found %d RLS enabled tables", len(database.RLSEnabledTables))
-	for _, table := range database.RLSEnabledTables {
-		t.Logf("RLS Enabled Table: %s", table.Table)
-	}
-
-	// We should have 5 RLS policies (one from each file)
-	expectedPolicies := []string{
-		"area_tenant_isolation",
-		"commodity_tenant_isolation",
-		"user_tenant_isolation",
-		"file_tenant_isolation",
-		"location_tenant_isolation",
-	}
-
-	c.Assert(database.RLSPolicies, qt.HasLen, len(expectedPolicies), qt.Commentf("Expected %d RLS policies, got %d", len(expectedPolicies), len(database.RLSPolicies)))
-
-	// Check that all expected policies are present
-	policyNames := make(map[string]bool)
-	for _, policy := range database.RLSPolicies {
-		policyNames[policy.Name] = true
-	}
-
-	for _, expectedPolicy := range expectedPolicies {
-		c.Assert(policyNames[expectedPolicy], qt.IsTrue, qt.Commentf("Expected policy %s not found", expectedPolicy))
-	}
-
-	// We should also have 5 RLS enabled tables
-	expectedTables := []string{
-		"areas",
-		"commodities",
-		"users",
-		"files",
-		"locations",
-	}
-
-	c.Assert(database.RLSEnabledTables, qt.HasLen, len(expectedTables), qt.Commentf("Expected %d RLS enabled tables, got %d", len(expectedTables), len(database.RLSEnabledTables)))
-
-	// Check that all expected tables are present
-	tableNames := make(map[string]bool)
-	for _, table := range database.RLSEnabledTables {
-		tableNames[table.Table] = true
-	}
-
-	for _, expectedTable := range expectedTables {
-		c.Assert(tableNames[expectedTable], qt.IsTrue, qt.Commentf("Expected RLS enabled table %s not found", expectedTable))
-	}
+	// One policy and one enablement in each file reach the row-security owner.
+	c.Assert(slices.Sorted(maps.Keys(ownerPolicies(c, database))), qt.DeepEquals, []string{
+		"public.areas.area_tenant_isolation",
+		"public.commodities.commodity_tenant_isolation",
+		"public.files.file_tenant_isolation",
+		"public.locations.location_tenant_isolation",
+		"public.users.user_tenant_isolation",
+	})
+	c.Assert(slices.Sorted(maps.Keys(ownerSwitches(c, database))), qt.DeepEquals, []string{"areas", "commodities", "files", "locations", "users"})
+	c.Assert(database.RLSPolicies, qt.HasLen, 0)
+	c.Assert(database.RLSEnabledTables, qt.HasLen, 0)
 }

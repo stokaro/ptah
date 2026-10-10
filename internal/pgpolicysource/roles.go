@@ -97,7 +97,7 @@ func parseRole(entry string) (pgpolicy.RoleSelector, error) {
 			return pgpolicy.RoleSelector{Keyword: keyword}, nil
 		}
 	}
-	if !identifier(entry) {
+	if !plainIdentifier(entry) {
 		return pgpolicy.RoleSelector{}, fmt.Errorf("%w: role %q must be double-quoted to be a name", schemaext.ErrInvalidValue, entry)
 	}
 	return pgpolicy.RoleSelector{Name: lowerASCII(entry)}, nil
@@ -118,12 +118,12 @@ func SpellsKeyword(name string) bool {
 // bareName reports a name PostgreSQL reads back unchanged when it is written
 // without quotes: an identifier in lower case that spells no keyword.
 func bareName(name string) bool {
-	return identifier(name) && lowerASCII(name) == name && !SpellsKeyword(name)
+	return plainIdentifier(name) && lowerASCII(name) == name && !SpellsKeyword(name)
 }
 
-// identifier reports an unquoted PostgreSQL identifier: a letter or an
+// plainIdentifier reports an unquoted PostgreSQL identifier: a letter or an
 // underscore, then letters, digits, underscores and dollar signs.
-func identifier(text string) bool {
+func plainIdentifier(text string) bool {
 	for i, char := range text {
 		letter := unicode.IsLetter(char) || char == '_'
 		if !letter && (i == 0 || (!unicode.IsDigit(char) && char != '$')) {

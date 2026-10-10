@@ -16,23 +16,18 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chdiff"
-	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/cockroachdb/crdbast"
 	"ptah.run/dialect/cockroachdb/crdbdiff"
-	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/dialect/mssql/mssqlast"
 	"ptah.run/dialect/mssql/mssqldiff"
-	"ptah.run/dialect/mssql/mssqlrender"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/spanner/spannerast"
 	"ptah.run/dialect/spanner/spannerdiff"
-	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/timescaledb/tsast"
 	"ptah.run/dialect/timescaledb/tsdiff"
-	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -52,9 +47,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 	"ptah.run/feature/pgpolicy"
-	"ptah.run/feature/pgpolicy/policyrender"
 	"ptah.run/internal/astrouteguard"
-	"ptah.run/internal/ydbextensions"
 )
 
 type extensionFixture struct {
@@ -239,44 +232,31 @@ func defaultPoolFixture() extensionFixture {
 }
 
 // The source inventory is independent of both owner registration and fixtures.
-// Moving a concrete node out of core cannot remove its routing evidence.
-func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
+// Moving a concrete node out of core cannot remove its routing evidence: every
+// payload a departed node kind names is in the inventory, every payload in the
+// inventory has a fixture, and TestExtensionPayloads_RouteThroughTheBundledRuntime
+// drives each fixture through the runtime's codecs and renderers.
+func TestExtensionPayloads_CoverSourceTypes(t *testing.T) {
 	c := qt.New(t)
 	root, err := astrouteguard.ModuleRoot()
 	c.Assert(err, qt.IsNil)
 	kinds, err := astrouteguard.ExtensionKinds(root)
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(kinds) >= astrouteguard.ExtensionKindFloor, qt.IsTrue)
-	var source []string
+	nodes, err := astrouteguard.NodeKinds(root)
+	c.Assert(err, qt.IsNil)
+	var source, fixtures []string
 	for _, kind := range kinds {
-		source = append(source, kind.Package+"."+kind.Name)
-	}
-	registry, err := ydbextensions.Registry()
-	c.Assert(err, qt.IsNil)
-	clickhouseRegistry, err := chrender.Registry()
-	c.Assert(err, qt.IsNil)
-	cockroachRegistry, err := crdbrender.Registry()
-	c.Assert(err, qt.IsNil)
-	timescaleRegistry, err := tsrender.Registry()
-	c.Assert(err, qt.IsNil)
-	spannerRegistry, err := spannerrender.Registry()
-	c.Assert(err, qt.IsNil)
-	policyRegistry, err := policyrender.Registry()
-	c.Assert(err, qt.IsNil)
-	securityPolicyRegistry, err := mssqlrender.Registry()
-	c.Assert(err, qt.IsNil)
-	var registered, fixtures []string
-	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes(), timescaleRegistry.PayloadTypes(),
-		spannerRegistry.PayloadTypes(), policyRegistry.PayloadTypes(), securityPolicyRegistry.PayloadTypes()) {
-		registered = append(registered, payloadType.Elem().PkgPath()+"."+payloadType.Elem().Name())
+		source = append(source, kind.String())
 	}
 	for _, fixture := range allExtensionFixtures() {
 		payloadType := reflect.TypeOf(fixture.payload).Elem()
 		fixtures = append(fixtures, payloadType.PkgPath()+"."+payloadType.Name())
 	}
-	slices.Sort(registered)
 	slices.Sort(fixtures)
-	c.Assert(registered, qt.DeepEquals, source)
+
+	for _, successor := range astrouteguard.Account(astrouteguard.Baseline(), astrouteguard.Departures(), nodes).Successors() {
+		c.Assert(source, qt.Contains, successor.String())
+	}
 	c.Assert(fixtures, qt.DeepEquals, source)
 }
 

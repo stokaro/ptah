@@ -26,9 +26,9 @@ func TestNodeKinds_HappyPath(t *testing.T) {
 	kinds, err := astrouteguard.NodeKinds(root)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(len(kinds) >= astrouteguard.NodeKindFloor, qt.IsTrue,
-		qt.Commentf("the corpus holds %d node kinds, below the floor of %d",
-			len(kinds), astrouteguard.NodeKindFloor))
+	accounting := astrouteguard.Account(astrouteguard.Baseline(), astrouteguard.Departures(), kinds)
+	c.Assert(accounting.Unaccounted, qt.HasLen, 0,
+		qt.Commentf("the corpus of %d node kinds lost baseline kinds without a recorded departure", len(kinds)))
 
 	seen := make(map[string]astrouteguard.NodeKind, len(kinds))
 	for _, kind := range kinds {

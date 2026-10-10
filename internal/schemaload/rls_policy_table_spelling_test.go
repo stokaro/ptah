@@ -10,8 +10,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/schemaload"
 )
 
@@ -33,9 +35,9 @@ CREATE POLICY p ON public.orders FOR ALL TO PUBLIC USING (tenant_id = 2);
 // both spellings emitted two CREATE POLICY statements against one table and
 // the database rejected the second.
 //
-// The survivor must be the first declaration: deduplication keeps the first,
-// and a row-level-security predicate that silently changes from `tenant_id =
-// 1` to `tenant_id = 2` is the same defect wearing a quieter coat.
+// Neither declaration is kept: keeping the first silently drops the second
+// predicate, and keeping either applies one the author may have meant to
+// replace. The refusal names both (stokaro/ptah#2440).
 func TestLoad_SQLSchemaFileFoldsTwoSpellingsOfOnePolicysTable(t *testing.T) {
 	c := qt.New(t)
 
@@ -43,17 +45,10 @@ func TestLoad_SQLSchemaFileFoldsTwoSpellingsOfOnePolicysTable(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(oneTableTwoPolicySpellings), 0o600), qt.IsNil)
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
-	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Name, qt.Equals, "p")
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
-	c.Assert(database.RLSPolicies[0].UsingExpression, qt.Equals, "tenant_id = 1")
 
-	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
-	c.Assert(err, qt.IsNil)
-	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
-		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
-	})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*CREATE POLICY p ON orders \(policy statement 1\) and CREATE POLICY p ON public\.orders \(policy statement 2\) both declare policy "p" on table public\.orders.*`)
+	c.Assert(database, qt.IsNil)
 }
 
 // oneTableTwoPolicyCases spells the same table three ways: declared as
@@ -83,27 +78,15 @@ func TestLoad_SQLSchemaFileFoldsACaseVariantOfOnePolicysTable(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(oneTableTwoPolicyCases), 0o600), qt.IsNil)
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
-	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
-	c.Assert(database.RLSPolicies[0].UsingExpression, qt.Equals, "tenant_id = 1")
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
 
-	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
-	c.Assert(err, qt.IsNil)
-	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
-		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
-	})
-	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
-		`ALTER TABLE "orders" ENABLE ROW LEVEL SECURITY;`,
-	})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*\(policy statement 1\) and .*\(policy statement 2\) both declare policy "p" on table public\.orders.*`)
+	c.Assert(database, qt.IsNil)
 }
 
 // TestLoad_SQLSchemaFileKeepsACaseVariantDeclaredFirst pins the half a
-// deduplication key alone cannot reach. Deduplication keeps the first
-// declaration, so when the variant spelling comes first the survivor still has
-// to name the declared table.
+// deduplication key alone cannot reach: the variant spelling coming first is
+// still the declared table, so the pair is still one policy declared twice.
 func TestLoad_SQLSchemaFileKeepsACaseVariantDeclaredFirst(t *testing.T) {
 	c := qt.New(t)
 
@@ -115,14 +98,9 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
-	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 
-	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
-	c.Assert(err, qt.IsNil)
-	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
-		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 2)\n;",
-	})
+	c.Assert(err, qt.ErrorMatches, `(?s).*both declare policy "p" on table public\.orders.*`)
+	c.Assert(database, qt.IsNil)
 }
 
 // TestLoad_SQLSchemaFileDoesNotFoldOntoACasePreservingTable is the direction
@@ -140,25 +118,37 @@ func TestLoad_SQLSchemaFileDoesNotFoldOntoACasePreservingTable(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE "ORDERS" (id INTEGER PRIMARY KEY, tenant_id INTEGER);
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
+	c.Assert(policyTables(database), qt.DeepEquals, []string{"orders"})
+	c.Assert(switchedTables(database), qt.HasLen, 0)
 
-	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
-	c.Assert(err, qt.IsNil)
-	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
-		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
-	})
-	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
-		`ALTER TABLE "orders" ENABLE ROW LEVEL SECURITY;`,
-	})
+	// The policy stays on the table it names, which the schema does not
+	// declare, so a render refuses it rather than create it elsewhere.
+	_, err = builtin.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.ErrorMatches, `.*public\.orders\.p has no declared parent table`)
+}
+
+// TestLoad_SQLSchemaFileRefusesSwitchesForAnUndeclaredTable is the enablement
+// half: switches belong to a table the schema declares, and `orders` names no
+// table beside `"ORDERS"`. Rendering the ALTER TABLE anyway wrote a statement
+// against a relation the schema does not create.
+func TestLoad_SQLSchemaFileRefusesSwitchesForAnUndeclaredTable(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE "ORDERS" (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+`), 0o600), qt.IsNil)
+
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: .*the document declares no such table.*`)
+	c.Assert(database, qt.IsNil)
 }
 
 // TestLoad_SQLSchemaFileFoldsOntoALowerCaseTableDeclaredUnquoted is the other
@@ -177,10 +167,8 @@ CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
+	c.Assert(policyTables(database), qt.DeepEquals, []string{"orders"})
+	c.Assert(switchedTables(database), qt.DeepEquals, []string{"orders"})
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
@@ -246,14 +234,12 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "ORDERS")
+	c.Assert(policyTables(database), qt.DeepEquals, []string{"ORDERS"})
 
-	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
-	c.Assert(err, qt.IsNil)
-	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
-		"CREATE POLICY \"p\" ON \"ORDERS\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
-	})
+	// The policy stays on the table it names, which the schema does not
+	// declare, so a render refuses it rather than create it elsewhere.
+	_, err = builtin.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.ErrorMatches, `.*public\.ORDERS\.p has no declared parent table`)
 }
 
 // TestLoad_SQLSchemaFileFoldsOnlyTheUnquotedHalfOfAQualifiedReference is the
@@ -278,10 +264,8 @@ CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "App.orders")
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "App.orders")
+	c.Assert(policyTables(database), qt.DeepEquals, []string{"App.orders"})
+	c.Assert(switchedTables(database), qt.DeepEquals, []string{"App.orders"})
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
@@ -332,10 +316,8 @@ CREATE POLICY p ON Ä FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(tableNames(database.Tables), qt.DeepEquals, []string{"Ä", "ä"})
-	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "Ä")
-	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "Ä")
+	c.Assert(policyTables(database), qt.DeepEquals, []string{"Ä"})
+	c.Assert(switchedTables(database), qt.DeepEquals, []string{"Ä"})
 }
 
 // tableNames projects the loaded tables onto their declared names, so a
@@ -366,13 +348,13 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 2);
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 2)
+	c.Assert(policyTables(database), qt.HasLen, 2)
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
-		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
 		"CREATE POLICY \"p\" ON \"ORDERS\" FOR ALL TO PUBLIC\n    USING (tenant_id = 2)\n;",
+		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
 	})
 }
 
@@ -393,7 +375,7 @@ CREATE POLICY p ON zeta_orders  FOR ALL TO PUBLIC USING (tenant_id = 2);
 
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.RLSPolicies, qt.HasLen, 2)
+	c.Assert(policyTables(database), qt.HasLen, 2)
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
@@ -412,8 +394,39 @@ func createPolicyStatements(statements []string) []string {
 // rowLevelSecurityStatements keeps the rendered RLS enablement statements. The
 // policy and the enablement name the same table, and a render is only
 // replayable when both spell it the way the schema declares it.
+//
+// A switch statement follows the CREATE TABLE it belongs to, so each rendered
+// statement is read line by line.
 func rowLevelSecurityStatements(statements []string) []string {
-	return statementsWithPrefix(statements, "ALTER TABLE ")
+	var lines []string
+	for _, statement := range statements {
+		lines = append(lines, strings.Split(statement, "\n")...)
+	}
+	return statementsWithPrefix(slices.DeleteFunc(lines, func(line string) bool {
+		return !strings.Contains(line, "ROW LEVEL SECURITY")
+	}), "ALTER TABLE ")
+}
+
+// policyTables is the table each policy the PostgreSQL row-security owner
+// holds is on, as the schema spells it, in identity order.
+func policyTables(database *schemamodel.Database) []string {
+	var tables []string
+	for _, ref := range database.FeatureObjects.Refs() {
+		tables = append(tables, schemamodel.QualifyTableName(ref.Schema.Authored(), ref.Parent.Source))
+	}
+	return tables
+}
+
+// switchedTables is each table whose row-level security switches the owner
+// holds.
+func switchedTables(database *schemamodel.Database) []string {
+	var tables []string
+	for _, table := range database.Tables {
+		if slices.Contains(table.Facets.Kinds(), pgpolicy.TableStateKind) {
+			tables = append(tables, table.QualifiedName())
+		}
+	}
+	return tables
 }
 
 func statementsWithPrefix(statements []string, prefix string) []string {

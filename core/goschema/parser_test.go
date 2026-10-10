@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 )
 
 func mustParseSource(c *qt.C, filename string, source any) schemamodel.Database {
@@ -569,11 +570,11 @@ type User struct {
 	c.Assert(database.Constraints[1].ForeignTable, qt.Equals, "auth.accounts")
 	c.Assert(database.Indexes, qt.HasLen, 1)
 	c.Assert(database.Indexes[0].TableName, qt.Equals, "auth.users")
-	c.Assert(database.RLSEnabledTables, qt.DeepEquals, []schemamodel.RLSEnabledTable{
-		{StructName: "User", Table: "auth.users"},
+	c.Assert(ownerSwitches(c, &database), qt.DeepEquals, map[string]pgpolicy.DesiredTableState{
+		"auth.users": {Enabled: true, StructName: "User"},
 	})
-	c.Assert(database.RLSPolicies, qt.DeepEquals, []schemamodel.RLSPolicy{
-		{StructName: "User", Name: "users_rls", Table: "auth.users", PolicyFor: "ALL", UsingExpression: "account_id IS NOT NULL"},
+	c.Assert(ownerPolicies(c, &database), qt.DeepEquals, map[string]pgpolicy.DesiredPolicy{
+		"auth.users.users_rls": {Command: pgpolicy.CommandAll, Using: new("account_id IS NOT NULL"), StructName: "User"},
 	})
 }
 

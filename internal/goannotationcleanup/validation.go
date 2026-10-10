@@ -3,6 +3,9 @@ package goannotationcleanup
 import (
 	"errors"
 	"fmt"
+	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/pgpolicysource"
 	"slices"
 	"strings"
 
@@ -461,7 +464,7 @@ func embeddedModeMaterializesFields(mode string) bool {
 }
 
 func rlsPolicyRepresented(removal removedLine, database *schemamodel.Database) bool {
-	return slices.ContainsFunc(database.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
+	return ownerPolicyRepresented(removal, database) || slices.ContainsFunc(database.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
 		return policy.Name == removal.values["name"] &&
 			sameTableRef(policy.Table, removal.values["table"]) &&
 			policy.PolicyFor == canonicalRLSPolicyFor(removal.values["for"]) &&
@@ -472,6 +475,44 @@ func rlsPolicyRepresented(removal removedLine, database *schemamodel.Database) b
 	})
 }
 
+// ownerPolicyRepresented reports whether the PostgreSQL row-security owner
+// holds the policy the removed annotation declared: one of its name on its
+// table, declaring what the annotation's attributes declare.
+func ownerPolicyRepresented(removal removedLine, database *schemamodel.Database) bool {
+	declared, err := pgpolicysource.Attributes{
+		For: removal.values["for"], To: removal.values["to"], Using: removal.values["using"],
+		WithCheck: removal.values["with_check"], Comment: removal.values["comment"],
+		Restrictive: strings.EqualFold(strings.TrimSpace(removal.values["as"]), "RESTRICTIVE"),
+	}.Policy()
+	if err != nil {
+		return false
+	}
+	objects, err := database.FeatureObjects.All()
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(objects, func(object schemaext.Object) bool {
+		table := schemamodel.QualifyTableName(object.Ref.Schema.Authored(), object.Ref.Parent.Source)
+		return object.Ref.Name.Source == removal.values["name"] && sameTableRef(table, removal.values["table"]) &&
+			object.Value.Equal(&declared)
+	})
+}
+
+// ownerSwitchesFor returns the row-level security switches the owner holds
+// for the table a removed annotation names.
+func ownerSwitchesFor(database *schemamodel.Database, removal removedLine) []*pgpolicy.DesiredTableState {
+	var switches []*pgpolicy.DesiredTableState
+	for _, table := range database.Tables {
+		if !sameTableRef(table.QualifiedName(), removal.values["table"]) && !sameTableRef(table.Name, removal.values["table"]) {
+			continue
+		}
+		if state, found, err := schemaext.FacetAs[*pgpolicy.DesiredTableState](table.Facets, pgpolicy.TableStateKind); err == nil && found {
+			switches = append(switches, state)
+		}
+	}
+	return switches
+}
+
 func canonicalRLSPolicyFor(value string) string {
 	if value == "" {
 		return "ALL"
@@ -480,6 +521,12 @@ func canonicalRLSPolicyFor(value string) string {
 }
 
 func rlsEnableRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
+	if source := ownerSwitchesFor(sourceDB, removal); len(source) > 0 {
+		exported := ownerSwitchesFor(exportedDB, removal)
+		return len(exported) == len(source) && slices.EqualFunc(source, exported, func(a, b *pgpolicy.DesiredTableState) bool {
+			return a.Enabled == b.Enabled && a.Forced == b.Forced && a.Comment == b.Comment
+		})
+	}
 	tables := sourceRLSEnabledTablesForRemoval(sourceDB, removal)
 	if len(tables) == 0 {
 		return false

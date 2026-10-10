@@ -48,6 +48,11 @@ type SubjectCoverage struct {
 	Kind      Kind              `json:"kind"`
 	Subject   objectidentity.ID `json:"subject"`
 	Knowledge Knowledge         `json:"knowledge"`
+	// Targets scopes the claim to the targets of the target-scoped
+	// declarations it is made for. Empty applies it on every target.
+	// [Coverage.ForTarget] drops a claim scoped to other targets, as
+	// [Objects.ForTarget] drops an object.
+	Targets []string `json:"targets,omitempty"`
 }
 
 type subjectKey struct {
@@ -90,6 +95,14 @@ func NewCoverage(representation Representation, kinds []KindCoverage, subjects [
 		}
 		if record.Subject.Kind == "" || record.Subject.Name.Source == "" || record.Subject.Name.Normalized == "" {
 			return Coverage{}, fmt.Errorf("%w: coverage subject has no structured identity", ErrInvalidValue)
+		}
+		targets, err := normalizeTargetScope(record.Targets)
+		if err != nil {
+			return Coverage{}, err
+		}
+		record.Targets = nil
+		if len(targets) != 0 {
+			record.Targets = targets
 		}
 		key := subjectKey{kind: record.Kind, ref: record.Subject.Key()}
 		if _, found := result.subjects[key]; found {
@@ -173,6 +186,9 @@ func (c Coverage) KindRecords() []KindCoverage {
 // SubjectRecords returns independent overrides ordered by kind and identity.
 func (c Coverage) SubjectRecords() []SubjectCoverage {
 	result := slices.Collect(maps.Values(c.subjects))
+	for i := range result {
+		result[i].Targets = slices.Clone(result[i].Targets)
+	}
 	slices.SortFunc(result, func(a, b SubjectCoverage) int {
 		if a.Kind < b.Kind {
 			return -1

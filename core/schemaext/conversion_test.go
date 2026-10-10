@@ -45,7 +45,10 @@ func TestConvertCoverage_PreservesKnowledgeWithoutRuntimeGrowth(t *testing.T) {
 	}
 }
 
-func TestConvertCoverage_RejectsWrongDirectionAndUnresolvedDefaults(t *testing.T) {
+// TestConvertCoverage_ProjectsADefaultRequestAsUnknown pins that a default
+// request becomes an unknown observation: the declaration does not hold what
+// the owner's default is, so a projection cannot report it observed.
+func TestConvertCoverage_ProjectsADefaultRequestAsUnknown(t *testing.T) {
 	c := qt.New(t)
 	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Desired)), owned(widgetCodec(widgetKind, schemaext.Observed)))
 	c.Assert(err, qt.IsNil)
@@ -53,8 +56,22 @@ func TestConvertCoverage_RejectsWrongDirectionAndUnresolvedDefaults(t *testing.T
 		[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
 		[]schemaext.SubjectCoverage{{Kind: widgetKind, Subject: widgetRef("t", "v"), Knowledge: schemaext.Knowledge{State: schemaext.Defaulted}}})
 	c.Assert(err, qt.IsNil)
-	_, err = registry.ConvertCoverage(t.Context(), schemaext.Desired, schemaext.Observed, source)
-	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+
+	converted, err := registry.ConvertCoverage(t.Context(), schemaext.Desired, schemaext.Observed, source)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(converted.Lookup(widgetKind, widgetRef("t", "v")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(converted.Lookup(widgetKind, widgetRef("t", "w")).State, qt.Equals, schemaext.Complete)
+}
+
+func TestConvertCoverage_RejectsWrongDirection(t *testing.T) {
+	c := qt.New(t)
+	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Desired)), owned(widgetCodec(widgetKind, schemaext.Observed)))
+	c.Assert(err, qt.IsNil)
+	source, err := schemaext.NewCoverage(schemaext.Desired,
+		[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
+		[]schemaext.SubjectCoverage{{Kind: widgetKind, Subject: widgetRef("t", "v"), Knowledge: schemaext.Knowledge{State: schemaext.Defaulted}}})
+	c.Assert(err, qt.IsNil)
 	_, err = registry.ConvertCoverage(t.Context(), schemaext.Observed, schemaext.Desired, source)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	ctx, cancel := context.WithCancel(t.Context())

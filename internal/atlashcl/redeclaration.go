@@ -398,8 +398,8 @@ func (p *parser) documentDeclarations(policy redeclarationPolicy) []declaration 
 	for _, trigger := range db.Triggers {
 		objects = append(objects, declare(kindTrigger, qualifyWithOwner(trigger.Table, trigger.Name)))
 	}
-	for _, policyBlock := range db.RLSPolicies {
-		objects = append(objects, declare(kindPolicy, qualifyWithOwner(policyOwner(policyBlock), policyBlock.Name)))
+	for _, policyBlock := range p.policies {
+		objects = append(objects, declare(kindPolicy, qualifyWithOwner(policyBlock.table, policyBlock.name)))
 	}
 	return append(objects, declaredBeyondParity(db, policy)...)
 }
@@ -559,14 +559,6 @@ func constraintOwner(constraint schemamodel.Constraint) string {
 		return table
 	}
 	return constraint.StructName
-}
-
-// policyOwner names the table a row-level security policy belongs to.
-func policyOwner(policy schemamodel.RLSPolicy) string {
-	if table := strings.TrimSpace(policy.Table); table != "" {
-		return table
-	}
-	return policy.StructName
 }
 
 // qualifyWithOwner prefixes a table-scoped object with its table.

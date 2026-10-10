@@ -71,8 +71,9 @@ func (r Registry) SnapshotValues(ctx context.Context, representation Representat
 // ConvertCoverage carries source knowledge into another representation without
 // enrolling additional kinds. It validates the recorded definitions before
 // substituting the selected destination definitions. Unknown observations stay
-// unknown; conversion is not inspection. Default requests must be resolved by
-// the owning feature before representing them as observations.
+// unknown; conversion is not inspection. A default request projects as an
+// unknown observation for the same reason: what the owner's default holds is
+// not in the declaration, and no projection can say it.
 func (r Registry) ConvertCoverage(ctx context.Context, from, to Representation, source Coverage) (Coverage, error) {
 	document, err := r.EncodeCoverage(ctx, from, source)
 	if err != nil {
@@ -90,6 +91,14 @@ func (r Registry) ConvertCoverage(ctx context.Context, from, to Representation, 
 			return Coverage{}, fmt.Errorf("%w: conversion changes model owner", ErrIncompatibleCodec)
 		}
 		document.Kinds[i].Model = CodecIdentity{Owner: codec.owner, Kind: record.Model.Kind, Representation: to, Version: codec.version, Definition: codec.definition}
+	}
+	if to == Observed {
+		for i, record := range document.Subjects {
+			if record.Knowledge.State == Defaulted {
+				document.Subjects[i].Knowledge = Knowledge{State: Uninspected,
+					Reason: "the declaration requests the owner's default, which a projection cannot observe"}
+			}
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return Coverage{}, err

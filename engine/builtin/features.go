@@ -3,7 +3,9 @@ package builtin
 import (
 	"fmt"
 	"slices"
+	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -258,4 +260,34 @@ func validateDeclaredFacets(dialect string, database *schemamodel.Database) erro
 		}
 	}
 	return nil
+}
+
+// validateDeclaredRowSecurity refuses PostgreSQL row-level security on a
+// target the row-security owner is not registered for, before any other
+// declaration is checked. The refusal names the declaration and the scope that
+// keeps it to the targets that host it: a policy written without one is
+// offered to every target, and SQL Server's security policy and ClickHouse's
+// row policy are declared with their own scope.
+func validateDeclaredRowSecurity(dialect string, database *schemamodel.Database) error {
+	if slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
+		return nil
+	}
+	var subject string
+	for _, ref := range database.FeatureObjects.Refs() {
+		if ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) {
+			subject = fmt.Sprintf("policy %q on %s", ref.Name.Source, pgpolicy.Table(ref))
+			break
+		}
+	}
+	for _, table := range database.Tables {
+		if subject == "" && slices.Contains(table.Facets.Kinds(), pgpolicy.TableStateKind) {
+			subject = fmt.Sprintf("row-level security on table %q", table.QualifiedName())
+		}
+	}
+	if subject == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: PostgreSQL %s cannot be planned on %s; scope its declaration to the targets that host it, "+
+		`as dialects="%s" does in a Go annotation`,
+		ptaherr.ErrUnsupportedFeature, subject, platform.NormalizeDialect(dialect), strings.Join(pgpolicyprovider.Targets(), ","))
 }

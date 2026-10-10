@@ -298,18 +298,24 @@ func capturePair(pair *policyPair, object schemaext.Object, direction schemaext.
 	return nil
 }
 
-// undecidedNamespaces reports each surviving table whose policies the desired
-// source describes and the read did not enumerate: an observed policy there
-// may be one the description drops, and nobody saw it.
+// undecidedNamespaces reports each surviving table that declares policies the
+// read did not enumerate: whether each exists, and so whether to create or
+// change it, is unknown. A table that declares none plans no removal there,
+// because nothing in the unread namespace was observed, so a read that cannot
+// enumerate policies leaves the ones it did not see in place.
 func undecidedNamespaces(request schemaext.ObjectComparisonRequest, result *schemaext.ObjectComparisonResult) {
+	declared := make(map[objectidentity.Key]bool)
+	for _, ref := range request.Desired.Objects.Refs() {
+		declared[pgpolicy.Table(ref).Key()] = true
+	}
 	for _, parent := range request.Parents {
-		if !parent.Desired || !parent.Current {
+		if !parent.Desired || !parent.Current || !declared[parent.Subject.Key()] {
 			continue
 		}
 		// A table subject reads the table's namespace claim, and the kind's
 		// claim where the table has none.
 		current := request.Current.Coverage.Lookup(pgpolicy.PolicyKind, parent.Subject)
-		if unknown(current) && !unknown(request.Desired.Coverage.Lookup(pgpolicy.PolicyKind, parent.Subject)) {
+		if unknown(current) {
 			undecided(result, parent.Subject, "the table's policies were not enumerated: "+current.Reason)
 		}
 	}

@@ -1,9 +1,13 @@
 package atlashcl_test
 
 import (
+	"maps"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/feature/pgpolicy"
 
 	"ptah.run/core/goschema"
 	"ptah.run/internal/atlashcl"
@@ -25,9 +29,7 @@ table "users" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(db.RLSEnabledTables[0].Table, qt.Equals, "users")
-	c.Assert(db.RLSEnabledTables[0].Comment, qt.Equals, "tenant isolation")
+	c.Assert(ownerSwitches(c, db)["users"].Comment, qt.Equals, "tenant isolation")
 }
 
 func TestParseRowSecurityCommentAbsentIsEmpty(t *testing.T) {
@@ -45,8 +47,7 @@ table "users" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
-	c.Assert(db.RLSEnabledTables[0].Comment, qt.Equals, "")
+	c.Assert(ownerSwitches(c, db), qt.DeepEquals, map[string]pgpolicy.DesiredTableState{"users": {Enabled: true, StructName: "users"}})
 }
 
 // TestRowSecurityCommentGoAnnotationParity asserts that the Go annotation
@@ -70,7 +71,6 @@ type User struct {
 type SecurityMarker struct{}
 `)
 	c.Assert(err, qt.IsNil)
-	c.Assert(goDB.RLSEnabledTables, qt.HasLen, 1)
 
 	hclDB, err := atlashcl.Parse([]byte(`
 table "users" {
@@ -84,10 +84,8 @@ table "users" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(hclDB.RLSEnabledTables, qt.HasLen, 1)
-
-	goRLS := goDB.RLSEnabledTables[0]
-	hclRLS := hclDB.RLSEnabledTables[0]
-	c.Assert(hclRLS.Table, qt.Equals, goRLS.Table)
-	c.Assert(hclRLS.Comment, qt.Equals, goRLS.Comment)
+	goRLS := ownerSwitches(c, &goDB)
+	hclRLS := ownerSwitches(c, hclDB)
+	c.Assert(slices.Collect(maps.Keys(hclRLS)), qt.DeepEquals, slices.Collect(maps.Keys(goRLS)))
+	c.Assert(hclRLS["users"].Comment, qt.Equals, goRLS["users"].Comment)
 }
