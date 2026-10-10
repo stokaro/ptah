@@ -582,9 +582,18 @@ models later cannot widen a claim already captured.
 `DecodeObject` decodes one strict JSON object for a codec: it refuses a key
 outside the `ObjectShape`, spelled exactly, so a key in another letter case
 that `encoding/json` would match to a struct field is refused too. It also
-refuses a null where the shape allows none, a missing required key, a
+refuses a null where the shape allows none, an empty value under a `NonEmpty`
+key, which an `omitempty` encoder never writes, a missing required key, a
 duplicate key, and a value that is not an object. A refusal wraps
 `ErrInvalidValue` and names the first offending key in sorted order.
+`ValidText` refuses invalid UTF-8 and a NUL byte, which a statement or a
+catalog cannot carry faithfully.
+
+`ModelCodec` builds the codec of a model whose wire form is its Go value as
+`encoding/json` writes it, from the owner's shape check, validator and
+canonical form. Cloning, encoding and decoding validate first, and every
+refusal is an `InvalidModelError` of the codec's kind and representation; one
+the validator already typed is returned unchanged.
 
 `engine.Provider.Relations` assigns dependency discovery by target, model kind,
 and source representation. `runtime.CaptureRelations` validates a complete
@@ -1527,8 +1536,16 @@ BEFORE UPDATE or BEFORE DELETE, or none for every write. The predicates are a
 set: equality and the canonical encoding ignore their order. Validation
 refuses a filter predicate with an operation and two predicates for one
 operation on one table, where a block predicate for every operation conflicts
-with any other. A refused value is a
-`schemaext.InvalidModelError`. The package defines the model, its codecs and
+with any other block predicate on that table. Two spellings of a table that
+differ in letter case or trailing spaces count as one table, since a
+case-insensitive database refuses them as one; a case-sensitive database would
+accept them. A blank schema, name or argument is refused.
+
+The decoders accept only what the encoders write, so an omitted value spelled
+out, such as an empty struct name or argument list, is refused. Every refusal
+of a value, from a validator, a codec or an object constructor, is a
+`schemaext.InvalidModelError`; `ValidateSecurityPolicyRef` refuses an identity
+with `schemaext.ErrInvalidValue`. The package defines the model, its codecs and
 its coverage, and reads, compares and plans nothing.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant

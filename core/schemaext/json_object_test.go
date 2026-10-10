@@ -10,7 +10,8 @@ import (
 )
 
 var widgetShape = schemaext.ObjectShape{
-	Name: "widget", Allowed: []string{"name", "size", "parent"}, Required: []string{"name"}, Nullable: []string{"parent"},
+	Name: "widget", Allowed: []string{"name", "size", "parent", "label", "tags"}, Required: []string{"name"}, Nullable: []string{"parent"},
+	NonEmpty: []string{"label", "tags"},
 }
 
 func TestDecodeObject_HappyPath(t *testing.T) {
@@ -22,6 +23,12 @@ func TestDecodeObject_HappyPath(t *testing.T) {
 		{name: "every key", input: `{"size": 2, "name": "a", "parent": null}`,
 			want: map[string]json.RawMessage{"name": json.RawMessage(`"a"`), "size": json.RawMessage(`2`), "parent": json.RawMessage(`null`)}},
 		{name: "only the required key", input: `{"name":"a"}`, want: map[string]json.RawMessage{"name": json.RawMessage(`"a"`)}},
+		{name: "values under non-empty keys", input: `{"name":"a","label":"l","tags":["t"]}`,
+			want: map[string]json.RawMessage{"name": json.RawMessage(`"a"`), "label": json.RawMessage(`"l"`), "tags": json.RawMessage(`["t"]`)}},
+		{name: "empty values under other keys", input: `{"name":"","size":0}`,
+			want: map[string]json.RawMessage{"name": json.RawMessage(`""`), "size": json.RawMessage(`0`)}},
+		{name: "a number a float rounds to zero", input: `{"name":"a","label":1e-400}`,
+			want: map[string]json.RawMessage{"name": json.RawMessage(`"a"`), "label": json.RawMessage(`1e-400`)}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -53,6 +60,11 @@ func TestDecodeObject_FailurePath(t *testing.T) {
 		{name: "a null the shape does not allow", input: `{"name":"a","size":null}`, want: `.*widget property "size" cannot be null`},
 		{name: "a missing required key", input: `{"size":1}`, want: `.*missing widget property "name"`},
 		{name: "a duplicate key", input: `{"name":"a","name":"b"}`, want: `.*duplicate object key "name".*`},
+		{name: "an empty string spelled out", input: `{"name":"a","label":""}`, want: `.*widget property "label" cannot be empty; omit it instead`},
+		{name: "false spelled out", input: `{"name":"a","label":false}`, want: `.*widget property "label" cannot be empty; omit it instead`},
+		{name: "zero spelled out", input: `{"name":"a","label":-0.0e3}`, want: `.*widget property "label" cannot be empty; omit it instead`},
+		{name: "an empty list spelled out", input: `{"name":"a","tags":[]}`, want: `.*widget property "tags" cannot be empty; omit it instead`},
+		{name: "an empty object spelled out", input: `{"name":"a","tags":{ }}`, want: `.*widget property "tags" cannot be empty; omit it instead`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

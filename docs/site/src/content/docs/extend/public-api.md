@@ -88,6 +88,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/spanner/spannerreverse` | Reverse row deletion policy changes with recovery limits. |
 | `dialect/spanner/spannerconvert` | Conversion between row deletion policy declarations and observations. |
 | `dialect/spanner/spannerreport` | Captured row deletion policy counts and export omission labels. |
+| `dialect/mssql/mssqlschema` | SQL Server security policy model, with every predicate binding, and codecs. |
 | `dialect/timescaledb/tsast` | TimescaleDB operations and codecs. |
 | `dialect/timescaledb/tscompare` | TimescaleDB comparison. |
 | `dialect/timescaledb/tsconvert` | TimescaleDB conversion. |
@@ -109,7 +110,6 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbreverse` | Feature reversal and recovery limits. |
 | `dialect/ydb/ydbplan` | Feature declaration and migration planning. |
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
-| `dialect/mssql/mssqlschema` | SQL Server security policy model, with every predicate binding, and codecs. |
 | `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
 | `dialect/ydb/ydbsecret` | Secret declarations, observations, rotation requests, statements, and codecs, without values. |
 | `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
