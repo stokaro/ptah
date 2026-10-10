@@ -51,6 +51,19 @@ func (SecretService) CompareObjects(ctx context.Context, request schemaext.Objec
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	held := make(map[objectidentity.Key]bool)
+	for key, value := range secrets {
+		held[key] = value.current != nil
+	}
+	var drops []objectidentity.ID
+	for _, change := range result.Changes {
+		if value, ok := change.Value.(*ydbdiff.Secret); ok && value.After == nil {
+			drops = append(drops, change.Subject)
+		}
+	}
+	if err := refuseDottedLimits(request.Desired.Coverage, "secret", held, drops, ydbsecret.Display); err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
 	// The changes come out in path order, so the refusal names the first
 	// secret a statement would create, rotate or drop.
 	if len(result.Changes) > 0 {

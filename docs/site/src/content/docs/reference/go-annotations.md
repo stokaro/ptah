@@ -625,6 +625,12 @@ same limit in its header, as `-- ptah:not-described secret "ext/pg.pw"` or
 `-- ptah:not-described topic "app/events"`. An HCL document and an SQL file of
 another dialect refuse both kinds, since neither can declare one.
 
+A dotted limit such as `name="app.events"` differs from `app/events` only in
+the separator. When the database holds no root object `app.events` and the
+plan would drop `app/events`, the comparison is refused, since the source most
+likely means to keep that object, and the refusal names the spelling
+`app/events` that does.
+
 Go export adds whole-family annotations when those namespaces were not
 inspected. These annotations keep the generated source from claiming that
 unread objects are absent. Repeated export preserves authored family and object

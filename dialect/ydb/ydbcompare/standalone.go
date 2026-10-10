@@ -7,10 +7,12 @@ import (
 	"slices"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemavalidation"
 )
 
 // Complete standalone comparisons share deterministic ordering and coverage
@@ -206,6 +208,45 @@ func captureStandalone[D, O schemaext.Value](ctx context.Context, state schemaex
 			return fmt.Errorf("%w: unexpected %s comparison operand %T", schemaext.ErrInvalidValue, kind, snapshot)
 		}
 		capture(object.Ref, desired, observed)
+	}
+	return nil
+}
+
+// refuseDottedLimits refuses a comparison that drops an object a dotted limit
+// of the desired source reads like. A limit is a path relative to the
+// database root, so `name="app.events"` names app.events at the root, while
+// app/events differs from it only in the separator. Where the limit names
+// nothing the database holds and the plan drops the object its dotted
+// directory form names, the source most likely means to keep that object,
+// and dropping it loses data nothing can restore, so the comparison is
+// refused with the spelling that keeps it. A limit that names an object the
+// database holds is read as written.
+//
+// Every subject record of desired is the family's: [collectStandalone] refused
+// any other before the comparison ran.
+func refuseDottedLimits(desired schemaext.Coverage, family string, held map[objectidentity.Key]bool,
+	drops []objectidentity.ID, display func(schema, name string) string,
+) error {
+	for _, record := range desired.SubjectRecords() {
+		limit := record.Subject
+		if !unknown(record.Knowledge) || held[limit.Key()] {
+			continue
+		}
+		written := display(limit.Schema.Source, limit.Name.Source)
+		for _, dropped := range drops {
+			// Only a written path with a dot can equal this join, so a limit
+			// without one is never refused.
+			if dropped.Schema.Source == "" || dropped.Schema.Source+"."+dropped.Name.Source != written {
+				continue
+			}
+			path := display(dropped.Schema.Source, dropped.Name.Source)
+			return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+				Code: schemavalidation.InvalidSchema, Kind: family, Object: written,
+				Message: fmt.Sprintf("the %s limit %q names %s at the database root, which the database does not hold, "+
+					"while this plan would drop %s, which the same name written with a slash names. Write the limit as %q to keep that %s",
+					family, written, written, path, path, family),
+			}}}).Err(platform.YDB)
+		}
 	}
 	return nil
 }

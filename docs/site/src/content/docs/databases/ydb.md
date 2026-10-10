@@ -1666,7 +1666,10 @@ Every spelling of a secret is its path relative to the database root, as YDB
 writes it: a slash separates directories and a dot is part of a name. `pg.pw`
 is the secret `pg.pw` at the root, never `pw` in a directory `pg`. A
 declaration, a `notdescribed` limit, `--rotate-secret` and every message read
-and write a secret that way.
+and write a secret that way. A limit `pg.pw` differs from `pg/pw` only in the
+separator, so a plan that would drop `pg/pw` while the database holds no root
+secret `pg.pw` is refused, and the refusal names the spelling `pg/pw` that
+keeps it. Topic limits follow the same rule.
 
 A changed value is planned only when asked for. `--rotate-secret <dir/name>`
 on `schema apply`, `schema plan`, `schema diff`, `schema compare`, `migrations
