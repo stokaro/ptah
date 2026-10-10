@@ -63,8 +63,6 @@ type Database struct {
 	Triggers                   []Trigger                      // Database triggers
 	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
 	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
-	Hypertables                []Hypertable                   // TimescaleDB hypertables
-	ContinuousAggregates       []ContinuousAggregate          // TimescaleDB continuous aggregates
 	Roles                      []Role                         // PostgreSQL roles
 	Grants                     []Grant                        // PostgreSQL privilege grants
 	DefaultPrivileges          []DefaultPrivilege             `json:",omitempty"` // PostgreSQL default privileges
@@ -1251,98 +1249,6 @@ type Sequence struct {
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
-}
-
-// Hypertable is a TimescaleDB hypertable: an ordinary table partitioned on a
-// range dimension.
-//
-// It is its own family rather than a field on [Table] for the reason
-// [RLSEnabledTable] is: the declaration is about a table and is not part of the
-// table's own definition, and a target that does not have the extension has a
-// table without it rather than a different table.
-//
-// Nothing outside TimescaleDB's own catalog can see one. Measured on 2.29.2 /
-// PostgreSQL 17.11 after `create_hypertable('conditions', by_range('time'))`,
-// `pg_class.relkind` answers `r`, `pg_depend` reports no extension ownership,
-// and the index the call created carries `deptype 'a'` -- the same as an
-// ordinary user index on an ordinary table. So a description that does not
-// carry this says the table is not partitioned, and replaying it produces a
-// table that is not (stokaro/ptah#1026).
-//
-// One range dimension. A second is a separate call -- `add_dimension` with
-// `by_hash` -- and a separate concept; the read counts them and says how many
-// it did not describe.
-//
-// Dialects is deliberately absent, for the reason [Synonym] gives: a hypertable
-// belongs to TimescaleDB and to nothing else, and a scope field would invite a
-// schema to claim otherwise.
-type Hypertable struct {
-	StructName string // Name of the Go struct this hypertable is associated with
-	// Table is the table to partition, optionally schema-qualified.
-	Table string
-	// Column is the range dimension: the column chunks are cut on.
-	Column string
-	// ChunkInterval is the width of one chunk, written the way PostgreSQL
-	// spells an interval -- `7 days`, `1 hour`. Empty takes TimescaleDB's own
-	// default, which is 7 days for a timestamptz column.
-	//
-	// It is a string rather than a duration because the server's own spelling
-	// is what `timescaledb_information.dimensions` reports back, and a
-	// declaration that had to be converted to compare would differ from the
-	// catalog on every run.
-	ChunkInterval string
-	// IfNotExists renders `if_not_exists => TRUE`, which turns the server's
-	// `table "x" is already a hypertable` error into a skipped notice.
-	IfNotExists bool
-	Comment     string // Optional comment for documentation
-}
-
-// ContinuousAggregate is a TimescaleDB continuous aggregate: a materialized
-// view over a hypertable that the extension keeps up to date.
-//
-// It is its own family rather than a [MaterializedView] with a flag, because
-// describing one as a materialized view is wrong in both directions and both
-// were measured on 2.29.2 / PostgreSQL 17.11: a plan that dropped it emitted
-// `DROP VIEW` and the server answered `cannot drop continuous aggregate using
-// DROP VIEW`, and a plan that created it emitted the body `pg_get_viewdef`
-// answers, which selects from the materialization hypertable in a schema the
-// extension owns (stokaro/ptah#1026).
-//
-// Body is the SELECT as it was WRITTEN. The catalog stores a rewritten one --
-// `time_bucket('1 hour', time)` comes back as
-// `time_bucket('01:00:00'::interval, "time")` -- so the two are compared by
-// putting the declaration through the same rewrite rather than by folding the
-// text; the comparison's expression probes (internal/dbexprprobe) do that.
-//
-// Dialects is deliberately absent, for the reason [Synonym] gives: a continuous
-// aggregate belongs to TimescaleDB and to nothing else.
-type ContinuousAggregate struct {
-	StructName string // Name of the Go struct this aggregate is associated with
-	Name       string // Aggregate name, which is also the view name
-	Schema     string // Schema holding the aggregate
-	// Body is the SELECT the aggregate materializes, without the trailing
-	// semicolon and without the CREATE prefix.
-	Body string
-	// MaterializedOnly renders `timescaledb.materialized_only`, which decides
-	// whether a query reads only materialized data or combines it with the raw
-	// rows since the last refresh.
-	//
-	// Nil is not false: it is a declaration that did not choose, and it takes
-	// whatever the server defaults to. The default is not a constant --
-	// measured on 2.29.2, an aggregate created without the option is reported
-	// `materialized_only = t` -- so comparing an unset declaration against the
-	// catalog as if it said false would report a change on every run, and the
-	// plan for that change drops the aggregate and its materialization.
-	MaterializedOnly *bool
-	Comment          string // Optional comment for documentation
-}
-
-// QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (a ContinuousAggregate) QualifiedName() string {
-	if strings.TrimSpace(a.Schema) == "" {
-		return a.Name
-	}
-	return a.Schema + "." + a.Name
 }
 
 // Synonym is a SQL Server synonym: a schema-qualified alias for another object.

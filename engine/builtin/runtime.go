@@ -98,6 +98,7 @@ func New() (*engine.Runtime, error) {
 		}
 		providers = append(providers, provider)
 	}
+	providers = append(providers, timescaleProvider())
 	return assembleSchemaServices(providers)
 }
 

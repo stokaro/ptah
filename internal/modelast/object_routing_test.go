@@ -47,8 +47,6 @@ var routedKinds = []routedKind{
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
 	{name: "external data source", want: 1, count: countNodes[*ast.CreateExternalDataSourceNode]},
 	{name: "external table", want: 1, count: countNodes[*ast.CreateExternalTableNode]},
-	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
-	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
 	{name: "revoked grant", want: 1, count: countNodes[*ast.RevokePrivilegeNode]},
@@ -104,13 +102,6 @@ func routingFixture() schemamodel.Database {
 			SourceType: "ObjectStorage", Location: "https://storage.example.test/b/", AuthMethod: "NONE"}},
 		ExternalTables: []schemamodel.ExternalTable{{StructName: "ET", Name: "external_probe",
 			DataSource: "source_probe", Location: "f/", Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64"}}}},
-		Hypertables: []schemamodel.Hypertable{{
-			StructName: "HY", Table: "table_probe", Column: "n",
-		}},
-		ContinuousAggregates: []schemamodel.ContinuousAggregate{{
-			StructName: "CA", Name: "aggregate_probe",
-			Body: "SELECT id FROM table_probe",
-		}},
 		ExtendedProperties: []schemamodel.ExtendedProperty{{
 			StructName: "XP", Name: "property_probe", Schema: "dbo",
 			Table: "table_probe", Value: "probe",

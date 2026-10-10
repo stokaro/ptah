@@ -64,6 +64,17 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/cockroachdb/crdbschema`
 - `ptah.run/dialect/cockroachdb/crdbsource`
 - `ptah.run/dialect/postgres/pgproject`
+- `ptah.run/dialect/timescaledb/tsast`
+- `ptah.run/dialect/timescaledb/tscompare`
+- `ptah.run/dialect/timescaledb/tsconvert`
+- `ptah.run/dialect/timescaledb/tsdiff`
+- `ptah.run/dialect/timescaledb/tsplan`
+- `ptah.run/dialect/timescaledb/tsprobe`
+- `ptah.run/dialect/timescaledb/tsrelation`
+- `ptah.run/dialect/timescaledb/tsrender`
+- `ptah.run/dialect/timescaledb/tsreport`
+- `ptah.run/dialect/timescaledb/tsreverse`
+- `ptah.run/dialect/timescaledb/tsschema`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
 - `ptah.run/dialect/ydb/ydbconvert`
@@ -157,7 +168,11 @@ for each entry; embedders can choose their own reporting policy.
 
 `core/objectidentity` provides the structured identity and reference rules used
 by comparison and planning. Source spelling stays separate from normalized
-identity. Custom feature kinds use the same contract as common objects.
+identity. Custom feature kinds use the same contract as common objects. A
+component the target's default filled in is marked `Defaulted`, and its
+`Source` holds that default; `Part.Authored` returns what the source wrote,
+the empty string for a defaulted component, for a consumer that resolves an
+unqualified name under a default of its own.
 
 `core/manageddata.LoadRowValues` reads a managed-data YAML file while retaining
 scalar spelling and tags in `schemamodel.ManagedRow`. `LoadRows` reads resolved Go
@@ -1085,6 +1100,86 @@ and equality include the binding. The spec-only `DesiredChangefeeds` and
 capturing state. A binding can refer to a remote destination and does not name a
 local replication controller.
 
+`dialect/timescaledb/tsschema` owns the TimescaleDB models. Hypertable
+settings are a table facet under `HypertableKind`: `DesiredHypertable` declares
+the partitioning column, an optional chunk interval, `IfNotExists` and a
+comment; `ObservedHypertable` records the first dimension, its type, the
+interval the catalog reports and the dimension count. A continuous aggregate is
+a named object under `ContinuousAggregateKind` in `Database.FeatureObjects`,
+identified by `ContinuousAggregateRef`. `DesiredContinuousAggregate` keeps the
+body as written and a nil `MaterializedOnly` for the server's default;
+`Normalized` holds a connected server's spelling of the body and is set only by
+normalization.
+
+The common schema, catalog, AST, coverage and diff types carry no TimescaleDB
+field. `CompleteCoverage` is the claim a source makes when it
+describes every hypertable and aggregate; `RequireNoLimits` refuses a subject
+limit a document format cannot write.
+
+`tscompare.HypertableService` compares the settings of surviving tables. An
+omitted chunk interval matches any reported interval, and the column compares
+without letter case. `tscompare.AggregateService` compares aggregates by
+schema-scoped identity under the request's identifier rules; a body is compared
+only after normalization, and an omitted option matches. Both keep an
+undescribed observation when the desired source cannot describe the kind, and
+report an undecided change when the read could not describe the subject.
+`tsdiff.Hypertable` and `tsdiff.ContinuousAggregate` carry both operands and
+their safety effects.
+
+`tsplan.Service` plans `tsast.CreateHypertable` for an existing table and
+`tsast.ContinuousAggregate` for each aggregate transition, as statement
+extensions. It refuses a hypertable the desired schema leaves ordinary, a
+changed partitioning column and a changed chunk interval, because TimescaleDB
+has no statement for the first two and Ptah plans none for the third. An
+aggregate whose name a common step also creates as a relation is refused.
+
+A new table carries its hypertable facet on `CreateTableNode`, and the
+PostgreSQL-family renderer writes `create_hypertable` after the table through
+`tsrender.LowerTableFacets`. `tsrender.Registry` renders both payloads and
+refuses targets outside the PostgreSQL family; a target without
+`capability.Hypertables` or `capability.ContinuousAggregates` writes a skip
+line and records an omission. `tsrelation.Service` reports the hypertable an
+observed aggregate reads. `tsreverse.Service` reverses both changes and reports
+that a recreated aggregate starts empty. `tsprobe.Service` normalizes declared
+aggregates the database holds inside rolled-back transactions of the probe
+session it is given.
+
+`engine.Provider.Normalizations` registers a `schemaext.NormalizationService`
+for a target and kinds whose desired codecs the provider owns. One target and
+kind has one normalizer; an empty kind list, a nil service, an unknown target
+or a kind without the provider's desired codec is refused with
+`engine.ErrInvalidRegistration`.
+
+`engine.Runtime.NormalizeObjects` resolves the target and refuses an unknown
+one with `ptaherr.ErrUnsupportedDialect` before any owner is asked. It sends
+each owner one batch: the declared objects of its kinds, the observations of
+the same kinds, the coverage of those kinds, and the request's
+`schemaext.ProbeSession`. Objects of a kind no owner normalizes pass through
+unchanged and are not snapshotted, so a target without a normalizer returns
+the declaration it was given.
+
+A reply must be `Complete` and return every
+object under its identity and kind with the source coverage unchanged;
+otherwise the call fails with `schemaext.ErrInvalidValue`. An owner error, a
+refused reply and cancellation return no result. Objects keep their identity
+order. `engine.SchemaRuntime`, `migration/schemadiff.DatabaseRuntime` and
+`migration/generator.Runtime` include the method, so a live comparison
+normalizes declarations before it compares them.
+
+A `schemaext.ProbeSession` runs one body inside a transaction it rolls back
+whatever the body does. It answers `ran == false` with a nil error when no
+isolated transaction is available; the body did not run, and an owner treats
+every probe as unanswered. A nil session is a request error the owner refuses.
+A `dbschema.DatabaseConnection` is a probe session.
+
+`schemaext.ComparisonRequest.DeclaredRelations` and
+`schemaext.ObjectComparisonRequest.DeclaredRelations` name the views and
+materialized views the desired schema declares, for an owner whose objects
+hold their names as relations; tables are in `Parents`. The runtime refuses an
+entry that is not a named view or materialized view with
+`schemaext.ErrInvalidValue`, sends the owner a copy in identity order, and
+leaves the caller's slice unchanged. A nil list declares none.
+
 `atlascompat.DBSchemaToGoSchema` requires a context, target name, and selected
 feature runtime. It returns a schema and an error. `FacetSlots` on the desired
 and observed database models enumerates the mutable slots holding immutable
@@ -1241,7 +1336,10 @@ failures return an error and no diff.
 Nil schema pointers are missing inputs and return `ErrInvalidSchemaDiff`.
 Pass an explicit empty schema value to compare against an empty declaration or
 catalog; its feature coverage still determines what the source established.
-A comparison involving feature state also requires an explicit target. A supplied
+A comparison involving feature values, or a limit a source recorded about one
+subject, also requires an explicit target. A kind-level knowledge claim with no
+value on either side does not: a PostgreSQL-family read records what it knows
+about the TimescaleDB models even where it found none. A supplied
 identifier-semantics snapshot must cover every compared identity; an incomplete
 snapshot is refused rather than replaced by fallback name rules.
 
@@ -2066,18 +2164,14 @@ therefore gets the warning rather than a plan. A reversal resolves the field
 against the pre-change database, so a rolled-back modification rebuilds the
 definition that database held.
 
-Two more modification entries carry the object they render rather than a
-reference to it. `migration/schemadiff/difftypes.ContinuousAggregateDiff` and
-`RoleDiff` each hold a `Desired` field, off the wire, holding the declaration
-the planner writes the change from: an aggregate modification is a drop and a
-create, and the create needs the schema, the name and the comment that the two
-body strings do not carry, while a role's `password_update_required` entry
+`migration/schemadiff/difftypes.RoleDiff` carries the object it renders rather
+than a reference to it: a `Desired` field, off the wire, holding the declaration
+the planner writes the change from. A role's `password_update_required` entry
 records only that a password has to be set and never the value. An embedder
-that builds either entry by hand and leaves `Desired` empty gets no statement
-for that entry. The field is also what makes a rollback correct: a reversal
-resolves it against the pre-change database, so a rolled-back aggregate is
-recreated from the definition that database held and a rolled-back password
-change sets nothing, the database holding no password to restore.
+that builds the entry by hand and leaves `Desired` empty gets no statement for
+it. A reversal resolves the field against the pre-change database, so a
+rolled-back password change sets nothing, the database holding no password to
+restore.
 
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract.

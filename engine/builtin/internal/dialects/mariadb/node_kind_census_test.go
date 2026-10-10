@@ -10,6 +10,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/timescaledb/tsast"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -94,11 +96,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			want: "",
 		},
 		{
-			kind: "CreateContinuousAggregateNode",
-			node: ast.NewCreateContinuousAggregate("agg1", "SELECT 1"),
-			want: "-- Continuous aggregate agg1 not supported in mariadb\n",
-		},
-		{
 			kind: "CreateDatabaseNode",
 			node: ast.NewCreateDatabase("appdb"),
 			want: "CREATE DATABASE `appdb`;\n",
@@ -109,11 +106,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			kind: "CreateFunctionNode",
 			node: &ast.CreateFunctionNode{Name: "touch", Returns: "int", Volatility: "IMMUTABLE", Body: "RETURN 1"},
 			want: "CREATE FUNCTION `touch`() RETURNS int DETERMINISTIC RETURN 1;\n",
-		},
-		{
-			kind: "CreateHypertableNode",
-			node: ast.NewCreateHypertable("events", "ts"),
-			want: "-- Hypertable events not supported in mariadb\n",
 		},
 		{
 			// Wrapper-owned.
@@ -170,11 +162,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			kind: "DefaultPrivilegeNode",
 			node: ast.NewDefaultPrivilege("owner", "app", "TABLE", "app_role", []ast.DefaultPrivilege{{Privilege: "SELECT"}}),
 			want: "-- MARIADB: default privilege app_role is not generated for this target; skipped.\n",
-		},
-		{
-			kind: "DropContinuousAggregateNode",
-			node: ast.NewDropContinuousAggregate("agg1"),
-			want: "-- Continuous aggregate agg1 not supported in mariadb\n",
 		},
 		{
 			// Wrapper-owned.
@@ -283,6 +270,14 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 func mariadbRefusedKinds() []mariadbCensusRow {
 	return []mariadbCensusRow{
 		{
+			// The TimescaleDB nodes left core/ast for owner payloads in this
+			// envelope. A backend that does not compose their owner refuses
+			// them through the common extension boundary.
+			kind: "ExtensionStatement",
+			node: &ast.ExtensionStatement{Payload: &tsast.CreateHypertable{Table: "events", Hypertable: tsschema.DesiredHypertable{Column: "ts"}}},
+			want: `target "mariadb" does not support extension "ptah.run/timescaledb/create-hypertable" in role "statement"`,
+		},
+		{
 			kind: "AlterIndexNode",
 			node: &ast.AlterIndexNode{Name: "ix", NewName: "other"},
 			want: "unsupported feature: mariadb: ALTER INDEX ix RENAME TO other is PostgreSQL's statement, " +
@@ -384,7 +379,7 @@ func TestMariaDBDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 48
+const censusKindFloor = 47
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mariadbCensusRow {

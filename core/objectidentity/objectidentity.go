@@ -86,12 +86,6 @@ const (
 	KindComposite Kind = "composite type"
 	KindRange     Kind = "range type"
 	KindMatView   Kind = "materialized view"
-	// KindContinuousAggregate separates a TimescaleDB continuous aggregate from
-	// the materialized view PostgreSQL reports it as. The two share a
-	// namespace and a relkind, and the statements that make and remove them
-	// differ, so a comparison that folded them together would plan a plain
-	// materialized view for an aggregate (stokaro/ptah#1026).
-	KindContinuousAggregate Kind = "continuous aggregate"
 )
 
 // Part is one component of a qualified name: what the author wrote, and what
@@ -122,6 +116,18 @@ type Part struct {
 	// an ON DELETE clause nobody wrote (ADR 0001 invariant 2), and without this
 	// flag Source alone cannot tell the two apart (stokaro/ptah#1662).
 	Defaulted bool
+}
+
+// Authored returns the spelling the source wrote: Source, or the empty string
+// for a component the target's default filled in. A consumer that resolves an
+// unqualified name itself -- a filter with its own default schema, a key built
+// under the connection's default -- reads this rather than Source, which holds
+// the default the identity was built with.
+func (p Part) Authored() string {
+	if p.Defaulted {
+		return ""
+	}
+	return p.Source
 }
 
 // Empty reports whether the component was absent, which is different from

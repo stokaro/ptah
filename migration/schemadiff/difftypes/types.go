@@ -195,68 +195,6 @@ func (c ExternalTableChange) MarshalJSON() ([]byte, error) {
 	return json.Marshal(c.Declared.QualifiedName())
 }
 
-// HypertableChanges is a set of hypertables one change applies to, carrying
-// each one's partitioning and not only its table name.
-//
-// `create_hypertable` takes the column to partition on and the chunk interval,
-// neither of which a table name carries.
-//
-// See [RangeChanges] for why both sides carry the operand and why the wire
-// shape does not change.
-type HypertableChanges []schemamodel.Hypertable
-
-// MarshalJSON writes the table names alone, the shape `hypertables_added` and
-// `hypertables_removed` have always had.
-func (h HypertableChanges) MarshalJSON() ([]byte, error) {
-	if h == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(h.Names())
-}
-
-// Names is the tables this change partitions or stops partitioning.
-func (h HypertableChanges) Names() []string {
-	if h == nil {
-		return nil
-	}
-	names := make([]string, 0, len(h))
-	for _, hypertable := range h {
-		names = append(names, hypertable.Table)
-	}
-	return names
-}
-
-// ContinuousAggregateChanges is a set of continuous aggregates one change
-// applies to, carrying each one's body and not only its name.
-//
-// The plain twin of [HypertableChanges]: an aggregate is a materialized view
-// over a hypertable, so the body is the statement.
-//
-// See [RangeChanges] for why both sides carry the operand and why the wire
-// shape does not change.
-type ContinuousAggregateChanges []schemamodel.ContinuousAggregate
-
-// MarshalJSON writes the names alone, the shape `continuous_aggregates_added`
-// and `continuous_aggregates_removed` have always had.
-func (a ContinuousAggregateChanges) MarshalJSON() ([]byte, error) {
-	if a == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(a.Names())
-}
-
-// Names is the aggregate names this change applies to.
-func (a ContinuousAggregateChanges) Names() []string {
-	if a == nil {
-		return nil
-	}
-	names := make([]string, 0, len(a))
-	for _, aggregate := range a {
-		names = append(names, aggregate.QualifiedName())
-	}
-	return names
-}
-
 // ColumnChanges is a set of columns one table change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -1245,47 +1183,6 @@ type SchemaDiff struct {
 	// the target schema, each carrying its body; see [ViewChanges].
 	ViewsRemoved ViewChanges `json:"views_removed"`
 
-	// HypertablesAdded names the tables a declaration asks to partition and the
-	// database reports as ordinary.
-	HypertablesAdded HypertableChanges `json:"hypertables_added"`
-
-	// HypertablesRemoved names the tables the database reports as hypertables
-	// and the declaration does not.
-	//
-	// There is no statement that honors one. TimescaleDB has no
-	// `drop_hypertable`: measured on 2.29.2, the call answers
-	// `function drop_hypertable(unknown) does not exist`, and the only way back
-	// to an ordinary table is dropping this one and its data. So the planner
-	// refuses rather than plans (stokaro/ptah#1026).
-	HypertablesRemoved HypertableChanges `json:"hypertables_removed"`
-
-	// HypertablesModified names the tables whose partitioning declaration
-	// differs from what the catalog reports.
-	//
-	// It carries the same refusal as a removal, for the same reason: changing a
-	// dimension is not a statement either.
-	HypertablesModified []HypertableDiff `json:"hypertables_modified"`
-
-	// ContinuousAggregatesAdded names the continuous aggregates a declaration
-	// asks for and the database does not report.
-	ContinuousAggregatesAdded ContinuousAggregateChanges `json:"continuous_aggregates_added"`
-
-	// ContinuousAggregatesRemoved names the continuous aggregates the database
-	// reports and the declaration does not.
-	//
-	// Unlike a hypertable this one CAN be honored, and the statement is DROP
-	// MATERIALIZED VIEW rather than DROP VIEW -- measured on 2.29.2, DROP VIEW
-	// answers `cannot drop continuous aggregate using DROP VIEW`.
-	ContinuousAggregatesRemoved ContinuousAggregateChanges `json:"continuous_aggregates_removed"`
-
-	// ContinuousAggregatesModified names the aggregates whose declared body or
-	// options differ from the ones the catalog reports.
-	//
-	// It is planned as a drop and a create rather than a replacement, because
-	// there is no replacement: measured on 2.29.2, `CREATE OR REPLACE
-	// MATERIALIZED VIEW` is `syntax error at or near "MATERIALIZED"`.
-	ContinuousAggregatesModified []ContinuousAggregateDiff `json:"continuous_aggregates_modified"`
-
 	// SynonymsAdded is the synonyms that exist in the target schema and not in
 	// the database, each carrying its target; see [SynonymChanges].
 	SynonymsAdded SynonymChanges `json:"synonyms_added"`
@@ -1800,7 +1697,6 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 //   - roles, grants, and grant options
 //   - default privileges, and the grant options on them
 //   - row-level security policies, and the tables RLS is enabled or disabled on
-//   - TimescaleDB hypertables and continuous aggregates
 //   - SQL Server extended properties
 //
 // The method itself is the full set; the list above names the groups rather
@@ -1843,8 +1739,7 @@ func (d *SchemaDiff) HasChanges() bool {
 }
 
 func (d *SchemaDiff) hasFeatureChanges() bool {
-	return len(d.FeatureChanges) > 0 || d.hasYDBObjectChanges() ||
-		d.hasHypertableChanges() || d.hasContinuousAggregateChanges() || d.hasExtendedPropertyChanges()
+	return len(d.FeatureChanges) > 0 || d.hasYDBObjectChanges() || d.hasExtendedPropertyChanges()
 }
 
 // SchemaChange is a schema whose attributes a whole-server comparison
@@ -2126,18 +2021,6 @@ func (d *SchemaDiff) hasExternalChanges() bool {
 		len(d.ExternalTablesAdded) > 0 ||
 		len(d.ExternalTablesRemoved) > 0 ||
 		len(d.ExternalTablesChanged) > 0
-}
-
-func (d *SchemaDiff) hasHypertableChanges() bool {
-	return len(d.HypertablesAdded) > 0 ||
-		len(d.HypertablesRemoved) > 0 ||
-		len(d.HypertablesModified) > 0
-}
-
-func (d *SchemaDiff) hasContinuousAggregateChanges() bool {
-	return len(d.ContinuousAggregatesAdded) > 0 ||
-		len(d.ContinuousAggregatesRemoved) > 0 ||
-		len(d.ContinuousAggregatesModified) > 0
 }
 
 func (d *SchemaDiff) hasExtendedPropertyChanges() bool {
@@ -2833,50 +2716,6 @@ type ExtensionDiff struct {
 	// `extension "plpgsql" does not support SET SCHEMA`, measured on
 	// PostgreSQL 18.
 	Relocatable bool `json:"relocatable"`
-}
-
-// HypertableDiff describes a hypertable whose declared partitioning differs
-// from the one the catalog reports.
-type HypertableDiff struct {
-	// Table is the table both sides name.
-	Table string `json:"table"`
-	// OldColumn and NewColumn are the range dimensions, live and declared.
-	OldColumn string `json:"old_column"`
-	NewColumn string `json:"new_column"`
-	// OldChunkInterval and NewChunkInterval are the chunk widths, live and
-	// declared. An empty declared interval takes the server's default and is
-	// not a difference.
-	OldChunkInterval string `json:"old_chunk_interval"`
-	NewChunkInterval string `json:"new_chunk_interval"`
-}
-
-// ContinuousAggregateDiff describes a continuous aggregate whose declaration
-// differs from the one the catalog reports.
-//
-// Both bodies are carried so a reviewer reading the plan can see what changed;
-// the plan itself is a drop followed by a create, and the create uses the
-// DECLARED body.
-type ContinuousAggregateDiff struct {
-	// Name is the aggregate both sides name, schema-qualified when it has one.
-	Name string `json:"name"`
-	// OldBody and NewBody are the SELECTs, live and declared.
-	OldBody string `json:"old_body"`
-	NewBody string `json:"new_body"`
-	// OldMaterializedOnly and NewMaterializedOnly are the option's two values.
-	OldMaterializedOnly bool `json:"old_materialized_only"`
-	NewMaterializedOnly bool `json:"new_materialized_only"`
-
-	// Desired is the aggregate this change asks the database to hold.
-	//
-	// A modification is a drop followed by a create, and the create needs more
-	// than the two fields above: the schema and the name separately, and the
-	// comment. Carrying the object is what lets the planner render the change
-	// without being handed the schema it came out of (stokaro/ptah#2315).
-	//
-	// It stays off the wire. The bodies and the option are the change; this is
-	// the operand the renderer needs to write it, and a reader of a stored plan
-	// resolves the object for itself.
-	Desired schemamodel.ContinuousAggregate `json:"-"`
 }
 
 // ExtendedPropertyRef names one SQL Server extended property, by the address

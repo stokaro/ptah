@@ -8,12 +8,16 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/planartifact"
 	"ptah.run/migration/safety"
@@ -27,6 +31,7 @@ func TestNewFS_UsesStateBoundCanonicalJSON(t *testing.T) {
 		Size:      123,
 	}
 	report, err := planartifact.NewReport(
+		context.Background(), must.Must(builtin.New()),
 		subject,
 		&catalog.Database{},
 		"postgres",
@@ -65,6 +70,7 @@ func TestPublishTo_AttachesPlanToExactSubject(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	report, err := planartifact.NewReport(
+		context.Background(), must.Must(builtin.New()),
 		subject.Descriptor,
 		&catalog.Database{},
 		"postgres",
@@ -113,6 +119,7 @@ func TestPublishTo_RejectsDesiredDigestMismatch(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	report, err := planartifact.NewReport(
+		context.Background(), must.Must(builtin.New()),
 		ocispec.Descriptor{
 			Digest:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			MediaType: ocispec.MediaTypeImageManifest,
@@ -154,4 +161,32 @@ func sampleAssessments() []safety.StatementAssessment {
 		Severity:  safety.Destructive,
 		Reason:    "DROP TABLE removes the table and all rows",
 	}}
+}
+
+// A read of a PostgreSQL-family database records what it knows about the
+// TimescaleDB models, even when it found none, and default JSON refuses that
+// coverage. The digest goes through the runtime's codecs, so the report
+// builds, and the coverage counts: the same tables with and without it do not
+// share a digest.
+func TestNewReport_FingerprintsOwnerDataThroughTheRuntime(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	subject := ocispec.Descriptor{
+		Digest:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		MediaType: ocispec.MediaTypeImageManifest,
+		Size:      1,
+	}
+	plain := &catalog.Database{Tables: []catalog.Table{{Name: "items"}}}
+	covered := &catalog.Database{Tables: []catalog.Table{{Name: "items"}}, FeatureCoverage: must.Must(tsschema.CompleteCoverage(schemaext.Observed))}
+
+	first, err := planartifact.NewReport(t.Context(), runtime, subject, covered, "postgres", nil, nil, nil)
+	c.Assert(err, qt.IsNil)
+	second, err := planartifact.NewReport(t.Context(), runtime, subject, covered, "postgres", nil, nil, nil)
+	c.Assert(err, qt.IsNil)
+	without, err := planartifact.NewReport(t.Context(), runtime, subject, plain, "postgres", nil, nil, nil)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(first.CurrentSchemaDigest, qt.Matches, `sha256:[a-f0-9]{64}`)
+	c.Assert(second.CurrentSchemaDigest, qt.Equals, first.CurrentSchemaDigest)
+	c.Assert(without.CurrentSchemaDigest, qt.Not(qt.Equals), first.CurrentSchemaDigest)
 }

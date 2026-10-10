@@ -13,10 +13,13 @@ import (
 	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/timescaledb/tsdiff"
+	"ptah.run/dialect/timescaledb/tsprobe"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -75,8 +78,8 @@ func TestTimescaleContinuousAggregateConvergesE2E(t *testing.T) {
 	// The catalog and the declaration disagree textually. Asserting that first
 	// is what makes the convergence below mean something: without it, a
 	// comparison that never looked at the body would pass this test.
-	c.Assert(describedAggregateDefinition(live, aggregate), qt.Not(qt.Equals), body)
-	c.Assert(describedAggregateDefinition(live, aggregate), qt.Contains, "01:00:00")
+	c.Assert(describedAggregateDefinition(c, live, aggregate), qt.Not(qt.Equals), body)
+	c.Assert(describedAggregateDefinition(c, live, aggregate), qt.Contains, "01:00:00")
 
 	declared := timescaleDeclaration(table, aggregate, body)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil, must.Must(builtin.New()))
@@ -86,7 +89,7 @@ func TestTimescaleContinuousAggregateConvergesE2E(t *testing.T) {
 	// read whole would report every other object on it -- which is a fact about
 	// the server rather than about the comparison under test.
 	c.Assert(aggregateChanges(diff, aggregate), qt.HasLen, 0,
-		qt.Commentf("declared:\n%s\n\ncatalog:\n%s", body, describedAggregateDefinition(live, aggregate)))
+		qt.Commentf("declared:\n%s\n\ncatalog:\n%s", body, describedAggregateDefinition(c, live, aggregate)))
 
 	// The control on the other side: a body that really did change is reported,
 	// so the normalization above is not a comparison that always agrees.
@@ -104,10 +107,19 @@ func TestTimescaleContinuousAggregateConvergesE2E(t *testing.T) {
 // form an assertion can read.
 func aggregateChanges(diff *difftypes.SchemaDiff, name string) []string {
 	changes := make([]string, 0, 3)
-	changes = append(changes, prefixedMatches("added:", diff.ContinuousAggregatesAdded.Names(), name)...)
-	changes = append(changes, prefixedMatches("removed:", diff.ContinuousAggregatesRemoved.Names(), name)...)
-	for _, change := range diff.ContinuousAggregatesModified {
-		changes = append(changes, prefixedMatches("modified:", []string{change.Name}, name)...)
+	for _, record := range diff.FeatureChanges {
+		change, ok := record.Value.(*tsdiff.ContinuousAggregate)
+		if !ok {
+			continue
+		}
+		label := "modified:"
+		switch {
+		case change.Before == nil:
+			label = "added:"
+		case change.After == nil:
+			label = "removed:"
+		}
+		changes = append(changes, prefixedMatches(label, []string{record.Subject.Name.Source}, name)...)
 	}
 	return changes
 }
@@ -165,13 +177,20 @@ func TestTimescaleContinuousAggregateProbeLeavesNothingBehindE2E(t *testing.T) {
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
-	resolved, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn, []dbexprprobe.ContinuousAggregateProbe{{
-		Key: aggregate, Body: body,
-	}})
+	declared := timescaleDeclaration(table, aggregate, body)
+	resolved, err := tsprobe.Service{}.NormalizeObjects(ctx, schemaext.NormalizationRequest{
+		Target: conn.Info().Dialect, Identifiers: conn.Info().IdentifierSemantics, Capabilities: conn.Info().Capabilities,
+		Desired: schemaext.ObjectState{Objects: declared.FeatureObjects, Coverage: declared.FeatureCoverage},
+		Current: schemaext.ObjectState{Objects: before.FeatureObjects, Coverage: before.FeatureCoverage},
+		Session: conn,
+	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(resolved[aggregate].Resolved, qt.IsTrue)
-	c.Assert(resolved[aggregate].Body, qt.Equals, describedAggregateDefinition(before, aggregate))
+	c.Assert(resolved.Complete, qt.IsTrue)
+	normalized, found := must.Must2(resolved.Desired.Objects.Get(tsschema.ContinuousAggregateRef("", aggregate)))
+	c.Assert(found, qt.IsTrue)
+	c.Assert(normalized.Value.(*tsschema.DesiredContinuousAggregate).Normalized, qt.DeepEquals,
+		&tsschema.NormalizedBody{Body: describedAggregateDefinition(c, before, aggregate)})
 
 	after, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
@@ -183,15 +202,15 @@ func TestTimescaleContinuousAggregateProbeLeavesNothingBehindE2E(t *testing.T) {
 // the aggregate carrying the body it was written with.
 func timescaleDeclaration(table, aggregate, body string) *schemamodel.Database {
 	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "R", Name: table}},
+		Tables: []schemamodel.Table{{StructName: "R", Name: table,
+			Facets: must.Must(schemaext.NewFacets(&tsschema.DesiredHypertable{Column: "time"}))}},
 		Fields: []schemamodel.Field{
 			{StructName: "R", Name: "time", Type: "TIMESTAMPTZ"},
 			{StructName: "R", Name: "device", Type: "TEXT"},
 			{StructName: "R", Name: "temperature", Type: "DOUBLE PRECISION", Nullable: true},
 		},
-		Hypertables: []schemamodel.Hypertable{{StructName: "R", Table: table, Column: "time"}},
-		ContinuousAggregates: []schemamodel.ContinuousAggregate{{
-			StructName: "A", Name: aggregate, Body: body,
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(tsschema.DesiredContinuousAggregateObject("", aggregate,
+			tsschema.DesiredContinuousAggregate{StructName: "A", Body: body}))),
+		FeatureCoverage: must.Must(tsschema.CompleteCoverage(schemaext.Desired)),
 	}
 }

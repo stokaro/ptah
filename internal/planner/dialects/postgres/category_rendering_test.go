@@ -77,18 +77,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "a database's character set and collation are a whole-server MySQL-family change for the same reason",
 		diff: &difftypes.SchemaDiff{SchemasModified: []difftypes.SchemaChange{{Name: "app", Collate: "C"}}},
 	},
-	"HypertablesRemoved": {
-		why: "TimescaleDB has no statement that turns a hypertable back into an ordinary table -- measured on 2.29.2, drop_hypertable does not exist -- so the planner refuses instead of emitting nothing and calling the two sides equal",
-		diff: &difftypes.SchemaDiff{HypertablesRemoved: difftypes.HypertableChanges{{
-			Table: "readings", Column: "ts",
-		}}},
-	},
-	"HypertablesModified": {
-		why: "TimescaleDB has no statement that repartitions an existing hypertable either, and the refusal is what keeps a permanent divergence from reading as no change",
-		diff: &difftypes.SchemaDiff{HypertablesModified: []difftypes.HypertableDiff{{
-			Table: "readings", OldColumn: "ts", NewColumn: "created_at",
-		}}},
-	},
 	"RoleMembershipsAdded": {
 		why:  "the comparison records a membership only on a target with role_membership, which is YDB's, so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would leave the member without what it was declared to hold",
 		diff: &difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
@@ -440,35 +428,6 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{Synonyms: []schemamodel.Synonym{{Name: "s", Target: "dbo.t"}}},
 		},
 		{"SynonymsRemoved", &difftypes.SchemaDiff{SynonymsRemoved: difftypes.SynonymChanges{{Name: "s"}}}, &schemamodel.Database{}},
-		{
-			"HypertablesAdded",
-			&difftypes.SchemaDiff{HypertablesAdded: difftypes.HypertableChanges{{Table: "conditions"}}},
-			&schemamodel.Database{Hypertables: []schemamodel.Hypertable{
-				{Table: "conditions", Column: "time"},
-			}},
-		},
-		{
-			"ContinuousAggregatesAdded",
-			&difftypes.SchemaDiff{ContinuousAggregatesAdded: difftypes.ContinuousAggregateChanges{{Name: "hourly"}}},
-			&schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
-				{Name: "hourly", Body: "SELECT 1"},
-			}},
-		},
-		{
-			"ContinuousAggregatesRemoved",
-			&difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{Name: "hourly"}}},
-			&schemamodel.Database{},
-		},
-		{
-			"ContinuousAggregatesModified",
-			&difftypes.SchemaDiff{ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{
-				{
-					Name: "hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
-					Desired: schemamodel.ContinuousAggregate{Name: "hourly", Body: "SELECT 2"},
-				},
-			}},
-			&schemamodel.Database{},
-		},
 		{
 			"SynonymsModified",
 			&difftypes.SchemaDiff{SynonymsModified: []difftypes.SynonymDiff{{

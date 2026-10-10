@@ -1680,15 +1680,13 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 }
 
 // refuseYDBChanges refuses the changes only the YDB planner plans: a table's
-// column families and partitioning settings, changefeeds, topics, role
-// memberships and coordination nodes. A
-// diff reaches this planner with one only when it was built by hand or for
-// YDB, and planning nothing would report the change applied.
+// column families and partitioning settings, and role memberships. A diff
+// reaches this planner with one only when it was built by hand or for YDB, and
+// planning nothing would report the change applied. Feature changes go to
+// their owners through the runtime instead, which refuses a YDB-owned change
+// on this target because no owner plans it here.
 func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
-		return err
-	}
-	if err := schemaprecondition.RefuseFeatureChanges(p.targetDialect(), p.unownedFeatureChanges(diff)); err != nil {
 		return err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
@@ -1796,10 +1794,15 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		}
 	}()
 
-	return p.generateMigrationAST(ctx, runtime, diff)
+	var positions featurePositions
+	nodes, err := p.generateMigrationAST(ctx, runtime, diff, &positions)
+	if err != nil {
+		return nil, err
+	}
+	return p.scheduleFeatures(ctx, runtime, diff, nodes, positions)
 }
 
-func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, positions *featurePositions) ([]ast.Node, error) {
 	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
 		return nil, err
 	}
@@ -1820,9 +1823,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	}
 	var result []ast.Node
 	if err := p.validateExtensionInstallationSchemas(diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseHypertableChanges(diff); err != nil {
 		return nil, err
 	}
 	result, err := p.planExtensionChanges(result, diff)
@@ -1950,6 +1950,13 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.addSequenceOwnership(result, diff)
 	result = p.modifyExistingSequences(result, diff)
 
+	// Feature operations that create or change objects join the plan here:
+	// after the tables and columns they may read exist, and before the views
+	// and materialized views that may read them. A TimescaleDB continuous
+	// aggregate reads a hypertable or another aggregate, and a view can read
+	// an aggregate.
+	positions.creation = len(result)
+
 	// 6.6. Add and modify views, materialized views, and triggers after their
 	// tables/functions exist. The routines that name a relation this plan
 	// creates are ordered with the views, since either may read the other.
@@ -1957,9 +1964,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.modifyExistingViews(result, diff)
 	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
-	result = p.addNewHypertables(result, diff)
-	result = p.addNewContinuousAggregates(result, diff)
-	result = p.modifyExistingContinuousAggregates(result, diff)
 	result = p.addExtendedProperties(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff)
 	result = p.addNewTriggers(result, diff)
@@ -2081,8 +2085,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
 	result = p.removeTriggers(result, diff)
 	result = p.removeMaterializedViews(result, diff)
-	result = p.removeContinuousAggregates(result, diff)
 	result = p.removeViews(result, diff)
+	// Feature operations that drop objects join the plan here: after the views
+	// and materialized views that may read them are dropped, and before the
+	// tables they may read.
+	positions.removal = len(result)
 	result = p.removeExtendedProperties(result, diff)
 	result = p.removeSynonyms(result, diff)
 
@@ -2945,124 +2952,6 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.Sch
 // follows: the plan and the render have to agree about which objects exist, and
 // a planner that dropped the node instead would make a declared object vanish
 // from the plan while the render still reported it.
-// addNewHypertables emits the create_hypertable call for each table a
-// declaration asks to partition and the database reports as ordinary.
-//
-// It runs after the tables exist and before anything writes rows. Measured on
-// TimescaleDB 2.29.2, the call against a missing relation answers
-// `relation "conditions" does not exist`, and against a table holding one row
-// it answers `table "loaded" is not empty` -- so a plan that ran it too early
-// or too late would leave the table ordinary either way.
-func (p *Planner) addNewHypertables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The partitioning travels WITH the change, so this renders what it was
-	// handed rather than looking the table name back up in the desired schema.
-	for _, hypertable := range diff.HypertablesAdded {
-		result = append(result, modelast.FromHypertable(hypertable))
-	}
-	return result
-}
-
-// addNewContinuousAggregates emits the CREATE MATERIALIZED VIEW for each
-// aggregate a declaration asks for and the database does not report.
-//
-// It runs after the create_hypertable calls above, which is a requirement
-// rather than a preference: measured on TimescaleDB 2.29.2, WITH
-// (timescaledb.continuous) over an ordinary table answers `invalid continuous
-// aggregate view`, so an aggregate planned before the table it reads was
-// partitioned would fail the migration it belongs to.
-func (p *Planner) addNewContinuousAggregates(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The body travels WITH the change, so this renders what it was handed
-	// rather than looking the name back up in the desired schema.
-	for _, aggregate := range diff.ContinuousAggregatesAdded {
-		result = append(result, modelast.FromContinuousAggregate(aggregate))
-	}
-	return result
-}
-
-// modifyExistingContinuousAggregates replaces an aggregate whose declaration
-// changed, by dropping it and creating it again.
-//
-// There is no replacement statement to prefer instead: measured on 2.29.2,
-// `CREATE OR REPLACE MATERIALIZED VIEW` is `syntax error at or near
-// "MATERIALIZED"`. The pair is emitted from inside this step for the reason
-// [Planner.modifyExistingViews] gives -- the plan runs additions before
-// removals, so a modification expressed as one of each would come out
-// create-then-drop and end with no aggregate at all.
-func (p *Planner) modifyExistingContinuousAggregates(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-) []ast.Node {
-	// The aggregate travels WITH the change, so this renders what it was handed
-	// rather than resolving the name against the schema the planner was given
-	// (stokaro/ptah#2315). A change carrying no aggregate names one the
-	// pre-change database did not hold, and there is nothing to recreate.
-	for _, change := range diff.ContinuousAggregatesModified {
-		if change.Desired.Name == "" {
-			continue
-		}
-		result = append(result,
-			dropContinuousAggregate(change.Desired),
-			modelast.FromContinuousAggregate(change.Desired))
-	}
-	return result
-}
-
-// removeContinuousAggregates drops the aggregates the database reports and the
-// declaration does not.
-//
-// The statement is DROP MATERIALIZED VIEW on the server's own instruction:
-// DROP VIEW answers `cannot drop continuous aggregate using DROP VIEW`, and a
-// plan that emitted it would never apply.
-func (p *Planner) removeContinuousAggregates(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, aggregate := range diff.ContinuousAggregatesRemoved {
-		// Addressed by the qualified name, which is the spelling the name list
-		// carried. dropContinuousAggregate below addresses the replacement half
-		// through SetSchema instead; the two are not unified here, because that
-		// would change what this statement renders.
-		result = append(result, ast.NewDropContinuousAggregate(aggregate.QualifiedName()).SetIfExists())
-	}
-	return result
-}
-
-// dropContinuousAggregate is the removal half of a replacement, addressed the
-// way the declaration addresses the object.
-func dropContinuousAggregate(aggregate schemamodel.ContinuousAggregate) *ast.DropContinuousAggregateNode {
-	return ast.NewDropContinuousAggregate(aggregate.Name).
-		SetSchema(aggregate.Schema).
-		SetIfExists()
-}
-
-// refuseHypertableChanges refuses what TimescaleDB has no statement for.
-//
-// A table that IS a hypertable cannot become an ordinary one: measured on
-// 2.29.2, `drop_hypertable` answers `function drop_hypertable(unknown) does not
-// exist`, and the only way back is dropping the table and its data. Changing
-// the dimension is not a statement either.
-//
-// Planning nothing would be worse than refusing. The table stays partitioned,
-// the description says it is not, and the next diff reports the same change
-// forever -- while an operator reading "no changes" believes the two agree.
-func (p *Planner) refuseHypertableChanges(diff *difftypes.SchemaDiff) error {
-	if diff == nil {
-		return nil
-	}
-	if len(diff.HypertablesRemoved) > 0 {
-		return fmt.Errorf(
-			"%w: %s is a hypertable and the desired schema does not declare one; TimescaleDB has no "+
-				"statement that turns a hypertable back into an ordinary table, so this needs an explicit "+
-				"migration that drops and recreates it",
-			ptaherr.ErrUnsupportedFeature, diff.HypertablesRemoved[0].Table)
-	}
-	if len(diff.HypertablesModified) > 0 {
-		change := diff.HypertablesModified[0]
-		return fmt.Errorf(
-			"%w: hypertable %s is partitioned on %q and the desired schema declares %q; TimescaleDB has no "+
-				"statement that repartitions an existing hypertable, so this needs an explicit migration",
-			ptaherr.ErrUnsupportedFeature, change.Table, change.OldColumn, change.NewColumn)
-	}
-	return nil
-}
-
 func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// The target travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.

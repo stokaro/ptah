@@ -1,12 +1,15 @@
 package planartifact_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planartifact"
 )
 
@@ -24,6 +27,7 @@ func TestNewReportRolePasswordStatesProduceDistinctFingerprints(t *testing.T) {
 func rolePasswordStateDigest(c *qt.C, state catalog.RolePasswordState) string {
 	c.Helper()
 	report, err := planartifact.NewReport(
+		context.Background(), must.Must(builtin.New()),
 		ocispec.Descriptor{
 			Digest:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			MediaType: ocispec.MediaTypeImageManifest,

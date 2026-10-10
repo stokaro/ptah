@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 )
 
 // WithoutStartingPoint returns current, a read of a dev database the caller
@@ -94,11 +96,34 @@ func WithoutKeptState(current, env, declared *catalog.Database, defaultSchema st
 		func(v catalog.Role) string { return v.Name })
 	filtered.RoleMemberships = subtract(current.RoleMemberships, env.RoleMemberships, declared.RoleMemberships,
 		func(v catalog.RoleMembership) string { return v.Role + "\x00" + v.Member })
-	filtered.Hypertables = subtract(current.Hypertables, env.Hypertables, declared.Hypertables,
-		func(v catalog.Hypertable) string { return q(v.Schema, v.Name) })
-	filtered.ContinuousAggregates = subtract(current.ContinuousAggregates, env.ContinuousAggregates,
-		declared.ContinuousAggregates, func(v catalog.ContinuousAggregate) string { return q(v.Schema, v.Name) })
+	// Named feature objects, such as TimescaleDB continuous aggregates, are
+	// matched by their structured identity; settings attached to a table
+	// leave with the table above.
+	filtered.FeatureObjects = subtractObjects(current.FeatureObjects, env.FeatureObjects, declared.FeatureObjects, func(ref objectidentity.ID) string {
+		return strings.Join([]string{string(ref.Kind), ref.Catalog.Normalized, q(ref.Schema.Authored(), ref.Parent.Normalized),
+			ref.Name.Normalized, ref.Signature}, "\x00")
+	})
 	return &filtered
+}
+
+// subtractObjects returns the feature objects of current whose identity env
+// does not hold, or declared holds too. key resolves an unqualified identity
+// under the caller's default schema, as every other family here does: the
+// identity a reader builds fills in its own default, which need not be the
+// schema the dev database uses.
+func subtractObjects(current, env, declared schemaext.Objects, key func(objectidentity.ID) string) schemaext.Objects {
+	if env.Len() == 0 || current.Len() == 0 {
+		return current
+	}
+	inEnv := make(map[string]bool, env.Len())
+	for _, ref := range env.Refs() {
+		inEnv[key(ref)] = true
+	}
+	inDeclared := make(map[string]bool, declared.Len())
+	for _, ref := range declared.Refs() {
+		inDeclared[key(ref)] = true
+	}
+	return current.Select(func(ref objectidentity.ID) bool { return !inEnv[key(ref)] || inDeclared[key(ref)] })
 }
 
 // subtract returns the values of current whose key env does not hold, or

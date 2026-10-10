@@ -59,8 +59,6 @@ func hostedSchema(family, host string) schemamodel.Database {
 			StructName: host, Name: "tr", Timing: "BEFORE", Event: "UPDATE",
 			ForEach: "ROW", ExecuteFunction: "touch()",
 		}}
-	case "hypertable":
-		schema.Hypertables = []schemamodel.Hypertable{{StructName: host, Column: "id"}}
 	}
 	return schema
 }
@@ -78,16 +76,16 @@ var hostedFamilies = []struct {
 	{name: "rls enable", kind: "a declared row-level security enablement names no table"},
 	{name: "policy", kind: `policy "p" names no table`},
 	{name: "trigger", kind: `trigger "tr" names no table`},
-	{name: "hypertable", kind: "a declared hypertable names no table"},
 }
 
 // TestHostlessDeclaration_EveryFamilyIsRefused is stokaro/ptah#2612.
 //
-// Measured on PostgreSQL before this change, all six at exit 0: the constraint
-// was dropped from the render entirely, and the other five rendered against an
-// empty identifier: an empty quoted name after ON, after ALTER TABLE, and as
-// the create_hypertable argument. No server takes an empty relation name, and a
-// constraint that vanishes is the loss the refusal exists to report.
+// Measured on PostgreSQL before this change, all of them at exit 0: the
+// constraint was dropped from the render entirely, and the others rendered
+// against an empty identifier: an empty quoted name after ON and after ALTER
+// TABLE. No server takes an empty relation name, and a constraint that
+// vanishes is the loss the refusal exists to report. Hypertable settings are a
+// facet of the table they partition, so they cannot lack a host.
 func TestHostlessDeclaration_EveryFamilyIsRefused(t *testing.T) {
 	for _, family := range hostedFamilies {
 		t.Run(family.name, func(t *testing.T) {

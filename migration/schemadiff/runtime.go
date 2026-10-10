@@ -17,10 +17,12 @@ type TargetRuntime interface {
 }
 
 // DatabaseRuntime adds rendering for the live normalization probes used by
-// CompareWithDatabase. Offline comparison does not require this service.
+// CompareWithDatabase, and the feature owners' own probes. Offline comparison
+// does not require either service.
 type DatabaseRuntime interface {
 	TargetRuntime
 	renderer.Service
+	schemaext.NormalizationService
 }
 
 func selectedComparisonOptions(opts *config.CompareOptions, runtime schemaext.TargetResolver) (*config.CompareOptions, schemaext.TargetSelection, error) {

@@ -54,6 +54,9 @@ type Provider struct {
 	Declarations []DeclarationPlanning
 	// Relations describes dependencies of captured model values without I/O.
 	Relations []RelationDiscovery
+	// Normalizations attach a connected target's spelling of declared objects
+	// before a comparison. They are the only services that use a probe session.
+	Normalizations []Normalization
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -106,6 +109,8 @@ type Runtime struct {
 	declarationServices []ownedDeclarationPlanning
 	relations           map[relationKey]int
 	relationServices    []RelationDiscovery
+	probes              map[conversionKey]int
+	probeServices       []Normalization
 }
 
 type target struct {
@@ -132,6 +137,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		declarations:   make(map[conversionKey]int),
 		relations:      make(map[relationKey]int),
 		properties:     make(map[propertyKey]int),
+		probes:         make(map[conversionKey]int),
 	}
 	owners := make(map[string]struct{}, len(providers))
 	var codecs []schemaext.OwnedCodec
@@ -160,6 +166,11 @@ func New(providers ...Provider) (*Runtime, error) {
 	for _, provider := range providers {
 		if err := runtime.registerServices(provider); err != nil {
 			return nil, err
+		}
+		for _, normalization := range provider.Normalizations {
+			if err := runtime.registerNormalization(provider.ID, normalization); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return runtime, nil

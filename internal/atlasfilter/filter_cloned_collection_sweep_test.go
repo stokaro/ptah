@@ -80,33 +80,6 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			// A hypertable answers its TABLE's selector and has none of its
-			// own, so `present` is a table name: it is a fact about a table
-			// rather than an object beside it, and a selector of its own would
-			// let a description carry the fact for a table it does not carry
-			// (stokaro/ptah#1026).
-			field: "Hypertables", present: "readings", absent: "nosuch_hypertable",
-			seed: func(s *catalog.Database) {
-				s.Tables = append(s.Tables, catalog.Table{
-					Name:    "readings",
-					Columns: []catalog.Column{{Name: "time"}},
-				})
-				s.Hypertables = append(s.Hypertables, catalog.Hypertable{
-					Name: "readings", PrimaryDimension: "time", Dimensions: 1,
-				})
-			},
-		},
-		{
-			field: "ContinuousAggregates", present: "hourly_totals", absent: "nosuch_aggregate",
-			seed: func(s *catalog.Database) {
-				s.ContinuousAggregates = append(s.ContinuousAggregates,
-					catalog.ContinuousAggregate{
-						Name: "hourly_totals", HypertableName: "readings",
-						Definition: "SELECT 1",
-					})
-			},
-		},
-		{
 			field: "ExtendedProperties", present: "ptah_flag", absent: "nosuch_property",
 			seed: func(s *catalog.Database) {
 				s.ExtendedProperties = append(s.ExtendedProperties,

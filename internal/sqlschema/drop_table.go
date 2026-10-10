@@ -141,9 +141,6 @@ func removeTable(target alterTarget) {
 		database.ExtendedProperties = slices.DeleteFunc(database.ExtendedProperties, func(property schemamodel.ExtendedProperty) bool {
 			return property.Table != "" && target.reachesTable(schemamodel.QualifyTableName(property.Schema, property.Table))
 		})
-		database.Hypertables = slices.DeleteFunc(database.Hypertables, func(hypertable schemamodel.Hypertable) bool {
-			return owns(hypertable.StructName, hypertable.Table)
-		})
 		database.ManagedData = slices.DeleteFunc(database.ManagedData, func(data schemamodel.ManagedData) bool {
 			return target.reachesTable(schemamodel.QualifyTableName(data.Schema, data.Table))
 		})

@@ -1580,53 +1580,6 @@ func appendExternalStatements(visit func(ast.Node) error, database *schemamodel.
 	return nil
 }
 
-// FromHypertable converts a schemamodel.Hypertable into the call that makes one.
-func FromHypertable(hypertable schemamodel.Hypertable) *ast.CreateHypertableNode {
-	return ast.NewCreateHypertable(hypertable.Table, hypertable.Column).
-		SetChunkInterval(hypertable.ChunkInterval).
-		SetIfNotExists(hypertable.IfNotExists).
-		SetComment(hypertable.Comment)
-}
-
-// appendHypertableStatements adds one create_hypertable call per declaration.
-func appendHypertableStatements(visit func(ast.Node) error, hypertables []schemamodel.Hypertable) error {
-	for _, hypertable := range hypertables {
-		if err := visit(FromHypertable(hypertable)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// FromContinuousAggregate converts a schemamodel.ContinuousAggregate into the
-// statement that creates one.
-//
-// WITH NO DATA is the default the node carries, and it is deliberate: creating
-// the aggregate with data materializes the whole history of the hypertable
-// underneath it, which is an unbounded amount of work a schema change should
-// not start on its own. A refresh is an operation someone runs, not a side
-// effect of CREATE.
-func FromContinuousAggregate(aggregate schemamodel.ContinuousAggregate) *ast.CreateContinuousAggregateNode {
-	return ast.NewCreateContinuousAggregate(aggregate.Name, aggregate.Body).
-		SetSchema(aggregate.Schema).
-		SetMaterializedOnly(aggregate.MaterializedOnly).
-		SetComment(aggregate.Comment)
-}
-
-// appendContinuousAggregateStatements adds one CREATE MATERIALIZED VIEW per
-// declared aggregate.
-func appendContinuousAggregateStatements(
-	visit func(ast.Node) error,
-	aggregates []schemamodel.ContinuousAggregate,
-) error {
-	for _, aggregate := range aggregates {
-		if err := visit(FromContinuousAggregate(aggregate)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // fromExtendedProperty converts a schemamodel.ExtendedProperty into the node that
 // writes it.
 //
@@ -2246,24 +2199,6 @@ func appendTableIndependentObjectStatements(visit func(ast.Node) error, database
 	// table and reads a topic, a changefeed's among them, so it follows the
 	// tables and the changefeeds their CREATE TABLE carries.
 	if err := appendReplicationStatements(visit, database); err != nil {
-		return err
-	}
-
-	// 8b2. A hypertable is a call against a table that must already exist:
-	// measured on TimescaleDB 2.29.2, create_hypertable against a missing
-	// relation answers `relation "conditions" does not exist`. It also has to
-	// come before the data statements below, because the call refuses a table
-	// that already holds rows -- `table "loaded" is not empty` -- and would
-	// then leave the table ordinary.
-	if err := appendHypertableStatements(visit, database.Hypertables); err != nil {
-		return err
-	}
-
-	// 8b3. A continuous aggregate selects from a hypertable, and TimescaleDB
-	// checks that: measured on 2.29.2, WITH (timescaledb.continuous) over an
-	// ordinary table answers `invalid continuous aggregate view`. It therefore
-	// comes after the create_hypertable calls above rather than with the views.
-	if err := appendContinuousAggregateStatements(visit, database.ContinuousAggregates); err != nil {
 		return err
 	}
 

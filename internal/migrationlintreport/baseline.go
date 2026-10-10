@@ -3,12 +3,15 @@ package migrationlintreport
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/migration/lint"
@@ -56,16 +59,22 @@ func readBaselineState(ctx context.Context,
 }
 
 // baselineHypertablesOf lists the TimescaleDB hypertables of the read schema as
-// the state version starts from. The reader asks the extension's catalog only
-// where the extension is installed, so a database without it yields none.
+// the state version starts from: the tables carrying hypertable settings, and
+// the ones the read could only record as hypertables whose dimension it did
+// not see. The reader asks the extension's catalog only where the extension is
+// installed, so a database without it yields none.
 func baselineHypertablesOf(schema *catalog.Database, version int64) []lint.BaselineHypertable {
 	var hypertables []lint.BaselineHypertable
-	for _, hypertable := range schema.Hypertables {
-		hypertables = append(hypertables, lint.BaselineHypertable{
-			Version: version,
-			Schema:  hypertable.Schema,
-			Table:   hypertable.Name,
-		})
+	for _, table := range schema.Tables {
+		if slices.Contains(table.Facets.Kinds(), tsschema.HypertableKind) {
+			hypertables = append(hypertables, lint.BaselineHypertable{Version: version, Schema: table.Schema, Table: table.Name})
+		}
+	}
+	for _, record := range schema.FeatureCoverage.SubjectRecords() {
+		if record.Kind == tsschema.HypertableKind && record.Subject.Kind == objectidentity.KindTable {
+			hypertables = append(hypertables, lint.BaselineHypertable{Version: version,
+				Schema: tsschema.AuthoredSchema(record.Subject), Table: record.Subject.Name.Source})
+		}
 	}
 	return hypertables
 }

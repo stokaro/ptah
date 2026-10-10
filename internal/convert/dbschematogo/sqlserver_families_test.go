@@ -220,32 +220,30 @@ func readSliceFields() []string {
 
 // convertedFamilies maps each read family to the IR field it becomes.
 var convertedFamilies = map[string]string{
-	"Schemas":              "Schemas",
-	"Tables":               "Tables",
-	"Enums":                "Enums",
-	"Indexes":              "Indexes",
-	"Constraints":          "Constraints",
-	"Extensions":           "Extensions",
-	"Functions":            "Functions",
-	"Sequences":            "Sequences",
-	"Domains":              "Domains",
-	"Composites":           "CompositeTypes",
-	"Ranges":               "Ranges",
-	"Views":                "Views",
-	"MatViews":             "MaterializedViews",
-	"Hypertables":          "Hypertables",
-	"ContinuousAggregates": "ContinuousAggregates",
-	"Synonyms":             "Synonyms",
-	"AsyncReplications":    "AsyncReplications",
-	"Transfers":            "Transfers",
-	"ExternalDataSources":  "ExternalDataSources",
-	"ExternalTables":       "ExternalTables",
-	"ExtendedProperties":   "ExtendedProperties",
-	"Triggers":             "Triggers",
-	"RLSPolicies":          "RLSPolicies",
-	"Roles":                "Roles",
-	"Grants":               "Grants",
-	"DefaultPrivileges":    "DefaultPrivileges",
+	"Schemas":             "Schemas",
+	"Tables":              "Tables",
+	"Enums":               "Enums",
+	"Indexes":             "Indexes",
+	"Constraints":         "Constraints",
+	"Extensions":          "Extensions",
+	"Functions":           "Functions",
+	"Sequences":           "Sequences",
+	"Domains":             "Domains",
+	"Composites":          "CompositeTypes",
+	"Ranges":              "Ranges",
+	"Views":               "Views",
+	"MatViews":            "MaterializedViews",
+	"Synonyms":            "Synonyms",
+	"AsyncReplications":   "AsyncReplications",
+	"Transfers":           "Transfers",
+	"ExternalDataSources": "ExternalDataSources",
+	"ExternalTables":      "ExternalTables",
+	"ExtendedProperties":  "ExtendedProperties",
+	"Triggers":            "Triggers",
+	"RLSPolicies":         "RLSPolicies",
+	"Roles":               "Roles",
+	"Grants":              "Grants",
+	"DefaultPrivileges":   "DefaultPrivileges",
 }
 
 // unconvertedFamilies are the read families that deliberately do not become
@@ -256,30 +254,4 @@ var unconvertedFamilies = map[string]string{
 	"RolesOutOfScope":              "a report about what the read did not cover, not an object",
 	"UnregisteredVirtualTables":    "a report about SQLite virtual tables no module registered",
 	"UndescribedDefaultPrivileges": "a report about default privileges no declaration can carry: without IN SCHEMA, or FOR ALL ROLES",
-}
-
-// TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept pins WHICH
-// definition the conversion carries.
-//
-// A down migration is built from this description, and the two definitions a
-// TimescaleDB server can answer with are not interchangeable: pg_get_viewdef
-// answers the rewritten one, which selects from the materialization hypertable
-// in a schema the extension owns, and rebuilding an aggregate from it would
-// name a relation no declaration may touch (stokaro/ptah#1026).
-func TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept(t *testing.T) {
-	c := qt.New(t)
-
-	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
-		ContinuousAggregates: []catalog.ContinuousAggregate{{
-			Schema: "public", Name: "hourly",
-			HypertableSchema: "public", HypertableName: "readings",
-			MaterializedOnly: true,
-			Definition:       "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
-		}},
-	}, "sqlserver", must.Must(builtin.New())))
-
-	c.Assert(converted.ContinuousAggregates, qt.DeepEquals, []schemamodel.ContinuousAggregate{{
-		Name: "hourly", Schema: "public", MaterializedOnly: new(true),
-		Body: "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
-	}})
 }

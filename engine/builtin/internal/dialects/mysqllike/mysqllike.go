@@ -1846,33 +1846,6 @@ func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	return nil
 }
 
-// renderCreateContinuousAggregate refuses: a continuous aggregate is a
-// TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
-//
-// There is no capability key behind this refusal, for the reason
-// renderCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
-	r.w.WriteLinef("-- Continuous aggregate %s not supported in %s", node.Name, r.dialect)
-	return nil
-}
-
-func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
-	r.w.WriteLinef("-- Continuous aggregate %s not supported in %s", node.Name, r.dialect)
-	return nil
-}
-
-// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
-// TimescaleDB is an extension of PostgreSQL.
-//
-// There is no capability key behind this refusal, for the reason
-// renderCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
-	r.w.WriteLinef("-- Hypertable %s not supported in %s", node.Table, r.dialect)
-	return nil
-}
-
 // renderCreateSynonym names the synonym as unsupported. Neither MySQL nor
 // MariaDB has a synonym object; the nearest construct is a view, which is a
 // different thing with different resolution rules.

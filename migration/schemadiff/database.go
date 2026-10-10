@@ -87,7 +87,9 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	bodies, err := resolveContinuousAggregateBodies(ctx, conn, desired, database)
+	// Feature owners attach the same kind of live fact to the objects they
+	// own, through their own probes in rolled-back transactions.
+	desired, err = normalizeFeatureObjects(ctx, conn, desired, database, info, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -128,16 +130,15 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	// what keeps the caller's options untouched, which matters because a
 	// caller may compare twice with one value.
 	opts = withResolvedExpressions(opts, resolvedExpressions{
-		domains:    expressions,
-		aggregates: bodies,
-		checks:     checks,
-		policies:   policies,
-		indexes:    indexes,
-		excludes:   excludes,
-		columns:    columns,
-		triggers:   triggers,
-		arguments:  arguments,
-		views:      views,
+		domains:   expressions,
+		checks:    checks,
+		policies:  policies,
+		indexes:   indexes,
+		excludes:  excludes,
+		columns:   columns,
+		triggers:  triggers,
+		arguments: arguments,
+		views:     views,
 	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
@@ -148,22 +149,21 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 // resolvedExpressions collects what the resolvers above answered, so the
 // options are copied once rather than once per family.
 type resolvedExpressions struct {
-	domains    map[string]config.DomainExpression
-	aggregates map[string]config.ContinuousAggregateBody
-	checks     map[string]config.CheckExpression
-	policies   map[string]config.PolicyExpression
-	indexes    map[string]config.IndexExpression
-	excludes   map[string]config.ExcludeExpression
-	columns    map[string]config.ColumnSpelling
-	triggers   map[string]config.TriggerCondition
-	arguments  map[string]config.RoutineArguments
-	views      map[string]config.ViewBody
+	domains   map[string]config.DomainExpression
+	checks    map[string]config.CheckExpression
+	policies  map[string]config.PolicyExpression
+	indexes   map[string]config.IndexExpression
+	excludes  map[string]config.ExcludeExpression
+	columns   map[string]config.ColumnSpelling
+	triggers  map[string]config.TriggerCondition
+	arguments map[string]config.RoutineArguments
+	views     map[string]config.ViewBody
 }
 
 // empty reports that no server answered for anything, which is every offline
 // comparison and every target whose engine rewrites nothing.
 func (r resolvedExpressions) empty() bool {
-	return len(r.domains) == 0 && len(r.aggregates) == 0 && len(r.checks) == 0 &&
+	return len(r.domains) == 0 && len(r.checks) == 0 &&
 		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.excludes) == 0 && len(r.columns) == 0 &&
 		len(r.triggers) == 0 && len(r.arguments) == 0 && len(r.views) == 0
 }
@@ -186,9 +186,6 @@ func withResolvedExpressions(
 	}
 	if len(resolved.domains) > 0 {
 		merged.DomainExpressions = resolved.domains
-	}
-	if len(resolved.aggregates) > 0 {
-		merged.ContinuousAggregateBodies = resolved.aggregates
 	}
 	if len(resolved.checks) > 0 {
 		merged.CheckExpressions = resolved.checks
@@ -936,49 +933,36 @@ func liveTableColumns(
 	return tables
 }
 
-// resolveContinuousAggregateBodies normalizes the declared SELECT of every
-// continuous aggregate the database also holds.
-//
-// Only those, for the reason [resolveDomainExpressions] gives: an aggregate
-// being created carries its declaration into the CREATE statement unchanged,
-// and one being dropped has no declaration left to normalize. The ones in the
-// middle are the ones a string comparison cannot decide.
-func resolveContinuousAggregateBodies(
+// normalizeFeatureObjects asks the owners of declared feature objects to
+// attach the connected server's own spelling of what they declare, the way the
+// resolvers above do for the common families. The desired schema is copied,
+// never changed in place; with no declared object it is returned as it is.
+func normalizeFeatureObjects(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
-) (map[string]config.ContinuousAggregateBody, error) {
-	if desired == nil || database == nil {
-		return nil, nil
+	info catalog.ServerInfo,
+	runtime DatabaseRuntime,
+) (*schemamodel.Database, error) {
+	if desired.FeatureObjects.Len() == 0 || info.Dialect == "" {
+		return desired, nil
 	}
-	held := make(map[string]struct{}, len(database.ContinuousAggregates))
-	for _, aggregate := range database.ContinuousAggregates {
-		held[strings.ToLower(aggregate.QualifiedName())] = struct{}{}
-		held[strings.ToLower(aggregate.Name)] = struct{}{}
-	}
-
-	probes := make([]dbexprprobe.ContinuousAggregateProbe, 0, len(desired.ContinuousAggregates))
-	for _, aggregate := range desired.ContinuousAggregates {
-		if _, exists := held[strings.ToLower(aggregate.QualifiedName())]; !exists {
-			continue
-		}
-		probes = append(probes, dbexprprobe.ContinuousAggregateProbe{
-			Key:              aggregate.QualifiedName(),
-			Schema:           aggregate.Schema,
-			Body:             aggregate.Body,
-			MaterializedOnly: aggregate.MaterializedOnly,
-		})
-	}
-	if len(probes) == 0 {
-		return nil, nil
-	}
-
-	bodies, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn, probes)
+	result, err := runtime.NormalizeObjects(ctx, schemaext.NormalizationRequest{
+		Target: info.Dialect, Identifiers: info.IdentifierSemantics, Capabilities: info.Capabilities,
+		Desired: schemaext.ObjectState{Objects: desired.FeatureObjects, Coverage: desired.FeatureCoverage},
+		Current: schemaext.ObjectState{Objects: database.FeatureObjects, Coverage: database.FeatureCoverage},
+		Session: conn,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
-	return bodies, nil
+	if !result.Complete {
+		return nil, fmt.Errorf("%w: feature normalization did not complete", schemaext.ErrInvalidValue)
+	}
+	normalized := *desired
+	normalized.FeatureObjects = result.Desired.Objects
+	return &normalized, nil
 }
 
 // quoteDomainDefaultLiteral renders a declared literal default as SQL.

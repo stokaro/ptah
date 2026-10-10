@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dbschema"
@@ -24,6 +25,7 @@ import (
 
 type selectedProbeRuntime struct {
 	schemadiff.TargetRuntime
+	schemaext.NormalizationService
 	service     renderer.Service
 	validations int
 	stop        error
@@ -79,7 +81,7 @@ func TestDatabaseComparisonSelectsContextualProbeBatches(t *testing.T) {
 		return result, nil
 	})
 	stop := errors.New("stop after probes")
-	runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), service: service, stop: stop}
+	runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), NormalizationService: must.Must(builtin.New()), service: service, stop: stop}
 	diff, err := schemadiff.CompareWithDatabase(t.Context(), conn, desired, current, nil, runtime)
 	c.Assert(err, qt.ErrorIs, stop)
 	c.Assert(diff, qt.IsNil)
@@ -147,7 +149,7 @@ func TestDatabaseComparisonDoesNotHideProbeServiceFailure(t *testing.T) {
 			desired, current := test.schemas()
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), service: test.service(cancel)}
+			runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), NormalizationService: must.Must(builtin.New()), service: test.service(cancel)}
 			diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil, runtime)
 			c.Assert(err, qt.ErrorIs, test.want)
 			c.Assert(diff, qt.IsNil)
@@ -189,7 +191,7 @@ func TestDatabaseComparisonLeavesCompletedUnusableProbesUnresolved(t *testing.T)
 				calls++
 				return test.render(ctx, request)
 			})
-			runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), service: service, stop: stop}
+			runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), NormalizationService: must.Must(builtin.New()), service: service, stop: stop}
 			diff, err := schemadiff.CompareWithDatabase(t.Context(), conn, desired, current, nil, runtime)
 			c.Assert(err, qt.ErrorIs, stop)
 			c.Assert(diff, qt.IsNil)

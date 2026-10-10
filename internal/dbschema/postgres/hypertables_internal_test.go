@@ -1,9 +1,9 @@
 package postgres
 
-// White-box testing required: whether the hypertable currentCatalog is asked at all is
+// White-box testing required: whether the hypertable catalog is asked at all is
 // decided inside the reader from the extension list, and the exported read
-// returns the same empty list either way -- for a PostgreSQL server that has no
-// TimescaleDB, and for one whose currentCatalog answered nothing.
+// returns the same description either way -- for a PostgreSQL server that has
+// no TimescaleDB, and for one whose catalog answered nothing.
 
 import (
 	"database/sql/driver"
@@ -14,32 +14,37 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
 // TestReadHypertables_CarriesThePrimaryDimension pins what the read takes from
-// the catalog.
+// the catalog and where it puts it: the settings of the table it partitions.
 //
 // The primary dimension is the whole reason this read exists rather than a
-// bare list of names: the note it feeds has to say WHAT was lost, and "the
-// table is partitioned on time" is that. Measured on TimescaleDB 2.29.2 /
-// PostgreSQL 17.11, timescaledb_information.hypertables answers exactly these
-// columns for `create_hypertable('conditions', by_range('time'))`.
+// bare list of names: a declaration has to say which column the table is
+// partitioned on. Measured on TimescaleDB 2.29.2 / PostgreSQL 17.11,
+// timescaledb_information.hypertables answers exactly these columns for
+// `create_hypertable('conditions', by_range('time'))`.
 func TestReadHypertables_CarriesThePrimaryDimension(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answeringHypertables)
 	reader := NewPostgreSQLReader(db.SQL, "public")
+	schema := &catalog.Database{Tables: []catalog.Table{{Name: "conditions"}, {Name: "plain"}}}
 
 	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
-
 	c.Assert(err, qt.IsNil)
-	c.Assert(hypertables, qt.DeepEquals, []catalog.Hypertable{{
-		Name:                 "conditions",
-		PrimaryDimension:     "time",
-		PrimaryDimensionType: "timestamp with time zone",
-		ChunkInterval:        "7 days",
-		Dimensions:           1,
-	}})
+	c.Assert(reader.attachTimescale(schema, hypertables, nil), qt.IsNil)
+
+	c.Assert(observedHypertable(c, schema.Tables[0]), qt.DeepEquals, &tsschema.ObservedHypertable{
+		Column: "time", ColumnType: "timestamp with time zone", ChunkInterval: "7 days", Dimensions: 1,
+	})
+	c.Assert(observedHypertable(c, schema.Tables[1]), qt.IsNil)
+	c.Assert(schema.FeatureCoverage.Lookup(tsschema.HypertableKind, tableRef("plain")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestReadHypertables_AsksNothingWithoutTheExtension is the ordinary
@@ -66,10 +71,10 @@ func TestReadHypertables_AsksNothingWithoutTheExtension(t *testing.T) {
 // TestReadHypertables_AFailureWithTheExtensionIsSurfaced is the control the
 // gate needs.
 //
-// Once the extension IS installed the currentCatalog is there, so a failure means
+// Once the extension IS installed the catalog is there, so a failure means
 // something else, and an empty answer would claim that no table on this server
-// is partitioned. The consequence of that claim is not a wrong statement but a
-// MISSING note, which is the whole thing this read exists to produce.
+// is partitioned -- a claim a comparison would act on by declaring every
+// hypertable an ordinary table.
 func TestReadHypertables_AFailureWithTheExtensionIsSurfaced(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, faultingHypertables)
@@ -84,21 +89,24 @@ func TestReadHypertables_AFailureWithTheExtensionIsSurfaced(t *testing.T) {
 // TestReadHypertables_TakesAHypertableWithNoDimensionReported keeps a shape the
 // view declares nullable from failing the whole read.
 //
-// primary_dimension and primary_dimension_type are nullable columns. A
-// hypertable always has one today, and scanning into a plain string would turn
-// the day that stops being true into a failed description rather than a note
-// with one detail missing.
+// column_name and column_type are nullable through the LEFT JOIN. A hypertable
+// always has a dimension today, and scanning into a plain string would turn
+// the day that stops being true into a failed description. A declaration needs
+// the column, so the table carries no settings and its partitioning is
+// recorded as something the read could not represent: a comparison then
+// decides nothing about it, rather than planning it into an ordinary table.
 func TestReadHypertables_TakesAHypertableWithNoDimensionReported(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, dimensionlessHypertable)
 	reader := NewPostgreSQLReader(db.SQL, "public")
+	schema := &catalog.Database{Tables: []catalog.Table{{Name: "conditions"}}}
 
 	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
-
 	c.Assert(err, qt.IsNil)
-	c.Assert(hypertables, qt.DeepEquals, []catalog.Hypertable{{
-		Name: "conditions", Dimensions: 1,
-	}})
+	c.Assert(reader.attachTimescale(schema, hypertables, nil), qt.IsNil)
+
+	c.Assert(observedHypertable(c, schema.Tables[0]), qt.IsNil)
+	c.Assert(schema.FeatureCoverage.Lookup(tsschema.HypertableKind, tableRef("conditions")).State, qt.Equals, schemaext.Unrepresentable)
 }
 
 // TestHypertableQuery_ReadsTheExtensionsOwnCatalog pins where the answer comes
@@ -114,8 +122,8 @@ func TestHypertableQuery_ReadsTheExtensionsOwnCatalog(t *testing.T) {
 		name     string
 		fragment string
 	}{
-		{name: "the currentCatalog", fragment: "timescaledb_information.hypertables"},
-		{name: "the dimension currentCatalog", fragment: "timescaledb_information.dimensions"},
+		{name: "the catalog", fragment: "timescaledb_information.hypertables"},
+		{name: "the dimension catalog", fragment: "timescaledb_information.dimensions"},
 		{name: "the primary dimension", fragment: "d.column_name"},
 		{name: "the chunk interval", fragment: "d.time_interval::text"},
 		{name: "its type", fragment: "d.column_type::text"},
@@ -183,7 +191,7 @@ func hypertableRows() [][]driver.Value {
 	return [][]driver.Value{{"public", "conditions", "time", "timestamp with time zone", "7 days", int64(1)}}
 }
 
-// hypertableAnswer answers the currentCatalog with the five columns the read scans, so
+// hypertableAnswer answers the catalog with the six columns the read scans, so
 // a query that stopped selecting one fails here rather than being handed the
 // same rows.
 //
@@ -192,11 +200,11 @@ func hypertableRows() [][]driver.Value {
 // carry it on every supported release, and a query that went back to the newer
 // projection would otherwise be answered these rows anyway.
 func hypertableAnswer(query string, refusal error, rows [][]driver.Value) (dbtest.QueryResult, error) {
-	for _, currentCatalog := range []string{
+	for _, view := range []string{
 		"timescaledb_information.hypertables",
 		"timescaledb_information.dimensions",
 	} {
-		if !strings.Contains(query, currentCatalog) {
+		if !strings.Contains(query, view) {
 			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 		}
 	}
@@ -210,4 +218,17 @@ func hypertableAnswer(query string, refusal error, rows [][]driver.Value) (dbtes
 		},
 		Rows: rows,
 	}, nil
+}
+
+// observedHypertable answers the settings a table carries, or nil.
+func observedHypertable(c *qt.C, table catalog.Table) *tsschema.ObservedHypertable {
+	c.Helper()
+	value, _, err := schemaext.FacetAs[*tsschema.ObservedHypertable](table.Facets, tsschema.HypertableKind)
+	c.Assert(err, qt.IsNil)
+	return value
+}
+
+// tableRef names a table of the read's own schema the way the read does.
+func tableRef(name string) objectidentity.ID {
+	return objectidentity.NewBuilder(identifier.ForDialect(platform.Postgres)).TableParts("", name)
 }

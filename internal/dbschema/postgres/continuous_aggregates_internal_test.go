@@ -12,8 +12,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -82,22 +85,25 @@ func TestHasTimescaleExtension_DecidesWhetherTheCatalogIsAskedAtAll(t *testing.T
 }
 
 // TestReadContinuousAggregates_CarriesTheWrittenDefinition pins what the read
-// takes from the catalog.
+// takes from the catalog, and that it becomes a named object of the
+// description rather than a view.
 func TestReadContinuousAggregates_CarriesTheWrittenDefinition(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answeringContinuousAggregates)
 	reader := NewPostgreSQLReader(db.SQL, "public")
+	schema := &catalog.Database{}
 
 	aggregates, err := reader.readContinuousAggregates(t.Context(), timescaleInstalled())
-
 	c.Assert(err, qt.IsNil)
-	c.Assert(aggregates, qt.DeepEquals, []catalog.ContinuousAggregate{{
-		Name:             "conditions_hourly",
-		HypertableSchema: "public",
-		HypertableName:   "conditions",
-		MaterializedOnly: true,
-		Definition:       "SELECT device_id, avg(temperature) FROM conditions GROUP BY 1",
-	}})
+	c.Assert(reader.attachTimescale(schema, nil, aggregates), qt.IsNil)
+
+	c.Assert(must.Must(schema.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
+		tsschema.ObservedContinuousAggregateObject("", "conditions_hourly", tsschema.ObservedContinuousAggregate{
+			HypertableSchema: "public", HypertableName: "conditions", MaterializedOnly: new(true),
+			Definition: "SELECT device_id, avg(temperature) FROM conditions GROUP BY 1",
+		}),
+	})
+	c.Assert(schema.FeatureCoverage.Lookup(tsschema.ContinuousAggregateKind, tsschema.ContinuousAggregateRef("", "other")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestReadContinuousAggregates_AsksNothingWithoutTheExtension is the ordinary
@@ -142,16 +148,14 @@ func TestWithoutContinuousAggregates_RemovesOnlyTheAggregates(t *testing.T) {
 	tests := []struct {
 		name       string
 		views      []catalog.View
-		aggregates []catalog.ContinuousAggregate
+		aggregates [][2]string
 		want       []string
 	}{
 		{
-			name:  "the aggregate goes and the view stays",
-			views: []catalog.View{{Name: "conditions_hourly"}, {Name: "ordinary"}},
-			aggregates: []catalog.ContinuousAggregate{
-				{Name: "conditions_hourly"},
-			},
-			want: []string{"ordinary"},
+			name:       "the aggregate goes and the view stays",
+			views:      []catalog.View{{Name: "conditions_hourly"}, {Name: "ordinary"}},
+			aggregates: [][2]string{{"", "conditions_hourly"}},
+			want:       []string{"ordinary"},
 		},
 		{
 			name:  "a server with no aggregates keeps every view",
@@ -162,27 +166,27 @@ func TestWithoutContinuousAggregates_RemovesOnlyTheAggregates(t *testing.T) {
 			// The two lists are read through different catalogs, and one may
 			// qualify a name the other does not. Comparing raw strings would
 			// leave the aggregate in the view list on a schema-scoped read.
-			name:  "the schema is folded on both sides",
-			views: []catalog.View{{Schema: "APP", Name: "Conditions_Hourly"}},
-			aggregates: []catalog.ContinuousAggregate{
-				{Schema: "app", Name: "conditions_hourly"},
-			},
-			want: nil,
+			name:       "the schema is folded on both sides",
+			views:      []catalog.View{{Schema: "APP", Name: "Conditions_Hourly"}},
+			aggregates: [][2]string{{"app", "conditions_hourly"}},
+			want:       nil,
 		},
 		{
-			name:  "an aggregate in another schema leaves this one's views alone",
-			views: []catalog.View{{Schema: "app", Name: "conditions_hourly"}},
-			aggregates: []catalog.ContinuousAggregate{
-				{Schema: "other", Name: "conditions_hourly"},
-			},
-			want: []string{"conditions_hourly"},
+			name:       "an aggregate in another schema leaves this one's views alone",
+			views:      []catalog.View{{Schema: "app", Name: "conditions_hourly"}},
+			aggregates: [][2]string{{"other", "conditions_hourly"}},
+			want:       []string{"conditions_hourly"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(viewNames(withoutContinuousAggregates(test.views, test.aggregates)),
+			aggregates := make([]readAggregate, 0, len(test.aggregates))
+			for _, named := range test.aggregates {
+				aggregates = append(aggregates, readAggregate{schema: named[0], name: named[1]})
+			}
+			c.Assert(viewNames(withoutContinuousAggregates(test.views, aggregates)),
 				qt.DeepEquals, test.want)
 		})
 	}

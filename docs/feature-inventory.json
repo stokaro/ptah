@@ -922,6 +922,72 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-timescaledb-tsast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsast",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tscompare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tscompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsdiff",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsdiff",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsplan",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsprobe",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsprobe",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsrelation",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsrelation",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsrender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsreport",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsreverse",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-timescaledb-tsschema",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/timescaledb/tsschema",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-ydb-ydbast",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbast",

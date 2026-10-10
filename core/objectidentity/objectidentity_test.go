@@ -279,3 +279,28 @@ func TestIdentity_SchemaScopedPartsSeparatesFamilies(t *testing.T) {
 	c.Assert(sequence.Key().Kind(), qt.Equals, objectidentity.KindSequence)
 	c.Assert(table.Key().Kind(), qt.Equals, objectidentity.KindTable)
 }
+
+// TestPart_Authored pins the spelling a consumer that resolves defaults itself
+// reads: what the source wrote, and nothing for a schema the target's default
+// filled in -- even though Source holds that default.
+func TestPart_Authored(t *testing.T) {
+	builder := objectidentity.NewBuilder(identifier.ForDialect("postgres"))
+	tests := []struct {
+		name     string
+		id       objectidentity.ID
+		wantPart string
+		want     string
+	}{
+		{name: "an unqualified table", id: builder.Table("users"), wantPart: "public", want: ""},
+		{name: "a qualified table", id: builder.Table("app.users"), wantPart: "app", want: "app"},
+		{name: "the default written out", id: builder.TableParts("public", "users"), wantPart: "public", want: "public"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.id.Schema.Source, qt.Equals, test.wantPart)
+			c.Assert(test.id.Schema.Authored(), qt.Equals, test.want)
+		})
+	}
+}

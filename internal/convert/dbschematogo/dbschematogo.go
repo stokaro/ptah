@@ -70,8 +70,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertViews(database, dbSchema.Views)
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
-	convertHypertables(database, dbSchema.Hypertables)
-	convertContinuousAggregates(database, dbSchema.ContinuousAggregates)
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertReplications(database, dbSchema.AsyncReplications, dbSchema.Transfers)
 	convertExternalObjects(database, dbSchema)
@@ -504,49 +502,6 @@ func convertSequences(database *schemamodel.Database, dbSequences []catalog.Sequ
 			Cycle:     dbSequence.Cycle,
 			OwnedBy:   dbSequence.OwnedBy,
 			Comment:   dbSequence.Comment,
-		})
-	}
-}
-
-// convertHypertables carries the TimescaleDB hypertables a read found into the
-// IR, so a description says which tables are partitioned.
-//
-// Only the primary dimension is carried, because only it is declarable. A
-// table with more than one is described with the first, and the note the reader
-// emits says how many it did not describe.
-func convertHypertables(database *schemamodel.Database, hypertables []catalog.Hypertable) {
-	for _, hypertable := range hypertables {
-		database.Hypertables = append(database.Hypertables, schemamodel.Hypertable{
-			Table:         hypertable.QualifiedName(),
-			Column:        hypertable.PrimaryDimension,
-			ChunkInterval: hypertable.ChunkInterval,
-		})
-	}
-}
-
-// convertContinuousAggregates carries the TimescaleDB continuous aggregates a
-// read found into the IR.
-//
-// The body is the catalog's `view_definition` rather than pg_get_viewdef's,
-// which is what makes this conversion usable at all: pg_get_viewdef answers the
-// rewritten definition, which selects from the materialization hypertable in a
-// schema the extension owns, and a down migration built from it would create an
-// aggregate over an internal relation.
-func convertContinuousAggregates(
-	database *schemamodel.Database,
-	aggregates []catalog.ContinuousAggregate,
-) {
-	for _, aggregate := range aggregates {
-		// The catalog always reports a value, so the converted declaration
-		// carries a definite one: this description is what a DOWN migration
-		// recreates the aggregate from, and leaving the option unset there
-		// would take the server default rather than the value that was there.
-		materializedOnly := aggregate.MaterializedOnly
-		database.ContinuousAggregates = append(database.ContinuousAggregates, schemamodel.ContinuousAggregate{
-			Name:             aggregate.Name,
-			Schema:           aggregate.Schema,
-			Body:             aggregate.Definition,
-			MaterializedOnly: &materializedOnly,
 		})
 	}
 }

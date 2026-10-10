@@ -76,6 +76,12 @@ ptah_schema_clickhouse_table_settings{dialect="sqlite"} 0
 # HELP ptah_schema_cockroachdb_row_ttl_tables Tables with a captured CockroachDB row-level TTL.
 # TYPE ptah_schema_cockroachdb_row_ttl_tables gauge
 ptah_schema_cockroachdb_row_ttl_tables{dialect="sqlite"} 0
+# HELP ptah_schema_continuous_aggregates TimescaleDB continuous aggregates.
+# TYPE ptah_schema_continuous_aggregates gauge
+ptah_schema_continuous_aggregates{dialect="sqlite"} 0
+# HELP ptah_schema_hypertables Tables partitioned as TimescaleDB hypertables.
+# TYPE ptah_schema_hypertables gauge
+ptah_schema_hypertables{dialect="sqlite"} 0
 # HELP ptah_schema_changefeeds Table changefeeds.
 # TYPE ptah_schema_changefeeds gauge
 ptah_schema_changefeeds{dialect="sqlite"} 0

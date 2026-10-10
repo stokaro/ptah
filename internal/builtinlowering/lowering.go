@@ -15,16 +15,34 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/pgeffects"
 )
 
 // ForTarget binds the explicit runtime to local common-object metadata. Missing
 // services remain unavailable. The caller owns the context and capability facts.
 func ForTarget(ctx context.Context, runtime featureplan.DeclarationRuntime, target string, caps capability.Capabilities) modelast.Lowering {
 	result := modelast.Lowering{Context: ctx, Runtime: runtime, Capabilities: caps}
-	if platform.NormalizeDialect(target) == platform.YDB {
+	switch {
+	case platform.NormalizeDialect(target) == platform.YDB:
 		result.CommonMetadata = ydbMetadata
+	case platform.IsPostgresFamily(target):
+		result.CommonMetadata = postgresMetadata(target)
 	}
 	return result
+}
+
+// postgresMetadata describes the relations and columns each common statement
+// of a PostgreSQL-family render creates, so a feature owner can order itself
+// against them: after the tables it reads, before the views that read it.
+func postgresMetadata(target string) func(context.Context, []ast.Node) ([]featureplan.CommonStep, error) {
+	return func(ctx context.Context, nodes []ast.Node) ([]featureplan.CommonStep, error) {
+		effects := pgeffects.Sequence(objectidentity.NewBuilder(identifier.ForDialect(target)), nodes)
+		result := make([]featureplan.CommonStep, len(nodes))
+		for i := range nodes {
+			result[i].Effects = effects[i]
+		}
+		return result, ctx.Err()
+	}
 }
 
 func ydbMetadata(ctx context.Context, nodes []ast.Node) ([]featureplan.CommonStep, error) {

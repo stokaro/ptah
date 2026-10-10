@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -19,7 +20,7 @@ import (
 // successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
-		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) {
+		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) || ref.Kind == objectidentity.Kind(tsschema.ContinuousAggregateKind) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
@@ -43,8 +44,15 @@ func (r *renderer) reportFeatureObjects() {
 				record.Subject, record.Kind, record.Knowledge.Reason),
 		})
 	}
+	tables := make(map[*schemaext.Facets]bool, len(r.db.Tables))
+	for i := range r.db.Tables {
+		tables[&r.db.Tables[i].Facets] = true
+	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
+			if tables[facets] && representsFacet(kind) {
+				continue
+			}
 			r.diagnostics = append(r.diagnostics, Diagnostic{
 				Severity: SeverityWarning,
 				Path:     "feature." + string(kind),

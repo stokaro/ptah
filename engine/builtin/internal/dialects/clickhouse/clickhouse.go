@@ -1549,33 +1549,6 @@ func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 // grants, so they render SQL rather than a diagnostic; the syntax they render,
 // and what it refuses, is documented there.
 
-// renderCreateContinuousAggregate refuses: a continuous aggregate is a
-// TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
-//
-// There is no capability key behind this refusal, for the reason
-// renderCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
-	r.notSupported("CREATE CONTINUOUS AGGREGATE", node.Name)
-	return nil
-}
-
-func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
-	r.notSupported("DROP CONTINUOUS AGGREGATE", node.Name)
-	return nil
-}
-
-// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
-// TimescaleDB is an extension of PostgreSQL.
-//
-// There is no capability key behind this refusal, for the reason
-// renderCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
-	r.notSupported("CREATE HYPERTABLE", node.Table)
-	return nil
-}
-
 // renderCreateSynonym refuses: ClickHouse has no synonym object.
 func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	r.notSupported("CREATE SYNONYM", node.Name)

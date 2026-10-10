@@ -26,7 +26,7 @@ type hostedDeclaration struct {
 
 // validateDeclaredHosts refuses a table-owned declaration that names no host.
 //
-// Six families reach a target through a host they name, and measured on
+// Five families reach a target through a host they name, and measured on
 // PostgreSQL at a80cb5652 every one of them answered a declaration naming
 // neither spelling without a word (stokaro/ptah#2612):
 //
@@ -35,9 +35,9 @@ type hostedDeclaration struct {
 //	RLS enable     ALTER TABLE "" ENABLE ROW LEVEL SECURITY
 //	RLS policy     CREATE POLICY "p" ON "" FOR SELECT
 //	trigger        CREATE TRIGGER "tr" BEFORE UPDATE ON ""
-//	hypertable     SELECT create_hypertable('', by_range('id'))
 //
-// All six at exit 0. An empty identifier is not a relation name, no server
+// All five at exit 0. Hypertable settings are a facet of the table they
+// partition, so they cannot exist without a host and are not collected here. An empty identifier is not a relation name, no server
 // accepts one, and a constraint that vanishes is the loss this refusal exists
 // to report -- the same shape stokaro/ptah#2608 fixed one level down, for a
 // column.
@@ -91,7 +91,7 @@ func declarationSubject(declaration hostedDeclaration) string {
 func hostedDeclarations(database *schemamodel.Database) []hostedDeclaration {
 	declarations := make([]hostedDeclaration, 0,
 		len(database.Constraints)+len(database.Indexes)+len(database.RLSEnabledTables)+
-			len(database.RLSPolicies)+len(database.Triggers)+len(database.Hypertables))
+			len(database.RLSPolicies)+len(database.Triggers))
 
 	for _, constraint := range database.Constraints {
 		declarations = append(declarations, hostedDeclaration{
@@ -121,12 +121,6 @@ func hostedDeclarations(database *schemamodel.Database) []hostedDeclaration {
 		declarations = append(declarations, hostedDeclaration{
 			kind: "trigger", name: trigger.Name,
 			structName: trigger.StructName, table: trigger.Table,
-		})
-	}
-	for _, hypertable := range database.Hypertables {
-		declarations = append(declarations, hostedDeclaration{
-			kind: "hypertable", name: hypertable.Table,
-			structName: hypertable.StructName, table: hypertable.Table,
 		})
 	}
 	return slices.Clip(declarations)

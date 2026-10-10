@@ -109,6 +109,7 @@ func excludeDatabase(
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
@@ -127,8 +128,6 @@ func excludeDatabase(
 	filtered.ExternalDataSources = state.filterExternalDataSources(filtered.ExternalDataSources)
 	filtered.ExternalTables = state.filterExternalTables(filtered.ExternalTables)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
-	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
-	filtered.Hypertables = state.filterHypertables(filtered.Hypertables)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
@@ -226,6 +225,7 @@ func excludeGenerated(
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
@@ -1222,44 +1222,6 @@ func (s *exclusionState) filterExtendedProperties(
 	return result
 }
 
-// filterContinuousAggregates drops the continuous aggregates an exclusion
-// selector names, and the ones whose schema is excluded.
-//
-// Excluding one is meaningful even though Ptah does not manage it: the
-// description carries the aggregate so a comparison can decline a declaration
-// that wants its name, and an operator who excludes it is saying they want
-// that refusal to go away. The object stays on the server either way.
-func (s *exclusionState) filterContinuousAggregates(
-	aggregates []catalog.ContinuousAggregate,
-) []catalog.ContinuousAggregate {
-	result := make([]catalog.ContinuousAggregate, 0, len(aggregates))
-	for _, aggregate := range aggregates {
-		names := s.nameCandidates(aggregate.Schema, aggregate.Name)
-		if s.matches("continuous_aggregate", names...) || s.schemaExcluded(aggregate.Schema) {
-			continue
-		}
-		result = append(result, aggregate)
-	}
-	return result
-}
-
-// filterHypertables drops the hypertable rows whose TABLE this exclusion
-// removed.
-//
-// A hypertable has no selector of its own, and deliberately so: it is not a
-// second object beside the table but a fact about it, so `--exclude conditions`
-// has already said everything there is to say. Giving it one would let a
-// description carry a hypertable row for a table it does not describe, and the
-// note built on that row would name a statement the reader cannot see
-// (stokaro/ptah#1026).
-func (s *exclusionState) filterHypertables(
-	hypertables []catalog.Hypertable,
-) []catalog.Hypertable {
-	return keep(hypertables, func(hypertable catalog.Hypertable) bool {
-		return !s.tableExcluded(hypertable.Schema, hypertable.Name)
-	})
-}
-
 func (s *exclusionState) filterMatViews(views []catalog.MaterializedView) []catalog.MaterializedView {
 	result := make([]catalog.MaterializedView, 0, len(views))
 	for _, view := range views {
@@ -1910,36 +1872,34 @@ func stripGeneratedFieldForeignKey(field schemamodel.Field) schemamodel.Field {
 
 func cloneDatabase(schema *catalog.Database) *catalog.Database {
 	return &catalog.Database{
-		FeatureObjects:       schema.FeatureObjects,
-		FeatureCoverage:      schema.FeatureCoverage,
-		Schemas:              slices.Clone(schema.Schemas),
-		Tables:               slices.Clone(schema.Tables),
-		Enums:                slices.Clone(schema.Enums),
-		Indexes:              slices.Clone(schema.Indexes),
-		Constraints:          slices.Clone(schema.Constraints),
-		Extensions:           slices.Clone(schema.Extensions),
-		Functions:            slices.Clone(schema.Functions),
-		Sequences:            slices.Clone(schema.Sequences),
-		Domains:              slices.Clone(schema.Domains),
-		Composites:           slices.Clone(schema.Composites),
-		Ranges:               slices.Clone(schema.Ranges),
-		Views:                slices.Clone(schema.Views),
-		Synonyms:             slices.Clone(schema.Synonyms),
-		AsyncReplications:    slices.Clone(schema.AsyncReplications),
-		Transfers:            slices.Clone(schema.Transfers),
-		ExternalDataSources:  slices.Clone(schema.ExternalDataSources),
-		ExternalTables:       slices.Clone(schema.ExternalTables),
-		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
-		ContinuousAggregates: slices.Clone(schema.ContinuousAggregates),
-		Hypertables:          slices.Clone(schema.Hypertables),
-		MatViews:             slices.Clone(schema.MatViews),
-		Triggers:             slices.Clone(schema.Triggers),
-		RLSPolicies:          slices.Clone(schema.RLSPolicies),
-		Roles:                slices.Clone(schema.Roles),
-		Grants:               slices.Clone(schema.Grants),
-		DefaultPrivileges:    slices.Clone(schema.DefaultPrivileges),
-		RoleMemberships:      slices.Clone(schema.RoleMemberships),
-		ObjectOwners:         slices.Clone(schema.ObjectOwners),
+		FeatureObjects:      schema.FeatureObjects,
+		FeatureCoverage:     schema.FeatureCoverage,
+		Schemas:             slices.Clone(schema.Schemas),
+		Tables:              slices.Clone(schema.Tables),
+		Enums:               slices.Clone(schema.Enums),
+		Indexes:             slices.Clone(schema.Indexes),
+		Constraints:         slices.Clone(schema.Constraints),
+		Extensions:          slices.Clone(schema.Extensions),
+		Functions:           slices.Clone(schema.Functions),
+		Sequences:           slices.Clone(schema.Sequences),
+		Domains:             slices.Clone(schema.Domains),
+		Composites:          slices.Clone(schema.Composites),
+		Ranges:              slices.Clone(schema.Ranges),
+		Views:               slices.Clone(schema.Views),
+		Synonyms:            slices.Clone(schema.Synonyms),
+		AsyncReplications:   slices.Clone(schema.AsyncReplications),
+		Transfers:           slices.Clone(schema.Transfers),
+		ExternalDataSources: slices.Clone(schema.ExternalDataSources),
+		ExternalTables:      slices.Clone(schema.ExternalTables),
+		ExtendedProperties:  slices.Clone(schema.ExtendedProperties),
+		MatViews:            slices.Clone(schema.MatViews),
+		Triggers:            slices.Clone(schema.Triggers),
+		RLSPolicies:         slices.Clone(schema.RLSPolicies),
+		Roles:               slices.Clone(schema.Roles),
+		Grants:              slices.Clone(schema.Grants),
+		DefaultPrivileges:   slices.Clone(schema.DefaultPrivileges),
+		RoleMemberships:     slices.Clone(schema.RoleMemberships),
+		ObjectOwners:        slices.Clone(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is

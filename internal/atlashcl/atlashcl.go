@@ -17,7 +17,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/tableref"
@@ -61,6 +63,13 @@ type Options struct {
 	// lives with the caller that knows them
 	// (ptah.run/internal/schemafile.Options.SchemaScope).
 	RecordSchemaBlock func(SchemaBlock)
+
+	// DeferTableSettings, when set, receives every table setting a block of
+	// its own declares -- a `hypertable` block -- instead of the parse
+	// attaching it to its table. It is for a caller that assembles one schema
+	// from several documents, where a block and its table may sit in
+	// different files: it calls [AttachTableSettings] once all are read.
+	DeferTableSettings func(TableSetting)
 
 	// Vars supplies values for the file's `variable` blocks, spelled the way
 	// `--var` spells them: one entry per flag occurrence, each entry a
@@ -195,6 +204,16 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	if err := p.rejectRedeclarations(); err != nil {
 		return nil, err
 	}
+	// After the redeclaration check, so a hypertable attaches to the one table
+	// block that declares its table. A caller assembling one schema from
+	// several documents attaches them itself once every document is read.
+	if opts.DeferTableSettings != nil {
+		for _, setting := range p.tableSettings {
+			opts.DeferTableSettings(setting)
+		}
+	} else if err := AttachTableSettings(p.db, p.tableSettings); err != nil {
+		return nil, err
+	}
 	schemamodel.Finalize(p.db)
 	// After Finalize, which resolves the table a `permission` or `revoke`
 	// names, so the two are compared by the same name.
@@ -213,6 +232,16 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	}
 	p.db.NotDescribed = notDescribed
 	p.db.FeatureCoverage, _, err = ydbsource.ReadHCLCoverage(string(data), limits)
+	if err != nil {
+		return nil, err
+	}
+	// The format has a block for each TimescaleDB model, so a document
+	// without one describes a database without one.
+	timescale, err := tsschema.CompleteCoverage(schemaext.Desired)
+	if err != nil {
+		return nil, err
+	}
+	p.db.FeatureCoverage, err = p.db.FeatureCoverage.Combine(timescale)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +325,10 @@ type parser struct {
 	// only be read once every table block is known; see
 	// [parser.resolveDocumentTableRefs].
 	pendingForeignRefs []pendingForeignRef
+	// tableSettings holds the blocks that declare a setting of a table they
+	// name, attached once every table block is known; see
+	// [AttachTableSettings].
+	tableSettings []TableSetting
 	// emitting is true only during the body walk, which is the pass whose
 	// evaluations produce the document. See [parser.printLine].
 	emitting bool

@@ -21,6 +21,10 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbdiff"
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/cockroachdb/crdbschema"
+	"ptah.run/dialect/timescaledb/tsast"
+	"ptah.run/dialect/timescaledb/tsdiff"
+	"ptah.run/dialect/timescaledb/tsrender"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
@@ -111,8 +115,20 @@ func topicConsumerFixture() extensionFixture {
 		wantSQL: "ALTER TOPIC `ext/events.v1` ADD CONSUMER `audit`;\n"}
 }
 
+func hypertableFixture() extensionFixture {
+	return extensionFixture{payload: &tsast.CreateHypertable{Table: "items", Hypertable: tsschema.DesiredHypertable{Column: "ts", ChunkInterval: "1 day"}},
+		wantSQL: "SELECT create_hypertable('\"items\"', by_range('ts', INTERVAL '1 day'), create_default_indexes => FALSE);\n"}
+}
+
+func continuousAggregateFixture() extensionFixture {
+	return extensionFixture{payload: &tsast.ContinuousAggregate{Schema: "app", Name: "hourly",
+		Change: tsdiff.ContinuousAggregate{After: &tsschema.DesiredContinuousAggregate{Body: "SELECT 1"}}},
+		wantSQL: "CREATE MATERIALIZED VIEW \"app\".\"hourly\" WITH (timescaledb.continuous) AS\nSELECT 1\nWITH NO DATA\n;\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture())
+	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), cockroachDBRowTTLFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
+		hypertableFixture(), continuousAggregateFixture())
 }
 
 func defaultPoolFixture() extensionFixture {
@@ -139,8 +155,10 @@ func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	cockroachRegistry, err := crdbrender.Registry()
 	c.Assert(err, qt.IsNil)
+	timescaleRegistry, err := tsrender.Registry()
+	c.Assert(err, qt.IsNil)
 	var registered, fixtures []string
-	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes()) {
+	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes(), timescaleRegistry.PayloadTypes()) {
 		registered = append(registered, payloadType.Elem().PkgPath()+"."+payloadType.Elem().Name())
 	}
 	for _, fixture := range allExtensionFixtures() {
@@ -241,6 +259,33 @@ func TestCockroachDBExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(fmt.Sprint(err), qt.Contains, string(crdbast.AlterRowTTLKind))
 			c.Assert(sql, qt.Equals, "")
+		})
+	}
+}
+
+// TestTimescaleExtensionOwnerRendersAndNonownersRefuse pins the composition of
+// the TimescaleDB owner: every PostgreSQL-family target renders its payloads
+// where the capability is present and writes the skip line where it is not,
+// and every other target refuses them through the common boundary.
+func TestTimescaleExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	for _, fixture := range []extensionFixture{hypertableFixture(), continuousAggregateFixture()} {
+		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
+			c := qt.New(t)
+			node := &ast.ExtensionStatement{Payload: fixture.payload}
+			caps := capability.Postgres17().With(capability.Hypertables, true).With(capability.ContinuousAggregates, true)
+			for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner"} {
+				sql, err := builtin.RenderSQLWithCapabilities(dialect, caps, node)
+				c.Assert(err, qt.IsNil)
+				c.Assert(sql, qt.Equals, fixture.wantSQL)
+			}
+			sql, err := builtin.RenderSQL("postgres", node)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Matches, `-- POSTGRES: (hypertable items|continuous aggregate hourly) is not supported by this target; skipped.\n`)
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+				sql, err := builtin.RenderSQL(dialect, node)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(sql, qt.Equals, "")
+			}
 		})
 	}
 }

@@ -166,12 +166,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropExtension(n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
-	case *ast.CreateHypertableNode:
-		return r.renderCreateHypertable(n)
-	case *ast.CreateContinuousAggregateNode:
-		return r.renderCreateContinuousAggregate(n)
-	case *ast.DropContinuousAggregateNode:
-		return r.renderDropContinuousAggregate(n)
 
 	// Data manipulation.
 	case *ast.UpsertNode:

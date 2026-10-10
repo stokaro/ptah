@@ -3,6 +3,7 @@ package schemaext
 import (
 	"context"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 )
@@ -19,6 +20,8 @@ type FeatureState struct {
 // ComparisonRequest is the common feature comparison boundary. Providers keep
 // distinct object and facet semantics while the caller supplies one captured
 // state and receives one complete accounting of changes and limitations.
+// DeclaredRelations names the views and materialized views the desired schema
+// declares; see [ObjectComparisonRequest].
 type ComparisonRequest struct {
 	Target       string
 	Identifiers  identifier.Semantics
@@ -29,7 +32,8 @@ type ComparisonRequest struct {
 	// Requests are changes the caller asks for that a comparison cannot find,
 	// one per subject and action. Each goes to the owner of its subject's
 	// named-object kind; see [ChangeRequest].
-	Requests []ChangeRequest
+	Requests          []ChangeRequest
+	DeclaredRelations []objectidentity.ID
 }
 
 // ComparisonResult joins the selected object and facet owners' replies. No

@@ -120,7 +120,7 @@ for the message and the flag it names.
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
 | `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. Writing one of the four optional attributes as `""` says the range has none; omitting it says nothing about it, so a range that already carries one keeps it. |
-| `hypertable` | TimescaleDB partitioning of the table the label names: `column`, and optionally `chunk_interval`, `if_not_exists` and the `schema` holding the table. |
+| `hypertable` | TimescaleDB partitioning of the table the label names: `column`, and optionally `chunk_interval`, `if_not_exists` and the `schema` holding the table. The table may sit in another file of the schema directory; without a schema, the label names the one table of that name. |
 | `continuous_aggregate` | TimescaleDB continuous aggregate: `as` for the `SELECT` it materializes, and optionally `materialized_only`, a comment and the `schema` holding it. |
 | `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |
 | `extended_property` | SQL Server named value: `value`, and the object it is attached to as `schema`, `table` and `column`. |

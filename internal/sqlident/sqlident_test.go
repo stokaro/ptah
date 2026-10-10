@@ -275,3 +275,36 @@ func TestQuotePostgresQualified(t *testing.T) {
 		})
 	}
 }
+
+// TestQuotePostgresQualifiedSpellsARegclassLiteral pins the spelling a
+// PostgreSQL-family statement and a REGCLASS literal share: each part quoted
+// once, a part already in double quotes not quoted twice, and a dot inside a
+// quoted part kept in it.
+func TestQuotePostgresQualifiedSpellsARegclassLiteral(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "bare", in: "readings", want: `"readings"`},
+		{name: "mixed case", in: "Readings", want: `"Readings"`},
+		{name: "qualified", in: "app.Readings", want: `"app"."Readings"`},
+		{name: "already quoted", in: `"app"."Readings"`, want: `"app"."Readings"`},
+		{name: "a dot inside a quoted part", in: `app."odd.name"`, want: `"app"."odd.name"`},
+		{name: "a doubled quote", in: `"odd""name"`, want: `"odd""name"`},
+		{name: "non-ASCII bytes", in: "app.Äpfel", want: `"app"."Äpfel"`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(sqlident.QuotePostgresQualified(test.in), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestStringLiteral pins the standard escape: a single quote is doubled.
+func TestStringLiteral(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(sqlident.StringLiteral(`"odd"."it's"`), qt.Equals, `'"odd"."it''s"'`)
+}

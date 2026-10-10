@@ -8,14 +8,15 @@ import (
 	"io/fs"
 	"slices"
 
-	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/schemafingerprint"
 	"ptah.run/migration/safety"
 )
 
@@ -43,8 +44,13 @@ type Report struct {
 }
 
 // NewReport constructs a deterministic report bound to current and desired
-// state. The current-state digest hashes the complete schema IR.
+// state. The current-state digest hashes the complete schema IR, owner data
+// included, through the selected runtime's codecs: default JSON cannot encode
+// an owner's facets, objects or coverage, and a digest that left them out
+// would not change when they do.
 func NewReport(
+	ctx context.Context,
+	runtime schemaext.ModelRuntime,
 	subject ocispec.Descriptor,
 	current *catalog.Database,
 	dialect string,
@@ -58,9 +64,9 @@ func NewReport(
 	if current == nil {
 		return Report{}, fmt.Errorf("current schema is required")
 	}
-	currentJSON, err := json.Marshal(current)
+	currentDigest, err := schemafingerprint.Observed(ctx, runtime, current)
 	if err != nil {
-		return Report{}, fmt.Errorf("marshal current schema fingerprint input: %w", err)
+		return Report{}, fmt.Errorf("fingerprint current schema: %w", err)
 	}
 	schemas = slices.Clone(schemas)
 	slices.Sort(schemas)
@@ -81,7 +87,7 @@ func NewReport(
 	return Report{
 		SchemaVersion:         SchemaVersion,
 		DesiredArtifactDigest: subject.Digest.String(),
-		CurrentSchemaDigest:   digest.FromBytes(currentJSON).String(),
+		CurrentSchemaDigest:   currentDigest,
 		Dialect:               dialect,
 		Schemas:               schemas,
 		Capabilities:          capabilities,

@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -95,6 +96,15 @@ func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamod
 
 func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 	current := &catalog.Database{}
+	if platform.IsPostgresFamily(cell.Dialect) {
+		// A PostgreSQL-family read records TimescaleDB knowledge whether or not
+		// the extension is installed; an empty database holds neither model.
+		known, err := tsschema.CompleteCoverage(schemaext.Observed)
+		if err != nil {
+			return nil, err
+		}
+		current.FeatureCoverage = known
+	}
 	if cell.Dialect != platform.YDB {
 		return current, nil
 	}

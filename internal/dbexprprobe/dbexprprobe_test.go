@@ -48,9 +48,6 @@ func TestResolversRefuseANilConnection(t *testing.T) {
 	_, err = dbexprprobe.ResolveExcludeExpressions(ctx, nil, []dbexprprobe.ExcludeExpressionProbe{{Key: "k"}})
 	c.Assert(err, qt.ErrorMatches, `resolve exclude expressions: database connection is nil`)
 
-	_, err = dbexprprobe.ResolveContinuousAggregateBodies(ctx, nil, []dbexprprobe.ContinuousAggregateProbe{{Key: "k"}})
-	c.Assert(err, qt.ErrorMatches, `resolve continuous aggregate bodies: database connection is nil`)
-
 	_, err = dbexprprobe.ResolveColumnSpellings(ctx, nil, []dbexprprobe.ColumnSpellingProbe{{Table: "t"}})
 	c.Assert(err, qt.ErrorMatches, `resolve column spellings: database connection is nil`)
 }
@@ -74,10 +71,6 @@ func TestResolversAnswerNilForAnEmptyProbeList(t *testing.T) {
 	excludes, err := dbexprprobe.ResolveExcludeExpressions(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(excludes, qt.IsNil)
-
-	aggregates, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn, nil)
-	c.Assert(err, qt.IsNil)
-	c.Assert(aggregates, qt.IsNil)
 
 	columns, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
@@ -121,11 +114,6 @@ func TestResolversAnswerNilForADialectThatStoresWhatItWasGiven(t *testing.T) {
 			Columns: []dbexprprobe.CheckProbeColumn{{Name: "code", Type: "text"}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(excludes, qt.IsNil)
-
-	aggregates, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn,
-		[]dbexprprobe.ContinuousAggregateProbe{{Key: "agg", Body: "SELECT 1"}})
-	c.Assert(err, qt.IsNil)
-	c.Assert(aggregates, qt.IsNil)
 
 	desired, err := dbexprprobe.ResolveGeneratedExpressions(ctx, conn,
 		[]dbexprprobe.GeneratedExpressionProbe{{Table: "t", ProbeTable: "p",

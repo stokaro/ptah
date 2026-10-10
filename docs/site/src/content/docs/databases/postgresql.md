@@ -1621,7 +1621,11 @@ for the table, and the index the call created carries the same `deptype` an
 ordinary user index does. The extension's own catalog is the only evidence
 there is.
 
-Declare one beside the table it partitions:
+Declare one beside the table it partitions. The settings belong to that table,
+so the annotation has to sit in the Go file that declares the table, and the
+block in an HCL schema that declares it -- the files of a schema directory
+count as one schema. One that names a table declared anywhere else is refused,
+and so is a name without a schema that two schemas declare a table under.
 
 ```go
 //ptah:schema:hypertable table="readings" column="time" chunk_interval="1 day" if_not_exists="true"
@@ -1637,12 +1641,18 @@ hypertable "readings" {
 }
 ```
 
-which renders
+which renders, directly after the table's `CREATE TABLE`,
 
 ```sql
-SELECT create_hypertable('public.readings', by_range('time', INTERVAL '1 day'),
-  if_not_exists => TRUE, create_default_indexes => FALSE);
+SELECT create_hypertable('"public"."readings"', by_range('time', INTERVAL '1 day'), if_not_exists => TRUE, create_default_indexes => FALSE);
 ```
+
+The table name inside the literal keeps the quotes the `CREATE TABLE` gave it.
+The server reads the literal as a name and folds an unquoted one to lower case,
+so a table declared as `Readings` would otherwise not be found.
+
+A table that already exists and becomes a hypertable gets the same call after
+the statements that create or change its columns.
 
 `chunk_interval` is optional and is kept in the server's own spelling, because
 that is what `timescaledb_information.dimensions` reports back: an omitted one
@@ -1701,7 +1711,12 @@ SQL: CREATE INDEX events_kind_idx ON events (kind) WITH (timescaledb.transaction
 
 TimescaleDB has no `drop_hypertable` — measured, the call answers
 `function drop_hypertable(unknown) does not exist` — and no call repartitions an
-existing hypertable. So two changes are refused before anything is applied:
+existing hypertable. So a hypertable the declaration leaves ordinary, and a
+changed partitioning column, are refused before anything is applied. A changed
+chunk interval is refused too: Ptah does not plan a change to an existing
+hypertable's partitioning. A table the declaration no longer holds is another
+matter: `DROP TABLE` removes its hypertable and chunks with it, so the drop is
+planned as for any other table.
 
 ```console
 $ ptah schema apply --db-url "$TIMESCALE_URL" --to file://schema.hcl
@@ -1737,7 +1752,9 @@ version of its own, and it puts no token in `version()`. So no preset sets the
 `hypertables` or `continuous_aggregates` capability: what decides both is
 `pg_extension`, read once when the connection opens. A PostgreSQL target without the extension skips the statement
 and says so in the plan rather than failing at apply time on
-`function create_hypertable(unknown, unknown) does not exist`.
+`function create_hypertable(unknown, unknown) does not exist`. A target outside
+the PostgreSQL family refuses a hypertable or a continuous aggregate before it
+renders anything.
 
 **Offline, the declaration is the evidence.** `ptah schema render` has no
 connection to ask, so a document that declares the `timescaledb` extension

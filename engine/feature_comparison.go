@@ -122,9 +122,10 @@ func (r *Runtime) requestKinds(request schemaext.ComparisonRequest, facets, all 
 func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemaext.ComparisonRequest, objectKinds, facetKinds []schemaext.Kind) (schemaext.ObjectComparisonRequest, schemaext.FacetComparisonRequest, error) {
 	objects := schemaext.ObjectComparisonRequest{
 		Target: request.Target, Identifiers: request.Identifiers, Capabilities: request.Capabilities,
-		Desired:  schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: request.Desired.Coverage.SelectKinds(objectKinds)},
-		Current:  schemaext.ObjectState{Objects: request.Current.Objects, Coverage: request.Current.Coverage.SelectKinds(objectKinds)},
-		Requests: request.Requests,
+		Desired:           schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: request.Desired.Coverage.SelectKinds(objectKinds)},
+		Current:           schemaext.ObjectState{Objects: request.Current.Objects, Coverage: request.Current.Coverage.SelectKinds(objectKinds)},
+		Requests:          request.Requests,
+		DeclaredRelations: request.DeclaredRelations,
 	}
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind == objectidentity.KindTable {

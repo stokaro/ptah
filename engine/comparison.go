@@ -170,10 +170,27 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
+	request.DeclaredRelations, err = snapshotDeclaredRelations(request.DeclaredRelations)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, err
+	}
 	if err := comparisonInputSubjects(request); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
 	return request, nil
+}
+
+// snapshotDeclaredRelations copies and orders the declared views and
+// materialized views, refusing a reference that is not one.
+func snapshotDeclaredRelations(refs []objectidentity.ID) ([]objectidentity.ID, error) {
+	refs = slices.Clone(refs)
+	for _, ref := range refs {
+		if (ref.Kind != objectidentity.KindView && ref.Kind != objectidentity.KindMatView) || ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || ref.Signature != "" {
+			return nil, fmt.Errorf("%w: invalid declared relation %s", schemaext.ErrInvalidValue, ref)
+		}
+	}
+	slices.SortFunc(refs, schemaext.CompareRefs)
+	return refs, nil
 }
 
 func comparisonInputSubjects(request schemaext.ObjectComparisonRequest) error {

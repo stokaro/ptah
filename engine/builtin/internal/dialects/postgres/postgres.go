@@ -575,15 +575,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.renderAlterTableForceRLS(n)
 
-	// TimescaleDB objects, which only a PostgreSQL target carrying the
-	// extension can host.
-	case *ast.CreateHypertableNode:
-		return r.renderCreateHypertable(n)
-	case *ast.CreateContinuousAggregateNode:
-		return r.renderCreateContinuousAggregate(n)
-	case *ast.DropContinuousAggregateNode:
-		return r.renderDropContinuousAggregate(n)
-
 	// Objects another engine owns. Each handler writes the skip comment and
 	// records the omission rather than failing, so the declaration is reported
 	// instead of dropped.
@@ -959,7 +950,11 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// statement instead, because this target renders none of them (see
 	// writeTableOptionsSkipped). Its owner refuses a target without the
 	// capability rather than letting the clause drop (stokaro/ptah#1027).
-	storage, err := r.renderOwnedTableStorage(node)
+	following, storageFacets, err := r.lowerTableFacets(node)
+	if err != nil {
+		return err
+	}
+	storage, err := r.renderOwnedTableStorage(node, storageFacets)
 	if err != nil {
 		return err
 	}
@@ -982,7 +977,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	r.w.WriteLine("")
 	r.renderTableComments(node)
 
-	return nil
+	return r.renderTableFacets(following)
 }
 
 // renderTableComments writes the comments a table and its columns carry.
@@ -3984,140 +3979,6 @@ func (r *Renderer) uniqueConstraintUnsupported(name string, columns []string) er
 
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
-}
-
-// renderCreateContinuousAggregate renders the statement that creates a
-// TimescaleDB continuous aggregate.
-//
-// It is a CREATE MATERIALIZED VIEW carrying `WITH (timescaledb.continuous)`,
-// which is what makes the extension own it. A plain materialized view of the
-// same body is a different object: measured on 2.29.2, dropping a continuous
-// aggregate with `DROP VIEW` answers `cannot drop continuous aggregate using
-// DROP VIEW`, and there is no CREATE OR REPLACE form at all.
-//
-// `WITH NO DATA` is not optional here. Creating one WITH DATA materializes the
-// whole history the hypertable holds, which on a real table is a table scan and
-// a rewrite -- work an operator schedules rather than something a schema
-// migration does as a side effect. The first refresh is theirs to run.
-func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
-	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
-		return nil
-	}
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
-	options := []string{"timescaledb.continuous"}
-	if node.MaterializedOnly != nil {
-		options = append(options,
-			fmt.Sprintf("timescaledb.materialized_only = %t", *node.MaterializedOnly))
-	}
-	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s WITH (%s) AS",
-		r.escapeQualifiedIdentifier(r.continuousAggregateName(node.Schema, node.Name)),
-		strings.Join(options, ", "))
-	r.w.WriteLine(continuousAggregateBody(node.Body))
-	if node.WithNoData {
-		r.w.WriteLine("WITH NO DATA")
-	}
-	r.w.WriteLine(";")
-	return nil
-}
-
-// continuousAggregateBody trims the terminator the catalog puts on a definition
-// it hands back.
-//
-// A description read from a server carries `view_definition` verbatim, and that
-// column ends in a semicolon. Writing it into the statement would put the
-// terminator BEFORE `WITH NO DATA`, and the server answers `syntax error at or
-// near "WITH"` -- so a document Ptah inspected could not be applied by Ptah.
-func continuousAggregateBody(body string) string {
-	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(body), ";"))
-}
-
-// renderDropContinuousAggregate renders the statement that removes one.
-//
-// DROP MATERIALIZED VIEW rather than DROP VIEW, which is the server's own
-// instruction rather than a preference: `cannot drop continuous aggregate using
-// DROP VIEW. HINT: Use DROP MATERIALIZED VIEW to drop a continuous aggregate.`
-func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
-	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
-		return nil
-	}
-	parts := []string{"DROP MATERIALIZED VIEW"}
-	if node.IfExists {
-		parts = append(parts, "IF EXISTS")
-	}
-	parts = append(parts, r.escapeQualifiedIdentifier(
-		r.continuousAggregateName(node.Schema, node.Name)))
-	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-	return nil
-}
-
-// continuousAggregateName folds a separately-carried schema into the name, so
-// the identifier escaper sees the one qualified string every other object gives
-// it.
-func (r *Renderer) continuousAggregateName(schema, name string) string {
-	if strings.TrimSpace(schema) == "" {
-		return name
-	}
-	if strings.Contains(name, ".") {
-		return name
-	}
-	return schema + "." + name
-}
-
-// renderCreateHypertable renders the TimescaleDB call that turns an ordinary
-// table into a hypertable.
-//
-// It is a function call rather than DDL, because TimescaleDB has no CREATE
-// HYPERTABLE grammar. Measured on 2.29.2 / PostgreSQL 17:
-//
-//	SELECT create_hypertable('conditions', by_range('time'));                  -> (1,t)
-//	SELECT create_hypertable('conditions', by_range('time'));                  -> ERROR: already a hypertable
-//	SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE); -> (1,f), NOTICE
-//
-// The table is passed as a REGCLASS literal -- a quoted, possibly qualified
-// name -- and the column as a text literal inside `by_range`, which is the
-// signature the extension publishes. Both are escaped as string literals rather
-// than as identifiers for that reason: the argument is a string the server
-// resolves, not an identifier position.
-//
-// The key gates the emission rather than the declaration. A PostgreSQL target
-// without the extension has no such function, and a plan that called it would
-// fail on `function create_hypertable(unknown, unknown) does not exist` at
-// apply time instead of saying so in the plan (stokaro/ptah#1026).
-func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
-	if r.refuses(capability.Hypertables, "hypertable", node.Table) {
-		return nil
-	}
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
-	dimension := fmt.Sprintf("by_range(%s", r.escapeValue(node.Column))
-	if strings.TrimSpace(node.ChunkInterval) != "" {
-		dimension += fmt.Sprintf(", INTERVAL %s", r.escapeValue(node.ChunkInterval))
-	}
-	dimension += ")"
-
-	arguments := []string{r.escapeValue(node.Table), dimension}
-	if node.IfNotExists {
-		arguments = append(arguments, "if_not_exists => TRUE")
-	}
-	// The call creates an index on the dimension unless told not to, and that
-	// index is one nothing declared. Measured on 2.29.2: after
-	// `create_hypertable('readings', by_range('time'))` the table carries
-	// `readings_time_idx`, and the next comparison plans
-	// `DROP INDEX IF EXISTS "readings_time_idx"` -- Ptah dropping an index the
-	// server made a moment earlier, on every apply.
-	//
-	// `create_default_indexes => FALSE` is the answer rather than an exception
-	// in the comparator: measured on the same server the call then creates none
-	// at all, so the description stays the whole truth about which indexes
-	// exist, and an operator who wants one on the dimension declares it.
-	arguments = append(arguments, "create_default_indexes => FALSE")
-	r.w.WriteLinef("SELECT create_hypertable(%s);", strings.Join(arguments, ", "))
-	return nil
 }
 
 // renderCreateSynonym names the synonym as skipped.

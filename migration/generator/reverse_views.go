@@ -1,7 +1,7 @@
 package generator
 
-// Reversing views, materialized views, hypertables and continuous aggregates:
-// the families whose prior state is a body rather than a set of attributes.
+// Reversing views and materialized views: the families whose prior state is a
+// body rather than a set of attributes.
 
 import (
 	"strings"
@@ -11,66 +11,6 @@ import (
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/migration/schemadiff/difftypes"
 )
-
-// reverseHypertableDiffs swaps the two sides of each partitioning change, so a
-// rollback describes the partitioning the database had.
-func reverseHypertableDiffs(changes []difftypes.HypertableDiff) []difftypes.HypertableDiff {
-	reversed := make([]difftypes.HypertableDiff, 0, len(changes))
-	for _, change := range changes {
-		reversed = append(reversed, difftypes.HypertableDiff{
-			Table:            change.Table,
-			OldColumn:        change.NewColumn,
-			NewColumn:        change.OldColumn,
-			OldChunkInterval: change.NewChunkInterval,
-			NewChunkInterval: change.OldChunkInterval,
-		})
-	}
-	return reversed
-}
-
-// reverseContinuousAggregateDiffs swaps the two sides of each aggregate change,
-// so a rollback restores the body and the option the database had.
-func reverseContinuousAggregateDiffs(
-	changes []difftypes.ContinuousAggregateDiff,
-	prior *schemamodel.Database,
-	semantics identifier.Semantics,
-) []difftypes.ContinuousAggregateDiff {
-	reversed := make([]difftypes.ContinuousAggregateDiff, 0, len(changes))
-	for _, change := range changes {
-		reversed = append(reversed, difftypes.ContinuousAggregateDiff{
-			Name:                change.Name,
-			OldBody:             change.NewBody,
-			NewBody:             change.OldBody,
-			OldMaterializedOnly: change.NewMaterializedOnly,
-			NewMaterializedOnly: change.OldMaterializedOnly,
-			// Swapping the bodies without swapping the operand would have the
-			// down direction drop the aggregate and create the very definition
-			// it is undoing, since the operand is what the create renders from
-			// (stokaro/ptah#2315).
-			Desired: priorContinuousAggregate(prior, change.Name, semantics),
-		})
-	}
-	return reversed
-}
-
-// priorContinuousAggregate is the aggregate the pre-change database held.
-//
-// The diff spells a qualified name the declaration produced, and the aggregate
-// a read reports carries the schema the server puts it under, so the two are
-// compared as qualified names on the connection's own identifier terms.
-func priorContinuousAggregate(
-	prior *schemamodel.Database,
-	name string,
-	semantics identifier.Semantics,
-) schemamodel.ContinuousAggregate {
-	if prior == nil {
-		return schemamodel.ContinuousAggregate{}
-	}
-	if aggregate := objectlookup.Qualified(prior.ContinuousAggregates, name, semantics); aggregate != nil {
-		return *aggregate
-	}
-	return schemamodel.ContinuousAggregate{}
-}
 
 func reverseViewDiffs(
 	viewDiffs []difftypes.ViewDiff,

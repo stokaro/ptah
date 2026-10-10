@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -90,7 +91,7 @@ func TestExportsDoNotTurnCoordinationLimitsIntoAbsence(t *testing.T) {
 			c.Assert(files, qt.IsNil)
 			parsed, err := atlashcl.Parse(hcl.Data, "export.hcl")
 			c.Assert(err, qt.IsNil)
-			c.Assert(parsed.FeatureCoverage.Equal(db.FeatureCoverage), qt.IsTrue)
+			c.Assert(parsed.FeatureCoverage.Equal(withHCLTimescaleCoverage(c, db.FeatureCoverage)), qt.IsTrue)
 		})
 	}
 }
@@ -201,5 +202,16 @@ func TestExportsPreserveOrRefuseCompleteSubjectsInUnmanagedNamespaces(t *testing
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.Parse(result.Data, "export.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.FeatureCoverage.Equal(withNode.SelectKinds([]schemaext.Kind{ydbcoordination.Kind})), qt.IsTrue)
+	c.Assert(parsed.FeatureCoverage.Equal(withHCLTimescaleCoverage(c, withNode.SelectKinds([]schemaext.Kind{ydbcoordination.Kind}))), qt.IsTrue)
+}
+
+// withHCLTimescaleCoverage adds the claim every HCL document makes by its
+// format: it has a block for each TimescaleDB model, so a document without one
+// describes a database without one. The YDB account must survive beside it
+// unchanged.
+func withHCLTimescaleCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage {
+	c.Helper()
+	combined, err := known.Combine(must.Must(tsschema.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	return combined
 }

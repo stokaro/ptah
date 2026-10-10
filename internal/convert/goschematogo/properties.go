@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/internal/annotationmeta"
@@ -68,19 +69,61 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 			return nil, err
 		}
 	}
-	if slices.ContainsFunc(db.Tables, func(table schemamodel.Table) bool { return !table.Facets.IsZero() }) {
+	properties, annotated := setAsideAnnotatedFacets(db)
+	if slices.ContainsFunc(properties.Tables, func(table schemamodel.Table) bool { return !table.Facets.IsZero() }) {
 		var err error
-		db, err = schemaproperties.EncodeTables(requestContext, db, opts.Dialect, opts.Runtime)
+		properties, err = schemaproperties.EncodeTables(requestContext, properties, opts.Dialect, opts.Runtime)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if slices.ContainsFunc(db.Indexes, func(index schemamodel.Index) bool { return !index.Facets.IsZero() }) {
+	if slices.ContainsFunc(properties.Indexes, func(index schemamodel.Index) bool { return !index.Facets.IsZero() }) {
 		var err error
-		db, err = schemaproperties.EncodeIndexes(requestContext, db, opts.Dialect, opts.Runtime)
+		properties, err = schemaproperties.EncodeIndexes(requestContext, properties, opts.Dialect, opts.Runtime)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return db, nil
+	return restoreAnnotatedFacets(properties, annotated)
+}
+
+// setAsideAnnotatedFacets separates the table facets Go annotations write
+// themselves from those that become platform properties. Hypertable settings
+// have an annotation of their own, written beside the table, and no property
+// spelling. The returned schema is a copy; the input is not changed.
+func setAsideAnnotatedFacets(db *schemamodel.Database) (*schemamodel.Database, []schemaext.Facets) {
+	result := *db
+	result.Tables = slices.Clone(db.Tables)
+	annotated := make([]schemaext.Facets, len(result.Tables))
+	for i := range result.Tables {
+		facets := result.Tables[i].Facets
+		kept, setAside := facets, facets
+		for _, kind := range facets.DeclaredKinds() {
+			if isTimescaleFacet(kind) {
+				kept = kept.Without(kind)
+				continue
+			}
+			setAside = setAside.Without(kind)
+		}
+		result.Tables[i].Facets, annotated[i] = kept, setAside
+	}
+	return &result, annotated
+}
+
+// restoreAnnotatedFacets puts the set-aside facets back on their tables, which
+// the property encoder keeps in order.
+func restoreAnnotatedFacets(db *schemamodel.Database, annotated []schemaext.Facets) (*schemamodel.Database, error) {
+	if len(db.Tables) != len(annotated) {
+		return nil, fmt.Errorf("%w: table property encoder changed the table count", schemaext.ErrInvalidValue)
+	}
+	result := *db
+	result.Tables = slices.Clone(db.Tables)
+	for i := range result.Tables {
+		merged, err := result.Tables[i].Facets.Merge(annotated[i])
+		if err != nil {
+			return nil, err
+		}
+		result.Tables[i].Facets = merged
+	}
+	return &result, nil
 }

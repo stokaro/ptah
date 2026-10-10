@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -1400,25 +1401,22 @@ func triggerTransitionTablesFixture() schemamodel.Database {
 }
 
 func hypertableFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"},
+	hypertable := &tsschema.DesiredHypertable{Column: "at", ChunkInterval: "1 day", IfNotExists: true, Comment: "time series"}
+	db := oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(hypertable))},
 		schemamodel.Field{StructName: "T", FieldName: "At", Name: "at", Type: "TIMESTAMP", Nullable: true})
 	db.Extensions = []schemamodel.Extension{{Name: "timescaledb"}}
-	db.Hypertables = []schemamodel.Hypertable{{
-		StructName: "HY", Table: "t", Column: "at", ChunkInterval: "1 day",
-		IfNotExists: true, Comment: "time series",
-	}}
+	db.FeatureCoverage = must.Must(tsschema.CompleteCoverage(schemaext.Desired))
 	return db
 }
 
 func continuousAggregateFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"},
+	hypertable := &tsschema.DesiredHypertable{Column: "at"}
+	db := oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(hypertable))},
 		schemamodel.Field{StructName: "T", FieldName: "At", Name: "at", Type: "TIMESTAMP", Nullable: true})
 	db.Extensions = []schemamodel.Extension{{Name: "timescaledb"}}
-	db.Hypertables = []schemamodel.Hypertable{{StructName: "HY", Table: "t", Column: "at"}}
-	db.ContinuousAggregates = []schemamodel.ContinuousAggregate{{
-		StructName: "CA", Name: "t_hourly", Schema: "public",
-		Body: "SELECT id FROM t", MaterializedOnly: new(true), Comment: "hourly",
-	}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(tsschema.DesiredContinuousAggregateObject("public", "t_hourly",
+		tsschema.DesiredContinuousAggregate{StructName: "CA", Body: "SELECT id FROM t", MaterializedOnly: new(true), Comment: "hourly"})))
+	db.FeatureCoverage = must.Must(tsschema.CompleteCoverage(schemaext.Desired))
 	return db
 }
 

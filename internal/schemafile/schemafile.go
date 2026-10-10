@@ -130,6 +130,12 @@ type Options struct {
 	// it: a caller-supplied collector would make the gate run twice for a
 	// directory, once per entry and once for the whole.
 	collect *schemaBlockCollector
+
+	// deferTableSettings receives the table settings an HCL file declares in
+	// blocks of their own, so a schema directory attaches them once every file
+	// is merged: a `hypertable` block and its table may sit in different
+	// files. Unexported for the reason collect is.
+	deferTableSettings func(atlashcl.TableSetting)
 }
 
 // schemaBlockCollector accumulates the top-level `schema` blocks of one load.
@@ -327,11 +333,13 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //   - Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite
 //     virtual table is intent there and is not intent in HCL or YAML
 //     (stokaro/ptah#1028).
-//   - Only HCL and a Go schema express a SQL Server synonym, an extended
-//     property, or a TimescaleDB hypertable. YAML has no key for any of them,
-//     and the SQL parser's conversion produces none, so a `.sql` document
-//     naming CREATE SYNONYM still loads a database with none
-//     (stokaro/ptah#1031, stokaro/ptah#1026).
+//   - Only HCL and a Go schema express a SQL Server synonym or an extended
+//     property. YAML has no key for either, and the SQL parser's conversion
+//     produces none, so a `.sql` document naming CREATE SYNONYM still loads a
+//     database with none (stokaro/ptah#1031). The same two formats express a
+//     TimescaleDB hypertable and continuous aggregate; their owner enrolls
+//     that knowledge in those sources, and every other format leaves it
+//     undescribed (stokaro/ptah#1026).
 //   - The YAML surface has a top-level key for tables, enums, extensions,
 //     functions, views, matviews, triggers, roles, grants, default privileges
 //     and row-level security, and NONE for a sequence, a domain, a composite
@@ -387,8 +395,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	}
 	if extension != dirHCLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable,
-			coverage.ContinuousAggregate)...)
+			coverage.Synonym, coverage.ExtendedProperty)...)
 	}
 	// The YQL reader records unsupported families itself, including empty
 	// documents. Do not replace its evolving coverage with a format-wide
@@ -423,11 +430,9 @@ const dbmlExtension = ".dbml"
 func dbmlCannotExpress() []coverage.Kind {
 	return []coverage.Kind{
 		coverage.Composite,
-		coverage.ContinuousAggregate,
 		coverage.Domain,
 		coverage.ExtendedProperty,
 		coverage.Extension,
-		coverage.Hypertable,
 		coverage.Policy,
 		coverage.Range,
 		coverage.Role,
@@ -494,6 +499,7 @@ func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, erro
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
 			RecordIgnored:      ignoredNameReporter(opts.ReportIgnored),
 			RecordSchemaBlock:  opts.recordSchemaBlock(),
+			DeferTableSettings: opts.deferTableSettings,
 			Vars:               opts.Vars,
 			VarValues:          opts.VarValues,
 		})
@@ -576,6 +582,8 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	merged := &schemamodel.Database{}
 	document := sqlschema.NewDocument(merged)
 	ledger := newDirDeclarations()
+	var settings []atlashcl.TableSetting
+	opts.deferTableSettings = func(setting atlashcl.TableSetting) { settings = append(settings, setting) }
 	for _, name := range names {
 		db, statements, err := loadSchemaDirEntry(filepath.Join(dir, name), opts, document)
 		if err != nil {
@@ -587,6 +595,9 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 		if err := appendDatabase(merged, db); err != nil {
 			return nil, err
 		}
+	}
+	if err := atlashcl.AttachTableSettings(merged, settings); err != nil {
+		return nil, err
 	}
 	schemamodel.Finalize(merged)
 	return merged, nil
@@ -877,8 +888,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	// takes back an earlier file's GRANT, as it would in one file.
 	privilegefold.Merge(dst, src)
 	dst.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(dst.DefaultPrivileges, src.DefaultPrivileges)
-	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
-	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)

@@ -10,14 +10,22 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/internal/ydbextensions"
 )
 
-// cockroachDBRegistry is built once. A registry holds nothing a render changes,
-// and the renderer is built per statement, so building it per renderer built
-// the same handlers for every statement of a plan.
-var cockroachDBRegistry = sync.OnceValues(crdbrender.Registry)
+// The PostgreSQL-family registries are built once. A registry holds nothing a
+// render changes, and the renderer is built per statement, so building it per
+// renderer built the same handlers for every statement of a plan.
+var (
+	postgresFamilyRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
+		return renderer.NewExtensions(tsrender.Handlers()...)
+	})
+	cockroachDBRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
+		return renderer.NewExtensions(append(tsrender.Handlers(), crdbrender.Handlers()...)...)
+	})
+)
 
 // renderOwners is what a target's feature owners contribute to rendering it,
 // selected in [ownersFor], the one place at this composition boundary that
@@ -27,10 +35,15 @@ type renderOwners struct {
 	extensions func() (renderer.Extensions, error)
 	// tableStorage renders owned CREATE TABLE facets; nil means none.
 	tableStorage func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, error)
+	// lowerTableFacets turns the owned facets a CREATE TABLE cannot carry into
+	// the statements after it; nil means none.
+	lowerTableFacets func(table string, facets schemaext.Facets) ([]ast.ExtensionPayload, schemaext.Facets, error)
 }
 
 // ownersFor selects a target's feature owners. Neutral contracts and
-// non-owning backends know no payload types.
+// non-owning backends know no payload types. TimescaleDB is an owner on every
+// PostgreSQL-family target, and its renderer refuses or skips what a target
+// without the extension cannot hold; row-level TTL is CockroachDB's alone.
 func ownersFor(dialect string) renderOwners {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.YDB:
@@ -38,7 +51,10 @@ func ownersFor(dialect string) renderOwners {
 	case platform.ClickHouse:
 		return renderOwners{extensions: chrender.Registry}
 	case platform.CockroachDB:
-		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause}
+		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause,
+			lowerTableFacets: tsrender.LowerTableFacets}
+	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
+		return renderOwners{extensions: postgresFamilyRegistry, lowerTableFacets: tsrender.LowerTableFacets}
 	default:
 		return renderOwners{}
 	}
@@ -60,7 +76,8 @@ func postgresOwners(dialect string) (postgres.Owners, error) {
 	if err != nil {
 		return postgres.Owners{}, err
 	}
-	return postgres.Owners{Extensions: registry, TableStorage: ownersFor(dialect).tableStorage}, nil
+	owners := ownersFor(dialect)
+	return postgres.Owners{Extensions: registry, TableStorage: owners.tableStorage, LowerTableFacets: owners.lowerTableFacets}, nil
 }
 
 func prepareExtensionStatement(dialect string, caps capability.Capabilities, node *ast.ExtensionStatement) (ast.Node, error) {

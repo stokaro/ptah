@@ -14,8 +14,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
@@ -74,11 +77,9 @@ func TestTimescaleHypertableRoundTripE2E(t *testing.T) {
 	//    answer: pg_class reports relkind 'r' for a hypertable.
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	c.Assert(describedHypertableNames(live), qt.Contains, table)
-	c.Assert(readHypertable(c, live, table), qt.DeepEquals, catalog.Hypertable{
-		Schema: schemaName, Name: table,
-		PrimaryDimension: "time", PrimaryDimensionType: "timestamp with time zone",
-		ChunkInterval: "1 day", Dimensions: 1,
+	c.Assert(describedHypertableNames(c, live), qt.Contains, table)
+	c.Assert(readHypertable(c, live, table), qt.DeepEquals, &tsschema.ObservedHypertable{
+		Column: "time", ColumnType: "timestamp with time zone", ChunkInterval: "1 day", Dimensions: 1,
 	})
 
 	// 3. The same declaration now plans nothing, which is the property an apply
@@ -86,12 +87,13 @@ func TestTimescaleHypertableRoundTripE2E(t *testing.T) {
 	c.Assert(planTimescale(c, conn, declared, schemaName), qt.HasLen, 0)
 }
 
-// TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E pins the two
-// divergences TimescaleDB has no statement for.
+// TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E pins the
+// divergences TimescaleDB has no statement for, or that Ptah does not plan.
 //
 // Measured on 2.29.2: `drop_hypertable` answers `function drop_hypertable
 // (unknown) does not exist`, and there is no call that repartitions an existing
-// hypertable either. Planning nothing for those would be worse than refusing —
+// hypertable either. A changed chunk interval is refused as well: Ptah does not
+// plan a change to an existing hypertable's partitioning. Planning nothing for those would be worse than refusing —
 // the table stays partitioned, the description says otherwise, and an operator
 // reading "no changes" believes the two agree.
 func TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E(t *testing.T) {
@@ -124,17 +126,24 @@ func TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E(t *testing.T) {
 			name: "the declaration stops naming it",
 			declare: func() *schemamodel.Database {
 				schema := hypertableSchema(schemaName, table, "time", "")
-				schema.Hypertables = nil
+				schema.Tables[0].Facets = schemaext.Facets{}
 				return schema
 			},
-			want: "TimescaleDB has no statement that turns a hypertable back into an ordinary table",
+			want: `(?s).*is a hypertable and the desired schema does not declare one; TimescaleDB has no statement that turns a hypertable back into an ordinary table.*`,
+		},
+		{
+			name: "the declaration changes the interval",
+			declare: func() *schemamodel.Database {
+				return hypertableSchema(schemaName, table, "time", "1 day")
+			},
+			want: `(?s).*has chunk interval "7 days" and the desired schema declares "1 day".*`,
 		},
 		{
 			name: "the declaration moves the dimension",
 			declare: func() *schemamodel.Database {
 				return hypertableSchema(schemaName, table, "device", "")
 			},
-			want: "TimescaleDB has no statement that repartitions an existing hypertable",
+			want: `(?s).*is partitioned on "time" and the desired schema declares "device"; TimescaleDB has no statement that repartitions an existing hypertable.*`,
 		},
 	}
 
@@ -142,17 +151,18 @@ func TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := planTimescaleReportingError(c, conn, test.declare(), schemaName)
+			statements, err := planTimescaleReportingError(c, conn, test.declare(), schemaName)
 
-			c.Assert(err, qt.IsNotNil)
-			c.Assert(err.Error(), qt.Contains, test.want)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(statements, qt.IsNil)
 		})
 	}
 }
 
 // hypertableSchema declares one table and asks for it to be partitioned.
 func hypertableSchema(schemaName, table, column, interval string) *schemamodel.Database {
-	return &schemamodel.Database{
+	schema := &schemamodel.Database{
 		Schemas: []schemamodel.Schema{{Name: schemaName}},
 		Tables:  []schemamodel.Table{{StructName: "T", Name: table, Schema: schemaName}},
 		Fields: []schemamodel.Field{
@@ -160,12 +170,11 @@ func hypertableSchema(schemaName, table, column, interval string) *schemamodel.D
 			{StructName: "T", Name: "device", Type: "INTEGER"},
 			{StructName: "T", Name: "value", Type: "INTEGER"},
 		},
-		Extensions: []schemamodel.Extension{{Name: "timescaledb", IfNotExists: true}},
-		Hypertables: []schemamodel.Hypertable{{
-			StructName: "T", Table: schemaName + "." + table, Column: column,
-			ChunkInterval: interval, IfNotExists: true,
-		}},
+		Extensions:      []schemamodel.Extension{{Name: "timescaledb", IfNotExists: true}},
+		FeatureCoverage: must.Must(tsschema.CompleteCoverage(schemaext.Desired)),
 	}
+	schema.Tables[0].Facets = must.Must(schemaext.NewFacets(&tsschema.DesiredHypertable{Column: column, ChunkInterval: interval, IfNotExists: true}))
+	return schema
 }
 
 // readHypertable picks the one row this test is about, so the assertion is a
@@ -174,15 +183,19 @@ func readHypertable(
 	c *qt.C,
 	schema *catalog.Database,
 	table string,
-) catalog.Hypertable {
+) *tsschema.ObservedHypertable {
 	c.Helper()
-	for _, hypertable := range schema.Hypertables {
-		if hypertable.Name == table {
-			return hypertable
+	for _, described := range schema.Tables {
+		if described.Name != table {
+			continue
 		}
+		hypertable, found, err := schemaext.FacetAs[*tsschema.ObservedHypertable](described.Facets, tsschema.HypertableKind)
+		c.Assert(err, qt.IsNil)
+		c.Assert(found, qt.IsTrue, qt.Commentf("the read carries no hypertable settings on %s", table))
+		return hypertable
 	}
-	c.Fatalf("the read carries no hypertable named %s", table)
-	return catalog.Hypertable{}
+	c.Fatalf("the read carries no table named %s", table)
+	return nil
 }
 
 // dropTimescaleSchema removes the schema a test worked in, and everything it
