@@ -53,10 +53,12 @@ func MeasurePlan(ctx context.Context, runtime engine.SchemaRuntime) ([]Observati
 // planSurface answers with the shipping plan path. Each cell gets its own copy
 // of the schema, because comparison is not promised to leave its input alone.
 func planSurface(ctx context.Context, runtime engine.SchemaRuntime) surface {
-	return func(schema schemamodel.Database) func(capabilityprobe.Cell) (string, error) {
-		return func(cell capabilityprobe.Cell) (string, error) {
+	return func(schema schemamodel.Database) (func(capabilityprobe.Cell) (string, error), func() error) {
+		answer := func(cell capabilityprobe.Cell) (string, error) {
 			return planOne(ctx, runtime, schema, cell)
 		}
+		// Each cell plans its own copy, so there is nothing shared to verify.
+		return answer, func() error { return nil }
 	}
 }
 

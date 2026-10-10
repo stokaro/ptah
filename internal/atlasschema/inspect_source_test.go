@@ -103,10 +103,10 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 
 	// The deadline has to outlast everything the inspection does before it
 	// asks for the lock: loading the schema file and opening the dev
-	// database. With 100 ms, a race-instrumented run on a busy runner spent
-	// the budget there and failed with a bare deadline error that never
-	// reached the lock. The lock is held throughout, so the call still ends
-	// in the lock wait, only later.
+	// database. A race-instrumented run on a busy runner can spend a short
+	// budget there and fail with a bare deadline error that never reaches the
+	// lock. The lock is held throughout, so the call still ends in the lock
+	// wait.
 	blockedCtx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	renderedResult, err := atlasschema.InspectSource(blockedCtx, atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),

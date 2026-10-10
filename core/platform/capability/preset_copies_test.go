@@ -41,8 +41,9 @@ func TestPresets_EveryCallReturnsAnIndependentCopy(t *testing.T) {
 	}
 }
 
-// Concurrent first use builds the set once and hands each caller its own copy;
-// the race detector reports a set two callers share.
+// Concurrent callers each get their own copy; the race detector reports a set
+// two callers share. Presets are process-wide, so this cannot force the first
+// build to be concurrent; sync.OnceValue owns that guarantee.
 func TestPresets_ConcurrentCallsGetTheirOwnSet(t *testing.T) {
 	c := qt.New(t)
 	want := capability.YDB252()

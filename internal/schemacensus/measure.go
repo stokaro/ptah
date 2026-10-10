@@ -2,7 +2,9 @@ package schemacensus
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -60,25 +62,26 @@ func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation
 	return measured, nil
 }
 
-// surface is one way to answer for a schema: it prepares the schema once, and
-// the function it returns answers for one declared release line at a time.
-// Preparation that does not depend on the cell is done once rather than once
-// per cell, which is most of a fixture's cost on a matrix of many cells.
-type surface func(schemamodel.Database) func(capabilityprobe.Cell) (string, error)
+// surface is one way to answer for a schema. The answer function it returns
+// answers for one declared release line at a time, and done reports anything
+// the answers broke, once every cell has been asked. A surface may prepare the
+// schema once rather than once per cell, which is most of a fixture's cost on a
+// matrix of many cells.
+type surface func(schemamodel.Database) (answer func(capabilityprobe.Cell) (string, error), done func() error)
 
-// renderSurface answers with the shipping render. The schema is copied and
-// finalized once and rendered on every cell: rendering reads a schema and
-// never changes it, which is the [renderer.SchemaService] contract.
+// renderSurface answers with the shipping render, from one finalized copy of
+// the schema rendered on every cell; see [finalizedRender].
 func renderSurface(ctx context.Context, service renderer.SchemaService) surface {
-	return func(schema schemamodel.Database) func(capabilityprobe.Cell) (string, error) {
-		finalized := finalizedCopy(schema)
-		return func(cell capabilityprobe.Cell) (string, error) {
-			statements, err := renderFinalized(ctx, service, &finalized, cell)
+	return func(schema schemamodel.Database) (func(capabilityprobe.Cell) (string, error), func() error) {
+		render := newFinalizedRender(ctx, service, schema)
+		answer := func(cell capabilityprobe.Cell) (string, error) {
+			statements, err := render.statements(cell)
 			if err != nil {
 				return measuredRefusal(err)
 			}
 			return strings.Join(statements, "\n"), nil
 		}
+		return answer, render.verify
 	}
 }
 
@@ -164,7 +167,7 @@ func everyCell(
 	cells []capabilityprobe.Cell,
 ) (map[string]string, error) {
 	answers := make(map[string]string, len(cells))
-	answerFor := surface(schema)
+	answerFor, done := surface(schema)
 	for _, cell := range cells {
 		answer, err := answerFor(cell)
 		if err != nil {
@@ -172,23 +175,39 @@ func everyCell(
 		}
 		answers[CellName(cell)] = answer
 	}
+	if err := done(); err != nil {
+		return nil, err
+	}
 	return answers, nil
 }
 
-// RenderStatements is the shipping render for one cell, answering with the
-// statements rather than with their text.
-//
-// Exported because the emission guard reasons about statements and the
-// observability census reasons about bytes, and they have to be the same
-// render: two call sites building their own would let the guard measure a
-// schema the census never renders.
-func RenderStatements(
-	ctx context.Context,
-	service renderer.SchemaService,
-	schema schemamodel.Database, cell capabilityprobe.Cell,
-) ([]string, error) {
-	finalized := finalizedCopy(schema)
-	return renderFinalized(ctx, service, &finalized, cell)
+// finalizedRender renders one schema on many cells from a single finalized
+// copy. Rendering reads a schema and never changes it, which is the
+// [renderer.SchemaService] contract, so one copy serves every cell; verify
+// fails the measurement when a render broke that contract, because every later
+// cell would then measure a schema the fixture never declared.
+type finalizedRender struct {
+	ctx       context.Context
+	service   renderer.SchemaService
+	schema    schemamodel.Database
+	finalized schemamodel.Database
+}
+
+func newFinalizedRender(ctx context.Context, service renderer.SchemaService, schema schemamodel.Database) *finalizedRender {
+	return &finalizedRender{ctx: ctx, service: service, schema: schema, finalized: finalizedCopy(schema)}
+}
+
+// statements is the shipping render for one cell.
+func (r *finalizedRender) statements(cell capabilityprobe.Cell) ([]string, error) {
+	return renderFinalized(r.ctx, r.service, &r.finalized, cell)
+}
+
+// verify reports a render that changed the shared finalized copy.
+func (r *finalizedRender) verify() error {
+	if !reflect.DeepEqual(r.finalized, finalizedCopy(r.schema)) {
+		return errors.New("rendering changed the schema it was given; the census renders one copy on every cell")
+	}
+	return nil
 }
 
 // finalizedCopy is the schema a render reads: a copy, so the fixture is left

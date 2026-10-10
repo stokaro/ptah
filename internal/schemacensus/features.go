@@ -49,9 +49,6 @@ func immutableFeatures(t reflect.Type) bool {
 	return t == objectsType || t == facetsType || t == coverageType
 }
 
-// visitFeatures traverses cloned public values, then captures the changed
-// collection when the caller is ablating. It never reaches private maps or
-// mutates an interface-owned payload in its source container.
 // The feature container types visitFeatures recognizes, resolved once: the
 // walk asks for them at every value it visits.
 var (
@@ -60,6 +57,9 @@ var (
 	coverageType = reflect.TypeFor[schemaext.Coverage]()
 )
 
+// visitFeatures traverses cloned public values, then captures the changed
+// collection when the caller is ablating. It never reaches private maps or
+// mutates an interface-owned payload in its source container.
 func visitFeatures(value reflect.Value, walk func(reflect.Value)) bool {
 	switch value.Type() {
 	case objectsType:
