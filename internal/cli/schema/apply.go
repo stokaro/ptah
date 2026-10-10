@@ -443,7 +443,7 @@ func applySchema(
 	var desired *schemamodel.Database
 	loadOptions := schemaload.Options{
 		RootDirs:        opts.rootDirs,
-		Annotations:     opts.runtime.Annotations(),
+		Owners:          opts.runtime,
 		SchemaFiles:     opts.schemaFiles,
 		ProjectEnv:      schemaSourceEnv,
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),

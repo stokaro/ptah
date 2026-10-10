@@ -19,7 +19,7 @@ func TestRun_TimeoutKillsDescendantProcess(t *testing.T) {
 	startedFile := filepath.Join(t.TempDir(), "started")
 	survivorFile := filepath.Join(t.TempDir(), "survived")
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env: append(
 			helperEnv("orphan"),
@@ -40,7 +40,7 @@ func TestRun_SuccessfulCommandKillsDetachedDescendant(t *testing.T) {
 	startedFile := filepath.Join(t.TempDir(), "started")
 	survivorFile := filepath.Join(t.TempDir(), "survived")
 
-	db, err := schemasource.Run(context.Background(), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env: append(
 			helperEnv("orphan-detached-sql"),

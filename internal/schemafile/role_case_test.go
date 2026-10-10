@@ -8,10 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/schemafile"
 )
 
@@ -38,7 +39,7 @@ CREATE POLICY p ON docs TO %[1]s, CURRENT_USER USING (true);
 func loadRoleCaseSchema(c *qt.C, dialect, body string) *schemamodel.Database {
 	c.Helper()
 	path := writeSchemaFile(c, c.TempDir(), "schema.sql", body)
-	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: dialect})
+	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: dialect})
 	c.Assert(err, qt.IsNil)
 	return db
 }

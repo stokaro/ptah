@@ -116,13 +116,13 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	owners, err := builtin.Annotations()
+	owners, err := builtin.Bundled()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	db, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:        opts.rootDirs,
-		Annotations:     owners,
+		Owners:          owners,
 		SchemaFiles:     opts.schemaFiles,
 		ProjectEnv:      schemaSourceEnv,
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),

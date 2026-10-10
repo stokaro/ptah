@@ -22,7 +22,7 @@ func TestParse_DefaultPrivilegeRevoked_HappyPath(t *testing.T) {
     revoked: [insert, update]
 `
 
-	db, err := yamlschema.Parse([]byte(document))
+	db, err := yamlschema.Parse(noOwners, []byte(document))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.DefaultPrivileges, qt.HasLen, 1)
@@ -51,7 +51,7 @@ func TestParse_DefaultPrivilegeRevoked_FailurePath(t *testing.T) {
 			document := "default_privileges:\n  reader_tables:\n    for_role: app_owner\n    schema: app\n" +
 				"    object_type: TABLES\n    grantee: app_reader\n" + test.extra
 
-			db, err := yamlschema.Parse([]byte(document))
+			db, err := yamlschema.Parse(noOwners, []byte(document))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

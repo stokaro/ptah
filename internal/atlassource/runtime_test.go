@@ -9,12 +9,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/engine"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
 )
 
-func sourceRuntime(c *qt.C) goschematodb.Runtime {
+func sourceRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
 	return builtintest.Runtime()
 }

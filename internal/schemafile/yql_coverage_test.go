@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -31,7 +32,7 @@ func TestYQLSupportedFamilyCoverageSurvivesFileLoading(t *testing.T) {
 			c := qt.New(t)
 			path := filepath.Join(c.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id));"), 0o600), qt.IsNil)
-			database, err := load.read(path, schemafile.Options{Dialect: "ydb"})
+			database, err := load.read(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			for _, kind := range []coverage.Kind{coverage.Role, coverage.Grant, coverage.Changefeed, coverage.ColumnTable, coverage.View} {
 				c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
@@ -60,7 +61,7 @@ func TestYQLWorkloadHeaderLimitsSurviveFileLoading(t *testing.T) {
 -- ptah:not-described resource_pool_classifier
 CREATE RESOURCE POOL other WITH (CONCURRENT_QUERY_LIMIT = 0);
 `), 0o600), qt.IsNil)
-			db, err := load.read(path, schemafile.Options{Dialect: "ydb"})
+			db, err := load.read(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.FeatureObjects.Len(), qt.Equals, 1)
 			c.Assert(db.FeatureCoverage.Lookup(ydbworkload.PoolKind, ydbworkload.PoolRef("batch.jobs")).State, qt.Equals, schemaext.Uninspected)
@@ -75,7 +76,7 @@ func TestYQLPrincipalChangesAcrossFiles(t *testing.T) {
 	directory := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(directory, "01.sql"), []byte("CREATE USER app; CREATE GROUP readers;"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(directory, "02.sql"), []byte("ALTER USER app NOLOGIN; ALTER GROUP readers ADD USER app;"), 0o600), qt.IsNil)
-	database, err := schemafile.LoadPath(directory, schemafile.Options{Dialect: "ydb"})
+	database, err := schemafile.LoadPath(directory, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Roles, qt.HasLen, 2)
 	c.Assert(database.Roles[0].Name, qt.Equals, "app")
@@ -89,7 +90,7 @@ func TestYQLPrivilegeChangesAcrossFiles(t *testing.T) {
 	directory := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(directory, "01.sql"), []byte("CREATE TABLE `shop/orders` (id Uint64 NOT NULL, PRIMARY KEY(id)); GRANT SELECT ON `/local/shop/orders` TO readers WITH GRANT OPTION;"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(directory, "02.sql"), []byte("REVOKE GRANT OPTION FOR SELECT ON `shop/orders` FROM readers; GRANT LIST ON shop TO readers;"), 0o600), qt.IsNil)
-	database, err := schemafile.LoadPath(directory, schemafile.Options{Dialect: "ydb", DatabaseURL: "ydb://example/local?dev_realm=isolated"})
+	database, err := schemafile.LoadPath(directory, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb", DatabaseURL: "ydb://example/local?dev_realm=isolated"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Grants, qt.DeepEquals, []schemamodel.Grant{{Role: "readers", OnSchema: "shop", Privileges: []string{"YDB.GENERIC.LIST"}}})
 	c.Assert(database.RevokedGrants, qt.DeepEquals, []schemamodel.Grant{
@@ -141,5 +142,5 @@ func readYQLPermissionFile(c *qt.C, databaseURL, target string) (*schemamodel.Da
 	file := filepath.Join(c.TempDir(), "schema.sql")
 	source := "CREATE TABLE `shop/orders` (id Uint64 NOT NULL, PRIMARY KEY(id)); GRANT SELECT ON `" + target + "` TO readers;"
 	c.Assert(os.WriteFile(file, []byte(source), 0o600), qt.IsNil)
-	return schemafile.LoadPath(file, schemafile.Options{Dialect: "ydb", DatabaseURL: databaseURL})
+	return schemafile.LoadPath(file, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb", DatabaseURL: databaseURL})
 }

@@ -23,22 +23,22 @@ func TestResolveBeforeConnect_LeavesWhatNeedsADialect(t *testing.T) {
 		opts schemaload.Options
 	}{
 		{name: "no source at all", opts: schemaload.Options{}},
-		{name: "a Go root", opts: schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{"./entities"}}},
-		{name: "a schema file", opts: schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"schema.sql"}}},
+		{name: "a Go root", opts: schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{"./entities"}}},
+		{name: "a schema file", opts: schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{"schema.sql"}}},
 		{
 			name: "a command",
-			opts: schemaload.Options{Annotations: builtintest.Annotations(), Commands: []schemasource.Command{{Args: []string{"cat", "schema.sql"}}}},
+			opts: schemaload.Options{Owners: builtintest.Runtime(), Commands: []schemasource.Command{{Args: []string{"cat", "schema.sql"}}}},
 		},
 		{
 			// Two sources merge into one composite schema, and merging is read
 			// against the dialect like any other source.
 			name: "an artifact beside a file",
-			opts: schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"oci://example.test/schema:v1", "extra.sql"}},
+			opts: schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{"oci://example.test/schema:v1", "extra.sql"}},
 		},
 		{
 			name: "an artifact beside a Go root",
 			opts: schemaload.Options{
-				Annotations: builtintest.Annotations(),
+				Owners:      builtintest.Runtime(),
 				RootDirs:    []string{"./entities"},
 				SchemaFiles: []string{"oci://example.test/schema:v1"},
 			},

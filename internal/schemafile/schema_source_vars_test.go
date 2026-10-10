@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -56,7 +57,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 			sources: func(dir string) []schemafile.Source {
 				return []schemafile.Source{{URL: filepath.Join(dir, "tenant.hcl")}}
 			},
-			opts:         schemafile.Options{Vars: []string{"tenant=acme"}},
+			opts:         schemafile.Options{YAML: builtintest.Runtime().YAML(), Vars: []string{"tenant=acme"}},
 			wantDefaults: map[string]string{"tenant": "acme"},
 		},
 		{
@@ -73,7 +74,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 					{URL: filepath.Join(dir, "region.hcl")},
 				}
 			},
-			opts:         schemafile.Options{Vars: []string{"region=global"}},
+			opts:         schemafile.Options{YAML: builtintest.Runtime().YAML(), Vars: []string{"region=global"}},
 			wantDefaults: map[string]string{"tenant": "scoped", "region": "global"},
 		},
 		{
@@ -133,7 +134,7 @@ func TestLoadSourcesRefusesValuesFromOutsideTheScope(t *testing.T) {
 					VarsScoped: true,
 				}}
 			},
-			opts:    schemafile.Options{Vars: []string{"tenant=acme"}},
+			opts:    schemafile.Options{YAML: builtintest.Runtime().YAML(), Vars: []string{"tenant=acme"}},
 			wantErr: `.*missing value for required variable "tenant".*`,
 		},
 		{

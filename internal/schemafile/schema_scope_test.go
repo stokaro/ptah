@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -81,14 +82,14 @@ func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 		{
 			name:  "two schemas under a limited run refuse and name both blocks",
 			files: map[string]string{"schema.hcl": twoSchemasHCL},
-			opts:  schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			opts:  schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
 			wantErr: `cannot use HCL with more than 1 schema when dev-url is limited to schema "main": ` +
 				`2 top-level schema blocks are declared: "main" at .*schema\.hcl:1, "other" at .*schema\.hcl:2`,
 		},
 		{
 			name:  "the same schema declared twice is two blocks and refuses",
 			files: map[string]string{"schema.hcl": sameSchemaTwiceHCL},
-			opts:  schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			opts:  schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
 			wantErr: `cannot use HCL with more than 1 schema when dev-url is limited to schema "main": ` +
 				`2 top-level schema blocks are declared: "main" at .*, "main" at .*`,
 		},
@@ -98,14 +99,14 @@ func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 				"a.hcl": oneSchemaHCL,
 				"b.hcl": postsHCL,
 			},
-			opts: schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			opts: schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
 			wantErr: `cannot use HCL with more than 1 schema when dev-url is limited to schema "main": ` +
 				`2 top-level schema blocks are declared: "main" at .*a\.hcl:1, "main" at .*b\.hcl:1`,
 		},
 		{
 			name:    "the flag the run was limited by is the one quoted",
 			files:   map[string]string{"schema.hcl": twoSchemasHCL},
-			opts:    schemafile.Options{Dialect: "sqlite", SchemaScope: "public", SchemaScopeFlag: "url"},
+			opts:    schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "public", SchemaScopeFlag: "url"},
 			wantErr: `cannot use HCL with more than 1 schema when url is limited to schema "public": .*`,
 		},
 	}
@@ -144,21 +145,21 @@ func TestLoadAcceptsADocumentTheRunCanReach(t *testing.T) {
 		{
 			name:        "two schemas on a realm-scoped run load both",
 			files:       map[string]string{"schema.hcl": twoSchemasHCL},
-			opts:        schemafile.Options{Dialect: "sqlite"},
+			opts:        schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"},
 			wantSchemas: []string{"main", "other"},
 			wantTables:  []string{"users"},
 		},
 		{
 			name:        "one schema under a limited run loads",
 			files:       map[string]string{"schema.hcl": oneSchemaHCL},
-			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			opts:        schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
 			wantSchemas: []string{"main"},
 			wantTables:  []string{"users"},
 		},
 		{
 			name:        "a document with no schema block at all loads under a limited run",
 			files:       map[string]string{"schema.hcl": postsHCL[len("schema \"main\" {}\n"):]},
-			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			opts:        schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
 			wantSchemas: make([]string, 0),
 			wantTables:  []string{"posts"},
 		},
@@ -168,7 +169,7 @@ func TestLoadAcceptsADocumentTheRunCanReach(t *testing.T) {
 				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"2_b.sql": "CREATE TABLE posts (id INTEGER PRIMARY KEY);\n",
 			},
-			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			opts:        schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
 			wantSchemas: make([]string, 0),
 			// Sorted rather than in file order: the SQL path finishes through
 			// schemamodel.Finalize, which orders tables by their dependencies.
@@ -200,7 +201,7 @@ func TestLoadAllCountsSchemaBlocksAcrossEveryURL(t *testing.T) {
 	c := qt.New(t)
 	dir := writeSchemaDir(c, map[string]string{"a.hcl": oneSchemaHCL, "b.hcl": postsHCL})
 
-	limited := schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"}
+	limited := schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"}
 	_, err := schemafile.LoadAll([]string{dir + "/a.hcl", dir + "/b.hcl"}, limited)
 	c.Assert(err, qt.ErrorMatches,
 		`cannot use HCL with more than 1 schema when dev-url is limited to schema "main": `+

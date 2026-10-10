@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -121,7 +122,7 @@ func TestPostgresLiveRefusedStringConstantSpellings(t *testing.T) {
 				[]schemafile.Source{{URL: writeFormsDocument(c, schemaName, map[string]string{
 					"schema.sql": fmt.Sprintf(stringConstantFormsDocument, "%[1]s", test.spelling),
 				})}},
-				schemafile.Options{Dialect: platform.Postgres},
+				schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres},
 			)
 
 			c.Assert(err, qt.IsNotNil)

@@ -137,7 +137,7 @@ func workspaceAt(c *qt.C, root string) workspaceFixture {
 		}},
 	})
 	c.Assert(err, qt.IsNil)
-	gates, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: platform.Postgres})
+	gates, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Workspace:   workspace,

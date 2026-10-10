@@ -51,7 +51,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(rowSecurityDocument(test.dialects))
+			db, err := yamlschema.Parse(noOwners, rowSecurityDocument(test.dialects))
 
 			c.Assert(err, qt.IsNil)
 			objects := must.Must(db.FeatureObjects.All())
@@ -68,7 +68,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 func TestParse_RowSecurityScopeSelectsTheModel_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(rowSecurityDocument("dialects: [postgres, mssql]"))
+	db, err := yamlschema.Parse(noOwners, rowSecurityDocument("dialects: [postgres, mssql]"))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*rls_enabled_tables\.docs: .*mixes PostgreSQL-family targets with others.*`)

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/yamlext"
 	"ptah.run/engine"
 )
 
@@ -74,6 +75,52 @@ func TestAnnotations_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			runtime, err := engine.New(test.providers...)
+
+			c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(runtime, qt.IsNil)
+		})
+	}
+}
+
+func yamlProvider(owner string, kinds []schemaext.Kind) engine.Provider {
+	return engine.Provider{ID: "example.org/converter", Targets: []engine.Target{{Name: "custom"}},
+		Codecs: []schemaext.Codec{conversionCodec(conversionFirst, schemaext.Desired), conversionCodec(conversionFirst, schemaext.Observed)},
+		YAML: []yamlext.Extension{{Owner: owner, Kinds: kinds,
+			Coverage: func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil }}},
+	}
+}
+
+func TestYAML_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	runtime, err := engine.New(yamlProvider("example.org/converter", []schemaext.Kind{conversionFirst}))
+	c.Assert(err, qt.IsNil)
+	empty, err := engine.New()
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(runtime.YAML().Selected(), qt.IsTrue)
+	c.Assert(runtime.YAML().Kinds(), qt.DeepEquals, []schemaext.Kind{conversionFirst})
+	c.Assert(empty.YAML().Selected(), qt.IsTrue)
+	c.Assert(empty.YAML().Kinds(), qt.HasLen, 0)
+}
+
+func TestYAML_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider engine.Provider
+		wantErr  string
+	}{
+		{name: "a claim another provider owns", provider: yamlProvider("example.org/other", []schemaext.Kind{conversionFirst}),
+			wantErr: `.*provider "example.org/converter" registers YAML claims owned by "example.org/other"`},
+		{name: "a model whose desired codec the provider does not own", provider: yamlProvider("example.org/converter", []schemaext.Kind{conversionSecond}),
+			wantErr: `.*provider "example.org/converter" claims model "example.org/second" for YAML without owning its desired codec`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			runtime, err := engine.New(test.provider)
 
 			c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)

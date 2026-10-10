@@ -69,7 +69,7 @@ Renderer assembly lives in `engine/builtin`, above the neutral contracts in
 `core/renderer`. It consumes `internal/modelast` for AST lowering.
 `core/annotation`, `core/featureplan`, `core/objectidentity`, `core/plangraph`, `core/renderer`, `core/schemacapture`,
 `core/schemaext`, `core/schemamodel`, `core/schemaprojection`,
-`core/schemavalidation`, and `engine` are the roots of the
+`core/schemavalidation`, `core/yamlext`, and `engine` are the roots of the
 provider-contract isolation check. The check follows their complete import
 graph and refuses a missing root. Its mutation test verifies that an indirect
 import through a helper is still refused. Managed-data YAML parsing lives in

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/processcapture"
@@ -56,7 +57,17 @@ type Command struct {
 	Env []string
 }
 
+// Owners selects the feature owners whose models a program's output may
+// declare, for the output formats that have owners. *ptah.run/engine.Runtime
+// implements it.
+type Owners interface {
+	yamlext.Runtime
+}
+
 // Run executes cmd and parses its standard output into a desired schema.
+// owners selects the feature owners the parse reads, as
+// ptah.run/core/yamlschema.Parse does; a nil owners is refused before the
+// program starts.
 //
 // Execution is bounded by the resolved timeout, and when Run returns — on
 // success, failure, cancellation, or timeout — descendant processes the
@@ -74,9 +85,12 @@ type Command struct {
 // can quote program output) are redacted against the secret values visible in
 // the process environment and argv, and terminal control sequences in them
 // are escaped, so the error can be shown to an operator or written to a log.
-func Run(ctx context.Context, cmd Command) (*schemamodel.Database, error) {
+func Run(ctx context.Context, owners Owners, cmd Command) (*schemamodel.Database, error) {
 	if len(cmd.Args) == 0 || strings.TrimSpace(cmd.Args[0]) == "" {
 		return nil, errors.New("schema command is empty")
+	}
+	if owners == nil {
+		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
 
 	format := strings.ToLower(strings.TrimSpace(cmd.Format))
@@ -111,7 +125,7 @@ func Run(ctx context.Context, cmd Command) (*schemamodel.Database, error) {
 		return nil, fmt.Errorf("schema command %q produced empty output", cmd.Args[0])
 	}
 
-	db, err := parseOutput(stdout, format, cmd.Dialect)
+	db, err := parseOutput(owners, stdout, format, cmd.Dialect)
 	if err != nil {
 		safeErr := secretdisplay.SanitizeError(
 			err,
@@ -123,14 +137,14 @@ func Run(ctx context.Context, cmd Command) (*schemamodel.Database, error) {
 	return db, nil
 }
 
-func parseOutput(data []byte, format, dialect string) (*schemamodel.Database, error) {
+func parseOutput(owners Owners, data []byte, format, dialect string) (*schemamodel.Database, error) {
 	switch format {
 	case "sql":
 		return parseSQL(data, dialect)
 	case "hcl":
 		return atlashcl.Parse(data, "schema-command.hcl")
 	case "yaml", "yml":
-		return yamlschema.Parse(data)
+		return yamlschema.Parse(owners.YAML(), data)
 	default:
 		return nil, fmt.Errorf(
 			"unsupported schema command format %q: expected sql, hcl, or yaml",

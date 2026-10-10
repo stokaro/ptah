@@ -9,6 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -23,7 +25,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -325,7 +326,7 @@ func loadYAMLDocument(c *qt.C) *schemamodel.Database {
 		"        type: INTEGER\n" +
 		"        primary: true\n"
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
-	parsed, err := schemafile.Load(path, schemafile.Options{Dialect: platform.Postgres})
+	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return parsed
 }
@@ -534,7 +535,7 @@ func loadPostgresDocument(c *qt.C, document []byte) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TB.(*testing.T).TempDir(), "sweep.hcl")
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
-	parsed, err := schemafile.Load(path, schemafile.Options{Dialect: platform.Postgres})
+	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return parsed
 }

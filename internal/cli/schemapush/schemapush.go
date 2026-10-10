@@ -71,13 +71,13 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
-	annotations, err := builtin.Annotations()
+	owners, err := builtin.Bundled()
 	if err != nil {
 		return err
 	}
 	db, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    opts.rootDirs,
-		Annotations: annotations,
+		Owners:      owners,
 		SchemaFiles: opts.schemaFiles,
 		Dialect:     opts.dialect,
 		PlainHTTP:   opts.plainHTTP,

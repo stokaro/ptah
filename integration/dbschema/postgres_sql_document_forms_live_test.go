@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 )
@@ -66,7 +67,7 @@ func planFormsDocument(
 	c.Helper()
 	declared, err := schemafile.LoadSources(
 		[]schemafile.Source{{URL: writeFormsDocument(c, schemaName, files)}},
-		schemafile.Options{Dialect: platform.Postgres},
+		schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres},
 	)
 	c.Assert(err, qt.IsNil)
 	return planDocumentAgainstLive(c, conn, declared, schemaName)

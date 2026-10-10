@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -30,7 +31,7 @@ func TestYDBDesiredYQL_AppliesAndSettles(t *testing.T) {
 			source := []byte("CREATE TABLE `" + directory + "/items` (id Int64 NOT NULL, body Utf8 DEFAULT 'active'u, n Int64 DEFAULT 42l, PRIMARY KEY (id), INDEX by_body GLOBAL SYNC ON (body) COVER (n) WITH (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 2)) WITH (KEY_BLOOM_FILTER = ENABLED);")
 			path := filepath.Join(c.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(path, source, 0o600), qt.IsNil)
-			desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+			desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			plan := planAgainst(c, conn, desired, schemas)
 			c.Assert(plan, qt.Not(qt.HasLen), 0)
@@ -56,7 +57,7 @@ func TestYDBDesiredYQL_TTLAndColumnFamilies(t *testing.T) {
 			table := "CREATE TABLE `" + directory + "/events` (id Int64 NOT NULL, ts Timestamp, body Utf8 FAMILY payload, PRIMARY KEY (id), FAMILY payload (COMPRESSION = 'lz4'))"
 			for _, suffix := range []string{" WITH (TTL = Interval('PT1H') ON ts);", ";"} {
 				c.Assert(os.WriteFile(path, []byte(table+suffix), 0o600), qt.IsNil)
-				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				statements := planAgainst(c, conn, desired, schemas)
 				c.Assert(statements, qt.Not(qt.HasLen), 0)
@@ -82,7 +83,7 @@ func TestYDBDesiredYQL_ViewsAndTopics(t *testing.T) {
 				table,
 			} {
 				c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
-				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				statements := planAgainst(c, conn, desired, nil)
 				c.Assert(statements, qt.Not(qt.HasLen), 0)

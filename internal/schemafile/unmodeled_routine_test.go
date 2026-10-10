@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -27,7 +28,7 @@ func TestLoadPath_ReportsARoutineNothingModeled(t *testing.T) {
 		"CREATE TABLE counters (id INT);\n"+
 			"CREATE PROCEDURE bump() SET @counter = @counter + 1;\n"), 0o600), qt.IsNil)
 
-	_, err := schemafile.LoadPath(path, schemafile.Options{Dialect: "mysql"})
+	_, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "mysql"})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "schema.sql")
@@ -44,7 +45,7 @@ func TestLoadPath_ReadsTheSameFileWithoutIt(t *testing.T) {
 		"CREATE TABLE counters (id INT);\n"+
 			"CREATE PROCEDURE bump() BEGIN SET @counter = 1; END;\n"), 0o600), qt.IsNil)
 
-	database, err := schemafile.LoadPath(path, schemafile.Options{Dialect: "mysql"})
+	database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "mysql"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 1)

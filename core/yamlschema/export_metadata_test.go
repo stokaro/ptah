@@ -12,7 +12,7 @@ import (
 func TestParseExportMetadata(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   users:
     api_name: Account
@@ -81,7 +81,7 @@ tables:
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := yamlschema.Parse([]byte(test.source))
+			_, err := yamlschema.Parse(noOwners, []byte(test.source))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}

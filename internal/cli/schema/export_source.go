@@ -34,13 +34,13 @@ func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*schemamodel.Data
 	if err != nil {
 		return nil, err
 	}
-	annotations, err := builtin.Annotations()
+	owners, err := builtin.Bundled()
 	if err != nil {
 		return nil, err
 	}
 	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    rootDirs,
-		Annotations: annotations,
+		Owners:      owners,
 		SchemaFiles: opts.schemaFiles,
 		PlainHTTP:   opts.plainHTTP,
 		Vars:        declaredVars,

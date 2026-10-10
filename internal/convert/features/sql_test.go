@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlschema"
 )
@@ -24,7 +25,7 @@ func TestSQLFeatureObjects_AcrossFilesRetainStructuredParents(t *testing.T) {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
-	database, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: "ydb"})
+	database, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 2)
 	c.Assert(database.FeatureObjects.Len(), qt.Equals, 2)
@@ -65,7 +66,7 @@ func TestSourceMerge_UnknownFirstSourceStaysUnknown(t *testing.T) {
 	for _, sources := range [][]schemafile.Source{
 		{{URL: hcl}, {URL: sql}}, {{URL: sql}, {URL: hcl}},
 	} {
-		database, err := schemafile.LoadSources(sources, schemafile.Options{Dialect: "ydb"})
+		database, err := schemafile.LoadSources(sources, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 		c.Assert(err, qt.IsNil)
 		c.Assert(database.FeatureCoverage.Representation(), qt.Equals, schemaext.Desired)
 		c.Assert(database.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef("", "events", "updates")).State, qt.Equals, schemaext.Uninspected)

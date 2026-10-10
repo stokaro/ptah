@@ -66,7 +66,7 @@ func TestLoad_MaterializedArtifactCarriesItsDeclaredRows(t *testing.T) {
 	c := qt.New(t)
 	path := materializedArtifact(c, regionsDatabase())
 
-	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
+	db, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 1)
@@ -83,7 +83,7 @@ func TestLoad_MaterializedArtifactIsReadableAsADirectory(t *testing.T) {
 	c := qt.New(t)
 	path := materializedArtifact(c, regionsDatabase())
 
-	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{filepath.Dir(path)}})
+	db, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{filepath.Dir(path)}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 1)
@@ -98,7 +98,7 @@ func TestLoad_SchemaWithoutARowLayerKeepsItsDeclaration(t *testing.T) {
 	path := materializedArtifact(c, regionsDatabase())
 	c.Assert(os.Remove(filepath.Join(filepath.Dir(path), schemaartifact.ManagedDataFileName)), qt.IsNil)
 
-	db, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
+	db, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 1)
@@ -118,7 +118,7 @@ func TestLoad_RefusesARowLayerTheSchemaDoesNotDeclare(t *testing.T) {
 		`{"sets":[{"table":"countries","keys":["code"],"columns":["code"],"rows":[]}]}`+"\n",
 	), 0o600), qt.IsNil)
 
-	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
+	_, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}})
 
 	c.Assert(err, qt.ErrorMatches, `.*carries no rows for it.*`)
 }

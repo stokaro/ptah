@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -93,7 +94,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{})
+			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, test.want)
@@ -143,7 +144,7 @@ func TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{Dialect: test.dialect})
+			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "held")).State, qt.Equals, test.want)
@@ -174,7 +175,7 @@ func TestTimescaleCoverageFollowsWhatAFormatCanName(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{})
+			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 			c.Assert(err, qt.IsNil)
 			for _, kind := range []schemaext.Kind{tsschema.HypertableKind, tsschema.ContinuousAggregateKind} {

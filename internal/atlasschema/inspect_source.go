@@ -350,6 +350,7 @@ func inspectOnDev(
 		// supplies is exit 0 there and was exit 1 here, `missing value for
 		// required variable "tenant"`.
 		desired, err = schemafile.LoadSources(set.SchemaFileSources(), schemafile.Options{
+			YAML:                  opts.Runtime.YAML(),
 			DatabaseURL:           devURL,
 			Dialect:               dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,

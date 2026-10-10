@@ -164,7 +164,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
-		Annotations: runtime.Annotations(),
+		Owners:      runtime,
 		SchemaFiles: opts.schemaFiles,
 		Commands:    commands,
 		Dialect:     dialect,

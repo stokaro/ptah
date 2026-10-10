@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -37,7 +38,7 @@ func TestLoadSourcesRoleBootstrapOrderAndImports(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := schemafile.LoadSources(test.sources, schemafile.Options{Dialect: "postgres"})
+			db, err := schemafile.LoadSources(test.sources, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Roles, qt.DeepEquals, test.roles)
 		})
@@ -47,7 +48,7 @@ func TestLoadSourcesRoleBootstrapOrderAndImports(t *testing.T) {
 func TestLoadSourcesRoleBootstrapFailureNamesSource(t *testing.T) {
 	c := qt.New(t)
 	path := writeBootstrapSource(c, c.TempDir(), "roles.sql", `DO $$ BEGIN CREATE ROLE reader; EXECUTE 'CREATE ROLE hidden'; END $$;`)
-	db, err := schemafile.LoadSources([]schemafile.Source{{URL: path}}, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadSources([]schemafile.Source{{URL: path}}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 	c.Assert(err, qt.ErrorMatches, `(?s).*desired-state DO block.*only CREATE ROLE.*`)
 	c.Assert(err.Error(), qt.Contains, "roles.sql")
 	c.Assert(err.Error(), qt.Contains, "body byte")
@@ -73,7 +74,7 @@ func TestLoadSourcesRoleBootstrapDuplicateBoundaries(t *testing.T) {
 			dir := c.TempDir()
 			first := writeBootstrapSource(c, dir, "first.sql", test.first)
 			second := writeBootstrapSource(c, dir, "second.sql", test.second)
-			database, err := schemafile.LoadSources([]schemafile.Source{{URL: first}, {URL: second}}, schemafile.Options{Dialect: "postgres"})
+			database, err := schemafile.LoadSources([]schemafile.Source{{URL: first}, {URL: second}}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 			c.Assert(err, qt.ErrorMatches, `(?s).*second.sql.*already declared.*`)
 			c.Assert(database, qt.IsNil)
 		})

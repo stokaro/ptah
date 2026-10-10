@@ -11,6 +11,8 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/yamlext"
+	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/spanner/spannersource"
 )
@@ -84,4 +86,49 @@ type Event struct {
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
 	c.Assert(err, qt.ErrorMatches, `(?s).*row_deletion_(column|interval).*`)
+}
+
+const eventsYAML = `
+tables:
+  events:
+    platform:
+      spanner:
+        row_deletion_column: created_at
+        row_deletion_interval: 30 days
+    columns:
+      id: { type: bigint, primary: true }
+  plain:
+    columns:
+      id: { type: bigint, primary: true }
+`
+
+// TestYAML_ClaimsRowDeletionForAYAMLDocument pins the YAML spelling: the policy
+// sits in the table's spanner platform group, and a parse that selects the
+// owner claims complete knowledge of it, so a table without the group requests
+// none. Without the owner the document claims nothing.
+func TestYAML_ClaimsRowDeletionForAYAMLDocument(t *testing.T) {
+	tests := []struct {
+		name   string
+		owners []yamlext.Extension
+		state  schemaext.KnowledgeState
+	}{
+		{name: "the owner selected", owners: []yamlext.Extension{spannersource.YAML()}, state: schemaext.Complete},
+		{name: "no owner selected", state: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			set, err := yamlext.NewSet(test.owners...)
+			c.Assert(err, qt.IsNil)
+
+			db, err := yamlschema.Parse(set, []byte(eventsYAML))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Tables[0].Overrides, qt.DeepEquals, map[string]map[string]string{
+				"spanner": {"row_deletion_column": "created_at", "row_deletion_interval": "30 days"},
+			})
+			plain := objectidentity.NewBuilder(identifier.ForDialect("spanner")).TableParts("", "plain")
+			c.Assert(db.FeatureCoverage.Lookup(spannerschema.RowDeletionKind, plain).State, qt.Equals, test.state)
+		})
+	}
 }

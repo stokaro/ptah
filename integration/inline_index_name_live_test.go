@@ -91,7 +91,7 @@ func TestInlineIndexNameLive(t *testing.T) {
 			path := filepath.Join(c.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(path, []byte(ddl+";\n"), 0o600), qt.IsNil)
 			db, loadErr := schemaload.LoadContext(c.Context(), schemaload.Options{
-				Annotations: builtintest.Annotations(),
+				Owners:      builtintest.Runtime(),
 				SchemaFiles: []string{path},
 				Dialect:     row.dialect,
 			})

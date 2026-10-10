@@ -58,7 +58,7 @@ table "accounts" {
 }
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{models}, SchemaFiles: []string{hcl}})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{models}, SchemaFiles: []string{hcl}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 2)
 	return database

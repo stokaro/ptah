@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -69,7 +70,7 @@ func TestLoadPathRefusesADirectoryThatRedeclaresAnObject(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaDir(c, test.files)
 
-			db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: test.dialect})
+			db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: test.dialect})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			// A refused directory hands back no desired state: a caller that
@@ -152,7 +153,7 @@ func TestLoadPathAdmitsADirectoryThatBuildsOnEarlierFiles(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaDir(c, test.files)
 
-			db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: test.dialect})
+			db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sortedTableNames(db), qt.DeepEquals, test.wantTables)

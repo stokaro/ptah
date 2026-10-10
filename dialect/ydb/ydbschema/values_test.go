@@ -19,7 +19,7 @@ import (
 
 func TestNamedChangefeeds_YAMLToRenderAndCodec(t *testing.T) {
 	c := qt.New(t)
-	database, err := yamlschema.Parse([]byte(`tables:
+	database, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(`tables:
   items:
     columns:
       id:

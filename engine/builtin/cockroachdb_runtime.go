@@ -18,6 +18,7 @@ import (
 // CockroachDB row-level TTL is a table facet.
 func registerCockroachDBServices(provider *engine.Provider, target string) {
 	provider.Annotations = append(provider.Annotations, crdbsource.Annotations())
+	provider.YAML = append(provider.YAML, crdbsource.YAML())
 	registerTableFacetOwner(provider, target, tableFacetOwner{
 		codecs:          slices.Concat(crdbschema.Codecs(), crdbdiff.Codecs(), crdbast.Codecs()),
 		properties:      crdbsource.Definitions(),

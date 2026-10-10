@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/yamlext"
 )
 
 // SchemaRuntime composes the services used by schema comparison, validation,
@@ -15,6 +16,7 @@ import (
 // accept only the individual service they call. Both in-process runtimes and transport adapters can satisfy it.
 type SchemaRuntime interface {
 	annotation.Runtime
+	yamlext.Runtime
 	schemapreparation.Runtime
 	schemaprojection.TableCreationService
 	featureplan.Runtime

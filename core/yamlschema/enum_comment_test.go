@@ -19,7 +19,7 @@ func TestParse_EnumComment(t *testing.T) {
   plain: [a, b]
 `
 
-	db, err := yamlschema.Parse([]byte(document))
+	db, err := yamlschema.Parse(noOwners, []byte(document))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Enums, qt.HasLen, 2)

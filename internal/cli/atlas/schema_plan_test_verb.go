@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
@@ -175,7 +176,7 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 		Cases:                 cases,
 		DBURL:                 devURL,
 		ReportKind:            "PLAN",
-		ResolveSchema:         atlasPlanTestSchemaResolver(dir),
+		ResolveSchema:         atlasPlanTestSchemaResolver(dir, runtime.YAML()),
 		ApplyPlan:             atlasPlanTestPlanApplier(dir, runtime),
 		AllowExternalCommands: allowExternal,
 	})
@@ -198,13 +199,13 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 //
 // Paths resolve against the directory holding the test files, which is what
 // makes a case portable: the snapshot it names travels with it.
-func atlasPlanTestSchemaResolver(dir string) func(string) (*schemamodel.Database, error) {
+func atlasPlanTestSchemaResolver(dir string, owners yamlext.Set) func(string) (*schemamodel.Database, error) {
 	return func(url string) (*schemamodel.Database, error) {
 		path, err := atlasPlanTestLocalPath(dir, url, "schema")
 		if err != nil {
 			return nil, err
 		}
-		return schemafile.Load(path, schemafile.Options{})
+		return schemafile.Load(path, schemafile.Options{YAML: owners})
 	}
 }
 

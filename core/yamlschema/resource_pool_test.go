@@ -15,7 +15,7 @@ import (
 func TestParse_ResourcePool_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 resource_pools:
   reporting:
     concurrent_query_limit: 10
@@ -78,7 +78,7 @@ func TestParse_ResourcePool_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse([]byte(test.yaml))
+			db, err := yamlschema.Parse(noOwners, []byte(test.yaml))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
 		})

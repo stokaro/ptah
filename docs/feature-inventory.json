@@ -778,6 +778,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-yamlext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/yamlext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-yamlschema",
       "kind": "public-package",
       "surface": "ptah.run/core/yamlschema",

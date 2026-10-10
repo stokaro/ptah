@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -83,7 +84,7 @@ func TestLoadPathAdmitsATableALaterFileDropsFirst(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaDir(c, test.files)
 
-			db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: test.dialect})
+			db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sortedTableNames(db), qt.DeepEquals, test.wantTables)
@@ -104,7 +105,7 @@ func TestLoadPathRefusesATableALaterFileCreatesBeforeDropping(t *testing.T) {
 		"2_b.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);\nDROP TABLE users;\n",
 	})
 
-	db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches, `read state from "2_b.sql": table "users" already exists`)
 	c.Assert(db, qt.IsNil)
@@ -122,7 +123,7 @@ func TestLoadPathKeepsTheIndexesOfAQualifiedTableWhenDroppingItsSchemaName(t *te
 		"2_b.sql": "DROP TABLE app;\nCREATE INDEX idx_email ON app.users (email);\n",
 	})
 
-	db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches, `read state from "2_b.sql": index "app.users.idx_email" already exists`)
 	c.Assert(db, qt.IsNil)

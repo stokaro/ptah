@@ -13,7 +13,7 @@ import (
 func TestParse_TriggerClauses(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   orders:
     columns:

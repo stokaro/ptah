@@ -40,6 +40,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/engine/builtin`
 - `ptah.run/core/schemasource`
 - `ptah.run/core/sqlutil`
+- `ptah.run/core/yamlext`
 - `ptah.run/core/yamlschema`
 - `ptah.run/dbschema`
 - `ptah.run/dialect/clickhouse/chast`
@@ -1161,9 +1162,9 @@ properties, one per storage parameter. Its definition also claims the derived
 that begins with `ttl` in any case, so a misspelled or upper-case parameter is
 refused by name.
 `crdbsource.Coverage` is the knowledge a source format with platform properties
-holds. YAML enrolls it, and Go annotations enroll it through
-`crdbsource.Annotations` when the parse selects the owner, so a table without
-the properties requests no TTL; HCL, SQL, hand-built schemas and a Go parse
+holds. Go annotations enroll it through `crdbsource.Annotations` and YAML
+through `crdbsource.YAML` when the parse selects the owner, so a table without
+the properties requests no TTL. HCL, SQL, hand-built schemas and a parse
 without the owner do not, and leave a live policy unmanaged.
 
 `crdbcompare.Service` compares the facet on tables both sides hold and reads
@@ -1208,10 +1209,10 @@ provider identity `Owner`.
 `spannersource.Service` decodes and encodes the `platform.spanner` table
 properties `row_deletion_column` and `row_deletion_interval`, and claims every
 key that begins with `row_deletion`, so an unknown one is refused by name.
-`spannersource.Coverage` is the knowledge YAML and Spanner SQL enroll, and Go
-annotations through `spannersource.Annotations` when the parse selects the
-owner; HCL, hand-built schemas and a Go parse without the owner do not, and
-leave a live policy unmanaged.
+`spannersource.Coverage` is the knowledge Spanner SQL enrolls, and Go
+annotations and YAML through `spannersource.Annotations` and
+`spannersource.YAML` when the parse selects the owner. HCL, hand-built schemas
+and a parse without the owner do not, and leave a live policy unmanaged.
 
 `spannercompare.Service` compares the facet with the same undecided cases as
 the CockroachDB owner, and `spannerdiff.RowDeletion` carries the change.
@@ -2192,6 +2193,17 @@ second YAML document in the same stream is refused rather than ignored.
 `core/schemasource` covers the other direction — an external program that
 writes YAML to its standard output — and parses that output through this
 package.
+
+Both entry points take a `yamlext.Set` first: the feature owners whose models
+the document can declare. `core/yamlext` is that contract. An `Extension`
+names its owner, the models it claims and the knowledge a YAML document holds
+about them; `engine.Provider.YAML` registers it, and `engine.Runtime.YAML`
+returns the frozen set. A document claims knowledge of an owner's models only
+when the parse selects the owner, so a parse without it leaves them unknown
+rather than absent. The zero set is refused with `yamlext.ErrUnselected`, and
+`yamlext.None` selects no owner on purpose. `schemasource.Run` takes the owners
+the same way, through `schemasource.Owners`, which `*engine.Runtime`
+implements.
 
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into

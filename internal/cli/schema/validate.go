@@ -129,7 +129,7 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 		// failure is itself a problem this verb owes an answer about.
 		database, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 			RootDirs:        opts.rootDirs,
-			Annotations:     runtime.Annotations(),
+			Owners:          runtime,
 			SchemaFiles:     opts.schemaFiles,
 			ProjectEnv:      schemaSourceEnv,
 			EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),

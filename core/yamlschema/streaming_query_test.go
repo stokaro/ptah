@@ -18,7 +18,7 @@ func TestParse_StreamingQuery_RefusesInvalidDeclarations(t *testing.T) {
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := yamlschema.Parse([]byte(text))
+			_, err := yamlschema.Parse(noOwners, []byte(text))
 			c.Assert(err, qt.IsNotNil)
 		})
 	}

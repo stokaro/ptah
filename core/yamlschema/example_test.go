@@ -33,7 +33,7 @@ tables:
         unique: true
 `)
 
-	db := must.Must(yamlschema.Parse(document))
+	db := must.Must(yamlschema.Parse(noOwners, document))
 
 	for _, table := range db.Tables {
 		fmt.Printf("table %s: %s\n", table.Name, table.Comment)
@@ -69,7 +69,7 @@ tables:
         not_null: true
 `)
 
-	db := must.Must(yamlschema.Parse(document))
+	db := must.Must(yamlschema.Parse(noOwners, document))
 	for _, statement := range must.Must(builtin.GetOrderedCreateStatements(db, "postgres")) {
 		fmt.Println(statement)
 	}
@@ -102,7 +102,7 @@ default_privileges:
     grantable: [INSERT]
 `)
 
-	db := must.Must(yamlschema.Parse(document))
+	db := must.Must(yamlschema.Parse(noOwners, document))
 
 	for _, privilege := range db.DefaultPrivileges {
 		fmt.Printf("%s in %s for %s to %s\n",
@@ -129,7 +129,7 @@ func ExampleParseFile() {
 	path := filepath.Join(dir, "schema.yaml")
 	must.Assert(os.WriteFile(path, document, 0o600))
 
-	db := must.Must(yamlschema.ParseFile(path))
+	db := must.Must(yamlschema.ParseFile(noOwners, path))
 	fmt.Println(db.Tables[0].Name, len(db.Fields))
 
 	// Output:
@@ -141,7 +141,7 @@ func ExampleParseFile() {
 // that silently fails to apply. A permissive reader would drop the key and
 // render this table without the comment its author wrote.
 func ExampleParse_unknownKey() {
-	_, err := yamlschema.Parse([]byte("tables:\n  accounts:\n    commnet: Customer accounts\n"))
+	_, err := yamlschema.Parse(noOwners, []byte("tables:\n  accounts:\n    commnet: Customer accounts\n"))
 
 	// The decoder closes the sentence by naming the Go type it was filling.
 	// That type is Ptah's internal representation of a table, not part of
@@ -158,7 +158,7 @@ func ExampleParse_unknownKey() {
 // across a `---` document separator is rejected whole rather than half-applied.
 // ExampleParse_unknownKey shows the first.
 func ExampleParse_strictness() {
-	_, err := yamlschema.Parse([]byte("tables:\n  accounts: {}\n---\ntables:\n  orders: {}\n"))
+	_, err := yamlschema.Parse(noOwners, []byte("tables:\n  accounts: {}\n---\ntables:\n  orders: {}\n"))
 	fmt.Println(err)
 
 	// Output:

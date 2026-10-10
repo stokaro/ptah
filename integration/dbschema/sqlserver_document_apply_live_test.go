@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/planner"
@@ -72,7 +73,7 @@ func TestSQLServerLiveDocumentAppliesEveryPropertyScope(t *testing.T) {
 	path := writeFourScopeDocument(c, schemaName)
 	declared, err := schemafile.LoadSources(
 		[]schemafile.Source{{URL: path}},
-		schemafile.Options{Dialect: platform.SQLServer},
+		schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.SQLServer},
 	)
 	c.Assert(err, qt.IsNil)
 	// Non-vacuity: the merge really carries them, so an empty plan below cannot

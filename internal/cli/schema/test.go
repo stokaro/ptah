@@ -548,7 +548,7 @@ func loadTestSchemaFiles(ctx context.Context, opts testOptions, files []string) 
 		return nil, err
 	}
 	return schemaload.LoadContext(ctx, schemaload.Options{
-		Annotations: opts.runtime.Annotations(),
+		Owners:      opts.runtime,
 		SchemaFiles: files, Vars: opts.vars, PlainHTTP: opts.plainHTTP,
 		Dialect: dialect, DatabaseURL: opts.dbURL,
 	})

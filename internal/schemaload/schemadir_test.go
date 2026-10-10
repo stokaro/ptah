@@ -24,7 +24,7 @@ func TestLoad_SchemaDirectory(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "2_posts.sql"),
 		[]byte("CREATE TABLE native_dir_posts (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	result, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{dir}, Dialect: "sqlite"})
+	result, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{dir}, Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Tables, qt.HasLen, 2)
@@ -35,7 +35,7 @@ func TestLoad_SchemaDirectory(t *testing.T) {
 func TestLoad_EmptySchemaDirectoryRefuses(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{t.TempDir()}, Dialect: "sqlite"})
+	_, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{t.TempDir()}, Dialect: "sqlite"})
 
 	c.Assert(err, qt.ErrorMatches, `error parsing schema file: ".*" contains neither SQL nor HCL files`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported schema file extension")

@@ -22,6 +22,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -104,7 +105,7 @@ CREATE POLICY docs_tenant ON %[1]s.docs %[2]s USING (true);
 `, f.schema, toClause)
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
-	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: f.dialect})
+	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: f.dialect})
 	c.Assert(err, qt.IsNil)
 	return db
 }

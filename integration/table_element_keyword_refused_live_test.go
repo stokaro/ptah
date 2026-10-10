@@ -112,7 +112,7 @@ func loadSchemaError(c *qt.C, ddl, dialect string) error {
 	c.Assert(os.WriteFile(path, []byte(ddl+";\n"), 0o600), qt.IsNil)
 
 	_, err := schemaload.LoadContext(c.Context(), schemaload.Options{
-		Annotations: builtintest.Annotations(),
+		Owners:      builtintest.Runtime(),
 		SchemaFiles: []string{path},
 		Dialect:     dialect,
 	})

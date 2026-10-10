@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -37,7 +38,7 @@ func TestLoadPathReadsAnImportedSQLFile_HappyPath(t *testing.T) {
 	main := writeImportTree(c, dir, "main.sql",
 		"-- atlas:import ./tables/orders.sql\n-- atlas:import ./tables/users.sql\n")
 
-	db, err := schemafile.LoadPath(main, schemafile.Options{})
+	db, err := schemafile.LoadPath(main, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(db), qt.DeepEquals, []string{"orders", "users"})
@@ -53,7 +54,7 @@ func TestLoadPathReadsAnEntryPointThatAlsoDeclares_HappyPath(t *testing.T) {
 	main := writeImportTree(c, dir, "main.sql",
 		"-- atlas:import ./tables/users.sql\nCREATE TABLE audit (id INTEGER PRIMARY KEY);\n")
 
-	db, err := schemafile.LoadPath(main, schemafile.Options{})
+	db, err := schemafile.LoadPath(main, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(db), qt.DeepEquals, []string{"audit", "users"})
@@ -69,7 +70,7 @@ func TestLoadPathReadsANestedImportChain_HappyPath(t *testing.T) {
 	writeImportTree(c, dir, "mid.sql", "-- atlas:import ./leaf/users.sql\n")
 	main := writeImportTree(c, dir, "main.sql", "-- atlas:import ./mid.sql\n")
 
-	db, err := schemafile.LoadPath(main, schemafile.Options{})
+	db, err := schemafile.LoadPath(main, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(db), qt.DeepEquals, []string{"users"})
@@ -97,7 +98,7 @@ func TestLoadPathIgnoresTextThatOnlyResemblesTheDirective_HappyPath(t *testing.T
 			dir := c.TempDir()
 			main := writeImportTree(c, dir, "main.sql", row.body)
 
-			db, err := schemafile.LoadPath(main, schemafile.Options{})
+			db, err := schemafile.LoadPath(main, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tableNames(db), qt.DeepEquals, []string{"t"})
@@ -131,7 +132,7 @@ func TestLoadPathRefusesAnImportThatEscapes_FailurePath(t *testing.T) {
 			writeImportTree(c, dir, "../outside.sql", "CREATE TABLE outside (id INTEGER PRIMARY KEY);\n")
 			main := writeImportTree(c, dir, "main.sql", "-- atlas:import "+row.value+"\n")
 
-			db, err := schemafile.LoadPath(main, schemafile.Options{})
+			db, err := schemafile.LoadPath(main, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 			c.Assert(err, qt.ErrorIs, schemafile.ErrSQLImportEscapes)
 			c.Assert(db, qt.IsNil)
@@ -158,7 +159,7 @@ func TestLoadPathRefusesAnImportCycle_FailurePath(t *testing.T) {
 			writeImportTree(c, dir, "other.sql", row.other)
 			main := writeImportTree(c, dir, "main.sql", row.main)
 
-			db, err := schemafile.LoadPath(main, schemafile.Options{})
+			db, err := schemafile.LoadPath(main, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 			c.Assert(err, qt.ErrorIs, schemafile.ErrSQLImportCycle)
 			c.Assert(db, qt.IsNil)
@@ -205,7 +206,7 @@ func TestLoadPathRefusesAnUnusableImport_FailurePath(t *testing.T) {
 			writeImportTree(c, dir, "schema.yaml", "tables: []\n")
 			main := writeImportTree(c, dir, "main.sql", row.body)
 
-			db, err := schemafile.LoadPath(main, schemafile.Options{})
+			db, err := schemafile.LoadPath(main, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
 			c.Assert(db, qt.IsNil)

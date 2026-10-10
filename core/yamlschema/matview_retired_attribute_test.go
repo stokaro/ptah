@@ -37,11 +37,11 @@ func TestParse_RefusesTheRetiredRefreshStrategy(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := yamlschema.Parse([]byte(`
+			_, err := yamlschema.Parse(noOwners, []byte(`
 matviews:
   user_stats:
     body: SELECT count(*) FROM users
-    refresh_strategy: ` + test.value + `
+    refresh_strategy: `+test.value+`
 `))
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrRetiredAttribute)
@@ -56,7 +56,7 @@ matviews:
 func TestParse_AcceptsAMaterializedViewWithoutTheAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 matviews:
   user_stats:
     body: SELECT count(*) FROM users
