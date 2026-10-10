@@ -764,7 +764,7 @@ An HCL document carries a TTL as a `platform "ydb"` block of the same
 properties: `schema inspect` writes one on `ptah` and `ptah-compat` alike, in
 the form YDB shows, and a document read back declares that TTL. DBML has no
 spelling for a TTL, and `schema inspect --format dbml` warns about the TTL
-settings it leaves out. A desired state in HCL or DBML that names no TTL keeps
+settings it leaves out. A desired schema in HCL or DBML that names no TTL keeps
 every table's TTL as the database holds it, rather than reading its silence as
 a request to remove it, and a table it rebuilds gets that TTL on the new table.
 

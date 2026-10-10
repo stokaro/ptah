@@ -42,6 +42,12 @@
     "reason": "The concept page states what a dev database cleanup keeps and refuses on each engine, extensions, schemas and default privileges included; a reader pointing --dev-url at an image needs those rules beside the realm they apply to."
   },
   {
+    "route": "/databases/clickhouse/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The engine reference keeps ClickHouse table engines, skipping indexes, views, roles, row policies and the revision table together for target-specific lookup, beside the forms Ptah refuses on ClickHouse and the directive to use instead."
+  },
+  {
     "route": "/databases/mysql/",
     "check": "page-length",
     "target": "page",
