@@ -398,3 +398,27 @@ func TestCompleteCoverage_ClaimsBothKinds(t *testing.T) {
 	c.Assert(coverage.Lookup(pgpolicy.PolicyKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 	c.Assert(coverage.Lookup(pgpolicy.TableStateKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 }
+
+// TestObservedPolicy_ReadsRelation pins the relations a policy's expressions
+// name, which a plan that drops a relation with CASCADE asks about.
+func TestObservedPolicy_ReadsRelation(t *testing.T) {
+	using := "(tenant_id IN ( SELECT active_tenants.id FROM app.active_tenants))"
+	tests := []struct {
+		name     string
+		policy   pgpolicy.ObservedPolicy
+		relation string
+		want     bool
+	}{
+		{name: "the bare name", policy: pgpolicy.ObservedPolicy{Using: &using}, relation: "active_tenants", want: true},
+		{name: "the qualified name", policy: pgpolicy.ObservedPolicy{Using: &using}, relation: "app.active_tenants", want: true},
+		{name: "the WITH CHECK clause", policy: pgpolicy.ObservedPolicy{WithCheck: &using}, relation: "active_tenants", want: true},
+		{name: "another relation", policy: pgpolicy.ObservedPolicy{Using: &using}, relation: "tenants", want: false},
+		{name: "no clause", policy: pgpolicy.ObservedPolicy{}, relation: "active_tenants", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.policy.ReadsRelation(test.relation), qt.Equals, test.want)
+		})
+	}
+}

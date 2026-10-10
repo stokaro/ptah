@@ -10,6 +10,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/deporder"
+	"ptah.run/internal/tableref"
 )
 
 // Command is the class of statement a policy applies to.
@@ -165,6 +167,29 @@ func (v *DesiredPolicy) Equal(other schemaext.Value) bool {
 	return v.Command == right.Command && sameRoles(v.Roles, right.Roles) && equalText(v.Using, right.Using) &&
 		equalText(v.WithCheck, right.WithCheck) && v.Composition == right.Composition &&
 		v.Comment == right.Comment && v.StructName == right.StructName && v.Normalized.equal(right.Normalized)
+}
+
+// ReadsRelation reports whether either expression names relation, by its full
+// name or, for a schema-qualified one, by its bare name. It implements
+// [schemaext.RelationReader]: PostgreSQL records a dependency from a policy to
+// each relation its expressions read, so dropping one with CASCADE drops the
+// policy.
+func (v *ObservedPolicy) ReadsRelation(relation string) bool {
+	names := []string{relation}
+	if ref, ok := tableref.Parse(relation); ok && ref.Qualified {
+		names = append(names, ref.Name)
+	}
+	for _, clause := range []*string{v.Using, v.WithCheck} {
+		if clause == nil {
+			continue
+		}
+		for _, name := range names {
+			if deporder.ReferencesIdentifier(*clause, strings.Trim(name, `"`)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Equal compares observations field by field, the role list as a set.
