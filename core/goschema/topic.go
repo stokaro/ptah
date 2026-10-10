@@ -120,17 +120,23 @@ func (s *schemaParseState) attachTopicConsumers() error {
 }
 
 // topicAttributeError reports a value a topic or consumer declaration cannot
-// carry, naming the attribute.
+// carry, naming the attribute. The error wraps
+// [ptaherr.ErrInvalidAttributeValue] and the owner's own error, so a topic
+// declared twice still matches [schemaext.ErrDuplicate], as it does in YAML,
+// in YQL and across merged files.
 func topicAttributeError(ctx annotationErrorContext, directive string, err error) error {
 	parseErr := &ptaherr.ParseError{
 		File:      ctx.file,
 		Line:      ctx.line,
 		Directive: directive,
-		Err:       ptaherr.ErrInvalidAttributeValue,
+		Err:       fmt.Errorf("%w: %w", ptaherr.ErrInvalidAttributeValue, err),
 		Message:   fmt.Sprintf("%v on %s at %s", err, ctx.directive, ctx.location),
 	}
 	if declared, ok := errors.AsType[*ydbtopic.DeclarationError](err); ok {
 		parseErr.Attribute = declared.Attribute
+	}
+	if _, ok := errors.AsType[*ydbtopic.DuplicateError](err); ok {
+		parseErr.Attribute = ydbtopic.AttributeName
 	}
 	return parseErr
 }

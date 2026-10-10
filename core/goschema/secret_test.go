@@ -126,5 +126,7 @@ func TestParseSource_Secret_DeclaredTwice(t *testing.T) {
 	annotation := `//ptah:schema:secret name="pw" schema="ext" value_env="PTAH_SECRET_PW"`
 	db, err := goschema.ParseSource("secrets.go", secretSource(annotation+"\n", "\t"+annotation))
 	c.Assert(err, qt.ErrorMatches, `secret ext/pw is declared twice on //ptah:schema:secret at Credentials.*`)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 }

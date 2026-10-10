@@ -54,7 +54,7 @@ func TestCheck_FailurePath(t *testing.T) {
 				"names a consumer once per topic (`Consumer c defined more than once`)"}},
 		{name: "a consumer the parse refuses", topic: "events", caps: capability.YDB262(),
 			spec: ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{{Name: "c", Important: true, AvailabilityPeriod: "PT1H"}}},
-			want: ydbtopic.Refusal{Subject: `consumer "c" of topic events`, Reason: `invalid availability_period "PT1H": ` +
+			want: ydbtopic.Refusal{Subject: `topic events`, Reason: `consumer "c": invalid availability_period "PT1H": ` +
 				"YDB keeps every unread record for an important consumer, so it takes no availability period as well " +
 				"(`has both an important flag and a limited availability_period, which are mutually exclusive`)"}},
 	}

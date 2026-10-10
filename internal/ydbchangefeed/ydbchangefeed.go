@@ -23,7 +23,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -86,33 +85,6 @@ func Modes() []string {
 // no document table.
 func Formats() []string {
 	return []string{FormatJSON, FormatDebeziumJSON}
-}
-
-// The codecs a topic consumer can declare, as YQL spells them. Codecs reads
-// the numbers DescribeTopic reports them with.
-var codecNumbers = map[string]int32{
-	"raw":    1,
-	"gzip":   2,
-	"lzop":   3,
-	"zstd":   4,
-	"custom": 10000,
-}
-
-// Codecs lists the codec names a consumer takes, in the order YDB numbers
-// them.
-func Codecs() []string {
-	return []string{"raw", "gzip", "lzop", "zstd", "custom"}
-}
-
-// CodecName is the name of the codec DescribeTopic reports as number, and
-// false for a number no codec name Ptah declares carries.
-func CodecName(number int32) (string, bool) {
-	for name, value := range codecNumbers {
-		if value == number {
-			return name, true
-		}
-	}
-	return "", false
 }
 
 // DefaultRetentionSeconds is the retention YDB gives a changefeed's topic
@@ -188,52 +160,6 @@ func ParseDeclaration(values map[string]string) (ydbschema.ChangefeedSpec, error
 	return spec, nil
 }
 
-// ParseConsumer reads one consumer out of values, keyed by attribute name,
-// and ignores every key it does not name, the changefeed it belongs to
-// included.
-//
-// A codec may be written in any case and is kept in lower case, as YDB folds
-// them; read_from is an RFC 3339 time of whole seconds, kept in UTC, because
-// YDB keeps whole seconds in UTC (measured: `2026-01-01T00:00:00.5Z` reads
-// back as `2026-01-01T00:00:00Z`, and `2026-01-01T03:00:00+03:00` as
-// `2026-01-01T00:00:00Z`); and a consumer is not both important and limited
-// by an availability period, which YDB refuses (`has both an important flag
-// and a limited availability_period, which are mutually exclusive`).
-func ParseConsumer(values map[string]string) (ydbtopic.ConsumerSpec, error) {
-	consumer := ydbtopic.ConsumerSpec{Name: strings.TrimSpace(values[AttributeName])}
-	if consumer.Name == "" {
-		return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Reason: "a consumer needs a name"}
-	}
-	if strings.Contains(consumer.Name, "/") {
-		return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeName, Value: consumer.Name,
-			Reason: "a consumer's name cannot hold a slash (`consumer ... has illegal symbols`)"}
-	}
-	var err error
-	if consumer.Important, err = boolean(values, AttributeImportant); err != nil {
-		return ydbtopic.ConsumerSpec{}, err
-	}
-	if raw, ok := present(values, AttributeReadFrom); ok {
-		if consumer.ReadFrom, err = NormalizeReadFrom(raw); err != nil {
-			return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeReadFrom, Value: raw, Reason: err.Error()}
-		}
-	}
-	if raw, ok := present(values, AttributeSupportedCodecs); ok {
-		if consumer.SupportedCodecs, err = parseCodecs(raw); err != nil {
-			return ydbtopic.ConsumerSpec{}, err
-		}
-	}
-	if consumer.AvailabilityPeriod, err = interval(values, AttributeAvailabilityPeriod); err != nil {
-		return ydbtopic.ConsumerSpec{}, err
-	}
-	if consumer.Important && consumer.AvailabilityPeriod != "" {
-		return ydbtopic.ConsumerSpec{}, &DeclarationError{Attribute: AttributeAvailabilityPeriod,
-			Value: consumer.AvailabilityPeriod, Reason: "YDB keeps every unread record for an important consumer, " +
-				"so it takes no availability period as well (`has both an important flag and a limited " +
-				"availability_period, which are mutually exclusive`)"}
-	}
-	return consumer, nil
-}
-
 // present returns the trimmed value of attribute and whether one was given.
 func present(values map[string]string, attribute string) (string, bool) {
 	raw, ok := values[attribute]
@@ -291,49 +217,6 @@ func interval(values map[string]string, attribute string) (string, error) {
 		return "", &DeclarationError{Attribute: attribute, Value: raw, Reason: err.Error()}
 	}
 	return raw, nil
-}
-
-// parseCodecs reads a comma-separated codec list.
-func parseCodecs(raw string) ([]string, error) {
-	var codecs []string
-	for part := range strings.SplitSeq(raw, ",") {
-		codec := strings.ToLower(strings.TrimSpace(part))
-		if _, known := codecNumbers[codec]; !known {
-			return nil, &DeclarationError{Attribute: AttributeSupportedCodecs, Value: raw,
-				Reason: "takes a comma-separated list of " + strings.Join(Codecs(), ", ")}
-		}
-		if slices.Contains(codecs, codec) {
-			return nil, &DeclarationError{Attribute: AttributeSupportedCodecs, Value: raw,
-				Reason: "names codec " + codec + " twice"}
-		}
-		codecs = append(codecs, codec)
-	}
-	return codecs, nil
-}
-
-// NormalizeReadFrom reads an RFC 3339 time and writes it the way YDB keeps
-// it: in UTC, to the second. A time with a fraction of a second is refused,
-// because YDB drops the fraction and the consumer would read from a moment
-// other than the one declared.
-func NormalizeReadFrom(raw string) (string, error) {
-	instant, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(raw))
-	if err != nil {
-		return "", fmt.Errorf("takes an RFC 3339 time such as 2026-01-01T00:00:00Z")
-	}
-	if instant.Nanosecond() != 0 {
-		return "", fmt.Errorf("YDB keeps whole seconds, and drops the fraction of this one")
-	}
-	return FormatReadFrom(instant), nil
-}
-
-// FormatReadFrom writes an instant as a consumer's read_from: RFC 3339 in
-// UTC, or empty for the start of the Unix epoch, which is what YDB reports
-// for a consumer that declared none.
-func FormatReadFrom(instant time.Time) string {
-	if instant.Unix() == 0 {
-		return ""
-	}
-	return instant.UTC().Format(time.RFC3339)
 }
 
 // TopicPath is the path of the topic changefeed name keeps for table, a
@@ -462,7 +345,7 @@ func consumerRefusal(consumer ydbtopic.ConsumerSpec) string {
 	if consumer.AvailabilityPeriod != "" {
 		values[AttributeAvailabilityPeriod] = consumer.AvailabilityPeriod
 	}
-	if _, err := ParseConsumer(values); err != nil {
+	if _, err := ydbtopic.ParseConsumer(values); err != nil {
 		return err.Error()
 	}
 	return ""

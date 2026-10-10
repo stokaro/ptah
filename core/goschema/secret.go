@@ -44,17 +44,22 @@ func (s *schemaParseState) parseSecretComment(comment *ast.Comment, structName s
 }
 
 // secretAttributeError reports a value a secret declaration cannot carry,
-// naming the attribute.
+// naming the attribute. The error wraps [ptaherr.ErrInvalidAttributeValue] and
+// the owner's own error, so a secret declared twice still matches
+// [schemaext.ErrDuplicate].
 func secretAttributeError(ctx annotationErrorContext, err error) error {
 	parseErr := &ptaherr.ParseError{
 		File:      ctx.file,
 		Line:      ctx.line,
 		Directive: "ptah:schema:secret",
-		Err:       ptaherr.ErrInvalidAttributeValue,
+		Err:       fmt.Errorf("%w: %w", ptaherr.ErrInvalidAttributeValue, err),
 		Message:   fmt.Sprintf("%v on %s at %s", err, ctx.directive, ctx.location),
 	}
 	if declared, ok := errors.AsType[*ydbsecret.DeclarationError](err); ok {
 		parseErr.Attribute = declared.Attribute
+	}
+	if _, ok := errors.AsType[*ydbsecret.DuplicateError](err); ok {
+		parseErr.Attribute = ydbsecret.AttributeName
 	}
 	return parseErr
 }

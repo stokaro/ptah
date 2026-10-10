@@ -3,19 +3,14 @@ package ydbplan
 import (
 	"context"
 	"fmt"
-	"slices"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
-	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbtopic"
 )
 
@@ -31,67 +26,21 @@ import (
 // topic.
 type TopicService struct{}
 
-type topicChange struct {
-	input     int
-	operation *ydbast.Topic
+// topicChange is one statement on a topic.
+type topicChange = standaloneChange[*ydbast.Topic]
+
+// topicPlanner plans topic statements on the shared skeleton. A topic
+// statement is early.
+func topicPlanner() standalonePlanner[*ydbast.Topic] {
+	return standalonePlanner[*ydbast.Topic]{family: "topic", scope: "topic", kind: ydbdiff.TopicKind,
+		placement: plangraph.PlacementEarly, operations: topicOperations, refusals: topicRefusals, action: topicAction,
+		dependencies: topicDependencies, strategy: topicStrategy}
 }
 
 // PlanFeatures returns one operation per created, changed or dropped topic.
 // A refused change returns no operation from the batch.
 func (TopicService) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
-	if ctx == nil {
-		return featureplan.Result{}, fmt.Errorf("%w: planning requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	if request.Target != "ydb" {
-		return featureplan.Result{}, fmt.Errorf("%w: YDB planning on %q", ptaherr.ErrUnsupportedDialect, request.Target)
-	}
-	if !request.Identifiers.Equal(identifier.ForDialect("ydb")) || len(request.ParentKinds) != 0 {
-		return featureplan.Result{}, fmt.Errorf("%w: invalid topic planning scope", schemaext.ErrInvalidValue)
-	}
-	changes, err := topicOperations(ctx, request)
-	if err != nil {
-		return featureplan.Result{}, err
-	}
-	if diagnostics := topicRefusals(request, changes); len(diagnostics) > 0 {
-		return featureplan.Result{Complete: true, Diagnostics: diagnostics}, nil
-	}
-	slices.SortFunc(changes, func(a, b topicChange) int {
-		return schemaext.CompareRefs(a.operation.Subject(), b.operation.Subject())
-	})
-	common := indexCommonSteps(request.CommonSteps)
-	contribution := plangraph.Contribution[featureplan.Operation]{Owner: "ptah.run/ydb"}
-	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(request.Changes))}
-	for index, change := range changes {
-		if err := ctx.Err(); err != nil {
-			return featureplan.Result{}, err
-		}
-		operation := change.operation
-		action := topicAction(operation)
-		id := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("topic/%06d/%s", index, action)}
-		slot := ydbscheme.Path(operation.Schema, operation.Name)
-		edges, err := topicDependencies(id, operation.Subject(), slot, action, common)
-		if err != nil {
-			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{topicDiagnostic(change.input, operation, err)}}, nil
-		}
-		contribution.Dependencies = append(contribution.Dependencies, edges...)
-		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
-			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: operation},
-			Effects:     []plangraph.Effect{{Subject: operation.Subject(), Action: action}, {Subject: slot, Action: action}},
-			Transaction: plangraph.TransactionForbidden, Impact: operation.Effect(), Placement: plangraph.PlacementEarly,
-		})
-		result.Changes[change.input] = featureplan.ChangePlan{Subject: operation.Subject(), Kind: ydbdiff.TopicKind,
-			Strategy: topicStrategy(operation), Steps: []plangraph.StepID{id}}
-	}
-	if len(contribution.Steps) > 0 {
-		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	return result, nil
+	return topicPlanner().plan(ctx, request)
 }
 
 // topicDependencies orders one statement on the topic ref, at the scheme path
@@ -147,7 +96,7 @@ func topicOperations(ctx context.Context, request featureplan.Request) ([]topicC
 		if err := operation.Validate(); err != nil {
 			return nil, err
 		}
-		changes = append(changes, topicChange{input: index, operation: operation})
+		changes = append(changes, topicChange{input: index, ref: record.Subject, operation: operation})
 	}
 	return changes, nil
 }
@@ -202,12 +151,6 @@ func topicStrategy(operation *ydbast.Topic) string {
 	default:
 		return "change the topic's settings and consumers in place"
 	}
-}
-
-func topicDiagnostic(index int, operation *ydbast.Topic, err error) featureplan.Diagnostic {
-	return featureplan.Diagnostic{Change: new(index), Problem: schemavalidation.Diagnostic{
-		Code: schemavalidation.InvalidSchema, Kind: string(ydbdiff.TopicKind), Object: operation.Subject().String(), Message: err.Error(),
-	}}
 }
 
 // PlanDeclarations derives one CREATE TOPIC per declared topic. The operations

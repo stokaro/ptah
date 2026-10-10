@@ -201,7 +201,7 @@ func refuseTransferDependencies(diff *difftypes.SchemaDiff) error {
 		if !ydbreplication.LocalSource(transfer.Spec) {
 			continue
 		}
-		source := ydbreplication.SourceKey(transfer.Spec.Source, "")
+		source := transferSource(diff.CurrentDatabasePath, transfer.Spec.Source)
 		if topics[source] || declaresChangefeed(diff.Replications.DesiredObjects, declared, source) || recordsTopic(diff.Replications.CurrentCoverage, source) || recordsChangefeed(diff.Replications.CurrentCoverage, declared, source) {
 			continue
 		}
@@ -246,12 +246,25 @@ func recordsChangefeed(knowledgeOf schemaext.Coverage, declared map[string]schem
 // rather than described it: a topic it listed and could not read. A topic of
 // a changefeed the read recorded is [recordsChangefeed]'s.
 func recordsTopic(knowledgeOf schemaext.Coverage, source string) bool {
-	schema, name, found := cutLast(source)
-	if !found {
-		schema, name = "", source
+	ref, err := ydbtopic.ParsePath(source)
+	if err != nil {
+		return false
 	}
-	knowledge, recorded := knowledgeOf.SubjectKnowledge(ydbtopic.Kind, ydbtopic.Ref(schema, name))
+	knowledge, recorded := knowledgeOf.SubjectKnowledge(ydbtopic.Kind, ref)
 	return recorded && (knowledge.State == schemaext.Unrepresentable || knowledge.State == schemaext.Uninspected)
+}
+
+// transferSource is the path, relative to root, of the topic a transfer of
+// root's database reads. It reads the source the way the plan's statement
+// effects do ([ydbtopic.ResolvePath]), so an absolute source under root names
+// the same topic as the relative one. A source that names no topic of the
+// database is returned as written.
+func transferSource(root, source string) string {
+	ref, err := ydbtopic.ResolvePath(root, source)
+	if err != nil {
+		return source
+	}
+	return ydbtopic.Display(ref.Schema.Source, ref.Name.Source)
 }
 
 // cutLast splits a path at its last slash.
@@ -270,7 +283,7 @@ func cutLast(value string) (before, after string, found bool) {
 func transferOfTable(diff *difftypes.SchemaDiff, table schemamodel.Table) string {
 	tablePath := ydbreplication.TablePath(table.Schema, table.Name)
 	for _, transfer := range diff.Replications.CurrentTransfers {
-		source := ydbreplication.SourceKey(transfer.Spec.Source, "")
+		source := transferSource(diff.CurrentDatabasePath, transfer.Spec.Source)
 		if strings.Trim(transfer.Spec.Target, "/") == tablePath ||
 			(ydbreplication.LocalSource(transfer.Spec) && strings.HasPrefix(source, tablePath+"/")) {
 			return transfer.QualifiedName()

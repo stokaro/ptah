@@ -264,12 +264,12 @@ func TestDeclare_FailurePath(t *testing.T) {
 			attribute: ydbtopic.AttributeName},
 		{name: "a parent segment as the name", leaf: "..", wantErr: `invalid name "..": is not a path segment`, attribute: ydbtopic.AttributeName},
 		{name: "an unclean directory", schema: "app//queues", leaf: "events",
-			wantErr: `invalid schema "app//queues": is not a directory path relative to the database root`, attribute: ydbtopic.AttributeSchema},
+			wantErr: `invalid schema "app//queues": is not a directory path relative to the database root; write it without a trailing slash or an empty, \. or \.\. segment`, attribute: ydbtopic.AttributeSchema},
 		{name: "an absolute directory", schema: " /local/app ", leaf: "events",
 			wantErr:   `invalid schema "/local/app": starts with a slash; name the directory relative to the database root, without the database's own path`,
 			attribute: ydbtopic.AttributeSchema},
 		{name: "a trailing slash", schema: "app/", leaf: "events",
-			wantErr: `invalid schema "app/": is not a directory path relative to the database root`, attribute: ydbtopic.AttributeSchema},
+			wantErr: `invalid schema "app/": is not a directory path relative to the database root; write it without a trailing slash or an empty, \. or \.\. segment`, attribute: ydbtopic.AttributeSchema},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -323,16 +323,24 @@ func TestCheckDirectory_HappyPath(t *testing.T) {
 }
 
 // TestCheckDirectory_FailurePath refuses a directory written from the server
-// root, naming the schema attribute.
+// root and one that is not a clean path, naming the schema attribute.
 func TestCheckDirectory_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	err := ydbtopic.CheckDirectory(" /local/app")
-
-	c.Assert(err, qt.ErrorMatches, `invalid schema "/local/app": starts with a slash; .*`)
-	declarationError, ok := errors.AsType[*ydbtopic.DeclarationError](err)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(declarationError.Attribute, qt.Equals, ydbtopic.AttributeSchema)
+	tests := []struct{ name, schema, wantErr string }{
+		{name: "from the server root", schema: " /local/app", wantErr: `invalid schema "/local/app": starts with a slash; .*`},
+		{name: "a trailing slash", schema: "app/", wantErr: `invalid schema "app/": is not a directory path relative to the database root; .*`},
+		{name: "an empty segment", schema: "app//queues", wantErr: `invalid schema "app//queues": is not a directory path relative to the database root; .*`},
+		{name: "a parent segment", schema: "../app", wantErr: `invalid schema "\.\./app": is not a directory path relative to the database root; .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := ydbtopic.CheckDirectory(test.schema)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			declarationError, ok := errors.AsType[*ydbtopic.DeclarationError](err)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(declarationError.Attribute, qt.Equals, ydbtopic.AttributeSchema)
+		})
+	}
 }
 
 // TestCoverage_EnrollsTheTopicModel records a claim about the topic namespace

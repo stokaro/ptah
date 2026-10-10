@@ -3,15 +3,11 @@ package ydbplan
 import (
 	"context"
 	"fmt"
-	"slices"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbast"
@@ -24,73 +20,24 @@ import (
 // in a SQL transaction, and every change keeps that execution constraint.
 type CoordinationService struct{}
 
-type coordinationOperation struct {
-	input int
-	value *ydbast.CoordinationNode
+// coordinationPlanner plans coordination node statements on the shared
+// skeleton. A node statement is not early: its dependencies and its name
+// place it.
+func coordinationPlanner() standalonePlanner[*ydbast.CoordinationNode] {
+	return standalonePlanner[*ydbast.CoordinationNode]{family: "coordination", scope: "standalone coordination",
+		kind: ydbdiff.CoordinationNodeKind, operations: coordinationOperations, refusals: coordinationRefusals,
+		action: coordinationAction, strategy: func(*ydbast.CoordinationNode) string {
+			return "apply the captured configuration through the coordination service"
+		},
+		dependencies: func(id plangraph.StepID, _, slot objectidentity.ID, action plangraph.Action, common commonSteps) ([]plangraph.Dependency, error) {
+			return schemePathDependencies("coordination", id, slot, action, common.steps)
+		}}
 }
 
 // PlanFeatures returns complete operands, footprints, transaction requirements,
 // and safety metadata. A refused node discards all operations in this batch.
 func (CoordinationService) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
-	if ctx == nil {
-		return featureplan.Result{}, fmt.Errorf("%w: planning requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	if request.Target != "ydb" {
-		return featureplan.Result{}, fmt.Errorf("%w: YDB planning on %q", ptaherr.ErrUnsupportedDialect, request.Target)
-	}
-	if !request.Identifiers.Equal(identifier.ForDialect("ydb")) || len(request.ParentKinds) != 0 {
-		return featureplan.Result{}, fmt.Errorf("%w: invalid standalone coordination planning scope", schemaext.ErrInvalidValue)
-	}
-	operations, diagnostics, err := coordinationOperations(ctx, request)
-	if err != nil {
-		return featureplan.Result{}, err
-	}
-	if len(request.Changes) > 0 && !request.Capabilities.Has(capability.CoordinationNodes) {
-		diagnostics = append(diagnostics, featureplan.Diagnostic{Problem: schemavalidation.Diagnostic{
-			Code: schemavalidation.UnsupportedFeature, Kind: string(ydbdiff.CoordinationNodeKind),
-			Feature: string(capability.CoordinationNodes), Message: "this target does not support coordination nodes",
-		}})
-	}
-	if len(diagnostics) > 0 {
-		return featureplan.Result{Complete: true, Diagnostics: diagnostics}, nil
-	}
-	slices.SortFunc(operations, func(a, b coordinationOperation) int {
-		return schemaext.CompareRefs(a.value.Subject(), b.value.Subject())
-	})
-	contribution := plangraph.Contribution[featureplan.Operation]{Owner: "ptah.run/ydb"}
-	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(request.Changes))}
-	for index, operation := range operations {
-		if err := ctx.Err(); err != nil {
-			return featureplan.Result{}, err
-		}
-		action := coordinationAction(operation.value)
-		id := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("coordination/%06d/%s", index, action)}
-		slot := ydbscheme.Path(operation.value.Schema, operation.value.Name)
-		edges, err := schemePathDependencies("coordination", id, slot, action, request.CommonSteps)
-		if err != nil {
-			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{Change: new(operation.input), Problem: schemavalidation.Diagnostic{
-				Code: schemavalidation.InvalidSchema, Kind: string(ydbdiff.CoordinationNodeKind), Object: operation.value.Subject().String(), Message: err.Error(),
-			}}}}, nil
-		}
-		contribution.Dependencies = append(contribution.Dependencies, edges...)
-		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
-			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: operation.value},
-			Effects:     []plangraph.Effect{{Subject: operation.value.Subject(), Action: action}, {Subject: slot, Action: action}},
-			Transaction: plangraph.TransactionForbidden, Impact: operation.value.Effect(),
-		})
-		result.Changes[operation.input] = featureplan.ChangePlan{Subject: operation.value.Subject(), Kind: ydbdiff.CoordinationNodeKind,
-			Strategy: "apply the captured configuration through the coordination service", Steps: []plangraph.StepID{id}}
-	}
-	if len(contribution.Steps) > 0 {
-		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	return result, nil
+	return coordinationPlanner().plan(ctx, request)
 }
 
 // schemePathDependencies orders a standalone object's statement against the
@@ -190,36 +137,48 @@ func slotDependencies(family string, id plangraph.StepID, slot objectidentity.ID
 	return edges, nil
 }
 
-func coordinationOperations(ctx context.Context, request featureplan.Request) ([]coordinationOperation, []featureplan.Diagnostic, error) {
-	var operations []coordinationOperation
-	var diagnostics []featureplan.Diagnostic
+func coordinationOperations(ctx context.Context, request featureplan.Request) ([]standaloneChange[*ydbast.CoordinationNode], error) {
+	operations := make([]standaloneChange[*ydbast.CoordinationNode], 0, len(request.Changes))
 	seen := make(map[objectidentity.Key]bool)
 	for index, record := range request.Changes {
 		if err := ctx.Err(); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		cloned, err := record.Clone()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		change, ok := cloned.Value.(*ydbdiff.CoordinationNode)
 		if !ok || seen[cloned.Subject.Key()] {
-			return nil, nil, fmt.Errorf("%w: unexpected or duplicate coordination change", schemaext.ErrInvalidValue)
+			return nil, fmt.Errorf("%w: unexpected or duplicate coordination change", schemaext.ErrInvalidValue)
 		}
 		seen[cloned.Subject.Key()] = true
 		value := &ydbast.CoordinationNode{Schema: record.Subject.Schema.Source, Name: record.Subject.Name.Source, Change: *change}
 		if value.Subject() != record.Subject {
-			return nil, nil, fmt.Errorf("%w: coordination change has an invalid standalone identity", schemaext.ErrInvalidValue)
+			return nil, fmt.Errorf("%w: coordination change has an invalid standalone identity", schemaext.ErrInvalidValue)
 		}
-		if err := value.Validate(); err != nil {
-			diagnostics = append(diagnostics, featureplan.Diagnostic{Change: new(index), Problem: schemavalidation.Diagnostic{
-				Code: schemavalidation.InvalidSchema, Kind: string(ydbdiff.CoordinationNodeKind), Object: record.Subject.String(), Message: err.Error(),
-			}})
-			continue
-		}
-		operations = append(operations, coordinationOperation{input: index, value: value})
+		operations = append(operations, standaloneChange[*ydbast.CoordinationNode]{input: index, ref: record.Subject, operation: value})
 	}
-	return operations, diagnostics, nil
+	return operations, nil
+}
+
+// coordinationRefusals refuses, before any operation is returned, a node
+// whose operands are invalid, and every change on a target without
+// coordination nodes.
+func coordinationRefusals(request featureplan.Request, operations []standaloneChange[*ydbast.CoordinationNode]) []featureplan.Diagnostic {
+	var diagnostics []featureplan.Diagnostic
+	for _, operation := range operations {
+		if err := operation.operation.Validate(); err != nil {
+			diagnostics = append(diagnostics, standaloneDiagnostic(ydbdiff.CoordinationNodeKind, operation.input, operation.ref, err))
+		}
+	}
+	if len(request.Changes) > 0 && !request.Capabilities.Has(capability.CoordinationNodes) {
+		diagnostics = append(diagnostics, featureplan.Diagnostic{Problem: schemavalidation.Diagnostic{
+			Code: schemavalidation.UnsupportedFeature, Kind: string(ydbdiff.CoordinationNodeKind),
+			Feature: string(capability.CoordinationNodes), Message: "this target does not support coordination nodes",
+		}})
+	}
+	return diagnostics
 }
 
 func coordinationAction(value *ydbast.CoordinationNode) plangraph.Action {

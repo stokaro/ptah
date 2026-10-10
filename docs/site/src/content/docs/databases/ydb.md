@@ -903,12 +903,16 @@ topics:
 
 The attributes carry the YQL setting names, and the
 [annotation reference](../../reference/go-annotations/#ptahschematopic) lists
-them. The directory is relative to the database root, and a directory written
-from the server root, such as `/local/app`, is refused. A topic is declared
+them. The directory is relative to the database root. A directory written
+from the server root, such as `/local/app`, is refused, and so is one with a
+trailing slash or an empty, `.` or `..` segment; a consumer's directory follows
+the same rule as its topic's. A topic is declared
 once: a second declaration of its path, in the same file or in another source
 of the same schema, is refused. A YQL schema file declares a topic with
 `CREATE TOPIC`, and a consumer of it, or of a changefeed's topic, with `ALTER
-TOPIC ... ADD CONSUMER`. A setting the declaration leaves out stands for the value YDB gives a new
+TOPIC ... ADD CONSUMER`.
+
+A setting the declaration leaves out stands for the value YDB gives a new
 topic: one partition, auto-partitioning disabled, a retention of 24 hours, a
 write speed of 1 MiB per second per partition, a burst equal to the write speed,
 and no codec list. A topic created with a strategy splits a partition at 90% of

@@ -449,7 +449,8 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 
 // TestGenerateMigrationAST_Replications_RebuildRefusesATransfersTable refuses
 // to rebuild a table a transfer writes or reads a changefeed of: the rebuild
-// swaps the table from under the transfer.
+// swaps the table from under the transfer. YDB reports a source absolute, and
+// an absolute source under the database names the same changefeed.
 func TestGenerateMigrationAST_Replications_RebuildRefusesATransfersTable(t *testing.T) {
 	typeChange := []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}
 	tests := []struct {
@@ -460,6 +461,8 @@ func TestGenerateMigrationAST_Replications_RebuildRefusesATransfersTable(t *test
 			Lambda: lambda}},
 		{name: "a changefeed it reads", transfer: ast.TransferSpec{Source: "app/items/feed", Target: "log",
 			Lambda: lambda}},
+		{name: "a changefeed it reads by its absolute path", transfer: ast.TransferSpec{Source: "/local/app/items/feed", Target: "log",
+			Lambda: lambda}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -469,6 +472,7 @@ func TestGenerateMigrationAST_Replications_RebuildRefusesATransfersTable(t *test
 				ColumnsModified: typeChange})
 			diff.Replications.CurrentTransfers = []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning,
 				Spec: test.transfer}}
+			diff.CurrentDatabasePath = "/local"
 
 			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuild(true).GenerateMigrationAST(
 				context.Background(), must.Must(builtin.New()),

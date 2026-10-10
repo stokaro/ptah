@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -87,6 +88,15 @@ func TestParseSource_Topic_FailurePath(t *testing.T) {
 			`//ptah:schema:topic name="events" schema="app"`,
 			wantErr: `topic app/events is declared twice on //ptah:schema:topic at Events`,
 			wantIs:  ptaherr.ErrInvalidAttributeValue},
+		{name: "a directory with a trailing slash", annotations: `//ptah:schema:topic name="events" schema="app/"`,
+			wantErr: `invalid schema "app/": is not a directory path relative to the database root; write it without a trailing slash ` +
+				`or an empty, \. or \.\. segment on //ptah:schema:topic at Events`,
+			wantIs: ptaherr.ErrInvalidAttributeValue},
+		{name: "a consumer's directory with a trailing slash", annotations: `//ptah:schema:topic name="events" schema="app"` + "\n" +
+			`//ptah:schema:topic:consumer name="c" topic="events" schema="app/"`,
+			wantErr: `invalid schema "app/": is not a directory path relative to the database root; write it without a trailing slash ` +
+				`or an empty, \. or \.\. segment on //ptah:schema:topic:consumer at Events`,
+			wantIs: ptaherr.ErrInvalidAttributeValue},
 		{name: "a consumer's directory written from the server root", annotations: `//ptah:schema:topic name="events" schema="app"` + "\n" +
 			`//ptah:schema:topic:consumer name="c" topic="events" schema="/local/app"`,
 			wantErr: `invalid schema "/local/app": starts with a slash; .* on //ptah:schema:topic:consumer at Events`,
@@ -105,6 +115,22 @@ func TestParseSource_Topic_FailurePath(t *testing.T) {
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 		})
 	}
+}
+
+// TestParse_Topics_DeclaredTwiceInOneFile refuses a topic one file declares
+// twice with the error a duplicate carries in every other source, naming the
+// name attribute.
+func TestParse_Topics_DeclaredTwiceInOneFile(t *testing.T) {
+	c := qt.New(t)
+	db, err := goschema.ParseSource("topics.go", "package entities\n\n//ptah:schema:topic name=\"events\" schema=\"app\"\n"+
+		"//ptah:schema:topic name=\"events\" schema=\"app\"\ntype Events struct{}\n")
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	parseErr, ok := errors.AsType[*ptaherr.ParseError](err)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(parseErr.Attribute, qt.Equals, ydbtopic.AttributeName)
+	c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 }
 
 // TestMerge_Topics_DeclaredTwice refuses two files that declare one topic,
