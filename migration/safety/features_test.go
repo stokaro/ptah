@@ -74,3 +74,36 @@ func TestClassifySchemaDiffReportsAChangeOnAReplacedViewAsDestructive(t *testing
 		})
 	}
 }
+
+// Replacing a view raises the lifecycle severity of its setting changes and
+// leaves their access assessment alone: an owner that says a change widens
+// access is reported as widening on a view the plan keeps and on one it
+// replaces.
+func TestClassifySchemaDiffKeepsTheAccessEffectOfAChangeOnAReplacedView(t *testing.T) {
+	ref := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "", "daily")
+	record := schemaext.ChangeRecord{Subject: ref, Value: &accessChange{
+		effect: addsObject, access: schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: "admits more rows"},
+	}}
+	for _, test := range []struct {
+		name      string
+		changes   map[string]string
+		lifecycle safety.Severity
+	}{
+		{"a view the plan keeps", make(map[string]string), safety.Safe},
+		{"a view the plan replaces", map[string]string{"body": "SELECT 1 -> SELECT 2"}, safety.Destructive},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{
+				{ViewName: "daily", Changes: test.changes, FeatureChanges: []schemaext.ChangeRecord{record}},
+			}}
+
+			findings := safety.ClassifySchemaDiff(diff)
+
+			c.Assert(findings, qt.DeepEquals, []safety.Finding{
+				{Category: "feature_access_widened:example.org/access-change", Count: 1, Severity: safety.Destructive},
+				{Category: "feature_changes:example.org/access-change", Count: 1, Severity: test.lifecycle},
+			})
+		})
+	}
+}
