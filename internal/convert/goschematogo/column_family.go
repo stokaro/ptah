@@ -49,7 +49,8 @@ func validateVectorDeclaration(facets schemaext.Facets) error {
 // partitioning, and the MySQL index options, which it writes for every target
 // they are bound to.
 func isAnnotatedIndexFacet(kind schemaext.Kind) bool {
-	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind || kind == mysqlschema.IndexKind
+	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind || kind == mysqlschema.IndexKind ||
+		kind == mysqlschema.IndexBlockSizeKind
 }
 
 // captureTablePartitioning validates the YDB settings each table carries and

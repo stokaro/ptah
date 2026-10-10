@@ -586,6 +586,9 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			return nil, err
 		}
 	}
+	if err := validateIndexBlockSize(dialect, node.Name, indexBlockSize(node.Facets)); err != nil {
+		return nil, err
+	}
 	facets, err := prepareIndexFacets(dialect, node.Facets)
 	if err != nil {
 		return nil, err
@@ -597,9 +600,6 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 		return nil, err
 	}
 	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
-		return nil, err
-	}
-	if err := validateIndexBlockSize(dialect, node.Name, node.KeyBlockSize); err != nil {
 		return nil, err
 	}
 	if err := refuseInvisibleIndexNode(dialect, caps, node); err != nil {
@@ -1048,14 +1048,18 @@ func validateDeclaredFeatures(dialect string, caps capability.Capabilities, data
 	if err := validateDeclaredRowSecurity(dialect, database); err != nil {
 		return err
 	}
-	// A vector index is refused by the key it needs before its facet is
-	// refused as one the target's owners do not register, so every target
-	// without vector indexes gives the same answer.
+	// A vector index is refused by the key it needs, and a block-size hint
+	// by the target's support for it, before the facet is refused as one the
+	// target's owners do not register, so every target without the feature
+	// gives the same answer.
 	for _, index := range database.Indexes {
 		if ydbschema.HasVectorIndex(index.Facets) {
 			if err := refuseVectorIndex(dialect, caps, index.Name); err != nil {
 				return err
 			}
+		}
+		if err := validateIndexBlockSize(dialect, index.Name, indexBlockSize(index.Facets)); err != nil {
+			return err
 		}
 	}
 	if err := validateDeclaredFacets(dialect, database); err != nil {
@@ -1162,18 +1166,16 @@ func refuseInvisibleIndex(dialect string, caps capability.Capabilities, name str
 	}
 }
 
-// validateDeclaredIndexOptions checks index visibility and block-size hints over a
+// validateDeclaredIndexOptions checks index visibility and partitioning over a
 // whole declaration, before the first statement is rendered, for the reason
-// validateDeclaredNullsDistinct gives.
+// validateDeclaredNullsDistinct gives. A block-size hint is checked with the
+// features; see validateDeclaredFeatures.
 func validateDeclaredIndexOptions(
 	dialect string,
 	caps capability.Capabilities,
 	database *schemamodel.Database,
 ) error {
 	for _, index := range database.Indexes {
-		if err := validateIndexBlockSize(dialect, index.Name, index.KeyBlockSize); err != nil {
-			return err
-		}
 		if slices.Contains(index.Facets.Kinds(), ydbschema.IndexPartitioningKind) {
 			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
 				return err

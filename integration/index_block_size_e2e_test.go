@@ -21,11 +21,17 @@ func blockSizeSchema(size int, comment, options string) string {
 
 func blockSizeDDL(c *qt.C, dsn string) string {
 	c.Helper()
+	return showCreateTable(c, dsn, "bt")
+}
+
+// showCreateTable is SHOW CREATE TABLE of table in the database dsn names.
+func showCreateTable(c *qt.C, dsn, table string) string {
+	c.Helper()
 	conn, err := sql.Open("mysql", dsn)
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(conn.Close(), qt.IsNil) }()
 	var name, ddl string
-	c.Assert(conn.QueryRowContext(c.Context(), "SHOW CREATE TABLE bt").Scan(&name, &ddl), qt.IsNil)
+	c.Assert(conn.QueryRowContext(c.Context(), "SHOW CREATE TABLE `"+table+"`").Scan(&name, &ddl), qt.IsNil)
 	return ddl
 }
 
@@ -120,4 +126,65 @@ func TestSchemaApplyPrimaryKeyOptionsWithDependenciesE2E(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestIndexBlockSizeOwnerPlanE2E drives the MySQL owner's plan of a block-size
+// change against each engine. A change of the hint alone replaces the index,
+// on MySQL with the table copy, which the safety classification names, and
+// the next plan is empty. On a MySQL row format that discards hints the same
+// declaration plans nothing. Where the key changes too, the common
+// replacement writes the hint and the owner adds no second statement; the
+// server stores the hint, so the next plan is empty there as well.
+func TestIndexBlockSizeOwnerPlanE2E(t *testing.T) {
+	const tableFormat = "CREATE TABLE ob (id int NOT NULL PRIMARY KEY, a int, b int, KEY k(%s) KEY_BLOCK_SIZE=%d)%s;"
+	for _, test := range []struct {
+		name            string
+		engine          dbtarget.Engine
+		options         string
+		current, wanted string
+		size            int
+		plan            string
+		safety          string
+	}{
+		{name: "MySQL, the hint alone", engine: dbtarget.MySQLAdmin, options: " ROW_FORMAT=COMPRESSED", current: "a", wanted: "a", size: 8,
+			plan:   "ALTER TABLE `ob` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;",
+			safety: "ALGORITHM=COPY rebuilds the whole table"},
+		{name: "MySQL, the key changes too", engine: dbtarget.MySQLAdmin, options: " ROW_FORMAT=COMPRESSED", current: "a", wanted: "a,b", size: 8,
+			plan:   "ALTER TABLE `ob` DROP INDEX `k`, ADD INDEX `k` (`a`, `b`) KEY_BLOCK_SIZE=8;",
+			safety: "rebuilding an index can affect query plans and constraints"},
+		{name: "MariaDB, the hint alone", engine: dbtarget.MariaDBAdmin, current: "a", wanted: "a", size: 8,
+			plan:   "ALTER TABLE `ob` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8;",
+			safety: "the index is dropped and built again from every row of the table"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, test.engine)
+			name, target := scratch.builtFrom(c, fmt.Sprintf(tableFormat, test.current, 4, test.options))
+			desired := fmt.Sprintf(tableFormat, test.wanted, test.size, test.options)
+			builtName, _ := scratch.builtFrom(c, desired)
+			schema := writeKeyFile(c, desired)
+
+			planned := runPtahNative(c, "migrations", "plan", "--db-url", target, "--schema-file", schema)
+			c.Assert(planned, qt.Contains, test.plan)
+			c.Assert(strings.Count(planned, "DROP INDEX `k`"), qt.Equals, 1)
+			c.Assert(planned, qt.Contains, test.safety)
+			runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
+
+			c.Assert(showCreateTable(c, mySQLDSNForDatabase(c, scratch.adminDSN, name), "ob"), qt.Equals,
+				showCreateTable(c, mySQLDSNForDatabase(c, scratch.adminDSN, builtName), "ob"))
+			c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"), qt.Contains, "Schema is synced")
+		})
+	}
+}
+
+// TestIndexBlockSizeDiscardedByTheRowFormatE2E declares another hint for an
+// index of a MySQL table whose row format discards hints. The server keeps
+// none whatever is declared, so nothing is planned.
+func TestIndexBlockSizeDiscardedByTheRowFormatE2E(t *testing.T) {
+	c := qt.New(t)
+	scratch := newMySQLFamilyScratch(c, dbtarget.MySQLAdmin)
+	_, target := scratch.builtFrom(c, "CREATE TABLE ob (id int NOT NULL PRIMARY KEY, a int, KEY k(a) KEY_BLOCK_SIZE=4) ROW_FORMAT=DYNAMIC;")
+	schema := writeKeyFile(c, "CREATE TABLE ob (id int NOT NULL PRIMARY KEY, a int, KEY k(a) KEY_BLOCK_SIZE=8) ROW_FORMAT=DYNAMIC;")
+
+	c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"), qt.Contains, "Schema is synced")
 }

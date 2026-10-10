@@ -51,8 +51,17 @@ func (r TableCreationRequest) Clone() TableCreationRequest {
 // ColumnPrimaryKeys is authoritative only when ColumnPrimaryKeysPrepared is true;
 // an empty prepared list means the table has no primary-key columns.
 type TableCreation struct {
-	Subject                   objectidentity.ID
-	Facets                    []schemaext.FacetRecord
+	Subject objectidentity.ID
+	Facets  []schemaext.FacetRecord
+	// Observed holds what a CREATE of the declaration leaves that its
+	// declared values do not convert to, because it depends on the table
+	// rather than on the value alone: a conversion sees one value at a time,
+	// so it cannot know it. Each record names the table or one of its
+	// declared indexes and holds complete values in the Observed
+	// representation. A value replaces the conversion of its owner's value of
+	// that kind, or adds one where the declaration holds none, after every
+	// declared value has been converted. It cannot restore an excluded kind.
+	Observed                  []schemaext.FacetRecord
 	ColumnPrimaryKeys         []string
 	ColumnPrimaryKeysPrepared bool
 }
@@ -69,6 +78,7 @@ func (r TableCreationResult) Clone() TableCreationResult {
 	r.Tables = slices.Clone(r.Tables)
 	for i := range r.Tables {
 		r.Tables[i].Facets = slices.Clone(r.Tables[i].Facets)
+		r.Tables[i].Observed = slices.Clone(r.Tables[i].Observed)
 		r.Tables[i].ColumnPrimaryKeys = slices.Clone(r.Tables[i].ColumnPrimaryKeys)
 	}
 	return r
@@ -124,6 +134,9 @@ func validateTableCreation(input TableCreationInput, output TableCreation, seman
 		return fmt.Errorf("%w: creation projection changed table identity", ErrInvalid)
 	}
 	if err := validateCreationFacets(input, output.Facets, semantics); err != nil {
+		return err
+	}
+	if err := validateCreationFacets(input, output.Observed, semantics); err != nil {
 		return err
 	}
 	if len(output.ColumnPrimaryKeys) != 0 && !output.ColumnPrimaryKeysPrepared {

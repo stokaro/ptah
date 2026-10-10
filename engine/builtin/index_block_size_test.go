@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -17,7 +20,7 @@ func TestRender_IndexBlockSize_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			db := indexOptionsSchema()
 			db.Indexes[0].Invisible = false
-			db.Indexes[0].KeyBlockSize = 8
+			db.Indexes[0].Facets = blockSizeFacets(8)
 			statements, err := builtin.GetOrderedCreateStatements(db, dialect)
 			c.Assert(err, qt.ErrorMatches, `(?s).*KEY_BLOCK_SIZE.*does not support.*`)
 			c.Assert(statements, qt.IsNil)
@@ -34,7 +37,7 @@ func TestRender_IndexBlockSizeLimits_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			db := indexOptionsSchema()
 			db.Indexes[0].Invisible = false
-			db.Indexes[0].KeyBlockSize = test.size
+			db.Indexes[0].Facets = blockSizeFacets(test.size)
 			statements, err := builtin.GetOrderedCreateStatements(db, test.dialect)
 			c.Assert(err, qt.ErrorMatches, `(?s).*KEY_BLOCK_SIZE.*exceeds.*limit.*`)
 			c.Assert(statements, qt.IsNil)
@@ -45,11 +48,11 @@ func TestRender_IndexBlockSizeLimits_FailurePath(t *testing.T) {
 // The public AST renderer must refuse the hint too, including nested ALTERs.
 func TestRender_IndexBlockSizeAST_FailurePath(t *testing.T) {
 	for _, node := range []ast.Node{
-		&ast.IndexNode{Name: "k", Table: "t", Columns: []string{"a"}, KeyBlockSize: 8},
+		&ast.IndexNode{Name: "k", Table: "t", Columns: []string{"a"}, Facets: blockSizeFacets(8)},
 		&ast.ConstraintNode{Type: ast.PrimaryKeyConstraint, Columns: []string{"a"}, KeyBlockSize: 8},
 		&ast.ConstraintNode{Type: ast.UniqueConstraint, Columns: []string{"a"}, KeyBlockSize: 8},
-		&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.AddIndexOperation{Index: &ast.IndexNode{Name: "k", Columns: []string{"a"}, KeyBlockSize: 8}}}},
-		&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.ReplaceIndexOperation{Index: &ast.IndexNode{Name: "k", Columns: []string{"a"}, KeyBlockSize: 8}}}},
+		&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.AddIndexOperation{Index: &ast.IndexNode{Name: "k", Columns: []string{"a"}, Facets: blockSizeFacets(8)}}}},
+		&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.ReplaceIndexOperation{Index: &ast.IndexNode{Name: "k", Columns: []string{"a"}, Facets: blockSizeFacets(8)}}}},
 	} {
 		t.Run(fmt.Sprintf("%T", node), func(t *testing.T) {
 			c := qt.New(t)
@@ -57,4 +60,11 @@ func TestRender_IndexBlockSizeAST_FailurePath(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 		})
 	}
+}
+
+// blockSizeFacets holds a block-size declaration as the MySQL owner's facet,
+// built without the limit check a source applies, so a render can be shown
+// refusing a value no source would hand it.
+func blockSizeFacets(size uint64) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: size}))
 }

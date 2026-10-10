@@ -1242,7 +1242,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 	// as a visible one and says nothing. The index is written, and the loss
 	// is reported, because applying the document back makes it visible and
 	// changes the query plans its author held back (stokaro/ptah#3853).
-	if index.KeyBlockSize != 0 {
+	if size, _, _ := mysqlschema.IndexBlockSize(index.Facets); size != 0 {
 		r.warn(IndexDiagnosticPath(cmp.Or(index.TableName, index.StructName), index.Name),
 			"the index KEY_BLOCK_SIZE hint cannot be represented in HCL schema output; applying this HCL removes the hint")
 	}

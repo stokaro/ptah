@@ -21,7 +21,8 @@ func TestColumnService_CountsEachStatedSetting(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(reports, qt.DeepEquals, []schemaext.ValueReport{
-		{Kind: mysqlschema.ColumnSettingsKind, Counts: []schemaext.MetricCount{{Name: mysqlreport.ColumnCharsetMetric, Value: 1}}},
+		{Kind: mysqlschema.ColumnSettingsKind, Counts: []schemaext.MetricCount{
+			{Name: mysqlreport.ColumnCharsetMetric, Value: 1}, {Name: mysqlreport.ColumnOnUpdateMetric, Value: 0}}},
 		{Kind: mysqlschema.ColumnSettingsKind, Counts: []schemaext.MetricCount{
 			{Name: mysqlreport.ColumnCharsetMetric, Value: 1}, {Name: mysqlreport.ColumnOnUpdateMetric, Value: 1}}},
 	})

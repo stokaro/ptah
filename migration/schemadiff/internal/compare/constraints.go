@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
+	"ptah.run/internal/indexscope"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -653,4 +654,16 @@ func uniqueConstraintChanged(
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
 		!nullsDistinctEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct) ||
 		deferralChanged(genConstraint, dbConstraint)
+}
+
+// indexTableRowFormat resolves the index owner using the comparison's name semantics.
+func indexTableRowFormat(tables []catalog.Table, index catalog.Index, semantics identifier.Semantics) string {
+	ref := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{TableName: index.QualifiedTableName(), Name: index.Name})
+	for _, table := range tables {
+		owner := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{TableName: table.QualifiedName(), Name: index.Name})
+		if owner == ref {
+			return table.RowFormat
+		}
+	}
+	return ""
 }

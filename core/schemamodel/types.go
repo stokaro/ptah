@@ -437,9 +437,6 @@ type Index struct {
 	// keeps maintaining it: MySQL's INVISIBLE and MariaDB's IGNORED. A target
 	// without an invisible index refuses one rather than build it visible.
 	Invisible bool
-	// KeyBlockSize is the MySQL-family index KEY_BLOCK_SIZE hint. Zero uses
-	// the engine default. MySQL retains it only on compressed tables.
-	KeyBlockSize uint64
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not specified.
 	NullsDistinct *bool

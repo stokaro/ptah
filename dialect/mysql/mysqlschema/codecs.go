@@ -49,8 +49,13 @@ func TableCodecs() []schemaext.Codec {
 // knowledge is the claim for every table the source describes; subjects
 // override it for individual tables.
 func TableCoverage(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
-	owned := make([]schemaext.OwnedCodec, 0, 2)
-	for _, codec := range TableCodecs() {
+	return coverage(TableKind, TableCodecs(), representation, knowledge, subjects)
+}
+
+// coverage records one claim about kind, whose models codecs define.
+func coverage(kind schemaext.Kind, codecs []schemaext.Codec, representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
+	owned := make([]schemaext.OwnedCodec, 0, len(codecs))
+	for _, codec := range codecs {
 		owned = append(owned, schemaext.OwnedCodec{Owner: Owner, Codec: codec})
 	}
 	registry, err := schemaext.NewRegistry(owned...)
@@ -58,11 +63,11 @@ func TableCoverage(representation schemaext.Representation, knowledge schemaext.
 		return schemaext.Coverage{}, err
 	}
 	for _, model := range registry.Definitions() {
-		if model.Kind == TableKind && model.Representation == representation {
+		if model.Kind == kind && model.Representation == representation {
 			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
 		}
 	}
-	return schemaext.Coverage{}, fmt.Errorf("%w: MySQL table options coverage requires a schema representation", schemaext.ErrInvalidValue)
+	return schemaext.Coverage{}, fmt.Errorf("%w: %s coverage requires a schema representation", schemaext.ErrInvalidValue, kind)
 }
 
 func shape(object schemaext.ObjectShape) func(json.RawMessage) error {
@@ -114,4 +119,40 @@ func IndexCodecs() []schemaext.Codec {
 			Shape: shape(observedIndexShape), Validate: ValidateObservedIndex,
 		}.Codec(),
 	}
+}
+
+//go:embed index-block-size-codecs.json
+var indexBlockSizeDefinition []byte
+
+// IndexBlockSizeWireDefinition returns an independent description of the
+// index block-size wire model. The definition covers both representations.
+func IndexBlockSizeWireDefinition() json.RawMessage { return slices.Clone(indexBlockSizeDefinition) }
+
+var (
+	desiredIndexBlockSizeShape  = wireShape[DesiredIndexBlockSize]("MySQL index block size")
+	observedIndexBlockSizeShape = wireShape[ObservedIndexBlockSize]("MySQL index block size")
+)
+
+// IndexBlockSizeCodecs returns the version-one desired and observed index
+// block-size codecs, in that order, with the strictness [TableCodecs] has.
+func IndexBlockSizeCodecs() []schemaext.Codec {
+	return []schemaext.Codec{
+		schemaext.ModelCodec[*DesiredIndexBlockSize]{
+			Prototype: &DesiredIndexBlockSize{}, Representation: schemaext.Desired, Version: 1, Definition: IndexBlockSizeWireDefinition(),
+			Shape: shape(desiredIndexBlockSizeShape), Validate: ValidateDesiredIndexBlockSize,
+		}.Codec(),
+		schemaext.ModelCodec[*ObservedIndexBlockSize]{
+			Prototype: &ObservedIndexBlockSize{}, Representation: schemaext.Observed, Version: 1, Definition: IndexBlockSizeWireDefinition(),
+			Shape: shape(observedIndexBlockSizeShape), Validate: ValidateObservedIndexBlockSize,
+		}.Codec(),
+	}
+}
+
+// IndexBlockSizeCoverage records what one source knows about index block
+// sizes. knowledge is the claim for every index the source describes;
+// subjects override it for individual indexes. A source that can spell the
+// hint, or that removes it on apply as an HCL file does, claims
+// [schemaext.Complete]: an index it declares without one requests none.
+func IndexBlockSizeCoverage(representation schemaext.Representation, knowledge schemaext.Knowledge, subjects []schemaext.SubjectCoverage) (schemaext.Coverage, error) {
+	return coverage(IndexBlockSizeKind, IndexBlockSizeCodecs(), representation, knowledge, subjects)
 }

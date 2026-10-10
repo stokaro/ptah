@@ -261,10 +261,7 @@ func (ctx *renderContext) refuseUnwrittenFacets() error {
 			switch {
 			case tables[facets] && isAnnotatedFacet(kind) && active:
 			case indexes[facets] && isAnnotatedIndexFacet(kind) && active:
-				if err := validateVectorDeclaration(*facets); err != nil {
-					return err
-				}
-				if _, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](*facets, mysqlschema.IndexKind); err != nil {
+				if err := validateAnnotatedIndexFacets(*facets); err != nil {
 					return err
 				}
 			case columns[facets] && isAnnotatedColumnFacet(kind) && active:
@@ -277,4 +274,18 @@ func (ctx *renderContext) refuseUnwrittenFacets() error {
 		}
 	}
 	return nil
+}
+
+// validateAnnotatedIndexFacets checks the index values the export writes as
+// attributes of the index directive: a YDB vector declaration and the MySQL
+// owner's index options and block-size hint.
+func validateAnnotatedIndexFacets(facets schemaext.Facets) error {
+	if err := validateVectorDeclaration(facets); err != nil {
+		return err
+	}
+	if _, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](facets, mysqlschema.IndexKind); err != nil {
+		return err
+	}
+	_, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndexBlockSize](facets, mysqlschema.IndexBlockSizeKind)
+	return err
 }

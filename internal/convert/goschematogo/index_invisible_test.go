@@ -4,16 +4,20 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
 // TestRender_IndexInvisible writes an index hidden from the optimizer as
 // `invisible="true"`, which the annotation parser reads back
-// (stokaro/ptah#3853).
+// (stokaro/ptah#3853), and its MySQL block-size hint as `key_block_size`, the
+// attribute the MySQL owner reads back into its facet.
 func TestRender_IndexInvisible(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
@@ -24,7 +28,8 @@ func TestRender_IndexInvisible(t *testing.T) {
 		},
 		Indexes: []schemamodel.Index{{
 			StructName: "Order", Name: "k_total", TableName: "orders", Fields: []string{"total"},
-			Comment: "lookup", Invisible: true, KeyBlockSize: 8,
+			Comment: "lookup", Invisible: true,
+			Facets: must.Must(mysqlschema.WithIndexBlockSize(schemaext.Facets{}, 8)),
 		}},
 	}
 
@@ -35,8 +40,9 @@ func TestRender_IndexInvisible(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(files[0].Data), qt.Contains, `invisible="true"`)
+	c.Assert(string(files[0].Data), qt.Contains, `key_block_size="8"`)
 	c.Assert(reparsed.Indexes, qt.HasLen, 1)
 	c.Assert(reparsed.Indexes[0].Invisible, qt.IsTrue)
-	c.Assert(reparsed.Indexes[0].KeyBlockSize, qt.Equals, uint64(8))
+	c.Assert(reparsed.Indexes[0].Facets.Equal(db.Indexes[0].Facets), qt.IsTrue)
 	c.Assert(reparsed.Indexes[0].Comment, qt.Equals, "lookup")
 }

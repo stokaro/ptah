@@ -95,9 +95,11 @@ func WritesColumnFacet(kind schemaext.Kind) bool { return kind == mysqlschema.Co
 // WritesIndexFacet reports an index facet kind the renderer writes itself
 // rather than as platform properties: a YDB vector index's settings, a YDB
 // index's partitioning and read replicas, and a MySQL FULLTEXT index's parser,
-// which it writes as attributes of the index block.
+// which it writes as attributes of the index block, and a MySQL index's
+// block-size hint, whose loss it reports.
 func WritesIndexFacet(kind schemaext.Kind) bool {
-	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind || kind == mysqlschema.IndexKind
+	return kind == ydbschema.VectorIndexKind || kind == ydbschema.IndexPartitioningKind || kind == mysqlschema.IndexKind ||
+		kind == mysqlschema.IndexBlockSizeKind
 }
 
 // renderHypertables writes the TimescaleDB hypertable blocks.

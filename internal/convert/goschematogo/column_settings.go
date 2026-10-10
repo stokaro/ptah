@@ -1,6 +1,8 @@
 package goschematogo
 
 import (
+	"strconv"
+
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/mysql/mysqlsource"
@@ -55,4 +57,13 @@ func mysqlIndexOptionAttrs(facets schemaext.Facets) []attr {
 		attrs = append(attrs, attr{name: "platform." + target + "." + mysqlsource.ParserProperty, value: options.Parser, set: true})
 	}
 	return attrs
+}
+
+// blockSizeAttr writes the MySQL owner's block-size hint as the index
+// directive's own key_block_size attribute, which the owner's annotation
+// extension reads back. A facet of another type is
+// refused before the export writes anything.
+func blockSizeAttr(facets schemaext.Facets) attr {
+	size, _, _ := mysqlschema.IndexBlockSize(facets)
+	return attr{name: "key_block_size", value: strconv.FormatUint(size, 10), set: size != 0}
 }

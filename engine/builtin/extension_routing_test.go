@@ -29,6 +29,7 @@ var extensionOwners = map[schemaext.Kind][]string{
 	"ptah.run/cockroachdb/alter-row-ttl":                  {"cockroachdb/alter-table"},
 	"ptah.run/mssql/extended-property-operation":          {"sqlserver/statement"},
 	"ptah.run/mssql/security-policy-operation":            {"sqlserver/statement"},
+	"ptah.run/mysql/replace-index":                        {"mariadb/alter-table", "mysql/alter-table"},
 	"ptah.run/pgpolicy/policy-comment-operation":          postgresFamilyStatements,
 	"ptah.run/pgpolicy/policy-operation":                  postgresFamilyStatements,
 	"ptah.run/pgpolicy/table-state-operation":             postgresFamilyStatements,

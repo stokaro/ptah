@@ -4345,6 +4345,19 @@ func withIndexParser(index *ast.IndexNode, parserName string) error {
 	return nil
 }
 
+// withIndexBlockSize records the KEY_BLOCK_SIZE the key options read on
+// index as the MySQL owner's hint. It is bound to no target, so a statement
+// written for another engine that declares one is refused there, as it always
+// was. Zero records nothing.
+func (p *Parser) withIndexBlockSize(index *ast.IndexNode) error {
+	facets, err := mysqlschema.WithIndexBlockSize(index.Facets, p.keyOptions.keyBlockSize)
+	if err != nil {
+		return fmt.Errorf("index %s: %w", index.Name, err)
+	}
+	index.Facets = facets
+	return nil
+}
+
 // ForeignKeyIndex reports whether index is the index a MySQL `FOREIGN KEY
 // name (columns)` clause names in the AST this parser returned, rather than
 // one the table body declares on its own.
@@ -5213,13 +5226,15 @@ func (p *Parser) tableIndex(constraint *ast.ConstraintNode, indexMethod, parserN
 		// SPATIAL and FULLTEXT take no USING clause -- so one field holds
 		// whichever the element asked for. mysqlindex reads both questions
 		// out of it.
-		Type:         cmp.Or(indexMethod, p.indexAccessMethod),
-		Unique:       unique,
-		Comment:      p.keyOptions.comment,
-		Invisible:    p.keyOptions.invisible,
-		KeyBlockSize: p.keyOptions.keyBlockSize,
+		Type:      cmp.Or(indexMethod, p.indexAccessMethod),
+		Unique:    unique,
+		Comment:   p.keyOptions.comment,
+		Invisible: p.keyOptions.invisible,
 	}
 	if err := withIndexParser(index, parserName); err != nil {
+		return nil, err
+	}
+	if err := p.withIndexBlockSize(index); err != nil {
 		return nil, err
 	}
 	return index, nil
@@ -7102,7 +7117,9 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	index.IfNotExists = ifNotExists
 	index.Comment = p.keyOptions.comment
 	index.Invisible = p.keyOptions.invisible
-	index.KeyBlockSize = p.keyOptions.keyBlockSize
+	if err := p.withIndexBlockSize(index); err != nil {
+		return nil, err
+	}
 	return index, nil
 }
 

@@ -15,6 +15,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
@@ -112,6 +113,9 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		return nil, err
 	}
 	out.FeatureObjects, out.FeatureCoverage = objects, coverage
+	if err := applyCreationObservations(out, prepared, identifier.ForDialect(dialect), dialect); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -309,7 +313,6 @@ func toDBIndexes(
 			Condition:          index.Condition,
 			Comment:            index.Comment,
 			Invisible:          index.Invisible,
-			KeyBlockSize:       index.KeyBlockSize,
 			NullsDistinct:      clonePtr(index.NullsDistinct),
 			Method:             indexAccessMethod(index.Type, dialect),
 			IncludeColumns:     append([]string(nil), index.IncludeColumns...),

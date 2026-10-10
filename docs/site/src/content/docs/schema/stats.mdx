@@ -171,6 +171,9 @@ ptah_schema_mysql_column_on_update_clauses{dialect="sqlite"} 0
 # HELP ptah_schema_mysql_index_options MySQL and MariaDB index options an index states.
 # TYPE ptah_schema_mysql_index_options gauge
 ptah_schema_mysql_index_options{dialect="sqlite"} 0
+# HELP ptah_schema_mysql_index_block_sizes Indexes with a MySQL-family KEY_BLOCK_SIZE hint.
+# TYPE ptah_schema_mysql_index_block_sizes gauge
+ptah_schema_mysql_index_block_sizes{dialect="sqlite"} 0
 # HELP ptah_schema_spanner_row_deletion_policy_tables Tables with a captured Spanner row deletion policy.
 # TYPE ptah_schema_spanner_row_deletion_policy_tables gauge
 ptah_schema_spanner_row_deletion_policy_tables{dialect="sqlite"} 0

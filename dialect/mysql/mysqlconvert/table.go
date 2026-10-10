@@ -22,7 +22,7 @@ type TableService struct{}
 // Any error, including cancellation, returns no partial result.
 func (TableService) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
 	return optionConversion[*mysqlschema.DesiredTable, *mysqlschema.ObservedTable]{
-		name: "MySQL table options", observe: (*mysqlschema.DesiredTable).Observed,
+		name: "MySQL table options", observe: anyTarget((*mysqlschema.DesiredTable).Observed),
 		validate: mysqlschema.ValidateObservedTable, declare: (*mysqlschema.ObservedTable).Desired,
 	}.convert(ctx, request)
 }
@@ -35,16 +35,33 @@ type IndexService struct{}
 // does.
 func (IndexService) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
 	return optionConversion[*mysqlschema.DesiredIndex, *mysqlschema.ObservedIndex]{
-		name: "MySQL index options", observe: (*mysqlschema.DesiredIndex).Observed,
+		name: "MySQL index options", observe: anyTarget((*mysqlschema.DesiredIndex).Observed),
 		validate: mysqlschema.ValidateObservedIndex, declare: (*mysqlschema.ObservedIndex).Desired,
 	}.convert(ctx, request)
 }
 
+// IndexBlockSizeService converts index block-size hints. An observation
+// becomes a declaration of the hint it holds; a declaration becomes the
+// observation a read of an index created from it on the target reports,
+// which on MySQL does not retain the hint (see
+// [mysqlschema.DesiredIndexBlockSize.Observed]).
+type IndexBlockSizeService struct{}
+
+// ConvertFeatures converts an ordered batch, as [TableService.ConvertFeatures]
+// does.
+func (IndexBlockSizeService) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
+	return optionConversion[*mysqlschema.DesiredIndexBlockSize, *mysqlschema.ObservedIndexBlockSize]{
+		name: "MySQL index block size", observe: (*mysqlschema.DesiredIndexBlockSize).Observed,
+		validate: mysqlschema.ValidateObservedIndexBlockSize, declare: (*mysqlschema.ObservedIndexBlockSize).Desired,
+	}.convert(ctx, request)
+}
+
 // optionConversion converts one kind of options between their declaration D
-// and their observation O.
+// and their observation O. observe takes the target, since what a read
+// reports for a declaration can depend on the engine.
 type optionConversion[D, O schemaext.Value] struct {
 	name     string
-	observe  func(D) (O, error)
+	observe  func(D, string) (O, error)
 	validate func(O) error
 	declare  func(O) D
 }
@@ -65,7 +82,7 @@ func (c optionConversion[D, O]) convert(ctx context.Context, request schemaext.C
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		converted, err := c.one(request.From, value)
+		converted, err := c.one(request.From, request.Target, value)
 		if err != nil {
 			return nil, err
 		}
@@ -74,13 +91,13 @@ func (c optionConversion[D, O]) convert(ctx context.Context, request schemaext.C
 	return result, ctx.Err()
 }
 
-func (c optionConversion[D, O]) one(from schemaext.Representation, value schemaext.Value) (schemaext.Value, error) {
+func (c optionConversion[D, O]) one(from schemaext.Representation, target string, value schemaext.Value) (schemaext.Value, error) {
 	if from == schemaext.Desired {
 		desired, ok := value.(D)
 		if !ok {
 			return nil, fmt.Errorf("%w: expected desired %s, got %T", schemaext.ErrInvalidValue, c.name, value)
 		}
-		return c.observe(desired)
+		return c.observe(desired, target)
 	}
 	observed, ok := value.(O)
 	if !ok {
@@ -90,4 +107,9 @@ func (c optionConversion[D, O]) one(from schemaext.Representation, value schemae
 		return nil, err
 	}
 	return c.declare(observed), nil
+}
+
+// anyTarget adapts a projection that reads the same on every target.
+func anyTarget[D, O any](observe func(D) (O, error)) func(D, string) (O, error) {
+	return func(declared D, _ string) (O, error) { return observe(declared) }
 }

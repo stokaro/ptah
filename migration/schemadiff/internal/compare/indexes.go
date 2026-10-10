@@ -123,7 +123,6 @@ type databaseIndexEntry struct {
 	// index on its partitioned parent, so no statement of its own creates or
 	// drops it. See [partitionAttachedIndexIsNotPlannable].
 	partitionAttached bool
-	rowFormat         string
 }
 
 // IndexesWithDialect compares indexes for dialect, with its identifier
@@ -702,7 +701,6 @@ func collectDatabaseIndexes(
 			index:             index,
 			constraintBacked:  uniqueConstraintEnforcesTheIndex(identity, owned.unique),
 			partitionAttached: index.PartitionAttached,
-			rowFormat:         indexTableRowFormat(database.Tables, index, semantics),
 		}
 	}
 	return indexes
@@ -859,7 +857,6 @@ func appendIndexDifferences(
 	database map[difftypes.IndexRef]databaseIndexEntry,
 	comparison indexComparison,
 ) {
-	dialect := comparison.dialect
 	for identity, entries := range ambiguousGenerated {
 		for _, entry := range entries {
 			appendIndexAddition(diff, entry)
@@ -876,9 +873,6 @@ func appendIndexDifferences(
 			continue
 		case comparison.replacementRequired(generatedEntry, databaseEntry):
 			appendIndexAddition(diff, generatedEntry)
-			diff.IndexesAdded[len(diff.IndexesAdded)-1].RequiresTableCopy = platform.NormalizeDialect(dialect) == platform.MySQL &&
-				mysqlindex.KeepsBlockSize(dialect, databaseEntry.rowFormat) &&
-				generatedEntry.index.KeyBlockSize != databaseEntry.index.KeyBlockSize
 			appendIndexRemoval(diff, databaseEntry)
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 		case generatedEntry.index.Invisible != databaseEntry.index.Invisible:
@@ -1100,9 +1094,6 @@ func indexReplacementRequired(
 		desired.ref.Name != database.ref.Name {
 		return true
 	}
-	if platform.NormalizeDialect(dialect) == platform.MySQL && !mysqlindex.KeepsBlockSize(dialect, database.rowFormat) {
-		desired.index.KeyBlockSize, database.index.KeyBlockSize = 0, 0
-	}
 	return indexDefinitionsChanged(desired.index, database.index, dialect, semantics, resolved)
 }
 
@@ -1262,8 +1253,7 @@ func mysqlIndexDefinitionChanged(
 	return desired.Unique != database.IsUnique ||
 		mysqlIndexMethodChanged(desired, database, dialect) ||
 		mysqlIndexKeyColumnsChanged(desired, database, semantics) ||
-		desired.Comment != database.Comment ||
-		desired.KeyBlockSize != database.KeyBlockSize
+		desired.Comment != database.Comment
 }
 
 // mysqlIndexMethodChanged answers whether the server's index satisfies the
@@ -1719,18 +1709,6 @@ func normalizePredicate(value, dialect string) string {
 		value = normalizeSQLServerPredicateSpelling(value)
 	}
 	return normalizeCheckExpression(value)
-}
-
-// indexTableRowFormat resolves the index owner using the comparison's name semantics.
-func indexTableRowFormat(tables []catalog.Table, index catalog.Index, semantics identifier.Semantics) string {
-	ref := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{TableName: index.QualifiedTableName(), Name: index.Name})
-	for _, table := range tables {
-		owner := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{TableName: table.QualifiedName(), Name: index.Name})
-		if owner == ref {
-			return table.RowFormat
-		}
-	}
-	return ""
 }
 
 // IndexRenames returns the renames [IndexesWithSemantics] plans for desired

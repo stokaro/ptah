@@ -3156,10 +3156,6 @@ func (c IndexChanges) Refs() []IndexRef {
 // PostgreSQL indexes those, and a UNIQUE index on one is what
 // REFRESH MATERIALIZED VIEW CONCURRENTLY requires.
 type IndexChange struct {
-	// RequiresTableCopy marks a MySQL replacement whose changed KEY_BLOCK_SIZE
-	// needs ALGORITHM=COPY. An in-place DROP/ADD keeps the old hint, even
-	// though it reports success. It is also required when removing the hint.
-	RequiresTableCopy bool
 	// Index is the declaration.
 	Index schemamodel.Index
 	// TableName is the relation it belongs to, resolved.

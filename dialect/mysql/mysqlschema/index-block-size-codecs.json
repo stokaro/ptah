@@ -1,0 +1,38 @@
+{
+  "$id": "ptah.run/mysql/index-block-size/v1",
+  "values": {
+    "desired": {
+      "ptah.run/mysql/index-block-size": {
+        "type": "object",
+        "properties": {
+          "key_block_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The KEY_BLOCK_SIZE hint a declaration states for an index, in kilobytes. An empty object declares an index without one."
+      }
+    },
+    "observed": {
+      "ptah.run/mysql/index-block-size": {
+        "type": "object",
+        "properties": {
+          "key_block_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "retained": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The KEY_BLOCK_SIZE hint an index holds, and whether the server keeps one on it at all: MariaDB always, MySQL only with ROW_FORMAT=COMPRESSED."
+      }
+    }
+  },
+  "canonicalization": "A zero hint and a hint the server does not retain are omitted."
+}

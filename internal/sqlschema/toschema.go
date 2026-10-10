@@ -430,14 +430,13 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 	// element text the suffix is part of.
 	parts := indexParts(index, sourcePlatform)
 	return schemamodel.Index{
-		Name:         normalizeSQLIdentifier(sourcePlatform, index.Name),
-		StructName:   tableName,
-		Fields:       indexFieldNames(index, parts, sourcePlatform),
-		Parts:        parts,
-		Unique:       index.Unique,
-		Comment:      index.Comment,
-		Invisible:    index.Invisible,
-		KeyBlockSize: index.KeyBlockSize,
+		Name:       normalizeSQLIdentifier(sourcePlatform, index.Name),
+		StructName: tableName,
+		Fields:     indexFieldNames(index, parts, sourcePlatform),
+		Parts:      parts,
+		Unique:     index.Unique,
+		Comment:    index.Comment,
+		Invisible:  index.Invisible,
 		// PostgreSQL-specific features
 		Type: index.Type,
 		// ClickHouse's data-skipping type and granularity arrive as the

@@ -296,7 +296,8 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 		return nil, fmt.Errorf("failed to read indexes: %w", err)
 	}
 	schema.Indexes = indexes
-	if err := r.readIndexBlockSizes(ctx, dbName, schema); err != nil {
+	primaryBlockSizes, err := r.readIndexBlockSizes(ctx, dbName, schema)
+	if err != nil {
 		return nil, fmt.Errorf("failed to read index block sizes: %w", err)
 	}
 
@@ -346,7 +347,7 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
 	carryPrimaryKeyMethod(schema)
-	carryPrimaryKeyOptions(schema)
+	carryPrimaryKeyOptions(schema, primaryBlockSizes)
 
 	return schema, nil
 }

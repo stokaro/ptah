@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -23,7 +26,8 @@ func TestRender_IndexInvisible(t *testing.T) {
 		},
 		Indexes: []schemamodel.Index{{
 			StructName: "Order", Name: "k_total", TableName: "orders", Fields: []string{"total"},
-			Comment: "lookup", Invisible: true, KeyBlockSize: 8,
+			Comment: "lookup", Invisible: true,
+			Facets: must.Must(mysqlschema.WithIndexBlockSize(schemaext.Facets{}, 8)),
 		}},
 	}
 

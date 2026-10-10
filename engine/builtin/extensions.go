@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
@@ -73,7 +74,8 @@ type renderOwners struct {
 // what a target without the capability cannot hold; row-level TTL is
 // CockroachDB's alone, the row deletion policy Spanner's, and the security
 // policy and the extended property SQL Server's. The synonym owner serves SQL
-// Server and Oracle.
+// Server and Oracle, and the MySQL owner's index replacement MySQL and
+// MariaDB.
 func ownersFor(dialect string) renderOwners {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.YDB:
@@ -92,6 +94,8 @@ func ownersFor(dialect string) renderOwners {
 			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Postgres, platform.YugabyteDB:
 		return renderOwners{extensions: postgresFamilyRegistry, lowerTableFacets: lowerPostgresFamilyFacets}
+	case platform.MySQL, platform.MariaDB:
+		return renderOwners{extensions: mysqlrender.Registry}
 	default:
 		return renderOwners{}
 	}

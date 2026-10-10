@@ -134,6 +134,7 @@ None.
 | `mysqlschema.DesiredColumnSettings.Charset` | `ddl` | — |
 | `mysqlschema.DesiredColumnSettings.OnUpdate` | `ddl` | — |
 | `mysqlschema.DesiredIndex.Parser` | `ddl` | — |
+| `mysqlschema.DesiredIndexBlockSize.KeyBlockSize` | `ddl` | — |
 | `mysqlschema.DesiredTable.AutoIncrement` | `ddl` | — |
 | `mysqlschema.DesiredTable.Charset` | `ddl` | — |
 | `mysqlschema.DesiredTable.Engine` | `ddl` | — |
@@ -347,7 +348,6 @@ None.
 | `schemamodel.Index.Fields` | `ddl` | — |
 | `schemamodel.Index.IncludeColumns` | `ddl` | — |
 | `schemamodel.Index.Invisible` | `ddl` | — |
-| `schemamodel.Index.KeyBlockSize` | `ddl` | — |
 | `schemamodel.Index.Name` | `ddl` | — |
 | `schemamodel.Index.NullsDistinct` | `ddl` | — |
 | `schemamodel.Index.Operator` | `ddl` | — |

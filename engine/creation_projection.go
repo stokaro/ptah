@@ -44,22 +44,50 @@ func (r *Runtime) ProjectTableCreations(ctx context.Context, request schemaproje
 		return schemaprojection.TableCreationResult{}, err
 	}
 	for i := range result.Tables {
-		for j, record := range result.Tables[i].Facets {
-			for _, kind := range record.Values.Kinds() {
-				if !r.ownsCodec(selected.owner, kind, schemaext.Desired) {
-					return schemaprojection.TableCreationResult{}, fmt.Errorf("%w: creation projection returned a model outside its owner: %q", schemaprojection.ErrInvalid, kind)
-				}
-			}
-			result.Tables[i].Facets[j].Values, err = r.codecs.SnapshotFacets(ctx, schemaext.Desired, record.Values)
-			if err != nil {
-				return schemaprojection.TableCreationResult{}, err
-			}
+		desired := func(kind schemaext.Kind) bool { return r.ownsCodec(selected.owner, kind, schemaext.Desired) }
+		if err := r.snapshotCreationFacets(ctx, desired, "a model outside its owner", schemaext.Desired, result.Tables[i].Facets); err != nil {
+			return schemaprojection.TableCreationResult{}, err
+		}
+		if err := r.snapshotCreationFacets(ctx, r.convertsOn(selected.name), "an observation of a model the target does not convert", schemaext.Observed, result.Tables[i].Observed); err != nil {
+			return schemaprojection.TableCreationResult{}, err
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaprojection.TableCreationResult{}, err
 	}
 	return result, nil
+}
+
+// snapshotCreationFacets replaces each record's values with an independent
+// snapshot in representation, refusing, as refusal says, a model allowed does
+// not accept.
+// Declared values must be the target owner's own models. An observation may
+// be of any model the target converts, since it stands in for a conversion,
+// and an owner serving several targets registers its conversions on each.
+func (r *Runtime) snapshotCreationFacets(ctx context.Context, allowed func(schemaext.Kind) bool, refusal string,
+	representation schemaext.Representation, records []schemaext.FacetRecord,
+) error {
+	for j, record := range records {
+		for _, kind := range record.Values.Kinds() {
+			if !allowed(kind) {
+				return fmt.Errorf("%w: creation projection returned %s: %q", schemaprojection.ErrInvalid, refusal, kind)
+			}
+		}
+		values, err := r.codecs.SnapshotFacets(ctx, representation, record.Values)
+		if err != nil {
+			return err
+		}
+		records[j].Values = values
+	}
+	return nil
+}
+
+// convertsOn reports the models a conversion is registered for on target.
+func (r *Runtime) convertsOn(target string) func(schemaext.Kind) bool {
+	return func(kind schemaext.Kind) bool {
+		_, found := r.conversions[conversionKey{target: target, kind: kind}]
+		return found
+	}
 }
 
 func (r *Runtime) validateCreationInputs(ctx context.Context, request schemaprojection.TableCreationRequest) error {

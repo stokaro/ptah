@@ -1,13 +1,14 @@
 package dbschematogo_test
 
 import (
-	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -156,25 +157,38 @@ func TestConvert_ColumnUniqueIsClearedByTheOwningIndex(t *testing.T) {
 // A MySQL unique index must keep options that its constraint row cannot carry,
 // including when its name is the column's own name.
 func TestConvert_MySQLUniqueIndexOptions(t *testing.T) {
-	for _, index := range []catalog.Index{
-		{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, KeyBlockSize: 8},
-		{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, Comment: "lookup"},
-		{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, Invisible: true},
+	for _, test := range []struct {
+		name  string
+		index catalog.Index
+	}{
+		{"block size", catalog.Index{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true,
+			Facets: must.Must(mysqlschema.WithObservedIndexBlockSize(schemaext.Facets{}, mysqlschema.ObservedIndexBlockSize{KeyBlockSize: 8, Retained: true}))}},
+		{"comment", catalog.Index{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, Comment: "lookup"}},
+		{"invisible", catalog.Index{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, Invisible: true}},
 	} {
-		t.Run(fmt.Sprintf("%+v", index), func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			constraint := bareUniqueConstraint()
 			constraint.Name = "email"
 			schema := coveringUniqueSchema([]catalog.Constraint{constraint})
-			schema.Indexes = []catalog.Index{index}
+			schema.Indexes = []catalog.Index{test.index}
 			schema.Tables[0].Columns[1].IsUnique = true
 			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "mysql", must.Must(builtin.New())))
 			c.Assert(converted.Indexes, qt.HasLen, 1)
 			c.Assert(converted.Constraints, qt.HasLen, 0)
-			c.Assert(converted.Indexes[0].KeyBlockSize, qt.Equals, index.KeyBlockSize)
-			c.Assert(converted.Indexes[0].Comment, qt.Equals, index.Comment)
-			c.Assert(converted.Indexes[0].Invisible, qt.Equals, index.Invisible)
+			c.Assert(blockSize(c, converted.Indexes[0].Facets), qt.Equals, blockSize(c, test.index.Facets))
+			c.Assert(converted.Indexes[0].Comment, qt.Equals, test.index.Comment)
+			c.Assert(converted.Indexes[0].Invisible, qt.Equals, test.index.Invisible)
 			c.Assert(converted.Fields[1].Unique, qt.IsFalse)
 		})
 	}
+}
+
+// blockSize is the MySQL owner's hint facets hold in either representation,
+// zero for none.
+func blockSize(c *qt.C, facets schemaext.Facets) uint64 {
+	c.Helper()
+	size, _, err := mysqlschema.IndexBlockSize(facets)
+	c.Assert(err, qt.IsNil)
+	return size
 }
