@@ -20,14 +20,15 @@ import (
 )
 
 // TopicService plans statements on standalone YDB topics. A topic depends on
-// nothing but its path, so each statement runs before the common statements,
-// except the ones that free its path: a topic created where the plan drops a
-// table, or below such a path, follows that drop, since every directory above
-// a topic must hold no other object. A dropped topic likewise goes before a
-// common statement that creates an object at its path or above it. A transfer
-// reads its topic by path: a created or changed topic comes before every
-// statement that reads it, and a dropped one after every such statement, so
-// a transfer the plan drops is gone before its topic.
+// nothing but its path, so each statement is early and runs before the common
+// statements, except when it has to follow one that frees its path: a topic
+// created where the plan drops a table, or below such a path, follows that
+// drop, since every directory above a topic must hold no other object. A
+// dropped topic likewise goes before a common statement that creates an object
+// at its path or above it. A transfer reads its topic by path: a created or
+// changed topic comes before every statement that reads it, and a dropped one
+// after every such statement, so a transfer the plan drops is gone before its
+// topic.
 type TopicService struct{}
 
 type topicChange struct {
@@ -79,7 +80,7 @@ func (TopicService) PlanFeatures(ctx context.Context, request featureplan.Reques
 		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
 			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: operation},
 			Effects:     []plangraph.Effect{{Subject: operation.Subject(), Action: action}, {Subject: slot, Action: action}},
-			Transaction: plangraph.TransactionForbidden, Impact: operation.Effect(),
+			Transaction: plangraph.TransactionForbidden, Impact: operation.Effect(), Placement: plangraph.PlacementEarly,
 		})
 		result.Changes[change.input] = featureplan.ChangePlan{Subject: operation.Subject(), Kind: ydbdiff.TopicKind,
 			Strategy: topicStrategy(operation), Steps: []plangraph.StepID{id}}
@@ -95,9 +96,10 @@ func (TopicService) PlanFeatures(ctx context.Context, request featureplan.Reques
 
 // topicDependencies orders one statement on the topic ref, at the scheme path
 // slot, against the common statements: the handoffs at its path and the
-// directories above it (see [schemePathDependencies]), a drop
-// after every statement that reads the topic, each before the next common
-// statement, and a creation or change before every statement that reads it.
+// directories above it (see [schemePathDependencies]), a drop after every
+// statement that reads the topic, and a creation or change before every
+// statement that reads it. The statement is early, so it runs as soon as
+// these allow, ahead of the common statements.
 func topicDependencies(id plangraph.StepID, ref, slot objectidentity.ID, action plangraph.Action, common commonSteps) ([]plangraph.Dependency, error) {
 	edges, err := schemePathDependencies("topic", id, slot, action, common.steps)
 	if err != nil {
@@ -113,15 +115,6 @@ func topicDependencies(id plangraph.StepID, ref, slot objectidentity.ID, action 
 		for _, reader := range readers {
 			edges = append(edges, plangraph.Dependency{Before: reader, After: id})
 		}
-	}
-	next := 0
-	for _, edge := range edges {
-		if position, found := common.positions[edge.Before]; found && edge.After == id {
-			next = max(next, position+1)
-		}
-	}
-	if next < len(common.steps) {
-		edges = append(edges, plangraph.Dependency{Before: id, After: common.steps[next].ID})
 	}
 	if action != plangraph.Drop {
 		for _, reader := range readers {

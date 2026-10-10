@@ -93,6 +93,39 @@ func TestScheduleDeterministicOrderingAndLifecycles(t *testing.T) {
 	}
 }
 
+// TestSchedulePlacesEarlyStepsFirstAmongReadySteps runs an early step as soon
+// as its dependencies allow and ahead of every other ready step, whatever its
+// name, but never before a step it depends on.
+func TestSchedulePlacesEarlyStepsFirstAmongReadySteps(t *testing.T) {
+	tests := []struct {
+		name  string
+		steps []plangraph.Step[string]
+		edges []plangraph.Dependency
+		want  []string
+	}{
+		{name: "ready at the start", steps: []plangraph.Step[string]{{ID: id("a"), Payload: "a"}, {ID: id("z"), Payload: "z", Placement: plangraph.PlacementEarly}},
+			want: []string{"z", "a"}},
+		{name: "ready after a dependency", steps: []plangraph.Step[string]{{ID: id("a"), Payload: "a"}, {ID: id("m"), Payload: "m"},
+			{ID: id("z"), Payload: "z", Placement: plangraph.PlacementEarly}}, edges: []plangraph.Dependency{edge("a", "z")},
+			want: []string{"a", "z", "m"}},
+		{name: "two early steps by name", steps: []plangraph.Step[string]{{ID: id("z"), Payload: "z", Placement: plangraph.PlacementEarly},
+			{ID: id("y"), Payload: "y", Placement: plangraph.PlacementEarly}, {ID: id("a"), Payload: "a"}},
+			want: []string{"y", "z", "a"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan, err := plangraph.Schedule(t.Context(), plangraph.Contribution[string]{Owner: owner, Steps: test.steps, Dependencies: test.edges})
+			c.Assert(err, qt.IsNil)
+			var order []string
+			for _, step := range plan.Steps {
+				order = append(order, step.Payload)
+			}
+			c.Assert(order, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestScheduleKeepsStructuredObjectScopesDistinct(t *testing.T) {
 	c := qt.New(t)
 	first, second := operation("a", plangraph.Create), operation("b", plangraph.Create)
@@ -122,6 +155,7 @@ func TestScheduleRejectsInvalidGraphsWithoutPartialPlan(t *testing.T) {
 		{name: "read before creation", steps: []plangraph.Step[string]{operation("a", plangraph.Read), operation("b", plangraph.Create)}, edges: []plangraph.Dependency{edge("a", "b")}, want: plangraph.ErrConflict},
 		{name: "unnamed step", steps: []plangraph.Step[string]{operation("", plangraph.Read)}, want: plangraph.ErrInvalid},
 		{name: "invalid transaction", steps: []plangraph.Step[string]{{ID: id("a"), Transaction: "automatic"}}, want: plangraph.ErrInvalid},
+		{name: "invalid placement", steps: []plangraph.Step[string]{{ID: id("a"), Placement: "first"}}, want: plangraph.ErrInvalid},
 		{name: "missing object", steps: []plangraph.Step[string]{{ID: id("a"), Effects: []plangraph.Effect{{Action: plangraph.Read}}}}, want: plangraph.ErrInvalid},
 		{name: "missing column parent", steps: []plangraph.Step[string]{{ID: id("a"), Effects: []plangraph.Effect{{Subject: objectidentity.ID{Kind: objectidentity.KindColumn, Name: objectidentity.Part{Source: "id", Normalized: "id"}}, Action: plangraph.Read}}}}, want: plangraph.ErrInvalid},
 		{name: "invalid action", steps: []plangraph.Step[string]{operation("a", "other")}, want: plangraph.ErrInvalid},

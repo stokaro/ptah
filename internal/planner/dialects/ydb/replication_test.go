@@ -271,6 +271,31 @@ func TestGenerateMigrationAST_Replications_TransferDroppedBeforeItsTopic(t *test
 	c.Assert(got, qt.Equals, "DROP TRANSFER `ingest`;\nDROP TOPIC `events`;\n")
 }
 
+// TestGenerateMigrationAST_Replications_SecretTakesTheTopicsPath drops a
+// transfer and the topic it reads and creates a secret at the topic's path:
+// the topic drop waits for the transfer's, and the secret, which runs as early
+// as it can, waits for the topic's. Pinning the secret ahead of the first
+// common statement made this plan a dependency cycle.
+func TestGenerateMigrationAST_Replications_SecretTakesTheTopicsPath(t *testing.T) {
+	c := qt.New(t)
+	spec := ast.TransferSpec{Source: "events", Target: "order_log", Lambda: lambda}
+	diff := &difftypes.SchemaDiff{
+		FeatureChanges: []schemaext.ChangeRecord{
+			{Subject: ydbtopic.Ref("", "events"), Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}},
+			secretCreated("", "events", "PTAH_SECRET_EVENTS"),
+		},
+		TransfersRemoved: difftypes.TransferChanges{{Name: "ingest", Spec: spec}},
+		Replications: difftypes.ReplicationContext{
+			CurrentTransfers: []catalog.Transfer{{Name: "ingest", Spec: spec}},
+			CurrentTopics:    []string{"events"},
+		},
+	}
+
+	got := render(c, capability.YDB262(), diff)
+
+	c.Assert(got, qt.Equals, "DROP TRANSFER `ingest`;\nDROP TOPIC `events`;\nCREATE SECRET `events` WITH (value = $PTAH_SECRET_EVENTS);\n")
+}
+
 // TestGenerateMigrationAST_Replications_FailurePath refuses, before any
 // statement, a plan YDB cannot run or one that would break what a replication
 // or a transfer owns or depends on.

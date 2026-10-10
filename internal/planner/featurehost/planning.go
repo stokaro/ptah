@@ -57,6 +57,7 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 			}
 			contribution.Steps = append(contribution.Steps, plangraph.Step[[]ast.Node]{
 				ID: step.ID, Payload: nodes, Effects: slices.Clone(step.Effects), Transaction: step.Transaction, Impact: step.Impact,
+				Placement: step.Placement,
 			})
 		}
 		contributions[i] = contribution

@@ -25,6 +25,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
@@ -486,6 +487,49 @@ func TestYDBTransfer_FromATopic(t *testing.T) {
 		object, found, err := live.FeatureObjects.Get(ydbtopic.Ref(replicationSchema, "events"))
 		topic, observed := object.Value.(*ydbtopic.Observed)
 		return err == nil && found && observed && len(topic.Spec.Consumers) == 1
+	})
+	c.Assert(planAgainst(c, conn, declared, replicationSchemas), qt.HasLen, 0)
+}
+
+// TestYDBTransfer_ASecretTakesTheTopicsPath removes a transfer and the topic
+// it reads and declares a secret at the topic's path. The plan drops the
+// transfer, then the topic, then creates the secret, and the server runs it:
+// the topic waits for its reader's drop and the secret for the path. 25.1 has
+// neither transfers nor secrets, so only 26.2 runs it.
+func TestYDBTransfer_ASecretTakesTheTopicsPath(t *testing.T) {
+	t.Setenv("PTAH_SECRET_LIVE_REPL_EVENTS", "probe")
+	c := qt.New(t)
+	conn := openYDB(c, lineNamed(c, "26.2"))
+	dropReplications(c, conn)
+	c.Cleanup(func() {
+		dropReplications(c, conn)
+		// The secret is the plan's, so the test removes it; an earlier failure
+		// may have left none to remove.
+		_ = conn.Writer().ExecuteSQL(context.Background(), "DROP SECRET `ptah_ydb_repl/events`")
+	})
+	held := transferDeclaration("")
+	held.FeatureObjects = must.Must(held.FeatureObjects.With(ydbtopic.DesiredObject(replicationSchema, "events", "", ydbtopic.Spec{})))
+	held.FeatureCoverage = must.Must(held.FeatureCoverage.Combine(
+		must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))))
+	held.Transfers = []schemamodel.Transfer{{Name: "ingest", Schema: replicationSchema, Spec: ast.TransferSpec{
+		Source: replicationSchema + "/events", Target: replicationSchema + "/order_log", Lambda: lambdaWriting("t:"),
+	}}}
+	apply(c, conn, planAgainst(c, conn, held, replicationSchemas))
+	settledRead(c, conn, "the transfer from the topic", func(live *catalog.Database) bool { return len(live.Transfers) == 1 })
+	declared := transferDeclaration("")
+	declared.FeatureObjects = must.Must(declared.FeatureObjects.With(
+		ydbsecret.DesiredObject(replicationSchema, "events", "", "PTAH_SECRET_LIVE_REPL_EVENTS")))
+	declared.FeatureCoverage = must.Must(must.Must(declared.FeatureCoverage.Combine(
+		must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))).Combine(
+		must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))))
+
+	plan := planAgainst(c, conn, declared, replicationSchemas)
+	apply(c, conn, plan)
+
+	c.Assert(plan, qt.DeepEquals, []string{
+		"DROP TRANSFER `ptah_ydb_repl/ingest`",
+		"DROP TOPIC `ptah_ydb_repl/events`",
+		"CREATE SECRET `ptah_ydb_repl/events` WITH (value = $PTAH_SECRET_LIVE_REPL_EVENTS)",
 	})
 	c.Assert(planAgainst(c, conn, declared, replicationSchemas), qt.HasLen, 0)
 }

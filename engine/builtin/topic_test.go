@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
@@ -51,6 +52,31 @@ func TestRender_Topic_HappyPath(t *testing.T) {
 	})
 	assertOwnedSchemaEntryPoints(c, database, capability.YDB251(),
 		"CREATE TOPIC `ext/events` (CONSUMER `billing` WITH (important = TRUE)) WITH (retention_period = Interval('PT2H'));")
+}
+
+// TestRender_StreamingQueryFollowsTheTopicsItReads writes a running streaming
+// query after the topics its body reads and writes, on a schema with no table:
+// the query reads them as soon as it is created, and with no common statement
+// to order both owners against, only the query's reads of the topics put them
+// first.
+func TestRender_StreamingQueryFollowsTheTopicsItReads(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		ydbtopic.DesiredObject("", "zz_in", "", ydbtopic.Spec{}),
+		ydbtopic.DesiredObject("", "zz_out", "", ydbtopic.Spec{}),
+		ydbstreaming.DesiredObject("", "copy", "", ydbstreaming.Spec{Text: "INSERT INTO `zz_out` SELECT * FROM `zz_in`;"}, false),
+	))}
+	schemamodel.Finalize(database)
+
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, platform.YDB, capability.YDB262().With(capability.StreamingQueries, true))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE TOPIC `zz_in`;\n",
+		"CREATE TOPIC `zz_out`;\n",
+		"CREATE STREAMING QUERY `copy` WITH (RUN = TRUE, RESOURCE_POOL = `default`) AS DO BEGIN\n" +
+			"INSERT INTO `zz_out` SELECT * FROM `zz_in`;\nEND DO;\n",
+	})
 }
 
 // TestRender_Topic_FailurePath refuses a declared topic on every target

@@ -69,3 +69,33 @@ func ExampleScheduleRewritten() {
 	// add column with feature
 	// read column
 }
+
+// ExampleLifecycleDependencies hands one name from an object a contribution
+// drops to an object another contribution creates. Neither contribution sees
+// the other's step, so the host derives the order before it schedules both.
+func ExampleLifecycleDependencies() {
+	name := objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("public", "events")
+	drop := plangraph.Step[string]{ID: plangraph.StepID{Owner: "example.org/scheme", Name: "z-drop-old"}, Payload: "drop old object",
+		Effects: []plangraph.Effect{{Subject: name, Action: plangraph.Drop}}}
+	create := plangraph.Step[string]{ID: plangraph.StepID{Owner: "example.org/scheme", Name: "a-create-new"}, Payload: "create new object",
+		Effects: []plangraph.Effect{{Subject: name, Action: plangraph.Create}}}
+	dropping := plangraph.Contribution[string]{Owner: "example.org/scheme", Steps: []plangraph.Step[string]{drop}}
+	creating := plangraph.Contribution[string]{Owner: "example.org/scheme", Steps: []plangraph.Step[string]{create}}
+	edges, err := plangraph.LifecycleDependencies(context.Background(), dropping, creating)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	dropping.Dependencies = append(dropping.Dependencies, edges...)
+	plan, err := plangraph.Schedule(context.Background(), dropping, creating)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, step := range plan.Steps {
+		fmt.Println(step.Payload)
+	}
+	// Output:
+	// drop old object
+	// create new object
+}
