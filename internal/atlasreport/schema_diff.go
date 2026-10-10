@@ -146,23 +146,14 @@ func schemaDiffTemplateFuncs(ctx context.Context, codecs schemaext.Registry) (te
 // argument forms of [atlasTemplateJSON], with feature data encoded through
 // codecs in the desired representation both sides of a schema diff use.
 func featureTemplateJSON(ctx context.Context, codecs schemaext.Registry) func(any, ...string) (string, error) {
+	marshal := func(value any) ([]byte, error) {
+		return featurejson.Marshal(ctx, codecs, schemaext.Desired, value)
+	}
+	marshalIndent := func(value any, prefix, indent string) ([]byte, error) {
+		return featurejson.MarshalIndent(ctx, codecs, schemaext.Desired, value, prefix, indent)
+	}
 	return func(value any, args ...string) (string, error) {
-		var (
-			data []byte
-			err  error
-		)
-		switch len(args) {
-		case 0:
-			data, err = featurejson.Marshal(ctx, codecs, schemaext.Desired, value)
-		case 1:
-			data, err = featurejson.MarshalIndent(ctx, codecs, schemaext.Desired, value, "", args[0])
-		default:
-			data, err = featurejson.MarshalIndent(ctx, codecs, schemaext.Desired, value, args[0], args[1])
-		}
-		if err != nil {
-			return "", err
-		}
-		return string(data), nil
+		return templateJSON(value, args, marshal, marshalIndent)
 	}
 }
 
