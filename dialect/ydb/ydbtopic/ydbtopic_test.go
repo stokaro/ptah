@@ -116,6 +116,8 @@ func TestParseConsumer_HappyPath(t *testing.T) {
 			want: ydbtopic.ConsumerSpec{Name: "audit"}},
 		{name: "codecs and an availability period", values: map[string]string{"name": "audit", "supported_codecs": "zstd,raw", "availability_period": "PT2H"},
 			want: ydbtopic.ConsumerSpec{Name: "audit", SupportedCodecs: []string{"zstd", "raw"}, AvailabilityPeriod: "PT2H"}},
+		{name: "codecs in lower case", values: map[string]string{"name": "audit", "supported_codecs": "RAW, gzip"},
+			want: ydbtopic.ConsumerSpec{Name: "audit", SupportedCodecs: []string{"raw", "gzip"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -145,6 +147,8 @@ func TestParseConsumer_FailurePath(t *testing.T) {
 		{name: "an unknown codec", values: map[string]string{"name": "c", "supported_codecs": "snappy"},
 			wantErr: `invalid supported_codecs "snappy": takes a comma-separated list of raw, gzip, lzop, zstd, custom; ` +
 				`YDB keeps a list naming any other codec as no list at all`},
+		{name: "a codec twice", values: map[string]string{"name": "c", "supported_codecs": "raw,RAW"},
+			wantErr: `invalid supported_codecs "raw,RAW": names codec raw twice`},
 		{name: "important with an availability period", values: map[string]string{"name": "c", "important": "true", "availability_period": "PT1H"},
 			wantErr: `invalid availability_period "PT1H": YDB keeps every unread record for an important consumer, so it takes no ` +
 				"availability period as well (`has both an important flag and a limited availability_period, which are mutually exclusive`)"},

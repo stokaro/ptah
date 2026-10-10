@@ -3,20 +3,15 @@ package ydbplan
 import (
 	"context"
 	"fmt"
-	"slices"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbsecret"
 )
 
@@ -34,65 +29,21 @@ import (
 // still reads is refused.
 type SecretService struct{}
 
-type secretChange struct {
-	input     int
-	ref       objectidentity.ID
-	operation *ydbast.Secret
+// secretChange is one statement on a secret.
+type secretChange = standaloneChange[*ydbast.Secret]
+
+// secretPlanner plans secret statements on the shared skeleton. A secret
+// statement is early.
+func secretPlanner() standalonePlanner[*ydbast.Secret] {
+	return standalonePlanner[*ydbast.Secret]{family: "secret", scope: "secret", kind: ydbdiff.SecretKind,
+		placement: plangraph.PlacementEarly, operations: secretOperations, refusals: secretRefusals, action: secretAction,
+		dependencies: secretDependencies, strategy: secretStrategy}
 }
 
 // PlanFeatures returns one operation per created, rotated or dropped secret.
 // A refused change returns no operation from the batch.
 func (SecretService) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
-	if ctx == nil {
-		return featureplan.Result{}, fmt.Errorf("%w: planning requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	if request.Target != "ydb" {
-		return featureplan.Result{}, fmt.Errorf("%w: YDB planning on %q", ptaherr.ErrUnsupportedDialect, request.Target)
-	}
-	if !request.Identifiers.Equal(identifier.ForDialect("ydb")) || len(request.ParentKinds) != 0 {
-		return featureplan.Result{}, fmt.Errorf("%w: invalid secret planning scope", schemaext.ErrInvalidValue)
-	}
-	changes, err := secretOperations(ctx, request)
-	if err != nil {
-		return featureplan.Result{}, err
-	}
-	if diagnostics := secretRefusals(request, changes); len(diagnostics) > 0 {
-		return featureplan.Result{Complete: true, Diagnostics: diagnostics}, nil
-	}
-	slices.SortFunc(changes, func(a, b secretChange) int { return schemaext.CompareRefs(a.ref, b.ref) })
-	common := indexCommonSteps(request.CommonSteps)
-	contribution := plangraph.Contribution[featureplan.Operation]{Owner: "ptah.run/ydb"}
-	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(request.Changes))}
-	for index, change := range changes {
-		if err := ctx.Err(); err != nil {
-			return featureplan.Result{}, err
-		}
-		action := secretAction(change.operation)
-		id := plangraph.StepID{Owner: contribution.Owner, Name: fmt.Sprintf("secret/%06d/%s", index, action)}
-		slot := ydbscheme.Path(change.ref.Schema.Source, change.ref.Name.Source)
-		edges, err := secretDependencies(id, change.ref, slot, action, common)
-		if err != nil {
-			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{secretDiagnostic(change.input, change.ref, err)}}, nil
-		}
-		contribution.Dependencies = append(contribution.Dependencies, edges...)
-		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
-			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: change.operation},
-			Effects:     []plangraph.Effect{{Subject: change.ref, Action: action}, {Subject: slot, Action: action}},
-			Transaction: plangraph.TransactionForbidden, Impact: change.operation.Effect(), Placement: plangraph.PlacementEarly,
-		})
-		result.Changes[change.input] = featureplan.ChangePlan{Subject: change.ref, Kind: ydbdiff.SecretKind,
-			Strategy: secretStrategy(change.operation), Steps: []plangraph.StepID{id}}
-	}
-	if len(contribution.Steps) > 0 {
-		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	return result, nil
+	return secretPlanner().plan(ctx, request)
 }
 
 // commonSteps indexes the host's statements once per batch: each statement
@@ -199,7 +150,7 @@ func secretRefusals(request featureplan.Request, changes []secretChange) []featu
 			}}}
 		}
 		if err := change.operation.Validate(); err != nil {
-			diagnostics = append(diagnostics, secretDiagnostic(change.input, change.ref, err))
+			diagnostics = append(diagnostics, standaloneDiagnostic(ydbdiff.SecretKind, change.input, change.ref, err))
 		}
 	}
 	return diagnostics
@@ -225,10 +176,4 @@ func secretStrategy(operation *ydbast.Secret) string {
 	default:
 		return "give the secret the value its variable holds when the plan runs"
 	}
-}
-
-func secretDiagnostic(index int, ref objectidentity.ID, err error) featureplan.Diagnostic {
-	return featureplan.Diagnostic{Change: new(index), Problem: schemavalidation.Diagnostic{
-		Code: schemavalidation.InvalidSchema, Kind: string(ydbdiff.SecretKind), Object: ref.String(), Message: err.Error(),
-	}}
 }

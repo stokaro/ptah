@@ -216,10 +216,10 @@ func readConsumer(consumer *Ydb_Topic.Consumer) (ydbtopic.ConsumerSpec, bool) {
 	}
 	read := ydbtopic.ConsumerSpec{Name: consumer.GetName(), Important: consumer.GetImportant()}
 	if from := consumer.GetReadFrom(); from != nil {
-		read.ReadFrom = ydbchangefeed.FormatReadFrom(from.AsTime())
+		read.ReadFrom = ydbtopic.FormatReadFrom(from.AsTime())
 	}
 	for _, number := range consumer.GetSupportedCodecs().GetCodecs() {
-		name, known := ydbchangefeed.CodecName(number)
+		name, known := ydbtopic.CodecName(number)
 		if !known {
 			return ydbtopic.ConsumerSpec{}, false
 		}

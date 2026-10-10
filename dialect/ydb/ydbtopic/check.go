@@ -56,19 +56,10 @@ func Check(schema, name string, spec Spec, caps capability.Capabilities) *Refusa
 	if strings.TrimSpace(name) == "" {
 		return &Refusal{Subject: "a topic", Reason: "a topic needs a name"}
 	}
-	if err := checkSettings(spec); err != nil {
+	if err := Validate(spec); err != nil {
 		return &Refusal{Subject: subject, Reason: err.Error()}
 	}
-	names := make(map[string]bool, len(spec.Consumers))
 	for _, consumer := range spec.Consumers {
-		if names[consumer.Name] {
-			return &Refusal{Subject: subject, Reason: fmt.Sprintf("two of its consumers are named %q, and YDB "+
-				"names a consumer once per topic (`Consumer %s defined more than once`)", consumer.Name, consumer.Name)}
-		}
-		names[consumer.Name] = true
-		if _, err := ParseConsumer(consumerValues(consumer)); err != nil {
-			return &Refusal{Subject: consumerSubject(path, consumer.Name), Reason: err.Error()}
-		}
 		if consumer.AvailabilityPeriod != "" && !caps.Has(capability.TopicConsumerAvailabilityPeriod) {
 			return &Refusal{Subject: consumerSubject(path, consumer.Name) + " takes availability_period",
 				Key: capability.TopicConsumerAvailabilityPeriod}

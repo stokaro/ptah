@@ -88,64 +88,6 @@ func TestParseDeclaration_FailurePath(t *testing.T) {
 	}
 }
 
-func TestParseConsumer_HappyPath(t *testing.T) {
-	tests := []struct {
-		name   string
-		values map[string]string
-		want   ydbtopic.ConsumerSpec
-	}{
-		{name: "a name alone", values: map[string]string{"name": "audit", "changefeed": "feed"},
-			want: ydbtopic.ConsumerSpec{Name: "audit"}},
-		{
-			name: "every setting, the time kept in UTC and the codecs in lower case",
-			values: map[string]string{"name": "c", "important": "true",
-				"read_from": "2026-01-01T03:00:00+03:00", "supported_codecs": "RAW, gzip"},
-			want: ydbtopic.ConsumerSpec{Name: "c", Important: true, ReadFrom: "2026-01-01T00:00:00Z",
-				SupportedCodecs: []string{"raw", "gzip"}},
-		},
-		{name: "an availability period", values: map[string]string{"name": "c", "availability_period": "PT1H"},
-			want: ydbtopic.ConsumerSpec{Name: "c", AvailabilityPeriod: "PT1H"}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := ydbchangefeed.ParseConsumer(test.values)
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.DeepEquals, test.want)
-		})
-	}
-}
-
-func TestParseConsumer_FailurePath(t *testing.T) {
-	tests := []struct {
-		name    string
-		values  map[string]string
-		wantErr string
-	}{
-		{name: "no name", values: make(map[string]string), wantErr: `invalid name "": a consumer needs a name`},
-		{name: "a slash", values: map[string]string{"name": "shared/c"},
-			wantErr: `invalid name "shared/c": a consumer's name cannot hold a slash .*`},
-		{name: "a fraction of a second", values: map[string]string{"name": "c", "read_from": "2026-01-01T00:00:00.5Z"},
-			wantErr: `invalid read_from "2026-01-01T00:00:00.5Z": YDB keeps whole seconds, and drops the fraction of this one`},
-		{name: "not a time", values: map[string]string{"name": "c", "read_from": "yesterday"},
-			wantErr: `invalid read_from "yesterday": takes an RFC 3339 time such as 2026-01-01T00:00:00Z`},
-		{name: "an unknown codec", values: map[string]string{"name": "c", "supported_codecs": "raw,snappy"},
-			wantErr: `invalid supported_codecs "raw,snappy": takes a comma-separated list of raw, gzip, lzop, zstd, custom`},
-		{name: "a codec twice", values: map[string]string{"name": "c", "supported_codecs": "raw,RAW"},
-			wantErr: `invalid supported_codecs "raw,RAW": names codec raw twice`},
-		{name: "important and limited", values: map[string]string{"name": "c", "important": "true",
-			"availability_period": "PT1H"}, wantErr: `invalid availability_period "PT1H": YDB keeps every unread .*`},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := ydbchangefeed.ParseConsumer(test.values)
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.DeepEquals, ydbtopic.ConsumerSpec{})
-		})
-	}
-}
-
 // TestSeconds_HappyPath reads an interval in YDB's grammar, which
 // ydbttl.IntervalSeconds holds, in any case.
 func TestSeconds_HappyPath(t *testing.T) {
@@ -335,16 +277,4 @@ func TestKeyRefusal(t *testing.T) {
 			c.Assert(ydbchangefeed.KeyRefusal(test.spec, test.keyType), qt.Equals, test.want)
 		})
 	}
-}
-
-func TestCodecName(t *testing.T) {
-	c := qt.New(t)
-	for number, want := range map[int32]string{1: "raw", 2: "gzip", 3: "lzop", 4: "zstd", 10000: "custom"} {
-		got, ok := ydbchangefeed.CodecName(number)
-		c.Check(ok, qt.IsTrue)
-		c.Check(got, qt.Equals, want)
-	}
-	got, ok := ydbchangefeed.CodecName(5)
-	c.Assert(ok, qt.IsFalse)
-	c.Assert(got, qt.Equals, "")
 }

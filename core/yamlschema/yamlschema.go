@@ -81,6 +81,7 @@ import (
 	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
@@ -455,7 +456,7 @@ type changefeedSpec struct {
 }
 
 // consumerSpec is a consumer of a changefeed's topic, keyed by its name; see
-// [ydbchangefeed.ParseConsumer].
+// [ydbtopic.ParseConsumer].
 type consumerSpec struct {
 	Important          *stringScalar `yaml:"important"`
 	ReadFrom           *stringScalar `yaml:"read_from"`
@@ -515,7 +516,7 @@ func buildChangefeeds(table string, specs orderedMap[changefeedSpec]) ([]ydbsche
 			return nil, fmt.Errorf("table %q: changefeed %q: %w", table, entry.Name, err)
 		}
 		for _, consumerEntry := range entry.Value.Consumers {
-			consumer, err := ydbchangefeed.ParseConsumer(consumerEntry.Value.values(consumerEntry.Name))
+			consumer, err := ydbtopic.ParseConsumer(consumerEntry.Value.values(consumerEntry.Name))
 			if err != nil {
 				return nil, fmt.Errorf("table %q: changefeed %q: consumer %q: %w", table, entry.Name, consumerEntry.Name, err)
 			}

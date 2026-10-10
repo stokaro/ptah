@@ -72,7 +72,7 @@ func (s *schemaParseState) parseChangefeedConsumerComment(comment *ast.Comment, 
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	consumer, err := ydbchangefeed.ParseConsumer(kv)
+	consumer, err := ydbtopic.ParseConsumer(kv)
 	if err != nil {
 		return changefeedAttributeError(ctx, "ptah:schema:changefeed:consumer", err)
 	}
@@ -97,6 +97,9 @@ func changefeedAttributeError(ctx annotationErrorContext, directive string, err 
 		Message:   fmt.Sprintf("%v on %s at %s", err, ctx.directive, ctx.location),
 	}
 	if declared, ok := errors.AsType[*ydbchangefeed.DeclarationError](err); ok {
+		parseErr.Attribute = declared.Attribute
+	}
+	if declared, ok := errors.AsType[*ydbtopic.DeclarationError](err); ok {
 		parseErr.Attribute = declared.Attribute
 	}
 	return parseErr

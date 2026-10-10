@@ -81,8 +81,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Synonyms = keep(db.Synonyms, func(synonym catalog.Synonym) bool {
 		return s.selected(typeList("synonym"), synonym.Schema, synonym.Name)
 	})
-	// A YDB topic is selected on its own name, in the directory that holds
-	// it, and its consumers ride with it.
+	// A YDB topic is a feature object; selectTopicFeatures selects it.
 	// A YDB async replication and a transfer are each selected on their own
 	// name, in the directory that holds them.
 	out.AsyncReplications = keep(db.AsyncReplications, func(replication catalog.AsyncReplication) bool {

@@ -223,16 +223,22 @@ func ResolvePath(root, written string) (objectidentity.ID, error) {
 	return ParsePath(relative)
 }
 
-// CheckDirectory refuses a directory written from the server root, which names
-// the database the topic lies in: the directory of a topic, and the one a
-// consumer names its topic in, are relative to the database root. Surrounding
+// CheckDirectory refuses a directory a topic cannot lie in: one written from
+// the server root, which names the database the topic lies in, and one with a
+// trailing slash, an empty segment, or a `.` or `..` segment. The directory of
+// a topic, and the one a consumer names its topic in, are relative to the
+// database root, so a topic and its consumers are refused alike. Surrounding
 // space is ignored. The refusal is a [DeclarationError] naming the schema
 // attribute.
 func CheckDirectory(schema string) error {
 	schema = strings.TrimSpace(schema)
-	if strings.HasPrefix(schema, "/") {
+	switch {
+	case strings.HasPrefix(schema, "/"):
 		return &DeclarationError{Attribute: AttributeSchema, Value: schema,
 			Reason: "starts with a slash; name the directory relative to the database root, without the database's own path"}
+	case schema != "" && ValidateIdentity(Ref(schema, "topic")) != nil:
+		return &DeclarationError{Attribute: AttributeSchema, Value: schema,
+			Reason: "is not a directory path relative to the database root; write it without a trailing slash or an empty, . or .. segment"}
 	}
 	return nil
 }
@@ -265,12 +271,7 @@ func Declare(objects schemaext.Objects, schema, name, holder string, spec Spec) 
 	if err := CheckDirectory(schema); err != nil {
 		return objects, err
 	}
-	schema = strings.TrimSpace(schema)
-	object := DesiredObject(schema, name, holder, spec)
-	if ValidateIdentity(object.Ref) != nil {
-		return objects, &DeclarationError{Attribute: AttributeSchema, Value: schema,
-			Reason: "is not a directory path relative to the database root"}
-	}
+	object := DesiredObject(strings.TrimSpace(schema), name, holder, spec)
 	if err := Validate(spec); err != nil {
 		return objects, err
 	}

@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -135,4 +136,19 @@ func TestParseSource_Changefeed_RefusesAnInvalidValueAsSuch(t *testing.T) {
 		changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON" retention_period="1 day"
 `, ""))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+}
+
+// TestParseSource_ChangefeedConsumer_NamesTheAttribute names the consumer
+// attribute whose value YDB would refuse, as a topic consumer's refusal does:
+// both are read by one consumer grammar.
+func TestParseSource_ChangefeedConsumer_NamesTheAttribute(t *testing.T) {
+	c := qt.New(t)
+	_, err := goschema.ParseSource("items.go", changefeedSource(`//ptah:schema:changefeed name="f" mode="UPDATES" format="JSON"
+//ptah:schema:changefeed:consumer changefeed="f" name="c" important="maybe"
+`, ""))
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+	parseErr, ok := errors.AsType[*ptaherr.ParseError](err)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(parseErr.Attribute, qt.Equals, "important")
 }
