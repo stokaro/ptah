@@ -127,6 +127,14 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.RevokeDefaultPrivilegeNode:
 		return r.renderRevokeDefaultPrivilege(n)
 
+	// Shared row-level security. A ClickHouse row policy is the ClickHouse
+	// owner's object, rendered by its own operation, and ClickHouse has no
+	// table switch, so a shared node reaching this renderer was built by hand.
+	case *ast.CreatePolicyNode, *ast.DropPolicyNode, *ast.AlterTableEnableRLSNode,
+		*ast.AlterTableDisableRLSNode, *ast.AlterTableForceRLSNode:
+		return fmt.Errorf("%w: %s: %T is shared row-level security; declare a ClickHouse row policy with //ptah:schema:rowpolicy",
+			ptaherr.ErrUnsupportedFeature, DialectName, node)
+
 	// Objects another engine owns. Each is named and skipped so the reader of
 	// a render sees what the target left out.
 	case *ast.ExtensionNode:

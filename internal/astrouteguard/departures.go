@@ -141,6 +141,7 @@ func compareExtensionKinds(a, b ExtensionKind) int {
 const (
 	clickHouseAST = "ptah.run/dialect/clickhouse/chast"
 	cockroachAST  = "ptah.run/dialect/cockroachdb/crdbast"
+	mssqlProperty = "ptah.run/dialect/mssql/mssqlproperty"
 	spannerAST    = "ptah.run/dialect/spanner/spannerast"
 	timescaleAST  = "ptah.run/dialect/timescaledb/tsast"
 	ydbAST        = "ptah.run/dialect/ydb/ydbast"
@@ -185,6 +186,7 @@ var recordedDepartures = []Departure{
 	{Node: "DropSecretNode", Successors: []ExtensionKind{payload(ydbAST, "Secret")}},
 	{Node: "DropTopicNode", Successors: []ExtensionKind{payload(ydbAST, "Topic")}},
 	{Node: "DropTransferNode", Successors: []ExtensionKind{payload(ydbAST, "Transfer")}},
+	{Node: "ExtendedPropertyNode", Successors: []ExtensionKind{payload(mssqlProperty, "Operation")}},
 	{Node: "ModifyTTLOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AlterTTL")}},
 	{Node: "ResetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "SetIndexPartitioningOperation", Successors: []ExtensionKind{payload(ydbAST, "AlterIndexPartitioning")}},

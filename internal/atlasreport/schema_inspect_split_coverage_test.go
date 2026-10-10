@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
@@ -148,8 +149,8 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 }
 
 // Keeping all common objects cannot grant knowledge of an unenrolled feature.
-// The only claim a member makes is the one every HCL document makes by its
-// format: it has a block for each TimescaleDB model.
+// The only claims a member makes are the ones every HCL document makes by its
+// format, see withHCLBlockCoverage.
 func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 	c := qt.New(t)
 
@@ -160,8 +161,25 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
 		parsed, err := atlashcl.Parse([]byte(data), path)
 		c.Assert(err, qt.IsNil)
-		c.Assert(parsed.FeatureCoverage.Equal(must.Must(must.Must(tsschema.CompleteCoverage(schemaext.Desired)).Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))))), qt.IsTrue)
+		c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, schemaext.Coverage{})), qt.IsTrue)
 	}
+}
+
+// withHCLBlockCoverage adds the claims every HCL document makes by its
+// format: it has a block for each TimescaleDB model and for each SQL Server
+// extended property, so a document without one describes a database without
+// one, and it describes PostgreSQL row-level security. The account a document
+// carries must survive beside them unchanged.
+func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage {
+	c.Helper()
+	combined, err := known.Combine(must.Must(tsschema.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	properties := must.Must(mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	combined, err = combined.Combine(properties)
+	c.Assert(err, qt.IsNil)
+	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))
+	c.Assert(err, qt.IsNil)
+	return combined
 }
 
 // TestSplitCarriesTheRecordWithSQLCommentSyntax pins the comment spelling per
