@@ -2,135 +2,132 @@ package mssqlschema
 
 import (
 	"encoding/json"
-	"fmt"
+	"reflect"
+	"strings"
 
 	"ptah.run/core/schemaext"
 )
 
 const (
+	// text is a string holding something besides white space: SQL Server
+	// compares names without their trailing spaces, so a blank name equals
+	// the empty one, and a blank argument is no expression.
+	text           = `{"type":"string","pattern":"\\S"}`
 	nameDefinition = `{"type":"object","required":["schema","name"],"additionalProperties":false,"properties":{` +
-		`"schema":{"type":"string","minLength":1},"name":{"type":"string","minLength":1}}}`
+		`"schema":` + text + `,"name":` + text + `}}`
 	predicateDefinition = `{"type":"object","required":["type","function","table"],"additionalProperties":false,"properties":{` +
 		`"type":{"enum":["FILTER","BLOCK"]},"function":` + nameDefinition + `,` +
-		`"arguments":{"type":"array","items":{"type":"string","minLength":1}},"table":` + nameDefinition + `,` +
+		`"arguments":{"type":"array","minItems":1,"items":` + text + `},"table":` + nameDefinition + `,` +
 		`"operation":{"enum":["AFTER INSERT","AFTER UPDATE","BEFORE UPDATE","BEFORE DELETE"]}}}`
 
 	desiredDefinition = `{"type":"object","required":["predicates"],"additionalProperties":false,"properties":{` +
 		`"predicates":{"type":"array","items":` + predicateDefinition + `},` +
-		`"enabled":{"type":"boolean"},"schema_binding":{"type":"boolean"},"not_for_replication":{"type":"boolean"},` +
-		`"struct_name":{"type":"string"}}}`
+		`"enabled":{"type":"boolean"},"schema_binding":{"type":"boolean"},"not_for_replication":{"const":true},` +
+		`"struct_name":{"type":"string","minLength":1}}}`
 	observedDefinition = `{"type":"object","required":["predicates","enabled","schema_binding","not_for_replication"],` +
 		`"additionalProperties":false,"properties":{` +
 		`"predicates":{"type":"array","items":` + predicateDefinition + `},` +
 		`"enabled":{"type":"boolean"},"schema_binding":{"type":"boolean"},"not_for_replication":{"type":"boolean"}}}`
 )
 
+// The wire shapes come from the JSON tags of the model types, which are what
+// the encoder writes, so the keys are spelled in one place.
+var (
+	desiredShape   = wireShape[DesiredSecurityPolicy]("policy")
+	observedShape  = wireShape[ObservedSecurityPolicy]("policy")
+	predicateShape = wireShape[Predicate]("predicate")
+	nameShape      = wireShape[ObjectName]("name")
+)
+
 // Codecs returns the version-one desired and observed security policy codecs,
 // in that order. Each call returns independent definitions. Both encode the
 // predicates in their canonical order, so equal policies encode to the same
 // bytes, and a policy with no predicate encodes an empty list rather than
-// null. The codecs validate representation invariants; they resolve no
-// defaults and claim no support.
+// null. A decoder accepts only the spelling the encoder writes: an omitted
+// value written out, such as an empty struct name or argument list, is
+// refused. Every refusal is a [schemaext.InvalidModelError] wrapping
+// [schemaext.ErrInvalidValue]. The codecs validate representation invariants;
+// they resolve no defaults and claim no support.
 func Codecs() []schemaext.Codec {
 	return []schemaext.Codec{
-		modelCodec(&DesiredSecurityPolicy{}, schemaext.Desired, desiredDefinition, ValidateDesiredSecurityPolicy, canonicalDesired,
-			[]string{"predicates", "enabled", "schema_binding", "not_for_replication", "struct_name"}, []string{"predicates"}),
-		modelCodec(&ObservedSecurityPolicy{}, schemaext.Observed, observedDefinition, ValidateObservedSecurityPolicy, canonicalObserved,
-			[]string{"predicates", "enabled", "schema_binding", "not_for_replication"},
-			[]string{"predicates", "enabled", "schema_binding", "not_for_replication"}),
-	}
-}
-
-// modelCodec builds a codec for one representation. Every boundary validates
-// first: a clone, an encoding and a decoding of an invalid value are refused,
-// so no codec passes one on. canonical returns the value as it is encoded.
-func modelCodec[T schemaext.Value](prototype T, representation schemaext.Representation, definition string,
-	validate func(T) error, canonical func(T) T, allowed, required []string,
-) schemaext.Codec {
-	validated := func(payload schemaext.Payload) (T, error) {
-		value, ok := payload.(T)
-		if !ok {
-			var zero T
-			return zero, fmt.Errorf("%w: expected %T, got %T", schemaext.ErrInvalidValue, prototype, payload)
-		}
-		return value, validate(value)
-	}
-	encode := func(payload schemaext.Payload) (json.RawMessage, error) {
-		value, err := validated(payload)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(canonical(value))
-	}
-	return schemaext.Codec{
-		Prototype: prototype, Representation: representation, Version: 1, Definition: json.RawMessage(definition),
-		Encode: encode, Canonical: encode,
-		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			value, err := validated(payload)
-			if err != nil {
-				return nil, err
-			}
-			return value.Clone(), nil
-		},
-		Decode: func(data json.RawMessage) (schemaext.Payload, error) {
-			if err := policyShape(data, schemaext.ObjectShape{Name: "policy", Allowed: allowed, Required: required}); err != nil {
-				return nil, err
-			}
-			value, err := schemaext.DecodeJSON[T](data)
-			if err != nil {
-				return nil, err
-			}
-			if err := validate(value); err != nil {
-				return nil, err
-			}
-			return value, nil
-		},
+		schemaext.ModelCodec[*DesiredSecurityPolicy]{
+			Prototype: &DesiredSecurityPolicy{}, Representation: schemaext.Desired, Version: 1, Definition: json.RawMessage(desiredDefinition),
+			Shape: policyShape(desiredShape), Validate: ValidateDesiredSecurityPolicy, Canonical: canonicalDesired,
+		}.Codec(),
+		schemaext.ModelCodec[*ObservedSecurityPolicy]{
+			Prototype: &ObservedSecurityPolicy{}, Representation: schemaext.Observed, Version: 1, Definition: json.RawMessage(observedDefinition),
+			Shape: policyShape(observedShape), Validate: ValidateObservedSecurityPolicy, Canonical: canonicalObserved,
+		}.Codec(),
 	}
 }
 
 func canonicalDesired(value *DesiredSecurityPolicy) *DesiredSecurityPolicy {
 	canonical := value.Copy()
-	canonical.Predicates = sortedPredicates(canonical.Predicates)
-	if canonical.Predicates == nil {
-		canonical.Predicates = make([]Predicate, 0)
-	}
+	canonical.Predicates = canonicalPredicates(canonical.Predicates)
 	return canonical
 }
 
 func canonicalObserved(value *ObservedSecurityPolicy) *ObservedSecurityPolicy {
 	canonical := value.Copy()
-	canonical.Predicates = sortedPredicates(canonical.Predicates)
-	if canonical.Predicates == nil {
-		canonical.Predicates = make([]Predicate, 0)
-	}
+	canonical.Predicates = canonicalPredicates(canonical.Predicates)
 	return canonical
 }
 
+// canonicalPredicates orders an owned copy in place and spells no predicate
+// as an empty list, which both definitions require.
+func canonicalPredicates(predicates []Predicate) []Predicate {
+	if predicates == nil {
+		return make([]Predicate, 0)
+	}
+	sortPredicates(predicates)
+	return predicates
+}
+
 // policyShape checks the policy object's keys, each predicate's and each
-// name's, and that no present string value is empty. Which type, operation and
-// names a predicate holds is the validators'.
-func policyShape(data json.RawMessage, shape schemaext.ObjectShape) error {
-	fields, err := decodeObject(data, shape)
-	if err != nil {
-		return err
-	}
-	predicates, err := schemaext.DecodeJSON[[]json.RawMessage](fields["predicates"])
-	if err != nil {
-		return err
-	}
-	for _, raw := range predicates {
-		predicate, err := decodeObject(raw, schemaext.ObjectShape{Name: "predicate",
-			Allowed: []string{"type", "function", "arguments", "table", "operation"}, Required: []string{"type", "function", "table"}},
-			"type", "operation")
+// name's. Which type, operation and names a predicate holds is the
+// validators'.
+func policyShape(shape schemaext.ObjectShape) func(json.RawMessage) error {
+	return func(data json.RawMessage) error {
+		fields, err := schemaext.DecodeObject(data, shape)
 		if err != nil {
 			return err
 		}
-		for _, key := range []string{"function", "table"} {
-			if _, err := decodeObject(predicate[key], schemaext.ObjectShape{Name: "predicate " + key,
-				Allowed: []string{"schema", "name"}, Required: []string{"schema", "name"}}, "schema", "name"); err != nil {
+		predicates, err := schemaext.DecodeJSON[[]json.RawMessage](fields["predicates"])
+		if err != nil {
+			return err
+		}
+		for _, raw := range predicates {
+			predicate, err := schemaext.DecodeObject(raw, predicateShape)
+			if err != nil {
 				return err
 			}
+			for _, key := range []string{"function", "table"} {
+				name := nameShape
+				name.Name = "predicate " + key
+				if _, err := schemaext.DecodeObject(predicate[key], name); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+}
+
+// wireShape derives the strict shape of T's JSON object from its tags. Every
+// tagged field is allowed. One without omitempty is required. One with
+// omitempty is NonEmpty unless it is a pointer: its encoder never writes its
+// empty value, while a pointer's false is a value.
+func wireShape[T any](name string) schemaext.ObjectShape {
+	shape := schemaext.ObjectShape{Name: name}
+	for field := range reflect.TypeFor[T]().Fields() {
+		key, options, _ := strings.Cut(field.Tag.Get("json"), ",")
+		shape.Allowed = append(shape.Allowed, key)
+		switch {
+		case options != "omitempty":
+			shape.Required = append(shape.Required, key)
+		case field.Type.Kind() != reflect.Pointer:
+			shape.NonEmpty = append(shape.NonEmpty, key)
 		}
 	}
-	return nil
+	return shape
 }

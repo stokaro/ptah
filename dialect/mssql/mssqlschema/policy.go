@@ -169,21 +169,28 @@ func SecurityPolicyRefWith(semantics identifier.Semantics, schema, name string) 
 	return ref
 }
 
-// ValidateSecurityPolicyRef requires an identity of this kind with a schema
-// and a name, and no parent, catalog or signature.
+// ValidateSecurityPolicyRef requires an identity of this kind with no parent,
+// catalog or signature, and a schema and a name that are valid text holding
+// more than white space. SQL Server accepts a policy named `[ ]`, measured on
+// SQL Server 2025, but compares names without their trailing spaces, so such
+// a name equals the empty one; it is refused here. The refusal wraps
+// [schemaext.ErrInvalidValue]. It is not a [schemaext.InvalidModelError],
+// since an identity belongs to no representation; the object constructors
+// type it.
 func ValidateSecurityPolicyRef(ref objectidentity.ID) error {
-	if ref.Kind != objectidentity.Kind(SecurityPolicyKind) || ref.Name.Source == "" || ref.Name.Normalized == "" ||
-		ref.Schema.Source == "" || ref.Schema.Normalized == "" ||
+	if ref.Kind != objectidentity.Kind(SecurityPolicyKind) || ref.Name.Normalized == "" || ref.Schema.Normalized == "" ||
 		!ref.Parent.Empty() || !ref.Catalog.Empty() || ref.Signature != "" {
 		return fmt.Errorf("%w: a security policy requires a schema and a name, and no table parent", schemaext.ErrInvalidValue)
 	}
-	return nil
+	return validName("policy", ObjectName{Schema: ref.Schema.Source, Name: ref.Name.Source})
 }
 
-// DesiredSecurityPolicyObject captures one authored policy under ref.
+// DesiredSecurityPolicyObject captures a copy of one authored policy under
+// ref. An invalid ref or policy is refused with a desired
+// [schemaext.InvalidModelError] and the zero Object.
 func DesiredSecurityPolicyObject(ref objectidentity.ID, policy DesiredSecurityPolicy) (schemaext.Object, error) {
 	if err := ValidateSecurityPolicyRef(ref); err != nil {
-		return schemaext.Object{}, err
+		return schemaext.Object{}, modelError(schemaext.Desired, err)
 	}
 	if err := ValidateDesiredSecurityPolicy(&policy); err != nil {
 		return schemaext.Object{}, err
@@ -191,10 +198,12 @@ func DesiredSecurityPolicyObject(ref objectidentity.ID, policy DesiredSecurityPo
 	return schemaext.Object{Ref: ref, Value: policy.Copy()}, nil
 }
 
-// ObservedSecurityPolicyObject captures one policy a read reported under ref.
+// ObservedSecurityPolicyObject captures a copy of one policy a read reported
+// under ref. An invalid ref or policy is refused with an observed
+// [schemaext.InvalidModelError] and the zero Object.
 func ObservedSecurityPolicyObject(ref objectidentity.ID, policy ObservedSecurityPolicy) (schemaext.Object, error) {
 	if err := ValidateSecurityPolicyRef(ref); err != nil {
-		return schemaext.Object{}, err
+		return schemaext.Object{}, modelError(schemaext.Observed, err)
 	}
 	if err := ValidateObservedSecurityPolicy(&policy); err != nil {
 		return schemaext.Object{}, err
@@ -203,9 +212,11 @@ func ObservedSecurityPolicyObject(ref objectidentity.ID, policy ObservedSecurity
 }
 
 // ValidateDesiredSecurityPolicy checks representation invariants: each
-// predicate well formed, and no two predicates for one operation on one
-// table, which SQL Server refuses. A policy may hold no predicate: CREATE
-// SECURITY POLICY without one succeeds, measured on SQL Server 2025.
+// predicate well formed, no two predicates for one operation on one table,
+// which SQL Server refuses, and a struct name that is valid text. A policy may hold
+// no predicate: CREATE SECURITY POLICY without one succeeds, measured on SQL
+// Server 2025. A nil v is refused. A refusal is a desired
+// [schemaext.InvalidModelError] wrapping [schemaext.ErrInvalidValue].
 func ValidateDesiredSecurityPolicy(v *DesiredSecurityPolicy) error {
 	if v == nil {
 		return modelError(schemaext.Desired, fmt.Errorf("%w: nil security policy declaration", schemaext.ErrInvalidValue))
@@ -221,7 +232,9 @@ func ValidateDesiredSecurityPolicy(v *DesiredSecurityPolicy) error {
 
 // ValidateObservedSecurityPolicy checks that each predicate of an observation
 // is well formed and that no two cover one operation on one table. An
-// observation may hold no predicate, as a declaration may.
+// observation may hold no predicate, as a declaration may. A nil v is
+// refused. A refusal is an observed [schemaext.InvalidModelError] wrapping
+// [schemaext.ErrInvalidValue].
 func ValidateObservedSecurityPolicy(v *ObservedSecurityPolicy) error {
 	if v == nil {
 		return modelError(schemaext.Observed, fmt.Errorf("%w: nil security policy observation", schemaext.ErrInvalidValue))
@@ -238,39 +251,61 @@ func ValidateObservedSecurityPolicy(v *ObservedSecurityPolicy) error {
 // predicate per operation, where a block predicate without an operation
 // covers them all. Measured on SQL Server 2025, either second predicate is
 // refused with Msg 33262.
+//
+// Tables are told apart by [conflictName], since the collation that decides
+// which names are one table is not known offline. On a case-insensitive
+// database `app.orders`, `APP.Orders` and `app.orders  ` are one table, and
+// SQL Server refuses a second filter on any of them with the same Msg 33262.
 func validatePredicates(predicates []Predicate) error {
 	type slot struct {
 		table     ObjectName
 		kind      PredicateType
 		operation BlockOperation
 	}
+	type blocks struct {
+		count, everyOperation int
+	}
 	seen := make(map[slot]bool, len(predicates))
+	perTable := make(map[ObjectName]*blocks)
 	for _, predicate := range predicates {
 		if err := validatePredicate(predicate); err != nil {
 			return err
 		}
-		key := slot{table: predicate.Table, kind: predicate.Type, operation: predicate.Operation}
+		table := ObjectName{Schema: conflictName(predicate.Table.Schema), Name: conflictName(predicate.Table.Name)}
+		key := slot{table: table, kind: predicate.Type, operation: predicate.Operation}
 		if seen[key] {
 			return fmt.Errorf("%w: table %s has two %s predicates", schemaext.ErrInvalidValue, predicate.Table, describe(predicate))
 		}
 		seen[key] = true
-	}
-	for _, predicate := range predicates {
-		if predicate.Type == Block && predicate.Operation == "" && blockCount(predicates, predicate.Table) > 1 {
+		if predicate.Type != Block {
+			continue
+		}
+		counted := perTable[table]
+		if counted == nil {
+			counted = &blocks{}
+			perTable[table] = counted
+		}
+		counted.count++
+		if predicate.Operation == "" {
+			counted.everyOperation++
+		}
+		if counted.everyOperation > 0 && counted.count > 1 {
 			return fmt.Errorf("%w: table %s has a BLOCK predicate for every operation beside another BLOCK predicate", schemaext.ErrInvalidValue, predicate.Table)
 		}
 	}
 	return nil
 }
 
-func blockCount(predicates []Predicate, table ObjectName) int {
-	n := 0
-	for _, predicate := range predicates {
-		if predicate.Type == Block && predicate.Table == table {
-			n++
-		}
-	}
-	return n
+// conflictName is the key under which two spellings of a name may be one
+// object on some SQL Server database: trailing spaces removed, since SQL
+// Server compares names without them, and letter case folded, as every
+// case-insensitive collation does. It is deliberately broad. A case-sensitive
+// database holds `Orders` and `orders` as two tables, and a policy binding
+// both through one slot is refused here although that server would accept
+// it; the narrower key let a case-insensitive server refuse the policy at
+// apply instead.
+func conflictName(name string) string {
+	return strings.ToLower(strings.TrimRight(name, " "))
 }
 
 // validatePredicate checks one binding: a known type, an operation only on a
@@ -289,10 +324,10 @@ func validatePredicate(predicate Predicate) error {
 	default:
 		return fmt.Errorf("%w: unknown predicate type %q", schemaext.ErrInvalidValue, predicate.Type)
 	}
-	if err := validName("function", predicate.Function); err != nil {
+	if err := validName("predicate function", predicate.Function); err != nil {
 		return err
 	}
-	if err := validName("table", predicate.Table); err != nil {
+	if err := validName("predicate table", predicate.Table); err != nil {
 		return err
 	}
 	for _, argument := range predicate.Arguments {
@@ -307,10 +342,10 @@ func validatePredicate(predicate Predicate) error {
 }
 
 // validName requires both parts of a qualified name, which SQL Server binds by
-// schema.
+// schema, each holding more than white space.
 func validName(field string, name ObjectName) error {
-	if name.Schema == "" || name.Name == "" {
-		return fmt.Errorf("%w: a predicate %s needs its schema and its name", schemaext.ErrInvalidValue, field)
+	if strings.TrimSpace(name.Schema) == "" || strings.TrimSpace(name.Name) == "" {
+		return fmt.Errorf("%w: a %s needs its schema and its name", schemaext.ErrInvalidValue, field)
 	}
 	if err := validText(field+" schema", name.Schema); err != nil {
 		return err
@@ -327,9 +362,14 @@ func describe(predicate Predicate) string {
 	return string(predicate.Type) + " " + string(predicate.Operation)
 }
 
-// String renders a name for messages as schema.name, each part bracketed.
+// String renders the name as T-SQL writes it: each part bracketed, with a
+// closing bracket inside a part doubled, as QUOTENAME does.
 func (n ObjectName) String() string {
-	return "[" + n.Schema + "].[" + n.Name + "]"
+	return bracket(n.Schema) + "." + bracket(n.Name)
+}
+
+func bracket(part string) string {
+	return "[" + strings.ReplaceAll(part, "]", "]]") + "]"
 }
 
 // comparePredicates orders predicates by table, type, operation, function and
@@ -343,20 +383,21 @@ func comparePredicates(a, b Predicate) int {
 	)
 }
 
-// sortedPredicates returns predicates in their canonical order without
-// changing predicates.
-func sortedPredicates(predicates []Predicate) []Predicate {
-	sorted := clonePredicates(predicates)
-	slices.SortFunc(sorted, comparePredicates)
-	return sorted
+// sortPredicates puts predicates in their canonical order in place.
+func sortPredicates(predicates []Predicate) {
+	slices.SortFunc(predicates, comparePredicates)
 }
 
-// samePredicates compares two predicate lists as sets.
+// samePredicates compares two predicate lists as sets. Sorting moves whole
+// predicates, so shallow copies leave the arguments shared and unchanged.
 func samePredicates(left, right []Predicate) bool {
 	if len(left) != len(right) {
 		return false
 	}
-	return slices.EqualFunc(sortedPredicates(left), sortedPredicates(right), func(a, b Predicate) bool {
+	left, right = slices.Clone(left), slices.Clone(right)
+	sortPredicates(left)
+	sortPredicates(right)
+	return slices.EqualFunc(left, right, func(a, b Predicate) bool {
 		return comparePredicates(a, b) == 0
 	})
 }

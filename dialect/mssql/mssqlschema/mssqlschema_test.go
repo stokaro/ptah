@@ -1,6 +1,9 @@
 package mssqlschema_test
 
 import (
+	"encoding/json"
+	"maps"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -157,8 +160,12 @@ func TestEqual_TellsBindingsApart(t *testing.T) {
 			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "owner_id")}}},
 		{name: "a state named", other: mssqlschema.DesiredSecurityPolicy{
 			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "tenant_id")}, Enabled: &on}},
+		{name: "a schema binding named", other: mssqlschema.DesiredSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "tenant_id")}, SchemaBinding: &on}},
 		{name: "replication left out", other: mssqlschema.DesiredSecurityPolicy{
 			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "tenant_id")}, NotForReplication: true}},
+		{name: "a struct name", other: mssqlschema.DesiredSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterUpdate, "tenant_id")}, StructName: "Tenancy"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -168,8 +175,40 @@ func TestEqual_TellsBindingsApart(t *testing.T) {
 	}
 }
 
-// TestClone_SharesNothing pins that a clone is independent: changing its
-// predicates, their arguments or a flag leaves the original alone.
+// TestEqual_TellsObservationsApart pins what observed equality reads: the
+// state, the schema binding, replication, and the predicate type alone. A
+// predicate list in another order is the same policy.
+func TestEqual_TellsObservationsApart(t *testing.T) {
+	base := mssqlschema.ObservedSecurityPolicy{Predicates: []mssqlschema.Predicate{block(orders, "", "tenant_id"), filter(invoices)},
+		Enabled: true, SchemaBinding: true}
+	tests := []struct {
+		name  string
+		other mssqlschema.ObservedSecurityPolicy
+		equal bool
+	}{
+		{name: "the predicates in another order", equal: true, other: mssqlschema.ObservedSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{filter(invoices), block(orders, "", "tenant_id")}, Enabled: true, SchemaBinding: true}},
+		{name: "disabled", other: mssqlschema.ObservedSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{block(orders, "", "tenant_id"), filter(invoices)}, SchemaBinding: true}},
+		{name: "without schema binding", other: mssqlschema.ObservedSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{block(orders, "", "tenant_id"), filter(invoices)}, Enabled: true}},
+		{name: "replication left out", other: mssqlschema.ObservedSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{block(orders, "", "tenant_id"), filter(invoices)}, Enabled: true, SchemaBinding: true,
+			NotForReplication: true}},
+		{name: "a filter where the block was", other: mssqlschema.ObservedSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id"), filter(invoices)}, Enabled: true, SchemaBinding: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(base.Equal(&test.other), qt.Equals, test.equal)
+		})
+	}
+}
+
+// TestClone_SharesNothing pins that a clone of either representation is
+// independent: changing its predicates, their arguments or a flag leaves the
+// original alone.
 func TestClone_SharesNothing(t *testing.T) {
 	c := qt.New(t)
 	enabled := true
@@ -180,8 +219,14 @@ func TestClone_SharesNothing(t *testing.T) {
 	cloned.Predicates[0].Table = invoices
 	*cloned.Enabled = false
 
+	observed := &mssqlschema.ObservedSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")}}
+	observedClone := observed.Clone().(*mssqlschema.ObservedSecurityPolicy)
+	observedClone.Predicates[0].Arguments[0] = "owner_id"
+	observedClone.Predicates[0].Table = invoices
+
 	c.Assert(original.Predicates[0], qt.DeepEquals, filter(orders, "tenant_id"))
 	c.Assert(*original.Enabled, qt.IsTrue)
+	c.Assert(observed.Predicates[0], qt.DeepEquals, filter(orders, "tenant_id"))
 	c.Assert((*mssqlschema.DesiredSecurityPolicy)(nil).Clone(), qt.DeepEquals, schemaext.Value((*mssqlschema.DesiredSecurityPolicy)(nil)))
 	c.Assert((*mssqlschema.ObservedSecurityPolicy)(nil).Clone(), qt.DeepEquals, schemaext.Value((*mssqlschema.ObservedSecurityPolicy)(nil)))
 }
@@ -224,15 +269,116 @@ func TestCodecs_RefuseWhatTheModelCannotHold(t *testing.T) {
 		{name: "an observation with a struct name", codec: observed, input: `{"predicates":[],"enabled":true,"schema_binding":true,` +
 			`"not_for_replication":false,"struct_name":"T"}`},
 		{name: "a NUL in a name", codec: desired, input: `{"predicates":[{"type":"FILTER",` + fn + `,"table":{"schema":"app","name":"or\u0000ders"}}]}`},
+		{name: "a blank table name", codec: desired, input: `{"predicates":[{"type":"FILTER",` + fn + `,"table":{"schema":"app","name":"  "}}]}`},
+		{name: "a block with an empty operation", codec: desired, input: `{"predicates":[{"type":"BLOCK",` + fn + `,` + table + `,"operation":""}]}`},
+		{name: "an empty argument list", codec: desired, input: `{"predicates":[{"type":"FILTER",` + fn + `,"arguments":[],` + table + `}]}`},
+		{name: "an empty struct name", codec: desired, input: `{"predicates":[],"struct_name":""}`},
+		{name: "replication spelled out as false", codec: desired, input: `{"predicates":[],"not_for_replication":false}`},
+		{name: "the predicates not a list", codec: desired, input: `{"predicates":{}}`},
+		{name: "a state that is not a boolean", codec: observed, input: `{"predicates":[],"enabled":"ON","schema_binding":true,"not_for_replication":false}`},
+		{name: "two filters on one table in two cases", codec: desired, input: `{"predicates":[{"type":"FILTER",` + fn + `,` + table + `},` +
+			`{"type":"FILTER",` + fn + `,"table":{"schema":"APP","name":"Orders"}}]}`},
+		{name: "two filters on one table, one name with trailing spaces", codec: observed, input: `{"predicates":[{"type":"FILTER",` + fn + `,` + table + `},` +
+			`{"type":"FILTER",` + fn + `,"table":{"schema":"app","name":"orders  "}}],"enabled":true,"schema_binding":true,"not_for_replication":false}`},
+		{name: "a block for every operation beside another in another case", codec: desired, input: `{"predicates":[` +
+			`{"type":"BLOCK",` + fn + `,` + table + `},{"type":"BLOCK",` + fn + `,"table":{"schema":"app","name":"ORDERS"},"operation":"AFTER INSERT"}]}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			decoded, err := test.codec.Decode([]byte(test.input))
+			var refusal *schemaext.InvalidModelError
+			c.Assert(err, qt.ErrorAs, &refusal)
+			c.Assert(refusal.Kind, qt.Equals, mssqlschema.SecurityPolicyKind)
+			c.Assert(refusal.Representation, qt.Equals, test.codec.Representation)
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 			c.Assert(decoded, qt.IsNil)
 		})
 	}
+}
+
+// TestCodecs_DecodeTheEncodersSpelling pins the controls of the refusals
+// above: a desired state or schema binding written as false is a value, not
+// an omission, and a spelled-out operation, argument list and struct name
+// decode.
+func TestCodecs_DecodeTheEncodersSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	decoded, err := mssqlschema.Codecs()[0].Decode([]byte(`{"predicates":[{"type":"BLOCK","function":{"schema":"rls","name":"fn_tenant"},` +
+		`"arguments":["tenant_id"],"table":{"schema":"app","name":"orders"},"operation":"AFTER INSERT"}],` +
+		`"enabled":false,"schema_binding":false,"not_for_replication":true,"struct_name":"Tenancy"}`))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(decoded, qt.DeepEquals, schemaext.Payload(&mssqlschema.DesiredSecurityPolicy{
+		Predicates: []mssqlschema.Predicate{block(orders, mssqlschema.AfterInsert, "tenant_id")},
+		Enabled:    &off, SchemaBinding: &off, NotForReplication: true, StructName: "Tenancy",
+	}))
+}
+
+// TestCodecs_DefinitionsNameTheEncodedKeys pins each published definition to
+// what the encoder writes: its properties are the keys of a value with every
+// field set, and its required keys are those of a value with none set.
+func TestCodecs_DefinitionsNameTheEncodedKeys(t *testing.T) {
+	full := []mssqlschema.Predicate{block(orders, mssqlschema.AfterInsert, "tenant_id")}
+	bare := []mssqlschema.Predicate{{Type: mssqlschema.Filter, Function: tenantFunction, Table: orders}}
+	tests := []struct {
+		name       string
+		codec      schemaext.Codec
+		full, bare schemaext.Payload
+	}{
+		{name: "desired", codec: mssqlschema.Codecs()[0],
+			full: &mssqlschema.DesiredSecurityPolicy{Predicates: full, Enabled: &on, SchemaBinding: &on, NotForReplication: true, StructName: "T"},
+			bare: &mssqlschema.DesiredSecurityPolicy{Predicates: bare}},
+		{name: "observed", codec: mssqlschema.Codecs()[1],
+			full: &mssqlschema.ObservedSecurityPolicy{Predicates: full, Enabled: true},
+			bare: &mssqlschema.ObservedSecurityPolicy{Predicates: bare}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var definition jsonDefinition
+			c.Assert(json.Unmarshal(test.codec.Definition, &definition), qt.IsNil)
+			predicate := definition.Properties["predicates"].Items
+			name := predicate.Properties["table"]
+			fullKeys, fullPredicate := encodedKeys(c, test.codec, test.full)
+			bareKeys, barePredicate := encodedKeys(c, test.codec, test.bare)
+
+			c.Assert(sortedKeys(definition.Properties), qt.DeepEquals, fullKeys)
+			c.Assert(slices.Sorted(slices.Values(definition.Required)), qt.DeepEquals, bareKeys)
+			c.Assert(sortedKeys(predicate.Properties), qt.DeepEquals, fullPredicate)
+			c.Assert(slices.Sorted(slices.Values(predicate.Required)), qt.DeepEquals, barePredicate)
+			c.Assert(sortedKeys(name.Properties), qt.DeepEquals, []string{"name", "schema"})
+			c.Assert(slices.Sorted(slices.Values(name.Required)), qt.DeepEquals, []string{"name", "schema"})
+		})
+	}
+}
+
+// jsonDefinition reads the parts of a JSON Schema definition the agreement
+// test compares; encoding/json skips the other keywords.
+type jsonDefinition struct {
+	Required   []string                   `json:"required"`
+	Properties map[string]*jsonDefinition `json:"properties"`
+	Items      *jsonDefinition            `json:"items"`
+}
+
+// encodedKeys returns the keys an encoded policy holds and those of its first
+// predicate, each sorted.
+func encodedKeys(c *qt.C, codec schemaext.Codec, value schemaext.Payload) (policy, predicate []string) {
+	c.Helper()
+	encoded, err := codec.Encode(value)
+	c.Assert(err, qt.IsNil)
+	var keys map[string]json.RawMessage
+	var predicates struct {
+		Predicates []map[string]json.RawMessage `json:"predicates"`
+	}
+	c.Assert(json.Unmarshal(encoded, &keys), qt.IsNil)
+	c.Assert(json.Unmarshal(encoded, &predicates), qt.IsNil)
+	c.Assert(predicates.Predicates, qt.HasLen, 1)
+	return sortedKeys(keys), sortedKeys(predicates.Predicates[0])
+}
+
+func sortedKeys[V any](values map[string]V) []string {
+	return slices.Sorted(maps.Keys(values))
 }
 
 // TestCodecs_RefuseToEncodeAnInvalidValue pins that encoding validates first,
@@ -275,7 +421,8 @@ func TestSecurityPolicyRef_IsSchemaScoped(t *testing.T) {
 }
 
 // TestValidateSecurityPolicyRef_FailurePath refuses an identity of another
-// kind, one under a table, and one without a name.
+// kind, one under a table, one without a name or with a blank part, and one
+// whose parts are not valid text.
 func TestValidateSecurityPolicyRef_FailurePath(t *testing.T) {
 	underTable := mssqlschema.SecurityPolicyRef("rls", "tenancy")
 	underTable.Parent = objectidentity.Part{Source: "orders", Normalized: "orders"}
@@ -288,6 +435,10 @@ func TestValidateSecurityPolicyRef_FailurePath(t *testing.T) {
 		{name: "under a table", ref: underTable},
 		{name: "another kind", ref: otherKind},
 		{name: "no name", ref: mssqlschema.SecurityPolicyRef("rls", "")},
+		{name: "a blank name", ref: mssqlschema.SecurityPolicyRef("rls", " ")},
+		{name: "a blank schema", ref: mssqlschema.SecurityPolicyRef("  ", "tenancy")},
+		{name: "a NUL in the name", ref: mssqlschema.SecurityPolicyRef("rls", "ten\x00ancy")},
+		{name: "a schema that is not UTF-8", ref: mssqlschema.SecurityPolicyRef("r\xffls", "tenancy")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -297,27 +448,75 @@ func TestValidateSecurityPolicyRef_FailurePath(t *testing.T) {
 	}
 }
 
-// TestObjects_CaptureAnIndependentCopy pins that an object holds a copy of
-// the policy it was given, and that both constructors refuse what their
-// validators refuse.
-func TestObjects_CaptureAnIndependentCopy(t *testing.T) {
+// TestObjects_HappyPath pins that an object holds a copy of the policy it was
+// given, under the ref it was given.
+func TestObjects_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	ref := mssqlschema.SecurityPolicyRef("rls", "tenancy")
 	declared := mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")}}
+	observed := mssqlschema.ObservedSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")}, Enabled: true}
 
-	object := must.Must(mssqlschema.DesiredSecurityPolicyObject(ref, declared))
+	desiredObject, desiredErr := mssqlschema.DesiredSecurityPolicyObject(ref, declared)
+	observedObject, observedErr := mssqlschema.ObservedSecurityPolicyObject(ref, observed)
 	declared.Predicates[0].Arguments[0] = "owner_id"
-	_, desiredErr := mssqlschema.DesiredSecurityPolicyObject(ref, mssqlschema.DesiredSecurityPolicy{
-		Predicates: []mssqlschema.Predicate{block(orders, ""), block(orders, mssqlschema.BeforeDelete)}})
-	_, observedErr := mssqlschema.ObservedSecurityPolicyObject(ref, mssqlschema.ObservedSecurityPolicy{
-		Predicates: []mssqlschema.Predicate{filter(orders), filter(orders)}})
-	_, refErr := mssqlschema.ObservedSecurityPolicyObject(mssqlschema.SecurityPolicyRef("rls", ""), mssqlschema.ObservedSecurityPolicy{})
+	observed.Predicates[0].Arguments[0] = "owner_id"
 
-	c.Assert(object.Ref, qt.DeepEquals, ref)
-	c.Assert(object.Value.(*mssqlschema.DesiredSecurityPolicy).Predicates[0].Arguments, qt.DeepEquals, []string{"tenant_id"})
-	c.Assert(desiredErr, qt.ErrorIs, schemaext.ErrInvalidValue)
-	c.Assert(observedErr, qt.ErrorIs, schemaext.ErrInvalidValue)
-	c.Assert(refErr, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(desiredErr, qt.IsNil)
+	c.Assert(observedErr, qt.IsNil)
+	c.Assert(desiredObject.Ref, qt.DeepEquals, ref)
+	c.Assert(observedObject.Ref, qt.DeepEquals, ref)
+	c.Assert(desiredObject.Value, qt.DeepEquals, schemaext.Value(&mssqlschema.DesiredSecurityPolicy{
+		Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")}}))
+	c.Assert(observedObject.Value, qt.DeepEquals, schemaext.Value(&mssqlschema.ObservedSecurityPolicy{
+		Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")}, Enabled: true}))
+}
+
+// TestObjects_FailurePath pins that both constructors refuse what their
+// validators refuse, and an invalid ref, as the typed model error of their
+// representation, and return no object.
+func TestObjects_FailurePath(t *testing.T) {
+	ref := mssqlschema.SecurityPolicyRef("rls", "tenancy")
+	tests := []struct {
+		name           string
+		build          func() (schemaext.Object, error)
+		representation schemaext.Representation
+		wantErr        string
+	}{
+		{name: "a declaration with two blocks for every write", representation: schemaext.Desired,
+			wantErr: `.*has a BLOCK predicate for every operation beside another BLOCK predicate`,
+			build: func() (schemaext.Object, error) {
+				return mssqlschema.DesiredSecurityPolicyObject(ref, mssqlschema.DesiredSecurityPolicy{
+					Predicates: []mssqlschema.Predicate{block(orders, ""), block(orders, mssqlschema.BeforeDelete)}})
+			}},
+		{name: "a declaration under a blank name", representation: schemaext.Desired,
+			wantErr: `.*a policy needs its schema and its name`,
+			build: func() (schemaext.Object, error) {
+				return mssqlschema.DesiredSecurityPolicyObject(mssqlschema.SecurityPolicyRef("rls", " "), mssqlschema.DesiredSecurityPolicy{})
+			}},
+		{name: "an observation with two filters on one table", representation: schemaext.Observed,
+			wantErr: `.*table \[app\]\.\[orders\] has two FILTER predicates`,
+			build: func() (schemaext.Object, error) {
+				return mssqlschema.ObservedSecurityPolicyObject(ref, mssqlschema.ObservedSecurityPolicy{
+					Predicates: []mssqlschema.Predicate{filter(orders), filter(orders)}})
+			}},
+		{name: "an observation without a name", representation: schemaext.Observed,
+			wantErr: `.*a security policy requires a schema and a name, and no table parent`,
+			build: func() (schemaext.Object, error) {
+				return mssqlschema.ObservedSecurityPolicyObject(mssqlschema.SecurityPolicyRef("rls", ""), mssqlschema.ObservedSecurityPolicy{})
+			}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			object, err := test.build()
+			var refusal *schemaext.InvalidModelError
+			c.Assert(err, qt.ErrorAs, &refusal)
+			c.Assert(refusal.Kind, qt.Equals, mssqlschema.SecurityPolicyKind)
+			c.Assert(refusal.Representation, qt.Equals, test.representation)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(object, qt.DeepEquals, schemaext.Object{})
+		})
+	}
 }
 
 // TestCoverage_RecordsTheClaimItIsGiven pins coverage: the namespace-wide
@@ -337,29 +536,53 @@ func TestCoverage_RecordsTheClaimItIsGiven(t *testing.T) {
 }
 
 // TestValidateDesiredSecurityPolicy_FailurePath pins the validator on values
-// built in Go, which no codec shape checks first: an unqualified table or
-// function, and an argument that is empty or carries a NUL byte.
+// built in Go, which no codec shape checks first: an unqualified or blank
+// table or function, an argument that is empty or carries a NUL byte, a
+// struct name that is not valid text, and a nil declaration.
 func TestValidateDesiredSecurityPolicy_FailurePath(t *testing.T) {
 	tests := []struct {
-		name      string
-		predicate mssqlschema.Predicate
-		wantErr   string
+		name    string
+		policy  *mssqlschema.DesiredSecurityPolicy
+		wantErr string
 	}{
 		{name: "a table without its schema", wantErr: `.*a predicate table needs its schema and its name`,
-			predicate: mssqlschema.Predicate{Type: mssqlschema.Filter, Function: tenantFunction, Table: mssqlschema.ObjectName{Name: "orders"}}},
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{
+				{Type: mssqlschema.Filter, Function: tenantFunction, Table: mssqlschema.ObjectName{Name: "orders"}}}}},
 		{name: "a function without its schema", wantErr: `.*a predicate function needs its schema and its name`,
-			predicate: mssqlschema.Predicate{Type: mssqlschema.Filter, Function: mssqlschema.ObjectName{Name: "fn_tenant"}, Table: orders}},
-		{name: "an empty argument", wantErr: `.*a predicate argument cannot be empty`, predicate: filter(orders, "tenant_id", "")},
-		{name: "a NUL in an argument", wantErr: `.*security policy predicate argument contains a NUL byte`, predicate: filter(orders, "tenant\x00id")},
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{
+				{Type: mssqlschema.Filter, Function: mssqlschema.ObjectName{Name: "fn_tenant"}, Table: orders}}}},
+		{name: "a blank function name", wantErr: `.*a predicate function needs its schema and its name`,
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{
+				{Type: mssqlschema.Filter, Function: mssqlschema.ObjectName{Schema: "rls", Name: "\t "}, Table: orders}}}},
+		{name: "an empty argument", wantErr: `.*a predicate argument cannot be empty`,
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id", "")}}},
+		{name: "a NUL in an argument", wantErr: `.*security policy predicate argument contains a NUL byte`,
+			policy: &mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{filter(orders, "tenant\x00id")}}},
+		{name: "a NUL in the struct name", wantErr: `.*security policy struct name contains a NUL byte`,
+			policy: &mssqlschema.DesiredSecurityPolicy{StructName: "Ten\x00ancy"}},
+		{name: "a struct name that is not UTF-8", wantErr: `.*security policy struct name is not valid UTF-8`,
+			policy: &mssqlschema.DesiredSecurityPolicy{StructName: "Ten\xffancy"}},
+		{name: "nil", wantErr: `.*nil security policy declaration`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := mssqlschema.ValidateDesiredSecurityPolicy(&mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{test.predicate}})
+			err := mssqlschema.ValidateDesiredSecurityPolicy(test.policy)
+			var refusal *schemaext.InvalidModelError
+			c.Assert(err, qt.ErrorAs, &refusal)
+			c.Assert(refusal.Representation, qt.Equals, schemaext.Desired)
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// TestObjectName_StringQuotesEachPart pins the T-SQL spelling messages use: a
+// closing bracket inside a part is doubled, so the rendering names one object.
+func TestObjectName_StringQuotesEachPart(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(mssqlschema.ObjectName{Schema: "app", Name: "a]b"}.String(), qt.Equals, "[app].[a]]b]")
+	c.Assert(mssqlschema.ObjectName{Schema: "a.b", Name: "[c"}.String(), qt.Equals, "[a.b].[[c]")
 }
 
 // TestFingerprint_FollowsTheBindings pins the durable identity a registry
