@@ -1,4 +1,4 @@
-package schemaprep_test
+package ydblowering_test
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/ydblowering"
 )
 
 // uniqueAccounts is a table with a named and commented UNIQUE, an unnamed
@@ -43,7 +43,7 @@ func TestUniqueConstraintsAsIndexesFor_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	database := uniqueAccounts()
 
-	lowered := schemaprep.UniqueConstraintsAsIndexesFor(database, platform.YDB, capability.YDB262())
+	lowered := ydblowering.UniqueConstraintsAsIndexesFor(database, platform.YDB, capability.YDB262())
 
 	c.Assert(lowered.Indexes, qt.DeepEquals, []schemamodel.Index{
 		{StructName: "Account", Name: "uq_tenant_login", Fields: []string{"tenant", "login"}, Unique: true,
@@ -77,7 +77,7 @@ func TestUniqueConstraintsAsIndexesFor_LeavesOtherTargets(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			database := uniqueAccounts()
-			c.Assert(schemaprep.UniqueConstraintsAsIndexesFor(database, test.dialect, test.caps), qt.Equals, database)
+			c.Assert(ydblowering.UniqueConstraintsAsIndexesFor(database, test.dialect, test.caps), qt.Equals, database)
 		})
 	}
 }

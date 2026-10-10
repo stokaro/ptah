@@ -113,12 +113,15 @@ func compareReportingUndecidedAdditions(
 			return nil, Diagnostics{}, err
 		}
 		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
-		// A UNIQUE constraint is a unique index on YDB, which is what the
-		// reader reports for one a plan applied.
-		desired = schemaprep.UniqueConstraintsAsIndexesFor(desired, opts.Dialect, caps)
-		// A YDB privilege spelled as GRANT does is the permission name the
-		// reader reports.
-		desired = schemaprep.YDBPermissionNamesFor(desired, opts.Dialect)
+		// The target rewrites what its reader reports in another shape, such
+		// as a UNIQUE constraint YDB holds as a unique index.
+		desired, err = runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{
+			Target: selected.Name(), Desired: desired, Current: database, Capabilities: caps,
+			Semantics: loweringSemantics(opts),
+		})
+		if err != nil {
+			return nil, Diagnostics{}, err
+		}
 	}
 
 	diff := &difftypes.SchemaDiff{}
@@ -134,10 +137,6 @@ func compareReportingUndecidedAdditions(
 	}
 	desired, database = normalizeInlineEnumsForCompare(desired, database, opts)
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
-	desired, err = compare.AdoptTransferConsumers(desired, database, opts.Dialect, identifierSemantics)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
 	// The feature comparison runs before the index comparison, and reads a
 	// renamed index under the name the plan gives it.
 	prepared, err := prepareComparisonTables(ctx, desired, database,
@@ -643,4 +642,13 @@ func isMySQLFamilyComparison(dialect string) bool {
 	default:
 		return false
 	}
+}
+
+// loweringSemantics are the identifier rules a target's lowering pairs names
+// by: the snapshot the comparison holds, or the dialect's own.
+func loweringSemantics(opts *config.CompareOptions) identifier.Semantics {
+	if opts.IdentifierSemantics == nil {
+		return identifier.ForDialect(opts.Dialect)
+	}
+	return opts.IdentifierSemantics.Normalize(opts.Dialect)
 }

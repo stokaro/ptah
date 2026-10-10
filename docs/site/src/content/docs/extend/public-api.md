@@ -287,6 +287,12 @@ facets, bindings, observations, and knowledge stay unchanged. Incomplete replies
 no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
 captures as comparison provenance, including through reversal.
 
+`Target.Lowering` selects `schemapreparation.Lowering`, which rewrites the
+whole desired schema into the shape the target's reader reports it in, before
+comparison. YDB registers one so that a UNIQUE constraint compares as the unique
+index the server holds. A nil service leaves the declaration as written; an
+error or a nil result fails the comparison.
+
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
 files used as current state. It predicts CREATE defaults and column keys.
 `TableCreation.Facets` contains records keyed by captured table or index identity,

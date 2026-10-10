@@ -1,4 +1,4 @@
-package schemaprep
+package ydblowering
 
 import (
 	"slices"
@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -92,7 +93,7 @@ func UniqueConstraintsAsIndexesFor(
 // constraintTable is the table a constraint belongs to.
 func constraintTable(tables []schemamodel.Table, constraint schemamodel.Constraint) (schemamodel.Table, bool) {
 	index := slices.IndexFunc(tables, func(table schemamodel.Table) bool {
-		return ConstraintBelongsToTable(constraint, table)
+		return schemaprep.ConstraintBelongsToTable(constraint, table)
 	})
 	if index < 0 {
 		return schemamodel.Table{}, false
@@ -116,7 +117,7 @@ func tableKey(table schemamodel.Table, database *schemamodel.Database) []string 
 		return table.PrimaryKey
 	}
 	for _, constraint := range database.Constraints {
-		if strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") && ConstraintBelongsToTable(constraint, table) {
+		if strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") && schemaprep.ConstraintBelongsToTable(constraint, table) {
 			return constraint.Columns
 		}
 	}

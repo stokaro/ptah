@@ -107,13 +107,15 @@ type Service interface {
 	PrepareTables(context.Context, Request) (Result, error)
 }
 
-// Runtime selects preparation and feature comparison using the same target
-// registry and codecs. Source properties are decoded before preparation captures
-// declarations. It does not select a built-in implementation implicitly.
+// Runtime selects preparation, desired lowering and feature comparison using
+// the same target registry and codecs. Source properties are decoded before
+// preparation captures declarations. It does not select a built-in
+// implementation implicitly.
 type Runtime interface {
 	schemaext.ComparisonRuntime
 	schemaproperties.Runtime
 	Service
+	Lowering
 }
 
 // Identity explicitly selects unchanged table representations. Providers whose

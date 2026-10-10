@@ -11,16 +11,19 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemaproperties"
 )
 
-// Runtime selects source decoding, CREATE prediction, and representation
-// conversion together. Document projection never selects a built-in provider.
+// Runtime selects source decoding, CREATE prediction, desired lowering and
+// representation conversion together. Document projection never selects a
+// built-in provider.
 type Runtime interface {
 	schemaext.ConversionRuntime
 	schemaprojection.TableCreationService
 	schemaproperties.Runtime
+	schemapreparation.Lowering
 }
 
 // A current-side document describes the table its CREATE would produce. Resolve

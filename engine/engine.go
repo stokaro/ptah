@@ -87,6 +87,10 @@ type Target struct {
 	Validation schemavalidation.Service
 	// Preparation normalizes captured tables before comparison. Nil is unavailable.
 	Preparation schemapreparation.Service
+	// Lowering rewrites a whole desired schema into the shape the target's
+	// reader reports it in, before comparison. Nil leaves the desired schema
+	// as declared.
+	Lowering schemapreparation.Lowering
 	// Creations predicts table defaults and key membership for source documents.
 	// Nil leaves this offline operation unavailable.
 	Creations schemaprojection.TableCreationService
@@ -134,6 +138,7 @@ type target struct {
 	schemaRendering renderer.SchemaService
 	validation      schemavalidation.Service
 	preparation     schemapreparation.Service
+	lowering        schemapreparation.Lowering
 	creations       schemaprojection.TableCreationService
 	constraints     schemaprojection.ConstraintService
 }
@@ -270,6 +275,9 @@ func (r *Runtime) register(owner string, declared Target) error {
 	if declared.Preparation != nil && nilService(declared.Preparation) {
 		return fmt.Errorf("%w: target %q has a typed-nil preparation service", ErrInvalidRegistration, declared.Name)
 	}
+	if declared.Lowering != nil && nilService(declared.Lowering) {
+		return fmt.Errorf("%w: target %q has a typed-nil lowering service", ErrInvalidRegistration, declared.Name)
+	}
 	if declared.Creations != nil && nilService(declared.Creations) {
 		return fmt.Errorf("%w: target %q has a typed-nil creation projection service", ErrInvalidRegistration, declared.Name)
 	}
@@ -284,7 +292,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		r.targets[name] = target{
 			owner: owner, name: declared.Name, selection: selection,
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
-			validation: declared.Validation, preparation: declared.Preparation,
+			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations,
 		}
 	}
