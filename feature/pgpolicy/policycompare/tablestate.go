@@ -106,13 +106,20 @@ func compareTableState(request schemaext.FacetComparisonRequest, owner schemaext
 		}
 		return nil
 	}
+	if desired == nil && unknown(desiredKnowledge) {
+		// A source that cannot describe the switches keeps what the server
+		// holds. A read that recorded none holds the default, which needs no
+		// declaration to keep; adopting it would declare a value neither
+		// side carried.
+		if current == nil {
+			return nil
+		}
+		return adoptTableState(result, owner.Subject, current)
+	}
 	if current == nil {
 		current = &pgpolicy.ObservedTableState{}
 	}
 	if desired == nil {
-		if unknown(desiredKnowledge) {
-			return adoptTableState(result, owner.Subject, current)
-		}
 		desired = &pgpolicy.DesiredTableState{}
 	}
 	if desired.Enabled == current.Enabled && desired.Forced == current.Forced {
