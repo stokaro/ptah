@@ -16,9 +16,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
@@ -638,8 +640,8 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "views", present: len(database.Views) > 0},
 		{name: "materialized views", present: len(database.MaterializedViews) > 0},
 		{name: "triggers", present: len(database.Triggers) > 0},
-		{name: "row-level security policies", present: len(database.RLSPolicies) > 0},
-		{name: "row-level security settings", present: len(database.RLSEnabledTables) > 0},
+		{name: "row-level security policies", present: hasRowSecurityPolicies(database)},
+		{name: "row-level security settings", present: hasRowSecuritySettings(database)},
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
 		{name: "revoked grants", present: len(database.RevokedGrants) > 0},
@@ -661,6 +663,22 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 	}
 }
 
+// hasRowSecurityPolicies reports a policy in the common model or of the
+// PostgreSQL row-security owner.
+func hasRowSecurityPolicies(database *schemamodel.Database) bool {
+	return len(database.RLSPolicies) > 0 || slices.ContainsFunc(database.FeatureObjects.Refs(), func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind)
+	})
+}
+
+// hasRowSecuritySettings reports a table's row-level security switches in the
+// common model or as the row-security owner's facet.
+func hasRowSecuritySettings(database *schemamodel.Database) bool {
+	return len(database.RLSEnabledTables) > 0 || slices.ContainsFunc(database.Tables, func(table schemamodel.Table) bool {
+		return slices.Contains(table.Facets.DeclaredKinds(), pgpolicy.TableStateKind)
+	})
+}
+
 func hasEnumComments(database *schemamodel.Database) bool {
 	return slices.ContainsFunc(database.Enums, func(enum schemamodel.Enum) bool {
 		return enum.Comment != ""
@@ -671,8 +689,8 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) [
 	return []strictCEDesiredObject{
 		{name: "extensions", present: len(database.Extensions) > 0},
 		{name: "triggers", present: len(database.Triggers) > 0},
-		{name: "row-level security policies", present: len(database.RLSPolicies) > 0},
-		{name: "row-level security settings", present: len(database.RLSEnabledTables) > 0},
+		{name: "row-level security policies", present: hasRowSecurityPolicies(database)},
+		{name: "row-level security settings", present: hasRowSecuritySettings(database)},
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
 		{name: "revoked grants", present: len(database.RevokedGrants) > 0},

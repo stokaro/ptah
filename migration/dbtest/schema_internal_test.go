@@ -13,8 +13,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -115,4 +117,47 @@ func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Matches, `(?s).*DROP CONSTRAINT IF EXISTS "check_users_name".*ADD CONSTRAINT "check_users_name".*`)
+}
+
+// opaqueChange is a feature change whose owner does not say whether it takes
+// state away.
+type opaqueChange struct{}
+
+func (*opaqueChange) Kind() schemaext.Kind               { return "example.org/opaque" }
+func (*opaqueChange) CloneChange() schemaext.ChangeValue { return &opaqueChange{} }
+
+// TestPreserveUnmanagedObjects_KeepsFeatureChangesThatAddState pins the
+// additive apply over owned feature changes: a change whose owner says it
+// takes state away is left out, at the top and on a table; one whose owner
+// says it does not is applied even beside no structural change; and one whose
+// owner does not say is applied only beside a structural change, as before.
+func TestPreserveUnmanagedObjects_KeepsFeatureChangesThatAddState(t *testing.T) {
+	c := qt.New(t)
+	policy := func(name string, before *pgpolicy.ObservedPolicy, after *pgpolicy.DesiredPolicy) schemaext.ChangeRecord {
+		return schemaext.ChangeRecord{Subject: pgpolicy.PolicyRef("", "orders", name),
+			Value: &pgpolicy.PolicyChange{Before: before, After: after, Access: pgpolicy.PolicyAccess(before, after, pgpolicy.ExpressionsSame)}}
+	}
+	switches := func(before, after bool) schemaext.ChangeRecord {
+		return schemaext.ChangeRecord{Subject: pgpolicy.Table(pgpolicy.PolicyRef("", "orders", "x")), Value: &pgpolicy.TableStateChange{
+			Before: &pgpolicy.ObservedTableState{Enabled: before}, After: &pgpolicy.DesiredTableState{Enabled: after},
+			Access: pgpolicy.TableStateAccess(&pgpolicy.ObservedTableState{Enabled: before}, &pgpolicy.DesiredTableState{Enabled: after})}}
+	}
+	held := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}, Composition: pgpolicy.Permissive}
+	created, enabled := policy("created", nil, &pgpolicy.DesiredPolicy{}), switches(false, true)
+	opaque := schemaext.ChangeRecord{Subject: pgpolicy.Table(pgpolicy.PolicyRef("", "audit", "x")), Value: &opaqueChange{}}
+	diff := &difftypes.SchemaDiff{
+		FeatureChanges: []schemaext.ChangeRecord{policy("dropped_at_the_top", held, nil)},
+		TablesModified: []difftypes.TableDiff{
+			{TableName: "orders", FeatureChanges: []schemaext.ChangeRecord{created, policy("dropped", held, nil), enabled}},
+			{TableName: "invoices", FeatureChanges: []schemaext.ChangeRecord{switches(true, false)}},
+			{TableName: "audit", FeatureChanges: []schemaext.ChangeRecord{opaque}},
+		},
+	}
+
+	preserveUnmanagedObjects(diff, "postgres")
+
+	c.Assert(diff.FeatureChanges, qt.HasLen, 0)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].TableName, qt.Equals, "orders")
+	c.Assert(diff.TablesModified[0].FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{created, enabled})
 }

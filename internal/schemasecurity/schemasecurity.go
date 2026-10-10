@@ -32,7 +32,9 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/risk"
 )
 
@@ -349,6 +351,13 @@ func findGrantedTablesWithoutRLS(db *schemamodel.Database) []Finding {
 	protected := make(map[string]bool, len(db.RLSEnabledTables))
 	for _, enabled := range db.RLSEnabledTables {
 		protected[enabled.Table] = true
+	}
+	// The row-security owner's switches are a facet of the table.
+	for _, table := range db.Tables {
+		state, found, err := schemaext.FacetAs[*pgpolicy.DesiredTableState](table.Facets, pgpolicy.TableStateKind)
+		if err == nil && found && state.Enabled {
+			protected[table.QualifiedName()] = true
+		}
 	}
 
 	roles := make(map[string]map[string]bool, len(db.Grants))

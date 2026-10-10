@@ -6,12 +6,15 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/envbool/envbooltest"
 )
@@ -205,6 +208,10 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "triggers", database: &schemamodel.Database{Triggers: []schemamodel.Trigger{{}}}},
 		{name: "row-level security policies", database: &schemamodel.Database{RLSPolicies: []schemamodel.RLSPolicy{{}}}},
 		{name: "row-level security settings", database: &schemamodel.Database{RLSEnabledTables: []schemamodel.RLSEnabledTable{{}}}},
+		{name: "row-level security policies", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+			must.Must(pgpolicy.DesiredPolicyObject(pgpolicy.PolicyRef("", "users", "tenant"), pgpolicy.DesiredPolicy{}))))}},
+		{name: "row-level security settings", database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users",
+			Facets: must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{}))}}}},
 		{name: "roles", database: &schemamodel.Database{Roles: []schemamodel.Role{{}}}},
 		{name: "grants", database: &schemamodel.Database{Grants: []schemamodel.Grant{{}}}},
 		{name: "default privileges", database: &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{{}}}},

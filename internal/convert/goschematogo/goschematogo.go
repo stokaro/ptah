@@ -265,9 +265,15 @@ type renderContext struct {
 	indexesByTable       map[string][]schemamodel.Index
 	constraintsByTable   map[string][]schemamodel.Constraint
 	rlsByTable           map[string][]schemamodel.RLSPolicy
-	rlsEnabledByTable    map[string][]schemamodel.RLSEnabledTable
-	triggersByTable      map[string][]schemamodel.Trigger
-	imports              map[string]struct{}
+	// policyTables names each table by the identity a row-level security
+	// policy names its table by; policyAnnotations and switchAnnotations hold
+	// what is written beside each table, by its qualified name.
+	policyTables      map[objectidentity.Key]string
+	policyAnnotations map[string][]string
+	switchAnnotations map[string]string
+	rlsEnabledByTable map[string][]schemamodel.RLSEnabledTable
+	triggersByTable   map[string][]schemamodel.Trigger
+	imports           map[string]struct{}
 }
 
 func newRenderContext(db *schemamodel.Database, opts Options) *renderContext {
@@ -587,12 +593,18 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, policy := range ctx.rlsByTable[table.StructName] {
 		w.writeComment(rlsPolicyAnnotation(policy))
 	}
+	for _, text := range ctx.policyAnnotations[table.QualifiedName()] {
+		w.writeComment(text)
+	}
 	for _, enabled := range ctx.rlsEnabledByTable[table.StructName] {
 		w.writeComment(annotation("ptah:schema:rls:enable",
 			attr{name: "table", value: enabled.Table, set: true},
 			attr{name: "comment", value: enabled.Comment, set: enabled.Comment != ""},
 			dialectsAttr(enabled.Dialects),
 		))
+	}
+	if text, found := ctx.switchAnnotations[table.QualifiedName()]; found {
+		w.writeComment(text)
 	}
 	for _, trigger := range ctx.triggersByTable[table.QualifiedName()] {
 		w.writeComment(triggerAnnotation(trigger))

@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/schemaprep"
@@ -204,6 +205,9 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if err := r.captureTimescale(); err != nil {
 		return Result{}, err
 	}
+	if err := r.captureRowSecurity(); err != nil {
+		return Result{}, err
+	}
 	r.render()
 	return Result{
 		Data:         []byte(r.builder.String()),
@@ -217,6 +221,8 @@ type renderer struct {
 	coordinationDirectives []string
 	hypertables            []hypertableBlock
 	aggregates             []aggregateBlock
+	policies               []policyBlock
+	tableStates            map[string]*pgpolicy.DesiredTableState
 	db                     *schemamodel.Database
 	dialect                string
 	// defaultSchema owns every object that arrived without one. Empty means the
@@ -586,6 +592,7 @@ func (r *renderer) renderBody() {
 	r.renderMaterializedViews()
 	r.renderTriggers()
 	r.renderRLSPolicies()
+	r.renderPolicies()
 	r.renderGrants()
 	r.renderRevokedGrants()
 	// After the grants: a grant is about an object the document already declares,
@@ -771,6 +778,7 @@ func (r *renderer) renderTable(
 	r.stringAttr(1, "custom", table.CustomSQL)
 	r.renderPlatformOverrides(1, table.Overrides)
 	r.renderRowSecurity(rlsEnabled)
+	r.renderTableState(table)
 
 	// The columns are written in the order the schema carries them, which is the
 	// order the table has: a live read returns catalog order, a schema file

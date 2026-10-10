@@ -135,6 +135,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `feature/pgpolicy/policyconvert` | Projection of PostgreSQL row-security values between representations. |
 | `feature/pgpolicy/policyplan` | Planning of PostgreSQL row-security changes into ordered operations. |
 | `feature/pgpolicy/policyprobe` | A connected server's spelling of declared PostgreSQL row-security policies. |
+| `feature/pgpolicy/policyreport` | Inventory counts of PostgreSQL row-security policies and switches. |
 | `feature/pgpolicy/policyrender` | Rendering of the PostgreSQL row-security operations. |
 | `feature/pgpolicy/policyreverse` | Reversal of PostgreSQL row-security changes. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |

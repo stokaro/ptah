@@ -73,6 +73,15 @@ ptah_schema_security_policies{dialect="sqlite"} 0
 # HELP ptah_schema_security_predicates Predicates SQL Server security policies bind to tables.
 # TYPE ptah_schema_security_predicates gauge
 ptah_schema_security_predicates{dialect="sqlite"} 0
+# HELP ptah_schema_row_security_policies PostgreSQL row-level security policies.
+# TYPE ptah_schema_row_security_policies gauge
+ptah_schema_row_security_policies{dialect="sqlite"} 0
+# HELP ptah_schema_row_security_enabled_tables Tables whose row-level security is enabled.
+# TYPE ptah_schema_row_security_enabled_tables gauge
+ptah_schema_row_security_enabled_tables{dialect="sqlite"} 0
+# HELP ptah_schema_row_security_forced_tables Tables whose row-level security applies to their owner.
+# TYPE ptah_schema_row_security_forced_tables gauge
+ptah_schema_row_security_forced_tables{dialect="sqlite"} 0
 # HELP ptah_schema_spanner_row_deletion_policy_tables Tables with a captured Spanner row deletion policy.
 # TYPE ptah_schema_spanner_row_deletion_policy_tables gauge
 ptah_schema_spanner_row_deletion_policy_tables{dialect="sqlite"} 0

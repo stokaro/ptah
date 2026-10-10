@@ -50,6 +50,10 @@ func (v *PolicyChange) Copy() *PolicyChange {
 	return &PolicyChange{Before: v.Before.Copy(), After: v.After.Copy(), CommentOnly: v.CommentOnly, Access: v.Access}
 }
 
+// RemovesState reports a drop: a change without a declaration removes the
+// policy.
+func (v *PolicyChange) RemovesState() bool { return v != nil && v.After == nil }
+
 // AccessEffect returns the recorded assessment.
 func (v *PolicyChange) AccessEffect() schemaext.AccessEffect {
 	if v == nil {
@@ -133,6 +137,12 @@ func (v *TableStateChange) Copy() *TableStateChange {
 		cloned.After = new(*v.After)
 	}
 	return cloned
+}
+
+// RemovesState reports a change that turns a switch off: DISABLE or NO FORCE.
+func (v *TableStateChange) RemovesState() bool {
+	return v != nil && v.Before != nil && v.After != nil &&
+		((v.Before.Enabled && !v.After.Enabled) || (v.Before.Forced && !v.After.Forced))
 }
 
 // AccessEffect returns the recorded assessment.

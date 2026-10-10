@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
 )
@@ -106,6 +107,11 @@ func FilterGeneratedWithDefaultSchema(
 	filtered.RLSEnabledTables = keep(db.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) bool {
 		return tableReferenceAllowed(keptTables, table.Table)
 	})
+	// A table's feature children, such as its row-level security policies,
+	// follow the table.
+	filtered.FeatureObjects = db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Parent.Empty() || tableReferenceAllowed(keptTables, childTable(ref))
+	})
 	filtered.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return grantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
@@ -181,6 +187,9 @@ func FilterDatabaseWithDefaultSchema(
 	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
 		return dbTableReferenceAllowed(keptTables, policy.Table)
 	})
+	filtered.FeatureObjects = db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Parent.Empty() || dbTableReferenceAllowed(keptTables, childTable(ref))
+	})
 	filtered.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
 		return dbGrantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
@@ -250,6 +259,12 @@ func generatedNamedObjectAllowed(
 		return true
 	}
 	return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(name), defaultSchema))
+}
+
+// childTable names the table a feature object belongs to, as its source
+// spelled it.
+func childTable(ref objectidentity.ID) string {
+	return schemamodel.QualifyTableName(ref.Schema.Authored(), ref.Parent.Source)
 }
 
 func tableReferenceAllowed(keptTables map[string]schemamodel.Table, tableName string) bool {

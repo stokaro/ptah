@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/schemasecurity"
 	"ptah.run/migration/risk"
 )
@@ -82,6 +85,30 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			name:    "a granted table with no row-level security is reported",
 			dialect: "postgres",
 			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
+					{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
+				},
+			},
+			wantCodes:   []string{"PRV01"},
+			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+		},
+		{
+			name:    "the same table with the row-security owner's switch on is not",
+			dialect: "postgres",
+			database: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "users", Facets: must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true}))}},
+				Grants: []schemamodel.Grant{
+					{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
+				},
+			},
+			wantCodes:   make([]string, 0),
+			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+		},
+		{
+			name:    "the same table with the row-security owner's switch off is reported",
+			dialect: "postgres",
+			database: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "users", Facets: must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Forced: true}))}},
 				Grants: []schemamodel.Grant{
 					{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
 				},
