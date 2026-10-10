@@ -38,6 +38,15 @@ var postgresServerWideStatements = []struct {
 	{name: "DROP OWNED", statement: `DROP OWNED BY app`},
 	{name: "REASSIGN OWNED", statement: `REASSIGN OWNED BY app TO reporter`},
 	{name: "COMMENT ON ROLE", statement: `COMMENT ON ROLE app IS 'the application role'`},
+}
+
+// postgresDevDatabaseComments are accepted only on a server the run
+// provisioned: a comment on an extension or a schema of the dev database,
+// which the reset of a server that outlives the run keeps.
+var postgresDevDatabaseComments = []struct {
+	name      string
+	statement string
+}{
 	{name: "COMMENT ON EXTENSION", statement: `COMMENT ON EXTENSION pgcrypto IS 'hashing'`},
 	{name: "COMMENT ON SCHEMA", statement: `COMMENT ON SCHEMA app IS 'the application schema'`},
 }
@@ -47,11 +56,33 @@ func postgresGuard(realm devclean.ReplayRealm) *devclean.ReplayGuard {
 }
 
 func TestReplayGuardServerRealm_PostgresLiftsServerWideStatements(t *testing.T) {
-	guard := postgresGuard(devclean.ReplayRealmServer)
-	for _, test := range postgresServerWideStatements {
+	for _, realm := range []devclean.ReplayRealm{devclean.ReplayRealmServer, devclean.ReplayRealmProvisionedServer} {
+		guard := postgresGuard(realm)
+		for _, test := range postgresServerWideStatements {
+			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
+				c.Assert(guard.ValidateStatement(test.statement), qt.IsNil)
+			})
+		}
+	}
+}
+
+// TestReplayGuardProvisionedServer_PostgresLiftsDevDatabaseComments pins the
+// one difference between the two realms of a server the run owns: a comment
+// on an extension or a schema of the dev database is accepted on a server the
+// run provisioned and refused on one the operator declared disposable, which
+// keeps it after the run. That refusal names the remedy that does lift it.
+func TestReplayGuardProvisionedServer_PostgresLiftsDevDatabaseComments(t *testing.T) {
+	for _, test := range postgresDevDatabaseComments {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(guard.ValidateStatement(test.statement), qt.IsNil)
+			c.Assert(postgresGuard(devclean.ReplayRealmProvisionedServer).ValidateStatement(test.statement), qt.IsNil)
+			c.Assert(postgresGuard(devclean.ReplayRealmServer).WithServerRealmRemedy(replayRemedy).ValidateStatement(test.statement),
+				qt.ErrorMatches, `postgres migration replay rejects COMMENT ON global metadata because its effects cannot be confined `+
+					`to the disposable database realm; use a docker:// or docker\+<driver>:// dev URL, `+
+					`since a server declared disposable keeps this after the run`)
+			c.Assert(postgresGuard(devclean.ReplayRealmDatabase).WithServerRealmRemedy(replayRemedy).ValidateStatement(test.statement),
+				qt.ErrorMatches, `postgres migration replay rejects COMMENT ON global metadata .*; use a docker:// .*`)
 		})
 	}
 }

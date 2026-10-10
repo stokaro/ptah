@@ -81,7 +81,7 @@ func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token
 	// Another database is the realm's own concern: on a server the run owns,
 	// a table written in another database is removed with the server, and on
 	// a server named as a whole every user database is the run's.
-	if realm == ReplayRealmServer || realm == ReplayRealmServerDatabases {
+	if realm.ownsServer() || realm == ReplayRealmServerDatabases {
 		return nil
 	}
 	if err := rejectMySQLRenameDestinations(dialect, database, tokens); err != nil {

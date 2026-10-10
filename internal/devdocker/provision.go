@@ -246,7 +246,7 @@ func (i *Instance) Close() error {
 		}
 	}
 	i.closed = true
-	forgetRunOwned(i.url)
+	forgetProvisioned(i.url)
 	forgetStartingPoint(i.url)
 	return nil
 }
@@ -254,7 +254,7 @@ func (i *Instance) Close() error {
 // runOwned records the connectable URL of every server this run owns as a
 // whole: each one this process started and has not yet removed, and each one
 // the operator declared disposable, until the release [Resolve] returned for
-// it runs. [RunOwned] reads it.
+// it runs. [RunOwned] reads it, and [Provisioned] the servers it started.
 //
 // A URL is counted rather than stored once, because one command can resolve
 // the same declared URL twice, one call inside the other, and the inner
@@ -262,7 +262,10 @@ func (i *Instance) Close() error {
 var runOwned = struct {
 	sync.Mutex
 	urls map[string]int
-}{urls: make(map[string]int)}
+	// provisioned counts the subset of urls that [Provision] started, which
+	// [Provisioned] reads.
+	provisioned map[string]int
+}{urls: make(map[string]int), provisioned: make(map[string]int)}
 
 func recordRunOwned(rawURL string) {
 	runOwned.Lock()
@@ -273,9 +276,27 @@ func recordRunOwned(rawURL string) {
 func forgetRunOwned(rawURL string) {
 	runOwned.Lock()
 	defer runOwned.Unlock()
-	runOwned.urls[rawURL]--
-	if runOwned.urls[rawURL] <= 0 {
-		delete(runOwned.urls, rawURL)
+	forget(runOwned.urls, rawURL)
+}
+
+func recordProvisioned(rawURL string) {
+	runOwned.Lock()
+	defer runOwned.Unlock()
+	runOwned.urls[rawURL]++
+	runOwned.provisioned[rawURL]++
+}
+
+func forgetProvisioned(rawURL string) {
+	runOwned.Lock()
+	defer runOwned.Unlock()
+	forget(runOwned.urls, rawURL)
+	forget(runOwned.provisioned, rawURL)
+}
+
+func forget(counts map[string]int, rawURL string) {
+	counts[rawURL]--
+	if counts[rawURL] <= 0 {
+		delete(counts, rawURL)
 	}
 }
 
@@ -296,6 +317,17 @@ func RunOwned(rawURL string) bool {
 	runOwned.Lock()
 	defer runOwned.Unlock()
 	return runOwned.urls[rawURL] > 0
+}
+
+// Provisioned reports whether rawURL connects to a server [Provision] started
+// in this process and has not yet removed: the part of [RunOwned] that the
+// run discards. A server the operator declared disposable is the run's own,
+// but it outlives the run, so what the run leaves on the objects its reset
+// keeps is read by the next run.
+func Provisioned(rawURL string) bool {
+	runOwned.Lock()
+	defer runOwned.Unlock()
+	return runOwned.provisioned[rawURL] > 0
 }
 
 // Provision starts a dev database for rawURL and waits until it accepts
@@ -390,7 +422,7 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 			return nil, fmt.Errorf("run the baseline on dev database %s: %w", spec.Image, err)
 		}
 	}
-	recordRunOwned(instance.url)
+	recordProvisioned(instance.url)
 	if spec.fromBlock {
 		recordStartingPoint(instance.url)
 	}

@@ -284,7 +284,10 @@ reaches past the dev database:
   schema, language or parameter, CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`, `DROP OWNED`,
   `REASSIGN OWNED`, and `COMMENT ON` a role, a database, or an extension or
-  schema of the dev database.
+  schema of the dev database. A server declared disposable lifts all of these
+  except the comment on an extension or a schema: that server outlives the
+  run, and its reset keeps the extensions and schemas it found, so the next run
+  would read the comment.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, and writes to another database.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
@@ -320,7 +323,8 @@ this realm: a docker URL and the declaration below.
 A server Ptah did not start can be as disposable: a CI service container
 the job throws away, or a container the operator runs. `PTAH_DEV_SERVER_DISPOSABLE=1` declares that the server
 `--dev-url` names is the run's own. Replay then runs the statements listed
-above on it, as on a server Ptah provisions, and refuses the same rest.
+above on it, as on a server Ptah provisions, except a comment on an extension
+or a schema of the dev database, and refuses the same rest.
 
 ```bash
 PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url "$DEV_URL"
@@ -352,17 +356,17 @@ holds one is rehearsed only on a server the run owns: one Ptah provisions from
 a docker URL, or one declared with `PTAH_DEV_SERVER_DISPOSABLE=1`. The refusal
 names the baseline statement and these two remedies.
 
-Comments follow the same rule. A comment on a table or a column is written.
+Comments follow a narrower rule. A comment on a table or a column is written.
 The comment an extension's control file gives is not written, because `CREATE
 EXTENSION` sets it; Ptah reads that comment from the dev server. A comment the
-target gave an extension itself, or a comment on a schema, is refused unless
-the run owns the server, because the cleanup does not restore it.
+target gave an extension itself, or a comment on a schema, is written only on a
+server Ptah provisions from a docker URL, because the cleanup does not restore
+it and a server declared disposable keeps it for the next run.
 
-One baseline statement is accepted that a replay refuses. In a YDB dev realm,
-a single `GRANT` or `REVOKE` whose every path is the realm's own absolute path
-or a path under it is written, because the baseline grants the permissions the
-target holds on its database root on the realm's root, and removing the realm
-removes them.
+In a YDB dev realm, the baseline leaves out the permissions the target holds
+on its database root. The realm's root would stand in for the target's, but a
+reset in the middle of a run keeps the realm's root and its permissions, so a
+grant written there would reach the next target rehearsed in the realm.
 
 ## Where it appears
 

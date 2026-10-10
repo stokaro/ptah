@@ -991,9 +991,11 @@ func TestRunOwnedRecordsAProvisionedServerUntilItIsRemoved(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(devdocker.RunOwned(resolved), qt.IsTrue)
+	c.Assert(devdocker.Provisioned(resolved), qt.IsTrue)
 	c.Assert(devdocker.RunOwned("postgres://postgres:guessed@127.0.0.1:15432/dev?sslmode=disable"), qt.IsFalse)
 	release()
 	c.Assert(devdocker.RunOwned(resolved), qt.IsFalse)
+	c.Assert(devdocker.Provisioned(resolved), qt.IsFalse)
 }
 
 // TestRunOwnedIsFalseForAServerTheOperatorNamed is the control: a URL that
@@ -1012,8 +1014,9 @@ func TestRunOwnedIsFalseForAServerTheOperatorNamed(t *testing.T) {
 // TestRunOwnedRecordsADeclaredServerUntilItsReleaseRuns pins the declaration
 // path: a server URL the operator declared disposable is the run's own while
 // the consumer that resolved it holds it, in the trimmed form the consumers
-// connect with, and no longer once the release has run. A second release is a
-// no-op rather than an end to someone else's declaration.
+// connect with, and no longer once the release has run. It is never
+// provisioned, since it outlives the run. A second release is a no-op rather
+// than an end to someone else's declaration.
 func TestRunOwnedRecordsADeclaredServerUntilItsReleaseRuns(t *testing.T) {
 	c := qt.New(t)
 	const declared = "postgres://localhost:5432/declared_release"
@@ -1025,6 +1028,7 @@ func TestRunOwnedRecordsADeclaredServerUntilItsReleaseRuns(t *testing.T) {
 
 	c.Assert(resolved, qt.Equals, " "+declared+" ")
 	c.Assert(devdocker.RunOwned(declared), qt.IsTrue)
+	c.Assert(devdocker.Provisioned(declared), qt.IsFalse, qt.Commentf("a declared server outlives the run"))
 	release()
 	release()
 	c.Assert(devdocker.RunOwned(declared), qt.IsFalse)

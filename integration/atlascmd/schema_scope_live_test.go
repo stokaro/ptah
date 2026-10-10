@@ -262,12 +262,14 @@ func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres
 // whose pgcrypto extension carries a comment of its own, rehearsing it on a
 // scratch dev database of the same server, and returns what the command
 // printed and its error.
-func extensionCommentApply(c *qt.C) (string, error) {
+func extensionCommentApply(c *qt.C, devURL string) (string, error) {
 	c.Helper()
 	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	targetURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_comment_target_"+suffix)
-	devURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_comment_dev_"+suffix)
+	if devURL == "" {
+		devURL = createDisposableDatabase(c, adminURL, "ptah_scope_apply_comment_dev_"+suffix)
+	}
 	seedDatabase(c, targetURL,
 		`CREATE SCHEMA app`,
 		`CREATE TABLE app.users (id bigint PRIMARY KEY)`,
@@ -293,34 +295,51 @@ func extensionCommentApply(c *qt.C) (string, error) {
 	return out.String(), err
 }
 
+// extensionCommentRefusal is how the rehearsal refuses the target's own
+// comment on pgcrypto on a dev server the run does not provision.
+const extensionCommentRefusal = `(?s).*baseline statement \d+ \(COMMENT ON EXTENSION "pgcrypto" IS 'hashing for app.users'\) cannot be rehearsed: ` +
+	`postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm; ` +
+	`use a docker:// or docker\+<driver>:// dev URL, since a server declared disposable keeps this after the run; ` +
+	`the plan was not applied to the target database`
+
 // TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres holds the
 // rehearsal's rebuild of the target to the dev database's realm. The target's
 // extension carries a comment of its own, which the rebuild writes after
 // creating the extension. The cleanup does not restore such a comment, so on a
-// server the run does not own the rehearsal refuses before any statement of the
-// rebuild runs, names the statement, and names the two ways to a server the
-// run owns.
+// server the run does not provision the rehearsal refuses before any
+// statement of the rebuild runs, names the statement, and names the docker
+// URL as the way to a server the run discards.
 func TestSchemaApplyRefusesAnExtensionCommentInTheBaselineLivePostgres(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
 
-	_, err := extensionCommentApply(c)
+	_, err := extensionCommentApply(c, "")
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*baseline statement \d+ \(COMMENT ON EXTENSION "pgcrypto" IS 'hashing for app.users'\) cannot be rehearsed: `+
-		`postgres rehearsal baseline refuses COMMENT ON global metadata because its effects cannot be confined to the dev database realm; `+
-		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL; `+
-		`the plan was not applied to the target database`)
+	c.Assert(err, qt.ErrorMatches, extensionCommentRefusal)
 }
 
-// TestSchemaApplyWritesAnExtensionCommentOnADisposableDevServerLivePostgres is
-// the control for the refusal above: on a server declared disposable the run
-// owns the server, which it does not share, and the rebuild writes the
-// comment.
-func TestSchemaApplyWritesAnExtensionCommentOnADisposableDevServerLivePostgres(t *testing.T) {
+// TestSchemaApplyRefusesAnExtensionCommentOnADeclaredDevServerLivePostgres
+// pins that declaring the server disposable does not lift the refusal above:
+// such a server outlives the run, and its reset keeps the extension and the
+// comment with it for the next run to read.
+func TestSchemaApplyRefusesAnExtensionCommentOnADeclaredDevServerLivePostgres(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
 
-	out, err := extensionCommentApply(c)
+	_, err := extensionCommentApply(c, "")
+
+	c.Assert(err, qt.ErrorMatches, extensionCommentRefusal)
+}
+
+// TestSchemaApplyWritesAnExtensionCommentOnAProvisionedDevServerLivePostgres
+// is the control for the refusals above: on a dev server the run provisions
+// from a docker URL, and removes with everything on it, the rebuild writes the
+// comment.
+func TestSchemaApplyWritesAnExtensionCommentOnAProvisionedDevServerLivePostgres(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+
+	out, err := extensionCommentApply(c, "docker://postgres/18/dev")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, `DROP TABLE IF EXISTS "app"."users" CASCADE`)

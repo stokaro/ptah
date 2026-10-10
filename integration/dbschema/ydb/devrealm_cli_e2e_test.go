@@ -333,11 +333,15 @@ func TestYDBBinary_ARehearsalRefusesAUserItsRealmCannotHold(t *testing.T) {
 			defer cancel()
 			conn := openYDB(c, line)
 			const user = "ptahbaselineuser"
+			// The line is shared, so a user an interrupted run left behind is
+			// dropped first, and the cleanup drops the user before anything it
+			// asserts can stop it.
 			dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+			c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP USER IF EXISTS "+user), qt.IsNil)
 			c.Assert(conn.Writer().ExecuteSQL(ctx, "CREATE USER "+user), qt.IsNil)
 			c.Cleanup(func() {
-				dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
 				c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP USER IF EXISTS "+user), qt.IsNil)
+				dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
 			})
 			entities := filepath.Join(c.TempDir(), "entities")
 			writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
