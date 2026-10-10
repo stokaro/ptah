@@ -185,6 +185,18 @@ type Database struct {
 	// it holds, so it is never serialized: a description applied to another
 	// database is planned against that database's path.
 	DatabasePath string `json:"-"`
+
+	// CurrentAccount is the account the reading connection ran as, such as
+	// the MySQL family's CURRENT_USER(): a fact about the reading connection,
+	// not about the database. A plan applied through the same connection
+	// creates objects as this account, so beside [Function.Definer] it tells a
+	// replacement that keeps a routine's definer from one that changes it.
+	//
+	// Empty from a reader that does not record it, and from a description that
+	// did not come from a live read. Like DatabasePath, it is never
+	// serialized: the same database read by another account describes the
+	// same schema.
+	CurrentAccount string `json:"-"`
 }
 
 // VirtualTable identifies one SQLite virtual table and the module that owns
@@ -1245,15 +1257,14 @@ type Function struct {
 	// string is the valid identity of a zero-input or OUT-only function. This
 	// reader-only execution fact is not part of serialized schema descriptions.
 	IdentityArguments *string `json:"-"`
-	// Definer is the MySQL-family account that owns the routine. It is a
-	// reader-only execution fact: replacing a foreign SQL SECURITY DEFINER
-	// routine without preserving this account silently changes the principal
-	// under which its body runs.
+	// Definer is the account a SQL SECURITY DEFINER routine runs as, where a
+	// reader records it: the MySQL family's DEFINER. Empty where the reader
+	// records none. It is a reader-only execution fact: on a target whose plan
+	// replaces a routine by DROP and CREATE
+	// ([capability.RoutineReplacementResetsDefiner]), recreating a routine of
+	// another definer silently changes the principal its body runs as, which
+	// the comparison refuses with [Database.CurrentAccount].
 	Definer string `json:"-"`
-	// CurrentAccount is the MySQL-family CURRENT_USER() value for the connection
-	// that read this routine. Together with Definer it lets database-aware
-	// comparison distinguish a same-owner replacement from a principal change.
-	CurrentAccount string `json:"-"`
 	Returns        string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
 	Language       string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
 	Security       string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")

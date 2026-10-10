@@ -161,6 +161,7 @@ func (r *Reader) readServer(ctx context.Context) (*catalog.Database, error) {
 		server.Views = append(server.Views, part.Views...)
 		server.Triggers = append(server.Triggers, part.Triggers...)
 		server.Functions = append(server.Functions, part.Functions...)
+		server.CurrentAccount = cmp.Or(server.CurrentAccount, part.CurrentAccount)
 		server.Sequences = append(server.Sequences, part.Sequences...)
 		names = append(names, database.Name)
 	}
@@ -318,11 +319,12 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 	}
 	schema.Triggers = triggers
 
-	functions, err := r.readFunctions(ctx, dbName)
+	functions, account, err := r.readFunctions(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read functions: %w", err)
 	}
 	schema.Functions = functions
+	schema.CurrentAccount = account
 
 	// Read only where the preset claims the object. MySQL answers a sequence
 	// question with a syntax error rather than an empty result, so asking
@@ -776,10 +778,14 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 //
 // A body the connected account may not see is refused rather than reported as
 // empty; see [errFunctionBodyHidden].
-func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Function, error) {
+//
+// It also returns the account the connection runs as, CURRENT_USER(), which
+// the same query reports beside each routine's DEFINER, and which is empty
+// when the database holds no routine.
+func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Function, string, error) {
 	parameters, err := r.readRoutineParameters(ctx, dbName)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	query := `
@@ -804,11 +810,12 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
 	var functions []catalog.Function
+	var account string
 	for rows.Next() {
 		var (
 			fn              catalog.Function
@@ -820,12 +827,12 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 		)
 		if err := rows.Scan(
 			&fn.Name, &returns, &isDeterministic, &sqlDataAccess,
-			&fn.Security, &fn.Definer, &fn.CurrentAccount, &body, &fn.Comment, &routineType,
+			&fn.Security, &fn.Definer, &account, &body, &fn.Comment, &routineType,
 		); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if !body.Valid {
-			return nil, hiddenRoutineBodyError(dbName, fn.Name)
+			return nil, "", hiddenRoutineBodyError(dbName, fn.Name)
 		}
 		// DTD_IDENTIFIER is NULL for a procedure and carries the type for a
 		// function, which is the catalog saying the same thing the grammar
@@ -839,7 +846,7 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 		fn.Volatility = mysqlroutine.VolatilityFromCatalog(isDeterministic, sqlDataAccess)
 		functions = append(functions, fn)
 	}
-	return functions, rows.Err()
+	return functions, account, rows.Err()
 }
 
 // hiddenRoutineBodyError refuses a read whose function bodies the connected

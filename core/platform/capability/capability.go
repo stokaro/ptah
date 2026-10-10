@@ -218,6 +218,33 @@ const (
 	// (stokaro/ptah#1722).
 	Procedures Capability = "procedures"
 
+	// RoutineReplacementResetsDefiner marks a target where Ptah's plan
+	// replaces a modified routine by DROP and CREATE, and the CREATE makes the
+	// account that runs it the routine's definer: the principal a SQL SECURITY
+	// DEFINER routine runs as. It is a fact about Ptah's plan, read off its
+	// planners, and not a claim about the engine. The comparison refuses to
+	// replace a SECURITY DEFINER routine whose definer is another account on a
+	// target with it, since the replacement would change who the body runs as.
+	//
+	//   - MySQL and MariaDB: the plan drops and recreates the routine, its
+	//     CREATE writes no DEFINER clause, and the server records
+	//     CURRENT_USER() as the definer.
+	//   - The PostgreSQL family: the plan writes CREATE OR REPLACE, which keeps
+	//     the owner. Where the server refuses the replacement, the plan drops
+	//     and recreates the routine, which makes the connected role its owner;
+	//     no PostgreSQL-family reader records an owner, so that case is not
+	//     checked.
+	//   - Oracle: the plan drops and recreates the routine in its schema, and a
+	//     definer's-rights routine runs as the schema's owner, which stays.
+	//   - SQL Server: the plan drops and recreates the routine, and a new
+	//     module is owned by its schema's owner. A module whose owner was moved
+	//     with ALTER AUTHORIZATION gets that owner back; the reader records no
+	//     owner, so that case is not checked.
+	//   - Other targets have no routine Ptah replaces.
+	//
+	// Requires Functions.
+	RoutineReplacementResetsDefiner Capability = "routine_replacement_resets_definer"
+
 	// Triggers marks support for the CREATE TRIGGER object itself. Whether
 	// that object can be replaced in a single statement is
 	// CreateOrReplaceTrigger, which requires this one — replace syntax for a
@@ -1875,6 +1902,10 @@ var registry = map[Capability]spec{
 	Procedures: {
 		doc: "stored procedures: routines that return nothing and are invoked with CALL",
 	},
+	RoutineReplacementResetsDefiner: {
+		doc:      "Ptah's plan replaces a modified routine by DROP and CREATE, which makes the connected account its definer (MySQL, MariaDB)",
+		requires: []Capability{Functions},
+	},
 	Triggers: {
 		doc: "CREATE TRIGGER objects",
 	},
@@ -2431,38 +2462,39 @@ var presetMySQL84 = sync.OnceValue(buildMySQL84)
 // buildMySQL84 builds the [MySQL84] set; the preset builds it once and returns copies.
 func buildMySQL84() Capabilities {
 	return Capabilities{
-		DomainTypes:                    false,
-		CompositeTypes:                 false,
-		RangeTypes:                     false,
-		DropConstraintGeneric:          true,
-		DropConstraintIfExists:         false,
-		DropIndexIfExists:              false,
-		ObjectExistenceGuards:          true,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                true,
-		EnumInlineColumn:               true,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		DropIndexConcurrently:          false,
-		IndexIncludeSPGiST:             false,
-		Views:                          true,
-		CreateOrReplaceView:            true,
-		MaterializedViews:              false,
-		Functions:                      true,
-		Procedures:                     true,
-		Triggers:                       true,
-		CreateOrReplaceTrigger:         false,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		Hypertables:                    false,
-		ContinuousAggregates:           false,
-		CoordinationNodes:              false,
-		PostgresCatalogFunctions:       false,
-		CatalogRowStatistics:           false,
-		CatalogVectorInfo:              false,
-		CatalogDependencies:            false,
-		CatalogDefaultPrivileges:       false,
-		CatalogTriggerDefinitions:      false,
+		DomainTypes:                     false,
+		CompositeTypes:                  false,
+		RangeTypes:                      false,
+		DropConstraintGeneric:           true,
+		DropConstraintIfExists:          false,
+		DropIndexIfExists:               false,
+		ObjectExistenceGuards:           true,
+		CheckConstraintsEnforced:        true,
+		DropCheckClause:                 true,
+		EnumInlineColumn:                true,
+		EnumCustomType:                  false,
+		CreateIndexConcurrently:         false,
+		DropIndexConcurrently:           false,
+		IndexIncludeSPGiST:              false,
+		Views:                           true,
+		CreateOrReplaceView:             true,
+		MaterializedViews:               false,
+		Functions:                       true,
+		Procedures:                      true,
+		RoutineReplacementResetsDefiner: true,
+		Triggers:                        true,
+		CreateOrReplaceTrigger:          false,
+		AlterGeneratedColumnExpression:  false,
+		RowLevelSecurity:                false,
+		Hypertables:                     false,
+		ContinuousAggregates:            false,
+		CoordinationNodes:               false,
+		PostgresCatalogFunctions:        false,
+		CatalogRowStatistics:            false,
+		CatalogVectorInfo:               false,
+		CatalogDependencies:             false,
+		CatalogDefaultPrivileges:        false,
+		CatalogTriggerDefinitions:       false,
 		// RoleManagement is on because the read half exists. It was off with the
 		// recorded reason that Ptah cannot read or compare a role here, and the
 		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
@@ -2722,38 +2754,39 @@ var presetMariaDB1011 = sync.OnceValue(buildMariaDB1011)
 // buildMariaDB1011 builds the [MariaDB1011] set; the preset builds it once and returns copies.
 func buildMariaDB1011() Capabilities {
 	return Capabilities{
-		DomainTypes:                    false,
-		CompositeTypes:                 false,
-		RangeTypes:                     false,
-		DropConstraintGeneric:          true,
-		DropConstraintIfExists:         true,
-		DropIndexIfExists:              true,
-		ObjectExistenceGuards:          true,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                false,
-		EnumInlineColumn:               true,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		DropIndexConcurrently:          false,
-		IndexIncludeSPGiST:             false,
-		Views:                          true,
-		CreateOrReplaceView:            true,
-		MaterializedViews:              false,
-		Functions:                      true,
-		Procedures:                     true,
-		Triggers:                       true,
-		CreateOrReplaceTrigger:         true,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		Hypertables:                    false,
-		ContinuousAggregates:           false,
-		CoordinationNodes:              false,
-		PostgresCatalogFunctions:       false,
-		CatalogRowStatistics:           false,
-		CatalogVectorInfo:              false,
-		CatalogDependencies:            false,
-		CatalogDefaultPrivileges:       false,
-		CatalogTriggerDefinitions:      false,
+		DomainTypes:                     false,
+		CompositeTypes:                  false,
+		RangeTypes:                      false,
+		DropConstraintGeneric:           true,
+		DropConstraintIfExists:          true,
+		DropIndexIfExists:               true,
+		ObjectExistenceGuards:           true,
+		CheckConstraintsEnforced:        true,
+		DropCheckClause:                 false,
+		EnumInlineColumn:                true,
+		EnumCustomType:                  false,
+		CreateIndexConcurrently:         false,
+		DropIndexConcurrently:           false,
+		IndexIncludeSPGiST:              false,
+		Views:                           true,
+		CreateOrReplaceView:             true,
+		MaterializedViews:               false,
+		Functions:                       true,
+		Procedures:                      true,
+		RoutineReplacementResetsDefiner: true,
+		Triggers:                        true,
+		CreateOrReplaceTrigger:          true,
+		AlterGeneratedColumnExpression:  false,
+		RowLevelSecurity:                false,
+		Hypertables:                     false,
+		ContinuousAggregates:            false,
+		CoordinationNodes:               false,
+		PostgresCatalogFunctions:        false,
+		CatalogRowStatistics:            false,
+		CatalogVectorInfo:               false,
+		CatalogDependencies:             false,
+		CatalogDefaultPrivileges:        false,
+		CatalogTriggerDefinitions:       false,
 		// RoleManagement is on because the read half exists. It was off with the
 		// recorded reason that Ptah cannot read or compare a role here, and the
 		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
@@ -2955,39 +2988,40 @@ var presetPostgres16 = sync.OnceValue(buildPostgres16)
 // buildPostgres16 builds the [Postgres16] set; the preset builds it once and returns copies.
 func buildPostgres16() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          true,
-		DropConstraintIfExists:         true,
-		DropIndexIfExists:              true,
-		ObjectExistenceGuards:          true,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                false,
-		EnumInlineColumn:               false,
-		EnumCustomType:                 true,
-		CreateIndexConcurrently:        true,
-		DropIndexConcurrently:          true,
-		IndexIncludeSPGiST:             true,
-		Views:                          true,
-		CreateOrReplaceView:            true,
-		MaterializedViews:              true,
-		DomainTypes:                    true,
-		CompositeTypes:                 true,
-		RangeTypes:                     true,
-		Functions:                      true,
-		Procedures:                     true,
-		Triggers:                       true,
-		CreateOrReplaceTrigger:         true,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               true,
-		Hypertables:                    false,
-		ContinuousAggregates:           false,
-		CoordinationNodes:              false,
-		PostgresCatalogFunctions:       true,
-		CatalogRowStatistics:           true,
-		CatalogVectorInfo:              false,
-		CatalogDependencies:            true,
-		CatalogDefaultPrivileges:       true,
-		CatalogTriggerDefinitions:      true,
-		RoleManagement:                 true,
+		DropConstraintGeneric:           true,
+		DropConstraintIfExists:          true,
+		DropIndexIfExists:               true,
+		ObjectExistenceGuards:           true,
+		CheckConstraintsEnforced:        true,
+		DropCheckClause:                 false,
+		EnumInlineColumn:                false,
+		EnumCustomType:                  true,
+		CreateIndexConcurrently:         true,
+		DropIndexConcurrently:           true,
+		IndexIncludeSPGiST:              true,
+		Views:                           true,
+		CreateOrReplaceView:             true,
+		MaterializedViews:               true,
+		DomainTypes:                     true,
+		CompositeTypes:                  true,
+		RangeTypes:                      true,
+		Functions:                       true,
+		Procedures:                      true,
+		RoutineReplacementResetsDefiner: false,
+		Triggers:                        true,
+		CreateOrReplaceTrigger:          true,
+		AlterGeneratedColumnExpression:  false,
+		RowLevelSecurity:                true,
+		Hypertables:                     false,
+		ContinuousAggregates:            false,
+		CoordinationNodes:               false,
+		PostgresCatalogFunctions:        true,
+		CatalogRowStatistics:            true,
+		CatalogVectorInfo:               false,
+		CatalogDependencies:             true,
+		CatalogDefaultPrivileges:        true,
+		CatalogTriggerDefinitions:       true,
+		RoleManagement:                  true,
 		// Membership, groups, database grants and relative grant paths are
 		// YDB's: this planner plans none of them.
 		RoleMembership:                     false,
@@ -3306,11 +3340,12 @@ func buildClickHouse24() Capabilities {
 		// ClickHouse accepts. This key names the object ast.CreateFunctionNode
 		// describes -- a return type, a language and a body -- and that shape is
 		// a syntax error here. Measured both ways on 26.7.3.19.
-		Functions:                      false,
-		Procedures:                     false,
-		Triggers:                       false,
-		CreateOrReplaceTrigger:         false,
-		AlterGeneratedColumnExpression: true,
+		Functions:                       false,
+		Procedures:                      false,
+		RoutineReplacementResetsDefiner: false,
+		Triggers:                        false,
+		CreateOrReplaceTrigger:          false,
+		AlterGeneratedColumnExpression:  true,
 		// RowLevelSecurity is on because all three halves the key requires
 		// exist: the renderer emits CREATE/ALTER/DROP ROW POLICY, this reader
 		// takes system.row_policies back into DBSchema.RLSPolicies, and the
@@ -3538,39 +3573,40 @@ var presetSQLite3 = sync.OnceValue(buildSQLite3)
 // buildSQLite3 builds the [SQLite3] set; the preset builds it once and returns copies.
 func buildSQLite3() Capabilities {
 	return Capabilities{
-		DomainTypes:                    false,
-		CompositeTypes:                 false,
-		RangeTypes:                     false,
-		DropConstraintGeneric:          false,
-		DropConstraintIfExists:         false,
-		DropIndexIfExists:              true,
-		ObjectExistenceGuards:          true,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                false,
-		EnumInlineColumn:               false,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		DropIndexConcurrently:          false,
-		IndexIncludeSPGiST:             false,
-		Views:                          true,
-		CreateOrReplaceView:            false,
-		MaterializedViews:              false,
-		Functions:                      false,
-		Procedures:                     false,
-		Triggers:                       true,
-		CreateOrReplaceTrigger:         false,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		Hypertables:                    false,
-		ContinuousAggregates:           false,
-		CoordinationNodes:              false,
-		PostgresCatalogFunctions:       false,
-		CatalogRowStatistics:           false,
-		CatalogVectorInfo:              false,
-		CatalogDependencies:            false,
-		CatalogDefaultPrivileges:       false,
-		CatalogTriggerDefinitions:      false,
-		RoleManagement:                 false,
+		DomainTypes:                     false,
+		CompositeTypes:                  false,
+		RangeTypes:                      false,
+		DropConstraintGeneric:           false,
+		DropConstraintIfExists:          false,
+		DropIndexIfExists:               true,
+		ObjectExistenceGuards:           true,
+		CheckConstraintsEnforced:        true,
+		DropCheckClause:                 false,
+		EnumInlineColumn:                false,
+		EnumCustomType:                  false,
+		CreateIndexConcurrently:         false,
+		DropIndexConcurrently:           false,
+		IndexIncludeSPGiST:              false,
+		Views:                           true,
+		CreateOrReplaceView:             false,
+		MaterializedViews:               false,
+		Functions:                       false,
+		Procedures:                      false,
+		RoutineReplacementResetsDefiner: false,
+		Triggers:                        true,
+		CreateOrReplaceTrigger:          false,
+		AlterGeneratedColumnExpression:  false,
+		RowLevelSecurity:                false,
+		Hypertables:                     false,
+		ContinuousAggregates:            false,
+		CoordinationNodes:               false,
+		PostgresCatalogFunctions:        false,
+		CatalogRowStatistics:            false,
+		CatalogVectorInfo:               false,
+		CatalogDependencies:             false,
+		CatalogDefaultPrivileges:        false,
+		CatalogTriggerDefinitions:       false,
+		RoleManagement:                  false,
 		// Membership, groups, database grants and relative grant paths are
 		// YDB's: this planner plans none of them.
 		RoleMembership:                     false,
@@ -3831,10 +3867,11 @@ func buildSQLServer2022() Capabilities {
 		// not the one in `WITH EXECUTE AS OWNER` -- measured on SQL Server
 		// 2025, a procedure created with that clause keeps both words in
 		// sys.sql_modules.definition (stokaro/ptah#1784).
-		Procedures:                     true,
-		Triggers:                       true,
-		CreateOrReplaceTrigger:         true,
-		AlterGeneratedColumnExpression: false,
+		Procedures:                      true,
+		RoutineReplacementResetsDefiner: false,
+		Triggers:                        true,
+		CreateOrReplaceTrigger:          true,
+		AlterGeneratedColumnExpression:  false,
 		// RowLevelSecurity is on because all three halves the key requires
 		// exist for this target, in the security policy owner of
 		// dialect/mssql: it renders CREATE, ALTER and DROP SECURITY POLICY,
@@ -4631,10 +4668,11 @@ func buildOracle23() Capabilities {
 		// the two lines answered identically for the header, the catalog and
 		// the source text; they differ only in the existence guards, which
 		// ObjectExistenceGuards already carries.
-		Functions:              true,
-		Procedures:             true,
-		Triggers:               true,
-		CreateOrReplaceTrigger: true,
+		Functions:                       true,
+		Procedures:                      true,
+		RoutineReplacementResetsDefiner: false,
+		Triggers:                        true,
+		CreateOrReplaceTrigger:          true,
 		// Oracle changes a virtual column's expression through MODIFY rather
 		// than through the SET EXPRESSION clause this key names, and Ptah's
 		// Oracle path does not render either yet.
@@ -4928,20 +4966,21 @@ func buildYDB262() Capabilities {
 		// User types and routines. CREATE TYPE, DOMAIN, FUNCTION, PROCEDURE,
 		// TRIGGER and SEQUENCE are parse errors; an enum is neither a column
 		// type nor a named type.
-		EnumInlineColumn:               false,
-		EnumCustomType:                 false,
-		DomainTypes:                    false,
-		CompositeTypes:                 false,
-		RangeTypes:                     false,
-		Functions:                      false,
-		Procedures:                     false,
-		Triggers:                       false,
-		CreateOrReplaceTrigger:         false,
-		Sequences:                      false,
-		SequenceStartCounterOnly:       false,
-		XMLType:                        false,
-		GeneratedColumns:               false,
-		AlterGeneratedColumnExpression: false,
+		EnumInlineColumn:                false,
+		EnumCustomType:                  false,
+		DomainTypes:                     false,
+		CompositeTypes:                  false,
+		RangeTypes:                      false,
+		Functions:                       false,
+		Procedures:                      false,
+		RoutineReplacementResetsDefiner: false,
+		Triggers:                        false,
+		CreateOrReplaceTrigger:          false,
+		Sequences:                       false,
+		SequenceStartCounterOnly:        false,
+		XMLType:                         false,
+		GeneratedColumns:                false,
+		AlterGeneratedColumnExpression:  false,
 
 		// Views. CREATE VIEW ... WITH (security_invoker = TRUE) AS SELECT
 		// creates one, DescribeView returns its query, and DROP VIEW drops it,

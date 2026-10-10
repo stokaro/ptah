@@ -482,12 +482,15 @@ it when copying a finalized `Database` that will be finalized or merged again;
 discarding it can also discard the source declarations behind materialized
 `GeneratedFromEmbedded` fields.
 
-MySQL-family readers populate the JSON-hidden
-`catalog.Function.Definer` and `CurrentAccount` execution facts.
-Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
-a modified `SQL SECURITY DEFINER` routine when recreating it would change the
-executing account. Custom readers that supply a modified definer routine must
-preserve both fields; missing facts fail closed with
+MySQL-family readers populate the JSON-hidden execution facts
+`catalog.Function.Definer` and `catalog.Database.CurrentAccount`, the second a
+fact about the reading connection rather than the database. Database-aware
+`schemadiff.CompareWithDatabase` entry points use them, on a target whose
+capability set has `capability.RoutineReplacementResetsDefiner`, to refuse a
+modified `SQL SECURITY DEFINER` routine when recreating it would change the
+executing account. The capability states how Ptah's plan replaces a routine,
+so the rule is not tied to a dialect. Custom readers that supply a modified
+definer routine must preserve both facts; missing facts fail closed with
 `ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
 and is not the safety boundary for applying such a replacement.
 

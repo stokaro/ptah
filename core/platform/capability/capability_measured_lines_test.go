@@ -193,6 +193,7 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:          {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.AlterTableAlgorithmLock: "the probe sends no ALTER TABLE ... ALGORITHM= " +
 					"clause, and the key is false for every PostgreSQL-family target because the grammar " +
 					"is MySQL's alone",
@@ -380,6 +381,7 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
 					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
 					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +
@@ -567,6 +569,7 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
 					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
 					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +
@@ -743,6 +746,13 @@ const mysqlConstraintCommentCarried = "this run predates the key and sent no COM
 
 // enforcementAndMatchCarried is the reason a line carries the NOT ENFORCED
 // and MATCH keys: its run predates them.
+// routineReplacementCarried explains the routine replacement key, which no
+// probe statement decides: it describes how Ptah's own plan replaces a
+// routine, read off the planners, rather than anything a server answers.
+const routineReplacementCarried = "no statement decides it: the key states how Ptah's plan replaces a modified " +
+	"routine, by DROP and CREATE on MySQL and MariaDB and by CREATE OR REPLACE on the PostgreSQL family, " +
+	"which is the planner's choice rather than the server's answer"
+
 const enforcementAndMatchCarried = "this run predates the key and sent no NOT ENFORCED or MATCH clause. " +
 	"It was measured on 2026-09-27 against PostgreSQL 17.11 and 18.6, MySQL 8.4.11 and 9.7.2, " +
 	"MariaDB 11.8.9, CockroachDB v26.3.2, YugabyteDB 2026.1.2 and SQLite 3.51, and carried here " +

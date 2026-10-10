@@ -198,6 +198,7 @@ so typos fail fast. Current registry:
 | `returning_clause` | INSERT, UPDATE and DELETE each return the rows they wrote through RETURNING (not MySQL, MariaDB, YDB 25.1 and 25.2) |
 | `role_management` | named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse, YDB users and groups) |
 | `role_membership` | Ptah plans a declared membership of a role in another (YDB's ALTER GROUP ... ADD USER) |
+| `routine_replacement_resets_definer` | Ptah's plan replaces a modified routine by DROP and CREATE, which makes the connected account its definer (MySQL, MariaDB) |
 | `row_deletion_policy` | a table clause declaring an interval and a timestamp column after which the engine deletes a row (Spanner row deletion policy, YDB TTL) |
 | `row_deletion_policy_epoch_column` | a row deletion policy may read an integer column counting seconds, milliseconds, microseconds or nanoseconds since the Unix epoch (YDB TTL ... AS SECONDS) |
 | `row_level_security` | row-level security policies (PostgreSQL) |
@@ -423,6 +424,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `returning_clause` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | `role_management` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `role_membership` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `routine_replacement_resets_definer` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `row_deletion_policy` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `row_deletion_policy_epoch_column` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -1196,7 +1198,9 @@ file, exactly as any other command reaching the same URL would.
   different account, comparison refuses before any migration SQL is planned.
   Connect as the existing definer, declare `SQL SECURITY INVOKER` explicitly,
   or leave the foreign routine unchanged. Missing ownership facts also fail
-  closed for a modified definer routine.
+  closed for a modified definer routine. The refusal follows
+  `routine_replacement_resets_definer`, which names the targets where Ptah's
+  plan replaces a routine by DROP and CREATE, not the dialect.
 
   What is generated also depends on the declared `language`, not on the target
   alone. MySQL and MariaDB run exactly one routine language, SQL, so a function
