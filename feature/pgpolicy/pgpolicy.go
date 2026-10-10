@@ -12,11 +12,8 @@
 package pgpolicy
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -56,33 +53,23 @@ func validTexts(pairs ...string) error {
 	return nil
 }
 
-// modelError names the model and representation a refusal is about.
+// modelError names the model and representation a refusal is about, as the
+// typed error the codec boundary and the census recognize.
 func modelError(kind schemaext.Kind, representation schemaext.Representation, err error) error {
-	return fmt.Errorf("%s model %q: %w", representation, kind, err)
+	return &schemaext.InvalidModelError{Kind: kind, Representation: representation, Message: err.Error()}
 }
 
-// wireObject decodes one JSON object and checks its keys exactly. JSON null is
-// neither an omitted value nor an observed absence, and encoding/json would
-// otherwise accept a key in any letter case.
-func wireObject(data json.RawMessage, model string, allowed, required []string) (map[string]json.RawMessage, error) {
-	fields, err := schemaext.DecodeJSON[map[string]json.RawMessage](data)
+// decodeObject decodes one strict object and refuses a present key whose
+// string value is empty: the model spells an absent value by omitting the key,
+// so an empty one cannot mean anything the definition allows.
+func decodeObject(data json.RawMessage, shape schemaext.ObjectShape, nonEmpty ...string) (map[string]json.RawMessage, error) {
+	fields, err := schemaext.DecodeObject(data, shape)
 	if err != nil {
 		return nil, err
 	}
-	if fields == nil {
-		return nil, fmt.Errorf("%w: expected a non-null row-security %s object", schemaext.ErrInvalidValue, model)
-	}
-	for _, name := range slices.Sorted(maps.Keys(fields)) {
-		if !slices.Contains(allowed, name) {
-			return nil, fmt.Errorf("%w: unknown row-security %s property %q", schemaext.ErrInvalidValue, model, name)
-		}
-		if bytes.Equal(bytes.TrimSpace(fields[name]), []byte("null")) {
-			return nil, fmt.Errorf("%w: row-security %s property %q cannot be null", schemaext.ErrInvalidValue, model, name)
-		}
-	}
-	for _, name := range required {
-		if _, found := fields[name]; !found {
-			return nil, fmt.Errorf("%w: missing row-security %s property %q", schemaext.ErrInvalidValue, model, name)
+	for _, key := range nonEmpty {
+		if string(fields[key]) == `""` {
+			return nil, fmt.Errorf("%w: row-security %s property %q cannot be empty; omit it instead", schemaext.ErrInvalidValue, shape.Name, key)
 		}
 	}
 	return fields, nil

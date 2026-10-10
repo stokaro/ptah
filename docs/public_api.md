@@ -564,6 +564,13 @@ inspection limits separately. `OwnedCoverage` enrolls one model in a source's
 coverage claim from its owner's codecs alone, so a runtime that registers more
 models later cannot widen a claim already captured.
 
+`DecodeObject` decodes one strict JSON object for a codec: it refuses a key
+outside the `ObjectShape`, spelled exactly, so a key in another letter case
+that `encoding/json` would match to a struct field is refused too. It also
+refuses a null where the shape allows none, a missing required key, a
+duplicate key, and a value that is not an object. A refusal wraps
+`ErrInvalidValue` and names the first offending key in sorted order.
+
 `engine.Provider.Relations` assigns dependency discovery by target, model kind,
 and source representation. `runtime.CaptureRelations` validates a complete
 `schemaext.RelationRequest` before dispatching one batch per owner. Each concrete
@@ -1379,14 +1386,22 @@ An omitted value requests PostgreSQL's default (ALL, PUBLIC, permissive), and a
 nil expression declares no clause. `ObservedPolicy` holds what `pg_policy`
 reports, every value definite.
 
-A `RoleSelector` is a keyword or a role name and never both, so the PUBLIC
-keyword and a role named `public` stay apart. An observation carries only the
-PUBLIC keyword, because the catalog resolves the others to a role when the
-policy is created. The role list is a set: equality and the canonical encoding
-ignore its order. `DesiredTableState` and `ObservedTableState` are a table facet
+A `RoleSelector` is a keyword or a role name and never both, and a name keeps
+its exact bytes. PostgreSQL reserves the role names `public` and `none` and
+stores `TO "public"` as PUBLIC, so neither is accepted as a name; PUBLIC is the
+keyword, and it stands alone, because the server keeps only PUBLIC from a list
+that names other roles beside it. An observation carries only the PUBLIC
+keyword, because the catalog resolves the others to a role when the policy is
+created. The role list is a set: equality and the canonical encoding ignore its
+order, and a reader records a role `polroles` lists twice once. `PolicyRef`
+takes its parts as the catalog stores them, untrimmed, because PostgreSQL keeps
+a policy named ` p` beside one named `p`.
+
+`DesiredTableState` and `ObservedTableState` are a table facet
 of `TableStateKind` that holds ENABLE and FORCE ROW LEVEL SECURITY as
-independent flags. The codecs refuse unknown, null and case-variant keys, a
-clause the command does not take, and an empty expression. The package defines
+independent flags. The codecs refuse unknown, null, empty and case-variant
+keys, a clause the command does not take, and an empty expression, and a
+refused value is a `schemaext.InvalidModelError`. The package defines
 the models, their codecs and their coverage, and reads, compares and plans
 nothing.
 

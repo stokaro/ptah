@@ -42,8 +42,8 @@ func Codecs() []schemaext.Codec {
 // names, so equal policies encode to the same bytes.
 func PolicyCodecs() []schemaext.Codec {
 	return []schemaext.Codec{
-		modelCodec(&DesiredPolicy{}, schemaext.Desired, desiredPolicyDefinition, encodeDesiredPolicy, decodeDesiredPolicy),
-		modelCodec(&ObservedPolicy{}, schemaext.Observed, observedPolicyDefinition, encodeObservedPolicy, decodeObservedPolicy),
+		modelCodec(&DesiredPolicy{}, schemaext.Desired, desiredPolicyDefinition, ValidateDesiredPolicy, canonicalDesiredPolicy, desiredPolicyShape),
+		modelCodec(&ObservedPolicy{}, schemaext.Observed, observedPolicyDefinition, ValidateObservedPolicy, canonicalObservedPolicy, observedPolicyShape),
 	}
 }
 
@@ -51,116 +51,94 @@ func PolicyCodecs() []schemaext.Codec {
 // that order.
 func TableStateCodecs() []schemaext.Codec {
 	return []schemaext.Codec{
-		modelCodec(&DesiredTableState{}, schemaext.Desired, desiredTableStateDefinition, encodeDesiredTableState, decodeDesiredTableState),
-		modelCodec(&ObservedTableState{}, schemaext.Observed, observedTableStateDefinition, encodeObservedTableState, decodeObservedTableState),
+		modelCodec(&DesiredTableState{}, schemaext.Desired, desiredTableStateDefinition, ValidateDesiredTableState, identity[*DesiredTableState], desiredTableStateShape),
+		modelCodec(&ObservedTableState{}, schemaext.Observed, observedTableStateDefinition, ValidateObservedTableState, identity[*ObservedTableState], observedTableStateShape),
 	}
 }
 
-// modelCodec builds a codec whose clone and encodings validate the payload
-// first, so no codec boundary passes an invalid value.
-func modelCodec(prototype schemaext.Value, representation schemaext.Representation, definition string,
-	encode func(schemaext.Payload) (json.RawMessage, error), decode func(json.RawMessage) (schemaext.Payload, error),
+// model is the payload type a codec owns.
+type model interface {
+	schemaext.Value
+}
+
+// modelCodec builds a codec for one model. Every boundary validates first:
+// a clone, an encoding and a decoding of an invalid value are refused, so no
+// codec passes one on. canonical returns the value as it is encoded, which
+// orders a role list.
+func modelCodec[T model](prototype T, representation schemaext.Representation, definition string,
+	validate func(T) error, canonical func(T) T, shape func(json.RawMessage) error,
 ) schemaext.Codec {
+	validated := func(payload schemaext.Payload) (T, error) {
+		value, ok := payload.(T)
+		if !ok {
+			var zero T
+			return zero, fmt.Errorf("%w: expected %T, got %T", schemaext.ErrInvalidValue, prototype, payload)
+		}
+		return value, validate(value)
+	}
+	encode := func(payload schemaext.Payload) (json.RawMessage, error) {
+		value, err := validated(payload)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(canonical(value))
+	}
 	return schemaext.Codec{
 		Prototype: prototype, Representation: representation, Version: 1, Definition: json.RawMessage(definition),
+		Encode: encode, Canonical: encode,
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
-			if _, err := encode(payload); err != nil {
+			value, err := validated(payload)
+			if err != nil {
 				return nil, err
 			}
-			value, ok := payload.(schemaext.Value)
-			if !ok {
-				return nil, fmt.Errorf("%w: expected a row-security value, got %T", schemaext.ErrInvalidValue, payload)
-			}
-			return schemaext.CloneValue(value)
+			return value.Clone(), nil
 		},
-		Encode: encode, Canonical: encode, Decode: decode,
+		Decode: func(data json.RawMessage) (schemaext.Payload, error) {
+			if err := shape(data); err != nil {
+				return nil, err
+			}
+			value, err := schemaext.DecodeJSON[T](data)
+			if err != nil {
+				return nil, err
+			}
+			if err := validate(value); err != nil {
+				return nil, err
+			}
+			return value, nil
+		},
 	}
 }
 
-func encodeDesiredPolicy(payload schemaext.Payload) (json.RawMessage, error) {
-	value, ok := payload.(*DesiredPolicy)
-	if !ok {
-		return nil, fmt.Errorf("%w: expected a desired policy, got %T", schemaext.ErrInvalidValue, payload)
-	}
-	if err := ValidateDesiredPolicy(value); err != nil {
-		return nil, err
-	}
+func identity[T any](value T) T { return value }
+
+func canonicalDesiredPolicy(value *DesiredPolicy) *DesiredPolicy {
 	canonical := value.Copy()
 	canonical.Roles = sortedRoles(canonical.Roles)
-	return json.Marshal(canonical)
+	return canonical
 }
 
-func encodeObservedPolicy(payload schemaext.Payload) (json.RawMessage, error) {
-	value, ok := payload.(*ObservedPolicy)
-	if !ok {
-		return nil, fmt.Errorf("%w: expected an observed policy, got %T", schemaext.ErrInvalidValue, payload)
-	}
-	if err := ValidateObservedPolicy(value); err != nil {
-		return nil, err
-	}
+func canonicalObservedPolicy(value *ObservedPolicy) *ObservedPolicy {
 	canonical := value.Copy()
 	canonical.Roles = sortedRoles(canonical.Roles)
-	return json.Marshal(canonical)
+	return canonical
 }
 
-func encodeDesiredTableState(payload schemaext.Payload) (json.RawMessage, error) {
-	value, ok := payload.(*DesiredTableState)
-	if !ok {
-		return nil, fmt.Errorf("%w: expected a desired row-security table state, got %T", schemaext.ErrInvalidValue, payload)
-	}
-	if err := ValidateDesiredTableState(value); err != nil {
-		return nil, err
-	}
-	return json.Marshal(value)
+func desiredPolicyShape(data json.RawMessage) error {
+	return policyShape(data, schemaext.ObjectShape{Name: "policy",
+		Allowed: []string{"command", "roles", "using", "with_check", "composition", "comment", "struct_name"}})
 }
 
-func encodeObservedTableState(payload schemaext.Payload) (json.RawMessage, error) {
-	value, ok := payload.(*ObservedTableState)
-	if !ok {
-		return nil, fmt.Errorf("%w: expected an observed row-security table state, got %T", schemaext.ErrInvalidValue, payload)
-	}
-	if err := ValidateObservedTableState(value); err != nil {
-		return nil, err
-	}
-	return json.Marshal(value)
+func observedPolicyShape(data json.RawMessage) error {
+	return policyShape(data, schemaext.ObjectShape{Name: "policy",
+		Allowed:  []string{"command", "roles", "using", "with_check", "composition", "comment"},
+		Required: []string{"command", "roles", "composition"}})
 }
 
-var (
-	desiredPolicyKeys  = []string{"command", "roles", "using", "with_check", "composition", "comment", "struct_name"}
-	observedPolicyKeys = []string{"command", "roles", "using", "with_check", "composition", "comment"}
-)
-
-func decodeDesiredPolicy(data json.RawMessage) (schemaext.Payload, error) {
-	if err := policyWire(data, desiredPolicyKeys, nil); err != nil {
-		return nil, err
-	}
-	value, err := schemaext.DecodeJSON[*DesiredPolicy](data)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateDesiredPolicy(value); err != nil {
-		return nil, err
-	}
-	return value, nil
-}
-
-func decodeObservedPolicy(data json.RawMessage) (schemaext.Payload, error) {
-	if err := policyWire(data, observedPolicyKeys, []string{"command", "roles", "composition"}); err != nil {
-		return nil, err
-	}
-	value, err := schemaext.DecodeJSON[*ObservedPolicy](data)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateObservedPolicy(value); err != nil {
-		return nil, err
-	}
-	return value, nil
-}
-
-// policyWire checks the policy object's keys and each role selector's.
-func policyWire(data json.RawMessage, allowed, required []string) error {
-	fields, err := wireObject(data, "policy", allowed, required)
+// policyShape checks the policy object's keys and each role selector's, and
+// that no present value is empty. Whether a selector holds a keyword or a name
+// and which one is the validators'.
+func policyShape(data json.RawMessage, shape schemaext.ObjectShape) error {
+	fields, err := decodeObject(data, shape, "command", "composition")
 	if err != nil {
 		return err
 	}
@@ -173,37 +151,21 @@ func policyWire(data json.RawMessage, allowed, required []string) error {
 		return err
 	}
 	for _, selector := range selectors {
-		if _, err := wireObject(selector, "role selector", []string{"keyword", "name"}, nil); err != nil {
+		if _, err := decodeObject(selector, schemaext.ObjectShape{Name: "role selector", Allowed: []string{"keyword", "name"}}, "keyword", "name"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func decodeDesiredTableState(data json.RawMessage) (schemaext.Payload, error) {
-	if _, err := wireObject(data, "table state", []string{"enabled", "forced", "comment", "struct_name"}, []string{"enabled", "forced"}); err != nil {
-		return nil, err
-	}
-	value, err := schemaext.DecodeJSON[*DesiredTableState](data)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateDesiredTableState(value); err != nil {
-		return nil, err
-	}
-	return value, nil
+func desiredTableStateShape(data json.RawMessage) error {
+	_, err := decodeObject(data, schemaext.ObjectShape{Name: "table state",
+		Allowed: []string{"enabled", "forced", "comment", "struct_name"}, Required: []string{"enabled", "forced"}})
+	return err
 }
 
-func decodeObservedTableState(data json.RawMessage) (schemaext.Payload, error) {
-	if _, err := wireObject(data, "table state", []string{"enabled", "forced"}, []string{"enabled", "forced"}); err != nil {
-		return nil, err
-	}
-	value, err := schemaext.DecodeJSON[*ObservedTableState](data)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateObservedTableState(value); err != nil {
-		return nil, err
-	}
-	return value, nil
+func observedTableStateShape(data json.RawMessage) error {
+	_, err := decodeObject(data, schemaext.ObjectShape{Name: "table state",
+		Allowed: []string{"enabled", "forced"}, Required: []string{"enabled", "forced"}})
+	return err
 }
