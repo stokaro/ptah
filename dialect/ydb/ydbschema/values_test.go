@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 func TestNamedChangefeeds_YAMLToRenderAndCodec(t *testing.T) {
@@ -61,7 +62,7 @@ func TestNamedChangefeeds_YAMLToRenderAndCodec(t *testing.T) {
 
 func TestNamedChangefeeds_GoSourceCapturesParentIdentity(t *testing.T) {
 	c := qt.New(t)
-	database, err := goschema.ParseSource("entity.go", `package entities
+	database, err := goschema.ParseSource(builtintest.Annotations(), "entity.go", `package entities
 //ptah:schema:table name="items" schema="shop"
 //ptah:schema:changefeed name="updates" mode="UPDATES" format="JSON"
 //ptah:schema:changefeed:consumer changefeed="updates" name="audit"

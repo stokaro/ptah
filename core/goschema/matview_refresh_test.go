@@ -34,7 +34,7 @@ func parseMatViewRefreshSource(c *qt.C, attribute string) (*schemamodel.Database
 		"//ptah:schema:matview name=\"mv\" body=\"SELECT 1\"" + attribute + "\n" +
 		"type MV struct{}\n"
 	writeGoFile(c, dir, "models.go", source)
-	return goschema.ParseDir(dir)
+	return goschema.ParseDir(noOwners, dir)
 }
 
 // TestParseMatView_CanonicalizesTheDeclaredSchedule is what keeps a declaration

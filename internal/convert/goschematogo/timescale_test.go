@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -63,7 +64,7 @@ func TestRender_TimescaleStateSurvivesItsOwnAnnotations(t *testing.T) {
 			for _, file := range files {
 				source["models/"+file.Name] = &fstest.MapFile{Data: file.Data}
 			}
-			parsed, err := goschema.ParseFS(source, "models")
+			parsed, err := goschema.ParseFS(builtintest.Annotations(), source, "models")
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tableFacets(c, parsed), qt.DeepEquals, tableFacets(c, db))

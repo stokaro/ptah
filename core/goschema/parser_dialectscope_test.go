@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
 	"github.com/go-extras/go-kit/must"
+
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -202,7 +202,7 @@ type Tenant struct {
 func TestParse_RowSecurityScopeSelectsTheModel_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseSource("models.go", `package test
+	database, err := goschema.ParseSource(noOwners, "models.go", `package test
 
 //ptah:schema:table name="tenants"
 //ptah:schema:rls:policy name="isolation" table="tenants" for="ALL" using="true" dialects="postgres,mssql"
@@ -254,7 +254,7 @@ type Ext struct{}`,
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := goschema.ParseSource("models.go", "package test\n\n"+test.code+"\n")
+			_, err := goschema.ParseSource(noOwners, "models.go", "package test\n\n"+test.code+"\n")
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(err.Error(), qt.Contains, test.message)

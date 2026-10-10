@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/introspect"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
@@ -313,7 +314,7 @@ func TestYDBViews_IntrospectedModelsPlanNothing(t *testing.T) {
 			stdout, err := runCommand(introspect.NewIntrospectCommand(),
 				"--db-url", dbtarget.URL(c, line.engine), "--schemas", strings.Join(viewsSchemas, ","), "--out", out)
 			c.Assert(err, qt.IsNil, qt.Commentf("introspect:\n%s", stdout))
-			models, err := goschema.ParseDir(out)
+			models, err := goschema.ParseDir(builtintest.Annotations(), out)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(viewNames(readScoped(c, conn, viewsSchemas)), qt.HasLen, 3)

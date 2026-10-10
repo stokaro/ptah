@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"strings"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbexternal"
 )
@@ -17,7 +16,7 @@ import (
 // nothing else, and every other target refuses one.
 func (s *schemaParseState) parseExternalDataSourceComment(comment *ast.Comment, structName string) error {
 	const directive = "ptah:schema:externaldatasource"
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//"+directive, structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -47,7 +46,7 @@ func (s *schemaParseState) parseExternalDataSourceComment(comment *ast.Comment, 
 // columns included, and declares it as a feature object.
 func (s *schemaParseState) parseExternalTableComment(comment *ast.Comment, structName string) error {
 	const directive = "ptah:schema:externaltable"
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//"+directive, structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err

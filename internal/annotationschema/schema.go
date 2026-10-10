@@ -20,15 +20,16 @@ import (
 // would go stale while the committed one looked current (stokaro/ptah#2889).
 const SchemaPath = "docs/site/public/ptah-annotations.schema.json"
 
-// Generate renders the JSON Schema document.
-func Generate() ([]byte, error) {
+// Generate renders the JSON Schema document for the directives of catalog,
+// the selected owners' among them.
+func Generate(catalog annotationmeta.Catalog) ([]byte, error) {
 	doc := map[string]any{
 		"$schema":     "https://json-schema.org/draft/2020-12/schema",
 		"$id":         "https://docs.ptah.run/ptah-annotations.schema.json",
 		"title":       "Ptah Go Annotation Directives",
 		"description": "Schema for parsed //ptah Go annotation directives.",
-		"oneOf":       directiveRefs(),
-		"$defs":       directiveDefs(),
+		"oneOf":       directiveRefs(catalog),
+		"$defs":       directiveDefs(catalog),
 	}
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
@@ -40,8 +41,8 @@ func Generate() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func directiveRefs() []map[string]string {
-	directives := annotationmeta.Directives()
+func directiveRefs(catalog annotationmeta.Catalog) []map[string]string {
+	directives := catalog.Directives()
 	refs := make([]map[string]string, 0, len(directives))
 	for _, directive := range directives {
 		refs = append(refs, map[string]string{
@@ -51,9 +52,9 @@ func directiveRefs() []map[string]string {
 	return refs
 }
 
-func directiveDefs() map[string]any {
+func directiveDefs(catalog annotationmeta.Catalog) map[string]any {
 	defs := make(map[string]any)
-	for _, directive := range annotationmeta.Directives() {
+	for _, directive := range catalog.Directives() {
 		defs[defName(directive.Name)] = directiveDef(directive)
 	}
 	return defs

@@ -32,7 +32,7 @@ type Reporting struct{}
 type Defaults struct{}
 `
 
-	db, err := goschema.ParseSource("pools.go", source)
+	db, err := goschema.ParseSource(noOwners, "pools.go", source)
 
 	c.Assert(err, qt.IsNil)
 	objects, err := db.FeatureObjects.All()
@@ -87,7 +87,7 @@ func TestParseSource_ResourcePool_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("pools.go", "package entities\n\n"+test.annotations+"\ntype Pools struct{}\n")
+			db, err := goschema.ParseSource(noOwners, "pools.go", "package entities\n\n"+test.annotations+"\ntype Pools struct{}\n")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			var parseErr *ptaherr.ParseError

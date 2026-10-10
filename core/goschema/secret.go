@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/ast"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbsecret"
 )
@@ -19,7 +18,7 @@ import (
 // There is no dialect scope here, for the reason a synonym has none: a secret
 // is a YDB object and nothing else, and every other target refuses one.
 func (s *schemaParseState) parseSecretComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:secret", structName)
 	if _, written := kv[ydbsecret.AttributeValue]; written {
 		return secretAttributeError(ctx, &ydbsecret.DeclarationError{

@@ -32,7 +32,7 @@ type Product struct {
 }
 `
 
-	db := must.Must(goschema.ParseSource("products.go", source))
+	db := must.Must(goschema.ParseSource(noOwners, "products.go", source))
 
 	for _, table := range db.Tables {
 		fmt.Printf("table %s (struct %s)\n", table.Name, table.StructName)
@@ -62,7 +62,7 @@ type Product struct {
 }
 `
 
-	_, err := goschema.ParseSource("products.go", source)
+	_, err := goschema.ParseSource(noOwners, "products.go", source)
 
 	if parseErr, ok := errors.AsType[*ptaherr.ParseError](err); ok {
 		fmt.Printf("file=%s line=%d directive=%s attribute=%s\n",
@@ -103,7 +103,7 @@ type User struct {
 `)},
 	}
 
-	db := must.Must(goschema.ParseFS(fsys, "."))
+	db := must.Must(goschema.ParseFS(noOwners, fsys, "."))
 
 	for _, table := range db.Tables {
 		fmt.Println(table.Name)
@@ -144,7 +144,7 @@ type User struct {
 }
 `), 0o600))
 
-	raw := must.Must(goschema.ParseDirRaw(dir))
+	raw := must.Must(goschema.ParseDirRaw(noOwners, dir))
 	fmt.Println("raw tables:", len(raw.Tables), "dependency entries:", len(raw.Dependencies))
 
 	merged := must.Must(schemamodel.Merge(raw))

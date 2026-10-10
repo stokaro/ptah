@@ -34,7 +34,7 @@ func TestParseDomainAnnotation_MissingTypeRejected(t *testing.T) {
 type EmailDomain struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:domain")
@@ -81,7 +81,7 @@ func TestParseCompositeAnnotation_InvalidFieldsRejected(t *testing.T) {
 type AddressType struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Attribute, qt.Equals, "fields")
@@ -144,7 +144,7 @@ func TestParseRangeAnnotation_MissingSubtypeRejected(t *testing.T) {
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	_, err := goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource(noOwners, "fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:range")

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/yamlschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -35,7 +36,7 @@ tables:
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource("schema.go", string(files[0].Data))
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
 	c.Assert(parsed.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{

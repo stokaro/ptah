@@ -23,7 +23,7 @@ func TestParseDirsMergesMultipleRoots(t *testing.T) {
 	writeGoFile(c, rootA, "users.go", usersSource)
 	writeGoFile(c, rootB, "orders.go", ordersSource)
 
-	db, err := goschema.ParseDirs(rootA, rootB)
+	db, err := goschema.ParseDirs(noOwners, rootA, rootB)
 	c.Assert(err, qt.IsNil)
 
 	// Both roots contribute their table, finalized together.
@@ -41,7 +41,7 @@ func TestParseDirsSingleRoot(t *testing.T) {
 	root := t.TempDir()
 	writeGoFile(c, root, "users.go", usersSource)
 
-	db, err := goschema.ParseDirs(root)
+	db, err := goschema.ParseDirs(noOwners, root)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(tableIndex(db, "users") >= 0, qt.IsTrue)
@@ -51,7 +51,7 @@ func TestParseDirsSingleRoot(t *testing.T) {
 func TestParseDirsNoRootsReturnsEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := goschema.ParseDirs()
+	db, err := goschema.ParseDirs(noOwners)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db, qt.IsNotNil)
 	c.Assert(db.Tables, qt.HasLen, 0)
@@ -67,9 +67,9 @@ func TestParseDirRawFeedsMerge(t *testing.T) {
 
 	// ParseDirRaw yields un-finalized sources suitable for Merge to combine and
 	// finalize once, matching a single finalized ParseDirs over both roots.
-	rawA, err := goschema.ParseDirRaw(rootA)
+	rawA, err := goschema.ParseDirRaw(noOwners, rootA)
 	c.Assert(err, qt.IsNil)
-	rawB, err := goschema.ParseDirRaw(rootB)
+	rawB, err := goschema.ParseDirRaw(noOwners, rootB)
 	c.Assert(err, qt.IsNil)
 
 	merged, err := schemamodel.Merge(rawA, rawB)

@@ -137,8 +137,13 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 
 	// The render dialect also hints SQL parsing for both schema files and command
 	// output, so the two SQL sources are treated consistently.
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return err
+	}
 	result, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    opts.rootDirs,
+		Annotations: annotations,
 		SchemaFiles: opts.schemaFiles,
 		Commands:    commands,
 		Dialect:     opts.dialect,

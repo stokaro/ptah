@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/root"
 	"ptah.run/migration/schemadiff"
 )
@@ -74,7 +75,7 @@ func TestIntrospectCommand_PostgresSequenceGrantRoundTrips(t *testing.T) {
 	err = cmd.Execute()
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
 
-	desired, err := goschema.ParseDir(outDir)
+	desired, err := goschema.ParseDir(builtintest.Annotations(), outDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(introspectedGrantTargets(desired.Grants, roleName), qt.ContentEquals, []introspectedGrantTarget{
 		{Privileges: []string{"SELECT"}, OnTable: schemaName + ".invoices"},

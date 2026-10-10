@@ -82,7 +82,7 @@ func TestParseSource_ADeclaredSchemaReachesTheObjectName(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database, err := goschema.ParseSource("fixture.go",
+			database, err := goschema.ParseSource(noOwners, "fixture.go",
 				"package m\n\n"+test.annotation+"\ntype S struct{}\n")
 
 			c.Assert(err, qt.IsNil)

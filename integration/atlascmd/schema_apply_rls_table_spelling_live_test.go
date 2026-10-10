@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemaload"
@@ -252,7 +253,7 @@ func executeRenderedSchema(t *testing.T, dbURL, schemaPath string) error {
 	// The file is rendered for PostgreSQL, so it is read as PostgreSQL: that is
 	// what `ptah schema render --dialect postgres` does, and the dialect
 	// decides how an unquoted name folds.
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{schemaPath}, Dialect: "postgres"})
+	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{schemaPath}, Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)

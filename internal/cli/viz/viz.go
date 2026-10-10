@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/serverversion"
@@ -115,8 +116,13 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	owners, err := builtin.Annotations()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	db, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:        opts.rootDirs,
+		Annotations:     owners,
 		SchemaFiles:     opts.schemaFiles,
 		ProjectEnv:      schemaSourceEnv,
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),

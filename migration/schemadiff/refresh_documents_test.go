@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -28,7 +29,7 @@ import (
 // "schema comparison is incomplete" (stokaro/ptah#4278).
 func TestCompareSchemas_APlainViewAgainstADocumentThatStatesNoSchedule(t *testing.T) {
 	c := qt.New(t)
-	desired := must.Must(goschema.ParseSource("views.go", `package models
+	desired := must.Must(goschema.ParseSource(builtintest.Annotations(), "views.go", `package models
 
 //ptah:schema:matview name="daily" body="SELECT 1 AS c"
 type Daily struct{}

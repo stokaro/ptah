@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -56,7 +57,7 @@ func TestCockroachDBRowTTL_GoExportRoundTrip(t *testing.T) {
 	c.Assert(files, qt.HasLen, 1)
 	c.Assert(string(files[0].Data), qt.Contains, `platform.cockroachdb.ttl_expire_after="72:00:00"`)
 
-	parsed := must.Must(goschema.ParseSource("schema.go", string(files[0].Data)))
+	parsed := must.Must(goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data)))
 	decoded, err := schemaproperties.DecodeTables(t.Context(), &parsed, "cockroachdb", runtime)
 	c.Assert(err, qt.IsNil)
 	restored, found, err := schemaext.FacetAs[*crdbschema.DesiredRowTTL](decoded.Tables[0].Facets, crdbschema.RowTTLKind)

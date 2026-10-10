@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // TestParseIndexGranularityAsAClickHousePlatformProperty reads a skipping
@@ -65,7 +66,7 @@ table "events" {
 func TestIndexGranularityGoAnnotationParity(t *testing.T) {
 	c := qt.New(t)
 
-	goDB, err := goschema.ParseSource("events.go", `package models
+	goDB, err := goschema.ParseSource(builtintest.Annotations(), "events.go", `package models
 
 //ptah:schema:table name="events"
 type Event struct {

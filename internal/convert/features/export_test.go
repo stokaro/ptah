@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -30,7 +31,7 @@ func TestNamedChangefeeds_GoExportRoundTrip(t *testing.T) {
 	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource("schema.go", string(files[0].Data))
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
 	c.Assert(err, qt.IsNil)
 	feeds, err := ydbschema.DesiredChangefeeds(parsed.FeatureObjects, "shop", "items")
 	c.Assert(err, qt.IsNil)

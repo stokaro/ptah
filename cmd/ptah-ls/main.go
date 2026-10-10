@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/buildinfo"
 	"ptah.run/internal/cli/banner"
 	"ptah.run/internal/ptahls"
@@ -74,7 +75,14 @@ func main() {
 	// is now looking at a process that appears to do nothing.
 	banner.Print(os.Stderr, "ptah-ls", info.Version)
 
-	opts := ptahls.ServerOptions{Version: info.Version}
+	// The server knows the directives of every bundled owner, as the parse the
+	// ptah binary runs does.
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ptah-ls: %v\n", err)
+		os.Exit(1)
+	}
+	opts := ptahls.ServerOptions{Version: info.Version, Annotations: annotations}
 	if err := ptahls.RunWithOptions(context.Background(), os.Stdin, os.Stdout, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "ptah-ls: %v\n", err)
 		os.Exit(1)

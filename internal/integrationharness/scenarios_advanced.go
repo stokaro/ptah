@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/integrationfixture"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
@@ -80,7 +81,11 @@ func testSchemaDiff(ctx context.Context, conn *dbschema.DatabaseConnection, fixt
 		// Fallback to local development path
 		entitiesDir = "integration/internal/fixtures/entities/000-initial"
 	}
-	entityResult, err := goschema.ParseDir(entitiesDir)
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return err
+	}
+	entityResult, err := goschema.ParseDir(annotations, entitiesDir)
 	if err != nil {
 		return fmt.Errorf("failed to parse entities: %w", err)
 	}

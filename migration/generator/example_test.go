@@ -14,6 +14,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
@@ -243,7 +244,7 @@ func ExampleGenerateCheckpointFromShadow() {
 // rollback in one result, each with its own RequiresNoTransaction
 // classification.
 func ExamplePlanBidirectionalSchemaDiff() {
-	desired := must.Must(goschema.ParseFS(
+	desired := must.Must(goschema.ParseFS(builtintest.Annotations(),
 		fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
 		"models",
 	))

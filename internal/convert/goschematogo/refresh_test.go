@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -32,7 +33,7 @@ func TestRenderWritesTheRefreshScheduleOfAMaterializedView(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(files[0].Data), qt.Contains, `refresh="EVERY 1 DAY OFFSET 2 HOUR DEPENDS ON analytics.source APPEND"`)
-	reparsed, err := goschema.ParseSource("schema.go", string(files[0].Data))
+	reparsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
 	c.Assert(err, qt.IsNil)
 	c.Assert(reparsed.MaterializedViews, qt.HasLen, 1)
 	c.Assert(reparsed.MaterializedViews[0].Facets, qt.DeepEquals, db.MaterializedViews[0].Facets)

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/datamigrate"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemaload"
@@ -34,7 +35,7 @@ func liveSchema(c *qt.C, conn *dbschema.DatabaseConnection) *catalog.Database {
 // schema, so a test can hand Inspect a model instead of a directory.
 func parseFixture(c *qt.C, root string) *schemamodel.Database {
 	c.Helper()
-	desired, err := goschema.ParseDir(root)
+	desired, err := goschema.ParseDir(builtintest.Annotations(), root)
 	c.Assert(err, qt.IsNil)
 	return desired
 }
@@ -57,8 +58,9 @@ func TestInspect_CountsAHandEditedRow(t *testing.T) {
 `)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -89,8 +91,9 @@ func TestInspect_TheSummaryCarriesNoRowValue(t *testing.T) {
 	writeRegionsFixture(t, root, driftDesiredRows)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(summary.Tables, qt.DeepEquals, []datamigrate.TableDrift{
@@ -124,8 +127,9 @@ func TestInspect_CleanDatabaseReportsNoTable(t *testing.T) {
 	writeRegionsFixture(t, root, driftDesiredRows)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -151,8 +155,9 @@ func TestInspect_AnUncreatedTableCountsEveryDeclaredRowAsAnInsert(t *testing.T) 
 	writeRegionsFixture(t, root, driftDesiredRows)
 
 	summary, err := datamigrate.Inspect(ctx, conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -228,8 +233,9 @@ func TestInspect_AColumnTheTableLacksIsNotRowDrift(t *testing.T) {
 	writeISO3Fixture(t, root, declaredWithISO3)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -253,8 +259,9 @@ func TestInspect_AnEditedRowDriftsBesideAColumnTheTableLacks(t *testing.T) {
 	writeISO3Fixture(t, root, declaredWithISO3)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -289,8 +296,9 @@ func TestInspect_DesiredReplacesTheRootParse(t *testing.T) {
 	// RootDir is left empty on purpose: the declaration records the directory it
 	// was authored in, so the row file resolves without it.
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		Desired: desired,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		Desired:     desired,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -342,8 +350,9 @@ func TestInspect_ReadsTheRowsTheDeclarationCarries(t *testing.T) {
 	// RootDir is empty because the run that reads an artifact has no root, which
 	// is what makes reading a file the wrong answer here.
 	summary, err := datamigrate.Inspect(ctx, conn, datamigrate.Options{
-		Desired: pulled.Database,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		Desired:     pulled.Database,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -406,8 +415,9 @@ func TestInspect_AnEmptyDeclarationCountsTheRowsItWouldDelete(t *testing.T) {
 	writeGeneratedKeyFixture(t, root, "")
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -431,6 +441,7 @@ func TestGenerate_AnEmptyDeclarationStillRefusesAGeneratedKey(t *testing.T) {
 	writeGeneratedKeyFixture(t, root, "")
 
 	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:      builtintest.Annotations(),
 		RootDir:          root,
 		AllowDestructive: true,
 	})
@@ -456,6 +467,7 @@ func TestGenerate_RefusesAColumnTheTableDoesNotHave(t *testing.T) {
 	writeISO3Fixture(t, root, declaredWithISO3)
 
 	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:      builtintest.Annotations(),
 		RootDir:          root,
 		AllowDestructive: true,
 	})
@@ -470,7 +482,7 @@ func TestInspect_FailurePath(t *testing.T) {
 	t.Run("no connection", func(t *testing.T) {
 		c := qt.New(t)
 
-		summary, err := datamigrate.Inspect(context.Background(), nil, datamigrate.Options{RootDir: t.TempDir()})
+		summary, err := datamigrate.Inspect(context.Background(), nil, datamigrate.Options{Annotations: builtintest.Annotations(), RootDir: t.TempDir()})
 
 		c.Assert(err, qt.ErrorMatches, `datamigrate: a database connection is required`)
 		c.Assert(summary, qt.IsNil)
@@ -484,8 +496,9 @@ func TestInspect_FailurePath(t *testing.T) {
 		c.Assert(os.Remove(filepath.Join(root, "regions.yaml")), qt.IsNil)
 
 		summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-			RootDir: root,
-			Live:    liveSchema(c, conn),
+			Annotations: builtintest.Annotations(),
+			RootDir:     root,
+			Live:        liveSchema(c, conn),
 		})
 
 		c.Assert(err, qt.ErrorMatches, `read managed data file .*regions.yaml" for table "regions": .*`)

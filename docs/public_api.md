@@ -14,6 +14,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/atlascompat`
 - `ptah.run/config`
 - `ptah.run/config/projectconfig`
+- `ptah.run/core/annotation`
 - `ptah.run/core/ast`
 - `ptah.run/core/astbuilder`
 - `ptah.run/core/coverage`
@@ -96,6 +97,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/timescaledb/tsreport`
 - `ptah.run/dialect/timescaledb/tsreverse`
 - `ptah.run/dialect/timescaledb/tsschema`
+- `ptah.run/dialect/timescaledb/tssource`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
 - `ptah.run/dialect/ydb/ydbconvert`
@@ -1589,6 +1591,12 @@ identified by `ContinuousAggregateRef`. `DesiredContinuousAggregate` keeps the
 body as written and a nil `MaterializedOnly` for the server's default;
 `Normalized` holds a connected server's spelling of the body and is set only by
 normalization.
+
+`dialect/timescaledb/tssource` declares both Go annotation directives,
+`//ptah:schema:hypertable` and `//ptah:schema:continuousaggregate`, through
+`Annotations`, an `annotation.Extension` the bundled runtime registers. A parse
+that does not select it reads neither directive and claims no knowledge of
+either model.
 
 The common schema, catalog, AST, coverage and diff types carry no TimescaleDB
 field. `CompleteCoverage` is the claim a source makes when it

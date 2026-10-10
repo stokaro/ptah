@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 func TestParseIndexComment(t *testing.T) {
@@ -58,7 +59,7 @@ table "users" {
 func TestIndexCommentGoAnnotationParity(t *testing.T) {
 	c := qt.New(t)
 
-	goDB, err := goschema.ParseSource("users.go", `package models
+	goDB, err := goschema.ParseSource(builtintest.Annotations(), "users.go", `package models
 
 //ptah:schema:table name="users"
 type User struct {

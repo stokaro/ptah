@@ -26,12 +26,12 @@ func sourceComments(file *ast.File) []*ast.Comment {
 func TestAllowsAttributeValidatesPlatformOverrideShape(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.type"), qt.IsTrue)
-	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.generated.kind"), qt.IsTrue)
-	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql"), qt.IsFalse)
-	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform..type"), qt.IsFalse)
-	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.type-name"), qt.IsFalse)
-	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.тип"), qt.IsFalse)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:field", "platform.mysql.type"), qt.IsTrue)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:field", "platform.mysql.generated.kind"), qt.IsTrue)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:field", "platform.mysql"), qt.IsFalse)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:field", "platform..type"), qt.IsFalse)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:field", "platform.mysql.type-name"), qt.IsFalse)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:field", "platform.mysql.тип"), qt.IsFalse)
 }
 
 func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
@@ -45,7 +45,7 @@ func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
 	for _, directive := range directives {
 		t.Run(directive, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(annotationmeta.AllowsAttribute(directive, "platform.postgres.type"), qt.IsTrue)
+			c.Assert(annotationmeta.Common().AllowsAttribute(directive, "platform.postgres.type"), qt.IsTrue)
 		})
 	}
 }
@@ -53,7 +53,7 @@ func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
 func TestAllowsAttribute_AcceptsIndexInclude(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:index", "include"), qt.IsTrue)
+	c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:index", "include"), qt.IsTrue)
 }
 
 func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
@@ -92,7 +92,7 @@ func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(annotationmeta.AllowsAttribute(test.directive, test.attribute), qt.IsFalse)
+			c.Assert(annotationmeta.Common().AllowsAttribute(test.directive, test.attribute), qt.IsFalse)
 		})
 	}
 }
@@ -108,7 +108,7 @@ func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testin
 	for _, directive := range directives {
 		t.Run(directive, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(annotationmeta.AllowsAttribute(directive, "platform.postgres.type"), qt.IsFalse)
+			c.Assert(annotationmeta.Common().AllowsAttribute(directive, "platform.postgres.type"), qt.IsFalse)
 		})
 	}
 }
@@ -116,7 +116,7 @@ func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testin
 func TestDetachedFileScopesMatchParserSupport(t *testing.T) {
 	c := qt.New(t)
 
-	for _, directive := range annotationmeta.Directives() {
+	for _, directive := range annotationmeta.Common().Directives() {
 		for _, scope := range directive.Scopes {
 			if scope != annotationmeta.ScopeFile {
 				continue
@@ -129,12 +129,12 @@ func TestDetachedFileScopesMatchParserSupport(t *testing.T) {
 func TestAllowsScope_UsesDirectiveMetadata(t *testing.T) {
 	c := qt.New(t)
 
-	table, ok := annotationmeta.Lookup("ptah:schema:table")
+	table, ok := annotationmeta.Common().Lookup("ptah:schema:table")
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(annotationmeta.AllowsScope(table, annotationmeta.ScopeStruct), qt.IsTrue)
 	c.Assert(annotationmeta.AllowsScope(table, annotationmeta.ScopeFile), qt.IsFalse)
 
-	policy, ok := annotationmeta.Lookup("ptah:schema:rls:policy")
+	policy, ok := annotationmeta.Common().Lookup("ptah:schema:rls:policy")
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(annotationmeta.AllowsScope(policy, annotationmeta.ScopeStruct), qt.IsTrue)
 	c.Assert(annotationmeta.AllowsScope(policy, annotationmeta.ScopeFile), qt.IsTrue)
@@ -192,8 +192,8 @@ func TestTableDirectiveSpellsRowTTLAsCockroachDBProperties(t *testing.T) {
 	for _, parameter := range crdbschema.ManagedParameters() {
 		t.Run(parameter, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(annotationmeta.AllowsAttribute("ptah:schema:table", "platform.cockroachdb."+parameter), qt.IsTrue)
-			c.Assert(annotationmeta.AllowsAttribute("ptah:schema:table", parameter), qt.IsFalse)
+			c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", "platform.cockroachdb."+parameter), qt.IsTrue)
+			c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", parameter), qt.IsFalse)
 		})
 	}
 }
@@ -216,8 +216,8 @@ func TestTableDirectiveSpellsRowDeletionAsPlatformProperties(t *testing.T) {
 			for _, property := range definition.Keys {
 				t.Run(owner.dialect+"."+property, func(t *testing.T) {
 					c := qt.New(t)
-					c.Assert(annotationmeta.AllowsAttribute("ptah:schema:table", "platform."+owner.dialect+"."+property), qt.IsTrue)
-					c.Assert(annotationmeta.AllowsAttribute("ptah:schema:table", property), qt.IsFalse)
+					c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", "platform."+owner.dialect+"."+property), qt.IsTrue)
+					c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", property), qt.IsFalse)
 				})
 			}
 		}

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
 	"ptah.run/internal/ptahls"
 )
@@ -12,7 +13,7 @@ import (
 func TestAnalyzeReportsUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	diagnostics := ptahls.Analyze(`package test
+	diagnostics := ptahls.Analyze(annotationmeta.Common(), `package test
 
 type User struct {
 	//ptah:schema:field name="x" defaul="now()"
@@ -29,7 +30,7 @@ type User struct {
 func TestHoverShowsRLSPolicyAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	hover, ok := ptahls.Hover(
+	hover, ok := ptahls.Hover(annotationmeta.Common(),
 		`//ptah:schema:rls:policy name="tenant" table="users"`,
 		annotationparse.Position{Line: 0, Character: 20},
 	)
@@ -43,7 +44,7 @@ func TestHoverShowsRLSPolicyAttributes(t *testing.T) {
 func TestCompleteReturnsUnusedAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	items := ptahls.Complete(
+	items := ptahls.Complete(annotationmeta.Common(),
 		`//ptah:schema:field name="email" `,
 		annotationparse.Position{Line: 0, Character: 20},
 	)
@@ -59,7 +60,7 @@ func TestCompleteReturnsUnusedAttributes(t *testing.T) {
 func TestCompleteSuppressesAttributeNamesInsideValues(t *testing.T) {
 	c := qt.New(t)
 
-	items := ptahls.Complete(
+	items := ptahls.Complete(annotationmeta.Common(),
 		`//ptah:schema:field name="email" default="now()"`,
 		annotationparse.Position{Line: 0, Character: 45},
 	)
@@ -89,8 +90,8 @@ type Order struct {
 	At string
 }`
 
-	diagnostics := ptahls.Analyze(source)
-	hover, ok := ptahls.Hover(source, annotationparse.Position{Line: 7, Character: 10})
+	diagnostics := ptahls.Analyze(annotationmeta.Common(), source)
+	hover, ok := ptahls.Hover(annotationmeta.Common(), source, annotationparse.Position{Line: 7, Character: 10})
 
 	c.Assert(diagnostics, qt.HasLen, 0)
 	c.Assert(ok, qt.IsTrue)

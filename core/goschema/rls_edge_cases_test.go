@@ -171,7 +171,7 @@ type Order struct {
 			tempFile := filepath.Join(t.TempDir(), "test.go")
 			c.Assert(os.WriteFile(tempFile, []byte(tt.goCode), 0o600), qt.IsNil)
 
-			database, err := goschema.ParseFile(tempFile)
+			database, err := goschema.ParseFile(noOwners, tempFile)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)

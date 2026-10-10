@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/matviewrefresh"
 )
 
@@ -97,7 +98,7 @@ materialized "user_stats" {
 func TestMaterializedViewRetiredAttributeGoAnnotationParity(t *testing.T) {
 	c := qt.New(t)
 
-	_, goErr := goschema.ParseSource("user_stats.go", `package models
+	_, goErr := goschema.ParseSource(builtintest.Annotations(), "user_stats.go", `package models
 
 //ptah:schema:matview name="user_stats" body="SELECT count(*) FROM users" refresh_strategy="concurrently"
 type UserStatsMatView struct{}

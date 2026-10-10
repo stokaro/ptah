@@ -1,11 +1,19 @@
 // Package annotationmeta defines Ptah Go annotation directive metadata.
+//
+// The frontend's own directives are a source constant. A feature owner's
+// directives come from the owner, through an [annotation.Set] the caller
+// selects, and a [Catalog] joins the two. Every question about a directive is
+// asked of a catalog, so a surface that lists or validates directives cannot
+// forget the owners its caller selected.
 package annotationmeta
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
 
+	"ptah.run/core/annotation"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -22,65 +30,68 @@ import (
 )
 
 // Scope describes where a directive is valid in Go source.
-type Scope string
+type Scope = annotation.Scope
 
+// The scopes a directive may name.
 const (
-	ScopeFile   Scope = "file"
-	ScopeStruct Scope = "struct"
-	ScopeField  Scope = "field"
+	ScopeFile   = annotation.ScopeFile
+	ScopeStruct = annotation.ScopeStruct
+	ScopeField  = annotation.ScopeField
 )
 
 // Attribute describes a single directive attribute.
-type Attribute struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Value       string `json:"value"`
-	Required    bool   `json:"required,omitempty"`
-	Boolean     bool   `json:"boolean,omitempty"`
-	AliasFor    string `json:"alias_for,omitempty"`
-	// Sensitive marks an attribute whose VALUE is a credential. Display
-	// surfaces must redact it; planning and destructive writes keep using the
-	// original bytes.
-	Sensitive bool `json:"sensitive,omitempty"`
-	// Retired carries the reason an attribute Ptah still RECOGNIZES is refused.
-	// Empty for every ordinary attribute.
-	//
-	// Recognizing it is the point. Deleting the entry instead would make the
-	// parser answer "unknown annotation attribute", which reads as a typo and
-	// says nothing about why a correctly spelled attribute is refused -- and
-	// worse, it would make a bareword spelling vanish: a directive carrying
-	// `refresh_strategy` with no `=value` is promoted into the key/value map
-	// only while the attribute is UNKNOWN, so a deleted entry is silently
-	// dropped rather than refused (stokaro/ptah#1625).
-	Retired string `json:"retired,omitempty"`
-}
+type Attribute = annotation.Attribute
 
 // Directive describes one //ptah annotation directive.
-type Directive struct {
-	Name          string      `json:"name"`
-	Description   string      `json:"description"`
-	Scopes        []Scope     `json:"scopes"`
-	Attributes    []Attribute `json:"attributes"`
-	AllowPlatform bool        `json:"allow_platform,omitempty"`
+type Directive = annotation.Directive
+
+// Catalog is the directives one parse or one surface knows: the frontend's
+// own, and those of the owners its caller selected. The zero value knows
+// none. A Catalog is safe for concurrent use.
+type Catalog struct {
+	directives []Directive
 }
 
-// Directives returns every supported annotation directive in stable order.
-func Directives() []Directive {
-	out := make([]Directive, len(directives))
-	copy(out, directives)
+// Common is the catalog of the frontend's own directives, without any owner.
+func Common() Catalog {
+	return Catalog{directives: directives}
+}
+
+// NewCatalog joins the frontend's own directives with those of the owners in
+// set. It refuses an unselected set, and an owner directive that takes the
+// name of one of the frontend's own.
+func NewCatalog(set annotation.Set) (Catalog, error) {
+	if !set.Selected() {
+		return Catalog{}, annotation.ErrUnselected
+	}
+	joined := slices.Clone(directives)
+	for _, directive := range set.Directives() {
+		if slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == directive.Name }) {
+			owner, _ := set.Owner(directive.Name)
+			return Catalog{}, fmt.Errorf("directive %q of %s takes the name of one of the frontend's own", directive.Name, owner)
+		}
+		joined = append(joined, directive)
+	}
+	return Catalog{directives: joined}, nil
+}
+
+// Directives returns every directive of the catalog in stable order.
+func (c Catalog) Directives() []Directive {
+	out := make([]Directive, len(c.directives))
+	copy(out, c.directives)
 	return out
 }
 
 // Lookup returns metadata for name, without a leading // comment marker.
-func Lookup(name string) (Directive, bool) {
+func (c Catalog) Lookup(name string) (Directive, bool) {
 	name = strings.TrimPrefix(strings.TrimSpace(name), "//")
-	i := slices.IndexFunc(directives, func(d Directive) bool {
+	i := slices.IndexFunc(c.directives, func(d Directive) bool {
 		return d.Name == name
 	})
 	if i < 0 {
 		return Directive{}, false
 	}
-	return directives[i], true
+	return c.directives[i], true
 }
 
 // AllowsScope reports whether directive can be attached at scope.
@@ -89,9 +100,9 @@ func AllowsScope(directive Directive, scope Scope) bool {
 }
 
 // MatchCommentDirective returns the directive matching a comment line.
-func MatchCommentDirective(comment string) (Directive, bool) {
+func (c Catalog) MatchCommentDirective(comment string) (Directive, bool) {
 	body := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "//"))
-	for _, directive := range directivesByDescendingLength() {
+	for _, directive := range c.directivesByDescendingLength() {
 		if !strings.HasPrefix(body, directive.Name) {
 			continue
 		}
@@ -104,8 +115,8 @@ func MatchCommentDirective(comment string) (Directive, bool) {
 }
 
 // KnownAttributes returns a set containing every declared attribute name.
-func KnownAttributes(directive string) map[string]bool {
-	spec, ok := Lookup(directive)
+func (c Catalog) KnownAttributes(directive string) map[string]bool {
+	spec, ok := c.Lookup(directive)
 	if !ok {
 		return nil
 	}
@@ -117,8 +128,8 @@ func KnownAttributes(directive string) map[string]bool {
 }
 
 // RequiredAttributes returns every required attribute name for directive.
-func RequiredAttributes(directive string) []string {
-	spec, ok := Lookup(directive)
+func (c Catalog) RequiredAttributes(directive string) []string {
+	spec, ok := c.Lookup(directive)
 	if !ok {
 		return nil
 	}
@@ -132,8 +143,8 @@ func RequiredAttributes(directive string) []string {
 }
 
 // AllowsAttribute reports whether key is valid for directive.
-func AllowsAttribute(directive, key string) bool {
-	spec, ok := Lookup(directive)
+func (c Catalog) AllowsAttribute(directive, key string) bool {
+	spec, ok := c.Lookup(directive)
 	if !ok {
 		return false
 	}
@@ -178,8 +189,8 @@ func isIdentifierPart(part string) bool {
 }
 
 // AttributeNames returns sorted attribute names for directive.
-func AttributeNames(directive string) []string {
-	spec, ok := Lookup(directive)
+func (c Catalog) AttributeNames(directive string) []string {
+	spec, ok := c.Lookup(directive)
 	if !ok {
 		return nil
 	}
@@ -194,8 +205,8 @@ func AttributeNames(directive string) []string {
 // SensitiveAttributes returns the attribute names of directive whose values are
 // credentials, including alias spellings. Display surfaces use this to redact a
 // value without re-deriving which attributes are secret.
-func SensitiveAttributes(directive string) map[string]bool {
-	found, ok := Lookup(directive)
+func (c Catalog) SensitiveAttributes(directive string) map[string]bool {
+	found, ok := c.Lookup(directive)
 	if !ok {
 		return nil
 	}
@@ -218,21 +229,21 @@ func SensitiveAttributes(directive string) map[string]bool {
 }
 
 // AllSensitiveAttributes returns every attribute name marked Sensitive on any
-// directive, including alias spellings.
+// directive of the catalog, including alias spellings.
 //
 // Redaction uses this rather than SensitiveAttributes because a redactor must be
 // the widest matcher in the system, not the narrowest. It must still protect a
 // sensitive attribute when the surrounding directive is malformed.
-func AllSensitiveAttributes() map[string]bool {
+func (c Catalog) AllSensitiveAttributes() map[string]bool {
 	sensitive := make(map[string]bool)
-	for _, directive := range directives {
+	for _, directive := range c.directives {
 		for _, attribute := range directive.Attributes {
 			if attribute.Sensitive {
 				sensitive[strings.ToLower(attribute.Name)] = true
 			}
 		}
 	}
-	for _, directive := range directives {
+	for _, directive := range c.directives {
 		for _, attribute := range directive.Attributes {
 			if attribute.AliasFor != "" && sensitive[strings.ToLower(attribute.AliasFor)] {
 				sensitive[strings.ToLower(attribute.Name)] = true
@@ -243,9 +254,9 @@ func AllSensitiveAttributes() map[string]bool {
 }
 
 // BooleanAttributes returns the attributes accepted as bare booleans.
-func BooleanAttributes() map[string]bool {
+func (c Catalog) BooleanAttributes() map[string]bool {
 	out := make(map[string]bool)
-	for _, directive := range directives {
+	for _, directive := range c.directives {
 		for _, attr := range directive.Attributes {
 			if attr.Boolean {
 				out[attr.Name] = true
@@ -257,12 +268,12 @@ func BooleanAttributes() map[string]bool {
 
 // DirectiveTokens returns every directive path segment that must not be
 // auto-promoted to a bare boolean attribute by annotation parsers.
-func DirectiveTokens() map[string]bool {
+func (c Catalog) DirectiveTokens() map[string]bool {
 	out := map[string]bool{
 		"ptah":   true,
 		"schema": true,
 	}
-	for _, directive := range directives {
+	for _, directive := range c.directives {
 		for part := range strings.SplitSeq(directive.Name, ":") {
 			out[part] = true
 		}
@@ -305,8 +316,8 @@ func Markdown(directive Directive) string {
 	return strings.TrimSpace(b.String())
 }
 
-func directivesByDescendingLength() []Directive {
-	out := Directives()
+func (c Catalog) directivesByDescendingLength() []Directive {
+	out := c.Directives()
 	sort.SliceStable(out, func(i, j int) bool {
 		return len(out[i].Name) > len(out[j].Name)
 	})
@@ -805,35 +816,6 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name: "ptah:schema:continuousaggregate",
-		Description: "Declares a TimescaleDB continuous aggregate: a materialized view over a " +
-			"hypertable the extension keeps up to date.",
-		Scopes: []Scope{ScopeStruct},
-		Attributes: []Attribute{
-			attr("name", "Aggregate name, which is also the view name.", valueString, true, false),
-			attr("schema", "Schema holding the aggregate.", valueString, false, false),
-			attr("body", "The SELECT the aggregate materializes.", valueString, true, false),
-			attr("materialized_only", "Read only materialized data, rather than combining it with "+
-				"the rows since the last refresh.", valueBoolean, false, false),
-			attr("comment", "Continuous aggregate comment.", valueString, false, false),
-		},
-	},
-	{
-		Name: "ptah:schema:hypertable",
-		Description: "Declares a TimescaleDB hypertable: a table partitioned on a range " +
-			"dimension.",
-		Scopes: []Scope{ScopeStruct},
-		Attributes: []Attribute{
-			attr("table", "Table to partition, optionally schema-qualified.", valueString, true, false),
-			attr("column", "Range dimension: the column chunks are cut on.", valueString, true, false),
-			attr("chunk_interval", "Width of one chunk, spelled the way PostgreSQL spells an "+
-				"interval. Omit to take TimescaleDB's default.", valueString, false, false),
-			attr("if_not_exists", "Skip a table that is already a hypertable instead of failing.",
-				valueBoolean, false, false),
-			attr("comment", "Hypertable comment.", valueString, false, false),
-		},
-	},
-	{
 		Name:        "ptah:schema:synonym",
 		Description: "Declares a SQL Server synonym, an alias for another object.",
 		Scopes:      []Scope{ScopeStruct},
@@ -1237,8 +1219,8 @@ func retiredAttr(name, description, reason string) Attribute {
 
 // RetiredAttribute reports the reason a recognized attribute is refused, and
 // whether it is retired at all.
-func RetiredAttribute(directive, key string) (string, bool) {
-	spec, ok := Lookup(directive)
+func (c Catalog) RetiredAttribute(directive, key string) (string, bool) {
+	spec, ok := c.Lookup(directive)
 	if !ok {
 		return "", false
 	}

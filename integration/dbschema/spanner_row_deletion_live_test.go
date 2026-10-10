@@ -21,6 +21,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -35,7 +36,7 @@ func spannerRowDeletionSource(c *qt.C, table, policy string, columns ...string) 
 	for _, column := range columns {
 		fmt.Fprintf(&fields, "\t//ptah:schema:field name=%q type=\"TIMESTAMPTZ\"\n\tF%s string\n", column, column)
 	}
-	database, err := goschema.ParseSource("events.go", fmt.Sprintf(`package entities
+	database, err := goschema.ParseSource(builtintest.Annotations(), "events.go", fmt.Sprintf(`package entities
 
 //ptah:schema:table name=%q %s
 type Event struct {

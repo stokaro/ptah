@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
@@ -41,6 +42,10 @@ type Options struct {
 	// row files still resolve against RootDir for an annotation whose recorded
 	// source directory is relative.
 	RootDir string
+	// Annotations selects the feature owners whose directives the RootDir
+	// parse reads. It is required when Desired is nil; pass annotation.None
+	// for the frontend's own directives only.
+	Annotations annotation.Set
 	// Desired supplies an already-resolved desired schema. When set it replaces
 	// the RootDir parse, so a caller that merged several Go roots with schema
 	// files inspects every declaration it resolved; re-parsing one root would
@@ -233,7 +238,7 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 
 	db := opts.Desired
 	if db == nil {
-		parsed, err := goschema.ParseDir(opts.RootDir)
+		parsed, err := goschema.ParseDir(opts.Annotations, opts.RootDir)
 		if err != nil {
 			return inspection{}, fmt.Errorf("datamigrate: parse Go annotations in %q: %w", opts.RootDir, err)
 		}

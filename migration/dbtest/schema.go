@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -111,7 +112,7 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 	// over an annotation in some unrelated file (stokaro/ptah#1211).
 	schema := opts.Desired
 	if schema == nil && strings.TrimSpace(opts.RootDir) != "" {
-		parsed, err := goschema.ParseDir(opts.RootDir)
+		parsed, err := goschema.ParseDir(opts.Runtime.Annotations(), opts.RootDir)
 		if err != nil {
 			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.RootDir, err)
 		}
@@ -156,14 +157,14 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 	return runCases(ctx, opts.DBURL, kind, opts.Cases, opts.Parallelism, provision, run)
 }
 
-func desiredSchemaForMigrationCases(rootDir string, cases []Case) (*schemamodel.Database, error) {
+func desiredSchemaForMigrationCases(annotations annotation.Set, rootDir string, cases []Case) (*schemamodel.Database, error) {
 	if !casesUseStepKind(cases, stepKindApplySchema) {
 		return nil, nil
 	}
 	if strings.TrimSpace(rootDir) == "" {
 		return nil, fmt.Errorf("apply_schema requires a desired schema root directory")
 	}
-	schema, err := goschema.ParseDir(rootDir)
+	schema, err := goschema.ParseDir(annotations, rootDir)
 	if err != nil {
 		return nil, fmt.Errorf("parse desired schema from %s: %w", rootDir, err)
 	}

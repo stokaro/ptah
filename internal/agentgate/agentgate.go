@@ -31,6 +31,7 @@ import (
 	"path"
 	"strings"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
@@ -175,6 +176,10 @@ type Options struct {
 	Validation schemavalidation.Runtime
 	// Rendering renders whole schemas for the schema gate. Nil is unavailable.
 	Rendering renderer.SchemaService
+	// Annotations selects the feature owners whose Go annotation directives
+	// the schema gate reads. The schema gate refuses the zero value; pass
+	// annotation.None for the frontend's own directives only.
+	Annotations annotation.Set
 	// Dialect is the target every SQL and schema check is run for. It is
 	// required: a lint run without one either guesses or checks nothing, and
 	// both answers are worse than refusing.
@@ -399,8 +404,9 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 		return Report{}, err
 	}
 	database, err := schemaload.LoadContext(ctx, schemaload.Options{
-		RootDirs: []string{scope.Path()},
-		Dialect:  r.opts.Dialect,
+		RootDirs:    []string{scope.Path()},
+		Annotations: r.opts.Annotations,
+		Dialect:     r.opts.Dialect,
 	})
 	if err != nil {
 		// A schema that will not load answers the other two gates as well: they

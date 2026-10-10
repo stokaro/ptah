@@ -50,7 +50,7 @@ func TestParseProcedureAnnotation(t *testing.T) {
 			path := t.TempDir() + "/routine.go"
 			c.Assert(os.WriteFile(path, []byte(source), 0o644), qt.IsNil) // #nosec G306 -- a test fixture
 
-			database, err := goschema.ParseFile(path)
+			database, err := goschema.ParseFile(noOwners, path)
 
 			c.Assert(err != nil, qt.Equals, test.wantErr, qt.Commentf("err: %v", err))
 			c.Assert(len(database.Functions) == 1, qt.Equals, !test.wantErr)

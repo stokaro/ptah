@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -57,6 +58,11 @@ type Provider struct {
 	// Normalizations attach a connected target's spelling of declared objects
 	// before a comparison. They are the only services that use a probe session.
 	Normalizations []Normalization
+	// Annotations contributes Go annotation directives, their decoders and the
+	// coverage a Go annotation source holds. Each extension names this
+	// provider as its owner, and the provider owns the desired codec of every
+	// model it produces. A directive name belongs to one provider.
+	Annotations []annotation.Extension
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -111,6 +117,7 @@ type Runtime struct {
 	relationServices    []RelationDiscovery
 	probes              map[conversionKey]int
 	probeServices       []Normalization
+	annotations         annotation.Set
 }
 
 type target struct {
@@ -172,6 +179,9 @@ func New(providers ...Provider) (*Runtime, error) {
 				return nil, err
 			}
 		}
+	}
+	if err := runtime.registerAnnotations(providers); err != nil {
+		return nil, err
 	}
 	return runtime, nil
 }

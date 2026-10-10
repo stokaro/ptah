@@ -10,6 +10,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -35,7 +36,7 @@ type User struct {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("models.go", source)
+			db, err := goschema.ParseSource(builtintest.Annotations(), "models.go", source)
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Indexes, qt.HasLen, 1)
 			c.Assert(db.Indexes[0].Overrides, qt.IsNil)

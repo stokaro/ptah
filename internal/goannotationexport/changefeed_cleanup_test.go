@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/goannotationexport"
 )
 
@@ -32,9 +33,10 @@ type Event struct {
 	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		RootDir:    root,
-		OutputPath: output,
-		Cleanup:    true,
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
+		Cleanup:     true,
 	})
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)

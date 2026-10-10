@@ -46,7 +46,7 @@ type User struct {
 }
 `
 
-	parsed, err := goschema.ParseSource("models.go", source)
+	parsed, err := goschema.ParseSource(noOwners, "models.go", source)
 	c.Assert(err, qt.IsNil)
 	db, err := schemamodel.Merge(&parsed)
 

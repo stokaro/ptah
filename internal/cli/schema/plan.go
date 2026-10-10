@@ -219,8 +219,13 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return atlasschema.PlanEvidence{}, err
+	}
 	loadOptions := schemaload.Options{
 		RootDirs:        opts.rootDirs,
+		Annotations:     annotations,
 		SchemaFiles:     opts.schemaFiles,
 		ProjectEnv:      schemaSourceEnv,
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),

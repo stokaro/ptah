@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/sqlschema"
 )
@@ -31,7 +32,7 @@ func TestGoTopicLimitsReadThePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("limits.go", fmt.Sprintf("package entities\n//ptah:schema:notdescribed kind=%q name=%q\ntype Unmanaged struct{}\n", "topic", test.limit))
+			db, err := goschema.ParseSource(builtintest.Annotations(), "limits.go", fmt.Sprintf("package entities\n//ptah:schema:notdescribed kind=%q name=%q\ntype Unmanaged struct{}\n", "topic", test.limit))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, test.unmanaged).State, qt.Equals, schemaext.Uninspected)
 			c.Assert(db.FeatureCoverage.Lookup(ydbtopic.Kind, test.described).State, qt.Equals, schemaext.Complete)
@@ -43,7 +44,7 @@ func TestGoTopicLimitsReadThePath(t *testing.T) {
 // server root rather than reading it some other way.
 func TestGoTopicLimits_RefuseAnAbsolutePath(t *testing.T) {
 	c := qt.New(t)
-	db, err := goschema.ParseSource("limits.go", "package entities\n//ptah:schema:notdescribed kind=\"topic\" name=\"/local/app/events\"\ntype Unmanaged struct{}\n")
+	db, err := goschema.ParseSource(builtintest.Annotations(), "limits.go", "package entities\n//ptah:schema:notdescribed kind=\"topic\" name=\"/local/app/events\"\ntype Unmanaged struct{}\n")
 	c.Assert(err, qt.ErrorMatches, `.*"/local/app/events" is not a topic path \(dir/name\): .*write the path relative to the database root.*`)
 	c.Assert(err, qt.ErrorIs, ydbtopic.ErrAbsolutePath)
 	c.Assert(db.FeatureCoverage.IsZero(), qt.IsTrue)
@@ -74,7 +75,7 @@ func TestGoExport_CarriesATopicAReadLeftUnread(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
 			c.Assert(string(files[0].Data), qt.Contains, `//ptah:schema:notdescribed kind="topic" name="app/legacy.v1"`)
-			parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+			parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("app", "legacy.v1")).State, qt.Equals, schemaext.Uninspected)
 			c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("app", "other")).State, qt.Equals, schemaext.Complete)

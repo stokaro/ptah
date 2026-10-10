@@ -13,8 +13,10 @@ import (
 	"sort"
 	"strings"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/fsdurable"
@@ -57,6 +59,10 @@ type Options struct {
 	Cleanup    bool
 	DryRun     bool
 	Diff       bool
+	// Annotations selects the feature owners whose directives the export
+	// reads and cleans up beside the frontend's own. The zero value is
+	// refused; pass annotation.None for the frontend's own directives only.
+	Annotations annotation.Set
 }
 
 // Result describes a completed export.
@@ -72,6 +78,7 @@ type Result struct {
 
 type exportPlan struct {
 	options        Options
+	catalog        annotationmeta.Catalog
 	outputPath     string
 	snapshot       *goannotationsource.Snapshot
 	cleanup        *goannotationcleanup.Plan
@@ -180,12 +187,16 @@ func prepareExport(opts Options) (exportPlan, error) {
 	if err != nil {
 		return exportPlan{}, err
 	}
+	catalog, err := annotationmeta.NewCatalog(opts.Annotations)
+	if err != nil {
+		return exportPlan{}, fmt.Errorf("select Go annotation owners: %w", err)
+	}
 
 	snapshot, err := goannotationsource.Capture(rootDir)
 	if err != nil {
 		return exportPlan{}, fmt.Errorf("capture Go annotation sources: %w", err)
 	}
-	cleanupPlan, err := goannotationcleanup.NewPlan(snapshot)
+	cleanupPlan, err := goannotationcleanup.NewPlan(catalog, snapshot)
 	if err != nil {
 		return exportPlan{}, fmt.Errorf("plan Go annotation cleanup: %w", err)
 	}
@@ -208,6 +219,7 @@ func prepareExport(opts Options) (exportPlan, error) {
 
 	return exportPlan{
 		options:        opts,
+		catalog:        catalog,
 		outputPath:     outputPath,
 		snapshot:       snapshot,
 		cleanup:        cleanupPlan,
@@ -216,7 +228,7 @@ func prepareExport(opts Options) (exportPlan, error) {
 }
 
 func renderExport(plan exportPlan) (renderedExport, error) {
-	db, err := goschema.ParseFS(plan.snapshot.FS(), ".")
+	db, err := goschema.ParseFS(plan.options.Annotations, plan.snapshot.FS(), ".")
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("parse Go annotations: %w", err)
 	}
@@ -246,7 +258,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	// Normalization loss is detected against the SOURCE, not the rendered HCL:
 	// once cty has composed a value, the original code points are gone and the
 	// round-trip below can only prove the composed form is self-stable.
-	normalization, err := normalizationDiagnostics(plan.snapshot.FS(), rendered.Data)
+	normalization, err := normalizationDiagnostics(plan.catalog, plan.snapshot.FS(), rendered.Data)
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("scan annotations for normalization loss: %w", err)
 	}

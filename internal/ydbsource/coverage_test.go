@@ -21,6 +21,7 @@ import (
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/ydbsource"
@@ -36,10 +37,12 @@ func TestEmptySourcesRecordSupportedFeatureNamespaces(t *testing.T) {
 		coordination schemaext.KnowledgeState
 	}{
 		{name: "Go source", parse: func() (*schemamodel.Database, error) {
-			db, err := goschema.ParseSource("empty.go", "package entities")
+			db, err := goschema.ParseSource(builtintest.Annotations(), "empty.go", "package entities")
 			return &db, err
 		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
-		{name: "empty Go directory", parse: func() (*schemamodel.Database, error) { return goschema.ParseFS(fstest.MapFS{}, ".") }, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
+		{name: "empty Go directory", parse: func() (*schemamodel.Database, error) {
+			return goschema.ParseFS(builtintest.Annotations(), fstest.MapFS{}, ".")
+		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
 		{name: "YAML", parse: func() (*schemamodel.Database, error) { return yamlschema.Parse([]byte("{}")) }, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
 		{name: "YQL", parse: func() (*schemamodel.Database, error) { db, _, err := sqlschema.Read(nil, "ydb"); return &db, err }, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
 		{name: "HCL", parse: func() (*schemamodel.Database, error) { return atlashcl.Parse(nil, "empty.hcl") }, changefeeds: schemaext.Uninspected},

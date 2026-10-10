@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -37,7 +38,7 @@ func TestRLSFixturePipeline(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			fixtureDir := filepath.Join("..", "..", "integration", "internal", "fixtures", "entities", test.fixture)
-			desired, err := goschema.ParseDir(fixtureDir)
+			desired, err := goschema.ParseDir(builtintest.Annotations(), fixtureDir)
 			c.Assert(err, qt.IsNil)
 			// The annotations reach the row-security owner.
 			c.Assert(desired.FeatureObjects.Select(func(ref objectidentity.ID) bool {

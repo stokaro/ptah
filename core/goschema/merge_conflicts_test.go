@@ -575,13 +575,13 @@ type Account struct{}
 		"second.go": {Data: []byte(secondSource)},
 	}
 
-	parsed, parseErr := goschema.ParseFS(fsys, ".")
+	parsed, parseErr := goschema.ParseFS(noOwners, fsys, ".")
 	c.Assert(parseErr, qt.ErrorMatches, `conflicting table "users" definitions`)
 	c.Assert(parsed, qt.IsNil)
 
-	first, err := goschema.ParseSource("first.go", firstSource)
+	first, err := goschema.ParseSource(noOwners, "first.go", firstSource)
 	c.Assert(err, qt.IsNil)
-	second, err := goschema.ParseSource("second.go", secondSource)
+	second, err := goschema.ParseSource(noOwners, "second.go", secondSource)
 	c.Assert(err, qt.IsNil)
 	merged, mergeErr := schemamodel.Merge(&first, &second)
 	c.Assert(mergeErr, qt.ErrorMatches, `conflicting table "users" definitions`)

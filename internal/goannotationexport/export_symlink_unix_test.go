@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/goannotationexport"
 )
 
@@ -23,9 +24,10 @@ func TestExport_FailurePath_OutputSymlinkAliasCannotOverwriteGoSource(t *testing
 	c.Assert(os.Symlink(source, output), qt.IsNil)
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		RootDir:    root,
-		OutputPath: output,
-		Cleanup:    true,
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
+		Cleanup:     true,
 	})
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesSource)
@@ -47,9 +49,10 @@ func TestExport_FailurePath_OutputHardLinkAliasCannotOverwriteGoSource(t *testin
 	c.Assert(os.Link(source, output), qt.IsNil)
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		RootDir:    root,
-		OutputPath: output,
-		Cleanup:    true,
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
+		Cleanup:     true,
 	})
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesSource)
@@ -80,8 +83,9 @@ type Country struct {
 	c.Assert(os.Link(dataPath, output), qt.IsNil)
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		RootDir:    root,
-		OutputPath: output,
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
 	})
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesManagedData)
@@ -113,8 +117,9 @@ type Country struct {
 	c.Assert(os.Symlink(dataPath, output), qt.IsNil)
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		RootDir:    root,
-		OutputPath: output,
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
 	})
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesManagedData)

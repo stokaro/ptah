@@ -68,7 +68,11 @@ import (
 
 func main() {
     // Parse your Go entities
-    generated, err := goschema.ParseDir("./models")
+    runtime, err := builtin.New()
+    if err != nil {
+        panic(err)
+    }
+    generated, err := goschema.ParseDir(runtime.Annotations(), "./models")
     if err != nil {
         panic(err)
     }
@@ -88,10 +92,6 @@ func main() {
         panic(err)
     }
 
-    runtime, err := builtin.New()
-    if err != nil {
-        panic(err)
-    }
     // Compare with the connected target and default options (ignores "plpgsql").
     diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, database, nil, runtime)
     if err != nil {

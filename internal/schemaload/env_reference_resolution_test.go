@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaload"
 )
 
@@ -47,6 +48,7 @@ func TestLoad_EnvReferenceResolvesThroughSelectedEnvironment(t *testing.T) {
 	dir := writeEnvProject(c, "file://desired.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 
 	database, err := schemaload.Load(schemaload.Options{
+		Annotations:     builtintest.Annotations(),
 		SchemaFiles:     []string{"env://src"},
 		ProjectEnv:      loadEnvProject(c, dir),
 		EnvSelectorFlag: "env",
@@ -69,6 +71,7 @@ func TestLoad_EnvReferenceResolvesToTheFileTheEnvironmentNames(t *testing.T) {
 	c.Assert(os.WriteFile(other, []byte("CREATE TABLE not_named (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
 	database, err := schemaload.Load(schemaload.Options{
+		Annotations:     builtintest.Annotations(),
 		SchemaFiles:     []string{"env://src"},
 		ProjectEnv:      loadEnvProject(c, dir),
 		EnvSelectorFlag: "env",
@@ -86,6 +89,7 @@ func TestLoad_EnvReferenceWithSelectorButNoEnvironmentPointsAtTheFlag(t *testing
 	c := qt.New(t)
 
 	_, err := schemaload.Load(schemaload.Options{
+		Annotations:     builtintest.Annotations(),
 		SchemaFiles:     []string{"env://src"},
 		EnvSelectorFlag: "env",
 	})
@@ -100,10 +104,11 @@ func TestLoad_EnvRefusalsDifferByWhetherTheCommandOffersASelector(t *testing.T) 
 	c := qt.New(t)
 
 	_, withSelector := schemaload.Load(schemaload.Options{
+		Annotations:     builtintest.Annotations(),
 		SchemaFiles:     []string{"env://src"},
 		EnvSelectorFlag: "env",
 	})
-	_, withoutSelector := schemaload.Load(schemaload.Options{SchemaFiles: []string{"env://src"}})
+	_, withoutSelector := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"env://src"}})
 
 	c.Assert(withSelector, qt.IsNotNil)
 	c.Assert(withoutSelector, qt.IsNotNil)
@@ -121,6 +126,7 @@ func TestLoad_EnvReferenceToANonFileSourceNamesTheKind(t *testing.T) {
 	dir := writeEnvProject(c, "sqlite://other.db", "")
 
 	_, err := schemaload.Load(schemaload.Options{
+		Annotations:     builtintest.Annotations(),
 		SchemaFiles:     []string{"env://src"},
 		ProjectEnv:      loadEnvProject(c, dir),
 		EnvSelectorFlag: "env",
@@ -140,6 +146,7 @@ func TestLoad_PlainSchemaFileIgnoresTheProjectEnvironment(t *testing.T) {
 	c.Assert(os.WriteFile(given, []byte("CREATE TABLE given (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
 	database, err := schemaload.Load(schemaload.Options{
+		Annotations:     builtintest.Annotations(),
 		SchemaFiles:     []string{given},
 		ProjectEnv:      loadEnvProject(c, dir),
 		EnvSelectorFlag: "env",

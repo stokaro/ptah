@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaload"
 	"ptah.run/migration/schemadiff"
 )
@@ -57,7 +58,7 @@ table "accounts" {
 }
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{RootDirs: []string{models}, SchemaFiles: []string{hcl}})
+	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{models}, SchemaFiles: []string{hcl}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 2)
 	return database

@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -198,7 +199,7 @@ func TestRender_YDBCoordinationNodesRoundTrip(t *testing.T) {
 	c.Assert(source, qt.Contains, `//ptah:schema:coordinationnode name="locks"`+"\n")
 	c.Assert(source, qt.Contains, `//ptah:schema:coordinationnode name="limits" schema="shop" `+
 		`self_check_period="PT2.5S" read_consistency_mode="strict" rate_limiter_counters_mode="detailed"`+"\n")
-	parsed, err := goschema.ParseSource("models.go", source)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "models.go", source)
 	c.Assert(err, qt.IsNil)
 	objects, err := parsed.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)

@@ -8,7 +8,7 @@ import (
 
 // Each root must be loaded even if it has no forbidden dependency. Otherwise
 // deleting or renaming a contract could remove it from the guard's corpus.
-var providerContractRoots = []string{"core/featureplan", "core/objectidentity", "core/plangraph", "core/renderer", "core/schemacapture", "core/schemaext", "core/schemamodel", "core/schemaprojection", "core/schemavalidation", "engine"}
+var providerContractRoots = []string{"core/annotation", "core/featureplan", "core/objectidentity", "core/plangraph", "core/renderer", "core/schemacapture", "core/schemaext", "core/schemamodel", "core/schemaprojection", "core/schemavalidation", "engine"}
 
 func providerContractImports(pkg *packages.Package) []finding {
 	self := relative(pkg.PkgPath)

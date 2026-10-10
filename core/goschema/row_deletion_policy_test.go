@@ -22,7 +22,7 @@ import (
 func TestParse_RowDeletionPolicyIsAPlatformProperty(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseSource("events.go", `package entities
+	database, err := goschema.ParseSource(noOwners, "events.go", `package entities
 
 //ptah:schema:table name="events" platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="30 days" platform.ydb.row_deletion_column="expires" platform.ydb.row_deletion_interval="PT1H" platform.ydb.row_deletion_unit="seconds"
 type Event struct {
@@ -56,7 +56,7 @@ type Plain struct {
 func TestParse_RowDeletionPolicyHasNoBareAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschema.ParseSource("events.go", `package entities
+	_, err := goschema.ParseSource(noOwners, "events.go", `package entities
 
 //ptah:schema:table name="events" row_deletion_column="created_at" row_deletion_interval="P30D"
 type Event struct {

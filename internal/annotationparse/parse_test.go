@@ -5,13 +5,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
 )
 
 func TestScanReportsDirectiveAndAttributeRanges(t *testing.T) {
 	c := qt.New(t)
 
-	annotations := annotationparse.Scan(`package test
+	annotations := annotationparse.Scan(annotationmeta.Common(), `package test
 
 type User struct {
 	//ptah:schema:field name="email" type="TEXT" defaul="x"
@@ -35,7 +36,7 @@ type User struct {
 func TestScanUsesLongestKnownDirectiveMatch(t *testing.T) {
 	c := qt.New(t)
 
-	annotations := annotationparse.Scan(`//ptah:schema:rls:policy name="tenant" table="users"`)
+	annotations := annotationparse.Scan(annotationmeta.Common(), `//ptah:schema:rls:policy name="tenant" table="users"`)
 
 	c.Assert(annotations, qt.HasLen, 1)
 	c.Assert(annotations[0].Directive, qt.Equals, "ptah:schema:rls:policy")
@@ -57,7 +58,7 @@ func TestScanAttributes_DecodesQuotedValuesWithoutChangingSourceValue(t *testing
 func TestScanCapturesUnknownPtahDirective(t *testing.T) {
 	c := qt.New(t)
 
-	annotations := annotationparse.Scan(`//ptah:schema:foreign_key name="fk"`)
+	annotations := annotationparse.Scan(annotationmeta.Common(), `//ptah:schema:foreign_key name="fk"`)
 
 	c.Assert(annotations, qt.HasLen, 1)
 	c.Assert(annotations[0].Directive, qt.Equals, "ptah:schema:foreign_key")
@@ -67,7 +68,7 @@ func TestScanCapturesUnknownPtahDirective(t *testing.T) {
 func TestScanIgnoresPtahTextInsideStringLiterals(t *testing.T) {
 	c := qt.New(t)
 
-	annotations := annotationparse.Scan(`package test
+	annotations := annotationparse.Scan(annotationmeta.Common(), `package test
 
 func example() {
 	_ = "//ptah:schema:field defaul=\"x\""

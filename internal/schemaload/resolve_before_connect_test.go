@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemasource"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaload"
 )
 
@@ -22,21 +23,22 @@ func TestResolveBeforeConnect_LeavesWhatNeedsADialect(t *testing.T) {
 		opts schemaload.Options
 	}{
 		{name: "no source at all", opts: schemaload.Options{}},
-		{name: "a Go root", opts: schemaload.Options{RootDirs: []string{"./entities"}}},
-		{name: "a schema file", opts: schemaload.Options{SchemaFiles: []string{"schema.sql"}}},
+		{name: "a Go root", opts: schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{"./entities"}}},
+		{name: "a schema file", opts: schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"schema.sql"}}},
 		{
 			name: "a command",
-			opts: schemaload.Options{Commands: []schemasource.Command{{Args: []string{"cat", "schema.sql"}}}},
+			opts: schemaload.Options{Annotations: builtintest.Annotations(), Commands: []schemasource.Command{{Args: []string{"cat", "schema.sql"}}}},
 		},
 		{
 			// Two sources merge into one composite schema, and merging is read
 			// against the dialect like any other source.
 			name: "an artifact beside a file",
-			opts: schemaload.Options{SchemaFiles: []string{"oci://example.test/schema:v1", "extra.sql"}},
+			opts: schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"oci://example.test/schema:v1", "extra.sql"}},
 		},
 		{
 			name: "an artifact beside a Go root",
 			opts: schemaload.Options{
+				Annotations: builtintest.Annotations(),
 				RootDirs:    []string{"./entities"},
 				SchemaFiles: []string{"oci://example.test/schema:v1"},
 			},

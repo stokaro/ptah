@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/annotation"
 )
 
 func TestExport_FailurePath_AncestorSwapAbortsHCLPublication(t *testing.T) {
@@ -33,8 +35,9 @@ func TestExport_FailurePath_AncestorSwapAbortsHCLPublication(t *testing.T) {
 	c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(outsideOutput, outsideData, 0o600), qt.IsNil)
 	result, err := export(Options{
-		RootDir:    root,
-		OutputPath: output,
+		Annotations: annotation.None(),
+		RootDir:     root,
+		OutputPath:  output,
 	}, exportHooks{afterOutputStage: func() {
 		c.Assert(os.Rename(outputDir, capturedDir), qt.IsNil)
 		c.Assert(os.Symlink(outsideDir, outputDir), qt.IsNil)

@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -33,7 +34,7 @@ func TestRenderSecretsRoundTripThroughParser(t *testing.T) {
 	dir := t.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
 
-	parsed, err := goschema.ParseDir(dir)
+	parsed, err := goschema.ParseDir(builtintest.Annotations(), dir)
 
 	c.Assert(err, qt.IsNil)
 	objects, err := parsed.FeatureObjects.All()

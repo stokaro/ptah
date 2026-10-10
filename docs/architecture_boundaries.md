@@ -67,7 +67,7 @@ types. Run
 
 Renderer assembly lives in `engine/builtin`, above the neutral contracts in
 `core/renderer`. It consumes `internal/modelast` for AST lowering.
-`core/featureplan`, `core/objectidentity`, `core/plangraph`, `core/renderer`, `core/schemacapture`,
+`core/annotation`, `core/featureplan`, `core/objectidentity`, `core/plangraph`, `core/renderer`, `core/schemacapture`,
 `core/schemaext`, `core/schemamodel`, `core/schemaprojection`,
 `core/schemavalidation`, and `engine` are the roots of the
 provider-contract isolation check. The check follows their complete import

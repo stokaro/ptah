@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaload"
 )
 
@@ -18,7 +19,7 @@ import (
 func TestLoad_EnvReferenceWithSupportedAttributeNamesEnvScheme(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{"env://src"}})
+	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"env://src"}})
 
 	c.Assert(err, qt.ErrorMatches, `--schema-file "env://src": env:// names the "src" attribute of a project environment, and this command selects none; pass the schema file itself, or use a command that takes --env, or ptah-compat, whose --to and --from accept env://src`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), `unsupported schema file extension`)
@@ -27,7 +28,7 @@ func TestLoad_EnvReferenceWithSupportedAttributeNamesEnvScheme(t *testing.T) {
 func TestLoad_EnvReferenceWithUnknownAttributeNamesTheAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{"env://bogus"}})
+	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"env://bogus"}})
 
 	c.Assert(err, qt.ErrorMatches, `--schema-file "env://bogus": unsupported env:// attribute "bogus": supported attributes are src, schema.src, url, dev, migration, and migration.dir`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), `unsupported schema file extension`)
@@ -39,8 +40,8 @@ func TestLoad_EnvReferenceWithUnknownAttributeNamesTheAttribute(t *testing.T) {
 func TestLoad_EnvReferencesDifferByAttributeValidity(t *testing.T) {
 	c := qt.New(t)
 
-	_, supported := schemaload.Load(schemaload.Options{SchemaFiles: []string{"env://src"}})
-	_, unknown := schemaload.Load(schemaload.Options{SchemaFiles: []string{"env://bogus"}})
+	_, supported := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"env://src"}})
+	_, unknown := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"env://bogus"}})
 
 	c.Assert(supported, qt.IsNotNil)
 	c.Assert(unknown, qt.IsNotNil)
@@ -55,7 +56,7 @@ func TestLoad_EnvReferencesDifferByAttributeValidity(t *testing.T) {
 func TestLoad_EnvReferenceWithoutAttributeIsNamed(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{"env://"}})
+	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{"env://"}})
 
 	c.Assert(err, qt.ErrorMatches, `--schema-file "env://": env:// desired-state reference is missing the env attribute \(for example env://src\)`)
 }
@@ -69,7 +70,7 @@ func TestLoad_UnsupportedExtensionSurvivesEnvRejection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.txt")
 	c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
 
 	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension "\.txt": only \.yaml, \.yml, \.hcl, \.sql, and \.dbml are supported`)
 }
@@ -83,7 +84,7 @@ func TestLoad_PlainFileNamedLikeEnvIsStillAFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "env-src.sql")
 	c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 1)

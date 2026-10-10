@@ -118,7 +118,7 @@ func TestParseManagedDataAnnotation_MissingRequiredAttributeRejected(t *testing.
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := goschema.ParseSource("schema.go", `
+			_, err := goschema.ParseSource(noOwners, "schema.go", `
 package fixture
 
 `+tt.annotation+`
@@ -146,7 +146,7 @@ func TestParseManagedDataAnnotation_EmptyKeyListRejected(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := goschema.ParseSource("schema.go", `
+			_, err := goschema.ParseSource(noOwners, "schema.go", `
 package fixture
 
 //ptah:schema:data table="countries" key="`+tt.key+`" file="countries.yaml"
@@ -181,7 +181,7 @@ type Country struct {
 `)
 	c.Assert(os.WriteFile(filepath.Join(sub, "countries.yaml"), []byte("- code: US\n  name: United States\n"), 0o600), qt.IsNil)
 
-	db, err := goschema.ParseDir(root)
+	db, err := goschema.ParseDir(noOwners, root)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 1)
 	c.Assert(db.ManagedData[0].SourceDir, qt.Equals, sub)
@@ -216,9 +216,9 @@ type Country struct {
 	c.Assert(os.WriteFile(filepath.Join(referenceA, "countries.yaml"), []byte("- code: US\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(referenceB, "countries.yaml"), []byte("- code: CZ\n"), 0o600), qt.IsNil)
 
-	first, err := goschema.ParseDirRaw(rootA)
+	first, err := goschema.ParseDirRaw(noOwners, rootA)
 	c.Assert(err, qt.IsNil)
-	second, err := goschema.ParseDirRaw(rootB)
+	second, err := goschema.ParseDirRaw(noOwners, rootB)
 	c.Assert(err, qt.IsNil)
 	merged, err := schemamodel.Merge(first, second)
 	c.Assert(err, qt.IsNil)
@@ -257,7 +257,7 @@ type Currency struct {
 }
 `)
 
-	db, err := goschema.ParseDir(root)
+	db, err := goschema.ParseDir(noOwners, root)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 2)
 
