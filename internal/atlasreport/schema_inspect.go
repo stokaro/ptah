@@ -40,6 +40,9 @@ type SchemaInspectReport struct {
 	db          *schemamodel.Database
 	info        catalog.ServerInfo
 	diagnostics io.Writer
+	// databasePath is where the inspected database is, which the SQL format
+	// names a YDB grant on the database itself by.
+	databasePath string
 	// omitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
 	// which leaves out the block types the pinned Atlas community binary
 	// refuses to read where nothing in the document names them; see
@@ -223,6 +226,7 @@ func NewSchemaInspectReport(
 		db:                      db,
 		info:                    info,
 		diagnostics:             diagnostics,
+		databasePath:            schema.DatabasePath,
 		omitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
 		compatibilityHCLFraming: opts.CompatibilityHCLFraming,
 		describeSchemas:         opts.DescribeSchemas,
@@ -461,7 +465,7 @@ func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	}
 	rendered, err := renderer.RenderSchema(r.ctx, r.runtime, renderer.SchemaRequest{
 		Target: r.info.Dialect, Schema: r.sqlSource(), Capabilities: r.info.Capabilities,
-		Identifiers: r.info.IdentifierSemantics,
+		Identifiers: r.info.IdentifierSemantics, DatabasePath: r.databasePath,
 	})
 	if err != nil {
 		return "", fmt.Errorf("render SQL: %w", err)

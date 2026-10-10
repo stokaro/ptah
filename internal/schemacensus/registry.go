@@ -321,7 +321,6 @@ var registry = []Entry{
 	{Field: "schemamodel.Database.CompositeTypes", Disposition: DDL},
 	{Field: "schemamodel.Database.Constraints", Disposition: DDL},
 	{Field: "schemamodel.Database.DefaultPrivileges", Disposition: DDL},
-	{Field: "schemamodel.Database.DatabasePath", Disposition: DDL},
 	{Field: "schemamodel.Database.Dependencies", Disposition: Derived, Reason: "table creation order, derived by Finalize from the declared foreign keys"},
 	{Field: "schemamodel.Database.Domains", Disposition: DDL},
 	{Field: "schemamodel.Database.EmbeddedFields", Disposition: DDL},

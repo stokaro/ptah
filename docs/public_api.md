@@ -456,6 +456,10 @@ This replaces the implicit `WithDialect` and `WithDialectCapabilities` factories
 carry target facts and read-only schema data. Results set `Complete` and carry
 ordered SQL fragments in `Statements`, with recorded `renderer.Omission` values.
 The grouping preserves the provider's output and does not define transactions.
+`SchemaRequest.DatabasePath` is the absolute path of the database a rendered
+description was read from, such as `/local`. It is where the read was made,
+not part of the schema: a YDB render names a grant on the database itself by
+it and refuses that grant when it is empty, as it is for a declaration.
 
 A schema refusal is a completed reply with validation diagnostics and no SQL
 or omissions. `renderer.RenderSchema` checks the reply and converts a refusal

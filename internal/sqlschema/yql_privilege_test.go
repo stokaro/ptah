@@ -57,7 +57,6 @@ func TestReadYQLPrivileges(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Grants, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.SortSlices(func(a, b string) bool { return a < b })), test.grants)
 			c.Assert(database.RevokedGrants, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.SortSlices(func(a, b string) bool { return a < b })), test.revoked)
-			c.Assert(database.DatabasePath, qt.Equals, "")
 		})
 	}
 }

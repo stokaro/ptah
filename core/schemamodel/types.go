@@ -96,14 +96,6 @@ type Database struct {
 	// does not do. A description that declares no limits must encode exactly as
 	// it did before this field existed.
 	NotDescribed coverage.Set `json:",omitzero"`
-
-	// DatabasePath is the absolute path of the database a description was
-	// read from, such as /local, on YDB, whose GRANT takes the database itself,
-	// and on its older lines an object at the database root, only by that
-	// path. A render of the description names those objects with it. It is
-	// empty for a declaration, which is not about one database, and never
-	// serialized, so it reaches no fingerprint and no document.
-	DatabasePath string `json:"-"`
 }
 
 // Schema represents a database schema/namespace.

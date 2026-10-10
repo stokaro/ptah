@@ -177,6 +177,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			RoleMemberships: roleMemberships(live),
 			ObjectOwners:    objectOwners(live),
 			RoleObjectUsage: usage,
+			DatabasePath:    live.DatabasePath,
 		},
 	)
 

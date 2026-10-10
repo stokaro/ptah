@@ -219,6 +219,11 @@ type Options struct {
 	// refinements included. An empty set runs no capability-gated rule and says
 	// so in SkippedRules.
 	Capabilities capability.Capabilities
+	// DatabasePath is the absolute path of the database db was read from,
+	// such as YDB's /local, and empty for a declaration. A finding about a
+	// grant on the database itself names the database by it, and by its kind
+	// when it is empty.
+	DatabasePath string
 }
 
 // Analyze runs every rule over db and returns their findings.
@@ -232,7 +237,7 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 	}
 
 	report := Report{Findings: make([]Finding, 0), SkippedRules: make([]SkippedRule, 0)}
-	report.Findings = append(report.Findings, findPublicGrants(db)...)
+	report.Findings = append(report.Findings, findPublicGrants(db, opts.DatabasePath)...)
 	report.Findings = append(report.Findings, findDefinerRoutines(db)...)
 
 	if opts.Capabilities.Has(capability.RowLevelSecurity) {
@@ -252,7 +257,7 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 	}
 
 	if opts.RoleObjectUsage != nil {
-		report.Findings = append(report.Findings, findGrantsOnUnusedObjects(db, opts.RoleObjectUsage)...)
+		report.Findings = append(report.Findings, findGrantsOnUnusedObjects(db, opts.RoleObjectUsage, opts.DatabasePath)...)
 	} else {
 		report.SkippedRules = append(report.SkippedRules, SkippedRule{
 			Code: "ROL01",
@@ -262,8 +267,8 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 	}
 
 	if opts.RoleMemberships != nil {
-		report.Findings = append(report.Findings, findRolesWithNoMembers(db, opts.RoleMemberships)...)
-		report.Findings = append(report.Findings, findOverlappingRoles(db, opts.RoleMemberships)...)
+		report.Findings = append(report.Findings, findRolesWithNoMembers(db, opts.RoleMemberships, opts.DatabasePath)...)
+		report.Findings = append(report.Findings, findOverlappingRoles(db, opts.RoleMemberships, opts.DatabasePath)...)
 	} else {
 		report.SkippedRules = append(report.SkippedRules,
 			SkippedRule{Code: "ROL03", Reason: "role membership was not read for this source"},
@@ -288,7 +293,7 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 // A grant to PUBLIC reaches every current and future role, including ones
 // created after the grant was written, so it is the one privilege statement
 // whose blast radius is not visible from the statement.
-func findPublicGrants(db *schemamodel.Database) []Finding {
+func findPublicGrants(db *schemamodel.Database, databasePath string) []Finding {
 	findings := make([]Finding, 0)
 	for _, grant := range db.Grants {
 		if !strings.EqualFold(strings.TrimSpace(grant.Role), publicRole) {
@@ -297,7 +302,7 @@ func findPublicGrants(db *schemamodel.Database) []Finding {
 		if isShippedDefaultPublicGrant(grant) {
 			continue
 		}
-		object, kind := grantTarget(db, grant)
+		object, kind := grantTarget(databasePath, grant)
 		if object == "" {
 			continue
 		}
@@ -483,7 +488,7 @@ func setOfOwners(owned map[string]map[string]bool) map[string]bool {
 // Severity is Warning rather than Error: the signal is a window, and a window
 // is evidence of absence only for as long as it covers. A quarterly job that
 // did not run inside it holds a privilege this rule will name.
-func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage) []Finding {
+func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage, databasePath string) []Finding {
 	used := make(map[string]bool, len(usage))
 	for _, observation := range usage {
 		role := strings.TrimSpace(observation.Role)
@@ -500,7 +505,7 @@ func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage
 		if role == "" || strings.EqualFold(role, publicRole) {
 			continue
 		}
-		object, kind := grantTarget(db, grant)
+		object, kind := grantTarget(databasePath, grant)
 		if object == "" {
 			continue
 		}
@@ -539,7 +544,7 @@ func usageKey(role, kind, name string) string {
 //
 // A login role with no members is NOT reported. It is its own principal, and
 // reporting every application account would bury the rule that matters.
-func findRolesWithNoMembers(db *schemamodel.Database, memberships []RoleMembership) []Finding {
+func findRolesWithNoMembers(db *schemamodel.Database, memberships []RoleMembership, databasePath string) []Finding {
 	held := make(map[string]bool, len(memberships))
 	for _, membership := range memberships {
 		if !heldForItsPrivileges(membership) {
@@ -560,7 +565,7 @@ func findRolesWithNoMembers(db *schemamodel.Database, memberships []RoleMembersh
 			Subject:  Subject{Kind: "role", Name: name},
 			Message: "role " + name + " cannot log in and has no members, so nothing it is " +
 				"granted reaches anybody",
-			Detail:     Detail{Privileges: privilegesOfRole(db, name)},
+			Detail:     Detail{Privileges: privilegesOfRole(db, name, databasePath)},
 			Suggestion: "grant it to the roles that should hold it, or drop it with its privileges",
 		})
 	}
@@ -596,10 +601,10 @@ func heldForItsPrivileges(membership RoleMembership) bool {
 // privileges, and at least half of the smaller role's set. One shared privilege
 // is a coincidence on any real schema, and a fraction below half describes
 // roles that genuinely differ.
-func findOverlappingRoles(db *schemamodel.Database, memberships []RoleMembership) []Finding {
+func findOverlappingRoles(db *schemamodel.Database, memberships []RoleMembership, databasePath string) []Finding {
 	privileges := make(map[string]map[string]bool, len(db.Roles))
 	for _, role := range db.Roles {
-		privileges[strings.TrimSpace(role.Name)] = privilegeSetOfRole(db, strings.TrimSpace(role.Name))
+		privileges[strings.TrimSpace(role.Name)] = privilegeSetOfRole(db, strings.TrimSpace(role.Name), databasePath)
 	}
 
 	byMember := make(map[string][]string, len(memberships))
@@ -640,13 +645,13 @@ func findOverlappingRoles(db *schemamodel.Database, memberships []RoleMembership
 // privilegeSetOfRole is every privilege a role holds, keyed by privilege and
 // object so that SELECT on one table and SELECT on another are different
 // members.
-func privilegeSetOfRole(db *schemamodel.Database, role string) map[string]bool {
+func privilegeSetOfRole(db *schemamodel.Database, role, databasePath string) map[string]bool {
 	held := make(map[string]bool)
 	for _, grant := range db.Grants {
 		if strings.TrimSpace(grant.Role) != role {
 			continue
 		}
-		object, kind := grantTarget(db, grant)
+		object, kind := grantTarget(databasePath, grant)
 		if object == "" {
 			continue
 		}
@@ -658,8 +663,8 @@ func privilegeSetOfRole(db *schemamodel.Database, role string) map[string]bool {
 }
 
 // privilegesOfRole is the sorted privilege list for a finding's detail.
-func privilegesOfRole(db *schemamodel.Database, role string) []string {
-	return sortedKeys(privilegeSetOfRole(db, role))
+func privilegesOfRole(db *schemamodel.Database, role, databasePath string) []string {
+	return sortedKeys(privilegeSetOfRole(db, role, databasePath))
 }
 
 // overlap returns the shared members and their share of the smaller set. Two
@@ -693,11 +698,11 @@ func setOf(byMember map[string][]string) map[string]bool {
 // grantTarget names what a grant is on, and the kind of that object. A grant
 // on the database itself is named by the path the read found it at, or by its
 // kind where the description came from no read.
-func grantTarget(db *schemamodel.Database, grant schemamodel.Grant) (name, kind string) {
+func grantTarget(databasePath string, grant schemamodel.Grant) (name, kind string) {
 	switch {
 	case grant.OnDatabase:
-		if db.DatabasePath != "" {
-			return db.DatabasePath, "database"
+		if databasePath != "" {
+			return databasePath, "database"
 		}
 		return "database", "database"
 	case strings.TrimSpace(grant.OnTable) != "":

@@ -161,7 +161,6 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"END DO",
 		// SQL Server's spelling of a comment.
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
-		"GRANT 'YDB.DATABASE.CONNECT' ON",
 		"GRANT EXECUTE ON",
 		"GRANT SELECT ON",
 		"GRANT UPDATE (\"LABEL\")",

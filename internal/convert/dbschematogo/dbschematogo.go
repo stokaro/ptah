@@ -70,7 +70,6 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
-	database.DatabasePath = dbSchema.DatabasePath
 	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
 	database.RevokedGrants = revokedPublicExecute(dbSchema.Grants)
 	database.DefaultPrivileges = convertDefaultPrivileges(dbSchema.DefaultPrivileges)

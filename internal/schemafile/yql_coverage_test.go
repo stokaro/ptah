@@ -98,7 +98,6 @@ func TestYQLPrivilegeChangesAcrossFiles(t *testing.T) {
 		{Role: "readers", OnTable: "shop.orders", Privileges: []string{"YDB.ACCESS.GRANT"}},
 	})
 	c.Assert(database.NotDescribed.Describes(coverage.Grant), qt.IsTrue)
-	c.Assert(database.DatabasePath, qt.Equals, "")
 }
 
 func TestYQLPrivilegeDatabaseContext(t *testing.T) {
@@ -114,7 +113,6 @@ func TestYQLPrivilegeDatabaseContext(t *testing.T) {
 			database, err := readYQLPermissionFile(c, test.url, test.target)
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Grants, qt.DeepEquals, []schemamodel.Grant{{Role: "readers", OnTable: "shop.orders", Privileges: []string{"YDB.GENERIC.READ"}}})
-			c.Assert(database.DatabasePath, qt.Equals, "")
 		})
 	}
 }

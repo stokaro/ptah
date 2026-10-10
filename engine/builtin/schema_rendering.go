@@ -20,7 +20,7 @@ func (s schemaRenderingService) RenderSchema(ctx context.Context, request render
 		return renderer.SchemaResult{}, err
 	}
 	sink := &renderdiag.Sink{}
-	statements, err := orderedCreateStatements(ctx, s.declarations, request.Schema, request.Target, request.Capabilities, sink)
+	statements, err := orderedCreateStatements(ctx, s.declarations, request, sink)
 	if ctx.Err() != nil {
 		return renderer.SchemaResult{}, ctx.Err()
 	}

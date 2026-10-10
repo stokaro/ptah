@@ -1921,7 +1921,7 @@ func WalkDatabase(
 	return lowering.Context.Err()
 }
 
-func walkCommonDatabase(database schemamodel.Database, targetPlatform string, visit func(ast.Node) error) error {
+func walkCommonDatabase(database schemamodel.Database, targetPlatform, databasePath string, visit func(ast.Node) error) error {
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
 	// wrong default refuses rather than merges.
@@ -1982,7 +1982,7 @@ func walkCommonDatabase(database schemamodel.Database, targetPlatform string, vi
 	}
 
 	// 9. Everything that needs the tables to exist first.
-	if err := appendPostTableObjectStatements(visit, database, targetPlatform, placements, tableRoutines); err != nil {
+	if err := appendPostTableObjectStatements(visit, database, targetPlatform, databasePath, placements, tableRoutines); err != nil {
 		return err
 	}
 
@@ -2411,7 +2411,7 @@ func appendRoutineStatements(
 func appendPostTableObjectStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
-	targetPlatform string,
+	targetPlatform, databasePath string,
 	placements map[string]deporder.RoutinePlacement,
 	tableRoutines map[string]bool,
 ) error {
@@ -2443,13 +2443,13 @@ func appendPostTableObjectStatements(
 	// on PostgreSQL 18, so after a column GRANT it would take that too.
 	for _, revoked := range database.RevokedGrants {
 		node := FromRevokedGrant(revoked)
-		node.ObjectName = grantPath(node.ObjectType, node.ObjectName, database.DatabasePath, targetPlatform)
+		node.ObjectName = grantPath(node.ObjectType, node.ObjectName, databasePath, targetPlatform)
 		if err := visit(node); err != nil {
 			return err
 		}
 	}
 	for _, grant := range database.Grants {
-		if err := visit(withGrantPath(FromGrant(grant), database.DatabasePath, targetPlatform)); err != nil {
+		if err := visit(withGrantPath(FromGrant(grant), databasePath, targetPlatform)); err != nil {
 			return err
 		}
 	}

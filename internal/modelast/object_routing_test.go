@@ -181,7 +181,6 @@ func TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testi
 		"FunctionDependencies",
 		"SelfReferencingForeignKeys",
 		"NotDescribed",
-		"DatabasePath", // where a read was made, which names a YDB grant's object; not a collection
 	}
 
 	declared := declaredCollectionNames(routingFixture())

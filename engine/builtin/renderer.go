@@ -1821,11 +1821,10 @@ func GetOrderedCreateStatementsWithCapabilities(
 func orderedCreateStatements(
 	ctx context.Context,
 	runtime featureplan.DeclarationRuntime,
-	r *schemamodel.Database,
-	dialect string,
-	caps capability.Capabilities,
+	request renderer.SchemaRequest,
 	sink *renderdiag.Sink,
 ) ([]string, error) {
+	r, dialect, caps := request.Schema, request.Target, request.Capabilities
 	var statements []string
 
 	if _, err := NewRendererWithCapabilities(dialect, caps); err != nil {
@@ -1847,6 +1846,8 @@ func orderedCreateStatements(
 	if err != nil {
 		return nil, err
 	}
+	lowering := builtinlowering.ForTarget(ctx, runtime, dialect, caps)
+	lowering.DatabasePath = request.DatabasePath
 	err = modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
 		sql, err := renderNodeReporting(ctx, dialect, caps, sink, node)
 		if err != nil {
@@ -1861,7 +1862,7 @@ func orderedCreateStatements(
 		}
 		statements = append(statements, sql)
 		return nil
-	}, builtinlowering.ForTarget(ctx, runtime, dialect, caps))
+	}, lowering)
 	if err != nil {
 		return nil, err
 	}

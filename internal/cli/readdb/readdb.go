@@ -135,6 +135,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	info := conn.Info()
 	rendered, err := renderer.RenderSchema(cmd.Context(), runtime, renderer.SchemaRequest{
 		Target: info.Dialect, Schema: dbsch, Capabilities: info.Capabilities, Identifiers: info.IdentifierSemantics,
+		DatabasePath: schema.DatabasePath,
 	})
 	if err != nil {
 		return fmt.Errorf("error rendering schema: %w", err)

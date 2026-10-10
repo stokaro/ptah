@@ -31,7 +31,6 @@ func TestReadYQLSerialSequence(t *testing.T) {
 			c.Assert(database.Fields[0].IdentityIncrement, qt.Equals, "5")
 			c.Assert(database.Fields[0].IdentityGeneration, qt.Equals, "")
 			c.Assert(database.Fields[0].AutoInc, qt.IsFalse)
-			c.Assert(database.DatabasePath, qt.Equals, "")
 		})
 	}
 }

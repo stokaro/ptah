@@ -1633,11 +1633,11 @@ func ydbGroupMembershipFixture() schemamodel.Database {
 }
 
 // ydbGrantDatabaseFixture grants a permission on the database itself, which a
-// YDB render names by the path of the database a read was made from, and
-// refuses without one.
+// YDB render names by the path of the database a read was made from. A
+// declaration is not about one database, so the census renders it without a
+// path, and a YDB render refuses the grant.
 func ydbGrantDatabaseFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.DatabasePath = "/local"
 	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true, Dialects: []string{"ydb"}}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app", Privileges: []string{"CONNECT"}, OnDatabase: true, Dialects: []string{"ydb"},
