@@ -36,7 +36,7 @@ features, database implementations, or external modules.
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
 | `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
-| `neutral-packages-link-owners` | Models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner. | 27 |
+| `neutral-packages-link-owners` | Models, contracts, the runtime and orchestration must not link a concrete dialect, feature or built-in owner. | falling; the [baseline](architecture_boundaries.json) holds the count |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build.
@@ -60,7 +60,7 @@ one neutral package and one owner it links through any chain of imports:
 packages of one owner does not change the count; a neutral package that starts
 linking another owner does. The recorded findings are the source frontends that
 still decode owner models (`core/goschema`, `core/yamlschema`,
-`core/schemasource`), `core/query`, and comparison and planning code that still
+`core/schemasource`) and comparison and planning code that still
 names YDB, ClickHouse, CockroachDB, Spanner, TimescaleDB and `feature/pgpolicy`
 types. Run
 `go run ./internal/cmd/boundaries -json` for the current list.

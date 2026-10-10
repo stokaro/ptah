@@ -5,16 +5,20 @@ package ydbsyntax
 import (
 	"fmt"
 	"strings"
-)
 
-var identifierEscaper = strings.NewReplacer(`\`, `\\`, "`", "\\`")
+	"ptah.run/core/sqlutil"
+)
 
 // QuoteIdentifier quotes one identifier verbatim, without splitting paths or
 // folding case. YQL reads backslash escapes inside backticks, so both backslashes
 // and backticks are escaped. An empty name produces an empty quoted identifier;
 // name validity belongs to the operation that uses it.
+//
+// The rule is [sqlutil.QuoteYQLIdentifier]'s: Ptah's YQL lexer reads these
+// names back, and the shared identifier quoting spells YDB names for code
+// that knows no owner.
 func QuoteIdentifier(name string) string {
-	return "`" + identifierEscaper.Replace(name) + "`"
+	return sqlutil.QuoteYQLIdentifier(name)
 }
 
 // StringLiteral writes arbitrary bytes as a single-quoted YQL string. It escapes

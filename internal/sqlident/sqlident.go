@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
-	"ptah.run/dialect/ydb/ydbsyntax"
+	"ptah.run/core/sqlutil"
 )
 
 // Quote returns name as a safely-quoted identifier for dialect. The dialect
@@ -17,7 +17,7 @@ import (
 // square brackets for SQL Server; and double quotes for the PostgreSQL family,
 // SQLite, and any unrecognized dialect. Embedded quote characters are doubled
 // per the SQL standard so the value cannot terminate the quoted identifier,
-// except on YDB, where a backslash escapes them; see [ydbsyntax.QuoteIdentifier]. The dialect is
+// except on YDB, where a backslash escapes them; see [sqlutil.QuoteYQLIdentifier]. The dialect is
 // resolved through platform.NormalizeDialect, so every documented spelling of
 // an engine (`mssql`, `tsql`, `sql-server`, `sql_server`; `ch`) picks the same
 // quote style as its canonical name. name itself is quoted verbatim (it is not
@@ -25,7 +25,7 @@ import (
 func Quote(dialect, name string) string {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.YDB:
-		return ydbsyntax.QuoteIdentifier(name)
+		return sqlutil.QuoteYQLIdentifier(name)
 	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 	case platform.SQLServer:
