@@ -5,8 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -38,19 +41,19 @@ func TestRenderSQLiteKeyColumnNullabilityFollowsTheTableShape(t *testing.T) {
 		},
 		{
 			name:        "without rowid table writes the key column NOT NULL",
-			table:       schemamodel.Table{StructName: "T", Name: "users", WithoutRowID: true},
+			table:       schemamodel.Table{StructName: "T", Name: "users", Facets: sqliteTableFacets(false, true)},
 			fields:      []schemamodel.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
 			wantNullSet: false,
 		},
 		{
 			name:        "strict table writes the key column NOT NULL",
-			table:       schemamodel.Table{StructName: "T", Name: "users", Strict: true},
+			table:       schemamodel.Table{StructName: "T", Name: "users", Facets: sqliteTableFacets(true, false)},
 			fields:      []schemamodel.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
 			wantNullSet: false,
 		},
 		{
 			name:        "strict rowid alias keeps its nullable key column",
-			table:       schemamodel.Table{StructName: "T", Name: "users", Strict: true},
+			table:       schemamodel.Table{StructName: "T", Name: "users", Facets: sqliteTableFacets(true, false)},
 			fields:      []schemamodel.Field{{StructName: "T", Name: "id", Type: "integer", Primary: true, Nullable: true}},
 			wantNullSet: true,
 		},
@@ -59,7 +62,7 @@ func TestRenderSQLiteKeyColumnNullabilityFollowsTheTableShape(t *testing.T) {
 			table: schemamodel.Table{
 				StructName: "T",
 				Name:       "memberships",
-				Strict:     true,
+				Facets:     sqliteTableFacets(true, false),
 				PrimaryKey: []string{"team", "member"},
 			},
 			fields: []schemamodel.Field{
@@ -89,4 +92,10 @@ func TestRenderSQLiteKeyColumnNullabilityFollowsTheTableShape(t *testing.T) {
 				qt.Commentf("rendered HCL:\n%s", hcl))
 		})
 	}
+}
+
+// sqliteTableFacets is the facet a table declaring SQLite table options
+// carries.
+func sqliteTableFacets(strict, withoutRowID bool) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&sqlitetable.DesiredTable{Options: sqlitetable.Options{Strict: strict, WithoutRowID: withoutRowID}}))
 }

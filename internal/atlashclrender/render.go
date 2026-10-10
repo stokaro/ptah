@@ -803,10 +803,11 @@ func (r *renderer) renderTable(
 	if options.AutoIncrement != "" {
 		r.rawAttr(1, "auto_increment", options.AutoIncrement)
 	}
-	if table.Strict {
+	strict, withoutRowID := sqliteTableOptions(table)
+	if strict {
 		r.rawAttr(1, "strict", "true")
 	}
-	if table.WithoutRowID {
+	if withoutRowID {
 		r.rawAttr(1, "without_rowid", "true")
 	}
 	if len(table.Checks) > 0 {
@@ -1871,6 +1872,24 @@ func mysqlTableOptions(table schemamodel.Table) mysqlschema.DesiredTable {
 		return *observed.Desired()
 	}
 	return mysqlschema.DesiredTable{}
+}
+
+// sqliteTableOptions are the SQLite table options a table's facet holds,
+// declared or read, written as the table block's strict and without_rowid
+// attributes the HCL parser reads them from. The facet is asked through the
+// method the SQLite owner's values have, as internal/sqlitekey asks it, so
+// this writer does not depend on the owner.
+func sqliteTableOptions(table schemamodel.Table) (strict, withoutRowID bool) {
+	values, err := table.Facets.Values()
+	if err != nil {
+		return false, false
+	}
+	for _, value := range values {
+		if shape, ok := value.(interface{ SQLiteRowidShape() (bool, bool) }); ok {
+			return shape.SQLiteRowidShape()
+		}
+	}
+	return false, false
 }
 
 // mysqlIndexOptions are the MySQL-family index options an index's facet

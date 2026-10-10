@@ -97,6 +97,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/spanner/spannerreverse`
 - `ptah.run/dialect/spanner/spannerschema`
 - `ptah.run/dialect/spanner/spannersource`
+- `ptah.run/dialect/sqlite/sqlitetable`
 - `ptah.run/dialect/timescaledb/tsast`
 - `ptah.run/dialect/timescaledb/tscompare`
 - `ptah.run/dialect/timescaledb/tsconvert`
@@ -1144,6 +1145,19 @@ table's options, `mysqlplan.TableService` accounts for them through table
 creation and removal, and `mysqlrender.CreateTableOptions` writes them into
 CREATE TABLE; `mysqldiff`, `mysqlconvert` and `mysqlreport` complete the
 provider.
+
+`dialect/sqlite/sqlitetable` owns the options a SQLite table is created
+with, STRICT and WITHOUT ROWID, as a table facet under `TableKind`.
+`DesiredTable` and `ObservedTable` hold the two flags in `Options`, whose
+`SQLiteRowidShape` method is how the comparison reads them to decide whether
+SQLite holds a primary key column NOT NULL. `PropertyService` reads the
+`strict` and `without_rowid` platform properties of the sqlite target, each
+`true` or `false`, and refuses any other value. `CompareService` plans no
+change of an existing table's options, since SQLite has no statement for one,
+and `PlanService` accounts for them through table creation, rebuild and
+removal. `TableOptions` is what the SQLite renderer writes after the column
+list; `TableCodecs`, `TableCoverage`, `ChangeCodec`, `ConvertService` and
+`ReportService` complete the owner.
 
 `mysqlschema` owns an index's options under `IndexKind` the same way:
 `DesiredIndex` and `ObservedIndex` hold the parser of a FULLTEXT index, read

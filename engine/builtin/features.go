@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/spanner/spannerrender"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbrender"
@@ -198,6 +199,11 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 		validate = ydbrender.ValidateTableFacets
 	case platform.MySQL, platform.MariaDB:
 		validate = mysqlrender.ValidateTableFacets
+	case platform.SQLite:
+		validate = func(facets schemaext.Facets) error {
+			_, err := sqlitetable.TableOptions(facets)
+			return err
+		}
 	default:
 		return refuseActiveFacets(dialect, projected)
 	}

@@ -417,8 +417,8 @@ table "events" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Strict, qt.IsTrue)
-	c.Assert(db.Tables[0].WithoutRowID, qt.IsTrue)
+	c.Assert(db.Tables[0].Overrides["sqlite"], qt.DeepEquals, map[string]string{"strict": "true", "without_rowid": "true"},
+		qt.Commentf("the options are the SQLite owner's platform properties"))
 }
 
 func TestParseMySQLTableAutoIncrement(t *testing.T) {

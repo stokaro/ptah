@@ -7,6 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/dbschema/sqlite"
 )
 
@@ -24,6 +27,10 @@ func TestReaderTableOptions(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(schema.Tables, qt.HasLen, 1)
-	c.Assert(schema.Tables[0].Strict, qt.IsTrue)
-	c.Assert(schema.Tables[0].WithoutRowID, qt.IsTrue)
+	observed, found, err := schemaext.FacetAs[*sqlitetable.ObservedTable](schema.Tables[0].Facets, sqlitetable.TableKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(observed.Options, qt.Equals, sqlitetable.Options{Strict: true, WithoutRowID: true})
+	c.Assert(schema.FeatureCoverage.Lookup(sqlitetable.TableKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete,
+		qt.Commentf("the read looked at every table's options"))
 }

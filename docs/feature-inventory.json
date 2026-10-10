@@ -1120,6 +1120,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-sqlite-sqlitetable",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/sqlite/sqlitetable",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-timescaledb-tsast",
       "kind": "public-package",
       "surface": "ptah.run/dialect/timescaledb/tsast",

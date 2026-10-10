@@ -144,18 +144,16 @@ func toDBTables(
 	for _, table := range tables {
 		enablement, rlsEnabled := tableRLSEnablement(table, rlsEnabledTables)
 		out = append(out, catalog.Table{
-			Facets:       table.Facets,
-			Name:         table.Name,
-			Schema:       table.Schema,
-			Type:         "TABLE",
-			Comment:      table.Comment,
-			RowFormat:    table.Overrides[platform.NormalizeDialect(dialect)]["row_format"],
-			Columns:      toDBColumns(table, fieldsByStruct[table.StructName], dialect),
-			RLSEnabled:   rlsEnabled,
-			RLSForced:    rlsEnabled && enablement.Forced,
-			Strict:       table.Strict,
-			WithoutRowID: table.WithoutRowID,
-			Unlogged:     table.Unlogged,
+			Facets:     table.Facets,
+			Name:       table.Name,
+			Schema:     table.Schema,
+			Type:       "TABLE",
+			Comment:    table.Comment,
+			RowFormat:  table.Overrides[platform.NormalizeDialect(dialect)]["row_format"],
+			Columns:    toDBColumns(table, fieldsByStruct[table.StructName], dialect),
+			RLSEnabled: rlsEnabled,
+			RLSForced:  rlsEnabled && enablement.Forced,
+			Unlogged:   table.Unlogged,
 			// Non-empty when the desired state came from a `.sql` file
 			// declaring CREATE VIRTUAL TABLE, which is how `ptah db read`
 			// output is read back. See stokaro/ptah#1028.

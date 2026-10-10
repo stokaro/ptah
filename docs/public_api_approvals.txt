@@ -612,3 +612,13 @@ v0.13.0 ptah.run/core/ast
 v0.13.0 ptah.run/core/coverage
 v0.13.0 ptah.run/core/schemamodel
 v0.13.0 ptah.run/migration/schemadiff/difftypes
+
+# #4140 moves a SQLite table's STRICT and WITHOUT ROWID options to the SQLite
+# owner ptah.run/dialect/sqlite/sqlitetable as a table facet. The Strict and
+# WithoutRowID fields of catalog.Table and schemamodel.Table are removed
+# without aliases; a declaration states the options as the table's sqlite
+# platform properties or as the owner's facet. This changes the Go API;
+# pre-v1, so no compatibility is owed under the authorized #4140/#4204
+# clean-break policy.
+v0.13.0 ptah.run/catalog
+v0.13.0 ptah.run/core/schemamodel

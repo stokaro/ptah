@@ -53,13 +53,31 @@ func ImpliesNotNull(table schemamodel.Table, keyColumns []string, field schemamo
 	if !coversColumn(keyColumns, field.Name) {
 		return false
 	}
-	if table.WithoutRowID {
+	strict, withoutRowID := rowidShape(table)
+	if withoutRowID {
 		return true
 	}
-	if !table.Strict {
+	if !strict {
 		return false
 	}
 	return !isRowidAlias(keyColumns, field)
+}
+
+// rowidShape is the table's STRICT and WITHOUT ROWID options, read from the
+// SQLite owner's table facet. The facet is asked through the method it has
+// rather than by its type, so the comparison that normalizes key nullability
+// does not depend on the owner. A table with no such facet has neither option.
+func rowidShape(table schemamodel.Table) (strict, withoutRowID bool) {
+	values, err := table.Facets.Values()
+	if err != nil {
+		return false, false
+	}
+	for _, value := range values {
+		if shape, ok := value.(interface{ SQLiteRowidShape() (bool, bool) }); ok {
+			return shape.SQLiteRowidShape()
+		}
+	}
+	return false, false
 }
 
 // IsRowidAlias reports whether field is table's rowid under another name: the
@@ -78,7 +96,7 @@ func ImpliesNotNull(table schemamodel.Table, keyColumns []string, field schemamo
 // `id TEXT PRIMARY KEY` on an ordinary rowid table holds NULL -- keeps a flag
 // that means what it says.
 func IsRowidAlias(table schemamodel.Table, keyColumns []string, field schemamodel.Field) bool {
-	if table.WithoutRowID || !coversColumn(keyColumns, field.Name) {
+	if _, withoutRowID := rowidShape(table); withoutRowID || !coversColumn(keyColumns, field.Name) {
 		return false
 	}
 	return isRowidAlias(keyColumns, field)

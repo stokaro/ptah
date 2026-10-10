@@ -53,21 +53,22 @@ import (
 // fixture replays to exactly the source's three indexes.
 
 // inspectSQLiteFormat runs `atlas schema inspect` over dbPath with an explicit
-// --format template and returns what reached stdout.
-func inspectSQLiteFormat(c *qt.C, dbPath, format string) string {
+// --format template and returns what reached stdout and stderr, kept apart so
+// that a warning cannot be parsed as part of the document.
+func inspectSQLiteFormat(c *qt.C, dbPath, format string) (stdout, stderr string) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
-	var out bytes.Buffer
+	var out, diagnostics bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&out)
+	cmd.SetErr(&diagnostics)
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", sqliteURLFromPath(dbPath),
 		"--format", format,
 	})
 	err := cmd.Execute()
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	return out.String()
+	c.Assert(err, qt.IsNil, qt.Commentf("%s%s", out.String(), diagnostics.String()))
+	return out.String(), diagnostics.String()
 }
 
 // sqliteIndexNames returns every index name the database reports, in name
@@ -268,7 +269,7 @@ func TestSchemaInspectSQLiteSQLReplaysTheSourceIndexSet(t *testing.T) {
 			c.Assert(sqliteIndexNames(c, sourcePath), qt.DeepEquals, test.wantNames,
 				qt.Commentf("fixture does not have the index set it claims"))
 
-			rendered := inspectSQLiteFormat(c, sourcePath, "{{ sql . }}")
+			rendered, _ := inspectSQLiteFormat(c, sourcePath, "{{ sql . }}")
 
 			replayPath := filepath.Join(dir, "replay.db")
 			seedSQLiteSchema(c, replayPath, rendered)
@@ -293,11 +294,14 @@ func TestSchemaInspectSQLiteSQLReplaysTheSourceIndexSet(t *testing.T) {
 // nullability on this path has to disagree with the catalog out loud. Their
 // values are the catalog's: measured, a STRICT or WITHOUT ROWID key column
 // reports notnull=1, and the rowid alias of a STRICT table still reports 0.
+// The document has no slot for either option, so those rows also expect the
+// stderr warning that says the option was left out.
 func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 	tests := []struct {
-		name         string
-		schemaSQL    string
-		wantNullable map[string]bool
+		name            string
+		schemaSQL       string
+		wantNullable    map[string]bool
+		wantDiagnostics string
 	}{
 		{
 			name:      "rowid alias key column is nullable",
@@ -319,6 +323,7 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 			wantNullable: map[string]bool{
 				"id": false, "name": false, "note": true,
 			},
+			wantDiagnostics: "warning: JSON schema inspection leaves out SQLite table options (1) from table \"t\"\n",
 		},
 		{
 			name: "without rowid table level composite key is not nullable",
@@ -327,6 +332,7 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 			wantNullable: map[string]bool{
 				"team": false, "member": false, "note": true,
 			},
+			wantDiagnostics: "warning: JSON schema inspection leaves out SQLite table options (1) from table \"t\"\n",
 		},
 		{
 			name:      "strict key column is not nullable",
@@ -334,6 +340,7 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 			wantNullable: map[string]bool{
 				"id": false, "name": false, "note": true,
 			},
+			wantDiagnostics: "warning: JSON schema inspection leaves out SQLite table options (1) from table \"t\"\n",
 		},
 		{
 			name: "strict table level composite key is not nullable",
@@ -342,6 +349,7 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 			wantNullable: map[string]bool{
 				"team": false, "member": false, "note": true,
 			},
+			wantDiagnostics: "warning: JSON schema inspection leaves out SQLite table options (1) from table \"t\"\n",
 		},
 		{
 			name:      "strict rowid alias key column is still nullable",
@@ -349,6 +357,7 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 			wantNullable: map[string]bool{
 				"id": true, "name": false, "note": true,
 			},
+			wantDiagnostics: "warning: JSON schema inspection leaves out SQLite table options (1) from table \"t\"\n",
 		},
 	}
 	for _, test := range tests {
@@ -357,10 +366,11 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 			dbPath := filepath.Join(c.TempDir(), "nullability.db")
 			seedSQLiteSchema(c, dbPath, test.schemaSQL)
 
-			rendered := inspectSQLiteFormat(c, dbPath, "{{ json . }}")
+			rendered, diagnostics := inspectSQLiteFormat(c, dbPath, "{{ json . }}")
 
 			c.Assert(inspectJSONNullability(c, rendered, "t"), qt.DeepEquals, test.wantNullable,
 				qt.Commentf("rendered JSON: %s", rendered))
+			c.Assert(diagnostics, qt.Equals, test.wantDiagnostics)
 		})
 	}
 }

@@ -3,11 +3,13 @@ package sqlite
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/internal/defaultlit"
@@ -144,9 +146,16 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		return nil
 	}
 
+	// The options a declaration states are the SQLite owner's facet; a node
+	// built without one, such as a parsed statement, carries them as options.
+	tableOptions, err := createTableOptions(node)
+	if err != nil {
+		return fmt.Errorf("table %q: %w", node.Name, err)
+	}
+
 	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
 		r.w.Writef("CREATE TABLE%s %s", guard, escapeQualifiedIdentifier(node.Name))
-		r.writeTableOptions(node.Name, node.Options)
+		r.writeTableOptions(node.Name, tableOptions)
 		r.writeCustomSQL(node)
 		r.w.WriteLinef(" AS %s;", strings.TrimSpace(node.SelectBody))
 		return nil
@@ -181,7 +190,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 
 	r.w.Write(")")
-	r.writeTableOptions(node.Name, node.Options)
+	r.writeTableOptions(node.Name, tableOptions)
 	// The author's own raw tail closes the statement (stokaro/ptah#2590).
 	r.writeCustomSQL(node)
 	r.w.WriteLine(";")
@@ -624,6 +633,26 @@ func (r *Renderer) writeCreateVirtualTable(node *ast.CreateTableNode, guard, mod
 // compatibility. See stokaro/ptah#1028.
 func escapeModuleName(module string) string {
 	return sqlident.BareOrQuoted(DialectName, module)
+}
+
+// createTableOptions is the node's options with the SQLite owner's declared
+// table options written over them.
+func createTableOptions(node *ast.CreateTableNode) (map[string]string, error) {
+	declared, err := sqlitetable.TableOptions(node.Facets)
+	if err != nil || declared == nil {
+		return node.Options, err
+	}
+	options := maps.Clone(node.Options)
+	if options == nil {
+		options = make(map[string]string, 2)
+	}
+	if declared.Strict {
+		options["STRICT"] = "true"
+	}
+	if declared.WithoutRowID {
+		options["WITHOUT_ROWID"] = "true"
+	}
+	return options, nil
 }
 
 func (r *Renderer) writeTableOptions(table string, options map[string]string) {

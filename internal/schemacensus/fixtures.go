@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
@@ -827,7 +828,8 @@ func tableEngineFixture() schemamodel.Database {
 }
 
 func tableSQLiteFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{Name: "t", Strict: true, WithoutRowID: true})
+	return oneTable("T", schemamodel.Table{Name: "t",
+		Facets: must.Must(schemaext.NewFacets(&sqlitetable.DesiredTable{Options: sqlitetable.Options{Strict: true, WithoutRowID: true}}))})
 }
 
 func tableUnloggedFixture() schemamodel.Database {

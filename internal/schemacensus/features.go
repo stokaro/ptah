@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/spanner/spannerschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
@@ -50,6 +51,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: crdbschema.Owner, codecs: crdbschema.Codecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.TableCodecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.ColumnSettingsCodecs()},
+		{owner: sqlitetable.Owner, codecs: sqlitetable.TableCodecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.IndexCodecs()},
 		{owner: mssqlschema.Owner, codecs: mssqlschema.Codecs()},
 		{owner: mssqlproperty.Owner, codecs: mssqlproperty.Codecs()},
