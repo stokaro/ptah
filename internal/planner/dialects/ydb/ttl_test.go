@@ -332,7 +332,7 @@ func TestGenerateMigrationAST_TableRebuild_FormatLimitIsNotASetting(t *testing.T
 	diff := notDescribing(modified(t, difftypes.TableDiff{TableName: "app.items",
 		Desired:         appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}}),
-		coverage.Object{Kind: coverage.TTL, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact})
+		coverage.Object{Kind: ydbschema.CoverageTTL, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact})
 
 	c.Assert(renderRebuild(c, capability.YDB262(), diff), qt.Contains, "RENAME TO `app/items`;\n")
 }

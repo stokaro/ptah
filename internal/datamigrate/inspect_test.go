@@ -11,6 +11,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -336,7 +337,7 @@ func TestInspect_ReadsTheRowsTheDeclarationCarries(t *testing.T) {
 	store := memory.New()
 	_, err := schemaartifact.PushTo(ctx, store, published, schemaartifact.PushOptions{Tags: []string{"stable"}})
 	c.Assert(err, qt.IsNil)
-	pulled, err := schemaartifact.PullFrom(ctx, store, "stable")
+	pulled, err := schemaartifact.PullFrom(ctx, store, "stable", coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 	// What the artifact carries and what it does not: the declared rows, and no
 	// path into the working copy that published them. What the declaration

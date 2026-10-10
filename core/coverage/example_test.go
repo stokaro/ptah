@@ -21,7 +21,7 @@ func ExampleHeaderComments() {
 func ExampleObject_Directive() {
 	input := coverage.Object{Kind: "native_kind", Name: "batch.jobs", Reason: coverage.NotInspected}
 	var owned []coverage.Object
-	common, err := coverage.DecodeHeader("-- "+input.Directive(), func(record coverage.Object) (bool, error) {
+	common, err := coverage.DecodeHeader("-- "+input.Directive(), coverage.Vocabulary{}, func(record coverage.Object) (bool, error) {
 		if record.Kind != "native_kind" {
 			return false, nil
 		}
@@ -57,7 +57,7 @@ func Example() {
 	document.WriteString("\nCREATE TABLE users (id BIGINT PRIMARY KEY);\n")
 	fmt.Print(document.String())
 
-	decoded, err := coverage.DecodeHeader(document.String(), nil)
+	decoded, err := coverage.DecodeHeader(document.String(), coverage.Vocabulary{}, nil)
 	if err != nil {
 		fmt.Println("decode:", err)
 		return
@@ -130,7 +130,7 @@ CREATE TABLE users (id BIGINT PRIMARY KEY);
 
 -- ptah:not-described sequence
 `
-	set, err := coverage.DecodeHeader(document, nil)
+	set, err := coverage.DecodeHeader(document, coverage.Vocabulary{}, nil)
 	if err != nil {
 		fmt.Println("refused:", err)
 		return

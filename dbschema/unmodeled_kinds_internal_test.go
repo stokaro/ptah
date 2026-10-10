@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/spanner/spannerschema"
 )
 
 // TestRecordUnmodeledObjectKinds_SpannerChangeStreams pins that a description
@@ -60,7 +60,7 @@ func TestRecordUnmodeledObjectKinds_SpannerChangeStreams(t *testing.T) {
 
 			schema := recordUnmodeledObjectKinds(&catalog.Database{}, test.dialect)
 
-			c.Assert(schema.NotDescribed.Describes(coverage.ChangeStream), qt.Equals, !test.declined)
+			c.Assert(schema.NotDescribed.Describes(spannerschema.CoverageChangeStream), qt.Equals, !test.declined)
 		})
 	}
 }

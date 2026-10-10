@@ -17,8 +17,8 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // settlingSource answers each listing and each description of a table from a
@@ -102,7 +102,7 @@ func TestReader_SettlesATableInTransition_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 0)
-			c.Assert(db.NotDescribed.Describes(coverage.ReplicaTable, "rep"), qt.Equals, !test.recorded)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageReplicaTable, "rep"), qt.Equals, !test.recorded)
 		})
 	}
 }

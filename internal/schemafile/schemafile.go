@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbmlparse"
 	"ptah.run/internal/devdocker"
@@ -40,6 +41,12 @@ type Options struct {
 	// compares with. Loading a YAML file refuses the zero value; pass
 	// yamlext.None to read the frontend's own keys only.
 	YAML yamlext.Set
+	// CoverageVocabulary is the coverage kinds an HCL or SQL document's
+	// `ptah:not-described` header may name, usually the vocabulary of the
+	// runtime the caller compares with. The zero value holds the common kinds
+	// only, so a header naming an owner's kind, such as a YDB changefeed, is
+	// refused.
+	CoverageVocabulary coverage.Vocabulary
 	// IgnoreUnknownHCLNames accepts and drops HCL names Ptah's schema HCL
 	// parser does not model instead of refusing the file.
 	//
@@ -393,7 +400,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	extension := strings.ToLower(filepath.Ext(resolved))
 	if extension == dirHCLExtension || extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(
-			unsupportedByFormat(coverage.Changefeed, coverage.ColumnTable, coverage.TTL)...)
+			unsupportedByFormat(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable, ydbschema.CoverageTTL)...)
 	}
 	if slices.Contains(yamlOnlyExtensions, extension) {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
@@ -493,6 +500,7 @@ func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, erro
 			DeferTableSettings: opts.deferTableSettings,
 			Vars:               opts.Vars,
 			VarValues:          opts.VarValues,
+			CoverageVocabulary: opts.CoverageVocabulary,
 		})
 	case ".yaml", ".yml":
 		return yamlschema.ParseFile(opts.YAML, resolved)
@@ -813,7 +821,7 @@ func loadSQLFileWithStatements(
 		}
 		earlier.YDBDatabasePath = root
 	}
-	db, statements, err := sqlschema.ReadOnto(data, opts.Dialect, earlier)
+	db, statements, err := sqlschema.ReadOntoWithVocabulary(data, opts.Dialect, earlier, opts.CoverageVocabulary)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
 	}

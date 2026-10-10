@@ -38,7 +38,7 @@ func TestPackageContract_OutsideCallersUseReadOnly(t *testing.T) {
 
 	used := referencedSymbolsOutsidePackage(c, root)
 
-	c.Assert(used, qt.DeepEquals, []string{"Document", "NewDocument", "OwnRowSecurity", "Read", "ReadOnto"},
+	c.Assert(used, qt.DeepEquals, []string{"Document", "NewDocument", "OwnRowSecurity", "Read", "ReadOnto", "ReadOntoWithVocabulary"},
 		qt.Commentf("another package reached past Read into the conversion internals; "+
 			"either it wants SQL read into the model, which Read does, or it wants a "+
 			"conversion service, which this package deliberately is not"))

@@ -17,6 +17,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
@@ -34,6 +35,7 @@ import (
 type Owners interface {
 	annotation.Runtime
 	yamlext.Runtime
+	coverage.Runtime
 }
 
 // Options selects the desired-schema sources and how loading is reported.
@@ -334,7 +336,7 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if o.Owners == nil {
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
-	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML()), command)
+	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.CoverageVocabulary()), command)
 }
 
 func commandDisplay(command schemasource.Command) string {
@@ -497,11 +499,12 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	// extension-check convenience above; it must not become the value the guard
 	// judges.
 	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{
-		DatabaseURL: o.DatabaseURL,
-		Dialect:     o.Dialect,
-		YAML:        o.yaml(),
-		Vars:        o.Vars,
-		VarValues:   o.VarValues,
+		DatabaseURL:        o.DatabaseURL,
+		Dialect:            o.Dialect,
+		YAML:               o.yaml(),
+		CoverageVocabulary: o.vocabulary(),
+		Vars:               o.Vars,
+		VarValues:          o.VarValues,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
@@ -625,7 +628,7 @@ func (o Options) loadOCIResult(ctx context.Context, raw string) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
-	artifact, err := schemaartifact.Pull(ctx, client, ref.String())
+	artifact, err := schemaartifact.Pull(ctx, client, ref.String(), o.vocabulary())
 	if err != nil {
 		return nil, fmt.Errorf("resolve schema artifact: %w", err)
 	}
@@ -646,6 +649,15 @@ func (o Options) annotations() annotation.Set {
 		return annotation.Set{}
 	}
 	return o.Owners.Annotations()
+}
+
+// vocabulary is the coverage kinds of the load's owners, or the common kinds
+// alone when the caller selected no owners.
+func (o Options) vocabulary() coverage.Vocabulary {
+	if o.Owners == nil {
+		return coverage.Vocabulary{}
+	}
+	return o.Owners.CoverageVocabulary()
 }
 
 // yaml is the YAML owners of the load, or the zero set, which a YAML parse

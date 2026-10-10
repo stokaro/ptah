@@ -23,6 +23,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/coverage"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlext"
@@ -97,6 +98,7 @@ type Runtime interface {
 	schemaext.ReportingRuntime
 	renderer.SchemaService
 	yamlext.Runtime
+	coverage.Runtime
 }
 
 // Options are the migration lint inputs shared by native and Atlas-compatible

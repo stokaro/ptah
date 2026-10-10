@@ -12,6 +12,7 @@ import (
 	"text/template/parse"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -32,6 +33,7 @@ type InspectRuntime interface {
 	schemaext.ReportingRuntime
 	renderer.SchemaService
 	schemaproperties.Runtime
+	coverage.Runtime
 }
 
 type SchemaInspectReport struct {
@@ -339,7 +341,7 @@ func newAtlasSchemaInspectTemplate(
 		"dbml":      atlasSchemaInspectDBML,
 		"sql":       atlasSchemaInspectSQL,
 		"split": func(args ...any) (schemaInspectArchive, error) {
-			return atlasSchemaInspectSplit(report.defaultSchemaName(), args...)
+			return atlasSchemaInspectSplit(report.defaultSchemaName(), report.coverageVocabulary(), args...)
 		},
 		"write": func(args ...any) (string, error) {
 			return atlasSchemaInspectWrite(files, args...)
@@ -354,6 +356,15 @@ func newAtlasSchemaInspectTemplate(
 // defaultSchemaName resolves the schema that owns unqualified objects for
 // split grouping. It is nil-safe so template validation can parse formats
 // without a report.
+// coverageVocabulary is the coverage kinds the report's runtime accepts, or
+// the common kinds alone for a report built without one.
+func (r *SchemaInspectReport) coverageVocabulary() coverage.Vocabulary {
+	if r == nil || r.runtime == nil {
+		return coverage.Vocabulary{}
+	}
+	return r.runtime.CoverageVocabulary()
+}
+
 func (r *SchemaInspectReport) defaultSchemaName() string {
 	if r == nil {
 		return ""

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
@@ -44,7 +45,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			name:     "HCL cannot name a TTL, a changefeed, a resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want:     unsupportedRecords(coverage.Changefeed, coverage.ColumnTable, coverage.TTL),
+			want:     unsupportedRecords(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable, ydbschema.CoverageTTL),
 		},
 		{
 			// The control on the common families. Synonyms, extended
@@ -81,10 +82,10 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
-				coverage.Changefeed, coverage.ColumnTable, coverage.Composite,
+				ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable, coverage.Composite,
 				coverage.Domain, coverage.Extension,
 				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
-				coverage.TTL),
+				ydbschema.CoverageTTL),
 		},
 	}
 

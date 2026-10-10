@@ -204,7 +204,7 @@ func TestSplitCarriesTheRecordWithSQLCommentSyntax(t *testing.T) {
 	members := txtarMembers(output.Text)
 	c.Assert(memberPaths(members), qt.DeepEquals, []string{"tables.sql"})
 	for path, data := range members {
-		got, err := coverage.DecodeHeader(data, nil)
+		got, err := coverage.DecodeHeader(data, coverage.Vocabulary{}, nil)
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Sequence), qt.Commentf("member %s", path))
 	}

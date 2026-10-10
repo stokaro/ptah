@@ -33,7 +33,7 @@ func TestGenerateSchemaDiff_YDBRebuildKeepsATTLTheDesiredStateDoesNotDescribe(t 
 			{StructName: "Event", Name: "ts", Type: "Timestamp", Nullable: true},
 		},
 		NotDescribed: coverage.Set{}.With(coverage.Object{
-			Kind: coverage.TTL, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact,
+			Kind: ydbschema.CoverageTTL, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact,
 		}),
 	}
 	current := &catalog.Database{

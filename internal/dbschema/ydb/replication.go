@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/dialect/ydb/ydbreplication"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/tableref"
 )
 
@@ -38,7 +39,7 @@ func isReplica(attributes map[string]string) bool {
 // would drop it as undeclared, or alter it.
 func replicaTable(schema, name string) coverage.Object {
 	return coverage.Object{
-		Kind:       coverage.ReplicaTable,
+		Kind:       ydbschema.CoverageReplicaTable,
 		Name:       tableref.Canonical(schema, name),
 		Reason:     coverage.Unsupported,
 		Provenance: coverage.Observed,

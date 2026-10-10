@@ -15,10 +15,12 @@ import (
 	"ptah.run/engine"
 )
 
-// The Spanner row deletion policy is a table facet.
+// The Spanner row deletion policy is a table facet, and a change stream is
+// state the read records and does not describe.
 func registerSpannerServices(provider *engine.Provider, target string) {
 	provider.Annotations = append(provider.Annotations, spannersource.Annotations())
 	provider.YAML = append(provider.YAML, spannersource.YAML())
+	provider.CoverageKinds = append(provider.CoverageKinds, spannerschema.CoverageKinds()...)
 	registerTableFacetOwner(provider, target, tableFacetOwner{
 		codecs:          slices.Concat(spannerschema.Codecs(), spannerdiff.Codecs(), spannerast.Codecs()),
 		properties:      spannersource.Definitions(),

@@ -34,7 +34,7 @@ CREATE TABLE archive (id Int64 NOT NULL, PRIMARY KEY (id));
 			for _, file := range output.Files {
 				var limits ydbsource.Limits
 				var owned []coverage.Object
-				common, err := coverage.DecodeHeader(file.Data, func(record coverage.Object) (bool, error) {
+				common, err := coverage.DecodeHeader(file.Data, coverage.Vocabulary{}, func(record coverage.Object) (bool, error) {
 					owned = append(owned, record)
 					return limits.ConsumeDirective(record)
 				})

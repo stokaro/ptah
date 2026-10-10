@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 )
@@ -184,4 +185,31 @@ func suppressedBlocks(kinds ...coverage.Kind) coverage.Set {
 		})
 	}
 	return set
+}
+
+// TestRenderWritesTheDescriptionsOwnLimits writes the record a description
+// carries of what it did not describe into the header, so the document read
+// back keeps it, beside what the compatibility surface adds. A YDB replica
+// table is consulted in process only and no document can name it, so its
+// record stays out of the header: written, the document would not read back.
+func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
+	c := qt.New(t)
+	db := coverageBareDatabase()
+	db.NotDescribed = coverage.Set{}.With(
+		coverage.Object{Kind: ydbschema.CoverageChangefeed, Name: "app.t", Reason: coverage.Unsupported, Provenance: coverage.Observed},
+		coverage.Object{Kind: coverage.Role, Reason: coverage.NotInspected, Provenance: coverage.Observed},
+		coverage.Object{Kind: ydbschema.CoverageReplicaTable, Name: "replica.accounts", Reason: coverage.Unsupported, Provenance: coverage.Observed},
+	)
+
+	result, err := atlashclrender.RenderInspected(db, platform.YDB, "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{
+		`// ptah:not-described changefeed reason=unsupported provenance=observed "app.t"`,
+		"// ptah:not-described role reason=not-inspected provenance=observed",
+	})
+	c.Assert(result.NotDescribed.Directives(), qt.DeepEquals, []string{
+		`ptah:not-described changefeed reason=unsupported provenance=observed "app.t"`,
+		"ptah:not-described role reason=not-inspected provenance=observed",
+	})
 }

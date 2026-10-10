@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/schemaartifact"
@@ -39,11 +40,16 @@ Authentication comes from the Docker credential store.`,
 }
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
+	owners, err := builtin.Bundled()
+	if err != nil {
+		return err
+	}
 	artifact, written, err := schemaartifact.PullToFile(
 		cmd.Context(),
 		reference,
 		opts.output,
 		opts.plainHTTP,
+		owners.CoverageVocabulary(),
 	)
 	if err != nil {
 		return err

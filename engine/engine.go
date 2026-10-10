@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -68,6 +69,13 @@ type Provider struct {
 	// provider's models. Each extension names this provider as its owner, and
 	// the provider owns the desired codec of every model it claims.
 	YAML []yamlext.Extension
+	// CoverageKinds are the not-described coverage kinds the provider's reader
+	// records for state Ptah does not model, such as a YDB changefeed. A
+	// document's coverage header and a Go notdescribed declaration may name
+	// them only in a runtime that selects the provider; see
+	// [Runtime.CoverageVocabulary]. A kind belongs to one provider and is
+	// never a common kind.
+	CoverageKinds []coverage.Kind
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -128,6 +136,7 @@ type Runtime struct {
 	probeServices       []Normalization
 	annotations         annotation.Set
 	yaml                yamlext.Set
+	vocabulary          coverage.Vocabulary
 }
 
 type target struct {
@@ -190,6 +199,9 @@ func New(providers ...Provider) (*Runtime, error) {
 				return nil, err
 			}
 		}
+	}
+	if err := runtime.registerCoverageKinds(providers); err != nil {
+		return nil, err
 	}
 	if err := runtime.registerAnnotations(providers); err != nil {
 		return nil, err

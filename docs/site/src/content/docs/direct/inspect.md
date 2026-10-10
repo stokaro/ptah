@@ -195,9 +195,11 @@ property of `ptah-compat` alone, never reaches this command, and
 [Blocks the compatibility surface leaves out by default](../../atlas/schema-commands/#blocks-the-compatibility-surface-leaves-out-by-default).
 
 Because this command leaves no block type out, its output claims to describe
-everything the HCL format can express, and it carries no `ptah:not-described`
-header. Delete a block from it and the plan that follows removes the object,
-which is what you asked for. The compatibility surface, which does leave blocks
+everything the HCL format can express, and its `ptah:not-described` header
+carries only what the read itself did not describe, such as a role catalog the
+server refused or a YDB changefeed, so the plan that follows does not read that
+silence as complete. Delete a block from it and the plan that follows removes
+the object, which is what you asked for. The compatibility surface, which does leave blocks
 out, says so in the document; see
 [The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
 

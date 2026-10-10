@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/connectgate"
 	"ptah.run/internal/dbschema/clickhouse"
@@ -812,7 +813,7 @@ func recordUnmodeledObjectKinds(schema *catalog.Database, dialect string) *catal
 		return schema
 	}
 	schema.NotDescribed = schema.NotDescribed.With(coverage.Object{
-		Kind:       coverage.ChangeStream,
+		Kind:       spannerschema.CoverageChangeStream,
 		Reason:     coverage.Unsupported,
 		Provenance: coverage.DerivedFromTarget,
 	})

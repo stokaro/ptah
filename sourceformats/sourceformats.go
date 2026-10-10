@@ -7,6 +7,7 @@
 package sourceformats
 
 import (
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/core/yamlext"
@@ -16,13 +17,15 @@ import (
 )
 
 // New returns the readers with owners selecting the feature owners a YAML
-// document may declare. SQL and HCL are read by the bundled readers.
-func New(owners yamlext.Set) schemasource.Formats {
-	return readers{owners: owners}
+// document may declare, and vocabulary the coverage kinds an SQL or HCL
+// document's header may name. SQL and HCL are read by the bundled readers.
+func New(owners yamlext.Set, vocabulary coverage.Vocabulary) schemasource.Formats {
+	return readers{owners: owners, vocabulary: vocabulary}
 }
 
 type readers struct {
-	owners yamlext.Set
+	owners     yamlext.Set
+	vocabulary coverage.Vocabulary
 }
 
 // ReadYAML reads a YAML document with the selected owners.
@@ -31,8 +34,8 @@ func (r readers) ReadYAML(data []byte) (*schemamodel.Database, error) {
 }
 
 // ReadSQL reads SQL DDL with an optional dialect hint.
-func (readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, error) {
-	db, _, err := sqlschema.Read(data, dialect)
+func (r readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, error) {
+	db, _, err := sqlschema.ReadOntoWithVocabulary(data, dialect, nil, r.vocabulary)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +43,6 @@ func (readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, erro
 }
 
 // ReadHCL reads an Atlas HCL document, naming it filename in a refusal.
-func (readers) ReadHCL(data []byte, filename string) (*schemamodel.Database, error) {
-	return atlashcl.Parse(data, filename)
+func (r readers) ReadHCL(data []byte, filename string) (*schemamodel.Database, error) {
+	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{CoverageVocabulary: r.vocabulary})
 }

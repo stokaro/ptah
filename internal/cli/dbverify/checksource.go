@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/migration/migrator"
@@ -139,7 +140,11 @@ func loadChecksFromArtifact(
 	if err != nil {
 		return nil, err
 	}
-	artifact, err := schemaartifact.Pull(ctx, client, reference)
+	owners, err := builtin.Bundled()
+	if err != nil {
+		return nil, err
+	}
+	artifact, err := schemaartifact.Pull(ctx, client, reference, owners.CoverageVocabulary())
 	if err != nil {
 		return nil, fmt.Errorf("read checks from %s: %w", reference, err)
 	}

@@ -352,9 +352,9 @@ var settingKinds = []struct {
 	kind  coverage.Kind
 	words string
 }{
-	{coverage.TTL, "a TTL run interval or tiering policy"},
+	{ydbschema.CoverageTTL, "a TTL run interval or tiering policy"},
 	{"", unreadFamilies},
-	{coverage.TableOption, "storage settings (commit log pools, an external pool or external blobs)"},
+	{ydbschema.CoverageTableOption, "storage settings (commit log pools, an external pool or external blobs)"},
 }
 
 // undescribedSettings names the settings of table that the read of the

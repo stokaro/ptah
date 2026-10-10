@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -342,8 +343,8 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 			caps: capability.YDB262(),
 			diff: notDescribing(modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
-				coverage.Object{Kind: coverage.TTL, Name: "app.items"},
-				coverage.Object{Kind: coverage.TTL, Name: "app.other"}),
+				coverage.Object{Kind: ydbschema.CoverageTTL, Name: "app.items"},
+				coverage.Object{Kind: ydbschema.CoverageTTL, Name: "app.other"}),
 			wantErr: `rebuilding table "app.items": the table carries a TTL run interval or tiering policy, ` +
 				`which Ptah does not model and ` +
 				`so cannot write on the new table: recreating it would drop them\. .*`,
@@ -353,7 +354,7 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 			caps: capability.YDB262(),
 			diff: notDescribing(unreadFamilies(t, modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange})),
-				coverage.Object{Kind: coverage.TableOption}),
+				coverage.Object{Kind: ydbschema.CoverageTableOption}),
 			wantErr: `rebuilding table "app.items": the table carries column families with settings Ptah does not ` +
 				`read, storage settings \(commit log pools, an external pool or external blobs\), which Ptah does not model .*`,
 		},

@@ -171,6 +171,9 @@ type Set struct {
 	// attributes holds, for each frontend directive, the extension index
 	// that owns each attribute an owner adds to it.
 	attributes map[string]map[string]int
+	// vocabulary is the coverage kinds a notdescribed declaration may name
+	// for the common coverage set.
+	vocabulary coverage.Vocabulary
 }
 
 // None returns a selected set without owners. A parse with it reads the
@@ -417,6 +420,28 @@ func (s Set) Owner(directive string) (string, bool) {
 		return "", false
 	}
 	return s.extensions[index].Owner, true
+}
+
+// WithCoverageVocabulary returns the set with the coverage kinds a
+// notdescribed declaration may name for the frontend's own coverage set: the
+// common kinds and those the selected owners record. The zero vocabulary
+// holds the common kinds only. An owner limit the vocabulary also holds is
+// refused, since one spelling would then reach two coverage sets.
+func (s Set) WithCoverageVocabulary(vocabulary coverage.Vocabulary) (Set, error) {
+	for kind, index := range s.limits {
+		if _, err := vocabulary.ParseKind(kind); err == nil {
+			return Set{}, fmt.Errorf("annotation extension of %s reads not-described kind %q, which the coverage vocabulary also holds",
+				s.extensions[index].Owner, kind)
+		}
+	}
+	s.vocabulary = vocabulary
+	return s, nil
+}
+
+// CoverageVocabulary returns the coverage kinds a notdescribed declaration
+// may name for the frontend's own coverage set.
+func (s Set) CoverageVocabulary() coverage.Vocabulary {
+	return s.vocabulary
 }
 
 // LimitOwner returns the owner that reads not-described declarations of

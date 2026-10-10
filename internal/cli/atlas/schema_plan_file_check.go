@@ -91,6 +91,7 @@ func verifyAtlasSchemaPlanFile(
 	// load local files directly instead of classifying them.
 	desired, err := schemafile.LoadSources(atlasSchemaPlanSources(transition), schemafile.Options{
 		YAML:                  runtime.YAML(),
+		CoverageVocabulary:    runtime.CoverageVocabulary(),
 		Dialect:               conn.Info().Dialect,
 		IgnoreUnknownHCLNames: true,
 		SchemaScope:           schemaScope,

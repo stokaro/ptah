@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -44,6 +45,7 @@ import (
 type Runtime interface {
 	schemaext.ConversionRuntime
 	yamlext.Runtime
+	coverage.Runtime
 }
 
 // ResolveOptions configures resolution of one classified desired-state set.
@@ -346,6 +348,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 			DatabaseURL:           opts.DatabaseURL,
 			Dialect:               opts.Dialect,
 			YAML:                  opts.Runtime.YAML(),
+			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			ReportIgnored:         opts.ReportIgnored,
 			SchemaScope:           opts.SchemaScope,
@@ -367,7 +370,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 		}
 		return finish(state, nil)
 	case KindRemoteSchema:
-		state, err := s.resolveRemoteSchema(ctx)
+		state, err := s.resolveRemoteSchema(ctx, opts)
 		if err != nil {
 			return err
 		}
@@ -392,7 +395,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 // repository already had -- distributing a desired state through an ordinary
 // registry, with tags, digests and ordinary registry auth, and with no hosted
 // service in the path (stokaro/ptah#1210).
-func (s Set) resolveRemoteSchema(ctx context.Context) (State, error) {
+func (s Set) resolveRemoteSchema(ctx context.Context, opts ResolveOptions) (State, error) {
 	reference := s.Sources[0].OCIReference
 	plainHTTP, err := atlasregistry.PlainHTTP.Resolve()
 	if err != nil {
@@ -406,7 +409,7 @@ func (s Set) resolveRemoteSchema(ctx context.Context) (State, error) {
 	// Pull validates the artifact type, the format annotation and the single
 	// expected file, and parses the schema, so it returns either a schema or an
 	// error.
-	artifact, err := schemaartifact.Pull(ctx, client, reference)
+	artifact, err := schemaartifact.Pull(ctx, client, reference, opts.Runtime.CoverageVocabulary())
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, reference, err)
 	}
@@ -421,7 +424,7 @@ func (s Set) resolveRemoteSchema(ctx context.Context) (State, error) {
 func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (State, error) {
 	command := s.Sources[0].Command
 	command.Dialect = opts.Dialect
-	schema, err := schemasource.Run(ctx, sourceformats.New(opts.Runtime.YAML()), command)
+	schema, err := schemasource.Run(ctx, sourceformats.New(opts.Runtime.YAML(), opts.Runtime.CoverageVocabulary()), command)
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, s.Sources[0].Raw, err)
 	}

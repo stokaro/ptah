@@ -129,6 +129,9 @@ func New() (*engine.Runtime, error) {
 			registerYDBIndexPartitioningServices(&provider, name)
 			provider.Annotations = append(provider.Annotations, ydbsource.Annotations())
 			provider.YAML = append(provider.YAML, ydbsource.YAML())
+			// The YDB state a read records and does not describe, which a
+			// document's header may name.
+			provider.CoverageKinds = append(provider.CoverageKinds, ydbschema.CoverageKinds()...)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

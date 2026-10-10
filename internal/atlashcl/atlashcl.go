@@ -99,6 +99,12 @@ type Options struct {
 	// and no `--var` at all, which is what the pinned community binary v1.3.0
 	// does -- but the rule has to be stated for the field to mean anything.
 	VarValues map[string]string
+
+	// CoverageVocabulary is the coverage kinds the document's
+	// `ptah:not-described` header may name: the common kinds and those of the
+	// run's selected owners, such as a YDB changefeed. The zero value holds
+	// the common kinds only, so a header naming an owner's kind is refused.
+	CoverageVocabulary coverage.Vocabulary
 }
 
 // ParseFile parses an HCL schema file into the same Database IR used by
@@ -147,6 +153,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		recordIgnored:   opts.RecordIgnored,
 		refContext:      columnRefContext(body),
 		declaredSchemas: schemaBlockNames(schemaBlocks),
+		vocabulary:      opts.CoverageVocabulary,
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -236,7 +243,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	// community binary v1.3.0 reads a document carrying it at exit 0 -- and
 	// because a block would need a name that binary refuses.
 	var limits ydbsource.Limits
-	notDescribed, err := coverage.DecodeHeader(string(data), limits.ConsumeHCLDirective)
+	notDescribed, err := coverage.DecodeHeader(string(data), p.vocabulary, limits.ConsumeHCLDirective)
 	if err != nil {
 		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
 	}
@@ -313,10 +320,11 @@ func projectFileError(filename string, block *hclsyntax.Block) error {
 }
 
 type parser struct {
-	src       []byte
-	filename  string
-	sourceDir string
-	db        *schemamodel.Database
+	src        []byte
+	filename   string
+	sourceDir  string
+	db         *schemamodel.Database
+	vocabulary coverage.Vocabulary
 
 	// ctx carries the var. and local. namespaces and the function set every
 	// attribute is evaluated against. It is never nil once Parse has built it.
