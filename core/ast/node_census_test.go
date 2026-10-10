@@ -128,7 +128,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.RenameIndexOperation{}},
 	{node: &ast.AlterIndexVisibilityOperation{}},
 	{node: &ast.SetIndexPartitioningOperation{}},
-	{node: &ast.SetYDBColumnFamiliesOperation{}},
 	{node: &ast.ExtensionStatement{}},
 	{node: &ast.ExtensionAlterOperation{}},
 	{node: &ast.SetYDBTablePartitioningOperation{}},

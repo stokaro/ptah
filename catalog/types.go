@@ -257,13 +257,6 @@ type Table struct {
 	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
 	Unlogged     bool `json:"unlogged,omitempty"`
 	WithoutRowID bool `json:"without_rowid,omitempty"` // SQLite WITHOUT ROWID table option
-	// YDBColumnFamilies is YDB's, and no other target fills it: the column
-	// families of a YDB row table, each with its settings and the columns it
-	// holds, the default family only where its settings are not YDB's own.
-	// A table whose families hold a setting Ptah does not read lists none
-	// here; the reader records them as not described instead, so a plan
-	// neither changes nor drops them.
-	YDBColumnFamilies []ast.YDBColumnFamilySpec `json:"ydb_column_families,omitempty"`
 	// YDBPartitioning is YDB's, and no other target fills it: the settings of
 	// a YDB row table that differ from what a new table is given -- how it
 	// splits into partitions, its read replicas and its key bloom filter. It

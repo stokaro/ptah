@@ -316,7 +316,8 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsTrue)
 			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsTrue)
 			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsFalse)
-			c.Assert(live.NotDescribed.Describes(coverage.ColumnFamily, "ptah_ydb_connection.base"), qt.IsTrue)
+			c.Assert(heldFamilies(c, tableNamed(c, live, connectionSchema, "base")), qt.DeepEquals,
+				[]ydbschema.ColumnFamily{{Name: "default", Compression: "lz4"}})
 			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsTrue)
 			c.Assert(observedTTL(c, tableNamed(c, live, connectionSchema, "base")), qt.DeepEquals,
 				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "P1D"}, RunIntervalSeconds: 1800})

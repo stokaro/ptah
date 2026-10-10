@@ -453,7 +453,7 @@ declares. Every other dialect refuses a table that declares one. See
 | `data` | No | Kind of storage pool the family is kept in, such as `ssd`. Omitted, the table keeps the pool it holds. |
 | `compression` | No | `off` or `lz4`. Omitted, the table keeps the compression it holds. |
 | `cache_mode` | No | `regular` or `in_memory`, either of which needs `column_family_cache_mode`. Omitted, the table keeps the cache mode it holds. |
-| `fields` | No | Columns the family holds, never a key column. The default family lists none. |
+| `fields` | No | Columns the family holds, never a key column, and none another family lists. The default family lists none. |
 
 ### `//ptah:schema:changefeed`
 

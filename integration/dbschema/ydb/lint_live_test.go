@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/lint"
 )
@@ -424,9 +424,10 @@ func TestYDBLint_UndeclaredColumnFamilyIsCreated(t *testing.T) {
 					c.Assert(runErr, qt.IsNil)
 					c.Assert(readErr, qt.IsNil)
 					c.Assert(live.Tables, qt.HasLen, 1)
-					c.Assert(slices.ContainsFunc(live.Tables[0].YDBColumnFamilies, func(family ast.YDBColumnFamilySpec) bool {
+					families := heldFamilies(c, live.Tables[0])
+					c.Assert(slices.ContainsFunc(families, func(family ydbschema.ColumnFamily) bool {
 						return family.Name == test.family
-					}), qt.IsTrue, qt.Commentf("families: %+v", live.Tables[0].YDBColumnFamilies))
+					}), qt.IsTrue, qt.Commentf("families: %+v", families))
 				})
 			}
 		})

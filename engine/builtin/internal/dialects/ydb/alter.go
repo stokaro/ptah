@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbextensions"
-	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -102,8 +101,6 @@ func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.Alte
 			fmt.Sprintf("the visibility of index %q of %s", op.IndexName, subject))
 	case *ast.SetIndexPartitioningOperation:
 		return r.setIndexPartitioning(table, op)
-	case *ast.SetYDBColumnFamiliesOperation:
-		return r.setColumnFamilies(prefix, subject, op)
 	case *ast.ExtensionAlterOperation:
 		registry, err := ydbextensions.Registry()
 		if err != nil {
@@ -129,29 +126,6 @@ func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.Alte
 	default:
 		return nil, refuseFact(subject, fmt.Sprintf("the YDB renderer has no ALTER TABLE spelling for %T", operation))
 	}
-}
-
-// setColumnFamilies writes the one ALTER TABLE that changes a table's column
-// families in place: the families it adds, the settings it states and the
-// columns it moves, as [ydbfamily.AlterActions] lists them. YDB applies the
-// actions of one statement together. It refuses an action the target has no
-// key for (see [ydbfamily.ChangeRequirements]) and a keep_in_memory no
-// statement writes (see [ydbfamily.ChangeRefusal]). A change that moves
-// nothing writes no statement.
-func (r *Renderer) setColumnFamilies(prefix, subject string, op *ast.SetYDBColumnFamiliesOperation) ([]string, error) {
-	for _, requirement := range ydbfamily.ChangeRequirements(op.Families, op.Previous) {
-		if !r.caps.Has(requirement.Key) {
-			return nil, refuseKey(requirement.Key, fmt.Sprintf("changing the %s of %s", requirement.Settings, subject))
-		}
-	}
-	if reason := ydbfamily.ChangeRefusal(op.Families, op.Previous); reason != "" {
-		return nil, refuseFact(subject, reason)
-	}
-	actions := ydbfamily.AlterActions(op.Families, op.Previous)
-	if len(actions) == 0 {
-		return nil, nil
-	}
-	return []string{prefix + strings.Join(actions, ", ") + ";"}, nil
 }
 
 // addColumn writes ADD COLUMN, refusing the shapes YDB refuses on an existing

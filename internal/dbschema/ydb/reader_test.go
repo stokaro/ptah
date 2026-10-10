@@ -498,9 +498,11 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		return coverage.Object{Kind: kind, Name: name, Reason: coverage.Unsupported, Provenance: coverage.Observed}
 	}
 	c.Assert(db.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef("app", "t", "feed")).State, qt.Equals, schemaext.Unrepresentable)
+	tables := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
+	c.Assert(db.FeatureCoverage.Lookup(ydbschema.ColumnFamiliesKind, tables.TableParts("app", "t")).State, qt.Equals, schemaext.Unrepresentable)
+	c.Assert(db.FeatureCoverage.Lookup(ydbschema.ColumnFamiliesKind, tables.TableParts("app", "plain")).State, qt.Equals, schemaext.Complete)
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
 		observed(coverage.TTL, "app.t"),
-		observed(coverage.ColumnFamily, "app.t"),
 		observed(coverage.TableOption, "app.t"),
 		observed(coverage.ColumnTable, "olap"),
 		observed(coverage.Replication, "repl"),
@@ -934,7 +936,8 @@ func TestReader_UnspecifiedCompressionRecordsNoFamily(t *testing.T) {
 
 	db := readFrom(c, source)
 
-	c.Assert(db.NotDescribed.Describes(coverage.ColumnFamily, "t"), qt.IsTrue)
+	c.Assert(familyKnowledge(db), qt.Equals, schemaext.Complete)
+	c.Assert(readFamilies(c, db.Tables[0]), qt.IsNil)
 }
 
 func defaultPartitioning() *Ydb_Table.PartitioningSettings {
@@ -956,7 +959,7 @@ func TestReader_PlainTableRecordsNoSetting(t *testing.T) {
 
 	db := readFrom(c, source)
 
-	for _, kind := range []coverage.Kind{coverage.TTL, coverage.Changefeed, coverage.ColumnFamily, coverage.TableOption} {
+	for _, kind := range []coverage.Kind{coverage.TTL, coverage.Changefeed, coverage.TableOption} {
 		c.Assert(db.NotDescribed.Describes(kind, "t"), qt.IsTrue, qt.Commentf("kind %s", kind))
 	}
 }

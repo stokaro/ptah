@@ -1425,7 +1425,7 @@ drops. Setting one family setting resets no other.
 YQL has no `DROP FAMILY` and resets no family setting, and no family change
 needs a rebuild, since what the declaration leaves out stays. A rollback of a
 change that added a family or gave one a storage pool moves the columns back
-and keeps the family and the pool.
+and keeps the family and the pool, and its recovery note names them.
 
 YDB does not refuse a statement that names a family the table does not have: it
 creates the family with its own settings. Ptah adds a family before it moves a
@@ -1443,9 +1443,9 @@ allowed`), but a table profile's `column_cache` sets it. A read reports it, no
 statement Ptah writes changes it, and a [rebuild](#table-rebuilds) of a table
 holding it is refused, since the new table's `CREATE TABLE` cannot say it.
 
-Other dialects refuse a table that declares a column family. CockroachDB's
-`FAMILY` clause groups columns with no settings of their own, and Ptah models
-none.
+Other dialects refuse a table that declares a column family, even the default
+family stating no setting. CockroachDB's `FAMILY` clause groups columns with no
+settings of their own, and Ptah models none.
 
 ## Coordination nodes
 

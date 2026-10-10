@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbfamily"
 )
 
@@ -17,7 +19,7 @@ import (
 // named.
 func (r *renderer) reportColumnFamilies() {
 	for _, table := range r.db.Tables {
-		families := ydbfamily.Stated(table.YDBColumnFamilies)
+		families := ydbfamily.Stated(heldFamilies(table.Facets))
 		if len(families) == 0 {
 			continue
 		}
@@ -35,4 +37,16 @@ func (r *renderer) reportColumnFamilies() {
 			Message:  message,
 		})
 	}
+}
+
+// heldFamilies are the column families a table's facet states, declared or
+// read; an invalid value states none here and is refused where it is used.
+func heldFamilies(facets schemaext.Facets) []ydbschema.ColumnFamily {
+	if declared, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](facets, ydbschema.ColumnFamiliesKind); err == nil && found {
+		return declared.Families
+	}
+	if observed, found, err := schemaext.FacetAs[*ydbschema.ObservedColumnFamilies](facets, ydbschema.ColumnFamiliesKind); err == nil && found {
+		return observed.Families
+	}
+	return nil
 }

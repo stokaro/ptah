@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/schemaproperties"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbmlrender"
+	"ptah.run/internal/facetsplit"
 	"ptah.run/internal/schemaviz"
 )
 
@@ -404,12 +405,15 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 // hclSource exports typed table and index settings as the platform properties
 // HCL can carry, so a ClickHouse skipping index keeps its type and granularity
 // in the document. A model without a source-property codec stays a facet, and
-// the renderer reports it as a loss rather than writing a partial block.
+// the renderer reports it as a loss rather than writing a partial block. The
+// table facets the renderer handles itself are set aside first: the encoder
+// refuses every table while one facet has no property spelling, and every YDB
+// table read holds column families beside any TTL it has.
 func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
-	db := r.db
-	if db == nil || r.info.Dialect == "" {
-		return db, nil
+	if r.db == nil || r.info.Dialect == "" {
+		return r.db, nil
 	}
+	db, written := facetsplit.SetAside(r.db, atlashclrender.WritesTableFacet)
 	for _, encode := range []func(context.Context, *schemamodel.Database, string, schemaproperties.Runtime) (*schemamodel.Database, error){
 		schemaproperties.EncodeTables, schemaproperties.EncodeIndexes,
 	} {
@@ -422,7 +426,7 @@ func (r *SchemaInspectReport) hclSource() (*schemamodel.Database, error) {
 		}
 		db = encoded
 	}
-	return db, nil
+	return facetsplit.Restore(db, written)
 }
 
 // sqlSource is the database the SQL format renders, which is the inspected one

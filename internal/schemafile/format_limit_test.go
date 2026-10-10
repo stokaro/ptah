@@ -33,14 +33,14 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// HCL has the synonym and extended_property blocks
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
 			// name a virtual table, a table's row deletion policy, a changefeed,
-			// a column family, or a YDB async replication, transfer, resource
-			// pool or classifier. A secret, a topic and an external object are
+			// or a YDB async replication, transfer, resource pool or classifier. A
+			// secret, a topic, an external object and a column family are
 			// owned features the format makes no claim about.
-			name: "HCL cannot name a virtual table, a TTL, a changefeed, a column family, a " +
+			name: "HCL cannot name a virtual table, a TTL, a changefeed, a " +
 				"replication, transfer, resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable,
+			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnTable,
 				coverage.Replication,
 				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
@@ -87,7 +87,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
-				coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.Composite,
+				coverage.Changefeed, coverage.ColumnTable, coverage.Composite,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension,
 				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Sequence,
 				coverage.Synonym, coverage.Transfer, coverage.TTL, coverage.VirtualTable),

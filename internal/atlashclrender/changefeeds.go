@@ -54,7 +54,7 @@ func (r *renderer) reportFeatureObjects() {
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
 			path, held := tables[facets]
-			if held && representsFacet(kind) {
+			if held && WritesTableFacet(kind) {
 				continue
 			}
 			if !held {

@@ -62,9 +62,8 @@ func storageSchema(c *qt.C) *schemamodel.Database {
 			{StructName: "Plain", Name: "plain"},
 			{
 				StructName: "Events", Name: "events",
-				YDBColumnFamilies: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"id"}}},
-				Facets:            ydbTTL(c),
-				YDBPartitioning:   &ast.YDBTablePartitioningSpec{MinPartitions: 4},
+				Facets:          must.Must(ydbTTL(c).With(&ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"id"}}}})),
+				YDBPartitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 4},
 			},
 			{StructName: "Archive", Name: "archive", YDBColumnTable: &ast.YDBColumnTableSpec{}},
 		},

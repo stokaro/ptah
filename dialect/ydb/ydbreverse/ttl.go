@@ -21,34 +21,7 @@ type TTLService struct{}
 // absence, in place. ForwardState predicts the policy the forward change
 // leaves; it is a planning input, never inspection evidence.
 func (TTLService) ReverseChanges(ctx context.Context, request schemaext.ReversalRequest) ([]schemaext.Reversal, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("%w: reversal requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if request.Target != platform.YDB {
-		return nil, fmt.Errorf("%w: YDB TTL reversal on %q", ptaherr.ErrUnsupportedDialect, request.Target)
-	}
-	result := make([]schemaext.Reversal, 0, len(request.Changes))
-	for _, record := range request.Changes {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		change, ok := record.Value.(*ydbdiff.TTL)
-		if !ok {
-			return nil, fmt.Errorf("%w: reversal requires a YDB TTL change", schemaext.ErrInvalidValue)
-		}
-		reversal, err := reverseTTL(record, change)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, reversal)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return reverseFacet(ctx, request, "YDB TTL", reverseTTL)
 }
 
 func reverseTTL(record schemaext.ChangeRecord, change *ydbdiff.TTL) (schemaext.Reversal, error) {
@@ -74,6 +47,42 @@ func reverseTTL(record schemaext.ChangeRecord, change *ydbdiff.TTL) (schemaext.R
 	}
 	if change.After != nil {
 		result.Limitations = []string{"Restoring the prior TTL cannot recover rows YDB deleted under the forward TTL."}
+	}
+	return result, nil
+}
+
+// reverseFacet reverses each change of one YDB table facet, of type C, in
+// order, with reverse. name names the facet in an error. It returns no partial
+// result on error or cancellation.
+func reverseFacet[C schemaext.ChangeValue](ctx context.Context, request schemaext.ReversalRequest, name string,
+	reverse func(schemaext.ChangeRecord, C) (schemaext.Reversal, error),
+) ([]schemaext.Reversal, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("%w: reversal requires a context", schemaext.ErrInvalidValue)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if request.Target != platform.YDB {
+		return nil, fmt.Errorf("%w: %s reversal on %q", ptaherr.ErrUnsupportedDialect, name, request.Target)
+	}
+	result := make([]schemaext.Reversal, 0, len(request.Changes))
+	for _, record := range request.Changes {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		change, ok := record.Value.(C)
+		if !ok {
+			return nil, fmt.Errorf("%w: reversal requires a %s change", schemaext.ErrInvalidValue, name)
+		}
+		reversal, err := reverse(record, change)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, reversal)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

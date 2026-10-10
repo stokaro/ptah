@@ -828,21 +828,14 @@ type Table struct {
 	Partition           *PartitionSpec               // PostgreSQL table partitioning metadata
 	CustomSQL           string                       // Custom SQL to append to CREATE TABLE
 	Overrides           map[string]map[string]string // Platform-specific overrides
-	// YDBColumnFamilies is YDB's, and every other target refuses it: the
-	// column families this row table declares, each with the columns it
-	// holds -- the `//ptah:schema:column_family` annotations and the YAML
-	// `column_families` map. Nil declares none, and every column then sits in
-	// YDB's default family.
+	// YDBPartitioning is YDB's, and every other target refuses it: how this
+	// row table splits into partitions, its read replicas, its key bloom
+	// filter and the partitions it is created with, nil for a table declaring
+	// none of them.
 	//
 	// It carries the ast type rather than a copy of it. The settings are a
 	// closed, measured set, and a per-layer duplicate is a place for part of
 	// them to go missing between the declaration and the statement.
-	YDBColumnFamilies []ast.YDBColumnFamilySpec
-	// YDBPartitioning is YDB's, and every other target refuses it: how this
-	// row table splits into partitions, its read replicas, its key bloom
-	// filter and the partitions it is created with, nil for a table declaring
-	// none of them. It carries the ast type for the reason YDBColumnFamilies
-	// does.
 	// omitzero keeps the JSON of a table declaring none byte-identical, and
 	// with it the desired-schema fingerprint a plan records.
 	YDBPartitioning *ast.YDBTablePartitioningSpec `json:",omitzero"`
@@ -1278,7 +1271,7 @@ type AsyncReplication struct {
 	Name       string // Replication name, the last segment of its path
 	Schema     string // Directory that holds the replication, relative to the database root
 	// Spec is the replication's connection, items and consistency. It
-	// carries the ast type for the reason Table.YDBColumnFamilies does.
+	// carries the ast type for the reason Table.YDBPartitioning does.
 	Spec ast.AsyncReplicationSpec
 }
 

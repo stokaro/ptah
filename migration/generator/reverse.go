@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
-	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -478,25 +477,6 @@ func reverseCommentChange(change *difftypes.CommentChange) *difftypes.CommentCha
 		return nil
 	}
 	return &difftypes.CommentChange{Current: change.Desired, Desired: change.Current}
-}
-
-// reverseColumnFamiliesChange swaps the two sides of a table's YDB column
-// families, so a rollback moves each column back to the family it left and
-// gives back each setting the forward change wrote. Its current side is what
-// the table holds once the forward change has run (see [ydbfamily.Applied]).
-//
-// A family the forward change added, and a storage pool it named where the
-// table had none, are settings the earlier state does not state, so the
-// rollback keeps them, emptied of columns: YQL drops no family and removes no
-// pool, and a rollback refused for that would refuse the whole migration.
-func reverseColumnFamiliesChange(change *difftypes.YDBColumnFamiliesChange) *difftypes.YDBColumnFamiliesChange {
-	if change == nil {
-		return nil
-	}
-	return &difftypes.YDBColumnFamiliesChange{
-		Desired: ast.CloneYDBColumnFamilies(change.Current),
-		Current: ydbfamily.Applied(change.Desired, change.Current),
-	}
 }
 
 // reversePartitioningChange is the rollback of a YDB table's settings

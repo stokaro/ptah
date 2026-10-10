@@ -54,8 +54,10 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/engine/builtin/internal/dialects/mariadb"
 	"ptah.run/engine/builtin/internal/dialects/mssql"
@@ -676,10 +678,6 @@ func prepareCreateTableNode(
 		return nil, err
 	}
 	cloned.Facets = facets
-	if err := refuseColumnFamilies(dialect, caps, declaringFamilies(node.Name), node.YDBColumnFamilies); err != nil {
-		return nil, err
-	}
-	cloned.YDBColumnFamilies = ast.CloneYDBColumnFamilies(node.YDBColumnFamilies)
 	if err := validateCreateTableForeignKeyColumns(dialect, &cloned); err != nil {
 		return nil, err
 	}
@@ -698,72 +696,34 @@ func prepareCreateTableNode(
 	return &cloned, nil
 }
 
-// refuseColumnFamilies refuses a YDB row table's column families on a target
-// without the capability key each needs; see [ydbfamily.Requirements]. A
-// renderer that has no column families writes the table without them, and
-// every column then sits in one storage pool, uncompressed, with nothing
-// reporting the difference. A table declaring none passes, and so does one
-// declaring only the default family stating no setting. subject names what is
-// refused from the settings a requirement names.
-func refuseColumnFamilies(
-	dialect string,
-	caps capability.Capabilities,
-	subject func(settings string) string,
-	families []ast.YDBColumnFamilySpec,
-) error {
-	for _, requirement := range ydbfamily.Requirements(families) {
-		if caps.Has(requirement.Key) {
-			continue
-		}
-		normalized := platform.NormalizeDialect(dialect)
-		return &ptaherr.CapabilityError{
-			Dialect: normalized,
-			Feature: string(requirement.Key),
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-				subject(requirement.Settings), requirement.Key, normalized),
-		}
-	}
-	return nil
-}
-
-// refuseColumnFamilyChange refuses a change of a table's column families on a
-// target without the key what the change writes needs; see
-// [ydbfamily.ChangeRequirements].
-func refuseColumnFamilyChange(
-	dialect string,
-	caps capability.Capabilities,
-	table string,
-	change *ast.SetYDBColumnFamiliesOperation,
-) error {
-	for _, requirement := range ydbfamily.ChangeRequirements(change.Families, change.Previous) {
-		if caps.Has(requirement.Key) {
-			continue
-		}
-		normalized := platform.NormalizeDialect(dialect)
-		return &ptaherr.CapabilityError{
-			Dialect: normalized,
-			Feature: string(requirement.Key),
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf("changing the %s of %s, which requires target capability %s, unavailable on this %s target",
-				requirement.Settings, tableref.Phrase(table), requirement.Key, normalized),
-		}
-	}
-	return nil
-}
-
-// declaringFamilies names a table's column families as the table declares
-// them, for [refuseColumnFamilies].
-func declaringFamilies(table string) func(string) string {
-	return func(settings string) string { return fmt.Sprintf("table %q declares %s", table, settings) }
-}
-
-// refuseDeclaredColumnFamilies refuses the first declared table whose column
-// families the target cannot carry; see [refuseColumnFamilies].
+// refuseDeclaredColumnFamilies refuses the first declared table whose YDB
+// column families the target cannot carry: a family beyond a default one
+// stating nothing needs capability.ColumnFamilies, and a cache mode
+// capability.ColumnFamilyCacheMode (see [ydbfamily.Requirements]). Another
+// target refuses the families as a facet no owner of it registers.
 func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	if platform.NormalizeDialect(dialect) != platform.YDB {
+		return nil
+	}
 	for _, table := range tables {
-		if err := refuseColumnFamilies(dialect, caps, declaringFamilies(table.QualifiedName()), table.YDBColumnFamilies); err != nil {
+		declared, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](table.Facets, ydbschema.ColumnFamiliesKind)
+		if err != nil {
 			return err
+		}
+		if !found {
+			continue
+		}
+		for _, requirement := range ydbfamily.Requirements(declared.Families) {
+			if caps.Has(requirement.Key) {
+				continue
+			}
+			return &ptaherr.CapabilityError{
+				Dialect: platform.YDB,
+				Feature: string(requirement.Key),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("table %q declares %s, which requires target capability %s, unavailable on this %s target",
+					table.QualifiedName(), requirement.Settings, requirement.Key, platform.YDB),
+			}
 		}
 	}
 	return nil
@@ -1002,7 +962,7 @@ func prepareAlterOperation(
 		return operation, nil
 	case *ast.ExtensionAlterOperation:
 		return prepareExtensionAlter(dialect, caps, parent, typed)
-	case *ast.SetYDBColumnFamiliesOperation, *ast.SetYDBTablePartitioningOperation:
+	case *ast.SetYDBTablePartitioningOperation:
 		// One arm for a table's YDB settings, for the reason the column arm
 		// gives.
 		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
@@ -1039,9 +999,6 @@ func validateTableSettingOperation(
 	table string,
 	operation ast.AlterOperation,
 ) error {
-	if families, ok := operation.(*ast.SetYDBColumnFamiliesOperation); ok {
-		return refuseColumnFamilyChange(dialect, caps, table, families)
-	}
 	switch typed := operation.(type) {
 	case *ast.SetYDBTablePartitioningOperation:
 		return refuseTablePartitioningChange(dialect, caps, table, typed)

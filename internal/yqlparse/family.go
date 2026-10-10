@@ -5,10 +5,11 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbfamily"
 )
 
-func (p *parser) family() ast.YDBColumnFamilySpec {
+func (p *parser) family() ydbschema.ColumnFamily {
 	name := decodedName(p.identifier())
 	values := map[string]string{"name": name}
 	raw := make(map[string]string)
@@ -35,10 +36,14 @@ func (p *parser) family() ast.YDBColumnFamilySpec {
 	return spec
 }
 
-func (p *parser) bindFamilies(table *ast.CreateTableNode, columns map[string][]string) {
+// bindFamilies gives each declared family the columns that name it and
+// attaches the families to table as the YDB owner's facet. A family declared
+// twice and a column naming a family the statement does not declare are
+// refused, as YDB refuses them.
+func (p *parser) bindFamilies(table *ast.CreateTableNode, families []ydbschema.ColumnFamily, columns map[string][]string) {
 	declared := make(map[string]bool)
-	for i := range table.YDBColumnFamilies {
-		family := &table.YDBColumnFamilies[i]
+	for i := range families {
+		family := &families[i]
 		if declared[family.Name] {
 			p.failf("column family %q is declared twice", family.Name)
 		}
@@ -50,4 +55,18 @@ func (p *parser) bindFamilies(table *ast.CreateTableNode, columns map[string][]s
 			p.failf("column family %q is not declared", name)
 		}
 	}
+	if len(families) == 0 || p.err != nil {
+		return
+	}
+	value := &ydbschema.DesiredColumnFamilies{Families: families}
+	if err := ydbschema.ValidateDesiredColumnFamilies(value); err != nil {
+		p.failf("%v", err)
+		return
+	}
+	facets, err := table.Facets.With(value)
+	if err != nil {
+		p.failf("%v", err)
+		return
+	}
+	table.Facets = facets
 }

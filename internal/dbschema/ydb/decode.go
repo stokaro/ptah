@@ -75,22 +75,8 @@ func (r *Reader) table(
 		}
 		table.Facets = facets
 	}
-	if columnTable != nil {
-		table.YDBColumnTable = columnTable.Spec.Clone()
-		for _, index := range columnTable.Indexes {
-			db.Indexes = append(db.Indexes, catalog.Index{Name: index.Name, TableName: name, Schema: schema, Method: index.Method, Columns: index.Columns, StorageParams: index.Options, Comment: comments.Indexes[index.Name]})
-		}
-	} else {
-		families, familiesRead := r.columnFamilies(described)
-		table.YDBColumnFamilies = families
-		if !familiesRead {
-			db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.ColumnFamily, schema, name))
-		}
-		settings, err := tableSettings(described)
-		if err != nil {
-			return fmt.Errorf("%s: %w", subject, err)
-		}
-		table.YDBPartitioning = ydbpartition.TableSpec(settings)
+	if err := r.storage(&table, described, columnTable, comments, db); err != nil {
+		return fmt.Errorf("%s: %w", subject, err)
 	}
 	db.Tables = append(db.Tables, table)
 
@@ -488,6 +474,47 @@ func quotedList(names []string) string {
 		quoted[i] = sqlident.Quote("ydb", name)
 	}
 	return strings.Join(quoted, ", ")
+}
+
+// storage reads how table stores its rows: a column table's storage and
+// indexes, or a row table's column families and partitioning, read
+// replicas and key bloom filter.
+func (r *Reader) storage(
+	table *catalog.Table,
+	described *Ydb_Table.DescribeTableResult,
+	columnTable *ydbcolumn.Description,
+	comments ydbcomment.Comments,
+	db *catalog.Database,
+) error {
+	if columnTable != nil {
+		table.YDBColumnTable = columnTable.Spec.Clone()
+		for _, index := range columnTable.Indexes {
+			db.Indexes = append(db.Indexes, catalog.Index{Name: index.Name, TableName: table.Name, Schema: table.Schema, Method: index.Method, Columns: index.Columns, StorageParams: index.Options, Comment: comments.Indexes[index.Name]})
+		}
+		// A column table has no column families.
+		return familyCoverage(db, table.Schema, table.Name, schemaext.Knowledge{State: schemaext.Complete})
+	}
+	families, read := r.columnFamilies(described)
+	knowledge := schemaext.Knowledge{State: schemaext.Complete}
+	if !read {
+		knowledge = schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: unreadFamiliesReason}
+	}
+	if read && len(families) > 0 {
+		facets, err := familyFacets(table.Facets, families)
+		if err != nil {
+			return err
+		}
+		table.Facets = facets
+	}
+	if err := familyCoverage(db, table.Schema, table.Name, knowledge); err != nil {
+		return err
+	}
+	settings, err := tableSettings(described)
+	if err != nil {
+		return err
+	}
+	table.YDBPartitioning = ydbpartition.TableSpec(settings)
+	return nil
 }
 
 // ttlFacets reads a table's TTL as the YDB owner's observed value: the column,

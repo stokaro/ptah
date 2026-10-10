@@ -266,13 +266,13 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		Comment:    table.Comment,
 		Partition:  toSchemaPartition(table.Partition, sourcePlatform),
 		// Carried, because the SQL surface is where an owner's table setting,
-		// such as a Spanner row deletion policy or a YDB TTL, is read back:
-		// `db read` emits the clause, and a schema file holding that output
-		// has to describe the same table it came from (stokaro/ptah#2236).
-		Facets:            table.Facets,
-		YDBPartitioning:   table.YDBPartitioning.Clone(),
-		YDBColumnTable:    table.YDBColumnTable.Clone(),
-		YDBColumnFamilies: ast.CloneYDBColumnFamilies(table.YDBColumnFamilies),
+		// such as a Spanner row deletion policy, a YDB TTL or YDB column
+		// families, is read back: `db read` emits the clause, and a schema
+		// file holding that output has to describe the same table it came
+		// from (stokaro/ptah#2236).
+		Facets:          table.Facets,
+		YDBPartitioning: table.YDBPartitioning.Clone(),
+		YDBColumnTable:  table.YDBColumnTable.Clone(),
 		// Carried for the same reason: `db read` emits CREATE UNLOGGED TABLE,
 		// and a schema file holding that output has to describe the table it
 		// came from rather than a logged one.

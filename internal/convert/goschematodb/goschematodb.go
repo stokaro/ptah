@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -169,10 +168,6 @@ func toDBTables(
 			// output is read back. See stokaro/ptah#1028.
 			VirtualModule:    table.VirtualModule,
 			VirtualArguments: table.VirtualArguments,
-			// A declaration compared as the current side of a file-to-file
-			// comparison carries its column families and changefeeds as a
-			// database would.
-			YDBColumnFamilies: ast.CloneYDBColumnFamilies(table.YDBColumnFamilies),
 			// A database built from the document carries the YDB settings it
 			// declares, so a file-to-file comparison of one document against
 			// itself has nothing to plan for them.

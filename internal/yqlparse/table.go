@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/lexer"
 )
 
@@ -18,6 +19,7 @@ func (p *parser) table() *ast.CreateTableNode {
 	table.IfNotExists = guard
 	p.want("(")
 	var key []string
+	var families []ydbschema.ColumnFamily
 	familyColumns := make(map[string][]string)
 	for !p.done() && p.peek().Value != ")" {
 		switch {
@@ -33,7 +35,7 @@ func (p *parser) table() *ast.CreateTableNode {
 			table.AddIndex(p.index(table.Name))
 		case p.word("FAMILY"):
 			p.pos++
-			table.YDBColumnFamilies = append(table.YDBColumnFamilies, p.family())
+			families = append(families, p.family())
 		case p.anyWord([]string{"CONSTRAINT", "UNIQUE", "CHECK", "FOREIGN"}):
 			p.failf("this table element is not supported in a desired YQL schema")
 		default:
@@ -45,7 +47,7 @@ func (p *parser) table() *ast.CreateTableNode {
 	}
 	p.want(")")
 	p.primaryKey(table, key)
-	p.bindFamilies(table, familyColumns)
+	p.bindFamilies(table, families, familyColumns)
 	p.tableSettings(table)
 	return table
 }

@@ -5,22 +5,38 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
 // withFamilies is a table t keyed on an Int64 id, with nullable columns a and b
-// and a NOT NULL column c with a default, in the given column families.
-func withFamilies(families ...ast.YDBColumnFamilySpec) *ast.CreateTableNode {
+// and a NOT NULL column c with a default, in the given column families, which
+// the YDB owner's facet declares.
+func withFamilies(families ...ydbschema.ColumnFamily) *ast.CreateTableNode {
 	return &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{
 		ast.NewColumn("id", "BIGINT").SetPrimary(),
 		ast.NewColumn("a", "TEXT"),
 		ast.NewColumn("b", "BYTEA"),
 		ast.NewColumn("c", "INTEGER").SetNotNull().SetDefault("7"),
-	}, YDBColumnFamilies: families}
+	}, Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredColumnFamilies{Families: families}))}
+}
+
+// changeFamilies is the in-place change of table t's families from before to
+// after, in its extension envelope.
+func changeFamilies(after, before []ydbschema.ColumnFamily) *ast.AlterTableNode {
+	change := ydbdiff.ColumnFamilies{After: &ydbschema.DesiredColumnFamilies{Families: after}}
+	if before != nil {
+		change.Before = &ydbschema.ObservedColumnFamilies{Families: before}
+	}
+	return alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterColumnFamilies{Change: change}})
 }
 
 // TestRender_ColumnFamilies_HappyPath pins how a table's column families are
@@ -42,9 +58,9 @@ func TestRender_ColumnFamilies_HappyPath(t *testing.T) {
 			name: "a new table's families",
 			caps: capability.YDB251(),
 			node: withFamilies(
-				ast.YDBColumnFamilySpec{Name: "default", Compression: "lz4"},
-				ast.YDBColumnFamilySpec{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"b", "c"}},
-				ast.YDBColumnFamilySpec{Name: "empty"},
+				ydbschema.ColumnFamily{Name: "default", Compression: "lz4"},
+				ydbschema.ColumnFamily{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"b", "c"}},
+				ydbschema.ColumnFamily{Name: "empty"},
 			),
 			want: "CREATE TABLE `t` (\n" +
 				"    `id` Int64 NOT NULL,\n" +
@@ -60,7 +76,7 @@ func TestRender_ColumnFamilies_HappyPath(t *testing.T) {
 		{
 			name: "a cache mode",
 			caps: capability.YDB262(),
-			node: withFamilies(ast.YDBColumnFamilySpec{Name: "hot", CacheMode: "in_memory", Columns: []string{"a"}}),
+			node: withFamilies(ydbschema.ColumnFamily{Name: "hot", CacheMode: "in_memory", Columns: []string{"a"}}),
 			want: "CREATE TABLE `t` (\n" +
 				"    `id` Int64 NOT NULL,\n" +
 				"    `a` Utf8 FAMILY `hot`,\n" +
@@ -73,7 +89,7 @@ func TestRender_ColumnFamilies_HappyPath(t *testing.T) {
 		{
 			name: "the default family stating YDB's own compression",
 			caps: capability.YDB251(),
-			node: withFamilies(ast.YDBColumnFamilySpec{Name: "default", Compression: "off"}),
+			node: withFamilies(ydbschema.ColumnFamily{Name: "default", Compression: "off"}),
 			want: "CREATE TABLE `t` (\n" +
 				"    `id` Int64 NOT NULL,\n" +
 				"    `a` Utf8,\n" +
@@ -86,7 +102,7 @@ func TestRender_ColumnFamilies_HappyPath(t *testing.T) {
 		{
 			name: "the default family stating nothing",
 			caps: capability.YDB251(),
-			node: withFamilies(ast.YDBColumnFamilySpec{Name: "default"}),
+			node: withFamilies(ydbschema.ColumnFamily{Name: "default"}),
 			want: "CREATE TABLE `t` (\n" +
 				"    `id` Int64 NOT NULL,\n" +
 				"    `a` Utf8,\n" +
@@ -98,37 +114,15 @@ func TestRender_ColumnFamilies_HappyPath(t *testing.T) {
 		{
 			name: "families changed in place",
 			caps: capability.YDB251(),
-			node: alter(&ast.SetYDBColumnFamiliesOperation{
-				Families: []ast.YDBColumnFamilySpec{
+			node: changeFamilies(
+				[]ydbschema.ColumnFamily{
 					{Name: "cold", Compression: "off", Columns: []string{"a"}},
 					{Name: "warm", Compression: "lz4", Columns: []string{"b"}},
 				},
-				Previous: []ast.YDBColumnFamilySpec{{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"b"}}},
-			}),
+				[]ydbschema.ColumnFamily{{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"b"}}},
+			),
 			want: "ALTER TABLE `t` ADD FAMILY `warm` (COMPRESSION = 'lz4'), ALTER FAMILY `cold` SET COMPRESSION 'off', " +
 				"ALTER COLUMN `a` SET FAMILY `cold`, ALTER COLUMN `b` SET FAMILY `warm`;\n",
-		},
-		{
-			name: "settings and families the declaration leaves out",
-			caps: capability.YDB251(),
-			node: alter(&ast.SetYDBColumnFamiliesOperation{
-				Families: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"a"}}},
-				Previous: []ast.YDBColumnFamilySpec{
-					{Name: "cold", Data: "hdd", Compression: "lz4", Columns: []string{"a"}},
-					{Name: "default", Compression: "lz4", KeepInMemory: true},
-					{Name: "extra", Compression: "lz4"},
-				},
-			}),
-			want: "",
-		},
-		{
-			name: "a change that moves nothing",
-			caps: capability.YDB251(),
-			node: alter(&ast.SetYDBColumnFamiliesOperation{
-				Families: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "LZ4"}},
-				Previous: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4"}},
-			}),
-			want: "",
 		},
 	}
 	for _, test := range tests {
@@ -146,7 +140,7 @@ func TestRender_ColumnFamilies_HappyPath(t *testing.T) {
 // regular cache is refused too: 25.1 answers CACHE_MODE with `Unknown table
 // setting: CACHE_MODE` whatever its value.
 func TestRender_ColumnFamilies_RefusesByCapability(t *testing.T) {
-	hot := ast.YDBColumnFamilySpec{Name: "hot", CacheMode: "in_memory"}
+	hot := ydbschema.ColumnFamily{Name: "hot", CacheMode: "in_memory"}
 	tests := []struct {
 		name    string
 		caps    capability.Capabilities
@@ -162,19 +156,19 @@ func TestRender_ColumnFamilies_RefusesByCapability(t *testing.T) {
 		},
 		{
 			name: "a regular cache on 25.1", caps: capability.YDB251(),
-			node:    withFamilies(ast.YDBColumnFamilySpec{Name: "default", CacheMode: "regular"}),
+			node:    withFamilies(ydbschema.ColumnFamily{Name: "default", CacheMode: "regular"}),
 			wantKey: capability.ColumnFamilyCacheMode,
 			wantErr: `the column family cache mode of table "t", which requires target capability column_family_cache_mode, .*`,
 		},
 		{
 			name: "a family added with a cache mode on 25.1", caps: capability.YDB251(),
-			node:    alter(&ast.SetYDBColumnFamiliesOperation{Families: []ast.YDBColumnFamilySpec{hot}}),
+			node:    changeFamilies([]ydbschema.ColumnFamily{hot}, nil),
 			wantKey: capability.ColumnFamilyCacheMode,
 			wantErr: `changing the column family cache mode of table "t", which requires target capability column_family_cache_mode, .*`,
 		},
 		{
 			name: "families without the key", caps: capability.YDB262().With(capability.ColumnFamilies, false),
-			node:    withFamilies(ast.YDBColumnFamilySpec{Name: "cold", Columns: []string{"a"}}),
+			node:    withFamilies(ydbschema.ColumnFamily{Name: "cold", Columns: []string{"a"}}),
 			wantKey: capability.ColumnFamilies,
 			wantErr: `the column families of table "t", which requires target capability column_families, .*`,
 		},
@@ -203,31 +197,23 @@ func TestRender_ColumnFamilies_FailurePath(t *testing.T) {
 	}{
 		{
 			name:    "a key column in a family",
-			node:    withFamilies(ast.YDBColumnFamilySpec{Name: "cold", Columns: []string{"id"}}),
+			node:    withFamilies(ydbschema.ColumnFamily{Name: "cold", Columns: []string{"id"}}),
 			wantErr: "table \"t\": column family \"cold\" names key column \"id\", .*`Key column 'id' must belong to the default family`.*",
 		},
 		{
 			name:    "a column the table does not declare",
-			node:    withFamilies(ast.YDBColumnFamilySpec{Name: "cold", Columns: []string{"z"}}),
+			node:    withFamilies(ydbschema.ColumnFamily{Name: "cold", Columns: []string{"z"}}),
 			wantErr: `table "t": column family "cold" names column "z", which the table does not declare`,
 		},
 		{
-			name: "a column in two families",
-			node: withFamilies(ast.YDBColumnFamilySpec{Name: "cold", Columns: []string{"a"}},
-				ast.YDBColumnFamilySpec{Name: "warm", Columns: []string{"a"}}),
-			wantErr: `table "t": column "a" is in two column families, "cold" and "warm"`,
-		},
-		{
 			name:    "keep_in_memory in a new table",
-			node:    withFamilies(ast.YDBColumnFamilySpec{Name: "default", Compression: "lz4", KeepInMemory: true}),
+			node:    withFamilies(ydbschema.ColumnFamily{Name: "default", Compression: "lz4", KeepInMemory: true}),
 			wantErr: `table "t": column family "default" keeps its columns in memory \(keep_in_memory\), and YQL has no .*`,
 		},
 		{
 			name: "keep_in_memory stated for a table without it",
-			node: alter(&ast.SetYDBColumnFamiliesOperation{
-				Families: []ast.YDBColumnFamilySpec{{Name: "default", KeepInMemory: true}},
-				Previous: []ast.YDBColumnFamilySpec{{Name: "default", Compression: "off"}},
-			}),
+			node: changeFamilies([]ydbschema.ColumnFamily{{Name: "default", KeepInMemory: true}},
+				[]ydbschema.ColumnFamily{{Name: "default", Compression: "off"}}),
 			wantErr: `table "t": column family "default" keeps its columns in memory \(keep_in_memory\) on one side only, .*`,
 		},
 	}
@@ -240,4 +226,18 @@ func TestRender_ColumnFamilies_FailurePath(t *testing.T) {
 			c.Assert(got, qt.Equals, "")
 		})
 	}
+}
+
+// A column two families name is a value no source writes, which the model
+// itself refuses before any statement is written.
+func TestRender_ColumnFamilies_RefusesAnInvalidDeclaration(t *testing.T) {
+	c := qt.New(t)
+	node := withFamilies(ydbschema.ColumnFamily{Name: "cold", Columns: []string{"a"}},
+		ydbschema.ColumnFamily{Name: "warm", Columns: []string{"a"}})
+
+	got, err := ydb.NewWithCapabilities(capability.YDB262()).Render(node)
+
+	c.Assert(err, qt.ErrorMatches, `the column families of table "t": .*column "a" is in two column families, "cold" and "warm"`)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(got, qt.Equals, "")
 }

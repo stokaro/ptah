@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -195,10 +194,9 @@ func convertTablesAndFields(
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
 			// other (stokaro/ptah#1027).
-			YDBColumnFamilies: ast.CloneYDBColumnFamilies(dbTable.YDBColumnFamilies),
-			YDBPartitioning:   dbTable.YDBPartitioning.Clone(),
-			YDBColumnTable:    dbTable.YDBColumnTable.Clone(),
-			Overrides:         tableStorageOverrides(dbTable),
+			YDBPartitioning: dbTable.YDBPartitioning.Clone(),
+			YDBColumnTable:  dbTable.YDBColumnTable.Clone(),
+			Overrides:       tableStorageOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)
 

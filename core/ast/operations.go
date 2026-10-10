@@ -518,31 +518,6 @@ func (op *SetIndexPartitioningOperation) Accept(visitor Visitor) error { return 
 // alterOperation implements the marker method for type safety.
 func (op *SetIndexPartitioningOperation) alterOperation() {}
 
-// SetYDBColumnFamiliesOperation is YDB's: it changes a YDB row table's column
-// families in place, adding a family, changing a family's settings, and moving
-// a column from one family to another, in one `ALTER TABLE t ADD FAMILY ...,
-// ALTER FAMILY ... SET ..., ALTER COLUMN ... SET FAMILY ...`. The YDB renderer
-// writes it; the other renderers refuse it, because their engines have no
-// column families.
-//
-// It carries the families before the change as well as after it, because the
-// statement is the difference between the two: a family only Families names is
-// added, a setting that differs is set, and a column whose family differs is
-// moved. A column either side lists must exist when the statement runs.
-type SetYDBColumnFamiliesOperation struct {
-	// Families is the families the table takes, each with its columns.
-	Families []YDBColumnFamilySpec
-	// Previous is the families the table holds.
-	Previous []YDBColumnFamilySpec
-}
-
-// Accept hands the visitor this operation. The rendering is the ALTER TABLE
-// renderer's, which reads the operation out of the statement that carries it.
-func (op *SetYDBColumnFamiliesOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
-
-// alterOperation implements the marker method for type safety.
-func (op *SetYDBColumnFamiliesOperation) alterOperation() {}
-
 // SetYDBTablePartitioningOperation is YDB's: it changes how a YDB row table
 // splits into partitions, its read replicas and its key bloom filter, in
 // place: `ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4,

@@ -255,12 +255,8 @@ func TablesAndColumnsWithTableContext(
 			// different things about what the table is for -- on every run,
 			// with nothing able to fix it (stokaro/ptah#2168).
 			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
-			// A YDB table's column families belong to the table as well, and a
-			// table whose only difference is which family a column sits in
-			// has to reach TablesModified for the same reason.
-			tableDiff.YDBColumnFamiliesChange = columnFamiliesChange(cov, genTable, dbTable)
-			// A YDB table's settings are compared here for the same reason
-			// again: they belong to the table, and a table whose only
+			// A YDB table's settings are compared here for the same reason:
+			// they belong to the table, and a table whose only
 			// difference is how it splits into partitions has to reach
 			// TablesModified or nothing ever sets them.
 			tableDiff.YDBPartitioningChange = partitioningChange(genTable.YDBPartitioning, dbTable.YDBPartitioning)
@@ -327,7 +323,7 @@ func tableChanged(tableDiff difftypes.TableDiff) bool {
 	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 		len(tableDiff.ColumnsModified) > 0 ||
 		tableDiff.CommentChange != nil ||
-		len(tableDiff.FeatureChanges) > 0 || tableDiff.YDBColumnFamiliesChange != nil ||
+		len(tableDiff.FeatureChanges) > 0 ||
 		tableDiff.YDBPartitioningChange != nil || tableDiff.YDBColumnTableChange != nil
 }
 

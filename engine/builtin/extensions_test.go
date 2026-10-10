@@ -71,6 +71,9 @@ func extensionFixtures() []extensionFixture {
 		{payload: &ydbast.AlterChangefeedTopic{Changefeed: grown, Previous: feed}, wantSQL: "ALTER TOPIC `items/updates` SET (retention_period = Interval('PT2H'));\n"},
 		{payload: &ydbast.AlterTTL{Change: ydbdiff.TTL{After: &ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P30D"}}}},
 			wantSQL: "ALTER TABLE `items` SET (TTL = Interval(\"P30D\") ON `created_at`);\n"},
+		{payload: &ydbast.AlterColumnFamilies{Change: ydbdiff.ColumnFamilies{After: &ydbschema.DesiredColumnFamilies{
+			Families: []ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}},
+		}}}, wantSQL: "ALTER TABLE `items` ADD FAMILY `cold` (COMPRESSION = 'lz4'), ALTER COLUMN `body` SET FAMILY `cold`;\n"},
 	}
 }
 

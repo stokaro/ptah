@@ -9,7 +9,7 @@ import (
 
 // tableFacetOwner describes an owner whose value is one facet of a table and
 // whose every stage is a single service: CockroachDB row-level TTL, the Spanner
-// row deletion policy and the YDB TTL. Each is registered from one descriptor,
+// row deletion policy, the YDB TTL and YDB column families. Each is registered from one descriptor,
 // so no stage can select another owner.
 type tableFacetOwner struct {
 	codecs          []schemaext.Codec
@@ -29,9 +29,13 @@ type tableFacetOwner struct {
 // registerTableFacetOwner adds every stage of owner to provider for target.
 func registerTableFacetOwner(provider *engine.Provider, target string, owner tableFacetOwner) {
 	provider.Codecs = append(provider.Codecs, owner.codecs...)
-	provider.Properties = append(provider.Properties, engine.PropertySource{
-		Target: target, Format: schemaext.TablePlatformProperties, Definitions: owner.properties, Service: owner.propertyService,
-	})
+	// An owner declared through a directive of its own, such as YDB column
+	// families, reads no table property.
+	if owner.propertyService != nil {
+		provider.Properties = append(provider.Properties, engine.PropertySource{
+			Target: target, Format: schemaext.TablePlatformProperties, Definitions: owner.properties, Service: owner.propertyService,
+		})
+	}
 	provider.Conversions = append(provider.Conversions, engine.Conversion{
 		Target: target, Kinds: []schemaext.Kind{owner.facet}, Service: owner.conversion,
 	})

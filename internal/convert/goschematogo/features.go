@@ -52,11 +52,14 @@ func (ctx *renderContext) captureFeatureObjects() error {
 			continue
 		}
 		for _, kind := range facets.DeclaredKinds() {
-			if tables[facets] && isTimescaleFacet(kind) && slices.Contains(facets.Kinds(), kind) {
+			if tables[facets] && isAnnotatedFacet(kind) && slices.Contains(facets.Kinds(), kind) {
 				continue
 			}
 			return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, kind)
 		}
+	}
+	if err := ctx.captureColumnFamilies(); err != nil {
+		return err
 	}
 	if err := ctx.captureHypertables(); err != nil {
 		return err

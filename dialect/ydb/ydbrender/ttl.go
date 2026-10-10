@@ -83,15 +83,24 @@ func CreateTableTTL(target string, caps capability.Capabilities, table string, f
 // this call.
 func ValidateTableFacets(facets schemaext.Facets) error {
 	for _, kind := range facets.Kinds() {
-		if kind != ydbschema.TTLKind {
+		if kind != ydbschema.TTLKind && kind != ydbschema.ColumnFamiliesKind {
 			return fmt.Errorf("%w: YDB table facet %q is not supported", ptaherr.ErrUnsupportedFeature, kind)
 		}
 	}
-	value, found, err := schemaext.FacetAs[*ydbschema.DesiredTTL](facets, ydbschema.TTLKind)
+	ttl, found, err := schemaext.FacetAs[*ydbschema.DesiredTTL](facets, ydbschema.TTLKind)
+	if err != nil {
+		return err
+	}
+	if found {
+		if err := ydbschema.ValidateDesiredTTL(ttl); err != nil {
+			return err
+		}
+	}
+	families, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](facets, ydbschema.ColumnFamiliesKind)
 	if err != nil || !found {
 		return err
 	}
-	return ydbschema.ValidateDesiredTTL(value)
+	return ydbschema.ValidateDesiredColumnFamilies(families)
 }
 
 // requireTTL refuses a TTL on a target other than YDB, a TTL on a target

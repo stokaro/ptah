@@ -33,3 +33,21 @@ func registerYDBTTLServices(provider *engine.Provider, target string) {
 		reporting:       ydbreport.TTLService{},
 	})
 }
+
+// A YDB row table's column families are a table facet of the YDB owner. A Go
+// annotation, YAML and YQL declare them through their own syntax, not table
+// properties.
+func registerYDBColumnFamilyServices(provider *engine.Provider, target string) {
+	registerTableFacetOwner(provider, target, tableFacetOwner{
+		codecs:     slices.Concat(ydbschema.ColumnFamiliesCodecs(), []schemaext.Codec{ydbdiff.ColumnFamiliesCodec(), ydbast.ColumnFamiliesCodec()}),
+		facet:      ydbschema.ColumnFamiliesKind,
+		change:     ydbdiff.ColumnFamiliesKind,
+		operation:  ydbast.AlterColumnFamiliesKind,
+		conversion: ydbconvert.ColumnFamiliesService{},
+		comparison: ydbcompare.ColumnFamiliesService{},
+		reversal:   ydbreverse.ColumnFamiliesService{},
+		planning:   ydbplan.ColumnFamiliesService{},
+		reports:    ydbreport.ColumnFamiliesDefinitions(),
+		reporting:  ydbreport.ColumnFamiliesService{},
+	})
+}

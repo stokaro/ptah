@@ -2,8 +2,6 @@ package catalog
 
 import (
 	"slices"
-
-	"ptah.run/core/ast"
 )
 
 // Clone returns a table with independent columns and mutable settings.
@@ -13,7 +11,6 @@ func (t Table) Clone() Table {
 	for i := range t.Columns {
 		t.Columns[i] = t.Columns[i].Clone()
 	}
-	t.YDBColumnFamilies = ast.CloneYDBColumnFamilies(t.YDBColumnFamilies)
 	t.YDBPartitioning = t.YDBPartitioning.Clone()
 	t.YDBColumnTable = t.YDBColumnTable.Clone()
 	return t

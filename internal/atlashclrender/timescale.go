@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // hypertableBlock holds the validated inputs for one hypertable block.
@@ -68,9 +69,14 @@ func (r *renderer) captureTimescale() error {
 	return nil
 }
 
-// representsFacet reports a facet kind the document writes as a block.
-func representsFacet(kind schemaext.Kind) bool {
-	return kind == tsschema.HypertableKind
+// WritesTableFacet reports a table facet kind the renderer handles itself
+// rather than as platform properties: a hypertable it writes as a block, and
+// YDB column families, whose loss it reports by family and which it leaves
+// out where a table has only the default family stating nothing. A caller
+// that encodes the other facets as platform properties sets these aside
+// first.
+func WritesTableFacet(kind schemaext.Kind) bool {
+	return kind == tsschema.HypertableKind || kind == ydbschema.ColumnFamiliesKind
 }
 
 // renderHypertables writes the TimescaleDB hypertable blocks.

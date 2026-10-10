@@ -2080,12 +2080,6 @@ type TableDiff struct {
 	// comment report `Schema is synced` forever (stokaro/ptah#2168).
 	CommentChange *CommentChange `json:"comment_change,omitzero"`
 
-	// YDBColumnFamiliesChange is YDB's, and only the YDB planner plans it: a
-	// YDB row table's column families, with the columns each holds, when the
-	// declaration and the database disagree about them, nil when they agree.
-	// See [YDBColumnFamiliesChange].
-	YDBColumnFamiliesChange *YDBColumnFamiliesChange `json:"ydb_column_families_change,omitzero"`
-
 	// FeatureChanges carries owner-defined changes to individual table-owned subjects.
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 
@@ -2115,23 +2109,6 @@ type TableDiff struct {
 	// not measured, and in a diff built by hand; a planner then writes the name
 	// the server tries first. It rides off the wire, like Desired.
 	ColumnKeyNames map[string]string `json:"-"`
-}
-
-// YDBColumnFamiliesChange is YDB's: one row table's column families on both
-// sides of the comparison, each list whole, the columns each family holds
-// included.
-//
-// Whole lists travel because the statement is their difference: a family only
-// Desired names is added, a setting that differs is set, and a column whose
-// family differs moves. A column the plan drops is still listed on the Current
-// side, and the planner leaves it out of what it moves. A rollback swaps the
-// sides, and the column a dropped column's re-addition puts back in its family
-// comes from there.
-type YDBColumnFamiliesChange struct {
-	// Desired is the families the declaration states.
-	Desired []ast.YDBColumnFamilySpec `json:"desired,omitempty"`
-	// Current is the families the database holds.
-	Current []ast.YDBColumnFamilySpec `json:"current,omitempty"`
 }
 
 // YDBTablePartitioningChange is YDB's: one YDB row table's settings
