@@ -1,4 +1,4 @@
-package yamlschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -16,7 +16,7 @@ import (
 func TestParse_YDBAsyncReplication_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(ydbYAMLOwners, []byte(`
 async_replications:
   mirror:
     schema: /replicas/
@@ -156,7 +156,7 @@ transfers:
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(noOwners, []byte(test.document))
+			db, err := yamlschema.Parse(ydbYAMLOwners, []byte(test.document))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
 		})

@@ -36,6 +36,12 @@ type Extension struct {
 	Kinds []schemaext.Kind
 	// Sections are the top-level document keys the owner reads.
 	Sections []Section
+	// EntryAttributes are the scalar keys the owner adds to the frontend's
+	// table and index entries.
+	EntryAttributes []EntryAttributes
+	// EntrySections are the keys the owner adds to the frontend's table
+	// entries whose value is not a scalar.
+	EntrySections []EntrySection
 	// TargetScopes are the frontend's keys whose entries the owner reads
 	// where their target scope makes them its own.
 	TargetScopes []TargetScope
@@ -64,6 +70,9 @@ type Set struct {
 	// routes holds, for each frontend key, the extension index that reads
 	// its entries scoped to each target.
 	routes map[string]*targetscope.Routes
+	// entryKeys holds, for each frontend entry, the extension index that
+	// reads each key an owner adds to it.
+	entryKeys map[string]map[string]int
 }
 
 // None returns a selected set without owners. A parse with it claims no
@@ -77,7 +86,8 @@ func None() Set {
 // scopes without a key, a target or a reader, and a model, a section key or
 // the entries of one key and target two extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
-	set := Set{selected: true, sections: make(map[string]int), routes: make(map[string]*targetscope.Routes)}
+	set := Set{selected: true, sections: make(map[string]int), routes: make(map[string]*targetscope.Routes),
+		entryKeys: make(map[string]map[string]int)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
@@ -105,9 +115,20 @@ func NewSet(extensions ...Extension) (Set, error) {
 		if err := set.claimScopes(index, extension); err != nil {
 			return Set{}, err
 		}
+		if err := set.claimEntryKeys(index, extension); err != nil {
+			return Set{}, err
+		}
 		extension.Kinds = slices.Clone(extension.Kinds)
 		extension.Sections = slices.Clone(extension.Sections)
 		extension.TargetScopes = slices.Clone(extension.TargetScopes)
+		extension.EntrySections = slices.Clone(extension.EntrySections)
+		attributes := make([]EntryAttributes, 0, len(extension.EntryAttributes))
+		for _, group := range extension.EntryAttributes {
+			group.Attributes = slices.Clone(group.Attributes)
+			group.Reads = slices.Clone(group.Reads)
+			attributes = append(attributes, group)
+		}
+		extension.EntryAttributes = attributes
 		set.extensions = append(set.extensions, extension)
 	}
 	return set, nil

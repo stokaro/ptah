@@ -62,7 +62,7 @@ tables:
   users:
     api_nam: Account
 `,
-			wantErr: `(?s).*field api_nam not found.*`,
+			wantErr: `parse YAML schema: line 4: unknown key "api_nam" of table "users"`,
 		},
 		{
 			name: "non-scalar attribute",

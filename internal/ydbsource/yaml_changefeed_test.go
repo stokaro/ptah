@@ -1,4 +1,4 @@
-package yamlschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -17,7 +17,7 @@ import (
 func TestParse_YDBChangefeed_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(ydbYAMLOwners, []byte(`
 tables:
   items:
     columns:
@@ -70,12 +70,12 @@ func TestParse_YDBChangefeed_FailurePath(t *testing.T) {
 			"          c:\n            important: true\n            availability_period: PT1H",
 			wantErr: `table "items": changefeed "feed": consumer "c": invalid availability_period "PT1H": .*`},
 		{name: "an unknown key", changefeed: "mode: UPDATES\n        format: JSON\n        barriers: PT1S",
-			wantErr: `(?s).*field barriers not found in type yamlschema.changefeedSpec`},
+			wantErr: `(?s)parse YAML schema: .*field barriers not found.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(noOwners, []byte(`
+			db, err := yamlschema.Parse(ydbYAMLOwners, []byte(`
 tables:
   items:
     columns:

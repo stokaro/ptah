@@ -1,4 +1,4 @@
-package yamlschema_test
+package ydbsource_test
 
 import (
 	"testing"
@@ -14,7 +14,7 @@ import (
 // apart from its key, with the variable its value comes from.
 func TestParse_YDBSecret_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse(noOwners, []byte(`secrets:
+	db, err := yamlschema.Parse(ydbYAMLOwners, []byte(`secrets:
   pg_password:
     value_env: PTAH_SECRET_PG_PASSWORD
   s3:
@@ -76,7 +76,7 @@ func TestParse_YDBSecret_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(noOwners, []byte(test.document))
+			db, err := yamlschema.Parse(ydbYAMLOwners, []byte(test.document))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.Not(qt.ErrorMatches), ".*SENTINEL.*")
 			c.Assert(db, qt.IsNil)

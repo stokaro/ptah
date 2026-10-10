@@ -57,7 +57,7 @@ type yamlRowPolicy struct {
 func decodeYAMLRowPolicies(decode func(target any) error, tables yamlext.Tables) ([]yamlext.Contribution, error) {
 	var entries map[string]yamlRowPolicy
 	if err := decode(&entries); err != nil {
-		return nil, fmt.Errorf("%s: %w", RowPoliciesKey, err)
+		return nil, err
 	}
 	var collector chpolicysource.Collector
 	for _, key := range slices.Sorted(maps.Keys(entries)) {

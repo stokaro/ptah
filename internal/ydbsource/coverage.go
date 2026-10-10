@@ -1,8 +1,8 @@
 // Package ydbsource records feature knowledge for schema source adapters. Each
 // format explicitly enrolls the declaration namespaces it supports. The
-// package is also the YDB owner's side of the Go annotation frontend:
-// [Annotations] declares and decodes the YDB directives, which the frontend
-// reads only when a caller selects the owner.
+// package is also the YDB owner's side of the Go annotation and YAML
+// frontends: [Annotations] and [YAML] declare and decode the YDB directives
+// and keys, which a frontend reads only when a caller selects the owner.
 package ydbsource
 
 import (

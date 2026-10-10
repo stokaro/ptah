@@ -79,7 +79,7 @@ func TestParse_RowPoliciesKey_FailurePath(t *testing.T) {
 		wantErr  string
 	}{
 		{name: "a write check", policies: "  tenant:\n    table: orders\n    with_check: \"true\"\n",
-			wantErr: `(?s)row_policies: .*line 10: field with_check not found in type chsource.yamlRowPolicy.*`},
+			wantErr: `(?s)parse YAML schema: .*line 10: field with_check not found.*`},
 		{name: "no table", policies: "  tenant:\n    using: \"true\"\n",
 			wantErr: `row_policies\.tenant: .*a row policy names its table`},
 		{name: "a composition ClickHouse does not have", policies: "  tenant:\n    table: orders\n    as: STRICT\n",

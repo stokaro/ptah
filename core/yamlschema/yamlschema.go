@@ -29,9 +29,10 @@
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
 // rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
-// default_privileges, views, matviews, triggers, topics, resource_pools,
-// resource_pool_classifiers, async_replications, transfers, secrets,
-// external_data_sources and external_tables. A table carries
+// default_privileges, views, matviews and triggers. A selected feature owner
+// adds keys of its own, such as YDB's topics and secrets and ClickHouse's
+// row_policies, and keys to a table or an index entry, such as a YDB table's
+// changefeeds; a key no selected owner reads is unknown. A table carries
 // its columns in declaration order, along with its primary key, checks, engine,
 // comment, and per-platform overrides. A column carries the type, its
 // nullability, key and uniqueness flags, defaults, generated and identity
@@ -76,21 +77,13 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlext"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
-	"ptah.run/internal/ydbchangefeed"
-	"ptah.run/internal/ydbfamily"
-	"ptah.run/internal/ydbindex"
-	"ptah.run/internal/ydbpartition"
-	"ptah.run/internal/ydbsource"
+	"ptah.run/internal/yamlvalue"
 )
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the
@@ -160,34 +153,22 @@ func Parse(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
 }
 
 type document struct {
-	Tables                  map[string]tableSpec                  `yaml:"tables"`
-	Indexes                 map[string]indexSpec                  `yaml:"indexes"`
-	Constraints             map[string]constraintSpec             `yaml:"constraints"`
-	Enums                   map[string]enumSpec                   `yaml:"enums"`
-	Extensions              map[string]extensionSpec              `yaml:"extensions"`
-	Functions               map[string]functionSpec               `yaml:"functions"`
-	RLSPolicies             map[string]rlsPolicySpec              `yaml:"rls_policies"`
-	RLSEnabledTables        map[string]rlsEnableSpec              `yaml:"rls_enabled_tables"`
-	RLSEnabled              map[string]rlsEnableSpec              `yaml:"rls_enabled"`
-	Roles                   map[string]roleSpec                   `yaml:"roles"`
-	Grants                  map[string]grantSpec                  `yaml:"grants"`
-	Revokes                 map[string]revokeSpec                 `yaml:"revokes"`
-	DefaultPrivileges       map[string]defaultPrivilegeSpec       `yaml:"default_privileges"`
-	Views                   map[string]viewSpec                   `yaml:"views"`
-	MaterializedViews       map[string]matViewSpec                `yaml:"matviews"`
-	Triggers                map[string]triggerSpec                `yaml:"triggers"`
-	Topics                  map[string]topicSpec                  `yaml:"topics"`
-	ResourcePools           map[string]resourcePoolSpec           `yaml:"resource_pools"`
-	ResourcePoolClassifiers map[string]resourcePoolClassifierSpec `yaml:"resource_pool_classifiers"`
-	// YDB's async replications and transfers.
-	AsyncReplications map[string]asyncReplicationSpec `yaml:"async_replications"`
-	Transfers         map[string]transferSpec         `yaml:"transfers"`
-	CoordinationNodes map[string]coordinationNodeSpec `yaml:"coordination_nodes"`
-	Secrets           map[string]secretSpec           `yaml:"secrets"`
-	// ExternalDataSources and ExternalTables are YDB's.
-	ExternalDataSources map[string]externalDataSourceSpec `yaml:"external_data_sources"`
-	StreamingQueries    map[string]streamingQuerySpec     `yaml:"streaming_queries"`
-	ExternalTables      map[string]externalTableSpec      `yaml:"external_tables"`
+	Tables            map[string]tableSpec            `yaml:"tables"`
+	Indexes           map[string]indexSpec            `yaml:"indexes"`
+	Constraints       map[string]constraintSpec       `yaml:"constraints"`
+	Enums             map[string]enumSpec             `yaml:"enums"`
+	Extensions        map[string]extensionSpec        `yaml:"extensions"`
+	Functions         map[string]functionSpec         `yaml:"functions"`
+	RLSPolicies       map[string]rlsPolicySpec        `yaml:"rls_policies"`
+	RLSEnabledTables  map[string]rlsEnableSpec        `yaml:"rls_enabled_tables"`
+	RLSEnabled        map[string]rlsEnableSpec        `yaml:"rls_enabled"`
+	Roles             map[string]roleSpec             `yaml:"roles"`
+	Grants            map[string]grantSpec            `yaml:"grants"`
+	Revokes           map[string]revokeSpec           `yaml:"revokes"`
+	DefaultPrivileges map[string]defaultPrivilegeSpec `yaml:"default_privileges"`
+	Views             map[string]viewSpec             `yaml:"views"`
+	MaterializedViews map[string]matViewSpec          `yaml:"matviews"`
+	Triggers          map[string]triggerSpec          `yaml:"triggers"`
 
 	// Owned holds the top-level keys the frontend does not read itself. A
 	// selected owner's section is handed to the owner; any other key is
@@ -197,7 +178,6 @@ type document struct {
 
 type tableSpec struct {
 	Schema      stringScalar               `yaml:"schema"`
-	ColumnStore *columnStoreSpec           `yaml:"column_store"`
 	StructName  stringScalar               `yaml:"struct_name"`
 	Name        stringScalar               `yaml:"name"`
 	APIName     stringScalar               `yaml:"api_name"`
@@ -213,51 +193,15 @@ type tableSpec struct {
 	Fields      orderedMap[fieldSpec]      `yaml:"fields"`
 	Indexes     orderedMap[indexSpec]      `yaml:"indexes"`
 	Constraints orderedMap[constraintSpec] `yaml:"constraints"`
-	Changefeeds orderedMap[changefeedSpec] `yaml:"changefeeds"`
 	RLSEnabled  bool                       `yaml:"rls_enabled"`
-
-	// ColumnFamilies are the table's YDB column families; see
-	// [columnFamilySpec].
-	ColumnFamilies orderedMap[columnFamilySpec] `yaml:"column_families"`
 
 	Platform  platformSpec `yaml:"platform"`
 	Overrides platformSpec `yaml:"overrides"`
 
-	// The settings of a YDB row table, keyed as the annotation keys them;
-	// see [ydbpartition.ParseTableDeclaration].
-	AutoPartitioningBySize          *stringScalar `yaml:"auto_partitioning_by_size"`
-	AutoPartitioningPartitionSizeMB *stringScalar `yaml:"auto_partitioning_partition_size_mb"`
-	AutoPartitioningByLoad          *stringScalar `yaml:"auto_partitioning_by_load"`
-	AutoPartitioningMinPartitions   *stringScalar `yaml:"auto_partitioning_min_partitions_count"`
-	AutoPartitioningMaxPartitions   *stringScalar `yaml:"auto_partitioning_max_partitions_count"`
-	ReadReplicasSettings            *stringScalar `yaml:"read_replicas_settings"`
-	KeyBloomFilter                  *stringScalar `yaml:"key_bloom_filter"`
-	UniformPartitions               *stringScalar `yaml:"uniform_partitions"`
-	PartitionAtKeys                 *stringScalar `yaml:"partition_at_keys"`
-}
-
-// partitioningValues are the settings the table sets, keyed by attribute
-// name. An attribute the document leaves out is absent, and one it sets to an
-// empty value is present, so an empty value is refused rather than read as no
-// declaration.
-func (spec tableSpec) partitioningValues() map[string]string {
-	values := make(map[string]string)
-	for attribute, value := range map[string]*stringScalar{
-		ydbpartition.AttributeBySize:            spec.AutoPartitioningBySize,
-		ydbpartition.AttributePartitionSizeMB:   spec.AutoPartitioningPartitionSizeMB,
-		ydbpartition.AttributeByLoad:            spec.AutoPartitioningByLoad,
-		ydbpartition.AttributeMinPartitions:     spec.AutoPartitioningMinPartitions,
-		ydbpartition.AttributeMaxPartitions:     spec.AutoPartitioningMaxPartitions,
-		ydbpartition.AttributeReadReplicas:      spec.ReadReplicasSettings,
-		ydbpartition.AttributeKeyBloomFilter:    spec.KeyBloomFilter,
-		ydbpartition.AttributeUniformPartitions: spec.UniformPartitions,
-		ydbpartition.AttributePartitionAtKeys:   spec.PartitionAtKeys,
-	} {
-		if value != nil {
-			values[attribute] = string(*value)
-		}
-	}
-	return values
+	// Owned holds the keys the frontend does not read itself: the ones a
+	// selected owner adds to a table, such as a YDB table's changefeeds, and
+	// anything else, which is refused as unknown.
+	Owned map[string]yaml.Node `yaml:",inline"`
 }
 
 type fieldSpec struct {
@@ -301,260 +245,23 @@ type fieldSpec struct {
 }
 
 type indexSpec struct {
-	FalsePositiveProbability *stringScalar `yaml:"false_positive_probability"`
-	NgramSize                *stringScalar `yaml:"ngram_size"`
-	CaseSensitive            *stringScalar `yaml:"case_sensitive"`
-	Name                     stringScalar  `yaml:"name"`
-	Fields                   stringList    `yaml:"fields"`
-	Columns                  stringList    `yaml:"columns"`
-	Include                  stringList    `yaml:"include"`
-	Unique                   bool          `yaml:"unique"`
-	Comment                  stringScalar  `yaml:"comment"`
-	Type                     stringScalar  `yaml:"type"`
-	Condition                stringScalar  `yaml:"condition"`
-	Where                    stringScalar  `yaml:"where"`
-	Operator                 stringScalar  `yaml:"ops"`
-	TableName                stringScalar  `yaml:"table"`
-	Platform                 platformSpec  `yaml:"platform"`
+	Name      stringScalar `yaml:"name"`
+	Fields    stringList   `yaml:"fields"`
+	Columns   stringList   `yaml:"columns"`
+	Include   stringList   `yaml:"include"`
+	Unique    bool         `yaml:"unique"`
+	Comment   stringScalar `yaml:"comment"`
+	Type      stringScalar `yaml:"type"`
+	Condition stringScalar `yaml:"condition"`
+	Where     stringScalar `yaml:"where"`
+	Operator  stringScalar `yaml:"ops"`
+	TableName stringScalar `yaml:"table"`
+	Platform  platformSpec `yaml:"platform"`
 
-	// The partitioning of a YDB global index, keyed as the annotation keys
-	// it; see [ydbindex.ParseDeclaration].
-	AutoPartitioningBySize          *stringScalar `yaml:"auto_partitioning_by_size"`
-	AutoPartitioningPartitionSizeMB *stringScalar `yaml:"auto_partitioning_partition_size_mb"`
-	AutoPartitioningByLoad          *stringScalar `yaml:"auto_partitioning_by_load"`
-	AutoPartitioningMinPartitions   *stringScalar `yaml:"auto_partitioning_min_partitions_count"`
-	AutoPartitioningMaxPartitions   *stringScalar `yaml:"auto_partitioning_max_partitions_count"`
-	ReadReplicasSettings            *stringScalar `yaml:"read_replicas_settings"`
-
-	// The settings of a YDB vector index, keyed as the annotation keys them;
-	// see [ydbindex.ParseVectorDeclaration].
-	Distance        *stringScalar `yaml:"distance"`
-	Similarity      *stringScalar `yaml:"similarity"`
-	VectorType      *stringScalar `yaml:"vector_type"`
-	VectorDimension *stringScalar `yaml:"vector_dimension"`
-	Levels          *stringScalar `yaml:"levels"`
-	Clusters        *stringScalar `yaml:"clusters"`
-	// Full-text analyzer options use the same names as Go annotations.
-	Tokenizer            *stringScalar `yaml:"tokenizer"`
-	Language             *stringScalar `yaml:"language"`
-	UseFilterLowercase   *stringScalar `yaml:"use_filter_lowercase"`
-	UseFilterStopwords   *stringScalar `yaml:"use_filter_stopwords"`
-	UseFilterNgram       *stringScalar `yaml:"use_filter_ngram"`
-	UseFilterEdgeNgram   *stringScalar `yaml:"use_filter_edge_ngram"`
-	FilterNgramMinLength *stringScalar `yaml:"filter_ngram_min_length"`
-	FilterNgramMaxLength *stringScalar `yaml:"filter_ngram_max_length"`
-	UseFilterLength      *stringScalar `yaml:"use_filter_length"`
-	FilterLengthMin      *stringScalar `yaml:"filter_length_min"`
-	FilterLengthMax      *stringScalar `yaml:"filter_length_max"`
-	UseFilterSnowball    *stringScalar `yaml:"use_filter_snowball"`
-}
-
-// fullTextValues preserves both omitted and explicitly false analyzer options.
-func (spec indexSpec) fullTextValues() map[string]string {
-	values := map[string]string{"type": string(spec.Type)}
-	for name, value := range map[string]*stringScalar{
-		"false_positive_probability": spec.FalsePositiveProbability,
-		"ngram_size":                 spec.NgramSize,
-		"case_sensitive":             spec.CaseSensitive,
-		"tokenizer":                  spec.Tokenizer,
-		"language":                   spec.Language,
-		"use_filter_lowercase":       spec.UseFilterLowercase,
-		"use_filter_stopwords":       spec.UseFilterStopwords,
-		"use_filter_ngram":           spec.UseFilterNgram,
-		"use_filter_edge_ngram":      spec.UseFilterEdgeNgram,
-		"filter_ngram_min_length":    spec.FilterNgramMinLength,
-		"filter_ngram_max_length":    spec.FilterNgramMaxLength,
-		"use_filter_length":          spec.UseFilterLength,
-		"filter_length_min":          spec.FilterLengthMin,
-		"filter_length_max":          spec.FilterLengthMax,
-		"use_filter_snowball":        spec.UseFilterSnowball,
-	} {
-		if value != nil {
-			values[name] = string(*value)
-		}
-	}
-	return values
-}
-
-// vectorValues are the vector attributes the index sets, keyed by attribute
-// name, read the way [indexSpec.partitioningValues] reads its own.
-func (spec indexSpec) vectorValues() map[string]string {
-	values := make(map[string]string)
-	for attribute, value := range map[string]*stringScalar{
-		ydbindex.AttributeDistance:        spec.Distance,
-		ydbindex.AttributeSimilarity:      spec.Similarity,
-		ydbindex.AttributeVectorType:      spec.VectorType,
-		ydbindex.AttributeVectorDimension: spec.VectorDimension,
-		ydbindex.AttributeLevels:          spec.Levels,
-		ydbindex.AttributeClusters:        spec.Clusters,
-	} {
-		if value != nil {
-			values[attribute] = string(*value)
-		}
-	}
-	return values
-}
-
-// partitioningValues are the partitioning attributes the index sets, keyed by
-// attribute name. An attribute the document leaves out is absent, and one it
-// sets to an empty value is present, so an empty value is refused rather than
-// read as no declaration.
-func (spec indexSpec) partitioningValues() map[string]string {
-	values := make(map[string]string)
-	for attribute, value := range map[string]*stringScalar{
-		ydbpartition.AttributeBySize:          spec.AutoPartitioningBySize,
-		ydbpartition.AttributePartitionSizeMB: spec.AutoPartitioningPartitionSizeMB,
-		ydbpartition.AttributeByLoad:          spec.AutoPartitioningByLoad,
-		ydbpartition.AttributeMinPartitions:   spec.AutoPartitioningMinPartitions,
-		ydbpartition.AttributeMaxPartitions:   spec.AutoPartitioningMaxPartitions,
-		ydbpartition.AttributeReadReplicas:    spec.ReadReplicasSettings,
-	} {
-		if value != nil {
-			values[attribute] = string(*value)
-		}
-	}
-	return values
-}
-
-// columnFamilySpec is a YDB column family of the table, keyed by its name,
-// with each setting keyed as the annotation keys it; see
-// [ydbfamily.ParseDeclaration].
-type columnFamilySpec struct {
-	Data        *stringScalar `yaml:"data"`
-	Compression *stringScalar `yaml:"compression"`
-	CacheMode   *stringScalar `yaml:"cache_mode"`
-	Fields      stringList    `yaml:"fields"`
-}
-
-// values are the attributes the family sets, keyed by attribute name. An
-// attribute the document leaves out is absent, and one it sets to an empty
-// value is present, so an empty value is refused rather than read as no
-// declaration.
-func (spec columnFamilySpec) values(name string) map[string]string {
-	values := map[string]string{ydbfamily.AttributeName: name}
-	for attribute, value := range map[string]*stringScalar{
-		ydbfamily.AttributeData:        spec.Data,
-		ydbfamily.AttributeCompression: spec.Compression,
-		ydbfamily.AttributeCacheMode:   spec.CacheMode,
-	} {
-		if value != nil {
-			values[attribute] = string(*value)
-		}
-	}
-	if spec.Fields != nil {
-		values[ydbfamily.AttributeFields] = strings.Join(spec.Fields, ",")
-	}
-	return values
-}
-
-// buildColumnFamilies reads a table's YDB column families into the YDB
-// owner's facet, or an empty collection for a table that declares none.
-func buildColumnFamilies(table string, specs orderedMap[columnFamilySpec]) (schemaext.Facets, error) {
-	if len(specs) == 0 {
-		return schemaext.Facets{}, nil
-	}
-	families := make([]ydbschema.ColumnFamily, 0, len(specs))
-	for _, entry := range specs {
-		family, err := ydbfamily.ParseDeclaration(entry.Value.values(entry.Name))
-		if err != nil {
-			return schemaext.Facets{}, fmt.Errorf("table %q: column family %q: %w", table, entry.Name, err)
-		}
-		families = append(families, family)
-	}
-	declared := &ydbschema.DesiredColumnFamilies{Families: families}
-	if err := ydbschema.ValidateDesiredColumnFamilies(declared); err != nil {
-		return schemaext.Facets{}, fmt.Errorf("table %q: column families: %w", table, err)
-	}
-	return schemaext.NewFacets(declared)
-}
-
-// changefeedSpec is a YDB changefeed of the table, keyed by its name, with
-// each option keyed as the annotation keys it; see
-// [ydbchangefeed.ParseDeclaration].
-type changefeedSpec struct {
-	Mode                     *stringScalar            `yaml:"mode"`
-	Format                   *stringScalar            `yaml:"format"`
-	VirtualTimestamps        *stringScalar            `yaml:"virtual_timestamps"`
-	ResolvedTimestamps       *stringScalar            `yaml:"resolved_timestamps"`
-	InitialScan              *stringScalar            `yaml:"initial_scan"`
-	UserSIDs                 *stringScalar            `yaml:"user_sids"`
-	SchemaChanges            *stringScalar            `yaml:"schema_changes"`
-	TopicMinActivePartitions *stringScalar            `yaml:"topic_min_active_partitions"`
-	TopicAutoPartitioning    *stringScalar            `yaml:"topic_auto_partitioning"`
-	RetentionPeriod          *stringScalar            `yaml:"retention_period"`
-	Consumers                orderedMap[consumerSpec] `yaml:"consumers"`
-}
-
-// consumerSpec is a consumer of a changefeed's topic, keyed by its name; see
-// [ydbtopic.ParseConsumer].
-type consumerSpec struct {
-	Important          *stringScalar `yaml:"important"`
-	ReadFrom           *stringScalar `yaml:"read_from"`
-	SupportedCodecs    stringList    `yaml:"supported_codecs"`
-	AvailabilityPeriod *stringScalar `yaml:"availability_period"`
-}
-
-// values are the attributes the changefeed sets, keyed by attribute name. An
-// attribute the document leaves out is absent, and one it sets to an empty
-// value is present, so an empty value is refused rather than read as no
-// declaration.
-func (spec changefeedSpec) values(name string) map[string]string {
-	return presentValues(map[string]*stringScalar{
-		ydbchangefeed.AttributeMode:                     spec.Mode,
-		ydbchangefeed.AttributeFormat:                   spec.Format,
-		ydbchangefeed.AttributeVirtualTimestamps:        spec.VirtualTimestamps,
-		ydbchangefeed.AttributeResolvedTimestamps:       spec.ResolvedTimestamps,
-		ydbchangefeed.AttributeInitialScan:              spec.InitialScan,
-		ydbchangefeed.AttributeUserSIDs:                 spec.UserSIDs,
-		ydbchangefeed.AttributeSchemaChanges:            spec.SchemaChanges,
-		ydbchangefeed.AttributeTopicMinActivePartitions: spec.TopicMinActivePartitions,
-		ydbchangefeed.AttributeTopicAutoPartitioning:    spec.TopicAutoPartitioning,
-		ydbchangefeed.AttributeRetentionPeriod:          spec.RetentionPeriod,
-	}, name)
-}
-
-// values are the attributes the consumer sets, keyed as for a changefeed.
-func (spec consumerSpec) values(name string) map[string]string {
-	values := presentValues(map[string]*stringScalar{
-		ydbchangefeed.AttributeImportant:          spec.Important,
-		ydbchangefeed.AttributeReadFrom:           spec.ReadFrom,
-		ydbchangefeed.AttributeAvailabilityPeriod: spec.AvailabilityPeriod,
-	}, name)
-	if spec.SupportedCodecs != nil {
-		values[ydbchangefeed.AttributeSupportedCodecs] = strings.Join(spec.SupportedCodecs, ",")
-	}
-	return values
-}
-
-// presentValues keeps the attributes a document set, and names the object.
-func presentValues(scalars map[string]*stringScalar, name string) map[string]string {
-	values := map[string]string{ydbchangefeed.AttributeName: name}
-	for attribute, value := range scalars {
-		if value != nil {
-			values[attribute] = string(*value)
-		}
-	}
-	return values
-}
-
-// buildChangefeeds reads a table's changefeeds and their consumers.
-func buildChangefeeds(table string, specs orderedMap[changefeedSpec]) ([]ydbschema.ChangefeedSpec, error) {
-	var changefeeds []ydbschema.ChangefeedSpec
-	for _, entry := range specs {
-		changefeed, err := ydbchangefeed.ParseDeclaration(entry.Value.values(entry.Name))
-		if err != nil {
-			return nil, fmt.Errorf("table %q: changefeed %q: %w", table, entry.Name, err)
-		}
-		for _, consumerEntry := range entry.Value.Consumers {
-			consumer, err := ydbtopic.ParseConsumer(consumerEntry.Value.values(consumerEntry.Name))
-			if err != nil {
-				return nil, fmt.Errorf("table %q: changefeed %q: consumer %q: %w", table, entry.Name, consumerEntry.Name, err)
-			}
-			changefeed.Consumers = append(changefeed.Consumers, consumer)
-		}
-		changefeeds = append(changefeeds, changefeed)
-	}
-	return changefeeds, nil
+	// Owned holds the keys the frontend does not read itself: the ones a
+	// selected owner adds to an index, such as a YDB index's partitioning,
+	// and anything else, which is refused as unknown.
+	Owned map[string]yaml.Node `yaml:",inline"`
 }
 
 type constraintSpec struct {
@@ -623,39 +330,6 @@ type functionSpec struct {
 	Settings []stringScalar `yaml:"settings"`
 	Body     stringScalar   `yaml:"body"`
 	Comment  stringScalar   `yaml:"comment"`
-}
-
-// coordinationNodeSpec declares a YDB coordination node. The settings are
-// keyed as the annotation keys them; see [ydbcoordination.ParseDeclaration].
-type coordinationNodeSpec struct {
-	StructName              stringScalar  `yaml:"struct_name"`
-	Name                    stringScalar  `yaml:"name"`
-	Schema                  stringScalar  `yaml:"schema"`
-	SelfCheckPeriod         *stringScalar `yaml:"self_check_period"`
-	SessionGracePeriod      *stringScalar `yaml:"session_grace_period"`
-	ReadConsistencyMode     *stringScalar `yaml:"read_consistency_mode"`
-	AttachConsistencyMode   *stringScalar `yaml:"attach_consistency_mode"`
-	RateLimiterCountersMode *stringScalar `yaml:"rate_limiter_counters_mode"`
-}
-
-// settingValues are the settings the node sets, keyed by setting name. A
-// setting the document leaves out is absent, and one it sets to an empty
-// value is present, so an empty value is refused rather than read as no
-// declaration.
-func (spec coordinationNodeSpec) settingValues() map[string]string {
-	values := make(map[string]string)
-	for setting, value := range map[string]*stringScalar{
-		ydbcoordination.SettingSelfCheckPeriod:         spec.SelfCheckPeriod,
-		ydbcoordination.SettingSessionGracePeriod:      spec.SessionGracePeriod,
-		ydbcoordination.SettingReadConsistencyMode:     spec.ReadConsistencyMode,
-		ydbcoordination.SettingAttachConsistencyMode:   spec.AttachConsistencyMode,
-		ydbcoordination.SettingRateLimiterCountersMode: spec.RateLimiterCountersMode,
-	} {
-		if value != nil {
-			values[setting] = string(*value)
-		}
-	}
-	return values
 }
 
 type viewSpec struct {
@@ -812,20 +486,6 @@ type defaultPrivilegeSpec struct {
 
 type platformSpec map[string]map[string]stringScalar
 
-// addStandaloneObjects adds the YDB objects a document states outside any
-// table, one kind after another.
-func (d document) addStandaloneObjects(db *schemamodel.Database) error {
-	for _, add := range []func(*schemamodel.Database) error{
-		d.addTopics, d.addResourcePools, d.addAsyncReplications, d.addTransfers,
-		d.addCoordinationNodes, d.addSecrets, d.addStreamingQueries, d.addExternalObjects,
-	} {
-		if err := add(db); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
 	db := &schemamodel.Database{
 		Dependencies:               make(map[string][]string),
@@ -834,10 +494,10 @@ func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Data
 	}
 
 	d.addEnums(db)
-	if err := d.addTables(db, owners); err != nil {
+	if err := d.addTables(db, owners, data); err != nil {
 		return nil, err
 	}
-	if err := d.addIndexes(db); err != nil {
+	if err := d.addIndexes(db, owners); err != nil {
 		return nil, err
 	}
 	if err := d.addConstraints(db); err != nil {
@@ -854,9 +514,6 @@ func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Data
 		return nil, err
 	}
 	if err := d.addTriggers(db); err != nil {
-		return nil, err
-	}
-	if err := d.addStandaloneObjects(db); err != nil {
 		return nil, err
 	}
 	if err := d.addRLS(db, owners); err != nil {
@@ -903,45 +560,28 @@ func (d document) addEnums(db *schemamodel.Database) {
 	}
 }
 
-func (d document) addTables(db *schemamodel.Database, owners yamlext.Set) error {
-	featureCoverage, err := ydbsource.Coverage(ydbsource.Limits{})
-	if err != nil {
-		return err
-	}
+func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data []byte) error {
 	// The selected owners claim what a YAML document can declare of their
 	// models, such as CockroachDB row-level TTL and the Spanner row deletion
 	// policy in a table's cockroachdb and spanner platform groups, so a table
-	// without one requests none. ydbsource.Coverage enrolls the YDB TTL,
-	// declared in the ydb group, the same way.
+	// without one requests none.
 	claims, err := owners.Coverage()
 	if err != nil {
 		return err
 	}
-	if featureCoverage, err = featureCoverage.Combine(claims); err != nil {
-		return err
-	}
-	db.FeatureCoverage = featureCoverage
+	db.FeatureCoverage = claims
 
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
 		tableName := valueOrDefault(table.Name, tableKey)
 
-		changefeeds, err := buildChangefeeds(tableName, table.Changefeeds)
+		scalars, sections, err := ownedKeys(owners, yamlext.EntryTable, fmt.Sprintf("table %q", tableKey), table.Owned)
 		if err != nil {
 			return err
 		}
-		for _, feed := range changefeeds {
-			db.FeatureObjects, err = db.FeatureObjects.With(ydbschema.DesiredObject(string(table.Schema), tableName, feed))
-			if err != nil {
-				return err
-			}
-		}
-		facets, err := table.ydbFacets(tableKey, tableName)
+		facets, err := owners.DecodeEntryAttributes(yamlext.EntryTable, scalars)
 		if err != nil {
-			return err
-		}
-		if facets, err = table.ColumnStore.declare(facets); err != nil {
 			return fmt.Errorf("table %q: %w", tableKey, err)
 		}
 		db.Tables = append(db.Tables, schemamodel.Table{
@@ -963,11 +603,15 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set) error 
 
 			Facets: facets,
 		})
+		owned := yamlext.Table{Key: tableKey, Schema: string(table.Schema), Name: tableName, Struct: structName}
+		if err := addTableSections(db, owners, data, owned, sections); err != nil {
+			return err
+		}
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {
 			return err
 		}
-		if err := addTableIndexes(db, structName, table.Indexes); err != nil {
+		if err := addTableIndexes(db, owners, structName, table.Indexes); err != nil {
 			return err
 		}
 		if err := addTableConstraints(db, structName, tableName, table.Constraints); err != nil {
@@ -1105,9 +749,9 @@ func normalizeIdentityGeneration(value string) string {
 	}
 }
 
-func addTableIndexes(db *schemamodel.Database, structName string, indexes orderedMap[indexSpec]) error {
+func addTableIndexes(db *schemamodel.Database, owners yamlext.Set, structName string, indexes orderedMap[indexSpec]) error {
 	for _, index := range indexes {
-		value, err := buildIndex(index.Name, structName, index.Value)
+		value, err := buildIndex(owners, index.Name, structName, index.Value)
 		if err != nil {
 			return err
 		}
@@ -1116,9 +760,9 @@ func addTableIndexes(db *schemamodel.Database, structName string, indexes ordere
 	return nil
 }
 
-func (d document) addIndexes(db *schemamodel.Database) error {
+func (d document) addIndexes(db *schemamodel.Database, owners yamlext.Set) error {
 	for _, key := range sortedKeys(d.Indexes) {
-		index, err := buildIndex(key, "", d.Indexes[key])
+		index, err := buildIndex(owners, key, "", d.Indexes[key])
 		if err != nil {
 			return err
 		}
@@ -1127,7 +771,7 @@ func (d document) addIndexes(db *schemamodel.Database) error {
 	return nil
 }
 
-func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, error) {
+func buildIndex(owners yamlext.Set, key, structName string, spec indexSpec) (schemamodel.Index, error) {
 	fields := cleanStrings(spec.Fields)
 	if len(fields) == 0 {
 		fields = cleanStrings(spec.Columns)
@@ -1145,25 +789,22 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 			return schemamodel.Index{}, fmt.Errorf("index %q names an empty include column", key)
 		}
 	}
-	partitioning, err := ydbindex.ParseDeclaration(spec.partitioningValues())
+	// The keys owners add to an index, such as YDB's partitioning and
+	// full-text options, are read by their owners into settings and options
+	// of the index; an owner reads the index's type and operator class too.
+	scalars, _, err := ownedKeys(owners, yamlext.EntryIndex, fmt.Sprintf("index %q", key), spec.Owned)
+	if err != nil {
+		return schemamodel.Index{}, err
+	}
+	scalars["type"] = string(spec.Type)
+	if spec.Operator != "" {
+		scalars["ops"] = string(spec.Operator)
+	}
+	facets, err := owners.DecodeEntryAttributes(yamlext.EntryIndex, scalars)
 	if err != nil {
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
 	}
-	facets, err := ydbindex.WithPartitioning(schemaext.Facets{}, partitioning)
-	if err != nil {
-		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
-	}
-	vector, err := ydbindex.DeclareVector(spec.vectorValues(), string(spec.Type), string(spec.Operator))
-	if err != nil {
-		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
-	}
-	if vector != nil {
-		if facets, err = facets.With(vector); err != nil {
-			return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
-		}
-	}
-
-	fullText, err := ydbindex.ParseOptionsDeclaration(spec.fullTextValues())
+	options, err := owners.DecodeEntryParameters(yamlext.EntryIndex, scalars)
 	if err != nil {
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
 	}
@@ -1181,7 +822,7 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 		Operator:       string(spec.Operator),
 		TableName:      string(spec.TableName),
 		Overrides:      mergePlatform(spec.Platform, nil),
-		StorageParams:  fullText,
+		StorageParams:  options,
 	}, nil
 }
 
@@ -1342,25 +983,6 @@ func (d document) addViews(db *schemamodel.Database) error {
 }
 
 // addCoordinationNodes reads the YDB coordination nodes, in key order.
-func (d document) addCoordinationNodes(db *schemamodel.Database) error {
-	for _, key := range sortedKeys(d.CoordinationNodes) {
-		spec := d.CoordinationNodes[key]
-		name := valueOrDefault(spec.Name, key)
-		if err := ydbcoordination.RefuseName(string(spec.Schema), name); err != nil {
-			return fmt.Errorf("coordination node %q: %w", key, err)
-		}
-		settings, err := ydbcoordination.ParseDeclaration(spec.settingValues())
-		if err != nil {
-			return fmt.Errorf("coordination node %q: %w", key, err)
-		}
-		db.FeatureObjects, err = db.FeatureObjects.With(ydbcoordination.DesiredObject(string(spec.Schema), name, string(spec.StructName), settings))
-		if err != nil {
-			return fmt.Errorf("coordination node %q: %w", key, err)
-		}
-	}
-	return nil
-}
-
 func (d document) addMaterializedViews(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.MaterializedViews) {
 		spec := d.MaterializedViews[key]
@@ -1861,112 +1483,14 @@ func copyPlatform(target map[string]map[string]string, source platformSpec) {
 	}
 }
 
-type stringScalar string
-
-func (s *stringScalar) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind != yaml.ScalarNode {
-		return fmt.Errorf("expected scalar, got %s", value.ShortTag())
-	}
-	if value.Tag == "!!null" {
-		*s = ""
-		return nil
-	}
-	*s = stringScalar(value.Value)
-	return nil
-}
-
-type stringList []string
-
-func (s *stringList) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
-	case yaml.SequenceNode:
-		values := make([]string, 0, len(value.Content))
-		for _, item := range value.Content {
-			var scalar stringScalar
-			if err := item.Decode(&scalar); err != nil {
-				return err
-			}
-			values = append(values, string(scalar))
-		}
-		*s = values
-	case yaml.ScalarNode:
-		if value.Tag == "!!null" || value.Value == "" {
-			*s = nil
-			return nil
-		}
-		*s = strings.Split(value.Value, ",")
-	default:
-		return fmt.Errorf("expected scalar or sequence, got %s", value.ShortTag())
-	}
-	return nil
-}
-
-type orderedMap[V any] []orderedEntry[V]
-
-type orderedEntry[V any] struct {
-	Name  string
-	Value V
-}
-
-func (m *orderedMap[V]) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind == yaml.ScalarNode && value.Tag == "!!null" {
-		*m = nil
-		return nil
-	}
-	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("expected mapping, got %s", value.ShortTag())
-	}
-
-	entries := make([]orderedEntry[V], 0, len(value.Content)/2)
-	seen := make(map[string]bool, len(value.Content)/2)
-	for i := 0; i < len(value.Content); i += 2 {
-		keyNode := value.Content[i]
-		valueNode := value.Content[i+1]
-
-		if seen[keyNode.Value] {
-			return fmt.Errorf("duplicate key %q", keyNode.Value)
-		}
-		seen[keyNode.Value] = true
-
-		var entryValue V
-		if err := decodeKnownFields(valueNode, &entryValue); err != nil {
-			return err
-		}
-		entries = append(entries, orderedEntry[V]{
-			Name:  keyNode.Value,
-			Value: entryValue,
-		})
-	}
-
-	*m = entries
-	return nil
-}
+// The value types the frontend reads its keys with, shared with the owners
+// that read keys of their own.
+type (
+	stringScalar      = yamlvalue.Scalar
+	stringList        = yamlvalue.List
+	orderedMap[V any] = yamlvalue.OrderedMap[V]
+)
 
 func decodeKnownFields[V any](node *yaml.Node, target *V) error {
-	var buffer bytes.Buffer
-	encoder := yaml.NewEncoder(&buffer)
-	if err := encoder.Encode(node); err != nil {
-		return err
-	}
-	if err := encoder.Close(); err != nil {
-		return err
-	}
-
-	decoder := yaml.NewDecoder(&buffer)
-	decoder.KnownFields(true)
-	return decoder.Decode(target)
-}
-
-// ydbFacets is a table's YDB column families and settings as the YDB owner's
-// facets. tableKey names the table in a refusal of its settings.
-func (spec tableSpec) ydbFacets(tableKey, tableName string) (schemaext.Facets, error) {
-	partitioning, err := ydbpartition.ParseTableDeclaration(spec.partitioningValues())
-	if err != nil {
-		return schemaext.Facets{}, fmt.Errorf("table %q: %w", tableKey, err)
-	}
-	facets, err := buildColumnFamilies(tableName, spec.ColumnFamilies)
-	if err != nil || partitioning == nil {
-		return facets, err
-	}
-	return facets.With(&ydbschema.DesiredTablePartitioning{TablePartitioning: *partitioning})
+	return yamlvalue.DecodeKnownFields(node, target)
 }
