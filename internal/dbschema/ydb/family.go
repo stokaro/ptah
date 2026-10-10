@@ -149,10 +149,20 @@ const unreadFamiliesReason = "the table's column families hold a setting Ptah do
 // unrepresentable where they hold a setting it does not read. A table the read
 // did not return is not known to have no families.
 func familyCoverage(db *catalog.Database, schema, name string, knowledge schemaext.Knowledge) error {
+	return tableCoverage(db, ydbschema.ColumnFamiliesKind, ydbschema.ColumnFamiliesCoverage,
+		"only returned tables have inspected column families", schema, name, knowledge)
+}
+
+// tableCoverage records knowledge of a table facet of kind for the table name
+// in the directory schema, enrolling the kind first, through enroll, with
+// uninspected knowledge for every table the read did not return.
+func tableCoverage(db *catalog.Database, kind schemaext.Kind,
+	enroll func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error),
+	uninspected, schema, name string, knowledge schemaext.Knowledge,
+) error {
 	kinds := db.FeatureCoverage.KindRecords()
-	if !slices.ContainsFunc(kinds, func(record schemaext.KindCoverage) bool { return record.Model.Kind == ydbschema.ColumnFamiliesKind }) {
-		enrolled, err := ydbschema.ColumnFamiliesCoverage(schemaext.Observed,
-			schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables have inspected column families"}, nil)
+	if !slices.ContainsFunc(kinds, func(record schemaext.KindCoverage) bool { return record.Model.Kind == kind }) {
+		enrolled, err := enroll(schemaext.Observed, schemaext.Knowledge{State: schemaext.Uninspected, Reason: uninspected}, nil)
 		if err != nil {
 			return err
 		}
@@ -160,9 +170,9 @@ func familyCoverage(db *catalog.Database, schema, name string, knowledge schemae
 	}
 	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB)).TableParts(schema, name)
 	known, err := schemaext.NewCoverage(schemaext.Observed, kinds, append(db.FeatureCoverage.SubjectRecords(),
-		schemaext.SubjectCoverage{Kind: ydbschema.ColumnFamiliesKind, Subject: subject, Knowledge: knowledge}))
+		schemaext.SubjectCoverage{Kind: kind, Subject: subject, Knowledge: knowledge}))
 	if err != nil {
-		return fmt.Errorf("failed to record column family coverage: %w", err)
+		return fmt.Errorf("failed to record %s coverage: %w", kind, err)
 	}
 	db.FeatureCoverage = known
 	return nil

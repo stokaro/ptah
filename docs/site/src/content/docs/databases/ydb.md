@@ -1592,7 +1592,10 @@ minimum partition count to 1, and setting `AUTO_PARTITIONING_BY_SIZE` resets
 the partition size to 2048 MB and the minimum to 1. So the statement names
 every splitting setting whenever it changes one: the declared ones, and the
 held value of the rest. Read replicas and the key bloom filter reset nothing,
-and are named alone. YDB refuses `RESET` for every setting.
+and are named alone. YDB refuses `RESET` for every setting. A rollback names
+every setting the table held. It keeps a maximum partition count the change
+set on a table that had none, since YDB cannot remove one, and its recovery
+note says so.
 
 `uniform_partitions` and `partition_at_keys` give a new table the partitions
 it starts with. `uniform_partitions` splits a `Uint32` or `Uint64` first key
@@ -1841,10 +1844,10 @@ statement needs one that has not run yet:
    to drop an indexed or a covered column.
 7. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
-8. Per table: add columns, then change columns in place, then set or reset
-   the TTL, then change the column families, then change the table's
-   partitioning, read replicas and key bloom filter, then drop columns. YDB
-   refuses to drop the column a TTL reads.
+8. Per table: add columns, then change columns in place, then change the
+   column families, then the table's partitioning, read replicas and key
+   bloom filter, then set or reset the TTL, then drop columns. YDB refuses to
+   drop the column a TTL reads.
 9. Change the start and the increment of the Serial columns of existing tables.
 10. Add the new indexes of existing tables.
 11. Per table: drop changefeeds, then add changefeeds with their consumers,

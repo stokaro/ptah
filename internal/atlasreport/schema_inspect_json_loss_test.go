@@ -72,10 +72,9 @@ func jsonLossFixture(c *qt.C) (*schemamodel.Database, *catalog.Database) {
 		FeatureObjects: objects,
 		Tables: []schemamodel.Table{{
 			StructName: "AppEvents", Schema: "app", Name: "events",
-			Facets: must.Must(ydbTTLFacets(c).With(&ydbschema.DesiredColumnFamilies{
+			Facets: must.Must(must.Must(ydbTTLFacets(c).With(&ydbschema.DesiredColumnFamilies{
 				Families: []ydbschema.ColumnFamily{{Name: "cold"}},
-			})),
-			YDBPartitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 2},
+			})).With(&ydbschema.DesiredTablePartitioning{TablePartitioning: ydbschema.TablePartitioning{MinPartitions: 2}})),
 		}},
 		Fields: []schemamodel.Field{{
 			StructName: "AppEvents", Name: "id", Type: "Int64", AutoInc: true,

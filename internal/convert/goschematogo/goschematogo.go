@@ -257,6 +257,7 @@ type renderContext struct {
 	aggregateAnnotations []string
 	hypertablesByTable   map[string]*tsschema.DesiredHypertable
 	familiesByTable      map[string][]ydbschema.ColumnFamily
+	partitioningByTable  map[string]*ydbschema.TablePartitioning
 	changefeedsByTable   map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                   *schemamodel.Database
 	opts                 Options
@@ -612,7 +613,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, constraint := range ctx.constraintsByTable[table.StructName] {
 		w.writeComment(constraintAnnotation(constraint))
 	}
-	w.writeComment(tableAnnotation(table))
+	w.writeComment(tableAnnotation(table, ctx.partitioningByTable[table.QualifiedName()]))
 	if hypertable := ctx.hypertablesByTable[table.QualifiedName()]; hypertable != nil {
 		w.writeComment(hypertableAnnotation(table, hypertable))
 	}
@@ -701,7 +702,9 @@ func dialectsAttr(scope []string) attr {
 	}
 }
 
-func tableAnnotation(table schemamodel.Table) string {
+// tableAnnotation writes a table's directive, with the YDB settings
+// partitioning states, or none.
+func tableAnnotation(table schemamodel.Table, partitioning *ydbschema.TablePartitioning) string {
 	attrs := []attr{
 		{name: "name", value: table.Name, set: true},
 		{name: "schema", value: table.Schema, set: table.Schema != ""},
@@ -715,7 +718,7 @@ func tableAnnotation(table schemamodel.Table) string {
 	}
 	attrs = append(attrs, columnStoreAttrs(table.YDBColumnTable)...)
 	attrs = append(attrs, propertyAttrs(table.Overrides)...)
-	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(table.YDBPartitioning)...)...)
+	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(partitioning)...)...)
 }
 
 // columnFamilyAttrs writes a YDB column family as the attributes the
@@ -772,8 +775,8 @@ func consumerAttrs(changefeed string, consumer ydbtopic.ConsumerSpec) []attr {
 
 // tablePartitioningAttrs writes a YDB row table's settings as the attributes
 // the annotation parser reads them from.
-func tablePartitioningAttrs(spec *ast.YDBTablePartitioningSpec) []attr {
-	if spec.IsZero() {
+func tablePartitioningAttrs(spec *ydbschema.TablePartitioning) []attr {
+	if spec == nil || spec.IsZero() {
 		return nil
 	}
 	shared := partitioningAttrs(&ast.IndexPartitioningSpec{

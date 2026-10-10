@@ -101,15 +101,6 @@ None.
 | `ast.YDBColumnTableSpec.TTL` | `ddl` | — |
 | `ast.YDBTTLTierSpec.ExternalSource` | `ddl` | — |
 | `ast.YDBTTLTierSpec.Interval` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.ByLoad` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.BySize` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.KeyBloomFilter` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.MaxPartitions` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.MinPartitions` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.PartitionAtKeys` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.PartitionSizeMB` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.ReadReplicas` | `ddl` | — |
-| `ast.YDBTablePartitioningSpec.UniformPartitions` | `ddl` | — |
 | `ast.YDBTieredTTLSpec.Column` | `ddl` | — |
 | `ast.YDBTieredTTLSpec.Tiers` | `ddl` | — |
 | `ast.YDBTieredTTLSpec.Unit` | `ddl` | — |
@@ -547,7 +538,6 @@ None.
 | `schemamodel.Table.VirtualModule` | `ddl` | — |
 | `schemamodel.Table.WithoutRowID` | `ddl` | — |
 | `schemamodel.Table.YDBColumnTable` | `ddl` | — |
-| `schemamodel.Table.YDBPartitioning` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |
@@ -640,12 +630,22 @@ None.
 | `ydbschema.DesiredChangefeed.Spec` | `ddl` | — |
 | `ydbschema.DesiredColumnFamilies.Families` | `ddl` | — |
 | `ydbschema.DesiredTTL.Policy` | `ddl` | — |
+| `ydbschema.DesiredTablePartitioning.TablePartitioning` | `ddl` | — |
 | `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
 | `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |
 | `ydbschema.ReplicationBinding.SupportsTopicAutopartitioning` | `planning` | preserves observed controller behavior through snapshots and codecs |
 | `ydbschema.TTL.Column` | `ddl` | — |
 | `ydbschema.TTL.Interval` | `ddl` | — |
 | `ydbschema.TTL.Unit` | `ddl` | — |
+| `ydbschema.TablePartitioning.ByLoad` | `ddl` | — |
+| `ydbschema.TablePartitioning.BySize` | `ddl` | — |
+| `ydbschema.TablePartitioning.KeyBloomFilter` | `ddl` | — |
+| `ydbschema.TablePartitioning.MaxPartitions` | `ddl` | — |
+| `ydbschema.TablePartitioning.MinPartitions` | `ddl` | — |
+| `ydbschema.TablePartitioning.PartitionAtKeys` | `ddl` | — |
+| `ydbschema.TablePartitioning.PartitionSizeMB` | `ddl` | — |
+| `ydbschema.TablePartitioning.ReadReplicas` | `ddl` | — |
+| `ydbschema.TablePartitioning.UniformPartitions` | `ddl` | — |
 | `ydbsecret.Desired.StructName` | `source` | the annotation holder, independent of the secret's path |
 | `ydbsecret.Desired.ValueEnv` | `ddl` | — |
 | `ydbstreaming.Desired.AllowStateReset` | `ddl` | — |

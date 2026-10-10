@@ -257,13 +257,6 @@ type Table struct {
 	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
 	Unlogged     bool `json:"unlogged,omitempty"`
 	WithoutRowID bool `json:"without_rowid,omitempty"` // SQLite WITHOUT ROWID table option
-	// YDBPartitioning is YDB's, and no other target fills it: the settings of
-	// a YDB row table that differ from what a new table is given -- how it
-	// splits into partitions, its read replicas and its key bloom filter. It
-	// is nil for a table holding the defaults. A read never fills the starting
-	// layout, which YDB keeps no record of; a description converted from a
-	// declaration does.
-	YDBPartitioning *ast.YDBTablePartitioningSpec `json:"ydb_partitioning,omitzero"`
 	// YDBColumnTable selects column-oriented storage and its hash partitioning.
 	// Nil selects row storage. Other dialects refuse this declaration.
 	YDBColumnTable *ast.YDBColumnTableSpec `json:"ydb_column_table,omitzero"`

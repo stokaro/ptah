@@ -528,12 +528,9 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 			HasChanged: true,
 		})
 	}
-	// The owners' statements for the table's own facets: its TTL and its
-	// column families.
+	// The owners' statements for the table's own facets: its TTL, its column
+	// families and its settings.
 	nodes = append(nodes, facets...)
-	if operation := partitioningOperation(tableDiff.YDBPartitioningChange); operation != nil {
-		alter(operation)
-	}
 	for _, column := range tableDiff.ColumnsRemoved {
 		alter(&ast.DropColumnOperation{ColumnName: column.Name})
 	}

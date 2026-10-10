@@ -5,10 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // partitionedTableSource is an entity whose table directive carries
@@ -24,15 +25,27 @@ type Item struct {
 `
 }
 
+// declaredPartitioning is the settings a table's YDB owner facet declares, or
+// nil where the table states none.
+func declaredPartitioning(c *qt.C, table schemamodel.Table) *ydbschema.TablePartitioning {
+	c.Helper()
+	value, found, err := schemaext.FacetAs[*ydbschema.DesiredTablePartitioning](table.Facets, ydbschema.TablePartitioningKind)
+	c.Assert(err, qt.IsNil)
+	if !found {
+		return nil
+	}
+	return &value.TablePartitioning
+}
+
 // TestParseSource_TablePartitioning_HappyPath reads a YDB row table's settings,
-// spelled as YDB spells them, into the table's spec: the switches in either
+// spelled as YDB spells them, into the YDB owner's facet: the switches in either
 // case, the counts, the read replicas written back in capitals, and the split
 // points in YQL's own list.
 func TestParseSource_TablePartitioning_HappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
 		attributes string
-		want       *ast.YDBTablePartitioningSpec
+		want       *ydbschema.TablePartitioning
 	}{
 		{name: "none", attributes: `comment="x"`, want: nil},
 		{
@@ -41,13 +54,13 @@ func TestParseSource_TablePartitioning_HappyPath(t *testing.T) {
 				`auto_partitioning_by_load="ENABLED" auto_partitioning_min_partitions_count="3" ` +
 				`auto_partitioning_max_partitions_count="9" read_replicas_settings="per_az:1" ` +
 				`key_bloom_filter="Enabled" uniform_partitions="4"`,
-			want: &ast.YDBTablePartitioningSpec{
+			want: &ydbschema.TablePartitioning{
 				BySize: new(true), PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9,
 				ReadReplicas: "PER_AZ:1", KeyBloomFilter: new(true), UniformPartitions: 4,
 			},
 		},
 		{name: "split points", attributes: `partition_at_keys="(10, 'a'), 20"`,
-			want: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10", "a"}, {"20"}}}},
+			want: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10", "a"}, {"20"}}}},
 	}
 
 	for _, test := range tests {
@@ -56,7 +69,7 @@ func TestParseSource_TablePartitioning_HappyPath(t *testing.T) {
 			db, err := goschema.ParseSource("items.go", partitionedTableSource(test.attributes))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
-			c.Assert(db.Tables[0].YDBPartitioning, qt.DeepEquals, test.want)
+			c.Assert(declaredPartitioning(c, db.Tables[0]), qt.DeepEquals, test.want)
 		})
 	}
 }

@@ -634,7 +634,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameIndexOperation,
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
-		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.RenameEnumValueOperation,
 		*ast.RenameTableOperation,

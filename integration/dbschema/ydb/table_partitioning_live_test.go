@@ -9,10 +9,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -25,10 +28,10 @@ var partitioningSchemas = []string{partitioningSchema}
 
 // partitionedItems is a table keyed on an unsigned id and a text code, which
 // declares partitioning.
-func partitionedItems(partitioning *ast.YDBTablePartitioningSpec) *schemamodel.Database {
+func partitionedItems(partitioning *ydbschema.TablePartitioning) *schemamodel.Database {
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Item", Name: "items", Schema: partitioningSchema,
-			PrimaryKey: []string{"id", "code"}, YDBPartitioning: partitioning}},
+			PrimaryKey: []string{"id", "code"}, Facets: settingsFacets(partitioning)}},
 		Fields: []schemamodel.Field{
 			{StructName: "Item", Name: "id", Type: "BIGINT UNSIGNED"},
 			{StructName: "Item", Name: "code", Type: "TEXT"},
@@ -40,9 +43,30 @@ func partitionedItems(partitioning *ast.YDBTablePartitioningSpec) *schemamodel.D
 }
 
 // partitioningOf reads the settings of the items table back from the server.
-func partitioningOf(c *qt.C, conn *dbschema.DatabaseConnection) *ast.YDBTablePartitioningSpec {
+func partitioningOf(c *qt.C, conn *dbschema.DatabaseConnection) *ydbschema.TablePartitioning {
 	c.Helper()
-	return tableNamed(c, readScoped(c, conn, partitioningSchemas), partitioningSchema, "items").YDBPartitioning
+	return heldSettings(c, tableNamed(c, readScoped(c, conn, partitioningSchemas), partitioningSchema, "items"))
+}
+
+// settingsFacets is a table's settings as the YDB owner's facet, or none for
+// nil.
+func settingsFacets(partitioning *ydbschema.TablePartitioning) schemaext.Facets {
+	if partitioning == nil {
+		return schemaext.Facets{}
+	}
+	return must.Must(schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: *partitioning}))
+}
+
+// heldSettings is the settings the reader found a table holds, as the YDB
+// owner's observed facet, or nil for YDB's defaults.
+func heldSettings(c *qt.C, table catalog.Table) *ydbschema.TablePartitioning {
+	c.Helper()
+	held, found, err := schemaext.FacetAs[*ydbschema.ObservedTablePartitioning](table.Facets, ydbschema.TablePartitioningKind)
+	c.Assert(err, qt.IsNil)
+	if !found {
+		return nil
+	}
+	return &held.TablePartitioning
 }
 
 // planPartitioning plans the migration that takes the items table to declared,
@@ -76,40 +100,40 @@ func TestYDBTablePartitioning_RoundTrip(t *testing.T) {
 			dropTables(c, conn, partitioningSchemas)
 			c.Cleanup(func() { dropTables(c, conn, partitioningSchemas) })
 
-			tuned := &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100, MinPartitions: 6, MaxPartitions: 20,
-				ReadReplicas: "per_az:1", KeyBloomFilter: new(true)}
+			tuned := &ydbschema.TablePartitioning{PartitionSizeMB: 100, MinPartitions: 6, MaxPartitions: 20,
+				ReadReplicas: "PER_AZ:1", KeyBloomFilter: new(true)}
 			declared := partitionedItems(tuned)
 			apply(c, conn, planAgainst(c, conn, declared, partitioningSchemas))
 			c.Assert(planAgainst(c, conn, declared, partitioningSchemas), qt.HasLen, 0)
 			apply(c, conn, planAgainst(c, conn, declared, partitioningSchemas))
 			c.Assert(planAgainst(c, conn, declared, partitioningSchemas), qt.HasLen, 0)
-			c.Assert(partitioningOf(c, conn), qt.DeepEquals, &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100,
+			c.Assert(partitioningOf(c, conn), qt.DeepEquals, &ydbschema.TablePartitioning{PartitionSizeMB: 100,
 				MinPartitions: 6, MaxPartitions: 20, ReadReplicas: "PER_AZ:1", KeyBloomFilter: new(true)})
 
-			changes := planAgainst(c, conn, partitionedItems(&ast.YDBTablePartitioningSpec{ByLoad: new(true)}), partitioningSchemas)
+			changes := planAgainst(c, conn, partitionedItems(&ydbschema.TablePartitioning{ByLoad: new(true)}), partitioningSchemas)
 			c.Assert(changes, qt.DeepEquals, []string{
 				"ALTER TABLE `ptah_ydb_partitioning/items` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
 					"AUTO_PARTITIONING_PARTITION_SIZE_MB = 100, AUTO_PARTITIONING_BY_LOAD = ENABLED, " +
 					"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 6, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 20)",
 			})
 			apply(c, conn, changes)
-			c.Assert(partitioningOf(c, conn), qt.DeepEquals, &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100,
+			c.Assert(partitioningOf(c, conn), qt.DeepEquals, &ydbschema.TablePartitioning{PartitionSizeMB: 100,
 				ByLoad: new(true), MinPartitions: 6, MaxPartitions: 20, ReadReplicas: "PER_AZ:1", KeyBloomFilter: new(true)})
 
-			away := partitionedItems(&ast.YDBTablePartitioningSpec{ReadReplicas: "PER_AZ:0", KeyBloomFilter: new(false)})
+			away := partitionedItems(&ydbschema.TablePartitioning{ReadReplicas: "PER_AZ:0", KeyBloomFilter: new(false)})
 			changes = planAgainst(c, conn, away, partitioningSchemas)
 			c.Assert(changes, qt.DeepEquals, []string{
 				"ALTER TABLE `ptah_ydb_partitioning/items` SET (READ_REPLICAS_SETTINGS = \"PER_AZ:0\", KEY_BLOOM_FILTER = DISABLED)",
 			})
 			apply(c, conn, changes)
 			c.Assert(planAgainst(c, conn, away, partitioningSchemas), qt.HasLen, 0)
-			retuned := &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6, MaxPartitions: 20}
+			retuned := &ydbschema.TablePartitioning{PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6, MaxPartitions: 20}
 			c.Assert(partitioningOf(c, conn), qt.DeepEquals, retuned)
 			declared = partitionedItems(retuned)
 
 			// Turning splitting by size on again resets the size and the
 			// minimum unless the statement names them.
-			bySize := &ast.YDBTablePartitioningSpec{BySize: new(false), ByLoad: new(true), MinPartitions: 6, MaxPartitions: 20}
+			bySize := &ydbschema.TablePartitioning{BySize: new(false), ByLoad: new(true), MinPartitions: 6, MaxPartitions: 20}
 			apply(c, conn, planAgainst(c, conn, partitionedItems(bySize), partitioningSchemas))
 			c.Assert(partitioningOf(c, conn), qt.DeepEquals, bySize)
 			apply(c, conn, planAgainst(c, conn, declared, partitioningSchemas))
@@ -129,16 +153,16 @@ func TestYDBTablePartitioning_RoundTrip(t *testing.T) {
 func TestYDBTablePartitioning_StartingLayout(t *testing.T) {
 	tests := []struct {
 		name         string
-		partitioning *ast.YDBTablePartitioningSpec
-		want         *ast.YDBTablePartitioningSpec
+		partitioning *ydbschema.TablePartitioning
+		want         *ydbschema.TablePartitioning
 	}{
-		{name: "uniform partitions", partitioning: &ast.YDBTablePartitioningSpec{UniformPartitions: 4},
-			want: &ast.YDBTablePartitioningSpec{MinPartitions: 4}},
-		{name: "split points", partitioning: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10", "it's"}, {"20"}}},
-			want: &ast.YDBTablePartitioningSpec{MinPartitions: 3}},
+		{name: "uniform partitions", partitioning: &ydbschema.TablePartitioning{UniformPartitions: 4},
+			want: &ydbschema.TablePartitioning{MinPartitions: 4}},
+		{name: "split points", partitioning: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10", "it's"}, {"20"}}},
+			want: &ydbschema.TablePartitioning{MinPartitions: 3}},
 		{name: "a layout beside a declared minimum",
-			partitioning: &ast.YDBTablePartitioningSpec{UniformPartitions: 4, MinPartitions: 2, BySize: new(false)},
-			want:         &ast.YDBTablePartitioningSpec{BySize: new(false), MinPartitions: 2}},
+			partitioning: &ydbschema.TablePartitioning{UniformPartitions: 4, MinPartitions: 2, BySize: new(false)},
+			want:         &ydbschema.TablePartitioning{BySize: new(false), MinPartitions: 2}},
 	}
 
 	for _, line := range ydbLines {
@@ -168,23 +192,23 @@ func TestYDBTablePartitioning_StartingLayout(t *testing.T) {
 func TestYDBTablePartitioning_ChangesOnlyARebuildMakes(t *testing.T) {
 	tests := []struct {
 		name    string
-		before  *ast.YDBTablePartitioningSpec
-		after   *ast.YDBTablePartitioningSpec
-		want    *ast.YDBTablePartitioningSpec
+		before  *ydbschema.TablePartitioning
+		after   *ydbschema.TablePartitioning
+		want    *ydbschema.TablePartitioning
 		wantErr string
 	}{
 		{
 			name:  "a starting layout",
-			after: &ast.YDBTablePartitioningSpec{UniformPartitions: 4},
-			want:  &ast.YDBTablePartitioningSpec{MinPartitions: 4},
+			after: &ydbschema.TablePartitioning{UniformPartitions: 4},
+			want:  &ydbschema.TablePartitioning{MinPartitions: 4},
 			wantErr: `.*table "ptah_ydb_partitioning.items": it declares UNIFORM_PARTITIONS = 4, which YDB takes only ` +
 				`when it creates a table .*; YDB makes it by rebuilding the table, which Ptah plans when asked with --allow-table-rebuild`,
 		},
 		{
 			name:   "a starting layout over held settings",
-			before: &ast.YDBTablePartitioningSpec{BySize: new(false), MaxPartitions: 9, KeyBloomFilter: new(true)},
-			after:  &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}}},
-			want: &ast.YDBTablePartitioningSpec{BySize: new(false), MinPartitions: 2, MaxPartitions: 9,
+			before: &ydbschema.TablePartitioning{BySize: new(false), MaxPartitions: 9, KeyBloomFilter: new(true)},
+			after:  &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}}},
+			want: &ydbschema.TablePartitioning{BySize: new(false), MinPartitions: 2, MaxPartitions: 9,
 				KeyBloomFilter: new(true)},
 			wantErr: `.*table "ptah_ydb_partitioning.items": it declares PARTITION_AT_KEYS with one split point, .*; YDB ` +
 				`makes it by rebuilding the table, which Ptah plans when asked with --allow-table-rebuild`,
@@ -236,7 +260,7 @@ func TestYDBTablePartitioning_RebuildCarriesTheSettings(t *testing.T) {
 			c.Cleanup(func() {
 				dropDirectory(c, conn, partitioningSchema, "items", "__ptah_rebuild_items", "__ptah_replaced_items")
 			})
-			settings := &ast.YDBTablePartitioningSpec{ByLoad: new(true), MinPartitions: 3, ReadReplicas: "ANY_AZ:1"}
+			settings := &ydbschema.TablePartitioning{ByLoad: new(true), MinPartitions: 3, ReadReplicas: "ANY_AZ:1"}
 			before := partitionedItems(settings)
 			before.Fields[2].Type = "INTEGER"
 			apply(c, conn, planAgainst(c, conn, before, partitioningSchemas))
@@ -267,7 +291,7 @@ func TestYDBTablePartitioning_RebuildKeepsWhatTheDeclarationLeavesOut(t *testing
 			c.Cleanup(func() {
 				dropDirectory(c, conn, partitioningSchema, "items", "__ptah_rebuild_items", "__ptah_replaced_items")
 			})
-			tuned := &ast.YDBTablePartitioningSpec{BySize: new(false), ByLoad: new(true), MinPartitions: 3,
+			tuned := &ydbschema.TablePartitioning{BySize: new(false), ByLoad: new(true), MinPartitions: 3,
 				MaxPartitions: 9, ReadReplicas: "ANY_AZ:1", KeyBloomFilter: new(true)}
 			indexTuned := &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 2}
 			before := partitionedItems(tuned)
@@ -286,7 +310,7 @@ func TestYDBTablePartitioning_RebuildKeepsWhatTheDeclarationLeavesOut(t *testing
 
 			c.Assert(planAgainst(c, conn, declared, partitioningSchemas), qt.HasLen, 0)
 			live := readScoped(c, conn, partitioningSchemas)
-			c.Assert(tableNamed(c, live, partitioningSchema, "items").YDBPartitioning, qt.DeepEquals, tuned)
+			c.Assert(heldSettings(c, tableNamed(c, live, partitioningSchema, "items")), qt.DeepEquals, tuned)
 			c.Assert(indexNamed(c, live, "items_label").Partitioning, qt.DeepEquals, indexTuned)
 		})
 	}

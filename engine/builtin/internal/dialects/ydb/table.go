@@ -20,7 +20,6 @@ import (
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbextensions"
 	"ptah.run/internal/ydbindex"
-	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtype"
 )
@@ -321,47 +320,15 @@ func declaredTTL(facets schemaext.Facets) (*ydbschema.DesiredTTL, error) {
 }
 
 // partitioningSettings writes the settings of a row table its WITH clause
-// carries: how it splits into partitions, its read replicas, its key bloom
-// filter, and the partitions it starts with, each as the declaration names it.
-// A setting the target has no key for is refused by the key, a declaration YDB
-// refuses is refused with YDB's reason, and a starting layout is held to the
-// table's key; see [ydbpartition.LayoutClause].
+// carries, from the YDB owner's facet: how it splits into partitions, its read
+// replicas, its key bloom filter, and the partitions it starts with, each as
+// the declaration names it; see [ydbrender.CreateTablePartitioning].
 func (r *Renderer) partitioningSettings(node *ast.CreateTableNode, keyColumns []string, columnTypes map[string]string) ([]string, error) {
-	spec := node.YDBPartitioning
-	if spec.IsZero() {
-		return nil, nil
-	}
-	subject := fmt.Sprintf("table %q", node.Name)
-	if err := r.refusePartitioningKeys(subject, spec); err != nil {
-		return nil, err
-	}
-	if _, err := ydbpartition.ResolveTable(spec, ydbpartition.DefaultTableSettings()); err != nil {
-		return nil, refuseFact(subject, err.Error())
-	}
 	keyTypes := make([]string, len(keyColumns))
 	for i, column := range keyColumns {
 		keyTypes[i] = columnTypes[column]
 	}
-	layout, err := ydbpartition.LayoutClause(spec, keyTypes, r.caps)
-	if err != nil {
-		return nil, refuseFact(subject, err.Error())
-	}
-	settings := ydbpartition.CreateClause(spec)
-	if layout != "" {
-		settings = append(settings, layout)
-	}
-	return settings, nil
-}
-
-// refusePartitioningKeys refuses the settings a declaration names that the
-// target has no capability key for; see [ydbpartition.Requirements].
-func (r *Renderer) refusePartitioningKeys(subject string, spec *ast.YDBTablePartitioningSpec) error {
-	for _, requirement := range ydbpartition.Requirements(spec) {
-		if !r.caps.Has(requirement.Key) {
-			return refuseKey(requirement.Key, subject+" declares its "+requirement.Settings)
-		}
-	}
-	return nil
+	return ydbrender.CreateTablePartitioning(r.caps, node.Name, node.Facets, keyTypes)
 }
 
 // refuseTableConstraints refuses every table constraint but the key. YDB has

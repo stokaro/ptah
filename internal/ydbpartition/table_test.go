@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbpartition"
 )
 
@@ -17,7 +17,7 @@ func TestParseTableDeclaration_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
-		want   *ast.YDBTablePartitioningSpec
+		want   *ydbschema.TablePartitioning
 	}{
 		{name: "no settings", values: map[string]string{"name": "t"}, want: nil},
 		{
@@ -28,7 +28,7 @@ func TestParseTableDeclaration_HappyPath(t *testing.T) {
 				"auto_partitioning_max_partitions_count": "8", "read_replicas_settings": "per_az:1",
 				"key_bloom_filter": "Enabled", "uniform_partitions": "4",
 			},
-			want: &ast.YDBTablePartitioningSpec{
+			want: &ydbschema.TablePartitioning{
 				BySize: new(true), PartitionSizeMB: 64, ByLoad: new(true), MinPartitions: 2, MaxPartitions: 8,
 				ReadReplicas: "PER_AZ:1", KeyBloomFilter: new(true), UniformPartitions: 4,
 			},
@@ -36,12 +36,12 @@ func TestParseTableDeclaration_HappyPath(t *testing.T) {
 		{
 			name:   "split points",
 			values: map[string]string{"partition_at_keys": "(10, 'a'), (20)"},
-			want:   &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10", "a"}, {"20"}}},
+			want:   &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10", "a"}, {"20"}}},
 		},
 		{
 			name:   "a filter switched off is a declaration",
 			values: map[string]string{"key_bloom_filter": "disabled"},
-			want:   &ast.YDBTablePartitioningSpec{KeyBloomFilter: new(false)},
+			want:   &ydbschema.TablePartitioning{KeyBloomFilter: new(false)},
 		},
 	}
 
@@ -106,26 +106,26 @@ func TestResolveTable_HappyPath(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		spec *ast.YDBTablePartitioningSpec
+		spec *ydbschema.TablePartitioning
 		held ydbpartition.TableSettings
 		want ydbpartition.TableSettings
 	}{
 		{name: "nil keeps what the table holds", spec: nil, held: held, want: held},
 		{
 			name: "a filter declared off over one held on",
-			spec: &ast.YDBTablePartitioningSpec{KeyBloomFilter: new(false)},
+			spec: &ydbschema.TablePartitioning{KeyBloomFilter: new(false)},
 			held: held,
 			want: ydbpartition.TableSettings{Settings: held.Settings},
 		},
 		{
 			name: "a filter left out keeps the held one",
-			spec: &ast.YDBTablePartitioningSpec{MinPartitions: 2},
+			spec: &ydbschema.TablePartitioning{MinPartitions: 2},
 			held: held,
 			want: withMinimum(held, 2),
 		},
 		{
 			name: "every setting",
-			spec: &ast.YDBTablePartitioningSpec{
+			spec: &ydbschema.TablePartitioning{
 				BySize: new(true), PartitionSizeMB: 64, ByLoad: new(true), MinPartitions: 2, MaxPartitions: 8,
 				ReadReplicas: "any_az:3", KeyBloomFilter: new(true),
 			},
@@ -138,17 +138,17 @@ func TestResolveTable_HappyPath(t *testing.T) {
 				KeyBloomFilter: true,
 			},
 		},
-		{name: "uniform partitions set the minimum", spec: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}, held: defaults,
+		{name: "uniform partitions set the minimum", spec: &ydbschema.TablePartitioning{UniformPartitions: 4}, held: defaults,
 			want: withMinimum(defaults, 4)},
 		{
 			name: "split points set the minimum",
-			spec: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"20"}, {"30"}}},
+			spec: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}, {"20"}, {"30"}}},
 			held: defaults,
 			want: withMinimum(defaults, 4),
 		},
 		{
 			name: "a declared minimum wins over the layout",
-			spec: &ast.YDBTablePartitioningSpec{UniformPartitions: 4, MinPartitions: 2},
+			spec: &ydbschema.TablePartitioning{UniformPartitions: 4, MinPartitions: 2},
 			held: held,
 			want: withMinimum(held, 2),
 		},
@@ -170,7 +170,7 @@ func TestExplicitTable(t *testing.T) {
 	c := qt.New(t)
 	settings := ydbpartition.TableSettings{Settings: ydbpartition.Settings{ByLoad: true, MinPartitions: 3}}
 	spec := settings.Explicit()
-	c.Assert(spec, qt.DeepEquals, &ast.YDBTablePartitioningSpec{
+	c.Assert(spec, qt.DeepEquals, &ydbschema.TablePartitioning{
 		BySize: new(false), ByLoad: new(true), MinPartitions: 3, ReadReplicas: "PER_AZ:0", KeyBloomFilter: new(false),
 	})
 	other := ydbpartition.TableSettings{
@@ -188,22 +188,22 @@ func TestExplicitTable(t *testing.T) {
 func TestResolveTable_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
-		spec    *ast.YDBTablePartitioningSpec
+		spec    *ydbschema.TablePartitioning
 		wantErr string
 	}{
 		{
 			name:    "both starting layouts",
-			spec:    &ast.YDBTablePartitioningSpec{UniformPartitions: 3, PartitionAtKeys: [][]string{{"10"}}},
+			spec:    &ydbschema.TablePartitioning{UniformPartitions: 3, PartitionAtKeys: [][]string{{"10"}}},
 			wantErr: "uniform_partitions and partition_at_keys are both declared, which YDB refuses .*",
 		},
 		{
 			name:    "a size without splitting by size",
-			spec:    &ast.YDBTablePartitioningSpec{BySize: new(false), PartitionSizeMB: 100},
+			spec:    &ydbschema.TablePartitioning{BySize: new(false), PartitionSizeMB: 100},
 			wantErr: "auto_partitioning_partition_size_mb is set while auto_partitioning_by_size is disabled, .*",
 		},
 		{
 			name:    "replicas in an unknown mode",
-			spec:    &ast.YDBTablePartitioningSpec{ReadReplicas: "ALL_AZ:1"},
+			spec:    &ydbschema.TablePartitioning{ReadReplicas: "ALL_AZ:1"},
 			wantErr: `read replicas "ALL_AZ:1" are not one YDB takes: .*`,
 		},
 	}
@@ -231,13 +231,13 @@ func TestTableSpec(t *testing.T) {
 	tests := []struct {
 		name     string
 		settings ydbpartition.TableSettings
-		want     *ast.YDBTablePartitioningSpec
+		want     *ydbschema.TablePartitioning
 	}{
 		{name: "the defaults are nil", settings: ydbpartition.DefaultTableSettings(), want: nil},
 		{
 			name:     "every setting off its default",
 			settings: tuned,
-			want: &ast.YDBTablePartitioningSpec{
+			want: &ydbschema.TablePartitioning{
 				PartitionSizeMB: 64, ByLoad: new(true), MinPartitions: 7, MaxPartitions: 9, ReadReplicas: "PER_AZ:2",
 				KeyBloomFilter: new(true),
 			},
@@ -245,7 +245,7 @@ func TestTableSpec(t *testing.T) {
 		{
 			name:     "not splitting by size",
 			settings: ydbpartition.TableSettings{Settings: ydbpartition.Settings{MinPartitions: 1}},
-			want:     &ast.YDBTablePartitioningSpec{BySize: new(false)},
+			want:     &ydbschema.TablePartitioning{BySize: new(false)},
 		},
 	}
 
@@ -268,17 +268,17 @@ func TestTableSpec(t *testing.T) {
 // declaration leaves out, which keeps the held one.
 func TestTableChangeRefusal(t *testing.T) {
 	defaults := ydbpartition.DefaultTableSettings()
-	resolve := func(spec *ast.YDBTablePartitioningSpec) ydbpartition.TableSettings {
+	resolve := func(spec *ydbschema.TablePartitioning) ydbpartition.TableSettings {
 		return must.Must(ydbpartition.ResolveTable(spec, defaults))
 	}
-	capped := resolve(&ast.YDBTablePartitioningSpec{MaxPartitions: 9})
-	uniform := &ast.YDBTablePartitioningSpec{UniformPartitions: 4}
-	atKeys := &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"20"}}}
-	pinned := &ast.YDBTablePartitioningSpec{UniformPartitions: 4, MinPartitions: 2}
+	capped := resolve(&ydbschema.TablePartitioning{MaxPartitions: 9})
+	uniform := &ydbschema.TablePartitioning{UniformPartitions: 4}
+	atKeys := &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}, {"20"}}}
+	pinned := &ydbschema.TablePartitioning{UniformPartitions: 4, MinPartitions: 2}
 
 	tests := []struct {
 		name     string
-		desired  *ast.YDBTablePartitioningSpec
+		desired  *ydbschema.TablePartitioning
 		resolved ydbpartition.TableSettings
 		current  ydbpartition.TableSettings
 		want     string
@@ -377,13 +377,13 @@ func TestTableClause(t *testing.T) {
 func TestCreateClause(t *testing.T) {
 	tests := []struct {
 		name string
-		spec *ast.YDBTablePartitioningSpec
+		spec *ydbschema.TablePartitioning
 		want []string
 	}{
 		{name: "none", spec: nil, want: nil},
 		{
 			name: "every setting",
-			spec: &ast.YDBTablePartitioningSpec{
+			spec: &ydbschema.TablePartitioning{
 				KeyBloomFilter: new(false), ReadReplicas: "ANY_AZ:2", MaxPartitions: 9, MinPartitions: 3,
 				ByLoad: new(true), PartitionSizeMB: 64, BySize: new(true), UniformPartitions: 4,
 			},

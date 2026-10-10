@@ -153,11 +153,6 @@ type CreateTableNode struct {
 	// A table nothing declared is logged, which is the server's default, so
 	// false and "unset" mean the same and the field needs no pointer.
 	Unlogged bool
-	// YDBPartitioning is YDB's, and every other renderer refuses it: how a
-	// row table splits into partitions, its read replicas, its key bloom
-	// filter and the partitions it starts with; nil for a table declaring
-	// none of them. See [YDBTablePartitioningSpec].
-	YDBPartitioning *YDBTablePartitioningSpec
 	// YDBColumnTable selects column-oriented storage and its hash partitioning.
 	// Nil selects row storage. Other dialects refuse this declaration.
 	YDBColumnTable *YDBColumnTableSpec
@@ -251,87 +246,6 @@ func (s *VectorIndexSpec) Clone() *VectorIndexSpec {
 		return nil
 	}
 	out := *s
-	return &out
-}
-
-// YDBTablePartitioningSpec is YDB's, and no other dialect has these settings:
-// how a YDB row table splits into partitions, how many read replicas it keeps,
-// whether it keeps a bloom filter of its keys, and the partitions it is created
-// with, as YDB's `CREATE TABLE ... WITH (...)` takes them. Each field names
-// the setting it carries. A field left at its zero value is a setting the
-// declaration leaves out, which keeps what the table holds: a new table takes
-// it from the cluster's table profile, and a plan never changes it. A
-// reader's report of what a table holds uses the same type, naming the
-// settings that differ from YDB's documented defaults.
-//
-// UniformPartitions and PartitionAtKeys are the table's starting layout. YDB
-// takes them only when it creates the table (`UNIFORM_PARTITIONS alter is not
-// supported`), keeps no record of either, and sets the minimum partition count
-// from them unless MinPartitions names one: measured on YDB 25.1.4.7 and
-// 26.2.1.14, UNIFORM_PARTITIONS = 4 leaves a minimum of 4, and three split
-// points leave 4. A reader therefore never reports them, and a comparison sees
-// a starting layout only through the minimum it implies.
-type YDBTablePartitioningSpec struct {
-	// BySize is AUTO_PARTITIONING_BY_SIZE: whether a partition that grows
-	// past PartitionSizeMB splits.
-	BySize *bool `json:"by_size,omitempty"`
-	// PartitionSizeMB is AUTO_PARTITIONING_PARTITION_SIZE_MB, the size at
-	// which a partition splits. It has a meaning only while BySize holds.
-	PartitionSizeMB uint64 `json:"partition_size_mb,omitempty"`
-	// ByLoad is AUTO_PARTITIONING_BY_LOAD: whether a busy partition splits.
-	ByLoad *bool `json:"by_load,omitempty"`
-	// MinPartitions is AUTO_PARTITIONING_MIN_PARTITIONS_COUNT.
-	MinPartitions uint64 `json:"min_partitions,omitempty"`
-	// MaxPartitions is AUTO_PARTITIONING_MAX_PARTITIONS_COUNT.
-	MaxPartitions uint64 `json:"max_partitions,omitempty"`
-	// ReadReplicas is READ_REPLICAS_SETTINGS as YDB spells it: `PER_AZ:<n>`
-	// for n replicas in every availability zone, or `ANY_AZ:<n>` for n in
-	// all of them together. A count of zero declares none, which removes the
-	// replicas a table holds; empty leaves them as they are.
-	ReadReplicas string `json:"read_replicas,omitempty"`
-	// KeyBloomFilter is KEY_BLOOM_FILTER: whether the table keeps a bloom
-	// filter of its keys.
-	KeyBloomFilter *bool `json:"key_bloom_filter,omitempty"`
-	// UniformPartitions is UNIFORM_PARTITIONS: the table starts with this
-	// many partitions, splitting the range of its first key column evenly.
-	UniformPartitions uint64 `json:"uniform_partitions,omitempty"`
-	// PartitionAtKeys is PARTITION_AT_KEYS: the table starts split before
-	// each of these keys. Each split point holds the values of the leading
-	// key columns, as text, in key order; the key column's type says how a
-	// value is written.
-	PartitionAtKeys [][]string `json:"partition_at_keys,omitempty"`
-}
-
-// IsZero reports whether the spec declares nothing. Nil is zero.
-func (s *YDBTablePartitioningSpec) IsZero() bool {
-	return s == nil || (s.BySize == nil && s.PartitionSizeMB == 0 && s.ByLoad == nil && s.MinPartitions == 0 &&
-		s.MaxPartitions == 0 && s.ReadReplicas == "" && s.KeyBloomFilter == nil && s.UniformPartitions == 0 &&
-		len(s.PartitionAtKeys) == 0)
-}
-
-// Clone returns an independent copy, so a spec handed to a comparator or a
-// planner cannot be changed through the pointer it shares with the schema it
-// came from. Nil stays nil.
-func (s *YDBTablePartitioningSpec) Clone() *YDBTablePartitioningSpec {
-	if s == nil {
-		return nil
-	}
-	out := *s
-	if s.BySize != nil {
-		out.BySize = new(*s.BySize)
-	}
-	if s.ByLoad != nil {
-		out.ByLoad = new(*s.ByLoad)
-	}
-	if s.KeyBloomFilter != nil {
-		out.KeyBloomFilter = new(*s.KeyBloomFilter)
-	}
-	if s.PartitionAtKeys != nil {
-		out.PartitionAtKeys = make([][]string, len(s.PartitionAtKeys))
-		for i, point := range s.PartitionAtKeys {
-			out.PartitionAtKeys[i] = slices.Clone(point)
-		}
-	}
 	return &out
 }
 

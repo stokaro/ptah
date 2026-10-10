@@ -57,6 +57,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
@@ -86,7 +87,6 @@ import (
 	"ptah.run/internal/usertypescope"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
-	"ptah.run/internal/ydbpartition"
 )
 
 // SupportedDialects returns a list of all supported database dialects.
@@ -687,9 +687,6 @@ func prepareCreateTableNode(
 	if err := requirePrimaryKey(dialect, caps, &cloned); err != nil {
 		return nil, err
 	}
-	if err := refuseTablePartitioning(dialect, caps, declaring(node.Name), node.YDBPartitioning); err != nil {
-		return nil, err
-	}
 	if node.YDBColumnTable != nil && !caps.Has(capability.ColumnStoreTables) {
 		return nil, &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
 	}
@@ -729,68 +726,27 @@ func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, 
 	return nil
 }
 
-// refuseTablePartitioning refuses subject's YDB settings -- how a row table
-// splits into partitions, its read replicas and its key bloom filter -- on a
-// target without the capability key each needs; see
-// [ydbpartition.Requirements]. A renderer that has no such setting writes the
-// table without it, and the table then splits, replicates and filters as the
-// server's defaults say, with nothing reporting the difference. A table
-// declaring none of them passes. subject names what is refused from the
-// settings a requirement names.
-func refuseTablePartitioning(
-	dialect string,
-	caps capability.Capabilities,
-	subject func(settings string) string,
-	spec *ast.YDBTablePartitioningSpec,
-) error {
-	for _, requirement := range ydbpartition.Requirements(spec) {
-		if caps.Has(requirement.Key) {
-			continue
-		}
-		normalized := platform.NormalizeDialect(dialect)
-		return &ptaherr.CapabilityError{
-			Dialect: normalized,
-			Feature: string(requirement.Key),
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-				subject(requirement.Settings), requirement.Key, normalized),
-		}
-	}
-	return nil
-}
-
-// refuseTablePartitioningChange refuses a change of a table's YDB settings on a
-// target without the key a setting either side holds needs: a change that
-// removes read replicas needs [capability.ReadReplicas] as one that adds them
-// does.
-func refuseTablePartitioningChange(
-	dialect string,
-	caps capability.Capabilities,
-	table string,
-	change *ast.SetYDBTablePartitioningOperation,
-) error {
-	subject := func(settings string) string { return "changing the " + settings + " of " + tableref.Phrase(table) }
-	if err := refuseTablePartitioning(dialect, caps, subject, change.Partitioning); err != nil {
-		return err
-	}
-	return refuseTablePartitioning(dialect, caps, subject, change.Previous)
-}
-
-// declaring names a table's settings as the table declares them, for
-// [refuseTablePartitioning].
-func declaring(table string) func(string) string {
-	return func(settings string) string { return fmt.Sprintf("table %q declares its %s", table, settings) }
-}
-
-// validateDeclaredPartitioning refuses the first declared table whose YDB
-// partitioning, read replicas or key bloom filter the target cannot carry; see
-// [refuseTablePartitioning].
+// validateDeclaredPartitioning refuses the first declared table whose
+// column-oriented storage, or whose YDB partitioning, read replicas or key
+// bloom filter, the target cannot carry (see
+// [ydbrender.RefuseTablePartitioning]). Another target refuses the settings
+// as a facet no owner of it registers.
 func validateDeclaredPartitioning(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
 	for _, table := range tables {
 		if table.YDBColumnTable != nil && !caps.Has(capability.ColumnStoreTables) {
 			return &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
 		}
-		if err := refuseTablePartitioning(dialect, caps, declaring(table.QualifiedName()), table.YDBPartitioning); err != nil {
+		if platform.NormalizeDialect(dialect) != platform.YDB {
+			continue
+		}
+		declared, found, err := schemaext.FacetAs[*ydbschema.DesiredTablePartitioning](table.Facets, ydbschema.TablePartitioningKind)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		if err := ydbrender.RefuseTablePartitioning(caps, fmt.Sprintf("table %q", table.QualifiedName()), &declared.TablePartitioning); err != nil {
 			return err
 		}
 	}
@@ -962,13 +918,6 @@ func prepareAlterOperation(
 		return operation, nil
 	case *ast.ExtensionAlterOperation:
 		return prepareExtensionAlter(dialect, caps, parent, typed)
-	case *ast.SetYDBTablePartitioningOperation:
-		// One arm for a table's YDB settings, for the reason the column arm
-		// gives.
-		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
-			return nil, err
-		}
-		return operation, nil
 	default:
 		if isNilInterface(operation) {
 			return nil, nilNodeError(dialect, "alter-table operation")
@@ -988,23 +937,6 @@ func prepareAddConstraintOperation(dialect string, caps capability.Capabilities,
 	cloned := *operation
 	cloned.Constraint = constraint
 	return &cloned, nil
-}
-
-// validateTableSettingOperation refuses a table's row deletion policy, YDB
-// column families, partitioning, read replicas, or key bloom filter when the
-// target cannot carry the setting.
-func validateTableSettingOperation(
-	dialect string,
-	caps capability.Capabilities,
-	table string,
-	operation ast.AlterOperation,
-) error {
-	switch typed := operation.(type) {
-	case *ast.SetYDBTablePartitioningOperation:
-		return refuseTablePartitioningChange(dialect, caps, table, typed)
-	default:
-		return fmt.Errorf("%w: unexpected table setting operation %T", ptaherr.ErrInvalidSchemaDiff, operation)
-	}
 }
 
 // validateIndexOperation refuses an index operation that asks for an

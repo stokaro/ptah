@@ -86,22 +86,5 @@ func ColumnFamiliesCodec() schemaext.Codec {
 // columnFamiliesChangeShape checks the change's keys and decodes each operand
 // through its model's codec, which holds it to the strict wire form.
 func columnFamiliesChangeShape(data json.RawMessage) error {
-	fields, err := schemaext.DecodeObject(data, columnFamiliesShape)
-	if err != nil {
-		return err
-	}
-	for _, codec := range ydbschema.ColumnFamiliesCodecs() {
-		key := "after"
-		if codec.Representation == schemaext.Observed {
-			key = "before"
-		}
-		raw, found := fields[key]
-		if !found {
-			continue
-		}
-		if _, err := codec.Decode(raw); err != nil {
-			return err
-		}
-	}
-	return nil
+	return decodeOperands(data, columnFamiliesShape, ydbschema.ColumnFamiliesCodecs())
 }

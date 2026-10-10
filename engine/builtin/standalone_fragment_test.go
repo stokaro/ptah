@@ -303,9 +303,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 				Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2},
 			}
 		},
-		"SetYDBTablePartitioningOperation": func() ast.Node {
-			return &ast.SetYDBTablePartitioningOperation{Partitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 2}}
-		},
 		"ValidateConstraintOperation": func() ast.Node {
 			return &ast.ValidateConstraintOperation{ConstraintName: "ck_c"}
 		},

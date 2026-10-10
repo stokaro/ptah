@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // The attributes only a table declaration reads, beside the shared ones.
@@ -53,7 +53,7 @@ var errTwoLayouts = errors.New("uniform_partitions and partition_at_keys are bot
 // them; key_bloom_filter takes ENABLED or DISABLED, uniform_partitions a count
 // of at least 1, and partition_at_keys the split points [ParseSplitPoints]
 // reads.
-func ParseTableDeclaration(values map[string]string) (*ast.YDBTablePartitioningSpec, error) {
+func ParseTableDeclaration(values map[string]string) (*ydbschema.TablePartitioning, error) {
 	declared, present, err := ParseDeclared(values)
 	if err != nil {
 		return nil, err
@@ -102,8 +102,8 @@ type Requirement struct {
 // one of them cannot hold what the declaration names, and a renderer or a
 // planner that wrote the table without it would leave it at YDB's defaults
 // with nothing reporting the difference.
-func Requirements(spec *ast.YDBTablePartitioningSpec) []Requirement {
-	if spec.IsZero() {
+func Requirements(spec *ydbschema.TablePartitioning) []Requirement {
+	if isZero(spec) {
 		return nil
 	}
 	var requirements []Requirement
@@ -121,8 +121,8 @@ func Requirements(spec *ast.YDBTablePartitioningSpec) []Requirement {
 }
 
 // tableSpecOf writes the shared settings as a table's declaration.
-func tableSpecOf(declared Declared) *ast.YDBTablePartitioningSpec {
-	return &ast.YDBTablePartitioningSpec{
+func tableSpecOf(declared Declared) *ydbschema.TablePartitioning {
+	return &ydbschema.TablePartitioning{
 		BySize:          declared.BySize,
 		PartitionSizeMB: declared.PartitionSizeMB,
 		ByLoad:          declared.ByLoad,
@@ -133,7 +133,7 @@ func tableSpecOf(declared Declared) *ast.YDBTablePartitioningSpec {
 }
 
 // declaredOf reads the shared settings out of a table's declaration.
-func declaredOf(spec *ast.YDBTablePartitioningSpec) Declared {
+func declaredOf(spec *ydbschema.TablePartitioning) Declared {
 	return Declared{
 		BySize:          spec.BySize,
 		PartitionSizeMB: spec.PartitionSizeMB,
@@ -159,8 +159,8 @@ func declaredOf(spec *ast.YDBTablePartitioningSpec) Declared {
 // A declaration YDB would refuse whatever the table's columns are is an error
 // saying why; one whose layout does not fit the table's key is refused where
 // the key is known, by [LayoutClause].
-func ResolveTable(spec *ast.YDBTablePartitioningSpec, held TableSettings) (TableSettings, error) {
-	if spec.IsZero() {
+func ResolveTable(spec *ydbschema.TablePartitioning, held TableSettings) (TableSettings, error) {
+	if isZero(spec) {
 		return held, nil
 	}
 	if spec.UniformPartitions != 0 && len(spec.PartitionAtKeys) != 0 {
@@ -183,13 +183,13 @@ func ResolveTable(spec *ast.YDBTablePartitioningSpec, held TableSettings) (Table
 // HeldTable reads a reader's report of what a table holds, written by
 // [TableSpec] as the settings that differ from [DefaultTableSettings]. A nil
 // report is a table holding the defaults.
-func HeldTable(spec *ast.YDBTablePartitioningSpec) (TableSettings, error) {
+func HeldTable(spec *ydbschema.TablePartitioning) (TableSettings, error) {
 	return ResolveTable(spec, DefaultTableSettings())
 }
 
 // LayoutPartitions is how many partitions a declaration's starting layout
 // creates, and 0 where it declares none.
-func LayoutPartitions(spec *ast.YDBTablePartitioningSpec) uint64 {
+func LayoutPartitions(spec *ydbschema.TablePartitioning) uint64 {
 	switch {
 	case spec == nil:
 		return 0
@@ -203,7 +203,7 @@ func LayoutPartitions(spec *ast.YDBTablePartitioningSpec) uint64 {
 }
 
 // layoutSetting names a declaration's starting layout as YDB spells it.
-func layoutSetting(spec *ast.YDBTablePartitioningSpec) string {
+func layoutSetting(spec *ydbschema.TablePartitioning) string {
 	if spec.UniformPartitions != 0 {
 		return fmt.Sprintf("UNIFORM_PARTITIONS = %d", spec.UniformPartitions)
 	}
@@ -216,12 +216,12 @@ func layoutSetting(spec *ast.YDBTablePartitioningSpec) string {
 // TableSpec writes settings as what differs from [DefaultTableSettings], which
 // is what a reader reports for a table: nil for a table holding the defaults.
 // [HeldTable] gives the settings back.
-func TableSpec(settings TableSettings) *ast.YDBTablePartitioningSpec {
+func TableSpec(settings TableSettings) *ydbschema.TablePartitioning {
 	spec := tableSpecOf(settings.Declared())
 	if settings.KeyBloomFilter {
 		spec.KeyBloomFilter = new(true)
 	}
-	if spec.IsZero() {
+	if isZero(spec) {
 		return nil
 	}
 	return spec
@@ -230,7 +230,7 @@ func TableSpec(settings TableSettings) *ast.YDBTablePartitioningSpec {
 // Explicit writes settings as a table declaration that names every setting,
 // so it resolves to them over whatever a table holds; see [Settings.Explicit].
 // It names no starting layout, which a table does not hold.
-func (s TableSettings) Explicit() *ast.YDBTablePartitioningSpec {
+func (s TableSettings) Explicit() *ydbschema.TablePartitioning {
 	spec := tableSpecOf(s.Settings.Explicit())
 	spec.KeyBloomFilter = new(s.KeyBloomFilter)
 	return spec
@@ -254,8 +254,8 @@ func (s TableSettings) Equal(other TableSettings) bool {
 // whose layout sets the minimum (it names none of its own) and whose minimum
 // differs from the table's asks for a layout the table was not created with.
 // A layout beside a declared minimum leaves no witness, and is not compared.
-func TableChangeRefusal(desired *ast.YDBTablePartitioningSpec, resolved, current TableSettings) string {
-	if desired.IsZero() || desired.MinPartitions != 0 || LayoutPartitions(desired) == 0 {
+func TableChangeRefusal(desired *ydbschema.TablePartitioning, resolved, current TableSettings) string {
+	if isZero(desired) || desired.MinPartitions != 0 || LayoutPartitions(desired) == 0 {
 		return ""
 	}
 	if resolved.MinPartitions == current.MinPartitions {
@@ -268,7 +268,7 @@ func TableChangeRefusal(desired *ast.YDBTablePartitioningSpec, resolved, current
 }
 
 // layoutKeyword is the setting a declaration's starting layout uses.
-func layoutKeyword(spec *ast.YDBTablePartitioningSpec) string {
+func layoutKeyword(spec *ydbschema.TablePartitioning) string {
 	if spec.UniformPartitions != 0 {
 		return "UNIFORM_PARTITIONS"
 	}
@@ -310,8 +310,8 @@ func TableClause(desired, current TableSettings) []string {
 // starting layout is written by [LayoutClause], which needs the table's key. A
 // caller resolves the declaration first, so what is written here is a
 // declaration YDB takes.
-func CreateClause(spec *ast.YDBTablePartitioningSpec) []string {
-	if spec.IsZero() {
+func CreateClause(spec *ydbschema.TablePartitioning) []string {
+	if isZero(spec) {
 		return nil
 	}
 	settings := declaredOf(spec).CreateClause()
@@ -320,3 +320,6 @@ func CreateClause(spec *ast.YDBTablePartitioningSpec) []string {
 	}
 	return settings
 }
+
+// isZero reports whether a declaration states nothing. Nil states nothing.
+func isZero(spec *ydbschema.TablePartitioning) bool { return spec == nil || spec.IsZero() }

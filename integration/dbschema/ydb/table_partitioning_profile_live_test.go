@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // A new table takes its settings from the cluster's table profile, not from
@@ -28,10 +28,10 @@ func TestYDBTablePartitioning_ClusterProfileIsKept(t *testing.T) {
 
 			silent := partitionedItems(nil)
 			apply(c, conn, planAgainst(c, conn, silent, partitioningSchemas))
-			c.Assert(partitioningOf(c, conn), qt.DeepEquals, &ast.YDBTablePartitioningSpec{BySize: new(false)})
+			c.Assert(partitioningOf(c, conn), qt.DeepEquals, &ydbschema.TablePartitioning{BySize: new(false)})
 			c.Assert(planAgainst(c, conn, silent, partitioningSchemas), qt.HasLen, 0)
 
-			bySize := partitionedItems(&ast.YDBTablePartitioningSpec{BySize: new(true)})
+			bySize := partitionedItems(&ydbschema.TablePartitioning{BySize: new(true)})
 			changes := planAgainst(c, conn, bySize, partitioningSchemas)
 			c.Assert(changes, qt.DeepEquals, []string{
 				"ALTER TABLE `ptah_ydb_partitioning/items` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +

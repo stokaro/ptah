@@ -11,19 +11,17 @@ import (
 	"ptah.run/migration/schemadiff/internal/compare"
 )
 
-// TestCurrentYDBSettings carries what each table and global index holds of
-// its settings, for every table holding a setting off YDB's documented
-// defaults, sorted by table: a table holding only defaults is left out, and so
-// is one whose only tuned object is another table's.
+// TestCurrentYDBSettings carries what each global index holds of its
+// partitioning, for every table with an index holding a setting off YDB's
+// documented defaults, sorted by table: a table whose indexes hold only
+// defaults is left out. A table's own settings travel as the YDB owner's
+// facet of its observation, not here.
 func TestCurrentYDBSettings(t *testing.T) {
 	c := qt.New(t)
 	database := &catalog.Database{
-		Tables: []catalog.Table{
-			{Schema: "app", Name: "z_items", YDBPartitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 4}},
-			{Schema: "app", Name: "plain"},
-			{Schema: "app", Name: "a_orders"},
-		},
+		Tables: []catalog.Table{{Schema: "app", Name: "z_items"}, {Schema: "app", Name: "plain"}, {Schema: "app", Name: "a_orders"}},
 		Indexes: []catalog.Index{
+			{Schema: "app", TableName: "z_items", Name: "by_label", Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 4}},
 			{Schema: "app", TableName: "a_orders", Name: "by_customer", Partitioning: &ast.IndexPartitioningSpec{ByLoad: new(true)}},
 			{Schema: "app", TableName: "a_orders", Name: "by_date"},
 			{Schema: "app", TableName: "plain", Name: "by_name"},
@@ -34,10 +32,10 @@ func TestCurrentYDBSettings(t *testing.T) {
 
 	c.Assert(got, qt.DeepEquals, []difftypes.YDBHeldSettings{
 		{TableName: "app.a_orders", Indexes: map[string]*ast.IndexPartitioningSpec{"by_customer": {ByLoad: new(true)}}},
-		{TableName: "app.z_items", Partitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 4}},
+		{TableName: "app.z_items", Indexes: map[string]*ast.IndexPartitioningSpec{"by_label": {MinPartitions: 4}}},
 	})
-	got[1].Partitioning.MinPartitions = 9
-	c.Assert(database.Tables[0].YDBPartitioning.MinPartitions, qt.Equals, uint64(4),
+	got[1].Indexes["by_label"].MinPartitions = 9
+	c.Assert(database.Indexes[0].Partitioning.MinPartitions, qt.Equals, uint64(4),
 		qt.Commentf("the carry must not share a pointer with the read"))
 }
 

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbpartition"
 )
 
@@ -81,31 +81,31 @@ func TestLayoutClause_HappyPath(t *testing.T) {
 	caps := capability.YDB262()
 	tests := []struct {
 		name     string
-		spec     *ast.YDBTablePartitioningSpec
+		spec     *ydbschema.TablePartitioning
 		keyTypes []string
 		want     string
 	}{
 		{name: "none", spec: nil, keyTypes: []string{"Uint64"}, want: ""},
-		{name: "settings without a layout", spec: &ast.YDBTablePartitioningSpec{MinPartitions: 3}, keyTypes: []string{"Uint64"}, want: ""},
-		{name: "uniform on Uint64", spec: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}, keyTypes: []string{"Uint64", "Utf8"},
+		{name: "settings without a layout", spec: &ydbschema.TablePartitioning{MinPartitions: 3}, keyTypes: []string{"Uint64"}, want: ""},
+		{name: "uniform on Uint64", spec: &ydbschema.TablePartitioning{UniformPartitions: 4}, keyTypes: []string{"Uint64", "Utf8"},
 			want: "UNIFORM_PARTITIONS = 4"},
-		{name: "uniform on Uint32", spec: &ast.YDBTablePartitioningSpec{UniformPartitions: 2}, keyTypes: []string{"Uint32"},
+		{name: "uniform on Uint32", spec: &ydbschema.TablePartitioning{UniformPartitions: 2}, keyTypes: []string{"Uint32"},
 			want: "UNIFORM_PARTITIONS = 2"},
 		{
 			name:     "split points on a composite key",
-			spec:     &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10", "a'b"}, {"20"}}},
+			spec:     &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10", "a'b"}, {"20"}}},
 			keyTypes: []string{"Uint64", "Utf8"},
 			want:     `PARTITION_AT_KEYS = ((10, 'a\'b'u), (20))`,
 		},
 		{
 			name:     "the largest Uint64 and a String key",
-			spec:     &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"18446744073709551615", "m"}}},
+			spec:     &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"18446744073709551615", "m"}}},
 			keyTypes: []string{"Uint64", "String"},
 			want:     `PARTITION_AT_KEYS = ((18446744073709551615, 'm'))`,
 		},
 		{
 			name:     "a signed key and a Serial one",
-			spec:     &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"007", "2147483647"}}},
+			spec:     &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"007", "2147483647"}}},
 			keyTypes: []string{"Int16", "Serial"},
 			want:     `PARTITION_AT_KEYS = ((7, 2147483647))`,
 		},
@@ -127,29 +127,29 @@ func TestLayoutClause_FailurePath(t *testing.T) {
 	caps := capability.YDB262()
 	tests := []struct {
 		name     string
-		spec     *ast.YDBTablePartitioningSpec
+		spec     *ydbschema.TablePartitioning
 		keyTypes []string
 		wantErr  string
 	}{
-		{name: "uniform on a text key", spec: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}, keyTypes: []string{"Utf8"},
+		{name: "uniform on a text key", spec: &ydbschema.TablePartitioning{UniformPartitions: 4}, keyTypes: []string{"Utf8"},
 			wantErr: "uniform_partitions splits the range of the first key column, .* this one is Utf8 .*"},
-		{name: "uniform on a Serial key", spec: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}, keyTypes: []string{"Serial"},
+		{name: "uniform on a Serial key", spec: &ydbschema.TablePartitioning{UniformPartitions: 4}, keyTypes: []string{"Serial"},
 			wantErr: ".* this one is Serial \\(`Unsupported first key column type Int32, .*"},
-		{name: "uniform with no key", spec: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}, keyTypes: nil,
+		{name: "uniform with no key", spec: &ydbschema.TablePartitioning{UniformPartitions: 4}, keyTypes: nil,
 			wantErr: "uniform_partitions needs the table's key, and the table declares none"},
-		{name: "more values than key columns", spec: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"1", "a", "3"}}},
+		{name: "more values than key columns", spec: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"1", "a", "3"}}},
 			keyTypes: []string{"Uint64", "Utf8"},
 			wantErr:  "split point 1 of partition_at_keys: it holds 3 values, and the key has 2 columns .*"},
-		{name: "a value out of range", spec: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"300"}}},
+		{name: "a value out of range", spec: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}, {"300"}}},
 			keyTypes: []string{"Uint8"},
 			wantErr:  `split point 2 of partition_at_keys: "300" is not a whole number from 0 to the largest Uint8, .*`},
-		{name: "a negative value", spec: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"-10"}}},
+		{name: "a negative value", spec: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"-10"}}},
 			keyTypes: []string{"Int64"},
 			wantErr:  `split point 1 of partition_at_keys: "-10" is not a whole number .*`},
-		{name: "past a signed range", spec: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"128"}}},
+		{name: "past a signed range", spec: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"128"}}},
 			keyTypes: []string{"Int8"},
 			wantErr:  `split point 1 of partition_at_keys: "128" is not a whole number from 0 to the largest Int8, .*`},
-		{name: "a key type with no literal here", spec: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"2026-01-01"}}},
+		{name: "a key type with no literal here", spec: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"2026-01-01"}}},
 			keyTypes: []string{"Timestamp"},
 			wantErr:  "split point 1 of partition_at_keys: its key column is Timestamp, and YDB takes only literal numbers and strings here, .*"},
 	}

@@ -75,6 +75,9 @@ func extensionFixtures() []extensionFixture {
 		{payload: &ydbast.AlterColumnFamilies{Change: ydbdiff.ColumnFamilies{After: &ydbschema.DesiredColumnFamilies{
 			Families: []ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}},
 		}}}, wantSQL: "ALTER TABLE `items` ADD FAMILY `cold` (COMPRESSION = 'lz4'), ALTER COLUMN `body` SET FAMILY `cold`;\n"},
+		{payload: &ydbast.AlterTablePartitioning{Change: ydbdiff.TablePartitioning{After: &ydbschema.DesiredTablePartitioning{
+			TablePartitioning: ydbschema.TablePartitioning{KeyBloomFilter: new(true)},
+		}}}, wantSQL: "ALTER TABLE `items` SET (KEY_BLOOM_FILTER = ENABLED);\n"},
 	}
 }
 

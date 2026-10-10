@@ -51,3 +51,21 @@ func registerYDBColumnFamilyServices(provider *engine.Provider, target string) {
 		reporting:  ydbreport.ColumnFamiliesService{},
 	})
 }
+
+// A YDB row table's settings -- partitioning, read replicas and key bloom
+// filter -- are a table facet of the YDB owner. A Go annotation, YAML and YQL
+// declare them through their own syntax, not table properties.
+func registerYDBTablePartitioningServices(provider *engine.Provider, target string) {
+	registerTableFacetOwner(provider, target, tableFacetOwner{
+		codecs:     slices.Concat(ydbschema.TablePartitioningCodecs(), []schemaext.Codec{ydbdiff.TablePartitioningCodec(), ydbast.TablePartitioningCodec()}),
+		facet:      ydbschema.TablePartitioningKind,
+		change:     ydbdiff.TablePartitioningKind,
+		operation:  ydbast.AlterTablePartitioningKind,
+		conversion: ydbconvert.TablePartitioningService{},
+		comparison: ydbcompare.TablePartitioningService{},
+		reversal:   ydbreverse.TablePartitioningService{},
+		planning:   ydbplan.TablePartitioningService{},
+		reports:    ydbreport.TablePartitioningDefinitions(),
+		reporting:  ydbreport.TablePartitioningService{},
+	})
+}

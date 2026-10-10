@@ -380,7 +380,7 @@ func partitionSettings(c *qt.C, conn *dbschema.DatabaseConnection, name string) 
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{lintDir})
 	c.Assert(err, qt.IsNil)
 	described := tableNamed(c, live, lintDir, path.Base(name))
-	settings, err := ydbpartition.HeldTable(described.YDBPartitioning)
+	settings, err := ydbpartition.HeldTable(heldSettings(c, described))
 	c.Assert(err, qt.IsNil)
 	return settings
 }

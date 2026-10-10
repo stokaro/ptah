@@ -62,8 +62,8 @@ func storageSchema(c *qt.C) *schemamodel.Database {
 			{StructName: "Plain", Name: "plain"},
 			{
 				StructName: "Events", Name: "events",
-				Facets:          must.Must(ydbTTL(c).With(&ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"id"}}}})),
-				YDBPartitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 4},
+				Facets: must.Must(must.Must(ydbTTL(c).With(&ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"id"}}}})).
+					With(&ydbschema.DesiredTablePartitioning{TablePartitioning: ydbschema.TablePartitioning{MinPartitions: 4}})),
 			},
 			{StructName: "Archive", Name: "archive", YDBColumnTable: &ast.YDBColumnTableSpec{}},
 		},
@@ -130,10 +130,7 @@ func TestRender_StorageWarningsRespectTableSelection(t *testing.T) {
 func TestRender_EmptyOptionalStorageSettingsDoNotWarn(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{
-			StructName: "T", Name: "t",
-			YDBPartitioning: &ast.YDBTablePartitioningSpec{},
-		}},
+		Tables:  []schemamodel.Table{{StructName: "T", Name: "t"}},
 		Indexes: []schemamodel.Index{{StructName: "T", Name: "idx", Partitioning: &ast.IndexPartitioningSpec{}}},
 	}
 

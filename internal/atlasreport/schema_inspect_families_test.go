@@ -14,8 +14,9 @@ import (
 	"ptah.run/internal/atlasreport"
 )
 
-// An inspected YDB table carries its TTL and its column families as the YDB
-// owner's facets, and every row table holds a default family. Column families
+// An inspected YDB table carries its TTL, its column families and its
+// settings as the YDB owner's facets, and every row table holds a default
+// family. Column families
 // have no HCL spelling, so the document names the ones it leaves out; that
 // must not keep the TTL from becoming the table's YDB platform properties,
 // which the property encoder refuses to write for any table while one facet
@@ -25,7 +26,8 @@ func TestSchemaInspectHCLExportsTheTTLBesideColumnFamilies(t *testing.T) {
 	facets := must.Must(ydbTTLFacets(c).With(&ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{
 		{Name: "default", Compression: "off"}, {Name: "cold", Compression: "lz4", Columns: []string{"body"}},
 	}}))
-	facets = must.Must(facets.WithTargetScope(ydbschema.ColumnFamiliesKind, "ydb"))
+	facets = must.Must(must.Must(facets.WithTargetScope(ydbschema.ColumnFamiliesKind, "ydb")).
+		With(&ydbschema.DesiredTablePartitioning{TablePartitioning: ydbschema.TablePartitioning{MinPartitions: 4}}))
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Name: "events", StructName: "Event", Facets: facets}},
 		Fields: []schemamodel.Field{
@@ -43,5 +45,6 @@ func TestSchemaInspectHCLExportsTheTTLBesideColumnFamilies(t *testing.T) {
 	c.Assert(document, qt.Contains, "  platform \"ydb\" {\n    override \"row_deletion_column\" {\n      value = \"created_at\"\n    }\n"+
 		"    override \"row_deletion_interval\" {\n      value = \"P1D\"\n    }\n  }\n")
 	c.Assert(diagnostics.String(), qt.Contains, "column family cold is not represented in HCL")
-	c.Assert(db.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{ydbschema.ColumnFamiliesKind, ydbschema.TTLKind})
+	c.Assert(diagnostics.String(), qt.Contains, "YDB table settings (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4) are not represented in HCL")
+	c.Assert(db.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{ydbschema.ColumnFamiliesKind, ydbschema.TablePartitioningKind, ydbschema.TTLKind})
 }

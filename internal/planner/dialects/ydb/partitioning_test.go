@@ -9,27 +9,66 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// declareSettings gives a declaration the settings as the YDB owner's facet,
+// or none for nil.
+func declareSettings(declaration schemacapture.TableDeclaration, settings *ydbschema.TablePartitioning) schemacapture.TableDeclaration {
+	if settings != nil {
+		declaration.Table.Facets = must.Must(declaration.Table.Facets.With(&ydbschema.DesiredTablePartitioning{TablePartitioning: *settings}))
+	}
+	return declaration
+}
+
+// withSettingsChange adds to tableDiff the YDB owner's change of its table's
+// settings, from current, nil for YDB's defaults, to desired, nil for a
+// declaration stating none.
+func withSettingsChange(tableDiff difftypes.TableDiff, desired, current *ydbschema.TablePartitioning) difftypes.TableDiff {
+	change := &ydbdiff.TablePartitioning{After: &ydbschema.DesiredTablePartitioning{}}
+	if desired != nil {
+		change.After.TablePartitioning = *desired
+	}
+	if current != nil {
+		change.Before = &ydbschema.ObservedTablePartitioning{TablePartitioning: *current}
+	}
+	table := tableDiff.Desired.Table
+	subject := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts(table.Schema, table.Name)
+	tableDiff.FeatureChanges = append(tableDiff.FeatureChanges, schemaext.ChangeRecord{Subject: subject, Value: change})
+	return tableDiff
+}
+
+// holdSettings makes the read of the one table diff modifies hold the
+// settings, as the reader's observed facet.
+func holdSettings(diff *difftypes.SchemaDiff, current *ydbschema.TablePartitioning) *difftypes.SchemaDiff {
+	if current != nil {
+		observation := &diff.TablesModified[0].Current.Table
+		observation.Facets = must.Must(observation.Facets.With(&ydbschema.ObservedTablePartitioning{TablePartitioning: *current}))
+	}
+	return diff
+}
+
 // partitioningChanged is a change of the settings of items, beside a column
 // added and a column dropped, with the declaration holding desired.
-func partitioningChanged(t *testing.T, desired, current *ast.YDBTablePartitioningSpec) *difftypes.SchemaDiff {
-	declaration := itemsDeclaration(field("note", "TEXT", true))
-	declaration.Table.YDBPartitioning = desired
-	return modified(t, difftypes.TableDiff{
-		TableName:             "items",
-		Desired:               declaration,
-		ColumnsAdded:          difftypes.ColumnChanges{field("note", "TEXT", true)},
-		ColumnsRemoved:        difftypes.ColumnChanges{field("old", "TEXT", true)},
-		YDBPartitioningChange: &difftypes.YDBTablePartitioningChange{Desired: desired, Current: current},
-	})
+func partitioningChanged(t *testing.T, desired, current *ydbschema.TablePartitioning) *difftypes.SchemaDiff {
+	declaration := declareSettings(itemsDeclaration(field("note", "TEXT", true)), desired)
+	return holdSettings(modified(t, withSettingsChange(difftypes.TableDiff{
+		TableName:      "items",
+		Desired:        declaration,
+		ColumnsAdded:   difftypes.ColumnChanges{field("note", "TEXT", true)},
+		ColumnsRemoved: difftypes.ColumnChanges{field("old", "TEXT", true)},
+	}, desired, current)), current)
 }
 
 // TestGenerateMigrationAST_TablePartitioning_HappyPath pins where a change of a
@@ -45,28 +84,30 @@ func TestGenerateMigrationAST_TablePartitioning_HappyPath(t *testing.T) {
 	}{
 		{
 			name: "the minimum of a table splitting by load",
-			diff: partitioningChanged(t, &ast.YDBTablePartitioningSpec{ByLoad: new(true), MinPartitions: 4},
-				&ast.YDBTablePartitioningSpec{MinPartitions: 6}),
+			diff: partitioningChanged(t, &ydbschema.TablePartitioning{ByLoad: new(true), MinPartitions: 4},
+				&ydbschema.TablePartitioning{MinPartitions: 6}),
 			want: "ALTER TABLE `items` ADD COLUMN `note` Utf8;\n" +
 				"ALTER TABLE `items` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, " +
 				"AUTO_PARTITIONING_BY_LOAD = ENABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4);\n" +
 				"ALTER TABLE `items` DROP COLUMN `old`;\n",
 		},
 		{
-			name: "after the TTL",
+			// The owners' statements for a table's own facets sit together,
+			// ordered by name; neither reads the other.
+			name: "beside the TTL",
 			diff: func() *difftypes.SchemaDiff {
-				diff := partitioningChanged(t, &ast.YDBTablePartitioningSpec{KeyBloomFilter: new(true)}, nil)
+				diff := partitioningChanged(t, &ydbschema.TablePartitioning{KeyBloomFilter: new(true)}, nil)
 				diff.TablesModified[0].Desired.Fields = append(diff.TablesModified[0].Desired.Fields, field("ts", "TIMESTAMP", true))
 				return addTTLChange(diff, &ydbschema.TTL{Column: "ts", Interval: "P1D"}, nil)
 			}(),
 			want: "ALTER TABLE `items` ADD COLUMN `note` Utf8;\n" +
-				"ALTER TABLE `items` SET (TTL = Interval(\"P1D\") ON `ts`);\n" +
 				"ALTER TABLE `items` SET (KEY_BLOOM_FILTER = ENABLED);\n" +
+				"ALTER TABLE `items` SET (TTL = Interval(\"P1D\") ON `ts`);\n" +
 				"ALTER TABLE `items` DROP COLUMN `old`;\n",
 		},
 		{
 			name: "replicas and a filter alone",
-			diff: partitioningChanged(t, &ast.YDBTablePartitioningSpec{ReadReplicas: "ANY_AZ:2", KeyBloomFilter: new(true)}, nil),
+			diff: partitioningChanged(t, &ydbschema.TablePartitioning{ReadReplicas: "ANY_AZ:2", KeyBloomFilter: new(true)}, nil),
 			want: "ALTER TABLE `items` ADD COLUMN `note` Utf8;\n" +
 				"ALTER TABLE `items` SET (READ_REPLICAS_SETTINGS = \"ANY_AZ:2\", KEY_BLOOM_FILTER = ENABLED);\n" +
 				"ALTER TABLE `items` DROP COLUMN `old`;\n",
@@ -75,8 +116,8 @@ func TestGenerateMigrationAST_TablePartitioning_HappyPath(t *testing.T) {
 			name: "a new table",
 			diff: &difftypes.SchemaDiff{TablesAdded: []difftypes.TableCreation{{
 				Name: "events",
-				Table: schemamodel.Table{StructName: "E", Name: "events",
-					YDBPartitioning: &ast.YDBTablePartitioningSpec{UniformPartitions: 4, KeyBloomFilter: new(true)}},
+				Table: schemamodel.Table{StructName: "E", Name: "events", Facets: must.Must(schemaext.NewFacets(
+					&ydbschema.DesiredTablePartitioning{TablePartitioning: ydbschema.TablePartitioning{UniformPartitions: 4, KeyBloomFilter: new(true)}}))},
 				Fields: []schemamodel.Field{{StructName: "E", Name: "id", Type: "BIGINT UNSIGNED", Primary: true}},
 			}}},
 			want: "CREATE TABLE `events` (\n" +
@@ -95,9 +136,9 @@ func TestGenerateMigrationAST_TablePartitioning_HappyPath(t *testing.T) {
 }
 
 // TestGenerateMigrationAST_TablePartitioning_FailurePath refuses, before any
-// node, a change the target cannot make: by the key it lacks, by YDB's reason
-// for a declaration it refuses, and by the reason a change only a rebuild
-// makes, naming how to ask for one.
+// node, a change the target cannot make: the YDB owner by the key the target
+// lacks and by YDB's reason for a declaration it refuses, and the host by the
+// reason a change only a rebuild makes, naming how to ask for one.
 func TestGenerateMigrationAST_TablePartitioning_FailurePath(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -109,28 +150,28 @@ func TestGenerateMigrationAST_TablePartitioning_FailurePath(t *testing.T) {
 		{
 			name:        "partitioning without the key",
 			caps:        capability.YDB262().With(capability.PartitioningOptions, false),
-			diff:        partitioningChanged(t, &ast.YDBTablePartitioningSpec{MinPartitions: 4}, nil),
-			wantFeature: "partitioning_options",
+			diff:        partitioningChanged(t, &ydbschema.TablePartitioning{MinPartitions: 4}, nil),
+			wantFeature: "YDB table partitioning planning",
 			wantErr:     `changing the partitioning of table "items", which requires target capability partitioning_options, .*`,
 		},
 		{
 			name:        "replicas going away without the key",
 			caps:        capability.YDB262().With(capability.ReadReplicas, false),
-			diff:        partitioningChanged(t, nil, &ast.YDBTablePartitioningSpec{ReadReplicas: "PER_AZ:1"}),
-			wantFeature: "read_replicas",
+			diff:        partitioningChanged(t, nil, &ydbschema.TablePartitioning{ReadReplicas: "PER_AZ:1"}),
+			wantFeature: "YDB table partitioning planning",
 			wantErr:     `changing the read replicas of table "items", which requires target capability read_replicas, .*`,
 		},
 		{
 			name:        "a declaration YDB refuses",
 			caps:        capability.YDB262(),
-			diff:        partitioningChanged(t, &ast.YDBTablePartitioningSpec{BySize: new(false), PartitionSizeMB: 64}, nil),
-			wantFeature: `table "items"`,
+			diff:        partitioningChanged(t, &ydbschema.TablePartitioning{BySize: new(false), PartitionSizeMB: 64}, nil),
+			wantFeature: "YDB table partitioning planning",
 			wantErr:     `table "items": auto_partitioning_partition_size_mb is set while auto_partitioning_by_size is disabled, .*`,
 		},
 		{
 			name:        "a starting layout on a table created without it",
 			caps:        capability.YDB262(),
-			diff:        partitioningChanged(t, &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}}}, nil),
+			diff:        partitioningChanged(t, &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}}}, nil),
 			wantFeature: `table "items"`,
 			wantErr: `table "items": it declares PARTITION_AT_KEYS with one split point, which YDB takes only when it ` +
 				`creates a table .* where this table holds 1\. Declare auto_partitioning_min_partitions_count to change ` +
@@ -162,13 +203,13 @@ func TestGenerateMigrationAST_TablePartitioning_FailurePath(t *testing.T) {
 func TestGenerateMigrationAST_TablePartitioning_Rebuild(t *testing.T) {
 	tests := []struct {
 		name       string
-		desired    *ast.YDBTablePartitioningSpec
-		current    *ast.YDBTablePartitioningSpec
+		desired    *ydbschema.TablePartitioning
+		current    *ydbschema.TablePartitioning
 		wantCreate string
 	}{
 		{
 			name:    "a starting layout",
-			desired: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"20"}}},
+			desired: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}, {"20"}}},
 			current: nil,
 			wantCreate: ") WITH (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, " +
 				"AUTO_PARTITIONING_BY_LOAD = DISABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3, KEY_BLOOM_FILTER = DISABLED, " +
@@ -176,8 +217,8 @@ func TestGenerateMigrationAST_TablePartitioning_Rebuild(t *testing.T) {
 		},
 		{
 			name:    "a starting layout over held settings",
-			desired: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}}},
-			current: &ast.YDBTablePartitioningSpec{BySize: new(false), ByLoad: new(true), MaxPartitions: 9,
+			desired: &ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}}},
+			current: &ydbschema.TablePartitioning{BySize: new(false), ByLoad: new(true), MaxPartitions: 9,
 				ReadReplicas: "PER_AZ:1", KeyBloomFilter: new(true)},
 			wantCreate: ") WITH (AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_BY_LOAD = ENABLED, " +
 				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 2, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 9, " +
@@ -188,13 +229,9 @@ func TestGenerateMigrationAST_TablePartitioning_Rebuild(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			declaration := appItems(field("label", "TEXT", true))
-			declaration.Table.YDBPartitioning = test.desired
-			diff := modified(t, difftypes.TableDiff{
-				TableName: "app.items", Desired: declaration,
-				YDBPartitioningChange: &difftypes.YDBTablePartitioningChange{Desired: test.desired, Current: test.current},
-			})
-			diff.CurrentYDBSettings = []difftypes.YDBHeldSettings{{TableName: "app.items", Partitioning: test.current}}
+			declaration := declareSettings(appItems(field("label", "TEXT", true)), test.desired)
+			diff := holdSettings(modified(t, withSettingsChange(difftypes.TableDiff{TableName: "app.items", Desired: declaration},
+				test.desired, test.current)), test.current)
 			got := renderRebuild(c, capability.YDB262(), diff)
 			c.Assert(got, qt.Contains, rebuildNote+"CREATE TABLE `app/__ptah_rebuild_items` (")
 			c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n"+test.wantCreate)
@@ -209,8 +246,8 @@ func TestGenerateMigrationAST_TablePartitioning_Rebuild(t *testing.T) {
 // is for another change, so the settings survive the swap.
 func TestGenerateMigrationAST_TablePartitioning_RebuildCarriesTheSettings(t *testing.T) {
 	c := qt.New(t)
-	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
-	declaration.Table.YDBPartitioning = &ast.YDBTablePartitioningSpec{MinPartitions: 4, ReadReplicas: "PER_AZ:1"}
+	declaration := declareSettings(appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
+		&ydbschema.TablePartitioning{MinPartitions: 4, ReadReplicas: "PER_AZ:1"})
 	got := renderRebuild(c, capability.YDB262(), modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: declaration,
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
@@ -228,17 +265,16 @@ func TestGenerateMigrationAST_TablePartitioning_RebuildCarriesTheSettings(t *tes
 // same plan takes what it held under its old name.
 func TestGenerateMigrationAST_TablePartitioning_RebuildKeepsTheHeldSettings(t *testing.T) {
 	c := qt.New(t)
-	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
-	declaration.Table.YDBPartitioning = &ast.YDBTablePartitioningSpec{MinPartitions: 4}
-	diff := modified(t, difftypes.TableDiff{
+	declaration := declareSettings(appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
+		&ydbschema.TablePartitioning{MinPartitions: 4})
+	diff := holdSettings(modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: declaration,
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
-	})
+	}), &ydbschema.TablePartitioning{BySize: new(false), ByLoad: new(true), MaxPartitions: 20, KeyBloomFilter: new(true)})
 	diff.IndexesRenamed = []difftypes.IndexRename{{TableName: "app.items", From: "items_old_label", To: "items_label"}}
 	diff.CurrentYDBSettings = []difftypes.YDBHeldSettings{{
-		TableName:    "app.items",
-		Partitioning: &ast.YDBTablePartitioningSpec{BySize: new(false), ByLoad: new(true), MaxPartitions: 20, KeyBloomFilter: new(true)},
-		Indexes:      map[string]*ast.IndexPartitioningSpec{"items_old_label": {MinPartitions: 3, ReadReplicas: "ANY_AZ:1"}},
+		TableName: "app.items",
+		Indexes:   map[string]*ast.IndexPartitioningSpec{"items_old_label": {MinPartitions: 3, ReadReplicas: "ANY_AZ:1"}},
 	}}
 
 	got := renderRebuild(c, capability.YDB262(), diff)
@@ -256,13 +292,12 @@ func TestGenerateMigrationAST_TablePartitioning_RebuildKeepsTheHeldSettings(t *t
 // for, by the key, before any node.
 func TestGenerateMigrationAST_TablePartitioning_RebuildRefusesWhatItCannotWrite(t *testing.T) {
 	c := qt.New(t)
-	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
-	declaration.Table.YDBPartitioning = &ast.YDBTablePartitioningSpec{KeyBloomFilter: new(true)}
-	diff := modified(t, difftypes.TableDiff{
+	settings := &ydbschema.TablePartitioning{KeyBloomFilter: new(true)}
+	declaration := declareSettings(appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), settings)
+	diff := modified(t, withSettingsChange(difftypes.TableDiff{
 		TableName: "app.items", Desired: declaration,
-		ColumnsModified:       []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
-		YDBPartitioningChange: &difftypes.YDBTablePartitioningChange{Desired: declaration.Table.YDBPartitioning},
-	})
+		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
+	}, settings, nil))
 
 	nodes, err := ydb.NewWithCapabilities(capability.YDB262().With(capability.KeyBloomFilter, false)).
 		WithTableRebuild(true).GenerateMigrationAST(
@@ -270,7 +305,7 @@ func TestGenerateMigrationAST_TablePartitioning_RebuildRefusesWhatItCannotWrite(
 		diff,
 	)
 
-	c.Assert(err, qt.ErrorMatches, `changing the key bloom filter of table "app.items", which requires target capability key_bloom_filter, .*`)
+	c.Assert(err, qt.ErrorMatches, `rebuilding table "app/items" with its key bloom filter, which requires target capability key_bloom_filter, .*`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(nodes, qt.IsNil)
 }
