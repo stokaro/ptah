@@ -125,6 +125,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:defaultprivilege`](#ptahschemadefaultprivilege) | A PostgreSQL default privilege | struct |
 | [`ptah:schema:rls:enable`](#ptahschemarlsenable) | Row-level security enablement | file or struct |
 | [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
+| [`ptah:schema:rowpolicy`](#ptahschemarowpolicy) | A ClickHouse row policy | struct |
 | [`ptah:schema:secret`](#ptahschemasecret) | A YDB secret, by the variable its value comes from | struct or field |
 | [`ptah:schema:externaldatasource`](#ptahschemaexternaldatasource) | A YDB external data source | struct or field |
 | [`ptah:schema:externaltable`](#ptahschemaexternaltable) | A YDB external table over files in object storage | struct or field |
@@ -1205,6 +1206,30 @@ table. SQL Server has no form for a `to` list, `as="RESTRICTIVE"`, a comment,
 parsed, and so is an `rls:enable` scoped to SQL Server, which has no table
 switch, and a scope naming SQL Server beside another dialect. See
 [SQL Server](../../databases/sqlserver/#limitations).
+
+A ClickHouse row policy is not declared here: a policy or an enablement scoped
+to ClickHouse is refused while the file is parsed. Declare one with
+[`//ptah:schema:rowpolicy`](#ptahschemarowpolicy).
+
+### `//ptah:schema:rowpolicy`
+
+Declares a ClickHouse row policy: a filter on the rows of one table that the
+users and roles it names may read. The directive binds the policy to
+ClickHouse, so another target leaves it out. See
+[ClickHouse](../../databases/clickhouse/#row-policies).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Policy name, unique on its table. |
+| `table` | Yes | Table the policy filters, optionally database-qualified. |
+| `using` | No | Filter condition. Omitted, the policy admits every row to the users it names. |
+| `to` | No | Users and roles: names, `ALL`, `ALL EXCEPT` names, or `NONE`. Omitted, the policy applies to nobody. |
+| `as` | No | `PERMISSIVE`, the default, or `RESTRICTIVE`. |
+
+A user reads the rows that pass at least one permissive policy and every
+restrictive one. A `with_check` attribute is refused: ClickHouse parses
+`WITH CHECK` and discards it, so the policy would filter reads and leave
+writes open.
 
 ### `//ptah:schema:secret`
 

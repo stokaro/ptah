@@ -2,9 +2,11 @@ package goschema
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
@@ -37,10 +39,12 @@ type rlsSwitchDeclaration struct {
 // an enablement the switches facet of its table. A policy scoped to SQL Server
 // only is a security policy of the SQL Server owner (see
 // [mssqlpolicysource.Attributes.Policy]); SQL Server has no table switch, so
-// an enablement scoped to it is refused. One scoped to other targets only
-// stays a shared declaration, which ClickHouse plans. A scope naming two of
-// these is refused, and so are two annotations that declare one policy, or
-// one table's switches, naming both (stokaro/ptah#2440).
+// an enablement scoped to it is refused. One scoped to ClickHouse is refused
+// too: a ClickHouse row policy is its owner's own directive,
+// //ptah:schema:rowpolicy, and ClickHouse has no table switch. One scoped to
+// other targets only stays a shared declaration. A scope naming two of these
+// is refused, and so are two annotations that declare one policy, or one
+// table's switches, naming both (stokaro/ptah#2440).
 func (s *schemaParseState) attachRowSecurity() ([]schemamodel.RLSPolicy, []schemamodel.RLSEnabledTable, error) {
 	var collector pgpolicysource.Collector
 	var securityPolicies mssqlpolicysource.Collector
@@ -55,6 +59,9 @@ func (s *schemaParseState) attachRowSecurity() ([]schemamodel.RLSPolicy, []schem
 			err = s.collectPolicy(&collector, declared)
 		case sqlServerRowSecurity:
 			err = s.collectSecurityPolicy(&securityPolicies, declared)
+		case clickHouseRowSecurity:
+			err = s.rowSecurityError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: a ClickHouse row policy is not a "+
+				"row-level security policy; declare it with //ptah:schema:rowpolicy instead", ptaherr.ErrInvalidAttributeValue))
 		default:
 			policies = append(policies, declared.policy)
 		}
@@ -74,6 +81,10 @@ func (s *schemaParseState) attachRowSecurity() ([]schemamodel.RLSPolicy, []schem
 		case sqlServerRowSecurity:
 			err = s.rowSecurityError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: SQL Server has no row-level "+
 				"security switch on a table; a security policy carries its own state, so remove the enablement scoped to %s",
+				ptaherr.ErrInvalidAttributeValue, strings.Join(declared.enabled.Dialects, ",")))
+		case clickHouseRowSecurity:
+			err = s.rowSecurityError(declared.ctx, dialectscope.Attribute, fmt.Errorf("%w: ClickHouse has no row-level "+
+				"security switch: a row policy filters rows once it exists; remove the enablement scoped to %s",
 				ptaherr.ErrInvalidAttributeValue, strings.Join(declared.enabled.Dialects, ",")))
 		default:
 			switches = append(switches, declared.enabled)
@@ -105,6 +116,7 @@ const (
 	sharedRowSecurity rowSecurityOwner = iota
 	postgresRowSecurity
 	sqlServerRowSecurity
+	clickHouseRowSecurity
 )
 
 func (s *schemaParseState) rowSecurityOwner(scope []string, ctx annotationErrorContext) (rowSecurityOwner, error) {
@@ -121,6 +133,9 @@ func (s *schemaParseState) rowSecurityOwner(scope []string, ctx annotationErrorC
 	}
 	if sqlServer {
 		return sqlServerRowSecurity, nil
+	}
+	if slices.ContainsFunc(scope, func(target string) bool { return platform.NormalizeDialect(target) == platform.ClickHouse }) {
+		return clickHouseRowSecurity, nil
 	}
 	return sharedRowSecurity, nil
 }

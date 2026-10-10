@@ -322,7 +322,7 @@ func answerClickHouse(query string, args []driver.NamedValue, server rbacServer)
 	// (stokaro/ptah#1736).
 	case strings.Contains(query, "FROM system.row_policies"):
 		return dbtest.QueryResult{Columns: []string{
-			"short_name", "table", "select_filter", "apply_to_all", "apply_to_list", "apply_to_except",
+			"short_name", "table", "select_filter", "is_restrictive", "apply_to_all", "apply_to_list", "apply_to_except",
 		}}, nil
 	case strings.Contains(query, "SELECT count()"):
 		return dbtest.QueryResult{Columns: []string{"count()"}, Rows: [][]driver.Value{{uint64(0)}}}, nil

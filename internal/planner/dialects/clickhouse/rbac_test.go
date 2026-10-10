@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
@@ -271,8 +272,8 @@ func TestGenerateMigrationAST_ClickHouseRolesArePlannedBeforeTheGrantsThatNameTh
 // TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThem
 // pins where the two RBAC phases sit among the objects around them.
 //
-// The offline render path emits roles right after the tables and grants between
-// the row-level security statements and the triggers. The plan has to agree on
+// The offline render path emits roles right after the tables and grants just
+// before the triggers. The plan has to agree on
 // order and not merely on content, because `schema render` and
 // `schema apply --dry-run` are compared line for line; the ordering also has to
 // survive the phases that stayed diagnostics, which is why this case declares
@@ -283,31 +284,15 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 	diff := &difftypes.SchemaDiff{
 		RolesAdded:            difftypes.RoleChanges{{Name: "reporting"}},
 		FunctionsAdded:        difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
-		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "events"}},
-		RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
-			PolicyName: "p1", TableName: "events",
-			Desired: schemamodel.RLSPolicy{Name: "p1", Table: "events", UsingExpression: "true"},
-		}},
 		GrantsAdded:   []difftypes.GrantRef{rbacGrant("SELECT")},
 		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
 	}
 
-	// The row-policy phase plans from the declaration now that ClickHouse
-	// carries capability.RowLevelSecurity. The policy travels with its entry
-	// (stokaro/ptah#2315); the enablement below still comes from the schema,
-	// because RLSEnabledTablesAdded is a name list.
-	nodes := planClickHouse(c, diff, &schemamodel.Database{
-		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "events"}},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name: "p1", Table: "events", UsingExpression: "true",
-		}},
-	})
+	nodes := planClickHouse(c, diff, &schemamodel.Database{})
 
 	c.Assert(nodeTypes(nodes), qt.DeepEquals, []string{
 		"*ast.CreateRoleNode",
 		"*ast.CreateFunctionNode",
-		"*ast.AlterTableEnableRLSNode",
-		"*ast.CreatePolicyNode",
 		"*ast.GrantPrivilegeNode",
 		"*ast.CreateTriggerNode",
 	})
@@ -370,4 +355,30 @@ func rolesNamed(names ...string) difftypes.RoleChanges {
 		roles = append(roles, schemamodel.Role{Name: name})
 	}
 	return roles
+}
+
+// TestGenerateMigrationAST_ClickHouseRefusesSharedRowSecurity refuses every
+// shared row-level security entry, before any node: the ClickHouse owner plans
+// row policies from its own models, so an entry was built by hand, and
+// planning nothing would report a policy applied that is not.
+func TestGenerateMigrationAST_ClickHouseRefusesSharedRowSecurity(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+	}{
+		{name: "a policy added", diff: &difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
+			PolicyName: "p1", TableName: "events", Desired: schemamodel.RLSPolicy{Name: "p1", Table: "events", UsingExpression: "true"},
+		}}}},
+		{name: "a policy removed", diff: &difftypes.SchemaDiff{RLSPoliciesRemoved: []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "events"}}}},
+		{name: "an enablement", diff: &difftypes.SchemaDiff{RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "events"}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			nodes, err := clickhouse.New().GenerateMigrationAST(c.Context(), must.Must(builtin.New()), test.diff)
+			c.Assert(err, qt.ErrorMatches, `unsupported feature: shared row-level security entries on clickhouse; .*`)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
 }

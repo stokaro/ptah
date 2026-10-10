@@ -262,6 +262,9 @@ func (r *renderer) renderRowSecurity(rlsEnabled *schemamodel.RLSEnabledTable) {
 	}
 	r.line("  row_security {")
 	r.rawAttr(2, "enabled", "true")
+	if rlsEnabled.Forced {
+		r.rawAttr(2, "enforced", "true")
+	}
 	r.stringAttr(2, "comment", rlsEnabled.Comment)
 	r.line("  }")
 }
@@ -559,6 +562,9 @@ func (r *renderer) renderRLSPolicies() {
 		}
 		r.stringAttr(1, "using", policy.UsingExpression)
 		r.stringAttr(1, "check", policy.WithCheckExpression)
+		if policy.Restrictive {
+			r.stringAttr(1, "as", "RESTRICTIVE")
+		}
 		r.stringAttr(1, "comment", policy.Comment)
 		r.line("}")
 		r.line("")

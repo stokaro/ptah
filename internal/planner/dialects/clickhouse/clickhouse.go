@@ -111,6 +111,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseRoleMemberships(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseSharedRowSecurity(platform.ClickHouse, diff); err != nil {
+		return nil, err
+	}
 	var result []ast.Node
 
 	// The identity check alone. Nothing is resolved: an addition carries its
@@ -147,10 +150,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 	indexes = p.removeIndexes(indexes, diff)
-	// Row policies go before the tables they name, so a drop never names an
-	// object that is already gone.
-	last := removeRowPolicies(nil, diff, p.capabilities())
-	last = p.removeTables(last, diff)
+	last := p.removeTables(nil, diff)
 
 	return p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, drops: replacementDrops, columns: columns, after: after, indexes: indexes, last: last})
 }

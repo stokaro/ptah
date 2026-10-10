@@ -443,13 +443,9 @@ func TestUnsupportedFeaturesEmitCommentAndReturnNil(t *testing.T) {
 		{"drop extension", &ast.DropExtensionNode{Name: "pg_trgm"}},
 		{"create function", &ast.CreateFunctionNode{Name: "fn"}},
 		{"drop function", &ast.DropFunctionNode{Name: "fn"}},
-		// The policy nodes are deliberately absent for the same reason the role
-		// ones are: ClickHouse has row policies, so they render SQL now
-		// (stokaro/ptah#1736). rowpolicy_test.go pins them. The two nodes below
-		// stay, because the table-level switch they describe has no ClickHouse
-		// spelling at all and remains a comment.
-		{"enable rls", &ast.AlterTableEnableRLSNode{Table: "t"}},
-		{"disable rls", &ast.AlterTableDisableRLSNode{Table: "t"}},
+		// The shared row-level security nodes are deliberately absent: a row
+		// policy is the ClickHouse owner's object, so this renderer refuses
+		// them. rowpolicy_test.go pins that.
 		// The role and grant nodes are deliberately absent: ClickHouse has both
 		// objects, so they render SQL or refuse with an error rather than
 		// falling out of the migration as a comment. rbac_test.go pins them.

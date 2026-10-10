@@ -1037,8 +1037,18 @@ empty-valued keys and a selection ClickHouse cannot express, as do the
 `chdiff` and `chast` codecs that carry a policy, each refusal a
 `schemaext.InvalidModelError`. `RowPolicyCoverage` builds the model's coverage.
 
-The ClickHouse provider registers the row policy services, and no source or
-reader produces the model yet. `chcompare.RowPolicyService` pairs policies by
+The ClickHouse provider registers the row policy services, and row policies
+are the owner's alone. `chsource.Annotations` adds the Go directive
+`chsource.RowPolicyDirective` (`//ptah:schema:rowpolicy`), whose policies are
+bound to the clickhouse target, and `chsource.RowPolicyCoverage` is the claim a
+desired source that declares them makes. A YAML `rls_policies` entry scoped to
+ClickHouse is one too, and `chsource.YAML` makes the same claim on a YAML
+document. The ClickHouse reader reports each policy on a table of
+the database as an `ObservedRowPolicy`, and a read the account may not make as
+uninspected. A shared row-level security declaration or diff entry is refused
+on ClickHouse.
+
+`chcompare.RowPolicyService` pairs policies by
 resolved identity, so a declaration that leaves the database to the
 connection matches the policy the server reports with the database named. A
 policy whose table the plan creates or removes is left to that table's

@@ -9,7 +9,10 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/chpolicysource"
 	"ptah.run/internal/pgpolicysource"
 )
 
@@ -23,12 +26,18 @@ func (ctx *renderContext) captureSwitches() error {
 	if err := pgpolicysource.RequireRepresentable(ctx.db.FeatureCoverage, ctx.db.FeatureObjects); err != nil {
 		return err
 	}
+	if err := chpolicysource.RequireDescribed(ctx.db.FeatureCoverage); err != nil {
+		return err
+	}
 	builder := objectidentity.NewBuilder(identifier.ForDialect(platform.Postgres))
+	clickhouse := objectidentity.NewBuilder(identifier.ForDialect(platform.ClickHouse))
 	ctx.policyTables = make(map[objectidentity.Key]string, len(ctx.db.Tables))
+	ctx.rowPolicyTables = make(map[objectidentity.Key]string, len(ctx.db.Tables))
 	ctx.policyAnnotations = make(map[string][]string)
 	ctx.switchAnnotations = make(map[string]string)
 	for _, table := range ctx.db.Tables {
 		ctx.policyTables[builder.TableParts(table.Schema, table.Name).Key()] = table.QualifiedName()
+		ctx.rowPolicyTables[clickhouse.TablePartsVerbatim(table.Schema, table.Name).Key()] = table.QualifiedName()
 		state, found, err := schemaext.FacetAs[*pgpolicy.DesiredTableState](table.Facets, pgpolicy.TableStateKind)
 		if err != nil {
 			return err
@@ -80,6 +89,31 @@ func (ctx *renderContext) capturePolicy(object schemaext.Object, policy *pgpolic
 		attr{name: "as", value: strings.ToUpper(string(policy.Composition)), set: policy.Composition != ""},
 		attr{name: "comment", value: policy.Comment, set: policy.Comment != ""},
 		dialectsAttr(object.Targets),
+	))
+	return nil
+}
+
+// captureRowPolicy writes one ClickHouse row policy as the owner's directive
+// the Go source reads back, beside the table it filters, with its composition,
+// so a restrictive policy comes back restrictive (stokaro/ptah#4343). A policy
+// whose table the export does not hold is refused.
+func (ctx *renderContext) captureRowPolicy(object schemaext.Object, policy *chschema.DesiredRowPolicy) error {
+	if err := chschema.ValidateRowPolicyRef(object.Ref); err != nil {
+		return err
+	}
+	if err := chschema.ValidateDesiredRowPolicy(policy); err != nil {
+		return err
+	}
+	table, found := ctx.rowPolicyTables[chschema.RowPolicyTable(object.Ref).Key()]
+	if !found {
+		return fmt.Errorf("%w: row policy %s names a table the export does not declare", ptaherr.ErrUnsupportedFeature, object.Ref)
+	}
+	ctx.policyAnnotations[table] = append(ctx.policyAnnotations[table], annotation(chsource.RowPolicyDirective,
+		attr{name: "name", value: object.Ref.Name.Source, set: true},
+		attr{name: "table", value: table, set: true},
+		optionalAttr("using", policy.Filter),
+		attr{name: "to", value: chpolicysource.FormatRoles(policy.Roles), set: !policy.Roles.IsZero()},
+		attr{name: "as", value: strings.ToUpper(string(policy.Composition)), set: policy.Composition != ""},
 	))
 	return nil
 }

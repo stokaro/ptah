@@ -313,6 +313,11 @@ func validateDeclaredRowSecurity(dialect string, database *schemamodel.Database)
 			return err
 		}
 	}
+	if platform.NormalizeDialect(dialect) == platform.ClickHouse && len(database.RLSPolicies)+len(database.RLSEnabledTables) > 0 {
+		return fmt.Errorf("%w: shared row-level security declarations on %s; a ClickHouse row policy is the ClickHouse owner's, "+
+			"declared with //ptah:schema:rowpolicy in Go or as an rls_policies entry scoped to clickhouse in YAML",
+			ptaherr.ErrUnsupportedFeature, platform.ClickHouse)
+	}
 	if slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
 		return nil
 	}

@@ -49,8 +49,8 @@ exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 521 | reaches rendered SQL on at least one target |
-| `comparison` | 19 | read when two schemas are compared, and written into no statement |
+| `ddl` | 516 | reaches rendered SQL on at least one target |
+| `comparison` | 24 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 29 | identifies the source text the declaration was read from |
@@ -393,21 +393,21 @@ None.
 | `schemamodel.PrimaryKeyPart.Prefix` | `ddl` | — |
 | `schemamodel.PrivilegeGrant.Privilege` | `ddl` | — |
 | `schemamodel.PrivilegeGrant.WithOption` | `ddl` | — |
-| `schemamodel.RLSEnabledTable.Comment` | `export` | the comment a shared enablement carries for the HCL and Go writers; SQL Server and ClickHouse, the targets left on the shared model, have no enablement statement to write it on |
+| `schemamodel.RLSEnabledTable.Comment` | `export` | the comment a shared enablement carries for the HCL and Go writers; no target writes a shared enablement |
 | `schemamodel.RLSEnabledTable.Dialects` | `ddl` | — |
 | `schemamodel.RLSEnabledTable.Forced` | `comparison` | FORCE is PostgreSQL's, whose switches the row-security owner holds; the dialect-neutral comparison of two shared declarations still compares it |
 | `schemamodel.RLSEnabledTable.StructName` | `ddl` | — |
 | `schemamodel.RLSEnabledTable.Table` | `ddl` | — |
-| `schemamodel.RLSPolicy.Comment` | `ddl` | — |
+| `schemamodel.RLSPolicy.Comment` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
 | `schemamodel.RLSPolicy.Dialects` | `ddl` | — |
 | `schemamodel.RLSPolicy.Name` | `ddl` | — |
-| `schemamodel.RLSPolicy.PolicyFor` | `ddl` | — |
-| `schemamodel.RLSPolicy.Restrictive` | `comparison` | the shared targets write every policy permissive; the dialect-neutral comparison of two shared declarations still compares AS |
+| `schemamodel.RLSPolicy.PolicyFor` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
+| `schemamodel.RLSPolicy.Restrictive` | `comparison` | no target renders a shared policy; the Go and HCL writers carry AS, and the dialect-neutral comparison of two shared declarations still compares it |
 | `schemamodel.RLSPolicy.StructName` | `ddl` | — |
 | `schemamodel.RLSPolicy.Table` | `ddl` | — |
-| `schemamodel.RLSPolicy.ToRoles` | `ddl` | — |
-| `schemamodel.RLSPolicy.UsingExpression` | `ddl` | — |
-| `schemamodel.RLSPolicy.WithCheckExpression` | `ddl` | — |
+| `schemamodel.RLSPolicy.ToRoles` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
+| `schemamodel.RLSPolicy.UsingExpression` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
+| `schemamodel.RLSPolicy.WithCheckExpression` | `comparison` | no target renders a shared row-level security policy: PostgreSQL, SQL Server and ClickHouse read theirs into their owners' models, and every other target names one and skips it; the dialect-neutral comparison of two shared declarations still compares it |
 | `schemamodel.Range.Canonical` | `ddl` | — |
 | `schemamodel.Range.ClearedAttributes` | `comparison` | records the attributes a declaration explicitly cleared, so a comparison can tell a value nobody wrote from one somebody removed |
 | `schemamodel.Range.Collation` | `ddl` | — |

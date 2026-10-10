@@ -56,12 +56,21 @@ const MaterializedViewDirective = "ptah:schema:matview"
 // Annotations is the owner's contribution to the Go annotation frontend: the
 // refresh attribute of a materialized view, read by [RefreshFacets], and the
 // claim [RefreshCoverage] makes, so a view declared without a schedule
-// declares a plain view. A parse that does not select the owner refuses the
-// attribute as one the directive does not declare.
+// declares a plain view; and the row policy directive [RowPolicyDirective],
+// with the claim [RowPolicyCoverage] makes, so a policy the source leaves out
+// is absent. A parse that does not select the owner refuses the attribute and
+// the directive as ones it does not declare.
+//
+// A row policy belongs to ClickHouse alone, so each one the directive
+// declares is bound to the clickhouse target: another target leaves it out
+// rather than refusing it. PostgreSQL's row-level security, which
+// `//ptah:schema:rls:policy` declares, is a different object (ADR 0020).
 func Annotations() annotation.Extension {
 	return annotation.Extension{
-		Owner: chschema.Owner,
-		Kinds: []schemaext.Kind{chschema.RefreshKind},
+		Owner:      chschema.Owner,
+		Kinds:      []schemaext.Kind{chschema.RefreshKind, chschema.RowPolicyKind},
+		Directives: []annotation.Directive{rowPolicyDirective()},
+		Decode:     decodeRowPolicy,
 		Attributes: []annotation.DirectiveAttributes{{
 			Directive: MaterializedViewDirective,
 			Attributes: []annotation.Attribute{{Name: "refresh", Value: "string",
@@ -72,6 +81,20 @@ func Annotations() annotation.Extension {
 				return RefreshFacets(attributes["refresh"])
 			},
 		}},
-		Coverage: RefreshCoverage,
+		Coverage: ownedCoverage,
 	}
+}
+
+// ownedCoverage is the claim of [RefreshCoverage] and [RowPolicyCoverage]
+// together.
+func ownedCoverage() (schemaext.Coverage, error) {
+	refresh, err := RefreshCoverage()
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	policies, err := RowPolicyCoverage()
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	return refresh.Combine(policies)
 }

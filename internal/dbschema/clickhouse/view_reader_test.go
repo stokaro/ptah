@@ -83,7 +83,7 @@ func clickHouseViewReaderQuery(
 		}}, nil
 	case strings.Contains(query, "FROM system.row_policies"):
 		return dbtest.QueryResult{Columns: []string{
-			"short_name", "table", "select_filter", "apply_to_all", "apply_to_list", "apply_to_except",
+			"short_name", "table", "select_filter", "is_restrictive", "apply_to_all", "apply_to_list", "apply_to_except",
 		}}, nil
 	default:
 		return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
