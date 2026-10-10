@@ -25,6 +25,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/goschematodb"
@@ -95,6 +96,7 @@ type Runtime interface {
 	goschematodb.Runtime
 	schemaext.ReportingRuntime
 	renderer.SchemaService
+	yamlext.Runtime
 }
 
 // Options are the migration lint inputs shared by native and Atlas-compatible

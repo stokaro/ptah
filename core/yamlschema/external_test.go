@@ -14,7 +14,7 @@ import (
 // table, keyed by name, with option names in any letter case.
 func TestParse_YDBExternalObjects_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse([]byte(`external_data_sources:
+	db, err := yamlschema.Parse(noOwners, []byte(`external_data_sources:
   warehouse:
     schema: ext
     source_type: PostgreSQL
@@ -91,7 +91,7 @@ func TestParse_YDBExternalObjects_FailurePath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse([]byte(tc.document))
+			db, err := yamlschema.Parse(noOwners, []byte(tc.document))
 			c.Assert(err, qt.ErrorMatches, tc.wantErr)
 			c.Assert(db, qt.IsNil)
 		})

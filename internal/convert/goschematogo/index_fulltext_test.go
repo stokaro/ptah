@@ -15,7 +15,7 @@ import (
 // without losing an explicitly disabled filter or an integer option.
 func TestRender_FullTextIndexFromYAML(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(`
 tables:
   docs:
     columns:

@@ -69,7 +69,7 @@ func newWorkspace(c *qt.C, write agentpolicy.Verdict, approver agentpolicy.Appro
 	if approver != nil {
 		options = append(options, agentpolicy.WithApprover(approver))
 	}
-	gates, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Validation: builtintest.Runtime(), Rendering: builtintest.Runtime(), Dialect: "postgres"})
+	gates, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Validation: builtintest.Runtime(), Rendering: builtintest.Runtime(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Workspace:   workspace,

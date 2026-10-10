@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/schemafile"
 )
@@ -49,7 +50,7 @@ func TestToDBSchema_SQLDocumentCarriesIndexKeySuffixes(t *testing.T) {
 
 	dir := t.TempDir()
 	path := writeSchemaFile(c, dir, "inspected.sql", postgresIndexSuffixSQL)
-	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: platform.Postgres})
+	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	parts := make(map[string][]catalog.IndexPart)

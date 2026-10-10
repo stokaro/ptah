@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/shadow"
 )
 
@@ -33,7 +34,7 @@ func TestVerifyMigration_LeavesTheChangeRequestsOut(t *testing.T) {
 	target, err := shadowClaimTarget(c.Context(), dir)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
-	desired := must.Must(yamlschema.Parse([]byte("tables:\n  users:\n    columns:\n      id:\n        type: INTEGER\n        primary: true\n" +
+	desired := must.Must(yamlschema.Parse(builtintest.Runtime().YAML(), []byte("tables:\n  users:\n    columns:\n      id:\n        type: INTEGER\n        primary: true\n"+
 		"  posts:\n    columns:\n      id:\n        type: INTEGER\n        primary: true\n")))
 	request := schemaext.ChangeRequest{Action: "rotate",
 		Subject: objectidentity.NewBuilder(identifier.ForDialect("ydb")).SchemaScopedParts("ptah.run/ydb/secret", "ext", "pw")}

@@ -32,7 +32,7 @@ revokes:
     on_database: true
 `
 
-	db, err := yamlschema.Parse([]byte(document))
+	db, err := yamlschema.Parse(noOwners, []byte(document))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Roles, qt.DeepEquals, []schemamodel.Role{

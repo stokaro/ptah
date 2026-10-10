@@ -90,6 +90,7 @@ func verifyAtlasSchemaPlanFile(
 	// through `data "hcl_schema"` carries that block's vars, and the plan verbs
 	// load local files directly instead of classifying them.
 	desired, err := schemafile.LoadSources(atlasSchemaPlanSources(transition), schemafile.Options{
+		YAML:                  runtime.YAML(),
 		Dialect:               conn.Info().Dialect,
 		IgnoreUnknownHCLNames: true,
 		SchemaScope:           schemaScope,

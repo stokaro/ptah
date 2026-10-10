@@ -34,7 +34,7 @@ func TestCompareSchemas_APlainViewAgainstADocumentThatStatesNoSchedule(t *testin
 //ptah:schema:matview name="daily" body="SELECT 1 AS c"
 type Daily struct{}
 `))
-	current := must.Must(yamlschema.Parse([]byte("matviews:\n  daily:\n    body: SELECT 1 AS c\n")))
+	current := must.Must(yamlschema.Parse(builtintest.Runtime().YAML(), []byte("matviews:\n  daily:\n    body: SELECT 1 AS c\n")))
 
 	diff, err := schemadiff.CompareSchemas(t.Context(), &desired, current, "clickhouse", must.Must(builtin.New()))
 

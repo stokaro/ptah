@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -36,7 +37,7 @@ func TestYDBDesiredYQL_ExternalObjects(t *testing.T) {
 						"",
 					} {
 						c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
-						desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+						desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 						c.Assert(err, qt.IsNil)
 						statements := planAgainst(c, conn, desired, nil)
 						c.Assert(statements, qt.Not(qt.HasLen), 0)

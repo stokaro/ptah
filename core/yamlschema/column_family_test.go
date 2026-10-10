@@ -14,7 +14,7 @@ import (
 // by name, with the keys the annotation takes, read in the order written.
 func TestParse_ColumnFamilies_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse([]byte(`tables:
+	db, err := yamlschema.Parse(noOwners, []byte(`tables:
   items:
     fields:
       id: {type: BIGINT, primary: true}
@@ -61,8 +61,8 @@ func TestParse_ColumnFamilies_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse([]byte("tables:\n  items:\n    fields:\n      id: {type: BIGINT, primary: true}\n" +
-				"      body: {type: TEXT}\n    column_families:\n      " + test.families + "\n"))
+			db, err := yamlschema.Parse(noOwners, []byte("tables:\n  items:\n    fields:\n      id: {type: BIGINT, primary: true}\n"+
+				"      body: {type: TEXT}\n    column_families:\n      "+test.families+"\n"))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
 		})

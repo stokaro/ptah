@@ -24,7 +24,7 @@ func TestReadManagedRows_ReadsWhatTheAnnotationNames(t *testing.T) {
 - code: CZ
   name: Czechia
 `)
-	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{root}})
+	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{root}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 1)
 	c.Assert(db.ManagedData[0].Rows, qt.IsNil, qt.Commentf("loading a schema does not read row files"))
@@ -43,7 +43,7 @@ func TestReadManagedRows_ReadsWhatTheAnnotationNames(t *testing.T) {
 func TestReadManagedRows_EmptyFileIsNotAnUnreadOne(t *testing.T) {
 	c := qt.New(t)
 	root := goRootWithManagedData(c, "")
-	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{root}})
+	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{root}})
 	c.Assert(err, qt.IsNil)
 
 	err = schemaload.ReadManagedRows(db)
@@ -57,7 +57,7 @@ func TestReadManagedRows_MissingFile(t *testing.T) {
 	c := qt.New(t)
 	root := goRootWithManagedData(c, "")
 	c.Assert(os.Remove(filepath.Join(root, "countries.yaml")), qt.IsNil)
-	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Annotations: builtintest.Annotations(), RootDirs: []string{root}})
+	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{root}})
 	c.Assert(err, qt.IsNil)
 
 	err = schemaload.ReadManagedRows(db)

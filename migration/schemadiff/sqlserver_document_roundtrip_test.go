@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -152,7 +153,7 @@ func loadDocument(c *qt.C, document []byte) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TB.(*testing.T).TempDir(), "out.hcl")
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
-	parsed, err := schemafile.Load(path, schemafile.Options{Dialect: platform.SQLServer})
+	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.SQLServer})
 	c.Assert(err, qt.IsNil)
 	return parsed
 }

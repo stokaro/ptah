@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -20,7 +21,7 @@ import (
 func loadPostgresSchema(c *qt.C, body string) (*schemamodel.Database, error) {
 	dir := c.TempDir()
 	path := writeSchemaFile(c, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+body+"\n")
-	return schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: platform.Postgres})
+	return schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 }
 
 // TestLoadAll_ForceRowLevelSecurity_HappyPath reads ENABLE and FORCE as one

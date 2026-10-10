@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 )
@@ -55,7 +56,7 @@ func (f sqliteTableIdentityFixture) load(c *qt.C) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(sqliteTableIdentityFile), 0o600), qt.IsNil)
-	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "sqlite"})
+	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
 	return desired
 }

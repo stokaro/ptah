@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/yamlext"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/rowdeletion"
 )
@@ -134,4 +135,11 @@ func Annotations() annotation.Extension {
 		Kinds:    []schemaext.Kind{spannerschema.RowDeletionKind},
 		Coverage: Coverage,
 	}
+}
+
+// YAML is the owner's contribution to the YAML schema frontend. A YAML table declares the row deletion policy in its spanner platform
+// group, so the document could have declared one on any table, and the
+// claim is [Coverage].
+func YAML() yamlext.Extension {
+	return yamlext.Extension{Owner: spannerschema.Owner, Kinds: []schemaext.Kind{spannerschema.RowDeletionKind}, Coverage: Coverage}
 }

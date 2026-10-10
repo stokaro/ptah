@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -170,13 +171,13 @@ func TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint(t *testing.T) {
 	dir := t.TempDir()
 
 	hclPath := writeSchemaFile(c, dir, "schema.hcl", postgresObjectsHCL)
-	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{Dialect: platform.Postgres})
+	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	first := renderPostgres(c, fromHCL)
 	c.Assert(first, qt.HasLen, 15)
 
 	sqlPath := writeSchemaFile(c, dir, "first.sql", strings.Join(first, ";\n")+";\n")
-	fromSQL, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{Dialect: platform.Postgres})
+	fromSQL, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	second := renderPostgres(c, fromSQL)
 	c.Assert(second, qt.HasLen, 15)
@@ -188,7 +189,7 @@ func TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint(t *testing.T) {
 	// From the second render on, the SQL is a true fixed point: reading it and
 	// rendering it again reproduces it byte for byte.
 	secondPath := writeSchemaFile(c, dir, "second.sql", strings.Join(second, ";\n")+";\n")
-	fromSecondSQL, err := schemafile.LoadAll([]string{secondPath}, schemafile.Options{Dialect: platform.Postgres})
+	fromSecondSQL, err := schemafile.LoadAll([]string{secondPath}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(renderPostgres(c, fromSecondSQL), qt.DeepEquals, second)
 }
@@ -201,12 +202,12 @@ func TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind(t *testing.T) {
 	dir := t.TempDir()
 
 	hclPath := writeSchemaFile(c, dir, "schema.hcl", postgresObjectsHCL)
-	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{Dialect: platform.Postgres})
+	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	rendered := renderPostgres(c, fromHCL)
 
 	sqlPath := writeSchemaFile(c, dir, "schema.sql", strings.Join(rendered, ";\n")+";\n")
-	got, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{Dialect: platform.Postgres})
+	got, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(got.Schemas, qt.HasLen, 1)

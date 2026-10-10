@@ -33,7 +33,7 @@ func TestSchemaGatePresentsSelectedValidationDiagnostics(t *testing.T) {
 		c.Assert(request.Schema.Tables, qt.HasLen, 1)
 		return schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{Code: schemavalidation.InvalidSchema, Kind: "widget", Object: "sample", Message: "provider refusal"}}}, nil
 	})
-	selected, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Dialect: "postgres", Validation: service, Rendering: must.Must(builtin.New())})
+	selected, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Dialect: "postgres", Validation: service, Rendering: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	report, err := selected.Run(t.Context(), scope)
 	c.Assert(err, qt.IsNil)
@@ -62,7 +62,7 @@ func TestSchemaGateReturnsValidationFailureWithoutReport(t *testing.T) {
 			service := selectedValidator(func(context.Context, schemavalidation.Request) (schemavalidation.Result, error) {
 				return schemavalidation.Result{Complete: test.complete}, test.failure
 			})
-			selected, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Dialect: "postgres", Validation: service, Rendering: must.Must(builtin.New())})
+			selected, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Dialect: "postgres", Validation: service, Rendering: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
 			report, err := selected.Run(t.Context(), scope)
 			c.Assert(err, qt.ErrorIs, test.want)
@@ -80,7 +80,7 @@ func TestSchemaGateCancellationIsNotASchemaProblem(t *testing.T) {
 		cancel()
 		return schemavalidation.Result{Complete: true}, nil
 	})
-	selected, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Dialect: "postgres", Validation: service, Rendering: must.Must(builtin.New())})
+	selected, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Dialect: "postgres", Validation: service, Rendering: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	report, err := selected.Run(ctx, scope)
 	c.Assert(err, qt.ErrorIs, context.Canceled)

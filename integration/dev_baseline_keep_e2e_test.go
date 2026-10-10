@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/schemafile"
@@ -203,7 +204,7 @@ func TestRehearsePlanStatementsVerifiesBesideAnExtensionInThePinnedDevSchemaLive
 		"DROP TABLE kept;\nCREATE EXTENSION citext SCHEMA public;\n"), qt.IsNil)
 	target := newDevIdentityTarget(c, dbtarget.PostgreSQL, " WITH (FORCE)")
 	schemaFile, _ := writeDevIdentitySources(c)
-	desired, err := schemafile.LoadPath(schemaFile, schemafile.Options{Dialect: "postgres"})
+	desired, err := schemafile.LoadPath(schemaFile, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
 	err = atlasschema.RehearsePlanStatements(c.Context(), target.conn,

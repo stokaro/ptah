@@ -45,7 +45,7 @@ func TestLoad_SQLSchemaFileFoldsTwoSpellingsOfOnePolicysTable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(oneTableTwoPolicySpellings), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*CREATE POLICY p ON orders \(policy statement 1\) and CREATE POLICY p ON public\.orders \(policy statement 2\) both declare policy "p" on table public\.orders.*`)
@@ -78,7 +78,7 @@ func TestLoad_SQLSchemaFileFoldsACaseVariantOfOnePolicysTable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(oneTableTwoPolicyCases), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*\(policy statement 1\) and .*\(policy statement 2\) both declare policy "p" on table public\.orders.*`)
@@ -98,7 +98,7 @@ CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 2);
 CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*both declare policy "p" on table public\.orders.*`)
 	c.Assert(database, qt.IsNil)
@@ -122,7 +122,7 @@ func TestLoad_SQLSchemaFileDoesNotFoldOntoACasePreservingTable(t *testing.T) {
 CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(policyTables(database), qt.DeepEquals, []string{"orders"})
 	c.Assert(switchedTables(database), qt.HasLen, 0)
@@ -145,7 +145,7 @@ func TestLoad_SQLSchemaFileRefusesSwitchesForAnUndeclaredTable(t *testing.T) {
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE orders ENABLE ROW LEVEL SECURITY: .*the document declares no such table.*`)
@@ -166,7 +166,7 @@ ALTER TABLE ORDERS ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(policyTables(database), qt.DeepEquals, []string{"orders"})
 	c.Assert(switchedTables(database), qt.DeepEquals, []string{"orders"})
@@ -195,7 +195,7 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(database.Tables), qt.DeepEquals, []string{"orders"})
 
@@ -233,7 +233,7 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(policyTables(database), qt.DeepEquals, []string{"ORDERS"})
 
@@ -263,7 +263,7 @@ ALTER TABLE "App".ORDERS ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(policyTables(database), qt.DeepEquals, []string{"App.orders"})
 	c.Assert(switchedTables(database), qt.DeepEquals, []string{"App.orders"})
@@ -313,7 +313,7 @@ ALTER TABLE Ä ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON Ä FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(tableNames(database.Tables), qt.DeepEquals, []string{"Ä", "ä"})
@@ -347,7 +347,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 2);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(policyTables(database), qt.HasLen, 2)
 
@@ -374,7 +374,7 @@ CREATE POLICY p ON alpha_orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 CREATE POLICY p ON zeta_orders  FOR ALL TO PUBLIC USING (tenant_id = 2);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	database, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(policyTables(database), qt.HasLen, 2)
 

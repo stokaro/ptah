@@ -114,13 +114,13 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	annotations, err := builtin.Annotations()
+	owners, err := builtin.Bundled()
 	if err != nil {
 		return nil, err
 	}
 	loadOpts := schemaload.Options{
 		RootDirs:        opts.RootDirs,
-		Annotations:     annotations,
+		Owners:          owners,
 		SchemaFiles:     opts.SchemaFiles,
 		ProjectEnv:      opts.ProjectEnv,
 		EnvSelectorFlag: opts.EnvSelectorFlag,

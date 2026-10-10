@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -71,7 +72,7 @@ func applyRoleCaseSchema(c *qt.C, engine dbtarget.Engine, quote, template string
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(fmt.Sprintf(template, schema, role)), 0o600), qt.IsNil)
 	dialect := conn.Info().Dialect
-	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: dialect})
+	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: dialect})
 	c.Assert(err, qt.IsNil)
 
 	statements, err := builtin.GetOrderedCreateStatements(desired, dialect)

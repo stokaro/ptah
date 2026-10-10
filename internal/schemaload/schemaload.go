@@ -22,11 +22,19 @@ import (
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/yamlext"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
 )
+
+// Owners selects the feature owners each source format reads.
+// *ptah.run/engine.Runtime implements it.
+type Owners interface {
+	annotation.Runtime
+	yamlext.Runtime
+}
 
 // Options selects the desired-schema sources and how loading is reported.
 type Options struct {
@@ -37,11 +45,11 @@ type Options struct {
 
 	// RootDirs are Go entity roots scanned for migrator directives (repeatable).
 	RootDirs []string
-	// Annotations selects the feature owners whose Go annotation directives
-	// RootDirs may declare, usually the set of the runtime the command renders
-	// and compares with. A load with RootDirs refuses the zero value: pass
-	// annotation.None to read the frontend's own directives only.
-	Annotations annotation.Set
+	// Owners selects the feature owners whose models the sources may declare,
+	// usually the runtime the command renders and compares with. A load that
+	// parses Go annotations, YAML or a schema command's output refuses a nil
+	// Owners.
+	Owners Owners
 	// SchemaFiles are SQL, YAML, HCL, DBML, or OCI desired-schema sources (repeatable).
 	SchemaFiles []string
 	// ProjectEnv is the evaluated atlas.hcl environment an `env://` schema file
@@ -195,7 +203,7 @@ func (o Options) loadCompositeContext(
 		}
 		for _, absPath := range absRoots {
 			o.logf("Scanning directory: %s", absPath)
-			goDB, err := goschema.ParseDirRaw(o.Annotations, absPath)
+			goDB, err := goschema.ParseDirRaw(o.annotations(), absPath)
 			if err != nil {
 				return nil, fmt.Errorf("error parsing packages: %w", err)
 			}
@@ -276,7 +284,7 @@ func (o Options) loadGoRoots(rootDirs []string) (*schemamodel.Database, error) {
 		o.logf("Scanning directory: %s", absPath)
 	}
 
-	result, err := goschema.ParseDirs(o.Annotations, absRoots...)
+	result, err := goschema.ParseDirs(o.annotations(), absRoots...)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing packages: %w", err)
 	}
@@ -324,7 +332,10 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 		command.Dialect = o.Dialect
 	}
 	o.logf("Running schema command: %s", commandDisplay(command))
-	return schemasource.Run(ctx, command)
+	if o.Owners == nil {
+		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
+	}
+	return schemasource.Run(ctx, o.Owners, command)
 }
 
 func commandDisplay(command schemasource.Command) string {
@@ -489,6 +500,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{
 		DatabaseURL: o.DatabaseURL,
 		Dialect:     o.Dialect,
+		YAML:        o.yaml(),
 		Vars:        o.Vars,
 		VarValues:   o.VarValues,
 	})
@@ -650,4 +662,22 @@ func withGoAnnotationLimits(database *schemamodel.Database) *schemamodel.Databas
 		Provenance: coverage.DerivedFromFact,
 	})
 	return database
+}
+
+// annotations is the Go annotation owners of the load, or the zero set, which
+// the parse refuses, when the caller selected no owners.
+func (o Options) annotations() annotation.Set {
+	if o.Owners == nil {
+		return annotation.Set{}
+	}
+	return o.Owners.Annotations()
+}
+
+// yaml is the YAML owners of the load, or the zero set, which a YAML parse
+// refuses, when the caller selected no owners.
+func (o Options) yaml() yamlext.Set {
+	if o.Owners == nil {
+		return yamlext.Set{}
+	}
+	return o.Owners.YAML()
 }

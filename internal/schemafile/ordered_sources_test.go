@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -15,7 +16,7 @@ func TestLoadSourcesAltersEarlierSQL(t *testing.T) {
 		{URL: writeDocument(c, "table.sql", "CREATE TABLE users (id INTEGER NOT NULL, legacy TEXT);")},
 		{URL: writeDocument(c, "alter.sql", "ALTER TABLE users ADD PRIMARY KEY (id); ALTER TABLE users DROP COLUMN legacy;")},
 	}
-	db, err := schemafile.LoadSources(sources, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadSources(sources, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(fieldNames(db), qt.DeepEquals, []string{"id"})
 	c.Assert(fieldByName(db, "id").Primary, qt.IsTrue)
@@ -28,7 +29,7 @@ func TestLoadSourcesAltersEarlierSQLFailurePath(t *testing.T) {
 		{URL: writeDocument(c, "alter.sql", "ALTER TABLE users ADD PRIMARY KEY (id);")},
 		{URL: writeDocument(c, "table.sql", "CREATE TABLE users (id INTEGER NOT NULL);")},
 	}
-	db, err := schemafile.LoadSources(sources, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadSources(sources, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 	c.Assert(err, qt.ErrorMatches, ".*names a table this schema does not declare")
 	c.Assert(db, qt.IsNil)
 }
@@ -39,7 +40,7 @@ func TestLoadSourcesPreservesImports(t *testing.T) {
 	table := writeImportTree(c, dir, "table.sql", "CREATE TABLE users (id INTEGER NOT NULL);")
 	entry := writeImportTree(c, dir, "main.sql", "-- atlas:import ./nested/alter.sql\n")
 	writeImportTree(c, dir, "nested/alter.sql", "ALTER TABLE users ADD PRIMARY KEY (id); CREATE TABLE notes (note_id INTEGER PRIMARY KEY);")
-	db, err := schemafile.LoadSources([]schemafile.Source{{URL: table}, {URL: entry}}, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadSources([]schemafile.Source{{URL: table}, {URL: entry}}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(db), qt.DeepEquals, []string{"notes", "users"})
 	c.Assert(fieldByName(db, "id").Primary, qt.IsTrue)
@@ -57,7 +58,7 @@ func TestLoadSourcesImportFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			entry := writeImportTree(c, c.TempDir(), "main.sql", "-- atlas:import "+test.directive+"\n")
-			db, err := schemafile.LoadSources([]schemafile.Source{{URL: entry}}, schemafile.Options{Dialect: "postgres"})
+			db, err := schemafile.LoadSources([]schemafile.Source{{URL: entry}}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 			c.Assert(err, qt.ErrorIs, test.want)
 			c.Assert(db, qt.IsNil)
 		})

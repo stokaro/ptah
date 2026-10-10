@@ -715,6 +715,7 @@ func loadDesiredApplySchema(
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
 		desired, err := schemafile.LoadSources(localApplySources(opts), schemafile.Options{
+			YAML:                  opts.Runtime.YAML(),
 			DatabaseURL:           conn.Info().URL,
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,

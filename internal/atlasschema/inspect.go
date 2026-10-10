@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -35,6 +36,7 @@ import (
 type InspectRuntime interface {
 	goschematodb.Runtime
 	atlasreport.InspectRuntime
+	yamlext.Runtime
 }
 
 // InspectOptions configures Atlas-compatible schema inspection.

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbmlparse"
@@ -34,6 +35,11 @@ type Options struct {
 	DatabaseURL string
 
 	Dialect string
+	// YAML selects the feature owners whose models a YAML schema file may
+	// declare, usually the YAML set of the runtime the caller renders and
+	// compares with. Loading a YAML file refuses the zero value; pass
+	// yamlext.None to read the frontend's own keys only.
+	YAML yamlext.Set
 	// IgnoreUnknownHCLNames accepts and drops HCL names Ptah's schema HCL
 	// parser does not model instead of refusing the file.
 	//
@@ -496,7 +502,7 @@ func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, erro
 			VarValues:          opts.VarValues,
 		})
 	case ".yaml", ".yml":
-		return yamlschema.ParseFile(resolved)
+		return yamlschema.ParseFile(opts.YAML, resolved)
 	case ".sql":
 		return loadSQLFileTree(resolved, opts)
 	case ".dbml":

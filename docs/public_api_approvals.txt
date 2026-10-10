@@ -591,3 +591,12 @@ v0.13.0 ptah.run/core/astbuilder
 # The connection type implements the interface, so a caller that passes one
 # compiles unchanged; apidiff still reports the parameter type change.
 v0.13.0 ptah.run/migration/schemadiff
+
+# #4140 moves the coverage a YAML document claims for a feature's models to
+# the package that owns the feature. yamlschema.Parse and ParseFile take the
+# yamlext.Set the caller selected, and schemasource.Run takes the owners of the
+# output formats, so a parse never claims or forgets an owner's models without
+# the caller choosing it. This changes behavior; pre-v1, so no compatibility is
+# owed under the authorized #4140/#4204 clean-break policy.
+v0.13.0 ptah.run/core/yamlschema
+v0.13.0 ptah.run/core/schemasource

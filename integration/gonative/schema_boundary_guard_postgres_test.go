@@ -94,6 +94,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemafile"
 )
@@ -547,6 +548,7 @@ func boundaryParseBack(c *qt.C, document string, compatibility bool) *schemamode
 	c.Helper()
 
 	parsed, err := schemafile.LoadAll([]string{"file://" + boundaryDocumentFile(c, document)}, schemafile.Options{
+		YAML:                  builtintest.Runtime().YAML(),
 		Dialect:               "postgres",
 		IgnoreUnknownHCLNames: compatibility,
 	})

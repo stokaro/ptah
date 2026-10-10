@@ -52,7 +52,7 @@ func toolSession(c *qt.C) *mcp.ClientSession {
 
 	policy, err := agentpolicy.Assemble()
 	c.Assert(err, qt.IsNil)
-	gates, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Validation: builtintest.Runtime(), Rendering: builtintest.Runtime(), Dialect: "postgres"})
+	gates, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Validation: builtintest.Runtime(), Rendering: builtintest.Runtime(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Workspace: workspace,

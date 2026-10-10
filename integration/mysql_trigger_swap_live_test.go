@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/generator"
@@ -207,7 +208,7 @@ func TestMigrateUpHoldsWritesWhileAMySQLTriggerIsSwappedLive(t *testing.T) {
 			c.Assert(os.WriteFile(desiredFile, []byte(
 				triggerSwapSchema(test.desired, "tbl_time, NewColumn", "NOW(), NEW.name"),
 			), 0o600), qt.IsNil)
-			desired, err := schemafile.LoadPath(desiredFile, schemafile.Options{Dialect: test.dialect})
+			desired, err := schemafile.LoadPath(desiredFile, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: test.dialect})
 			c.Assert(err, qt.IsNil)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 			c.Assert(err, qt.IsNil)
@@ -272,7 +273,7 @@ func TestMigrateUpKeepsWritesWorkingWhenATriggerColumnIsDroppedLive(t *testing.T
 					"CREATE TABLE secondtable (id int PRIMARY KEY AUTO_INCREMENT, label varchar(100));\n"+
 					"CREATE TRIGGER audit AFTER INSERT ON mytable FOR EACH ROW INSERT INTO secondtable (label) VALUES (NEW.name);\n",
 			), 0o600), qt.IsNil)
-			desired, err := schemafile.LoadPath(desiredFile, schemafile.Options{Dialect: test.dialect})
+			desired, err := schemafile.LoadPath(desiredFile, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: test.dialect})
 			c.Assert(err, qt.IsNil)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 			c.Assert(err, qt.IsNil)

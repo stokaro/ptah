@@ -98,7 +98,7 @@ func TestLoad_SchemaFileSpellingsReachTheSameDestination(t *testing.T) {
 			fixture := newContainmentFixture(t, c)
 
 			database, err := schemaload.Load(schemaload.Options{
-				Annotations: builtintest.Annotations(),
+				Owners:      builtintest.Runtime(),
 				SchemaFiles: []string{tc.spelling(fixture)},
 				Dialect:     "sqlite",
 			})
@@ -136,7 +136,7 @@ func TestLoad_SchemaFileContainmentAllowsContainedDestinations(t *testing.T) {
 			fixture := newContainmentFixture(t, c)
 
 			database, err := schemaload.Load(schemaload.Options{
-				Annotations: builtintest.Annotations(),
+				Owners:      builtintest.Runtime(),
 				SchemaFiles: []string{tc.spelling(fixture)},
 				Dialect:     "sqlite",
 			})

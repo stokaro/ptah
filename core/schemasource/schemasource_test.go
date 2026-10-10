@@ -193,7 +193,7 @@ func helperEnv(mode string) []string {
 func TestRun_ParsesSQLStdout(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := schemasource.Run(context.Background(), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  helperEnv("sql"),
 	})
@@ -208,7 +208,7 @@ func TestRun_SQLiteRoundTripConverges(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
 
-	desired, err := schemasource.Run(ctx, schemasource.Command{
+	desired, err := schemasource.Run(ctx, noOwners{}, schemasource.Command{
 		Args:    helperArgs(),
 		Env:     helperEnv("roundtrip-sql"),
 		Dialect: "sqlite",
@@ -236,7 +236,7 @@ func TestRun_SQLiteRoundTripConverges(t *testing.T) {
 func TestRun_ParsesYAMLStdout(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := schemasource.Run(context.Background(), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args:   helperArgs(),
 		Env:    helperEnv("yaml"),
 		Format: "yaml",
@@ -261,7 +261,7 @@ func TestRun_ParsesYAMLStdout(t *testing.T) {
 func TestRun_ParsesHCLStdout(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := schemasource.Run(context.Background(), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args:   helperArgs(),
 		Env:    helperEnv("hcl"),
 		Format: "hcl",
@@ -286,7 +286,7 @@ func TestRun_ParsesHCLStdout(t *testing.T) {
 func TestRun_SurfacesStderrOnFailure(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  helperEnv("fail"),
 	})
@@ -298,7 +298,7 @@ func TestRun_SurfacesStderrOnFailure(t *testing.T) {
 func TestRun_TimesOut(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args:    helperArgs(),
 		Env:     helperEnv("sleep"),
 		Timeout: 200 * time.Millisecond,
@@ -317,7 +317,7 @@ func TestRun_PreservesCallerCancellation(t *testing.T) {
 		cancel()
 	}()
 
-	_, err := schemasource.Run(ctx, schemasource.Command{
+	_, err := schemasource.Run(ctx, noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  helperEnv("sleep"),
 	})
@@ -329,7 +329,7 @@ func TestRun_PreservesCallerCancellation(t *testing.T) {
 func TestRun_ReportsParseError(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  helperEnv("badsql"),
 	})
@@ -341,7 +341,7 @@ func TestRun_ReportsParseError(t *testing.T) {
 func TestRun_SanitizesParseError(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env: append(
 			helperEnv("secret-badsql"),
@@ -357,7 +357,7 @@ func TestRun_SanitizesParseError(t *testing.T) {
 func TestRun_RejectsEmptyCommand(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{})
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{})
 
 	c.Assert(err, qt.ErrorMatches, "schema command is empty")
 }
@@ -365,7 +365,7 @@ func TestRun_RejectsEmptyCommand(t *testing.T) {
 func TestRun_RejectsUnsupportedFormat(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args:   helperArgs(),
 		Env:    helperEnv("sql"),
 		Format: "json",
@@ -377,7 +377,7 @@ func TestRun_RejectsUnsupportedFormat(t *testing.T) {
 func TestRun_RejectsEmptyOutput(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  helperEnv("empty"),
 	})
@@ -388,7 +388,7 @@ func TestRun_RejectsEmptyOutput(t *testing.T) {
 func TestRun_RejectsWhitespaceOnlyOutput(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  helperEnv("whitespace"),
 	})
@@ -399,7 +399,7 @@ func TestRun_RejectsWhitespaceOnlyOutput(t *testing.T) {
 func TestRun_AllowsEmbedderWorkingDirectoryOutsideCurrentDirectory(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := schemasource.Run(context.Background(), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Dir:  "..",
 		Env:  helperEnv("sql"),
@@ -413,7 +413,7 @@ func TestRun_UpdatesPWDForWorkingDirectory(t *testing.T) {
 	c := qt.New(t)
 	workingDir := t.TempDir()
 
-	db, err := schemasource.Run(context.Background(), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Dir:  workingDir,
 		Env: append(
@@ -429,7 +429,7 @@ func TestRun_UpdatesPWDForWorkingDirectory(t *testing.T) {
 func TestRun_RejectsPATHOverride(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  []string{"PATH=/custom/bin"},
 	})
@@ -440,7 +440,7 @@ func TestRun_RejectsPATHOverride(t *testing.T) {
 func TestRun_RejectsPWDOverride(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  []string{"PWD=/tmp/incorrect"},
 	})
@@ -451,7 +451,7 @@ func TestRun_RejectsPWDOverride(t *testing.T) {
 func TestRun_RedactsAndSanitizesStderr(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env: append(
 			helperEnv("secret-fail"),
@@ -468,7 +468,7 @@ func TestRun_RedactsAndSanitizesStderr(t *testing.T) {
 func TestRun_ReportsActualStderrTail(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: helperArgs(),
 		Env:  helperEnv("large-stderr-fail"),
 	})

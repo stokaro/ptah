@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/yamlext"
 )
 
 // ErrInvalidRegistration identifies a malformed provider descriptor or
@@ -63,6 +64,10 @@ type Provider struct {
 	// provider as its owner, and the provider owns the desired codec of every
 	// model it produces. A directive name belongs to one provider.
 	Annotations []annotation.Extension
+	// YAML contributes the knowledge a YAML schema document holds about the
+	// provider's models. Each extension names this provider as its owner, and
+	// the provider owns the desired codec of every model it claims.
+	YAML []yamlext.Extension
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -118,6 +123,7 @@ type Runtime struct {
 	probes              map[conversionKey]int
 	probeServices       []Normalization
 	annotations         annotation.Set
+	yaml                yamlext.Set
 }
 
 type target struct {
@@ -181,6 +187,9 @@ func New(providers ...Provider) (*Runtime, error) {
 		}
 	}
 	if err := runtime.registerAnnotations(providers); err != nil {
+		return nil, err
+	}
+	if err := runtime.registerYAML(providers); err != nil {
 		return nil, err
 	}
 	return runtime, nil

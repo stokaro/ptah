@@ -25,7 +25,7 @@ func TestParse_FunctionAttributes_HappyPath(t *testing.T) {
     body: SELECT true
 `
 
-	db, err := yamlschema.Parse([]byte(document))
+	db, err := yamlschema.Parse(noOwners, []byte(document))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Functions, qt.HasLen, 1)
@@ -46,7 +46,7 @@ func TestParse_FunctionAttributes_FailurePath(t *testing.T) {
     body: SELECT true
 `
 
-	db, err := yamlschema.Parse([]byte(document))
+	db, err := yamlschema.Parse(noOwners, []byte(document))
 
 	c.Assert(err, qt.ErrorMatches, `function "same_tenant": parallel must be SAFE, RESTRICTED or UNSAFE, not "sometimes"`)
 	c.Assert(db, qt.IsNil)

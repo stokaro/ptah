@@ -15,7 +15,7 @@ import (
 func TestParse_YDBTablePartitioning_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   items:
     auto_partitioning_by_size: disabled
@@ -68,10 +68,10 @@ func TestParse_YDBTablePartitioning_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse([]byte(`
+			db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   items:
-    ` + test.setting + `
+    `+test.setting+`
     columns:
       id:
         type: bigint

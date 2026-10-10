@@ -72,7 +72,7 @@ func TestLoad_DeliversVariableValuesToAnHCLSchema(t *testing.T) {
 			name: "the --var spelling reaches the file",
 			file: tenantHCL,
 			opts: func(path string) schemaload.Options {
-				return schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Vars: []string{"tenant=acme"}}
+				return schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Vars: []string{"tenant=acme"}}
 			},
 			want: "acme",
 		},
@@ -81,7 +81,7 @@ func TestLoad_DeliversVariableValuesToAnHCLSchema(t *testing.T) {
 			file: tenantHCL,
 			opts: func(path string) schemaload.Options {
 				return schemaload.Options{
-					Annotations: builtintest.Annotations(),
+					Owners:      builtintest.Runtime(),
 					SchemaFiles: []string{path},
 					VarValues:   map[string]string{"tenant": "acme"},
 				}
@@ -92,7 +92,7 @@ func TestLoad_DeliversVariableValuesToAnHCLSchema(t *testing.T) {
 			name: "a variable with no value declared keeps its default",
 			file: tenantHCL,
 			opts: func(path string) schemaload.Options {
-				return schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}}
+				return schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}}
 			},
 			want: "fallback",
 		},
@@ -100,7 +100,7 @@ func TestLoad_DeliversVariableValuesToAnHCLSchema(t *testing.T) {
 			name: "a value reaches a variable that has no default",
 			file: requiredTenantHCL,
 			opts: func(path string) schemaload.Options {
-				return schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}, Vars: []string{"tenant=acme"}}
+				return schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}, Vars: []string{"tenant=acme"}}
 			},
 			want: "acme",
 		},
@@ -128,7 +128,7 @@ func TestLoad_RefusesARequiredVariableNobodyGaveAValue(t *testing.T) {
 	path := filepath.Join(c.TempDir(), "s.hcl")
 	c.Assert(os.WriteFile(path, []byte(requiredTenantHCL), 0o600), qt.IsNil)
 
-	_, err := schemaload.Load(schemaload.Options{Annotations: builtintest.Annotations(), SchemaFiles: []string{path}})
+	_, err := schemaload.Load(schemaload.Options{Owners: builtintest.Runtime(), SchemaFiles: []string{path}})
 
 	c.Assert(err, qt.ErrorMatches, `.*missing value for required variable "tenant".*`)
 }

@@ -16,6 +16,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -43,7 +44,7 @@ func TestYDBDesiredYQL_CoordinationAndPools(t *testing.T) {
 				"",
 			} {
 				c.Assert(os.WriteFile(file, []byte(source), 0o600), qt.IsNil)
-				desired, err := schemafile.LoadAll([]string{file}, schemafile.Options{Dialect: "ydb"})
+				desired, err := schemafile.LoadAll([]string{file}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				statements := planAgainst(c, conn, desired, schemas)
 				c.Assert(statements, qt.Not(qt.HasLen), 0)

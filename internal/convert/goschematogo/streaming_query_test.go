@@ -16,7 +16,7 @@ import (
 // newlines and quoted YQL literals must survive both annotation escaping passes.
 func TestRender_StreamingQuery_RoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse([]byte(`streaming_queries:
+	db, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(`streaming_queries:
   copy:
     schema: jobs
     run: false

@@ -277,12 +277,13 @@ import (
 )
 
 func main() {
-	db, err := yamlschema.ParseFile("schema.yaml")
+	runtime, err := builtin.New()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	runtime, err := builtin.New()
+	// The runtime's owners claim what a YAML document can declare of their
+	// models. yamlext.None() selects no owner.
+	db, err := yamlschema.ParseFile(runtime.YAML(), "schema.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -17,7 +17,7 @@ import (
 func TestParse_YDBVectorIndex_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   docs:
     columns:
@@ -70,7 +70,7 @@ func TestParse_YDBVectorIndex_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse([]byte(`
+			db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   docs:
     columns:
@@ -83,7 +83,7 @@ tables:
       i:
         fields: [emb]
         type: vector_kmeans_tree
-        ` + test.index + `
+        `+test.index+`
 `))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

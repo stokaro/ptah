@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -62,7 +63,7 @@ func verifyMigrationWithShadow(ctx context.Context, dir, shadowURL string) error
 		return err
 	}
 	defer dbschema.CloseAndWarn(target)
-	desired, err := yamlschema.Parse([]byte(`
+	desired, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(`
 tables:
   users:
     columns:

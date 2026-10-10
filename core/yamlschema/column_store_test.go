@@ -12,7 +12,7 @@ import (
 
 func TestParse_ColumnStore(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse([]byte(`tables:
+	db, err := yamlschema.Parse(noOwners, []byte(`tables:
   events:
     schema: analytics
     fields:

@@ -18,6 +18,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/migrator"
@@ -216,7 +217,7 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 
-	loaded, err := schemafile.LoadPath(path, schemafile.Options{})
+	loaded, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 	c.Assert(err, qt.IsNil)
 
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)

@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
@@ -132,7 +133,7 @@ func (f ownedSequenceGrantFixture) schemaFile(c *qt.C, prefix, suffix []string) 
 	lines = append(lines, suffix...)
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(strings.Join(lines, ";\n")+";\n"), 0o600), qt.IsNil)
-	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: f.conn.Info().Dialect})
+	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: f.conn.Info().Dialect})
 	c.Assert(err, qt.IsNil)
 	return desired
 }

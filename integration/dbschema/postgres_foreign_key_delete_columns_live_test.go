@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 )
@@ -70,7 +71,7 @@ func planDeleteListDocument(c *qt.C, conn *dbschema.DatabaseConnection, schemaNa
 	c.Assert(os.WriteFile(path, []byte(fmt.Sprintf(document, schemaName)), 0o600), qt.IsNil)
 	declared, err := schemafile.LoadSources(
 		[]schemafile.Source{{URL: path}},
-		schemafile.Options{Dialect: platform.Postgres},
+		schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres},
 	)
 	c.Assert(err, qt.IsNil)
 	return planDocumentAgainstLive(c, conn, declared, schemaName)

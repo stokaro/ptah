@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -27,7 +28,7 @@ func TestYDBDesiredYQL_ChangefeedsAndConsumers(t *testing.T) {
 				table,
 			} {
 				c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
-				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				statements := planAgainst(c, conn, desired, nil)
 				c.Assert(statements, qt.Not(qt.HasLen), 0)

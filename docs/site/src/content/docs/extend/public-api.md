@@ -53,6 +53,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `engine/builtin` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
+| `core/yamlext` | The YAML schema contract: the owner claims a YAML parse selects. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |

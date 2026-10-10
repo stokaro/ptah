@@ -149,7 +149,7 @@ func injectedSession(c *qt.C) (session *mcp.ClientSession, dir, digest string) {
 
 	policy, err := agentpolicy.Assemble()
 	c.Assert(err, qt.IsNil)
-	gates, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
+	gates, err := agentgate.New(agentgate.Options{Owners: builtintest.Runtime(), Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	apiSession, err := agentapi.NewSession(agentapi.SessionConfig{
 		Workspace: workspace,

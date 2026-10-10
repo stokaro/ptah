@@ -18,6 +18,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/schemafile"
@@ -266,7 +267,7 @@ func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 	c.Assert(renderedResult.Rendered, qt.Equals, "")
 	written := collectFiles(c, outDir, ".hcl")
 	c.Assert(written, qt.Not(qt.HasLen), 0)
-	reloaded, err := schemafile.LoadAll(written, schemafile.Options{Dialect: "sqlite"})
+	reloaded, err := schemafile.LoadAll(written, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
 	names := make([]string, 0, len(reloaded.Tables))
 	for _, table := range reloaded.Tables {
@@ -310,7 +311,7 @@ CREATE TABLE sessions (
 	c.Assert(string(mainSQL), qt.Contains, "-- atlas:import ./tables/users.sql")
 	objectFiles := collectFiles(c, filepath.Join(outDir, "tables"), ".sql")
 	c.Assert(objectFiles, qt.Not(qt.HasLen), 0)
-	reloaded, err := schemafile.LoadAll(objectFiles, schemafile.Options{Dialect: "sqlite"})
+	reloaded, err := schemafile.LoadAll(objectFiles, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(reloaded.Tables, qt.HasLen, 2)
 }

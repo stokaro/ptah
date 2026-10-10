@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/yamlext"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 )
 
@@ -129,4 +130,11 @@ func Annotations() annotation.Extension {
 		Kinds:    []schemaext.Kind{crdbschema.RowTTLKind},
 		Coverage: Coverage,
 	}
+}
+
+// YAML is the owner's contribution to the YAML schema frontend. A YAML table declares row-level TTL in its cockroachdb platform group, so the
+// document could have declared one on any table, and the
+// claim is [Coverage].
+func YAML() yamlext.Extension {
+	return yamlext.Extension{Owner: crdbschema.Owner, Kinds: []schemaext.Kind{crdbschema.RowTTLKind}, Coverage: Coverage}
 }

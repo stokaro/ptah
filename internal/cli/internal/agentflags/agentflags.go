@@ -182,7 +182,7 @@ func build(cmd *cobra.Command, opts *Options, openRecorder auditOpener) (*agenta
 		return nil, noop, err
 	}
 	gates, err := agentgate.New(agentgate.Options{
-		Annotations:  runtime.Annotations(),
+		Owners:       runtime,
 		Validation:   runtime,
 		Rendering:    runtime,
 		Dialect:      dialect,

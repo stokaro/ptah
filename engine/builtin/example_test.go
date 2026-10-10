@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 // ExampleRenderSQL is the one-call path: hand over the dialect and the nodes
@@ -117,7 +118,7 @@ tables:
         foreign_key_name: fk_posts_user
 `)
 
-	db := must.Must(yamlschema.Parse(document))
+	db := must.Must(yamlschema.Parse(builtintest.Runtime().YAML(), document))
 	statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 	if err != nil {
 		fmt.Println(err)

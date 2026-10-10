@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/yamlext"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devdocker"
@@ -60,7 +61,9 @@ func declaresSeveralDatabases(dialect string, desired atlassource.Set) bool {
 	if !desired.DeclarativeLocalFiles() {
 		return false
 	}
-	schema, err := schemafile.LoadSources(desired.SchemaFileSources(), schemafile.Options{Dialect: dialect})
+	// The load only counts the databases the files name, which no owner's
+	// claim changes, so it selects no YAML owner.
+	schema, err := schemafile.LoadSources(desired.SchemaFileSources(), schemafile.Options{Dialect: dialect, YAML: yamlext.None()})
 	return err == nil && len(schema.Schemas) > 1
 }
 

@@ -13,7 +13,7 @@
 // This package is the YAML reader. Parse takes the document as bytes, ParseFile
 // reads it from a path; both return the model:
 //
-//	db, err := yamlschema.ParseFile("schema.yaml")
+//	db, err := yamlschema.ParseFile(runtime.YAML(), "schema.yaml")
 //	if err != nil {
 //		return err
 //	}
@@ -78,8 +78,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/cockroachdb/crdbsource"
-	"ptah.run/dialect/spanner/spannersource"
+	"ptah.run/core/yamlext"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -101,13 +100,19 @@ import (
 // A read failure is wrapped but keeps the underlying filesystem error, so
 // errors.Is(err, fs.ErrNotExist) still answers for a missing file and
 // errors.As reaches the *fs.PathError naming the path.
-func ParseFile(path string) (*schemamodel.Database, error) {
+//
+// owners selects the feature owners whose models the document can declare, as
+// it does for Parse.
+func ParseFile(owners yamlext.Set, path string) (*schemamodel.Database, error) {
+	if !owners.Selected() {
+		return nil, fmt.Errorf("parse YAML schema: %w", yamlext.ErrUnselected)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read schema file: %w", err)
 	}
 
-	return Parse(data)
+	return Parse(owners, data)
 }
 
 // Parse parses a YAML schema document into the same *schemamodel.Database
@@ -126,7 +131,17 @@ func ParseFile(path string) (*schemamodel.Database, error) {
 // table, columns keep the order they were declared in, because column order
 // is part of the schema the author wrote. Tables and functions come back
 // ordered by their dependencies.
-func Parse(data []byte) (*schemamodel.Database, error) {
+//
+// owners selects the feature owners whose models the document can declare,
+// usually the YAML set of the runtime the caller renders and compares with.
+// The document claims knowledge of an owner's models only when the parse
+// selects the owner; otherwise they stay unknown rather than absent. The zero
+// set is refused with [yamlext.ErrUnselected]; [yamlext.None] selects no
+// owner on purpose.
+func Parse(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
+	if !owners.Selected() {
+		return nil, fmt.Errorf("parse YAML schema: %w", yamlext.ErrUnselected)
+	}
 	var doc document
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -140,7 +155,7 @@ func Parse(data []byte) (*schemamodel.Database, error) {
 		return nil, fmt.Errorf("parse YAML schema: %w", err)
 	}
 
-	return doc.toDatabase()
+	return doc.toDatabase(owners)
 }
 
 type document struct {
@@ -788,7 +803,7 @@ type defaultPrivilegeSpec struct {
 
 type platformSpec map[string]map[string]stringScalar
 
-func (d document) toDatabase() (*schemamodel.Database, error) {
+func (d document) toDatabase(owners yamlext.Set) (*schemamodel.Database, error) {
 	db := &schemamodel.Database{
 		Dependencies:               make(map[string][]string),
 		FunctionDependencies:       make(map[string][]string),
@@ -796,7 +811,7 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 	}
 
 	d.addEnums(db)
-	if err := d.addTables(db); err != nil {
+	if err := d.addTables(db, owners); err != nil {
 		return nil, err
 	}
 	if err := d.addIndexes(db); err != nil {
@@ -876,23 +891,22 @@ func (d document) addEnums(db *schemamodel.Database) {
 	}
 }
 
-func (d document) addTables(db *schemamodel.Database) error {
+func (d document) addTables(db *schemamodel.Database, owners yamlext.Set) error {
 	featureCoverage, err := ydbsource.Coverage(ydbsource.Limits{})
 	if err != nil {
 		return err
 	}
-	// A YAML table declares CockroachDB row-level TTL and the Spanner row
-	// deletion policy in its cockroachdb and spanner platform groups, so a
-	// table without one requests none. ydbsource.Coverage enrolls the YDB TTL,
+	// The selected owners claim what a YAML document can declare of their
+	// models, such as CockroachDB row-level TTL and the Spanner row deletion
+	// policy in a table's cockroachdb and spanner platform groups, so a table
+	// without one requests none. ydbsource.Coverage enrolls the YDB TTL,
 	// declared in the ydb group, the same way.
-	for _, owned := range []func() (schemaext.Coverage, error){crdbsource.Coverage, spannersource.Coverage} {
-		known, err := owned()
-		if err != nil {
-			return err
-		}
-		if featureCoverage, err = featureCoverage.Combine(known); err != nil {
-			return err
-		}
+	claims, err := owners.Coverage()
+	if err != nil {
+		return err
+	}
+	if featureCoverage, err = featureCoverage.Combine(claims); err != nil {
+		return err
 	}
 	db.FeatureCoverage = featureCoverage
 

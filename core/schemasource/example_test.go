@@ -19,8 +19,9 @@ func ExampleRun() {
 	// The argv is executed directly, never through a shell, so each argument
 	// is one element and no quoting or expansion is applied. The first two
 	// environment entries select the fixture's behavior; GORACE keeps a
-	// race-instrumented run from sleeping at exit.
-	db, err := schemasource.Run(context.Background(), schemasource.Command{
+	// race-instrumented run from sleeping at exit. A caller passes the runtime
+	// it renders with as the owners; noOwners selects none.
+	db, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: []string{os.Args[0], "-test.run=TestHelperProcess"},
 		Env: []string{
 			"GO_WANT_HELPER_PROCESS=1",
@@ -53,7 +54,7 @@ func ExampleRun() {
 // database holds. The fixture is the test binary re-executing itself and
 // exiting successfully without output.
 func ExampleRun_emptyOutput() {
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: []string{os.Args[0], "-test.run=TestHelperProcess"},
 		Env: []string{
 			"GO_WANT_HELPER_PROCESS=1",
@@ -78,7 +79,7 @@ func ExampleRun_emptyOutput() {
 // The same pre-spawn validation refuses a PWD override — Command.Dir is what
 // chooses the working directory — and any entry that is not KEY=VALUE.
 func ExampleRun_environment() {
-	_, err := schemasource.Run(context.Background(), schemasource.Command{
+	_, err := schemasource.Run(context.Background(), noOwners{}, schemasource.Command{
 		Args: []string{"schema-exporter"},
 		Env:  []string{"PATH=/opt/tools/bin"},
 	})

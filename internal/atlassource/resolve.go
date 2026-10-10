@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
@@ -37,11 +38,20 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
+// Runtime is what a resolution needs of the selected providers.
+// *ptah.run/engine.Runtime implements it.
+type Runtime interface {
+	schemaext.ConversionRuntime
+	yamlext.Runtime
+}
+
 // ResolveOptions configures resolution of one classified desired-state set.
 type ResolveOptions struct {
-	// Runtime selects feature conversion services and codecs for this resolution.
-	// It is required, including for a source with no feature declarations.
-	Runtime schemaext.ConversionRuntime
+	// Runtime selects feature conversion services and codecs for this
+	// resolution, and the owners a YAML source or a schema command's output
+	// may declare. It is required, including for a source with no feature
+	// declarations.
+	Runtime Runtime
 	// DatabaseURL supplies the database root used to resolve absolute YDB source
 	// paths. Relative declarations remain portable. The URL is never stored in
 	// the desired model or included in source errors.
@@ -334,6 +344,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 		schema, err := schemafile.LoadSources(s.SchemaFileSources(), schemafile.Options{
 			DatabaseURL:           opts.DatabaseURL,
 			Dialect:               opts.Dialect,
+			YAML:                  opts.Runtime.YAML(),
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			ReportIgnored:         opts.ReportIgnored,
 			SchemaScope:           opts.SchemaScope,
@@ -409,7 +420,7 @@ func (s Set) resolveRemoteSchema(ctx context.Context) (State, error) {
 func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (State, error) {
 	command := s.Sources[0].Command
 	command.Dialect = opts.Dialect
-	schema, err := schemasource.Run(ctx, command)
+	schema, err := schemasource.Run(ctx, opts.Runtime, command)
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, s.Sources[0].Raw, err)
 	}

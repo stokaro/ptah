@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -30,7 +31,7 @@ func TestLoadPathAddsAColumnFromALaterFile_HappyPath(t *testing.T) {
 			"ALTER TABLE users ADD COLUMN IF NOT EXISTS note TEXT;\n",
 	})
 
-	db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(db), qt.DeepEquals, []string{"users"})
@@ -46,7 +47,7 @@ func TestLoadPathAddsAColumnFromALaterFile_FailurePath(t *testing.T) {
 		"2_b.sql": "ALTER TABLE users ADD COLUMN note TEXT;\n",
 	})
 
-	db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches, `read SQL schema file .*2_b\.sql: ALTER TABLE users ADD COLUMN note names a column the table already declares`)
 	c.Assert(db, qt.IsNil)
@@ -61,7 +62,7 @@ func TestLoadPathAddsAColumnFromAnImportedFile(t *testing.T) {
 		"columns.sql": "ALTER TABLE users ADD COLUMN IF NOT EXISTS extra TEXT;\n",
 	})
 
-	db, err := schemafile.LoadPath(filepath.Join(dir, "main.sql"), schemafile.Options{Dialect: "postgres"})
+	db, err := schemafile.LoadPath(filepath.Join(dir, "main.sql"), schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fieldNames(db), qt.DeepEquals, []string{"id", "extra"})

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 )
@@ -28,7 +29,7 @@ func TestYDBDesiredYQL_Secrets(t *testing.T) {
 		"",
 	} {
 		c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
-		desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+		desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 		c.Assert(err, qt.IsNil)
 		statements := planAgainst(c, conn, desired, nil)
 		c.Assert(statements, qt.Not(qt.HasLen), 0)
@@ -42,7 +43,7 @@ func TestYDBDesiredYQL_SecretsRefusedOnOlderLine(t *testing.T) {
 	conn := connect(c, enterRealm(c, lineNamed(c, "25.1")))
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte("CREATE SECRET first WITH (value = $PTAH_SECRET_YQL_TEST);"), 0o600), qt.IsNil)
-	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	_, err = schemadiff.CompareWithDatabaseInfo(t.Context(), desired, readScoped(c, conn, nil), conn.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.ErrorMatches, "secret first, which requires target capability secrets, unavailable on this ydb target")

@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 )
@@ -44,7 +45,7 @@ func TestAnHCLDocumentKeepsTheTableTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, rendered.Data, 0o600), qt.IsNil)
 
-	desired, err := schemafile.LoadPath(path, schemafile.Options{})
+	desired, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
 	c.Assert(err, qt.IsNil)
 	read := must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	read = must.Must(read.Combine(must.Must(ydbschema.TTLCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))

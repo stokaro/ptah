@@ -9,18 +9,18 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // TestParse_RowDeletionPolicyIsAPlatformGroup pins the YAML spelling: the
 // Spanner policy and the YDB TTL sit in the table's spanner and ydb platform
-// groups, and the document claims complete knowledge of both, so a table
-// without them requests neither.
+// groups. The document claims complete knowledge of the YDB TTL, so a table
+// without it requests none; the Spanner claim belongs to the Spanner owner,
+// which spannersource tests.
 func TestParse_RowDeletionPolicyIsAPlatformGroup(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   events:
     platform:
@@ -44,8 +44,6 @@ tables:
 		"spanner": {"row_deletion_column": "created_at", "row_deletion_interval": "30 days"},
 		"ydb":     {"row_deletion_column": "expires", "row_deletion_interval": "PT1H", "row_deletion_unit": "nanoseconds"},
 	})
-	spanner := objectidentity.NewBuilder(identifier.ForDialect("spanner")).TableParts("", "plain")
-	c.Assert(db.FeatureCoverage.Lookup(spannerschema.RowDeletionKind, spanner).State, qt.Equals, schemaext.Complete)
 	ydb := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "plain")
 	c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, ydb).State, qt.Equals, schemaext.Complete)
 }
@@ -55,7 +53,7 @@ tables:
 func TestParse_RowDeletionPolicyHasNoBareKey(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse(noOwners, []byte(`
 tables:
   events:
     row_deletion_column: created_at
