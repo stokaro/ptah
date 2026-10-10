@@ -2242,6 +2242,15 @@ rather than absent. The zero set is refused with `yamlext.ErrUnselected`, and
 the same way, through `schemasource.Owners`, which `*engine.Runtime`
 implements.
 
+An owner may also read top-level keys of its own. Each `yamlext.Section` names
+a key and decodes its value through a callback. The callback refuses a key the
+owner's type does not declare and names the line, as the frontend does for its
+own keys. The decoder receives the document's tables, and `Tables.Find`
+applies the document's rule for a table reference. It returns objects and
+facets of those tables. A key that no selected owner reads is unknown and
+refused, so a parse without the owner refuses the owner's section instead of
+dropping it.
+
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any

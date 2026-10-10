@@ -6,8 +6,9 @@
 // declared through a table's cockroachdb platform group, is the owner's: the
 // owner states the knowledge a YAML document holds about it, so a document
 // that could have declared the model and did not describes a database
-// without it. A [Set] freezes the owners one parse selects; the frontend
-// imports no owner.
+// without it. An owner may also read top-level keys of its own, each a
+// [Section], into the objects and table facets they declare. A [Set] freezes
+// the owners one parse selects; the frontend imports no owner.
 package yamlext
 
 import (
@@ -29,9 +30,11 @@ var ErrUnselected = errors.New("no YAML schema owners were selected")
 type Extension struct {
 	// Owner names the owner, as its provider ID does.
 	Owner string
-	// Kinds are the models the claim covers. The provider that registers the
-	// extension owns their desired codecs.
+	// Kinds are the models the claim covers and the sections declare. The
+	// provider that registers the extension owns their desired codecs.
 	Kinds []schemaext.Kind
+	// Sections are the top-level document keys the owner reads.
+	Sections []Section
 	// Coverage is the knowledge a YAML document holds about Kinds. It is
 	// required, so the claim is always the owner's to make.
 	Coverage func() (schemaext.Coverage, error)
@@ -43,6 +46,8 @@ type Extension struct {
 type Set struct {
 	selected   bool
 	extensions []Extension
+	// sections holds the extension index that reads each section key.
+	sections map[string]int
 }
 
 // None returns a selected set without owners. A parse with it claims no
@@ -52,9 +57,10 @@ func None() Set {
 }
 
 // NewSet validates and freezes extensions. It refuses an extension without an
-// owner or a coverage claim, and a model two extensions claim.
+// owner or a coverage claim, a section without a key or a decoder, and a model
+// or a section key two extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
-	set := Set{selected: true}
+	set := Set{selected: true, sections: make(map[string]int)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
@@ -69,7 +75,18 @@ func NewSet(extensions ...Extension) (Set, error) {
 			}
 			kinds[kind] = extension.Owner
 		}
+		for _, section := range extension.Sections {
+			if strings.TrimSpace(section.Key) == "" || section.Decode == nil {
+				return Set{}, fmt.Errorf("YAML extension of %s declares a section without a key or a decoder", extension.Owner)
+			}
+			if previous, claimed := set.sections[section.Key]; claimed {
+				return Set{}, fmt.Errorf("%w: YAML key %q is read by %s and %s", schemaext.ErrDuplicate, section.Key,
+					set.extensions[previous].Owner, extension.Owner)
+			}
+			set.sections[section.Key] = index
+		}
 		extension.Kinds = slices.Clone(extension.Kinds)
+		extension.Sections = slices.Clone(extension.Sections)
 		set.extensions = append(set.extensions, extension)
 	}
 	return set, nil

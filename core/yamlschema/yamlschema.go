@@ -75,6 +75,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -83,7 +84,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/chpolicysource"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/pgpolicysource"
@@ -155,8 +155,11 @@ func Parse(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
 	} else if err != io.EOF {
 		return nil, fmt.Errorf("parse YAML schema: %w", err)
 	}
+	if err := checkOwnedKeys(owners, data, doc.Owned); err != nil {
+		return nil, err
+	}
 
-	return doc.toDatabase(owners)
+	return doc.toDatabase(owners, data)
 }
 
 type document struct {
@@ -188,6 +191,11 @@ type document struct {
 	ExternalDataSources map[string]externalDataSourceSpec `yaml:"external_data_sources"`
 	StreamingQueries    map[string]streamingQuerySpec     `yaml:"streaming_queries"`
 	ExternalTables      map[string]externalTableSpec      `yaml:"external_tables"`
+
+	// Owned holds the top-level keys the frontend does not read itself. A
+	// selected owner's section is handed to the owner; any other key is
+	// refused as unknown.
+	Owned map[string]yaml.Node `yaml:",inline"`
 }
 
 type tableSpec struct {
@@ -819,7 +827,7 @@ func (d document) addStandaloneObjects(db *schemamodel.Database) error {
 	return nil
 }
 
-func (d document) toDatabase(owners yamlext.Set) (*schemamodel.Database, error) {
+func (d document) toDatabase(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
 	db := &schemamodel.Database{
 		Dependencies:               make(map[string][]string),
 		FunctionDependencies:       make(map[string][]string),
@@ -853,6 +861,9 @@ func (d document) toDatabase(owners yamlext.Set) (*schemamodel.Database, error) 
 		return nil, err
 	}
 	if err := d.addRLS(db); err != nil {
+		return nil, err
+	}
+	if err := d.addOwnerSections(db, owners, data); err != nil {
 		return nil, err
 	}
 	d.addRoles(db)
@@ -1400,14 +1411,14 @@ func (d document) addTriggers(db *schemamodel.Database) error {
 // addRLS hands the document's row-level security to its owners: an entry
 // without `dialects`, or scoped to the PostgreSQL family, is the PostgreSQL
 // row-security owner's, a policy becoming an object and an enablement the
-// switches facet of its table, which the document must declare. A policy
-// scoped to ClickHouse is the ClickHouse owner's row policy, and an enablement
-// scoped to ClickHouse is refused, since ClickHouse has no switch. An entry
-// scoped to other targets stays shared. Two entries that declare one policy,
-// or one table's switches, are refused, naming both (stokaro/ptah#2440).
+// switches facet of its table, which the document must declare. An entry
+// scoped to ClickHouse is refused: a ClickHouse row policy is its owner's,
+// declared under the owner's row_policies key, and ClickHouse has no switch.
+// An entry scoped to other targets stays shared. Two entries that declare one
+// policy, or one table's switches, are refused, naming both
+// (stokaro/ptah#2440).
 func (d document) addRLS(db *schemamodel.Database) error {
 	var collector pgpolicysource.Collector
-	var rowPolicies chpolicysource.Collector
 	for _, key := range sortedKeys(d.Tables) {
 		table := d.Tables[key]
 		if table.RLSEnabled {
@@ -1429,8 +1440,9 @@ func (d document) addRLS(db *schemamodel.Database) error {
 				return err
 			}
 			if !owned {
-				if err := chpolicysource.RefuseSwitches(scope); err != nil {
-					return fmt.Errorf("%s: %w", origin, err)
+				if scopesClickHouse(scope) {
+					return fmt.Errorf("%s: %w: ClickHouse has no row-level security switch: a row policy filters rows once it exists; "+
+						"leave clickhouse out of the enablement's dialects", origin, ptaherr.ErrInvalidAttributeValue)
 				}
 				db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{StructName: string(spec.StructName),
 					Table: valueOrDefault(spec.Table, key), Comment: string(spec.Comment), Dialects: scope})
@@ -1442,7 +1454,7 @@ func (d document) addRLS(db *schemamodel.Database) error {
 		}
 	}
 	for _, key := range sortedKeys(d.RLSPolicies) {
-		if err := addRLSPolicy(db, &collector, &rowPolicies, key, d.RLSPolicies[key]); err != nil {
+		if err := addRLSPolicy(db, &collector, key, d.RLSPolicies[key]); err != nil {
 			return err
 		}
 	}
@@ -1450,9 +1462,7 @@ func (d document) addRLS(db *schemamodel.Database) error {
 	if err != nil {
 		return err
 	}
-	if db.FeatureObjects, err = objects.Merge(rowPolicies.Objects()); err != nil {
-		return err
-	}
+	db.FeatureObjects = objects
 	db.FeatureCoverage, err = pgpolicysource.Claim(db.FeatureCoverage, db.FeatureObjects)
 	return err
 }
@@ -1476,20 +1486,15 @@ func addRLSSwitches(db *schemamodel.Database, collector *pgpolicysource.Collecto
 	return nil
 }
 
-func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector, rowPolicies *chpolicysource.Collector,
-	key string, spec rlsPolicySpec,
-) error {
+func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector, key string, spec rlsPolicySpec) error {
 	origin := "rls_policies." + key
 	scope, owned, err := rowSecurityScope(origin, spec.Dialects)
 	if err != nil {
 		return err
 	}
-	clickhouse, err := chpolicysource.Owns(scope)
-	if err != nil {
-		return fmt.Errorf("%s: %w", origin, err)
-	}
-	if clickhouse {
-		return addRowPolicy(db, rowPolicies, origin, key, spec, scope)
+	if scopesClickHouse(scope) {
+		return fmt.Errorf("%s: %w: a ClickHouse row policy is not a row-level security policy; declare it under "+
+			"row_policies instead", origin, ptaherr.ErrInvalidAttributeValue)
 	}
 	if !owned {
 		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
@@ -1524,32 +1529,10 @@ func addRLSPolicy(db *schemamodel.Database, collector *pgpolicysource.Collector,
 	return collector.AddPolicy(origin, pgpolicysource.Ref(schemaName, tableName, valueOrDefault(spec.Name, key)), policy, scope)
 }
 
-// addRowPolicy reads one entry scoped to ClickHouse as the ClickHouse owner's
-// row policy, on the table it names or its struct maps to.
-func addRowPolicy(db *schemamodel.Database, collector *chpolicysource.Collector, origin, key string, spec rlsPolicySpec, scope []string) error {
-	index, err := pgpolicysource.DeclaredTable(db.Tables, string(spec.StructName), string(spec.Table))
-	if err != nil {
-		return fmt.Errorf("%s: %w", origin, err)
-	}
-	var database, tableName string
-	switch {
-	case index >= 0:
-		database, tableName = db.Tables[index].Schema, db.Tables[index].Name
-	case spec.Table == "":
-		return fmt.Errorf("%s: %w: a row policy names its table", origin, ptaherr.ErrInvalidAttributeValue)
-	default:
-		if database, tableName, err = pgpolicysource.TableParts(string(spec.Table)); err != nil {
-			return fmt.Errorf("%s: %w", origin, err)
-		}
-	}
-	policy, err := chpolicysource.Attributes{
-		For: string(spec.PolicyFor), To: string(spec.ToRoles), Using: string(spec.UsingExpression),
-		WithCheck: string(spec.WithCheckExpression), Comment: string(spec.Comment), StructName: string(spec.StructName),
-	}.Policy()
-	if err != nil {
-		return fmt.Errorf("%s: %w", origin, err)
-	}
-	return collector.AddPolicy(origin, chpolicysource.Ref(database, tableName, valueOrDefault(spec.Name, key)), policy, scope)
+// scopesClickHouse reports whether a row-level security entry's scope names
+// ClickHouse, whose row policy is its owner's and not row-level security.
+func scopesClickHouse(scope []string) bool {
+	return slices.ContainsFunc(scope, func(target string) bool { return platform.NormalizeDialect(target) == platform.ClickHouse })
 }
 
 // rowSecurityScope reads a row-level security entry's `dialects` and reports
@@ -1853,12 +1836,12 @@ func mergePlatform(primary, secondary platformSpec) map[string]map[string]string
 }
 
 func copyPlatform(target map[string]map[string]string, source platformSpec) {
-	for platform, values := range source {
-		if target[platform] == nil {
-			target[platform] = make(map[string]string)
+	for group, values := range source {
+		if target[group] == nil {
+			target[group] = make(map[string]string)
 		}
 		for key, value := range values {
-			target[platform][key] = string(value)
+			target[group][key] = string(value)
 		}
 	}
 }
