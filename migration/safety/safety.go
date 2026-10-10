@@ -261,9 +261,10 @@ func AssessRendered(ctx context.Context, service renderer.Service, nodes []ast.N
 // every statement its node renders when the node is that one operation
 // ([ast.IsolatedExtension]), which is how the planners build them. A node
 // carrying an owner operation beside other work ([ast.MixedExtension]) cannot
-// say which of its statements the operation wrote, so each of them is
-// Destructive, with an unknown access effect when the operation makes an
-// access claim.
+// say which of its statements the operation wrote, so each of them takes the
+// node's verdict raised to Destructive, with an unknown access effect when the
+// operation makes an access claim. Raising never lowers what the node
+// established: a known widening stays a widening.
 func AssessRenderedWithCapabilities(
 	ctx context.Context,
 	service renderer.Service,
@@ -290,7 +291,14 @@ func AssessRenderedWithCapabilities(
 	for i, node := range units {
 		nodeAssessment := assessNode(node)
 		placement := ast.PlacementOf(node)
-		statements := renderedStatements(result.Fragments[i], dialect)
+		if placement == ast.MixedExtension {
+			nodeAssessment = mixedVerdict(node)
+		}
+		rendered := result.Fragments[i]
+		statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
+		if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
+			statements = []string{strings.TrimSpace(rendered)}
+		}
 		keepsNull := keepsNullability(node)
 		fills := fillsNullRows(node)
 		for _, statement := range statements {
@@ -299,12 +307,7 @@ func AssessRenderedWithCapabilities(
 			if assessment.Subject == "" {
 				assessment.Subject = nodeAssessment.Subject
 			}
-			switch {
-			case placement == ast.IsolatedExtension:
-				raiseAssessment(&assessment, nodeAssessment)
-			case placement == ast.MixedExtension:
-				raiseAssessment(&assessment, failClosed(mixedReason, node))
-			case len(statements) == 1 || isTypeChangeSQL(statement):
+			if placement != ast.NoExtension || len(statements) == 1 || isTypeChangeSQL(statement) {
 				raiseAssessment(&assessment, nodeAssessment)
 			}
 			if fills {
@@ -595,6 +598,12 @@ func assessNode(node ast.Node) StatementAssessment {
 		combineAccess(&assessment, verdict.access.Access, verdict.access.Reason)
 		assessment.Subject = extensionSubject(node)
 	case *ast.AlterTableNode:
+		// A typed nil ALTER TABLE carries no operation. A statement list that
+		// holds one beside an owner operation is assessed as a whole when it
+		// fails closed, so it must not be dereferenced.
+		if n == nil {
+			return assessment
+		}
 		assessment.Subject = n.Name
 		return assessAlterTable(n, assessment)
 	case *ast.DropTypeNode:

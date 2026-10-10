@@ -706,14 +706,54 @@ type RenderedPlan struct {
 // SQL returns the rendered plan as one script.
 func (p RenderedPlan) SQL() string { return p.Result.SQL() }
 
-// Statements splits the rendered plan into the statements it executes.
+// PlannedStatement is one statement of a rendered plan and the index of the
+// planned node, in Request.Nodes, whose fragment rendered it. Node is -1 for a
+// comment-only piece at the end of the plan, which no statement follows.
+type PlannedStatement struct {
+	SQL  string
+	Node int
+}
+
+// PlannedStatements splits the rendered plan into the statements it executes,
+// one fragment at a time, so each statement keeps the node that rendered it.
+// A comment-only piece of a fragment, such as an owner's note, is joined to the
+// next statement and takes that statement's node, as splitting the joined
+// script would join it.
+func (p RenderedPlan) PlannedStatements() []PlannedStatement {
+	var statements []PlannedStatement
+	var pending []string
+	for node, fragment := range p.Result.Fragments {
+		// The dialect decides where one statement ends. The blind splitter
+		// treats every semicolon outside a BEGIN block as a boundary, which is
+		// right for most targets and wrong for the one whose routine body is
+		// opened by IS: an Oracle function with a declaration section came out
+		// of here as four fragments, each of which the server refuses on its own.
+		for _, statement := range sqlutil.SplitSQLStatementsForDialect(fragment, p.Dialect) {
+			if strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, p.Dialect)) == "" {
+				pending = append(pending, statement)
+				continue
+			}
+			if len(pending) > 0 {
+				statement = strings.Join(append(pending, statement), "\n")
+				pending = nil
+			}
+			statements = append(statements, PlannedStatement{SQL: statement, Node: node})
+		}
+	}
+	if len(pending) > 0 {
+		statements = append(statements, PlannedStatement{SQL: strings.Join(pending, "\n"), Node: -1})
+	}
+	return statements
+}
+
+// Statements returns the SQL of [RenderedPlan.PlannedStatements].
 func (p RenderedPlan) Statements() []string {
-	// The dialect decides where one statement ends. The blind splitter treats
-	// every semicolon outside a BEGIN block as a boundary, which is right for
-	// most targets and wrong for the one whose routine body is opened by IS:
-	// an Oracle function with a declaration section came out of here as four
-	// fragments, each of which the server refuses on its own.
-	return sqlutil.SplitSQLStatementsForDialect(p.SQL(), p.Dialect)
+	planned := p.PlannedStatements()
+	statements := make([]string, 0, len(planned))
+	for _, statement := range planned {
+		statements = append(statements, statement.SQL)
+	}
+	return statements
 }
 
 // GenerateSchemaDiffRenderedPlan plans diff and renders the planned nodes

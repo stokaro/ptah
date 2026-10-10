@@ -88,8 +88,8 @@ type ApplyOptions struct {
 	LocalFilesOnly bool
 	// assessOwnedOperations also attributes the owned feature operations'
 	// verdicts to the statements they rendered, so a saved plan can record
-	// them. It reuses the one planning pass; a node carrying an owned
-	// operation beside common ones is rendered once more without them.
+	// them. It reads the one planning pass: each statement keeps the node whose
+	// fragment rendered it, and nothing is rendered twice.
 	assessOwnedOperations bool
 	// ToSources carries the same desired-state sources as ToURLs, each with the
 	// variable scope its atlas.hcl `data "hcl_schema"` block put around it. It
@@ -460,9 +460,15 @@ func computeApplyPlan(
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 		}
-		computation.statements = plan.Statements()
+		planned := plan.PlannedStatements()
+		computation.statements = make([]string, 0, len(planned))
+		statementNodes := make([]int, 0, len(planned))
+		for _, statement := range planned {
+			computation.statements = append(computation.statements, statement.SQL)
+			statementNodes = append(statementNodes, statement.Node)
+		}
 		if opts.assessOwnedOperations {
-			computation.owned, err = safety.OwnerVerdicts(ctx, plan.Request, plan.Result, computation.statements, info.Dialect)
+			computation.owned, err = safety.OwnerVerdicts(plan.Request.Nodes, statementNodes)
 			if err != nil {
 				return applyComputation{}, fmt.Errorf("assess owned operations: %w", err)
 			}
