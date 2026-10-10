@@ -15,7 +15,6 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -136,7 +135,7 @@ func TestYDBTTL_RoundTrip(t *testing.T) {
 				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P30D"}})
 			c.Assert(observedTTL(c, tableNamed(c, live, ttlSchema, "tokens")), qt.DeepEquals,
 				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "expires", Interval: "PT1H", Unit: "MILLISECONDS"}})
-			c.Assert(live.NotDescribed.Describes(coverage.TTL, ttlSchema+".events"), qt.IsTrue)
+			c.Assert(live.NotDescribed.Describes(ydbschema.CoverageTTL, ttlSchema+".events"), qt.IsTrue)
 		})
 	}
 }
@@ -252,7 +251,7 @@ func TestYDBTTL_KeepsARunIntervalYQLCannotWrite(t *testing.T) {
 
 			c.Assert(planAgainst(c, conn, declared, ttlSchemas), qt.HasLen, 0)
 			live := readScoped(c, conn, ttlSchemas)
-			c.Assert(live.NotDescribed.Describes(coverage.TTL, ttlSchema+".events"), qt.IsFalse)
+			c.Assert(live.NotDescribed.Describes(ydbschema.CoverageTTL, ttlSchema+".events"), qt.IsFalse)
 			c.Assert(observedTTL(c, tableNamed(c, live, ttlSchema, "events")).RunIntervalSeconds, qt.Equals, uint64(1800))
 
 			changed := ttlEvents(&ydbschema.TTL{Column: "created_at", Interval: "PT2H"}, "created_at")
@@ -273,7 +272,7 @@ func TestYDBTTL_KeepsARunIntervalYQLCannotWrite(t *testing.T) {
 				[]string{"ALTER TABLE `ptah_ydb_ttl/events` RESET (TTL)"})
 			apply(c, conn, planAgainst(c, conn, removed, ttlSchemas))
 			c.Assert(planAgainst(c, conn, removed, ttlSchemas), qt.HasLen, 0)
-			c.Assert(readScoped(c, conn, ttlSchemas).NotDescribed.Describes(coverage.TTL, ttlSchema+".events"), qt.IsTrue)
+			c.Assert(readScoped(c, conn, ttlSchemas).NotDescribed.Describes(ydbschema.CoverageTTL, ttlSchema+".events"), qt.IsTrue)
 		})
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/envbool"
 )
 
@@ -167,7 +168,7 @@ var blockCoverageKinds = map[string]coverage.Kind{
 // document describes everything Ptah models and claims so by carrying no
 // record.
 func (r *renderer) notDescribed() coverage.Set {
-	var set coverage.Set
+	set := documentedLimits(r.db.NotDescribed)
 	if !r.omitAtlasRefusedBlocks {
 		return set
 	}
@@ -183,6 +184,25 @@ func (r *renderer) notDescribed() coverage.Set {
 		})
 	}
 	return set
+}
+
+// documentedLimits is the description's own record of what it does not
+// describe, as the document carries it. A read records what it met and did
+// not describe -- a YDB changefeed, a Spanner change stream, a role catalog it
+// was refused -- and an export that left the record out would hand the next
+// plan a document whose silence reads as complete, which is how an object
+// nobody looked at becomes a DROP. A kind an owner consults in process only, a
+// YDB replica table, is left out: no document can name it, and the read the
+// next plan makes records it again.
+func documentedLimits(set coverage.Set) coverage.Set {
+	var documented coverage.Set
+	for _, object := range set.Objects {
+		if object.Kind == ydbschema.CoverageReplicaTable {
+			continue
+		}
+		documented.Objects = append(documented.Objects, object)
+	}
+	return documented.Normalize()
 }
 
 // renderCoverageHeader writes the document's coverage record as directive

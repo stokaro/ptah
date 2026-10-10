@@ -424,8 +424,8 @@ func (r *Reader) directory(ctx context.Context, source Source, schema, name stri
 // [capability.Views], whose reader records it rather than describing it.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_VIEW:         coverage.View,
-	Ydb_Scheme.Entry_COLUMN_TABLE: coverage.ColumnTable,
-	Ydb_Scheme.Entry_COLUMN_STORE: coverage.ColumnTable,
+	Ydb_Scheme.Entry_COLUMN_TABLE: ydbschema.CoverageColumnTable,
+	Ydb_Scheme.Entry_COLUMN_STORE: ydbschema.CoverageColumnTable,
 	Ydb_Scheme.Entry_SEQUENCE:     coverage.Sequence,
 }
 

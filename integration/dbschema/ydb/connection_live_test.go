@@ -313,11 +313,11 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_connection|base", "ptah_ydb_connection|olap"})
 			c.Assert(live.Views, qt.DeepEquals, []catalog.View{{Name: "v", Schema: "ptah_ydb_connection", Body: "SELECT 1 AS a"}})
 			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsTrue)
-			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsTrue)
-			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsFalse)
+			c.Assert(live.NotDescribed.Describes(ydbschema.CoverageColumnTable, "ptah_ydb_connection.olap"), qt.IsTrue)
+			c.Assert(live.NotDescribed.Describes(ydbschema.CoverageTTL, "ptah_ydb_connection.base"), qt.IsFalse)
 			c.Assert(heldFamilies(c, tableNamed(c, live, connectionSchema, "base")), qt.DeepEquals,
 				[]ydbschema.ColumnFamily{{Name: "default", Compression: "lz4"}})
-			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsTrue)
+			c.Assert(live.NotDescribed.Describes(ydbschema.CoverageTableOption, "ptah_ydb_connection.base"), qt.IsTrue)
 			c.Assert(observedTTL(c, tableNamed(c, live, connectionSchema, "base")), qt.DeepEquals,
 				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "P1D"}, RunIntervalSeconds: 1800})
 			c.Assert(heldSettings(c, tableNamed(c, live, connectionSchema, "base")), qt.DeepEquals,

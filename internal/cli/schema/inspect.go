@@ -296,6 +296,10 @@ func materializeOCISchemaFiles(
 	if !slices.ContainsFunc(sources, isOCISchemaReference) {
 		return nil, nil, nil
 	}
+	owners, err := builtin.Bundled()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Every purely local argument error is answered before the registry is
 	// contacted. Without this the pull happens first, so `--format garbage` or
@@ -356,6 +360,7 @@ func materializeOCISchemaFiles(
 			reference,
 			filepath.Join(target, inspectOCIMaterializedName),
 			opts.plainHTTP,
+			owners.CoverageVocabulary(),
 		)
 		if err != nil {
 			cleanup()

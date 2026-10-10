@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/builtintest"
@@ -25,7 +26,7 @@ func TestCompare_UsesDatabaseURLDialectForExternalSQL(t *testing.T) {
 		Args: []string{"go", "run", "./testdata/sqlserver-schema-command"},
 	}
 
-	_, err := schemasource.Run(context.Background(), sourceformats.New(builtintest.Runtime().YAML()), command)
+	_, err := schemasource.Run(context.Background(), sourceformats.New(builtintest.Runtime().YAML(), coverage.Vocabulary{}), command)
 	c.Assert(err, qt.ErrorMatches, `parse schema command "go" output: unsupported CREATE OR ALTER outside SQL Server dialect at position \d+`)
 
 	_, err = schemaops.Compare(t.Context(), schemaops.CompareOptions{Runtime: selectedRuntime(c),

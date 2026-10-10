@@ -16,7 +16,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -160,7 +159,7 @@ func dropReplications(c *qt.C, conn *dbschema.DatabaseConnection) {
 	live, err = dbschema.ReadSchemaWithSchemasContext(ctx, conn, replicationSchemas)
 	c.Assert(err, qt.IsNil)
 	for _, object := range live.NotDescribed.Objects {
-		if object.Kind == coverage.ReplicaTable {
+		if object.Kind == ydbschema.CoverageReplicaTable {
 			c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP TABLE `"+strings.Replace(object.Name, ".", "/", 1)+"`"),
 				qt.IsNil)
 		}
@@ -200,7 +199,7 @@ func settledRead(c *qt.C, conn *dbschema.DatabaseConnection, what string,
 func replicaRecorded(live *catalog.Database) bool {
 	return len(liveReplications(live)) == 1 && liveReplications(live)[0].State == ydbreplication.StateRunning &&
 		len(liveReplications(live)[0].Spec.Items) == 1 &&
-		!live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
+		!live.NotDescribed.Describes(ydbschema.CoverageReplicaTable, replicationSchema+".rep")
 }
 
 // replicationState reports a read holding the replication mirror in state.
@@ -266,7 +265,7 @@ func TestYDBReplication_RoundTrip(t *testing.T) {
 			apply(c, conn, removed)
 			settledRead(c, conn, "the replication and its replica gone", func(live *catalog.Database) bool {
 				return len(liveReplications(live)) == 0 &&
-					live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
+					live.NotDescribed.Describes(ydbschema.CoverageReplicaTable, replicationSchema+".rep")
 			})
 			waitForDirectory(c, line, []string{"src"}, replicationSchema)
 			c.Assert(planAgainst(c, conn, replicationDeclaration(""), replicationSchemas), qt.HasLen, 0)
@@ -606,7 +605,7 @@ func TestYDBWriter_DropAllTablesDropsReplicationsFirst(t *testing.T) {
 					"`ptah_ydb_repl/orphan` WITH (CONNECTION_STRING = '" + connection + "')",
 			})
 			settledRead(c, conn, "the second replica recorded", func(live *catalog.Database) bool {
-				return !live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".orphan")
+				return !live.NotDescribed.Describes(ydbschema.CoverageReplicaTable, replicationSchema+".orphan")
 			})
 			apply(c, conn, []string{"DROP ASYNC REPLICATION `ptah_ydb_repl/orphaning`"})
 
@@ -614,8 +613,8 @@ func TestYDBWriter_DropAllTablesDropsReplicationsFirst(t *testing.T) {
 
 			settledRead(c, conn, "only the orphaned replica left", func(live *catalog.Database) bool {
 				return len(liveReplications(live)) == 0 && len(live.Tables) == 0 &&
-					!live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".orphan") &&
-					live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
+					!live.NotDescribed.Describes(ydbschema.CoverageReplicaTable, replicationSchema+".orphan") &&
+					live.NotDescribed.Describes(ydbschema.CoverageReplicaTable, replicationSchema+".rep")
 			})
 			waitForDirectory(c, line, []string{"orphan"}, replicationSchema)
 		})
@@ -729,7 +728,7 @@ func TestYDBReplication_ReadsWhileReplicasComeAndGo(t *testing.T) {
 				waitForDirectory(c, line, []string{"src"}, replicationSchema)
 				settled := readScoped(c, conn, replicationSchemas)
 				c.Assert(liveReplications(settled), qt.HasLen, 0)
-				c.Assert(settled.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".cycle_rep"),
+				c.Assert(settled.NotDescribed.Describes(ydbschema.CoverageReplicaTable, replicationSchema+".cycle_rep"),
 					qt.IsTrue)
 			}
 		})

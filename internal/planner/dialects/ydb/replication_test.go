@@ -111,7 +111,7 @@ const lambda = "($m) -> { return []; }"
 
 // replicaOf is the read's record of the replica table at name.
 func replicaOf(name string) coverage.Object {
-	return coverage.Object{Kind: coverage.ReplicaTable, Name: name, Reason: coverage.Unsupported,
+	return coverage.Object{Kind: ydbschema.CoverageReplicaTable, Name: name, Reason: coverage.Unsupported,
 		Provenance: coverage.Observed}
 }
 

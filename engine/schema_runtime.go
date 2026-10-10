@@ -2,6 +2,7 @@ package engine
 
 import (
 	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -17,6 +18,7 @@ import (
 type SchemaRuntime interface {
 	annotation.Runtime
 	yamlext.Runtime
+	coverage.Runtime
 	schemapreparation.Runtime
 	schemaprojection.TableCreationService
 	featureplan.Runtime

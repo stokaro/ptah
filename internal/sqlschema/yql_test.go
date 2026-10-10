@@ -96,7 +96,7 @@ func TestReadYQLSupportedFamilyCoverage(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
-	for _, kind := range []coverage.Kind{coverage.Role, coverage.Grant, coverage.Changefeed, coverage.View, coverage.ColumnTable, coverage.TTL} {
+	for _, kind := range []coverage.Kind{coverage.Role, coverage.Grant, ydbschema.CoverageChangefeed, coverage.View, ydbschema.CoverageColumnTable, ydbschema.CoverageTTL} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 	}
 	c.Assert(database.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)

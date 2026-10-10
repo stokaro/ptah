@@ -377,7 +377,7 @@ func namePath(name string) string {
 // replicaRecord finds the read's record of a live replica table at tablePath.
 func replicaRecord(notDescribed coverage.Set, tablePath string) (coverage.Object, bool) {
 	for _, object := range notDescribed.Objects {
-		if object.Kind == coverage.ReplicaTable && namePath(object.Name) == tablePath {
+		if object.Kind == ydbschema.CoverageReplicaTable && namePath(object.Name) == tablePath {
 			return object, true
 		}
 	}
@@ -388,7 +388,7 @@ func replicaRecord(notDescribed coverage.Set, tablePath string) (coverage.Object
 // it.
 func replicaUnder(notDescribed coverage.Set, target string) (string, bool) {
 	for _, object := range notDescribed.Objects {
-		if object.Kind == coverage.ReplicaTable && ydbreplication.UnderTarget(namePath(object.Name), []string{target}) {
+		if object.Kind == ydbschema.CoverageReplicaTable && ydbreplication.UnderTarget(namePath(object.Name), []string{target}) {
 			return namePath(object.Name), true
 		}
 	}

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
@@ -264,7 +265,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	}
 	diagnostics = append(diagnostics, normalization...)
 	sortDiagnostics(diagnostics)
-	canonicalHCL, exportedDB, err := canonicalRoundTrip(rendered.Data)
+	canonicalHCL, exportedDB, err := canonicalRoundTrip(rendered.Data, plan.options.Annotations.CoverageVocabulary())
 	if err != nil {
 		return renderedExport{}, err
 	}
@@ -455,8 +456,9 @@ func resolvePaths(opts Options) (rootDir, outputPath string, err error) {
 	return rootDir, outputPath, nil
 }
 
-func canonicalRoundTrip(data []byte) ([]byte, *schemamodel.Database, error) {
-	parsed, err := atlashcl.Parse(data, "schema.hcl")
+func canonicalRoundTrip(data []byte, vocabulary coverage.Vocabulary) ([]byte, *schemamodel.Database, error) {
+	hclOptions := atlashcl.Options{CoverageVocabulary: vocabulary}
+	parsed, err := atlashcl.ParseWithOptions(data, "schema.hcl", hclOptions)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: parse generated schema: %v", ErrInvalidHCL, err)
 	}
@@ -470,7 +472,7 @@ func canonicalRoundTrip(data []byte) ([]byte, *schemamodel.Database, error) {
 	if !bytes.Equal(canonical.Data, data) {
 		return nil, nil, fmt.Errorf("%w: canonical render changed the generated schema", ErrInvalidHCL)
 	}
-	reparsed, err := atlashcl.Parse(canonical.Data, "schema.hcl")
+	reparsed, err := atlashcl.ParseWithOptions(canonical.Data, "schema.hcl", hclOptions)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: parse canonical schema: %v", ErrInvalidHCL, err)
 	}

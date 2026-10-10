@@ -55,7 +55,7 @@ func (a schemaInspectArchive) String() string {
 	return out.String()
 }
 
-func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectArchive, error) {
+func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabulary, args ...any) (schemaInspectArchive, error) {
 	opts, input, err := atlasSchemaInspectSplitArgs(args...)
 	if err != nil {
 		return schemaInspectArchive{}, err
@@ -70,7 +70,7 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 	// from a parsed block, and a leading comment belongs to no block. Read it
 	// from the input before the split so each member can carry it
 	// (stokaro/ptah#1276).
-	directives, err := splitCoverageDirectives(input)
+	directives, err := splitCoverageDirectives(input, vocabulary)
 	if err != nil {
 		return schemaInspectArchive{}, fmt.Errorf("split schema output: %w", err)
 	}
@@ -98,10 +98,10 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 // splitCoverageDirectives transports validated owner records without adding
 // them to the common coverage set. Reason, provenance, and exact names survive
 // even though the splitter does not interpret their schema semantics.
-func splitCoverageDirectives(input string) ([]string, error) {
+func splitCoverageDirectives(input string, vocabulary coverage.Vocabulary) ([]string, error) {
 	var directives []string
 	var limits ydbsource.Limits
-	common, err := coverage.DecodeHeader(input, func(object coverage.Object) (bool, error) {
+	common, err := coverage.DecodeHeader(input, vocabulary, func(object coverage.Object) (bool, error) {
 		if !ydbsource.RecognizesLimit(object.Kind) {
 			return false, nil
 		}

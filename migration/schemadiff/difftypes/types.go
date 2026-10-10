@@ -1284,15 +1284,16 @@ type SchemaDiff struct {
 	// A reversal runs against the same database and carries the same path.
 	CurrentDatabasePath string `json:"-"`
 
-	// CurrentGrants is YDB's: every privilege the read of the database this
-	// plan runs against reported, carried once for the whole diff and off the
-	// wire. Only the YDB planner reads it.
+	// CurrentGrants is the read's grants: every privilege the read of the
+	// database this plan runs against reported, carried once for the whole
+	// diff and off the wire, for any planner whose table recreate drops them.
 	//
 	// A comparison plans only the grants that differ, so no entry above
-	// carries the ones that agree. A plan that recreates a table needs them,
-	// though: on YDB the table's permissions live in the table's own access
-	// list, which the rebuild drops with the old table, and the new one has
-	// none. This is how a planner gives them back.
+	// carries the ones that agree. A plan that recreates a table needs them
+	// where the table's permissions live in the table's own access list, which
+	// the rebuild drops with the old table while the new one has none. This is
+	// how a planner gives them back. The YDB planner is the one that reads it
+	// today.
 	//
 	// A reversal runs against the same database and carries the same grants.
 	CurrentGrants []GrantRef `json:"-"`

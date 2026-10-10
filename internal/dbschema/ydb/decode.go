@@ -734,7 +734,7 @@ var epochUnits = map[Ydb_Table.ValueSinceUnixEpochModeSettings_Unit]string{
 // replicas and key bloom filter are read, by [tableSettings].
 //
 // The TTL itself is the YDB owner's facet; see [ttlFacets]. What is recorded
-// under [coverage.TTL] is what YQL cannot write about it: the run interval,
+// under [ydbschema.CoverageTTL] is what YQL cannot write about it: the run interval,
 // which only the SDK and the CLI set and which `SET (TTL = ...)` resets (a
 // table set to 1800 seconds with `ydb table ttl set --run-interval` reads back
 // with none after it, on 25.1.4.7 and 26.2.1.14), and a column table's tiering
@@ -742,10 +742,10 @@ var epochUnits = map[Ydb_Table.ValueSinceUnixEpochModeSettings_Unit]string{
 func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableResult) []coverage.Object {
 	var records []coverage.Object
 	if described.GetTtlSettings().GetRunIntervalSeconds() != 0 || described.GetTiering() != "" {
-		records = append(records, unmodeled(coverage.TTL, schema, name))
+		records = append(records, unmodeled(ydbschema.CoverageTTL, schema, name))
 	}
 	if hasStorageSettings(described) {
-		records = append(records, unmodeled(coverage.TableOption, schema, name))
+		records = append(records, unmodeled(ydbschema.CoverageTableOption, schema, name))
 	}
 	return records
 }

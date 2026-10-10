@@ -9,11 +9,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbreplication"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -55,7 +55,7 @@ func TestYDBDesiredYQL_Replication(t *testing.T) {
 			c.Assert(planAgainst(c, conn, omitted, replicationSchemas), qt.DeepEquals, []string{"DROP ASYNC REPLICATION `ptah_ydb_repl/mirror` CASCADE"})
 			apply(c, conn, planAgainst(c, conn, omitted, replicationSchemas))
 			settledRead(c, conn, "the omitted replication removed", func(live *catalog.Database) bool {
-				return len(liveReplications(live)) == 0 && live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
+				return len(liveReplications(live)) == 0 && live.NotDescribed.Describes(ydbschema.CoverageReplicaTable, replicationSchema+".rep")
 			})
 			waitForDirectory(c, line, []string{"src"}, replicationSchema)
 			c.Assert(planAgainst(c, conn, omitted, replicationSchemas), qt.HasLen, 0)

@@ -50,6 +50,16 @@ func Read(data []byte, dialect string) (schemamodel.Database, *ast.StatementList
 func ReadOnto(
 	data []byte, dialect string, document *Document,
 ) (schemamodel.Database, *ast.StatementList, error) {
+	return ReadOntoWithVocabulary(data, dialect, document, schemacoverage.Vocabulary{})
+}
+
+// ReadOntoWithVocabulary is [ReadOnto] for a file whose `ptah:not-described`
+// header may name the coverage kinds of vocabulary, usually the vocabulary of
+// the runtime the caller compares with, such as a YDB changefeed. [ReadOnto]
+// reads the common kinds only.
+func ReadOntoWithVocabulary(
+	data []byte, dialect string, document *Document, vocabulary schemacoverage.Vocabulary,
+) (schemamodel.Database, *ast.StatementList, error) {
 	// SQL sources have their own declaration vocabulary. Ignoring a captured
 	// HCL account would replace its explicit claims with that vocabulary.
 	for body := range schemacoverage.HeaderComments(string(data)) {
@@ -82,7 +92,7 @@ func ReadOnto(
 	case platform.NormalizeDialect(dialect) == platform.SQLite:
 		extension = virtual.consume
 	}
-	header, err := schemacoverage.DecodeHeader(string(data), extension)
+	header, err := schemacoverage.DecodeHeader(string(data), vocabulary, extension)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}

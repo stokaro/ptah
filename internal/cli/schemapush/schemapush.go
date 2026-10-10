@@ -103,6 +103,9 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		Tags:             opts.tags,
 		Version:          opts.version,
 		PlainHTTP:        opts.plainHTTP,
+		// The snapshot is read back with the vocabulary of the owners that
+		// loaded it, which is what its header may name.
+		CoverageVocabulary: owners.CoverageVocabulary(),
 	})
 	if err != nil {
 		return err

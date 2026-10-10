@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/content/memory"
 
+	"ptah.run/core/coverage"
 	"ptah.run/internal/schemaartifact"
 )
 
@@ -27,7 +28,7 @@ func TestPushToPullFrom_CarriesTheChecksLayer(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1")
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1", coverage.Vocabulary{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(pulled.Checks), qt.Equals, publishedChecks)
@@ -45,7 +46,7 @@ func TestPushToPullFrom_CarriesNoChecksLayerWhenNoneWerePublished(t *testing.T) 
 	})
 	c.Assert(err, qt.IsNil)
 
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1")
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "v1", coverage.Vocabulary{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(pulled.Checks, qt.IsNil)

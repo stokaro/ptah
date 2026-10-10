@@ -677,10 +677,14 @@ DROP SEQUENCE IF EXISTS "order_seq";
 DROP EXTENSION IF EXISTS "pgcrypto";
 ```
 
-`PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` writes no `ptah:not-described` directives,
-because a document that omits nothing describes everything. Native
-`ptah schema inspect` never writes coverage directives for the same reason;
-its separate generated-code marker is unchanged. The same directive grammar
+`PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` writes none of the three lines above,
+because a document that omits no block type describes every one. Native
+`ptah schema inspect` omits none either; its separate generated-code marker is
+unchanged. Both still write what the read itself did not describe, such as a
+role catalog the server refused, a YDB changefeed, a YDB TTL run interval or a
+Spanner change stream: that limit belongs to the description rather than to the
+rendering, and a document without it would hand the next plan a silence that
+reads as complete. The same directive grammar
 is read out of the leading comments of a `.sql` desired state, spelled
 `-- ptah:not-described ...`; no Ptah surface writes one there, because only
 the HCL rendering omits blocks.

@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -9,6 +10,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
+	"ptah.run/dialect/spanner/spannerschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
@@ -160,4 +163,42 @@ type Note struct {
 	fromHeader := must.Must(schemadiff.CompareWithDialect(t.Context(), &byHeader, live, "postgres", must.Must(builtin.New())))
 
 	c.Assert(fromAnnotation.ExtensionsRemoved, qt.DeepEquals, fromHeader.ExtensionsRemoved)
+}
+
+// ownerKindSource declines one named object of an owner's coverage kind.
+func ownerKindSource(kind coverage.Kind) string {
+	return "package entities\n\n//ptah:schema:notdescribed kind=\"" + string(kind) + "\" name=\"events\"\ntype _ struct{}\n"
+}
+
+// TestParseSource_NotDescribed_OwnerKinds_HappyPath reads every kind an owner
+// registers, such as a YDB changefeed, where the annotations carry the
+// bundled runtime's coverage vocabulary, into the common coverage set.
+func TestParseSource_NotDescribed_OwnerKinds_HappyPath(t *testing.T) {
+	annotations := must.Must(builtin.Annotations())
+	for _, kind := range slices.Concat(ydbschema.CoverageKinds(), spannerschema.CoverageKinds()) {
+		t.Run(string(kind), func(t *testing.T) {
+			c := qt.New(t)
+
+			database, err := goschema.ParseSource(annotations, "entities.go", ownerKindSource(kind))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.NotDescribed.Directives(), qt.DeepEquals, []string{
+				"ptah:not-described " + string(kind) + ` provenance=declared "events"`,
+			})
+		})
+	}
+}
+
+// TestParseSource_NotDescribed_OwnerKinds_FailurePath refuses each owner kind
+// by name where the annotations select no owner.
+func TestParseSource_NotDescribed_OwnerKinds_FailurePath(t *testing.T) {
+	for _, kind := range slices.Concat(ydbschema.CoverageKinds(), spannerschema.CoverageKinds()) {
+		t.Run(string(kind), func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := goschema.ParseSource(noOwners, "entities.go", ownerKindSource(kind))
+
+			c.Assert(err, qt.ErrorMatches, `(?s)unknown coverage kind "`+string(kind)+`".*`)
+		})
+	}
 }

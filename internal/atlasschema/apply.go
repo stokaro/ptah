@@ -716,6 +716,7 @@ func loadDesiredApplySchema(
 	if opts.LocalFilesOnly {
 		desired, err := schemafile.LoadSources(localApplySources(opts), schemafile.Options{
 			YAML:                  opts.Runtime.YAML(),
+			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
 			DatabaseURL:           conn.Info().URL,
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,

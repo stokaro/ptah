@@ -893,6 +893,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// supplies. The plan itself was computed from them.
 		desired, err = schemafile.LoadSources(atlasSchemaApplyDesiredSources(opts), schemafile.Options{
 			YAML:                  opts.runtime.YAML(),
+			CoverageVocabulary:    opts.runtime.CoverageVocabulary(),
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
 			SchemaScope:           schemaScope,

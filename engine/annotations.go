@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlext"
 )
@@ -32,8 +33,33 @@ func (r *Runtime) registerAnnotations(providers []Provider) error {
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}
-	r.annotations = set
+	if r.annotations, err = set.WithCoverageVocabulary(r.vocabulary); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
+	}
 	return nil
+}
+
+// registerCoverageKinds freezes every provider's coverage kinds into the
+// runtime's vocabulary. Two providers claiming one kind, and a provider
+// claiming a common kind, are refused.
+func (r *Runtime) registerCoverageKinds(providers []Provider) error {
+	var kinds []coverage.Kind
+	for _, provider := range providers {
+		kinds = append(kinds, provider.CoverageKinds...)
+	}
+	vocabulary, err := coverage.NewVocabulary(kinds...)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
+	}
+	r.vocabulary = vocabulary
+	return nil
+}
+
+// CoverageVocabulary returns the coverage kinds the runtime's documents may
+// name: the common kinds and those its providers register. A header or a Go
+// notdescribed declaration naming any other kind is refused by name.
+func (r *Runtime) CoverageVocabulary() coverage.Vocabulary {
+	return r.vocabulary
 }
 
 // Annotations returns the Go annotation extensions of the runtime's providers

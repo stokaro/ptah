@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/content/memory"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaartifact"
@@ -24,7 +25,7 @@ func materializedArtifact(c *qt.C, db *schemamodel.Database) string {
 		context.Background(), store, db, schemaartifact.PushOptions{Latest: true},
 	)
 	c.Assert(err, qt.IsNil)
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest")
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 	written, err := schemaartifact.Materialize(pulled, filepath.Join(c.TempDir(), "schema.hcl"))
 	c.Assert(err, qt.IsNil)

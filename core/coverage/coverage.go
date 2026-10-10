@@ -63,9 +63,11 @@ import (
 // Source adapters can handle owner-defined kinds through [HeaderExtension]
 // without adding those records to a common [Set].
 //
-// One declared kind sits outside that serialized grammar: [ReplicaTable] is
-// built and consulted in process only, and its comment carries the consequence
-// for a [Set] that holds one.
+// The constants below are the common kinds. An owner that records state it
+// does not model declares its own kinds, such as a YDB changefeed, and a run
+// accepts them through the [Vocabulary] its selected owners register. A kind
+// an owner consults in process only is left out of its registration, so no
+// document can name it.
 type Kind string
 
 // The kinds a description can decline to describe. Each one names a comparator
@@ -107,90 +109,35 @@ const (
 	Schema Kind = "schema"
 	// Sequence is a standalone sequence (CREATE SEQUENCE).
 	Sequence Kind = "sequence"
-	// ChangeStream is a Spanner change stream (CREATE CHANGE STREAM): a
-	// database object with its own lifecycle that publishes row changes to a
-	// reader outside the schema.
-	//
-	// Ptah does not model one. The kind exists so that saying so is possible:
-	// a Spanner database's description carries none of its change streams, and
-	// that silence is not a statement that it has none. Without the record the
-	// silence read as authoritative, which is how an unmodeled construct
-	// becomes a DROP (stokaro/ptah#2236).
-	//
-	// It is recorded whenever the target could have them rather than when this
-	// read found some: recording only what was found would assert that the
-	// absence of every other one is authoritative.
-	ChangeStream Kind = "change_stream"
 )
 
-// The YDB object families a YDB read records rather than describes. A read
-// records each one it meets, by the path of the object or of the table that
-// carries it, so a description's silence about them is never read as their
-// absence and nothing plans their removal. Like [ChangeStream], none of them
-// but [ReplicaTable] is consulted by a comparator or a planner, because no
-// planner writes the others.
+// The common kinds a read records for objects it met and did not describe.
 const (
-	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
-	// a server without the views capability. Every YDB line Ptah measured has
-	// it, and there the reader describes each view instead.
+	// View is a view a read records rather than describes, such as a YDB view
+	// (CREATE VIEW ... WITH (security_invoker = TRUE)) on a server without the
+	// views capability. Every YDB line Ptah measured has it, and there the
+	// reader describes each view instead.
 	View Kind = "view"
-	// ColumnTable is a YDB column-oriented table (STORE = COLUMN), or the
-	// column store that holds such tables.
-	ColumnTable Kind = "column_table"
-	// ReplicaTable is a table a YDB async replication writes, named by its
-	// path: read-only while the replication runs, and read-only for good
-	// once the replication is dropped without being failed over first. YDB
-	// marks one with the `__async_replica` attribute. A read records it
-	// rather than describing it as a table, so no plan drops, changes or
-	// creates a table at its path; the replication owns it.
-	//
-	// ReplicaTable is consulted in process rather than serialized: it is not
-	// part of the directive grammar this package encodes and decodes, so a
-	// [Set] carrying this kind does not survive a round trip through a
-	// document. Hold the record in memory and consult it there.
-	ReplicaTable Kind = "replica_table"
-	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
-	// named by the table's path and the changefeed's name.
-	Changefeed Kind = "changefeed"
-	// TTL is a table's time to live, or the part of it a description does not
-	// describe. A YDB read records, by the table's path, what a TTL carries
-	// beyond the row deletion policy Ptah models: the run interval, which only
-	// the SDK and the CLI set, and a column table's tiering policy. A document
-	// in a format with no spelling for a TTL, HCL or DBML, records the whole
-	// kind, and the comparison then keeps the policy the database holds for
-	// each table, through a rebuild too.
-	TTL Kind = "ttl"
-	// TableOption is a YDB table's storage settings Ptah does not model,
-	// where they differ from what a new table is given: its tablet's commit
-	// log pools, an external pool, external blobs. A YDB read records them by
-	// the table's path. A table's partitioning, read replicas and key bloom
-	// filter are modeled, and a description that leaves them out, as HCL and
-	// DBML always do, keeps what the table holds.
-	TableOption Kind = "table_option"
 	// Grant is a permission granted on an object. A YDB read records the
 	// whole kind, since it does not read the access model.
 	Grant Kind = "grant"
 )
 
-// kinds is every [Kind] the serialized directive grammar accepts, in the order
-// [ParseKind]'s refusal message lists them. [ReplicaTable] is not in it; its
-// constant says what that costs a serialized [Set].
+// kinds is every common [Kind] the serialized directive grammar accepts, in
+// sorted order. An owner's kinds join it through a [Vocabulary].
 var kinds = []Kind{
-	Changefeed, ChangeStream, ColumnTable, Composite, DefaultPrivilege, Domain,
+	Composite, DefaultPrivilege, Domain,
 	Extension, Grant, Policy, Range,
-	Role, Schema, Sequence, TableOption,
-	TTL, View,
+	Role, Schema, Sequence,
+	View,
 }
 
-// ParseKind resolves a serialized kind token. It refuses anything not in the
-// closed list rather than returning a zero value, so a directive a build does
-// not understand fails loudly instead of silently covering nothing.
+// ParseKind resolves a serialized kind token against the common kinds alone,
+// as the zero [Vocabulary] does. It refuses anything else rather than
+// returning a zero value, so a directive a build does not understand fails
+// loudly instead of silently covering nothing.
 func ParseKind(token string) (Kind, error) {
-	kind := Kind(strings.ToLower(strings.TrimSpace(token)))
-	if slices.Contains(kinds, kind) {
-		return kind, nil
-	}
-	return "", fmt.Errorf("unknown coverage kind %q: valid kinds are %s", token, tokenList(kinds))
+	return Vocabulary{}.ParseKind(token)
 }
 
 // Object is one thing a description does not describe.
@@ -245,13 +192,10 @@ func (o Object) Directive() string {
 	return line
 }
 
-// Validate reports whether every token in the record is one this build
-// understands. An unknown one is refused rather than tolerated, for the reason
+// validateAttributes reports a reason or a provenance this build does not
+// understand. An unknown one is refused rather than tolerated, for the reason
 // [ParseKind] gives.
-func (o Object) Validate() error {
-	if _, err := ParseKind(string(o.Kind)); err != nil {
-		return err
-	}
+func (o Object) validateAttributes() error {
 	if !o.Reason.Valid() {
 		return fmt.Errorf("unknown coverage reason %q: valid reasons are %s", o.Reason, tokenList(reasons))
 	}
@@ -396,16 +340,6 @@ func (s Set) Merge(other Set) Set {
 	return out.Normalize()
 }
 
-// Validate reports the first record this build does not understand.
-func (s Set) Validate() error {
-	for _, object := range s.Objects {
-		if err := object.Validate(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s Set) clone() Set {
 	return Set{Objects: slices.Clone(s.Objects)}
 }
@@ -499,9 +433,10 @@ func (s Set) Directives() []string {
 // can use: HCL accepts the first two, SQL the third.
 var commentPrefixes = []string{"//", "#", "--"}
 
-// HeaderExtension consumes a parsed directive whose kind is outside the common
-// coverage vocabulary. It returns true only when it recognizes and records the
-// directive in its owner's coverage. Common kinds never reach this callback.
+// HeaderExtension consumes a parsed directive whose kind is outside the run's
+// [Vocabulary]. It returns true only when it recognizes and records the
+// directive in its owner's coverage. Kinds the vocabulary holds never reach
+// this callback.
 // Syntax, reason, and provenance are validated before it is called. A caller
 // must discard captured extension state if DecodeHeader returns an error.
 type HeaderExtension func(Object) (bool, error)
@@ -516,10 +451,12 @@ type HeaderExtension func(Object) (bool, error)
 // asked for -- a silent, destructive false negative in the one direction this
 // package must never fail.
 //
-// extension handles owner-defined source kinds without adding them to the
-// common Set. Nil recognizes common kinds only. An unclaimed kind or a callback
-// error returns an empty Set and an error, never a partially decoded result.
-func DecodeHeader(document string, extension HeaderExtension) (Set, error) {
+// vocabulary is the kinds the Set may hold: the common kinds and those of the
+// run's selected owners. extension handles owner-defined source kinds without
+// adding them to the common Set. Nil recognizes the vocabulary only. An
+// unclaimed kind or a callback error returns an empty Set and an error, never
+// a partially decoded result.
+func DecodeHeader(document string, vocabulary Vocabulary, extension HeaderExtension) (Set, error) {
 	var set Set
 	for body := range HeaderComments(document) {
 		object, ok, err := parseDirective(body)
@@ -529,7 +466,7 @@ func DecodeHeader(document string, extension HeaderExtension) (Set, error) {
 		if !ok {
 			continue
 		}
-		common, err := commonDirective(object, extension)
+		common, err := commonDirective(object, vocabulary, extension)
 		if err != nil {
 			return Set{}, err
 		}
@@ -540,8 +477,8 @@ func DecodeHeader(document string, extension HeaderExtension) (Set, error) {
 	return set.Normalize(), nil
 }
 
-func commonDirective(object Object, extension HeaderExtension) (bool, error) {
-	_, err := ParseKind(string(object.Kind))
+func commonDirective(object Object, vocabulary Vocabulary, extension HeaderExtension) (bool, error) {
+	_, err := vocabulary.ParseKind(string(object.Kind))
 	if err == nil {
 		return true, nil
 	}

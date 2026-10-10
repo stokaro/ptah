@@ -2411,10 +2411,25 @@ looked at becomes a `DROP`.
 
 Feature models use `schemaext.Coverage`, whose zero value is unknown.
 Resource pools and classifiers have no common coverage kind.
-`coverage.DecodeHeader` takes an explicit `HeaderExtension` callback, or nil
-for common kinds only. The callback receives validated directives outside the
-common vocabulary and records them in the owning feature's coverage. It cannot
-override common kinds. Unclaimed kinds and callback errors refuse the document.
+
+The constants of `core/coverage` are the common kinds. An owner that records
+state it does not model declares its own kinds, such as `ydbschema.CoverageChangefeed`
+or `spannerschema.CoverageChangeStream`, and registers the ones a document may
+name in `engine.Provider.CoverageKinds`. `Runtime.CoverageVocabulary` returns a
+`coverage.Vocabulary` of the common kinds and every selected provider's; two
+providers claiming one kind, or a provider claiming a common kind, is an
+invalid registration. The zero vocabulary holds the common kinds only, so an
+owner's kind is refused by name unless its owner was selected. `coverage.Runtime`
+is the one-method interface a reader of document headers takes it through;
+`engine.SchemaRuntime` includes it, and the annotation set a runtime builds
+carries the same vocabulary for a Go `notdescribed` declaration.
+
+`coverage.DecodeHeader` takes the vocabulary and an explicit `HeaderExtension`
+callback, or nil for the vocabulary only. The callback receives validated
+directives outside the vocabulary and records them in the owning feature's
+coverage. It cannot override a kind the vocabulary holds. Unclaimed kinds and
+callback errors refuse the document. `Vocabulary.Validate` checks a set's
+records.
 `Object.Directive` encodes an owner-validated record without adding it to the
 common set. Split exports carry recognized owner records, including their
 reason, provenance, and exact name, in every output file.

@@ -648,3 +648,15 @@ v0.13.0 ptah.run/catalog
 v0.13.0 ptah.run/core/ast
 v0.13.0 ptah.run/core/coverage
 v0.13.0 ptah.run/core/schemamodel
+
+# #4140 moves the coverage kinds of YDB and Spanner state Ptah does not model
+# to their owners (ydbschema, spannerschema) and takes owner kinds into the
+# header grammar through a vocabulary the selected runtime registers.
+# coverage.ColumnTable, ReplicaTable, Changefeed, TTL, TableOption and
+# ChangeStream are removed without aliases; DecodeHeader takes a Vocabulary;
+# Object.Validate and Set.Validate give way to Vocabulary.Validate; and
+# engine.SchemaRuntime includes coverage.Runtime. This changes the Go API;
+# pre-v1, so no compatibility is owed under the authorized #4140/#4204
+# clean-break policy.
+v0.13.0 ptah.run/core/coverage
+v0.13.0 ptah.run/engine

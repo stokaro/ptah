@@ -623,7 +623,11 @@ includes removing it.
 The source parser recognizes common kinds and the YDB kinds `coordination_node`,
 `streaming_query`, `resource_pool`, `resource_pool_classifier`, `secret`,
 `topic`, `external_data_source` and `external_table`. Dots in pool and
-classifier names are literal characters.
+classifier names are literal characters. It also recognizes the kinds an owner
+registers for state its read records and does not model: the YDB kinds
+`changefeed`, `column_table`, `table_option` and `ttl`, and the Spanner kind
+`change_stream`. A run that does not select the owner refuses its kinds by
+name, here and in a document's `ptah:not-described` header.
 
 A secret, a topic, an external data source or an external table is named by
 its path relative to the database root, as YDB writes it: a slash separates

@@ -289,7 +289,7 @@ func TestDirectivesCarryReasonAndProvenanceAcrossTheProcessBoundary(t *testing.T
 					fmt.Fprintf(&document, "// %s\n", directive)
 				}
 
-				decoded, err := coverage.DecodeHeader(document.String(), nil)
+				decoded, err := coverage.DecodeHeader(document.String(), coverage.Vocabulary{}, nil)
 				c.Assert(err, qt.IsNil)
 				c.Assert(decoded, qt.DeepEquals, set)
 
@@ -353,7 +353,7 @@ func TestDirectivesOmitUnspecifiedAttributes(t *testing.T) {
 			for _, directive := range test.set.Directives() {
 				fmt.Fprintf(&document, "// %s\n", directive)
 			}
-			decoded, err := coverage.DecodeHeader(document.String(), nil)
+			decoded, err := coverage.DecodeHeader(document.String(), coverage.Vocabulary{}, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(decoded, qt.DeepEquals, test.set)
 		})
@@ -406,7 +406,7 @@ func TestDecodeHeaderRefusesMalformedAttributes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := coverage.DecodeHeader(test.document, nil)
+			got, err := coverage.DecodeHeader(test.document, coverage.Vocabulary{}, nil)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.IsZero(), qt.IsTrue)
@@ -526,7 +526,7 @@ func TestValidate_HappyPath(t *testing.T) {
 		},
 	)
 
-	c.Assert(set.Validate(), qt.IsNil)
+	c.Assert(coverage.Vocabulary{}.Validate(set), qt.IsNil)
 }
 
 // TestValidate_FailurePath pins the refusal. A record carrying a token outside
@@ -561,7 +561,7 @@ func TestValidate_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := test.set.Validate()
+			err := coverage.Vocabulary{}.Validate(test.set)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

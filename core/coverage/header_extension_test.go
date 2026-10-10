@@ -16,7 +16,7 @@ func TestHeaderRoutesOwnedKindsWithoutAddingCommonCoverage(t *testing.T) {
 -- ptah:not-described NATIVE_KIND reason=not-inspected provenance=observed "a.b"
 CREATE TABLE example (id int);
 -- ptah:not-described native_kind "inside SQL"
-`, func(object coverage.Object) (bool, error) {
+`, coverage.Vocabulary{}, func(object coverage.Object) (bool, error) {
 		owned = append(owned, object)
 		return object.Kind == "native_kind", nil
 	})
@@ -38,7 +38,7 @@ func TestHeaderRefusesUnknownOwnedKindsAndMalformedAttributes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			calls := 0
-			got, err := coverage.DecodeHeader(test.document, func(object coverage.Object) (bool, error) {
+			got, err := coverage.DecodeHeader(test.document, coverage.Vocabulary{}, func(object coverage.Object) (bool, error) {
 				calls++
 				return object.Kind == "native_kind", nil
 			})
@@ -52,7 +52,7 @@ func TestHeaderRefusesUnknownOwnedKindsAndMalformedAttributes(t *testing.T) {
 func TestHeaderReturnsOwnerFailureWithoutCommonPrefix(t *testing.T) {
 	c := qt.New(t)
 	failure := errors.New("owner refused the source limit")
-	got, err := coverage.DecodeHeader("-- ptah:not-described schema\n-- ptah:not-described native_kind", func(coverage.Object) (bool, error) {
+	got, err := coverage.DecodeHeader("-- ptah:not-described schema\n-- ptah:not-described native_kind", coverage.Vocabulary{}, func(coverage.Object) (bool, error) {
 		return false, failure
 	})
 	c.Assert(err, qt.ErrorIs, failure)

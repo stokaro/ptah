@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/content/memory"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
@@ -45,7 +46,7 @@ func TestPushToPullFrom_CarriesDeclaredRows(t *testing.T) {
 	_, err := schemaartifact.PushTo(context.Background(), store, db, schemaartifact.PushOptions{Tags: []string{"stable"}})
 	c.Assert(err, qt.IsNil)
 
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "stable")
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "stable", coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(pulled.Database.ManagedData, qt.HasLen, 1)
 	declaration := pulled.Database.ManagedData[0]
@@ -68,9 +69,9 @@ func TestPushToPullFrom_CarriesDeclaredRows(t *testing.T) {
 func TestCaptureRendersTheSameLayerTwice(t *testing.T) {
 	c := qt.New(t)
 
-	first, err := schemaartifact.Capture(managedUsersDatabase(), nil)
+	first, err := schemaartifact.Capture(managedUsersDatabase(), nil, coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
-	second, err := schemaartifact.Capture(managedUsersDatabase(), nil)
+	second, err := schemaartifact.Capture(managedUsersDatabase(), nil, coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 
 	firstLayer, err := fs.ReadFile(first, schemaartifact.ManagedDataFileName)
@@ -127,7 +128,7 @@ func TestCaptureRefusesUnusableRows(t *testing.T) {
 				Table: "users", Keys: test.keys, File: "users.yaml", Rows: test.rows,
 			}}
 
-			snapshot, err := schemaartifact.Capture(db, nil)
+			snapshot, err := schemaartifact.Capture(db, nil, coverage.Vocabulary{})
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(snapshot, qt.IsNil)
@@ -183,7 +184,7 @@ func TestMaterialize_WritesTheRowsBesideTheSchema(t *testing.T) {
 		context.Background(), store, managedUsersDatabase(), schemaartifact.PushOptions{Latest: true},
 	)
 	c.Assert(err, qt.IsNil)
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest")
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 
 	directory := t.TempDir()
@@ -214,7 +215,7 @@ func TestMaterialize_WritesOneFileWhenNothingDeclaresRows(t *testing.T) {
 		context.Background(), store, usersDatabase(), schemaartifact.PushOptions{Latest: true},
 	)
 	c.Assert(err, qt.IsNil)
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest")
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 
 	directory := t.TempDir()
@@ -236,7 +237,7 @@ func TestMaterialize_LeavesNoSchemaWithoutItsRows(t *testing.T) {
 		context.Background(), store, managedUsersDatabase(), schemaartifact.PushOptions{Latest: true},
 	)
 	c.Assert(err, qt.IsNil)
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest")
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 	directory := t.TempDir()
 	blocker := filepath.Join(directory, schemaartifact.ManagedDataFileName)

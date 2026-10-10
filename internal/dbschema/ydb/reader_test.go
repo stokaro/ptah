@@ -502,11 +502,11 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	c.Assert(db.FeatureCoverage.Lookup(ydbschema.ColumnFamiliesKind, tables.TableParts("app", "t")).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(db.FeatureCoverage.Lookup(ydbschema.ColumnFamiliesKind, tables.TableParts("app", "plain")).State, qt.Equals, schemaext.Complete)
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
-		observed(coverage.TTL, "app.t"),
-		observed(coverage.TableOption, "app.t"),
-		observed(coverage.ColumnTable, "olap"),
+		observed(ydbschema.CoverageTTL, "app.t"),
+		observed(ydbschema.CoverageTableOption, "app.t"),
+		observed(ydbschema.CoverageColumnTable, "olap"),
 		observed(coverage.Sequence, "seq"),
-		observed(coverage.ColumnTable, "store"),
+		observed(ydbschema.CoverageColumnTable, "store"),
 	))
 	c.Assert(db.FeatureCoverage.Lookup(ydbreplication.ReplicationKind, ydbreplication.ReplicationRef("", "repl")), qt.DeepEquals,
 		schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbreplication.ServiceUnavailableReason})
@@ -665,8 +665,8 @@ func TestReader_RecordsEachStorageSetting(t *testing.T) {
 
 			db := readFrom(c, source)
 
-			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsFalse)
-			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsTrue)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageTableOption, "t"), qt.IsFalse)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageTTL, "t"), qt.IsTrue)
 		})
 	}
 }
@@ -774,7 +774,7 @@ func TestReader_ReadsTableSettings(t *testing.T) {
 
 			c.Assert(db.Tables, qt.HasLen, 1)
 			c.Assert(readSettings(c, db.Tables[0]), qt.DeepEquals, test.want)
-			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsTrue)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageTableOption, "t"), qt.IsTrue)
 		})
 	}
 }
@@ -891,7 +891,7 @@ func TestReader_ReadsTheTTL(t *testing.T) {
 			read, _, err := schemaext.FacetAs[*ydbschema.ObservedTTL](db.Tables[0].Facets, ydbschema.TTLKind)
 			c.Assert(err, qt.IsNil)
 			c.Assert(read, qt.DeepEquals, test.want)
-			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsTrue)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageTTL, "t"), qt.IsTrue)
 			c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "t")).State,
 				qt.Equals, schemaext.Complete)
 		})
@@ -946,7 +946,7 @@ func TestReader_RecordsExpiry(t *testing.T) {
 
 			db := readFrom(c, source)
 
-			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsFalse)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageTTL, "t"), qt.IsFalse)
 		})
 	}
 }
@@ -987,7 +987,7 @@ func TestReader_PlainTableRecordsNoSetting(t *testing.T) {
 
 	db := readFrom(c, source)
 
-	for _, kind := range []coverage.Kind{coverage.TTL, coverage.Changefeed, coverage.TableOption} {
+	for _, kind := range []coverage.Kind{ydbschema.CoverageTTL, ydbschema.CoverageChangefeed, ydbschema.CoverageTableOption} {
 		c.Assert(db.NotDescribed.Describes(kind, "t"), qt.IsTrue, qt.Commentf("kind %s", kind))
 	}
 }

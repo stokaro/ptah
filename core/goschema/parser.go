@@ -530,7 +530,7 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 		s.limits = append(s.limits, coverage.Object{Kind: coverage.Kind(kv["kind"]), Name: kv["name"], Provenance: coverage.Declared})
 		return nil
 	}
-	kind, err := coverage.ParseKind(kv["kind"])
+	kind, err := s.annotations.CoverageVocabulary().ParseKind(kv["kind"])
 	if err != nil {
 		return &ptaherr.ParseError{
 			File:      ctx.file,

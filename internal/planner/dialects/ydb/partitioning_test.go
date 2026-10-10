@@ -320,7 +320,7 @@ func TestGenerateMigrationAST_TablePartitioning_RebuildIgnoresAFormatLimit(t *te
 	diff := notDescribing(modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
-	}), coverage.Object{Kind: coverage.TableOption, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact})
+	}), coverage.Object{Kind: ydbschema.CoverageTableOption, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact})
 
 	got := renderRebuild(c, capability.YDB262(), diff)
 

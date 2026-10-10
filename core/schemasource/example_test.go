@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemasource"
 	"ptah.run/engine/builtin"
 	"ptah.run/sourceformats"
@@ -30,7 +31,7 @@ func ExampleRun() {
 	// is one element and no quoting or expansion is applied. The first two
 	// environment entries select the fixture's behavior; GORACE keeps a
 	// race-instrumented run from sleeping at exit.
-	db, err := schemasource.Run(context.Background(), sourceformats.New(runtime.YAML()), schemasource.Command{
+	db, err := schemasource.Run(context.Background(), sourceformats.New(runtime.YAML(), coverage.Vocabulary{}), schemasource.Command{
 		Args: []string{os.Args[0], "-test.run=TestHelperProcess"},
 		Env: []string{
 			"GO_WANT_HELPER_PROCESS=1",

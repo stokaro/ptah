@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/content/memory"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/ociartifact"
@@ -88,7 +89,7 @@ func pushArtifactLayers(c *qt.C, ctx context.Context, reference, managedDataMedi
 		Tags: []string{"source"},
 	})
 	c.Assert(err, qt.IsNil)
-	published, err := schemaartifact.PullFrom(ctx, store, "source")
+	published, err := schemaartifact.PullFrom(ctx, store, "source", coverage.Vocabulary{})
 	c.Assert(err, qt.IsNil)
 	// The annotations come from the publish, so the re-push differs from a
 	// published artifact in the layer's media type and in nothing else.

@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbreplication"
+	ydbmodel "ptah.run/dialect/ydb/ydbschema"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -162,7 +163,7 @@ func TestReader_DescribesReplications_HappyPath(t *testing.T) {
 	})
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
-		coverage.Object{Kind: coverage.ReplicaTable, Name: "replica.accounts", Reason: coverage.Unsupported,
+		coverage.Object{Kind: ydbmodel.CoverageReplicaTable, Name: "replica.accounts", Reason: coverage.Unsupported,
 			Provenance: coverage.Observed},
 	))
 }

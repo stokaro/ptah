@@ -10,7 +10,6 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -150,7 +149,7 @@ func TestReader_ReadsTheColumnFamilies(t *testing.T) {
 			c.Assert(db.Tables, qt.HasLen, 1)
 			c.Assert(readFamilies(c, db.Tables[0]), qt.DeepEquals, test.want)
 			c.Assert(familyKnowledge(db), qt.Equals, schemaext.Complete)
-			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsTrue)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageTableOption, "t"), qt.IsTrue)
 		})
 	}
 }
@@ -190,7 +189,7 @@ func TestReader_RecordsColumnFamiliesItDoesNotRead(t *testing.T) {
 			c.Assert(db.Tables, qt.HasLen, 1)
 			c.Assert(readFamilies(c, db.Tables[0]), qt.IsNil)
 			c.Assert(familyKnowledge(db), qt.Equals, schemaext.Unrepresentable)
-			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsTrue)
+			c.Assert(db.NotDescribed.Describes(ydbschema.CoverageTableOption, "t"), qt.IsTrue)
 		})
 	}
 }
