@@ -51,4 +51,3 @@ func RefuseSerialSequence(dialect string, node *ast.AlterSerialSequenceNode) err
 			"capability %s, unavailable on this %s target", node.Column, node.Table, capability.SerialSequenceOptions, dialect),
 	}
 }
-

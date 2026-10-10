@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -111,6 +112,9 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 	}
 	if policy, ok := object.Value.(*pgpolicy.DesiredPolicy); ok {
 		return ctx.capturePolicy(object, policy)
+	}
+	if policy, ok := object.Value.(*mssqlschema.DesiredSecurityPolicy); ok {
+		return ctx.captureSecurityPolicy(object, policy)
 	}
 	if aggregate, ok := object.Value.(*tsschema.DesiredContinuousAggregate); ok && isTimescaleObject(object.Ref) {
 		return ctx.captureContinuousAggregate(object, aggregate)

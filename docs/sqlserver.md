@@ -147,8 +147,9 @@ ever silently dropped.
 
 The SQL Server support is deliberately conservative:
 
-- No PostgreSQL-style extensions, row-level security policies, roles/grants, or
-  materialized views.
+- No PostgreSQL-style extensions, roles/grants, or materialized views.
+  Row-level security is a `SECURITY POLICY` of the owner in
+  `dialect/mssql/mssqlschema`, not PostgreSQL's policy model.
 - Column drift planning supports direct `ALTER COLUMN` only for type and
   nullability changes. Default, generated expression, unique, and CHECK changes
   require explicit constraint-aware planning before they can be emitted safely.

@@ -329,12 +329,16 @@ leaves the default where it is.
 ## Limitations
 
 - No PostgreSQL-style extensions and no materialized views.
-- Row-level security renders as `CREATE SECURITY POLICY`, and only where T-SQL
-  has a form for the declaration. The `USING` predicate must invoke a two-part
-  function, and a policy carries no `TO` role list, because SQL Server scopes a
-  predicate inside the function body. A declaration outside that shape is named
-  in the output as not created, rather than rendered into something the engine
-  would refuse or accept with a different meaning.
+- Row-level security is a `SECURITY POLICY`, declared by a Go row-level
+  security annotation scoped to SQL Server. Its `USING` is a filter predicate
+  and its `WITH CHECK` a block predicate, each a call of a two-part inline
+  table-valued function, and `FOR INSERT`, `UPDATE` or `DELETE` names the
+  block predicate's operation. A declaration T-SQL has no form for, such as
+  one with a `TO` role list, an inline expression, or a table switch, is
+  refused when the schema is read, because SQL Server scopes a predicate
+  inside the function body. SQL Server stores some predicate arguments
+  rewritten, such as a `CAST`; a comparison against a connected database asks
+  the server how it stores the declaration.
 - Column drift planning handles type, nullability, and default changes (see
   [Column defaults](#column-defaults)); generated-expression, unique, and
   `CHECK` changes need a manual migration.

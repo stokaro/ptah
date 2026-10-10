@@ -108,6 +108,12 @@ func TestComparePolicy(t *testing.T) {
 			Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id"), block(orders, mssqlschema.BeforeDelete, "CONVERT([int],[tenant])+(0)")}}},
 		{name: "a predicate fewer", want: mssqlschema.Differ, declared: mssqlschema.DesiredSecurityPolicy{
 			Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id")}}},
+		{name: "a rewritten argument the server spelled", want: mssqlschema.Agree, declared: mssqlschema.DesiredSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id"), block(orders, mssqlschema.AfterInsert, "CAST(tenant AS int) + 0")},
+			Normalized: []mssqlschema.Predicate{filter(orders, "[tenant_id]"), block(orders, mssqlschema.AfterInsert, "CONVERT([int],[tenant])+(0)")}}},
+		{name: "a changed argument the server spelled", want: mssqlschema.Differ, declared: mssqlschema.DesiredSecurityPolicy{
+			Predicates: []mssqlschema.Predicate{filter(orders, "tenant_id"), block(orders, mssqlschema.AfterInsert, "CAST(tenant AS int) + 1")},
+			Normalized: []mssqlschema.Predicate{filter(orders, "[tenant_id]"), block(orders, mssqlschema.AfterInsert, "CONVERT([int],[tenant])+(1)")}}},
 		{name: "another function", want: mssqlschema.Differ, declared: mssqlschema.DesiredSecurityPolicy{
 			Predicates: []mssqlschema.Predicate{
 				{Type: mssqlschema.Filter, Function: mssqlschema.ObjectName{Schema: "rls", Name: "fn_other"}, Arguments: []string{"tenant_id"}, Table: orders},

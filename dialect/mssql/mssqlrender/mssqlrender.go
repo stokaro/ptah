@@ -77,6 +77,15 @@ func render(_ renderer.ExtensionContext, value *mssqlast.SecurityPolicy) ([]stri
 	return statements, nil
 }
 
+// CreateStatement is the CREATE SECURITY POLICY a plan runs to create policy
+// under name: every predicate in canonical order, its arguments as declared,
+// and the state, schema binding and replication behavior named even where
+// they are SQL Server's defaults. A normalization probe runs the same
+// statement to ask the server how it stores the declaration.
+func CreateStatement(name mssqlschema.ObjectName, policy *mssqlschema.DesiredSecurityPolicy) string {
+	return create(name.String(), policy)
+}
+
 // create writes CREATE SECURITY POLICY with every predicate in canonical order
 // and every value named.
 func create(name string, policy *mssqlschema.DesiredSecurityPolicy) string {
@@ -106,7 +115,7 @@ func alter(name string, clauses []string) string {
 func clause(verb string, predicate mssqlschema.Predicate) string {
 	text := verb + " " + string(predicate.Type) + " PREDICATE "
 	if verb != "DROP" {
-		text += predicate.Function.String() + "(" + strings.Join(predicate.Arguments, ", ") + ") "
+		text += predicate.Invocation() + " "
 	}
 	text += "ON " + predicate.Table.String()
 	if predicate.Operation != "" {

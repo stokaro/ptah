@@ -46,8 +46,6 @@ func TestReverseSchemaDiff_ARolledBackRLSModificationRestoresThePriorPredicate(t
 	c.Assert(reversed[0].Changes["using_expression"], qt.Equals, "tenant_id = 2 -> tenant_id = 1")
 	c.Assert(reversed[0].Desired.UsingExpression, qt.Equals, "tenant_id = 1",
 		qt.Commentf("the rollback recreates the predicate the database held"))
-	c.Assert(reversed[0].TableSchema, qt.Equals, "sales",
-		qt.Commentf("and the schema its table is declared under there, which SQL Server addresses it by"))
 }
 
 // TestReverseSchemaDiff_ARolledBackRLSAdditionCarriesNoOperand is the third.
@@ -67,8 +65,7 @@ func TestReverseSchemaDiff_ARolledBackRLSAdditionCarriesNoOperand(t *testing.T) 
 	forward := &difftypes.SchemaDiff{
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
 			PolicyName: "tenant", TableName: "orders",
-			Desired:     schemamodel.RLSPolicy{Name: "tenant", Table: "orders", PolicyFor: "ALL"},
-			TableSchema: "sales",
+			Desired: schemamodel.RLSPolicy{Name: "tenant", Table: "orders", PolicyFor: "ALL"},
 		}},
 	}
 
@@ -80,5 +77,4 @@ func TestReverseSchemaDiff_ARolledBackRLSAdditionCarriesNoOperand(t *testing.T) 
 	c.Assert(reversed.RLSPoliciesRemoved[0].PolicyName, qt.Equals, "tenant")
 	c.Assert(reversed.RLSPoliciesRemoved[0].TableName, qt.Equals, "orders")
 	c.Assert(reversed.RLSPoliciesRemoved[0].Desired, qt.DeepEquals, schemamodel.RLSPolicy{})
-	c.Assert(reversed.RLSPoliciesRemoved[0].TableSchema, qt.Equals, "")
 }

@@ -77,24 +77,22 @@ func (f policyBindingFixture) predicate(function, table, argument string) mssqls
 		Arguments: []string{argument}, Table: mssqlschema.ObjectName{Schema: f.schema, Name: table}}
 }
 
-// observed is the policy as a read reports it once the owner reads policies:
-// the catalog's bracketed arguments, enabled and schema bound.
+// observed is the policy as the reader reports it: the catalog's bracketed
+// arguments, enabled and schema bound.
 func (f policyBindingFixture) observed() *mssqlschema.ObservedSecurityPolicy {
 	return &mssqlschema.ObservedSecurityPolicy{Predicates: []mssqlschema.Predicate{
 		f.predicate("fn", "orders", "[tenant_id]"), f.predicate("fn", "invoices", "[tenant_id]"),
 	}, Enabled: true, SchemaBinding: true}
 }
 
-// read reads the schemas named and puts the policy where the owner's reader
-// will: as a feature object, with the common path's own record of it removed.
+// read reads the schemas named and adds the policy as the reader reports it.
+// The policy lives in the schema of its functions, which the read leaves out:
+// reading it would report the functions too, and a declaration that does not
+// manage them would drop them.
 func (f policyBindingFixture) read(c *qt.C, schemas ...string) *catalog.Database {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(context.Background(), f.conn, schemas)
 	c.Assert(err, qt.IsNil)
-	live.RLSPolicies = nil
-	for i := range live.Tables {
-		live.Tables[i].RLSEnabled = false
-	}
 	live.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(mssqlschema.ObservedSecurityPolicyObject(
 		mssqlschema.SecurityPolicyRef(f.rls, "tenancy"), *f.observed()))))
 	live.FeatureCoverage = must.Must(mssqlschema.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))

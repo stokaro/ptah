@@ -3835,16 +3835,16 @@ func buildSQLServer2022() Capabilities {
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,
-		// RowLevelSecurity is on because all three halves the key requires now
-		// exist for this target: the renderer emits CREATE/DROP SECURITY
-		// POLICY, internal/dbschema/mssql reads sys.security_policies joined
-		// to sys.security_predicates back into DBSchema.RLSPolicies, and the
-		// shared planner plans them. The engine has had it since 2016
-		// (stokaro/ptah#1699).
+		// RowLevelSecurity is on because all three halves the key requires
+		// exist for this target, in the security policy owner of
+		// dialect/mssql: it renders CREATE, ALTER and DROP SECURITY POLICY,
+		// internal/dbschema/mssql reads sys.security_policies joined to
+		// sys.security_predicates into its observations, and it plans the
+		// changes. The engine has had it since 2016 (stokaro/ptah#1699).
 		//
 		// What the key does not claim is that a PostgreSQL policy runs here
 		// unchanged. It cannot: T-SQL rejects an inline predicate expression
-		// outright, so a declaration carrying one is named and skipped.
+		// outright, so a declaration carrying one is refused at its source.
 		RowLevelSecurity:         true,
 		Hypertables:              false,
 		ContinuousAggregates:     false,

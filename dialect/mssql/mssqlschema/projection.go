@@ -87,10 +87,23 @@ func CompareInvocation(semantics identifier.Semantics, declared, observed Predic
 // differs, when a slot is held on one side only, or when an invocation
 // Differs. It is Undecided when every slot pairs and some invocation is
 // Undecided; the reason then names that predicate and both spellings.
+//
+// A declaration carrying the server's spelling of its predicates
+// ([DesiredSecurityPolicy.Normalized]) is compared by that spelling. Both
+// sides then come from one server, so an invocation it does not spell the way
+// the catalog holds it Differs rather than being Undecided.
 func ComparePolicy(semantics identifier.Semantics, declared *DesiredSecurityPolicy, observed *ObservedSecurityPolicy) (Agreement, string) {
 	enabled, schemaBinding, notForReplication := declared.Resolved()
 	if enabled != observed.Enabled || schemaBinding != observed.SchemaBinding || notForReplication != observed.NotForReplication ||
 		len(declared.Predicates) != len(observed.Predicates) {
+		return Differ, ""
+	}
+	if declared.Normalized != nil {
+		spelled := declared.Copy()
+		spelled.Predicates, spelled.Normalized = spelled.Normalized, nil
+		if agreement, reason := ComparePolicy(semantics, spelled, observed); agreement != Undecided {
+			return agreement, reason
+		}
 		return Differ, ""
 	}
 	result, reason := Agree, ""

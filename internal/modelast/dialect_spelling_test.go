@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
@@ -29,12 +30,13 @@ func acceptedSpellings(c *qt.C) []string {
 }
 
 // convertedStatements is the conversion this test compares: the AST that
-// modelast lowers a schema for a dialect spelling, rendered to SQL. A render error is
+// modelast lowers a schema for a dialect spelling, projected onto its engine
+// by [scopedTo], rendered to SQL. A render error is
 // folded into the compared string instead of failing the test, so a dialect that
 // refuses part of the fixture still contributes a value both spellings of that
 // engine must agree on.
 func convertedStatements(database schemamodel.Database, dialect string) []string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
+	nodes := must.Must(modelast.CollectDatabase(scopedTo(database, dialect), dialect, modelast.Lowering{Context: context.Background(), Runtime: must.Must(builtin.New())}))
 	rendered := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		sql, err := builtin.RenderSQL(dialect, node)
@@ -100,12 +102,20 @@ func TestCollectDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *te
 	c.Assert(divergent, qt.HasLen, 0, qt.Commentf("these spellings convert differently from their own canonical name"))
 }
 
+// scopedTo projects database onto dialect's engine, as every render entry
+// point does, so an object scoped to another target is left out.
+func scopedTo(database schemamodel.Database, dialect string) schemamodel.Database {
+	selection := must.Must(schemaext.NewTargetSelection(platform.NormalizeDialect(dialect)))
+	return *must.Must(schemamodel.ScopeToTarget(&database, selection))
+}
+
 // nodeKinds is the sequence of AST node types a conversion produces. It is the
 // converter's whole output as far as this comparison cares: which object kinds
 // were emitted, in which order. Rendering is deliberately not involved -- see
 // the test below for why.
 func nodeKinds(database schemamodel.Database, dialect string) []string {
-	nodes := must.Must(modelast.CollectDatabase(database, dialect, modelast.Lowering{Context: context.Background()}))
+	nodes := must.Must(modelast.CollectDatabase(scopedTo(database, dialect), dialect,
+		modelast.Lowering{Context: context.Background(), Runtime: must.Must(builtin.New())}))
 	kinds := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		kinds = append(kinds, fmt.Sprintf("%T", node))

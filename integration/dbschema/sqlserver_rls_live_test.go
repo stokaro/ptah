@@ -11,32 +11,34 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/catalog"
+	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
-	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
 
-// TestSQLServerLiveRLSRoundTrip is the test the RowLevelSecurity capability
-// could not have been flipped without.
+// TestSQLServerLiveRLSRoundTrip declares a security policy the way an author
+// does, as a row-level security annotation scoped to SQL Server, applies it,
+// reads it back, and compares again: the second comparison must plan nothing.
 //
-// The key promises render, read back and plan together, and the failure when
-// one is missing is not a compile error but an apply loop that plans the same
-// policy forever. This target has two ways to fall into that, and both are
-// live-only:
+// The failure it guards against is an apply loop, which no offline assertion
+// sees:
 //
-//   - the target of a predicate has to be a two-part name, so a renderer that
-//     emits `ON [t]` produces a statement the engine refuses with
-//     `Cannot schema bind security policy`, which no offline assertion sees;
-//   - sys.security_predicates hands the predicate back fully bracketed --
-//     `([dbo].[fn_tenant]([tenant]))` for a policy created from
-//     `dbo.fn_tenant(tenant)` -- so a reader that returns the catalog spelling
-//     verbatim reports using_expression as changed on every run.
+//   - the target of a predicate has to be a two-part name, so a statement
+//     that writes `ON [t]` is refused with `Cannot schema bind security
+//     policy`;
+//   - sys.security_predicates hands every argument back rewritten --
+//     `[tenant]` for `tenant`, and `CONVERT([int],[tenant])+(0)` for
+//     `CAST(tenant AS int) + 0` -- so a comparison that takes the catalog's
+//     spelling at face value plans the policy again on every run.
 //
-// Step 3 is the assertion that decides the key.
+// The cast is the half only the server can settle. Offline the comparison is
+// undecided and refuses to plan; connected, the owner's probe asks the server
+// how it stores the declaration, and the policy agrees.
 func TestSQLServerLiveRLSRoundTrip(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c := qt.New(t)
@@ -47,32 +49,47 @@ func TestSQLServerLiveRLSRoundTrip(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	schemaName := fmt.Sprintf("ptah_rls_%d", time.Now().UnixNano())
-	quoted := quoteSQLServerIdentifier(schemaName)
-	_, err = conn.ExecContext(ctx, "EXEC('CREATE SCHEMA "+quoted+"')")
-	c.Assert(err, qt.IsNil)
+	functions := schemaName + "_fn"
+	quoted, quotedFunctions := quoteSQLServerIdentifier(schemaName), quoteSQLServerIdentifier(functions)
+	for _, schema := range []string{quoted, quotedFunctions} {
+		_, err = conn.ExecContext(ctx, "EXEC('CREATE SCHEMA "+schema+"')")
+		c.Assert(err, qt.IsNil)
+	}
 	defer func() {
 		_, _ = conn.ExecContext(ctx,
 			"DROP SECURITY POLICY IF EXISTS "+quoted+"."+quoteSQLServerIdentifier("tenant_isolation"))
 		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoted+"."+quoteSQLServerIdentifier("documents"))
-		_, _ = conn.ExecContext(ctx, "DROP FUNCTION IF EXISTS "+quoted+"."+quoteSQLServerIdentifier("fn_tenant"))
+		_, _ = conn.ExecContext(ctx, "DROP FUNCTION IF EXISTS "+quotedFunctions+"."+quoteSQLServerIdentifier("fn_tenant"))
 		_, _ = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quoted)
+		_, _ = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quotedFunctions)
 	}()
 
-	// The predicate function is created outside Ptah, which is the design this
-	// target forces rather than an omission in the test. T-SQL has no inline
-	// predicate expression, and Ptah does not manage SQL Server routines
-	// (capability.Functions is false here), so the policy references a function
-	// its author owns.
-	_, err = conn.ExecContext(ctx, "EXEC('CREATE FUNCTION "+quoted+".fn_tenant(@tenant int) "+
+	// The predicate function is created outside Ptah, in a schema of its own
+	// that the read leaves out, which is the design this target forces rather
+	// than an omission in the test. T-SQL has no inline predicate expression,
+	// so the policy references a function its author owns; a read of its
+	// schema would report the function, and a declaration that does not
+	// manage it would drop it.
+	_, err = conn.ExecContext(ctx, "EXEC('CREATE FUNCTION "+quotedFunctions+".fn_tenant(@tenant int) "+
 		"RETURNS TABLE WITH SCHEMABINDING AS RETURN SELECT 1 AS allowed WHERE @tenant = 1')")
 	c.Assert(err, qt.IsNil)
 
-	description := sqlServerRLSSchema(schemaName)
+	description, err := goschema.ParseSource(builtintest.Annotations(), "documents.go", fmt.Sprintf(`package documents
 
-	// 1. The renderer's statements are the ones the server is given, so a
-	// statement this engine refuses fails here rather than being corrected by
-	// hand.
-	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
+//ptah:schema:table name="documents" schema="%[1]s"
+//ptah:schema:rls:policy name="tenant_isolation" table="%[1]s.documents" for="INSERT" using="%[2]s.fn_tenant(tenant)" with_check="%[2]s.fn_tenant(CAST(tenant AS int) + 0)" dialects="sqlserver"
+type Document struct {
+	//ptah:schema:field name="id" type="INT" primary="true"
+	ID int
+	//ptah:schema:field name="tenant" type="INT" not_null="true"
+	Tenant int
+}
+`, schemaName, functions))
+	c.Assert(err, qt.IsNil)
+
+	// 1. The statements a render writes are the ones the server is given, so
+	// one this engine refuses fails here rather than being corrected by hand.
+	statements, err := builtin.GetOrderedCreateStatements(&description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE SECURITY POLICY")
 	for _, statement := range statements {
@@ -80,32 +97,40 @@ func TestSQLServerLiveRLSRoundTrip(t *testing.T) {
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	// 2. The catalog is asked what it holds. The predicate has to come back in
-	// the declaration's spelling, not the catalog's.
+	// 2. The catalog is asked what it holds, in its own spelling.
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.RLSPolicies, qt.HasLen, 1)
-	c.Assert(live.RLSPolicies[0].Table, qt.Equals, "documents")
-	c.Assert(live.RLSPolicies[0].UsingExpression, qt.Equals, schemaName+".fn_tenant(tenant)")
+	function := mssqlschema.ObjectName{Schema: functions, Name: "fn_tenant"}
+	table := mssqlschema.ObjectName{Schema: schemaName, Name: "documents"}
+	held, found, err := live.FeatureObjects.Get(mssqlschema.SecurityPolicyRef(schemaName, "tenant_isolation"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(held.Value, qt.DeepEquals, &mssqlschema.ObservedSecurityPolicy{Enabled: true, SchemaBinding: true,
+		Predicates: []mssqlschema.Predicate{
+			{Type: mssqlschema.Filter, Function: function, Arguments: []string{"[tenant]"}, Table: table},
+			{Type: mssqlschema.Block, Function: function, Arguments: []string{"CONVERT([int],[tenant])+(0)"}, Table: table,
+				Operation: mssqlschema.AfterInsert},
+		}})
 
-	// The derived table flag: SQL Server has no per-table RLS attribute, so an
-	// enabled policy naming the table is what makes it true.
-	c.Assert(sqlServerTableNamed(live.Tables, "documents").RLSEnabled, qt.IsTrue)
+	// 3. Offline the cast is undecided, and the comparison refuses to plan
+	// rather than drop and create a security control nobody changed.
+	_, err = schemadiff.CompareWithDialect(ctx, &description, live, platform.SQLServer, must.Must(builtin.New()))
+	c.Assert(err, qt.ErrorMatches, `(?s).*the server rewrites argument expressions, so only it can tell.*`)
 
-	// 3. The convergence assertion. Comparing the same description against what
-	// the server now holds must produce nothing to do.
-	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
-	c.Assert(settled.RLSPoliciesAdded, qt.HasLen, 0)
-	c.Assert(settled.RLSPoliciesRemoved, qt.HasLen, 0)
-	c.Assert(settled.RLSPoliciesModified, qt.HasLen, 0)
+	// 4. The convergence assertion: connected, the probe spells the
+	// declaration as the server stores it, and the plan is empty.
+	settled, err := schemadiff.CompareWithDatabase(ctx, conn, &description, live, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(settled.FeatureChanges, qt.HasLen, 0)
+	c.Assert(settled.HasChanges(), qt.IsFalse)
 }
 
-// TestSQLServerLiveRLSRefusesWhatTheRendererDeclines pins that the two
-// declarations the renderer answers with a sentence are ones the engine really
-// refuses.
+// TestSQLServerLiveRLSRefusesWhatTheRendererDeclines pins that the
+// declarations a SQL Server-scoped source refuses (see
+// mssqlpolicysource.Attributes.Policy) are ones the engine really refuses.
 //
-// Without this the refusals are just this renderer's opinion, and an opinion
-// that turned out to be wrong would be a capability withheld for no reason.
+// Without this the refusals are just Ptah's opinion, and an opinion that
+// turned out to be wrong would be a capability withheld for no reason.
 func TestSQLServerLiveRLSRefusesWhatTheRendererDeclines(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c := qt.New(t)
@@ -180,34 +205,4 @@ func TestSQLServerLiveRLSRefusesWhatTheRendererDeclines(t *testing.T) {
 		c.Assert(execErr, qt.IsNil)
 		_, _ = conn.ExecContext(ctx, "DROP SECURITY POLICY IF EXISTS "+quoted+".p_ok")
 	})
-}
-
-// sqlServerRLSSchema is a table under one policy, with the predicate naming a
-// function the schema does not declare.
-func sqlServerRLSSchema(schemaName string) *schemamodel.Database {
-	return &schemamodel.Database{
-		Tables: []schemamodel.Table{
-			{StructName: "Document", Name: "documents", Schema: schemaName},
-		},
-		Fields: []schemamodel.Field{
-			{StructName: "Document", Name: "id", Type: "INT", Nullable: false},
-			{StructName: "Document", Name: "tenant", Type: "INT", Nullable: false},
-		},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			StructName:      "Document",
-			Name:            "tenant_isolation",
-			Table:           "documents",
-			UsingExpression: schemaName + ".fn_tenant(tenant)",
-		}},
-	}
-}
-
-// sqlServerTableNamed returns the table a catalog read reports under a name.
-func sqlServerTableNamed(tables []catalog.Table, name string) catalog.Table {
-	for _, table := range tables {
-		if table.Name == name {
-			return table
-		}
-	}
-	return catalog.Table{}
 }

@@ -8,7 +8,9 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/feature/pgpolicy"
 )
 
@@ -157,9 +159,9 @@ type Tenant struct {
 
 // TestParse_RowSecurityScopeSelectsTheModel pins which model holds a
 // row-level security annotation. PostgreSQL-family scopes and no scope at all
-// reach the row-security owner; a scope naming only SQL Server or ClickHouse
-// stays a shared declaration, which those targets plan as a security policy
-// or a row policy.
+// reach the row-security owner; a scope naming only ClickHouse stays a shared
+// declaration, which ClickHouse plans as a row policy. SQL Server's security
+// policy owner is pinned by TestParse_SQLServerScopedPolicyIsASecurityPolicy.
 func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -170,8 +172,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 	}{
 		{name: "no scope", dialects: "", wantOwned: 1, wantSwitches: 1},
 		{name: "PostgreSQL family", dialects: `dialects="postgres,cockroachdb,yugabytedb"`, wantOwned: 1, wantSwitches: 1},
-		{name: "SQL Server", dialects: `dialects="mssql"`, wantShared: 1},
-		{name: "ClickHouse and SQL Server", dialects: `dialects="clickhouse,mssql"`, wantShared: 1},
+		{name: "ClickHouse", dialects: `dialects="clickhouse"`, wantShared: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -192,6 +193,87 @@ type Tenant struct {
 			c.Assert(ownerSwitches(c, &database), qt.HasLen, test.wantSwitches)
 			c.Assert(database.RLSPolicies, qt.HasLen, test.wantShared)
 			c.Assert(database.RLSEnabledTables, qt.HasLen, test.wantShared)
+		})
+	}
+}
+
+// TestParse_SQLServerScopedPolicyIsASecurityPolicy pins a policy scoped to SQL
+// Server only: it becomes a security policy of the SQL Server owner, created
+// in its table's schema, its USING a filter predicate and its WITH CHECK a
+// block predicate for the operation FOR names, with the scope kept on the
+// object. The document claims every security policy.
+func TestParse_SQLServerScopedPolicyIsASecurityPolicy(t *testing.T) {
+	c := qt.New(t)
+
+	database := mustParseSource(c, "models.go", `package test
+
+//ptah:schema:table name="orders" schema="sales"
+//ptah:schema:rls:policy name="tenancy" table="sales.orders" for="UPDATE" using="rls.fn_read(tenant_id)" with_check="[rls].[fn_write](tenant_id, CAST(owner_id AS int))" dialects="mssql"
+type Order struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+}
+`)
+
+	table := mssqlschema.ObjectName{Schema: "sales", Name: "orders"}
+	c.Assert(must.Must(database.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{{
+		Ref: mssqlschema.SecurityPolicyRef("sales", "tenancy"),
+		Value: &mssqlschema.DesiredSecurityPolicy{StructName: "Order", Predicates: []mssqlschema.Predicate{
+			{Type: mssqlschema.Filter, Function: mssqlschema.ObjectName{Schema: "rls", Name: "fn_read"}, Arguments: []string{"tenant_id"}, Table: table},
+			{Type: mssqlschema.Block, Function: mssqlschema.ObjectName{Schema: "rls", Name: "fn_write"},
+				Arguments: []string{"tenant_id", "CAST(owner_id AS int)"}, Table: table, Operation: mssqlschema.AfterUpdate},
+		}},
+		Targets: []string{"sqlserver"},
+	}})
+	c.Assert(database.RLSPolicies, qt.HasLen, 0)
+	c.Assert(database.FeatureCoverage.Lookup(mssqlschema.SecurityPolicyKind, mssqlschema.SecurityPolicyRef("dbo", "undeclared")).State,
+		qt.Equals, schemaext.Complete)
+}
+
+// TestParse_SQLServerScopedRowSecurity_FailurePath pins what a security
+// policy cannot hold, which is refused at the annotation rather than dropped:
+// each row would otherwise widen or lose what the author wrote.
+func TestParse_SQLServerScopedRowSecurity_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+		message    string
+	}{
+		{name: "a table switch", annotation: `//ptah:schema:rls:enable table="tenants" dialects="mssql"`,
+			message: `SQL Server has no row-level security switch on a table`},
+		{name: "SQL Server beside ClickHouse",
+			annotation: `//ptah:schema:rls:policy name="p" table="tenants" using="dbo.fn(id)" dialects="clickhouse,mssql"`,
+			message:    `row-level security scoped to clickhouse,sqlserver mixes SQL Server with other targets`},
+		{name: "an inline expression", annotation: `//ptah:schema:rls:policy name="p" table="tenants" using="id = 1" dialects="mssql"`,
+			message: `"id = 1" is not a call of a two-part inline table-valued function`},
+		{name: "a role list", annotation: `//ptah:schema:rls:policy name="p" table="tenants" to="app" using="dbo.fn(id)" dialects="mssql"`,
+			message: `SQL Server security policy p declares TO app`},
+		{name: "FOR SELECT", annotation: `//ptah:schema:rls:policy name="p" table="tenants" for="SELECT" using="dbo.fn(id)" dialects="mssql"`,
+			message: `SQL Server security policy p declares FOR SELECT, which a security policy has no form for`},
+		{name: "FOR INSERT without WITH CHECK",
+			annotation: `//ptah:schema:rls:policy name="p" table="tenants" for="INSERT" using="dbo.fn(id)" dialects="mssql"`,
+			message:    `SQL Server security policy p declares FOR INSERT, which only a block predicate can carry`},
+		{name: "two filters on one table", annotation: `//ptah:schema:rls:policy name="p" table="tenants" using="dbo.fn(id)" dialects="mssql"
+//ptah:schema:rls:policy name="p" table="tenants" using="dbo.fn2(id)" dialects="mssql"`,
+			message: `both declare a predicate of security policy dbo.p on table [dbo].[tenants]; keep one declaration`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, err := goschema.ParseSource(noOwners, "models.go", `package test
+
+//ptah:schema:table name="tenants"
+`+test.annotation+`
+type Tenant struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+}
+`)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err.Error(), qt.Contains, test.message)
+			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 		})
 	}
 }

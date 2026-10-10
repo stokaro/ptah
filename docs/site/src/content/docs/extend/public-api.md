@@ -96,6 +96,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/mssql/mssqlast` | Typed security policy operation with an explicit codec. |
 | `dialect/mssql/mssqlrender` | Owner-selected security policy rendering for SQL Server. |
 | `dialect/mssql/mssqlplan` | Security policy planning, table hand-offs and declarations. |
+| `dialect/mssql/mssqlprobe` | A connected server's spelling of declared security policy predicates. |
 | `dialect/mssql/mssqlrelation` | Tables and predicate functions a security policy binds. |
 | `dialect/mssql/mssqlreverse` | Reverse security policy changes with recovery limits. |
 | `dialect/mssql/mssqlconvert` | Conversion between security policy declarations and observations. |

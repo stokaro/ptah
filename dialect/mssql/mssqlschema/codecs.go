@@ -23,7 +23,7 @@ const (
 	desiredDefinition = `{"type":"object","required":["predicates"],"additionalProperties":false,"properties":{` +
 		`"predicates":{"type":"array","items":` + predicateDefinition + `},` +
 		`"enabled":{"type":"boolean"},"schema_binding":{"type":"boolean"},"not_for_replication":{"const":true},` +
-		`"struct_name":{"type":"string","minLength":1}}}`
+		`"struct_name":{"type":"string","minLength":1},"normalized":{"type":"array","minItems":1,"items":` + predicateDefinition + `}}}`
 	observedDefinition = `{"type":"object","required":["predicates","enabled","schema_binding","not_for_replication"],` +
 		`"additionalProperties":false,"properties":{` +
 		`"predicates":{"type":"array","items":` + predicateDefinition + `},` +
@@ -78,6 +78,9 @@ func (v ObservedSecurityPolicy) MarshalJSON() ([]byte, error) {
 func canonicalDesired(value *DesiredSecurityPolicy) *DesiredSecurityPolicy {
 	canonical := value.Copy()
 	canonical.Predicates = canonicalPredicates(canonical.Predicates)
+	if canonical.Normalized != nil {
+		canonical.Normalized = canonicalPredicates(canonical.Normalized)
+	}
 	return canonical
 }
 
@@ -109,6 +112,13 @@ func policyShape(shape schemaext.ObjectShape) func(json.RawMessage) error {
 		predicates, err := schemaext.DecodeJSON[[]json.RawMessage](fields["predicates"])
 		if err != nil {
 			return err
+		}
+		if normalized, found := fields["normalized"]; found {
+			spelled, err := schemaext.DecodeJSON[[]json.RawMessage](normalized)
+			if err != nil {
+				return err
+			}
+			predicates = append(predicates, spelled...)
 		}
 		for _, raw := range predicates {
 			predicate, err := schemaext.DecodeObject(raw, predicateShape)

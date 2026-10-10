@@ -1508,12 +1508,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// 5.7. Grant privileges once the objects they name exist.
 	result = p.planGrants(result, diff)
 
-	// 5.8. Plan row-level security once the tables its predicates name exist.
-	// Unlike sequences, roles and functions this cannot run before tables: a
-	// security policy is schema-bound to the table it filters, and the engine
-	// resolves that name at creation time.
-	result = p.planRLS(result, diff)
-
 	// 6. Remove constraints before indexes. MySQL-family servers keep the
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so
 	// rollback plans may need to drop both. The FK must go first. fkPlan.dropped
@@ -1531,10 +1525,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 6.7. Remove indexes after constraints so FK-backed indexes can be dropped.
 	result = p.removeIndexes(result, diff, released.IndexSet())
-
-	// 6z. Drop the security policies before the tables they are schema-bound
-	// to, which the engine will not drop out from under a standing policy.
-	result = p.removeRLS(result, diff)
 
 	// 7. Remove tables (dangerous!)
 	windows.Removal = len(result)

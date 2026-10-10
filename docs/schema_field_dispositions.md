@@ -44,13 +44,13 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-611 fields are reachable from the desired schema, and each one carries
+612 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
 | `ddl` | 521 | reaches rendered SQL on at least one target |
-| `comparison` | 18 | read when two schemas are compared, and written into no statement |
+| `comparison` | 19 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 29 | identifies the source text the declaration was read from |
@@ -111,6 +111,7 @@ None.
 | `crdbschema.Policy.SelectBatchSize` | `ddl` | — |
 | `crdbschema.Policy.SelectRateLimit` | `ddl` | — |
 | `mssqlschema.DesiredSecurityPolicy.Enabled` | `ddl` | — |
+| `mssqlschema.DesiredSecurityPolicy.Normalized` | `comparison` | a connected server's spelling of the declared predicates, attached before a live comparison; a statement writes the predicates as declared |
 | `mssqlschema.DesiredSecurityPolicy.NotForReplication` | `ddl` | — |
 | `mssqlschema.DesiredSecurityPolicy.Predicates` | `ddl` | — |
 | `mssqlschema.DesiredSecurityPolicy.SchemaBinding` | `ddl` | — |

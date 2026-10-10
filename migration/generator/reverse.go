@@ -378,15 +378,6 @@ func reverseChangeMap(changes map[string]string) map[string]string {
 	return reversed
 }
 
-func priorTableSchema(prior *schemamodel.Database, tableName string) string {
-	for _, table := range prior.Tables {
-		if table.Name == tableName {
-			return table.Schema
-		}
-	}
-	return ""
-}
-
 // schemaCreationsFromRemovals is the creation of each removed schema, carrying
 // what the pre-change database declared for it. A removal is a name, and a
 // database recreated without its character set and collation is not the one

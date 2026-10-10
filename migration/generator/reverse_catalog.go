@@ -184,7 +184,7 @@ func reverseRLSPolicyDiffs(
 			}
 		}
 
-		policy, tableSchema := priorRLSPolicy(prior, policyDiff.PolicyName, policyDiff.TableName, semantics)
+		policy := priorRLSPolicy(prior, policyDiff.PolicyName, policyDiff.TableName, semantics)
 		reversed[i] = difftypes.RLSPolicyDiff{
 			PolicyName: policyDiff.PolicyName,
 			TableName:  policyDiff.TableName,
@@ -192,8 +192,7 @@ func reverseRLSPolicyDiffs(
 			// CREATE POLICY renders from the operand, so reversing the change
 			// map without reversing the operand would have the down direction
 			// re-apply the predicate it is undoing.
-			Desired:     policy,
-			TableSchema: tableSchema,
+			Desired: policy,
 		}
 	}
 	return reversed
@@ -216,12 +215,10 @@ func rlsAdditionsFromRemovals(
 	}
 	additions := make([]difftypes.RLSPolicyRef, len(removals))
 	for i, ref := range removals {
-		policy, tableSchema := priorRLSPolicy(prior, ref.PolicyName, ref.TableName, semantics)
 		additions[i] = difftypes.RLSPolicyRef{
-			PolicyName:  ref.PolicyName,
-			TableName:   ref.TableName,
-			Desired:     policy,
-			TableSchema: tableSchema,
+			PolicyName: ref.PolicyName,
+			TableName:  ref.TableName,
+			Desired:    priorRLSPolicy(prior, ref.PolicyName, ref.TableName, semantics),
 		}
 	}
 	return additions
@@ -259,9 +256,9 @@ func priorRLSPolicy(
 	prior *schemamodel.Database,
 	policyName, tableName string,
 	semantics identifier.Semantics,
-) (schemamodel.RLSPolicy, string) {
+) schemamodel.RLSPolicy {
 	if prior == nil {
-		return schemamodel.RLSPolicy{}, ""
+		return schemamodel.RLSPolicy{}
 	}
 	wanted := semantics.QualifiedTableIdentityKey(tableName)
 	for _, policy := range prior.RLSPolicies {
@@ -271,9 +268,9 @@ func priorRLSPolicy(
 		if semantics.QualifiedTableIdentityKey(policy.Table) != wanted {
 			continue
 		}
-		return policy, priorTableSchema(prior, policy.Table)
+		return policy
 	}
-	return schemamodel.RLSPolicy{}, ""
+	return schemamodel.RLSPolicy{}
 }
 
 // reverseRoleDiffs reverses role modifications for down migrations

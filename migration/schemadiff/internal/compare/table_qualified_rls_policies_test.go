@@ -330,8 +330,6 @@ func TestRLSPoliciesWithSemantics_AnAdditionCarriesItsDeclaration(t *testing.T) 
 
 	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesAdded[0].Desired.UsingExpression, qt.Equals, "tenant_id = 1")
-	c.Assert(diff.RLSPoliciesAdded[0].TableSchema, qt.Equals, "sales",
-		qt.Commentf("the schema the owning table is declared under, which SQL Server addresses the policy by"))
 
 	c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesRemoved[0].Desired, qt.DeepEquals, schemamodel.RLSPolicy{},

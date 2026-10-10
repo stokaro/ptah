@@ -10,6 +10,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlconvert"
 	"ptah.run/dialect/mssql/mssqldiff"
 	"ptah.run/dialect/mssql/mssqlplan"
+	"ptah.run/dialect/mssql/mssqlprobe"
 	"ptah.run/dialect/mssql/mssqlrelation"
 	"ptah.run/dialect/mssql/mssqlreport"
 	"ptah.run/dialect/mssql/mssqlreverse"
@@ -19,12 +20,10 @@ import (
 
 // mssqlProvider assembles the SQL Server security policy owner of ADR 0020 on
 // the SQL Server target. Its rendering joins the target's composition in
-// [ownersFor].
-//
-// No reader or source produces a security policy value yet, so a comparison
-// or a plan reaches these services only with values a caller built itself;
-// the common row-level security path still renders what a declaration asks
-// for.
+// [ownersFor]. The Go source declares the policies scoped to SQL Server and
+// the SQL Server reader reports the ones a database holds; a connected
+// comparison asks the server to spell the declared predicates it would
+// otherwise leave undecided.
 func mssqlProvider() engine.Provider {
 	models := []schemaext.Kind{mssqlschema.SecurityPolicyKind}
 	changes := []schemaext.Kind{mssqldiff.SecurityPolicyKind}
@@ -39,6 +38,7 @@ func mssqlProvider() engine.Provider {
 		Planning:    []engine.Planning{{Target: target, Kinds: changes, OperationKinds: operations, Service: mssqlplan.Service{}}},
 		Declarations: []engine.DeclarationPlanning{{Target: target, Kinds: models, OperationKinds: operations,
 			Service: mssqlplan.Service{}}},
+		Normalizations: []engine.Normalization{{Target: target, Kinds: models, Service: mssqlprobe.Service{}}},
 	}
 	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 		provider.Relations = append(provider.Relations, engine.RelationDiscovery{Target: target,

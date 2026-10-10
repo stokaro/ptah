@@ -2535,8 +2535,7 @@ func appendPostTableObjectStatements(
 		}
 	}
 	for _, rlsPolicy := range database.RLSPolicies {
-		if err := visit(FromRLSPolicy(schemaprep.QualifyRLSPolicyForTarget(
-			rlsPolicy, declaredTableSchema(database, rlsPolicy.Table), targetPlatform))); err != nil {
+		if err := visit(FromRLSPolicy(rlsPolicy)); err != nil {
 			return err
 		}
 	}
@@ -2596,24 +2595,6 @@ func visitDefaultPrivileges(visit func(ast.Node) error, defaultPrivileges []sche
 		}
 	}
 	return nil
-}
-
-// declaredTableSchema is the schema a declared table is written under, or empty
-// when nothing declares it.
-//
-// It exists here because this path renders a whole database rather than a diff,
-// so the tables are in hand and there is nothing to carry the answer. A plan
-// built from a diff gets it from the entry instead (stokaro/ptah#2315).
-//
-// The name is matched as written, which is what the search inside
-// QualifyRLSPolicyForTarget did with the same two values before it was narrowed.
-func declaredTableSchema(database schemamodel.Database, tableName string) string {
-	for _, declared := range database.Tables {
-		if declared.Name == tableName {
-			return declared.Schema
-		}
-	}
-	return ""
 }
 
 func appendOrderedViewLikeStatements(
