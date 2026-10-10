@@ -69,9 +69,8 @@ func (r *Runtime) registerComparison(owner string, declaration ObjectComparison)
 }
 
 func (r *Runtime) ownsCodec(owner string, kind schemaext.Kind, representation schemaext.Representation) bool {
-	return slices.ContainsFunc(r.codecs.Definitions(), func(model schemaext.CodecIdentity) bool {
-		return model.Owner == owner && model.Kind == kind && model.Representation == representation
-	})
+	model, found := r.codecs.Identity(kind, representation)
+	return found && model.Owner == owner
 }
 
 // CompareObjects validates a complete comparison before dispatch. Each selected

@@ -282,7 +282,7 @@ func RenderSQL(dialect string, nodes ...ast.Node) (string, error) {
 // messages and satisfy the schema sentinel on visitor and batch entry points;
 // branch on the sentinel rather than the message text.
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error) {
-	runtime, err := New()
+	runtime, err := bundled()
 	if err != nil {
 		return "", err
 	}
@@ -1987,7 +1987,7 @@ func ValidateSchemaWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) error {
-	runtime, err := New()
+	runtime, err := bundled()
 	if err != nil {
 		return err
 	}

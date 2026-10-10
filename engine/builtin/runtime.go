@@ -3,6 +3,7 @@ package builtin
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -26,6 +27,12 @@ import (
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbextensions"
 )
+
+// bundled is the runtime the package-level helpers (RenderSQL,
+// ValidateSchemaWithCapabilities and the omission reports) render with. A
+// runtime is frozen when New returns and renders concurrently, so the helpers
+// share one rather than assembling every provider and codec on each call.
+var bundled = sync.OnceValues(New)
 
 // New assembles a runtime with the bundled providers and their codecs. It returns a
 // fresh registry on every call and installs no process-global handlers. The

@@ -34,7 +34,7 @@ func GetOrderedCreateStatementsReportingOmissions(
 	dialect string,
 	caps capability.Capabilities,
 ) ([]string, []renderer.Omission, error) {
-	runtime, err := New()
+	runtime, err := bundled()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -67,7 +67,7 @@ func RenderSQLReportingOmissions(
 	caps capability.Capabilities,
 	nodes ...ast.Node,
 ) (string, []renderer.Omission, error) {
-	runtime, err := New()
+	runtime, err := bundled()
 	if err != nil {
 		return "", nil, err
 	}
