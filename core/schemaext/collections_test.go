@@ -68,7 +68,11 @@ func TestObjects_PreserveComponentBoundariesAndSnapshots(t *testing.T) {
 	input := &widget{ID: widgetKind, Names: []string{"kept"}}
 	first := widgetRef("a.b", "c")
 	second := widgetRef("a", "b.c")
-	c.Assert(first.String(), qt.Equals, second.String())
+	// The two identities differ only in where the dot falls. ID.String quotes
+	// a component holding one, so even their display differs
+	// (stokaro/ptah#4276); the collection must keep them apart by components.
+	c.Assert(first.String(), qt.Equals, `example.org/widget "a.b".c`)
+	c.Assert(second.String(), qt.Equals, `example.org/widget a."b.c"`)
 	objects, err := schemaext.NewObjects(schemaext.Object{Ref: first, Value: input}, schemaext.Object{Ref: second, Value: input})
 	c.Assert(err, qt.IsNil)
 	c.Assert(objects.Len(), qt.Equals, 2)
