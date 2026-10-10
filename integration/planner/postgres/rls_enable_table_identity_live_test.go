@@ -14,12 +14,15 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/pgpolicysource"
 	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -127,147 +130,112 @@ func queryStrings(c *qt.C, dbURL, query string) []string {
 }
 
 // ordersSchema returns the target schema for a single `orders` table whose
-// policy names the owning table with policyTable.
-func ordersSchema(tableSchema, policyTable string) *schemamodel.Database {
-	return &schemamodel.Database{
+// policy names the owning table's schema with policySchema, and declares no
+// switches, which leaves them to the row-security owner's default.
+func ordersSchema(tableSchema, policySchema string) *schemamodel.Database {
+	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Name: "orders", Schema: tableSchema, StructName: "Order"}},
 		Fields: []schemamodel.Field{
 			{Name: "id", StructName: "Order", Type: "INTEGER", Primary: true},
 			{Name: "tenant_id", StructName: "Order", Type: "INTEGER"},
 		},
-		RLSPolicies: []schemamodel.RLSPolicy{ordersPolicy(policyTable)},
 	}
+	return withPolicy(db, policySchema, "orders")
 }
 
-// ordersPolicy is the policy both the desired schema and the diff rows carry.
-//
-// One declaration rather than two: a diff entry's Desired is the operand the
-// planner renders from, so a row whose operand disagreed with the schema it is
-// applied against would be testing a state no comparator produces
-// (stokaro/ptah#1311).
-func ordersPolicy(policyTable string) schemamodel.RLSPolicy {
-	return schemamodel.RLSPolicy{
-		Name:            "tenant_isolation",
-		Table:           policyTable,
-		PolicyFor:       "ALL",
-		ToRoles:         "PUBLIC",
-		UsingExpression: "tenant_id = 1",
-	}
+// withPolicy declares the policy `tenant_id = 1` on table and, as a document
+// that names a table's policies and not its switches does, leaves the
+// switches to the row-security owner's default.
+func withPolicy(db *schemamodel.Database, policySchema, table string) *schemamodel.Database {
+	db.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+		pgpolicy.PolicyRef(policySchema, table, "tenant_isolation"),
+		pgpolicy.DesiredPolicy{Using: new("tenant_id = 1")}))))
+	db.FeatureCoverage = must.Must(pgpolicysource.Claim(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)), db.FeatureObjects))
+	return db
 }
 
-// TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres is
-// the fourth instance of one mistake, asserted where it is observable.
+// planFromLiveRead reads the database, compares desired with it, and applies
+// the plan.
+func planFromLiveRead(c *qt.C, dbURL string, desired *schemamodel.Database) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
+	c.Assert(err, qt.IsNil)
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
+	dbschema.CloseAndWarn(conn)
+	c.Assert(err, qt.IsNil)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, "postgres", must.Must(builtin.New())))
+	return planAndApply(c, dbURL, diff, desired)
+}
+
+// TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres
+// pins the row-security owner's answer for a table the plan creates: a
+// declaration that names the table's policies and not its switches enables
+// row-level security on it, however the policy spells the table. `orders` and
+// `public.orders` are one relation under PostgreSQL's rules.
 //
-// `enableRLSOnTables` decided whether a policy's owning table is new by asking
-// `slices.Contains(diff.TablesAdded, policy.Table)` -- a raw string comparison
-// -- while `addNewRLSPolicies` resolves the same table through the target's
-// identifier semantics (stokaro/ptah#1311, stokaro/ptah#1347). `orders` and
-// `public.orders` are one relation under PostgreSQL's rules and two different
-// strings, so the plan emitted `CREATE POLICY` and no
-// `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`.
+// The rows read the catalog rather than the SQL, because "the plan lacks a
+// statement" and "the database does not enforce the policy" are different
+// claims and only the second one matters (stokaro/ptah#1311).
 //
-// Measured on PostgreSQL 17.10: the plan applies cleanly, pg_policy carries the
-// policy, and pg_class.relrowsecurity for the relation is false. The policy is
-// inert -- row-level security is not enforced on a table the author asked to
-// protect -- and the plan reported success. That is why these rows read the
-// catalog rather than the SQL: "the plan lacks a statement" and "the database
-// does not enforce the policy" are different claims and only the second one
-// matters.
+// The last two rows are stokaro/ptah#2048 on a table the plan does not create:
+// the declaration leaves the switches as the table has them, whether off or
+// on. Enabling a table nothing in this plan creates would deny by default on
+// it, and disabling one would turn a security control off.
 func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t *testing.T) {
 	adminURL := livePostgresURLForRLSEnable(t)
-
-	// Each declaration is named once and used twice: the diff's creations are
-	// assembled FROM it, and the plan is applied AGAINST it. A creation carries
-	// the columns, enums and dependency edges the planner renders from, so a row
-	// that spelled a bare name here would be handing the planner a table with no
-	// columns and asserting on a plan that never created one.
-	ordersDeclaredBare := ordersSchema("", "public.orders")
-	ordersDeclaredQualified := ordersSchema("public", "orders")
-	ordersDeclaredMatching := ordersSchema("", "orders")
-	shipmentsAndLegacy := &schemamodel.Database{
-		Tables: []schemamodel.Table{
-			{Name: "shipments", StructName: "Shipment"},
-			{Name: "legacy", StructName: "Legacy"},
-		},
-		Fields: []schemamodel.Field{
-			{Name: "id", StructName: "Shipment", Type: "INTEGER", Primary: true},
-			{Name: "id", StructName: "Legacy", Type: "INTEGER", Primary: true},
-		},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name:            "tenant_isolation",
-			Table:           "legacy",
-			PolicyFor:       "ALL",
-			ToRoles:         "PUBLIC",
-			UsingExpression: "tenant_id = 1",
-		}},
+	legacy := func() *schemamodel.Database {
+		return withPolicy(&schemamodel.Database{
+			Tables: []schemamodel.Table{{Name: "legacy", StructName: "Legacy"}},
+			Fields: []schemamodel.Field{
+				{Name: "id", StructName: "Legacy", Type: "INTEGER", Primary: true},
+				{Name: "tenant_id", StructName: "Legacy", Type: "INTEGER"},
+			},
+		}, "", "legacy")
 	}
 
 	tests := []struct {
 		name string
-		// seed runs against the fresh database before the plan, for rows whose
-		// subject is a table the diff does not create.
-		seed    []string
-		diff    *difftypes.SchemaDiff
-		desired *schemamodel.Database
-		// wantPolicies and wantRowSecurity are the catalog after the plan ran.
-		// A row that expects neither spells `[]string{}` rather than leaving the
-		// field out, because qt.DeepEquals separates an empty slice from a nil
-		// one and queryStrings never returns nil.
+		// seed runs against the fresh database before the plan.
+		seed            []string
+		desired         *schemamodel.Database
 		wantPolicies    []string
 		wantRowSecurity []string
 	}{
 		{
-			name: "the diff creates orders and the policy names public.orders",
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredBare, identifier.ForDialect("postgres"), "orders"),
-				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "public.orders", Desired: ordersPolicy("public.orders")},
-				},
-			},
-			desired:         ordersDeclaredBare,
+			name:            "the plan creates orders and the policy names public.orders",
+			desired:         ordersSchema("", "public"),
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
 		{
-			name: "the diff creates public.orders and the policy names orders",
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredQualified, identifier.ForDialect("postgres"), "public.orders"),
-				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
-				},
-			},
-			desired:         ordersDeclaredQualified,
+			name:            "the plan creates public.orders and the policy names orders",
+			desired:         ordersSchema("public", ""),
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
 		{
-			name: "both sides spell the table the same way",
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredMatching, identifier.ForDialect("postgres"), "orders"),
-				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
-				},
-			},
-			desired:         ordersDeclaredMatching,
+			name:            "both sides spell the table the same way",
+			desired:         ordersSchema("", ""),
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
 		{
-			// The control the widened match must not swallow. `legacy` already
-			// exists, keeps its declared policy, and is in no diff collection;
-			// enabling row-level security on it would deny by default on a table
-			// nothing in this plan touches. A fix that enabled every declared
-			// policy's table instead of the ones the diff creates fails here.
-			name: "a policy on a table the diff does not create leaves it alone",
+			name:            "an existing table with row security off keeps it off",
+			seed:            []string{`CREATE TABLE legacy (id INTEGER PRIMARY KEY, tenant_id INTEGER)`},
+			desired:         legacy(),
+			wantPolicies:    []string{"public/legacy/tenant_isolation"},
+			wantRowSecurity: make([]string, 0),
+		},
+		{
+			name: "an existing table with row security on keeps it on",
 			seed: []string{
 				`CREATE TABLE legacy (id INTEGER PRIMARY KEY, tenant_id INTEGER)`,
+				`ALTER TABLE legacy ENABLE ROW LEVEL SECURITY`,
+				`CREATE POLICY tenant_isolation ON legacy USING (tenant_id = 1)`,
 			},
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(shipmentsAndLegacy, identifier.ForDialect("postgres"), "shipments"),
-			},
-			desired:         shipmentsAndLegacy,
-			wantPolicies:    make([]string, 0),
-			wantRowSecurity: make([]string, 0),
+			desired:         legacy(),
+			wantPolicies:    []string{"public/legacy/tenant_isolation"},
+			wantRowSecurity: []string{"public/legacy"},
 		},
 	}
 
@@ -276,9 +244,66 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			c := qt.New(t)
 			dbURL := createRLSEnableDatabase(c, adminURL)
 			executeSQL(c, dbURL, test.seed)
-			planAndApply(c, dbURL, test.diff, test.desired)
+			planFromLiveRead(c, dbURL, test.desired)
 			c.Assert(rlsPolicyRelations(c, dbURL), qt.DeepEquals, test.wantPolicies)
 			c.Assert(rowSecurityRelations(c, dbURL), qt.DeepEquals, test.wantRowSecurity)
 		})
 	}
+}
+
+// TestPlannerRowSecurityBindsANonOwnerLivePostgres counts the rows a role that
+// does not own the table reads after the plan: the policy admits tenant 1, so
+// a plan that left row-level security off, or the policy out, shows every row.
+// The owner of a table is exempt unless FORCE is on, which is why the count is
+// taken as another role.
+func TestPlannerRowSecurityBindsANonOwnerLivePostgres(t *testing.T) {
+	adminURL := livePostgresURLForRLSEnable(t)
+	c := qt.New(t)
+	// The role first, so it is dropped after the database that grants to it.
+	reader := createReaderRole(c, adminURL)
+	dbURL := createRLSEnableDatabase(c, adminURL)
+
+	planFromLiveRead(c, dbURL, ordersSchema("", ""))
+	executeSQL(c, dbURL, []string{
+		`INSERT INTO orders VALUES (1, 1), (2, 2), (3, 1)`,
+		"GRANT SELECT ON orders TO " + reader,
+	})
+
+	c.Assert(visibleOrders(c, dbURL, reader), qt.DeepEquals, []string{"1", "3"})
+}
+
+// createReaderRole creates a role that owns nothing, removed when the test
+// ends. Roles belong to the cluster, so the name is unique to the run.
+func createReaderRole(c *qt.C, adminURL string) string {
+	c.Helper()
+	reader := fmt.Sprintf("ptah_rls_reader_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
+	executeSQL(c, adminURL, []string{"CREATE ROLE " + reader})
+	c.Cleanup(func() {
+		executeSQL(c, adminURL, []string{"DROP ROLE IF EXISTS " + reader})
+	})
+	return reader
+}
+
+// visibleOrders lists the ids of the orders role reads.
+func visibleOrders(c *qt.C, dbURL, role string) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	tx, err := conn.BeginTx(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(context.Background(), "SET LOCAL ROLE "+role)
+	c.Assert(err, qt.IsNil)
+	rows, err := tx.QueryContext(context.Background(), "SELECT id::text FROM orders ORDER BY id")
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = rows.Close() }()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		c.Assert(rows.Scan(&id), qt.IsNil)
+		ids = append(ids, id)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return ids
 }

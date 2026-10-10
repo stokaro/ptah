@@ -105,8 +105,7 @@ ALTER TABLE %[1]s.docs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY docs_role ON %[1]s.docs TO %[2]s USING (true);
 `)
 
-				c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
-				c.Assert(diff.RLSPoliciesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.RLSPoliciesModified))
+				c.Assert(rowSecurityChanges(diff), qt.HasLen, 0)
 			})
 		}
 	}

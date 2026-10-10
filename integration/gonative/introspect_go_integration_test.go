@@ -18,8 +18,10 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/cli/root"
 	"ptah.run/migration/schemadiff"
 )
@@ -84,8 +86,10 @@ func TestIntrospectCommand_PostgresBrownfieldGoRoundTrip(t *testing.T) {
 	c.Assert(desired.Tables, qt.HasLen, 10)
 	c.Assert(desired.Enums, qt.HasLen, 1)
 	c.Assert(desired.Functions, qt.HasLen, 1)
-	c.Assert(desired.RLSPolicies, qt.HasLen, 1)
-	c.Assert(desired.RLSEnabledTables, qt.HasLen, 1)
+	// Row-level security reads back as the PostgreSQL row-security owner's.
+	c.Assert(desired.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		return ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind)
+	}).Len(), qt.Equals, 1)
 
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)

@@ -11,14 +11,14 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
@@ -45,29 +45,18 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 			{StructName: "Invoice", Name: "user_id", Type: "INTEGER", Foreign: "ptah_ms_auth.ptah_ms_users(id)"},
 			{StructName: "Invoice", Name: "account_id", Type: "INTEGER", Foreign: "ptah_ms_accounts(id)"},
 		},
-		RLSPolicies: []schemamodel.RLSPolicy{
-			{Name: "ptah_ms_users_visible", Table: "ptah_ms_auth.ptah_ms_users", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "id IS NOT NULL"},
-		},
-		RLSEnabledTables: []schemamodel.RLSEnabledTable{
-			{Table: "ptah_ms_auth.ptah_ms_users"},
-		},
+		// Row-level security is the PostgreSQL row-security owner's.
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+			pgpolicy.PolicyRef("ptah_ms_auth", "ptah_ms_users", "ptah_ms_users_visible"),
+			pgpolicy.DesiredPolicy{Command: pgpolicy.CommandAll, Using: new("id IS NOT NULL")})))),
+		FeatureCoverage:            must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)),
 		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
+	desired.Tables[1].Facets = must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true}))
 
-	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"),
-		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-			{
-				PolicyName: "ptah_ms_users_visible",
-				TableName:  "ptah_ms_auth.ptah_ms_users",
-				// The operand the planner renders from. Taken from the desired
-				// schema above rather than restated, so the row cannot drift
-				// from the declaration it is applied against (stokaro/ptah#1311).
-				Desired: desired.RLSPolicies[0],
-			},
-		},
-		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "ptah_ms_auth.ptah_ms_users"}},
-	}
+	// Planned from a comparison with nothing, so the owner answers for the
+	// tables the plan creates.
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, "postgres", must.Must(builtin.New())))
 	nodes, err := planner.GenerateSchemaDiffAST(
 		context.Background(), must.Must(builtin.New()),
 		diff, "postgres",
@@ -114,7 +103,6 @@ func filterMultiSchemaIntegrationTables(in *catalog.Database) *catalog.Database 
 	out.Tables = filterTables(in.Tables, keepTables)
 	out.Indexes = filterIndexes(in.Indexes, keepTables)
 	out.Constraints = filterConstraints(in.Constraints, keepTables)
-	out.RLSPolicies = filterRLSPolicies(in.RLSPolicies, keepTables)
 	return &out
 }
 
@@ -143,16 +131,6 @@ func filterConstraints(in []catalog.Constraint, keep map[string]struct{}) []cata
 	for _, constraint := range in {
 		if _, ok := keep[constraint.QualifiedTableName()]; ok {
 			out = append(out, constraint)
-		}
-	}
-	return out
-}
-
-func filterRLSPolicies(in []catalog.RLSPolicy, keep map[string]struct{}) []catalog.RLSPolicy {
-	out := make([]catalog.RLSPolicy, 0, len(in))
-	for _, policy := range in {
-		if _, ok := keep[policy.Table]; ok {
-			out = append(out, policy)
 		}
 	}
 	return out

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +17,11 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -141,7 +144,6 @@ func TestPolicyRoles_LiveSchemaFileConverges(t *testing.T) {
 		{name: "one role", toClause: "TO ROLE_A"},
 		{name: "two roles", toClause: "TO ROLE_A, ROLE_B"},
 		{name: "two roles in the other order", toClause: "TO ROLE_B, ROLE_A"},
-		{name: "PUBLIC beside a role", toClause: "TO PUBLIC, ROLE_A"},
 	}
 	for _, engine := range policyRoleEngines {
 		for _, spelling := range spellings {
@@ -153,9 +155,7 @@ func TestPolicyRoles_LiveSchemaFileConverges(t *testing.T) {
 
 				diff := f.compare(c, desired)
 
-				c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
-				c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
-				c.Assert(diff.RLSPoliciesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.RLSPoliciesModified))
+				c.Assert(rowSecurityChanges(diff), qt.HasLen, 0)
 			})
 		}
 	}
@@ -184,9 +184,9 @@ func TestPolicyRoles_LiveADifferentRolePlansAChange(t *testing.T) {
 
 				diff := f.compare(c, f.load(c, direction.declared))
 
-				c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
-				_, rolesChanged := diff.RLSPoliciesModified[0].Changes["to_roles"]
-				c.Assert(rolesChanged, qt.IsTrue, qt.Commentf("%+v", diff.RLSPoliciesModified[0].Changes))
+				changes := rowSecurityChanges(diff)
+				c.Assert(changes, qt.HasLen, 1)
+				c.Assert(changes[0].Value.Kind(), qt.Equals, pgpolicy.PolicyChangeKind)
 			})
 		}
 	}
@@ -202,12 +202,31 @@ func TestPolicyRoles_LiveReaderReportsPUBLICBesideARole(t *testing.T) {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			f := newPolicyRoleFixture(c, engine.engine)
-			f.apply(c, f.load(c, "TO PUBLIC, ROLE_A"))
+			// A declaration naming PUBLIC beside a role is refused, so the
+			// policy is written directly.
+			f.apply(c, f.load(c, "TO ROLE_A"))
+			_, err := f.conn.ExecContext(c.Context(), fmt.Sprintf("ALTER POLICY docs_tenant ON %s.docs TO PUBLIC, %s",
+				pgx.Identifier{f.schema}.Sanitize(), pgx.Identifier{f.roleA}.Sanitize()))
+			c.Assert(err, qt.IsNil)
 
 			live := f.read(c)
 
-			c.Assert(live.RLSPolicies, qt.HasLen, 1)
-			c.Assert(live.RLSPolicies[0].ToRoles, qt.Equals, "PUBLIC")
+			objects := must.Must(live.FeatureObjects.All())
+			c.Assert(objects, qt.HasLen, 1)
+			c.Assert(objects[0].Value.(*pgpolicy.ObservedPolicy).Roles, qt.DeepEquals, []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}})
 		})
 	}
+}
+
+// rowSecurityChanges returns the changes the row-security owner planned,
+// wherever the diff carries them.
+func rowSecurityChanges(diff *difftypes.SchemaDiff) []schemaext.ChangeRecord {
+	changes := slices.Clone(diff.FeatureChanges)
+	for _, table := range diff.TablesModified {
+		changes = append(changes, table.FeatureChanges...)
+	}
+	return slices.DeleteFunc(changes, func(record schemaext.ChangeRecord) bool {
+		kind := record.Value.Kind()
+		return kind != pgpolicy.PolicyChangeKind && kind != pgpolicy.TableStateChangeKind
+	})
 }

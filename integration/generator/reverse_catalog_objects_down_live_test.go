@@ -12,11 +12,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/pgpolicysource"
 )
 
 // TestReverseCatalogObjects_DownRoundTrip_Integration executes the generated
@@ -65,15 +70,15 @@ func TestReverseCatalogObjects_DownRoundTrip_Integration(t *testing.T) {
 			prior:  func() *schemamodel.Database { return revCatSchemaFor(revCatOptions{}) },
 			target: func() *schemamodel.Database { return revCatSchemaFor(revCatOptions{objects: true}) },
 			downHas: []string{
-				"DROP POLICY IF EXISTS " + revCatPolicy + " ON " + revCatTable,
+				"DROP POLICY " + revCatPolicy + " ON " + revCatTable,
 				"DROP SEQUENCE IF EXISTS " + revCatSequence,
 				"DROP FUNCTION IF EXISTS " + revCatFunction,
 				"DROP ROLE IF EXISTS " + revCatRole,
 			},
 			downLacks: []string{"DROP TABLE", "CASCADE"},
 			downOrder: [][]string{
-				{"DROP POLICY IF EXISTS " + revCatPolicy, "DROP FUNCTION IF EXISTS " + revCatFunction},
-				{"DROP POLICY IF EXISTS " + revCatPolicy, "DROP ROLE IF EXISTS " + revCatRole},
+				{"DROP POLICY " + revCatPolicy, "DROP FUNCTION IF EXISTS " + revCatFunction},
+				{"DROP POLICY " + revCatPolicy, "DROP ROLE IF EXISTS " + revCatRole},
 			},
 			roleAfterDown: false,
 		},
@@ -264,19 +269,14 @@ func revCatSchemaFor(opts revCatOptions) *schemamodel.Database {
 				Increment:  &increment,
 			}}
 		}
-		schema.RLSEnabledTables = []schemamodel.RLSEnabledTable{{
-			StructName: "RevCatOrder",
-			Table:      revCatTable,
-		}}
-		schema.RLSPolicies = []schemamodel.RLSPolicy{{
-			StructName:      "RevCatOrder",
-			Name:            revCatPolicy,
-			Table:           revCatTable,
-			PolicyFor:       "ALL",
-			ToRoles:         revCatRole,
-			UsingExpression: cmp.Or(opts.policyUsing, revCatPolicyUsing),
-		}}
+		// Row-level security is the PostgreSQL row-security owner's.
+		schema.Tables[0].Facets = must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true}))
+		schema.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+			pgpolicy.PolicyRef("", revCatTable, revCatPolicy),
+			pgpolicy.DesiredPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: revCatRole}},
+				Using: new(cmp.Or(opts.policyUsing, revCatPolicyUsing))}))))
 	}
+	schema.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))
 	schemamodel.Finalize(schema)
 	return schema
 }
@@ -330,7 +330,8 @@ func revCatDropAll(admin *dbschema.DatabaseConnection) {
 func revCatCatalog(db *catalog.Database) []string {
 	var lines []string
 	for _, table := range db.Tables {
-		lines = append(lines, fmt.Sprintf("table %s rls=%t forced=%t", table.Name, table.RLSEnabled, table.RLSForced))
+		switches, _, _ := schemaext.FacetAs[*pgpolicy.ObservedTableState](table.Facets, pgpolicy.TableStateKind)
+		lines = append(lines, fmt.Sprintf("table %s rls=%t forced=%t", table.Name, switches != nil && switches.Enabled, switches != nil && switches.Forced))
 	}
 	for _, function := range db.Functions {
 		lines = append(lines, fmt.Sprintf("function %s(%s) returns %s language %s %s = %s",
@@ -348,11 +349,15 @@ func revCatCatalog(db *catalog.Database) []string {
 		lines = append(lines, fmt.Sprintf("role %s login=%t superuser=%t createdb=%t createrole=%t inherit=%t replication=%t",
 			role.Name, role.Login, role.Superuser, role.CreateDB, role.CreateRole, role.Inherit, role.Replication))
 	}
-	for _, policy := range db.RLSPolicies {
-		lines = append(lines, fmt.Sprintf("policy %s on %s for %s to %s using %s check %s restrictive=%t",
-			policy.Name, policy.Table, policy.PolicyFor, policy.ToRoles,
-			revCatNormalize(policy.UsingExpression), revCatNormalize(policy.WithCheckExpression),
-			policy.Restrictive))
+	policies, _ := db.FeatureObjects.All()
+	for _, object := range policies {
+		policy, ok := object.Value.(*pgpolicy.ObservedPolicy)
+		if !ok {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("policy %s on %s for %s to %s using %s check %s as %s",
+			object.Ref.Name.Source, object.Ref.Parent.Source, policy.Command, pgpolicysource.FormatRoleList(policy.Roles),
+			revCatNormalize(cmp.Or(deref(policy.Using))), revCatNormalize(deref(policy.WithCheck)), policy.Composition))
 	}
 	sort.Strings(lines)
 	return lines
@@ -384,11 +389,11 @@ func revCatMissingObjects(schema *schemamodel.Database, db *catalog.Database) []
 			missing = append(missing, "role "+role.Name)
 		}
 	}
-	for _, policy := range schema.RLSPolicies {
-		if !slices.ContainsFunc(db.RLSPolicies, func(candidate catalog.RLSPolicy) bool {
-			return candidate.Name == policy.Name
+	for _, ref := range schema.FeatureObjects.Refs() {
+		if !slices.ContainsFunc(db.FeatureObjects.Refs(), func(candidate objectidentity.ID) bool {
+			return candidate.Name.Source == ref.Name.Source
 		}) {
-			missing = append(missing, "policy "+policy.Name)
+			missing = append(missing, "policy "+ref.Name.Source)
 		}
 	}
 	return missing
@@ -439,4 +444,12 @@ func revCatNumber(value *int64) string {
 		return "unset"
 	}
 	return fmt.Sprintf("%d", *value)
+}
+
+// deref is the text a clause holds, empty for none.
+func deref(text *string) string {
+	if text == nil {
+		return ""
+	}
+	return *text
 }
