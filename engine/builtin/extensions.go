@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
+	"ptah.run/feature/pgpolicy/policyrender"
 	"ptah.run/internal/ydbextensions"
 )
 
@@ -21,15 +22,36 @@ import (
 // renderer built the same handlers for every statement of a plan.
 var (
 	postgresFamilyRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
-		return renderer.NewExtensions(tsrender.Handlers()...)
+		return renderer.NewExtensions(postgresFamilyHandlers()...)
 	})
 	cockroachDBRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
-		return renderer.NewExtensions(append(tsrender.Handlers(), crdbrender.Handlers()...)...)
+		return renderer.NewExtensions(postgresFamilyHandlers(crdbrender.Handlers()...)...)
 	})
 	spannerRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
-		return renderer.NewExtensions(append(tsrender.Handlers(), spannerrender.Handlers()...)...)
+		return renderer.NewExtensions(postgresFamilyHandlers(spannerrender.Handlers()...)...)
 	})
 )
+
+// postgresFamilyHandlers is the owners every PostgreSQL-family target
+// composes, TimescaleDB and row security, followed by the target's own.
+func postgresFamilyHandlers(own ...renderer.ExtensionHandler) []renderer.ExtensionHandler {
+	return append(append(tsrender.Handlers(), policyrender.Handlers()...), own...)
+}
+
+// lowerPostgresFamilyFacets lowers the table facets of the owners every
+// PostgreSQL-family target composes: the create_hypertable call first, then
+// the row-security switches.
+func lowerPostgresFamilyFacets(table string, facets schemaext.Facets) ([]ast.ExtensionPayload, schemaext.Facets, error) {
+	hypertable, rest, err := tsrender.LowerTableFacets(table, facets)
+	if err != nil {
+		return nil, schemaext.Facets{}, err
+	}
+	security, rest, err := policyrender.LowerTableFacets(table, rest)
+	if err != nil {
+		return nil, schemaext.Facets{}, err
+	}
+	return append(hypertable, security...), rest, nil
+}
 
 // renderOwners is what a target's feature owners contribute to rendering it,
 // selected in [ownersFor], the one place at this composition boundary that
@@ -46,9 +68,9 @@ type renderOwners struct {
 }
 
 // ownersFor selects a target's feature owners. Neutral contracts and
-// non-owning backends know no payload types. TimescaleDB is an owner on every
-// PostgreSQL-family target, and its renderer refuses or skips what a target
-// without the extension cannot hold; row-level TTL is CockroachDB's alone and
+// non-owning backends know no payload types. TimescaleDB and row security are
+// owners on every PostgreSQL-family target, and their renderers refuse or skip
+// what a target without the capability cannot hold; row-level TTL is CockroachDB's alone and
 // the row deletion policy Spanner's.
 func ownersFor(dialect string) renderOwners {
 	switch platform.NormalizeDialect(dialect) {
@@ -58,12 +80,12 @@ func ownersFor(dialect string) renderOwners {
 		return renderOwners{extensions: chrender.Registry}
 	case platform.CockroachDB:
 		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause,
-			lowerTableFacets: tsrender.LowerTableFacets}
+			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Spanner:
 		return renderOwners{extensions: spannerRegistry, tableStorage: spannerrender.CreateTableClause,
-			lowerTableFacets: tsrender.LowerTableFacets}
+			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Postgres, platform.YugabyteDB:
-		return renderOwners{extensions: postgresFamilyRegistry, lowerTableFacets: tsrender.LowerTableFacets}
+		return renderOwners{extensions: postgresFamilyRegistry, lowerTableFacets: lowerPostgresFamilyFacets}
 	default:
 		return renderOwners{}
 	}

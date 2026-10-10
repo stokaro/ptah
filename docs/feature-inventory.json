@@ -1174,6 +1174,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgpolicy-policyrender",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpolicy/policyrender",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-migration-datadiff",
       "kind": "public-package",
       "surface": "ptah.run/migration/datadiff",

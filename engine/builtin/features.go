@@ -14,6 +14,8 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgpolicy/policyrender"
 	"ptah.run/internal/ydbextensions"
 )
 
@@ -118,8 +120,9 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	return projected, nil
 }
 
-// preparePostgresTableFacets accepts the TimescaleDB settings every
-// PostgreSQL-family renderer writes after CREATE TABLE, the row-level TTL a
+// preparePostgresTableFacets accepts the TimescaleDB settings and the
+// row-security switches every PostgreSQL-family renderer writes after CREATE
+// TABLE, the row-level TTL a
 // CockroachDB CREATE TABLE carries, and the row deletion policy a Spanner one
 // carries. Every other kind is refused: no owner composed for this family
 // renders it.
@@ -127,7 +130,10 @@ func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (sch
 	if err := tsrender.ValidateTableFacets(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
-	rest := projected.Without(tsschema.HypertableKind)
+	if err := policyrender.ValidateTableFacets(projected); err != nil {
+		return schemaext.Facets{}, err
+	}
+	rest := projected.Without(tsschema.HypertableKind).Without(pgpolicy.TableStateKind)
 	var validate func(schemaext.Facets) error
 	switch platform.NormalizeDialect(dialect) {
 	case platform.CockroachDB:
