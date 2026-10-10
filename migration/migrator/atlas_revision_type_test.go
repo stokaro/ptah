@@ -236,6 +236,14 @@ WHERE revisions.version = '1'`,
 	c.Assert(storedAt, qt.Equals, startedAt)
 }
 
+// slowStatement runs long enough for the timeline tests below to tell a
+// recorded duration that covers the migration from one that does not: they
+// require at least 10ms. The size is a trade. A smaller blob risks finishing
+// under 10ms on a fast machine, and the race detector makes every MiB cost
+// about forty times as much. Measured on a 3.8 GHz Xeon E-2276G: 8 MiB takes
+// about 120ms without -race and about 5s with it, where 64 MiB took about 50s.
+const slowStatement = "SELECT length(randomblob(8388608));\n"
+
 func TestAtlasMigrationExecutionTimeline_TxModeAllSuccess(t *testing.T) {
 	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(
@@ -249,7 +257,7 @@ func TestAtlasMigrationExecutionTimeline_TxModeAllSuccess(t *testing.T) {
 		conn,
 		fstest.MapFS{
 			"1_slow_success.sql": &fstest.MapFile{
-				Data: []byte("SELECT length(randomblob(67108864));\n"),
+				Data: []byte(slowStatement),
 			},
 		},
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
@@ -295,9 +303,7 @@ func TestAtlasMigrationExecutionTimeline_TxModeAllFailure(t *testing.T) {
 		conn,
 		fstest.MapFS{
 			"1_slow_failure.sql": &fstest.MapFile{
-				Data: []byte(`SELECT length(randomblob(67108864));
-INSERT INTO missing_table (id) VALUES (1);
-`),
+				Data: []byte(slowStatement + "INSERT INTO missing_table (id) VALUES (1);\n"),
 			},
 		},
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
