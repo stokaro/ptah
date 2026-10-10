@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -44,6 +45,8 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgpolicy/policyrender"
 	"ptah.run/internal/astrouteguard"
 	"ptah.run/internal/ydbextensions"
 )
@@ -147,7 +150,28 @@ func continuousAggregateFixture() extensionFixture {
 
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		hypertableFixture(), continuousAggregateFixture())
+		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture())
+}
+
+func policyFixture() extensionFixture {
+	using := "tenant_id = 1"
+	return extensionFixture{payload: &pgpolicy.PolicyOperation{Schema: "app", Table: "orders", Name: "tenant", Change: pgpolicy.PolicyChange{
+		After: &pgpolicy.DesiredPolicy{Command: pgpolicy.CommandSelect, Roles: []pgpolicy.RoleSelector{{Name: "reader"}, {Keyword: pgpolicy.CurrentUser}},
+			Using: &using, Composition: pgpolicy.Restrictive},
+		Access: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "a restrictive policy can hide rows from the roles it names"}}},
+		wantSQL: "CREATE POLICY \"tenant\" ON \"app\".\"orders\" AS RESTRICTIVE FOR SELECT TO CURRENT_USER, \"reader\"\n    USING (tenant_id = 1)\n;\n"}
+}
+
+func policyCommentFixture() extensionFixture {
+	return extensionFixture{payload: &pgpolicy.PolicyCommentOperation{Schema: "app", Table: "orders", Name: "tenant", Comment: "it's tenants"},
+		wantSQL: "COMMENT ON POLICY \"tenant\" ON \"app\".\"orders\" IS 'it''s tenants';\n"}
+}
+
+func tableStateFixture() extensionFixture {
+	return extensionFixture{payload: &pgpolicy.TableStateOperation{Schema: "app", Table: "orders", Change: pgpolicy.TableStateChange{
+		Before: &pgpolicy.ObservedTableState{Forced: true}, After: &pgpolicy.DesiredTableState{Enabled: true},
+		Access: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "enabling row security hides every row no policy admits"}}},
+		wantSQL: "ALTER TABLE \"app\".\"orders\" ENABLE ROW LEVEL SECURITY;\nALTER TABLE \"app\".\"orders\" NO FORCE ROW LEVEL SECURITY;\n"}
 }
 
 func defaultPoolFixture() extensionFixture {
@@ -178,8 +202,11 @@ func TestExtensionPayloads_CoverSourceTypesAndHandlers(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	spannerRegistry, err := spannerrender.Registry()
 	c.Assert(err, qt.IsNil)
+	policyRegistry, err := policyrender.Registry()
+	c.Assert(err, qt.IsNil)
 	var registered, fixtures []string
-	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes(), timescaleRegistry.PayloadTypes(), spannerRegistry.PayloadTypes()) {
+	for _, payloadType := range slices.Concat(registry.PayloadTypes(), clickhouseRegistry.PayloadTypes(), cockroachRegistry.PayloadTypes(), timescaleRegistry.PayloadTypes(),
+		spannerRegistry.PayloadTypes(), policyRegistry.PayloadTypes()) {
 		registered = append(registered, payloadType.Elem().PkgPath()+"."+payloadType.Elem().Name())
 	}
 	for _, fixture := range allExtensionFixtures() {
@@ -311,6 +338,72 @@ func TestTimescaleExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 	}
 }
 
+// TestRowSecurityExtensionOwnerRendersAndNonownersRefuse pins the composition
+// of the row-security owner: every PostgreSQL-family target renders its
+// payloads where the capability is present and writes the skip line where it
+// is not, and every other target refuses them through the common boundary.
+// CockroachDB holds policies but not their comments, so the comment payload
+// writes its own skip line there.
+func TestRowSecurityExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	for _, fixture := range []extensionFixture{policyFixture(), policyCommentFixture(), tableStateFixture()} {
+		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
+			c := qt.New(t)
+			node := &ast.ExtensionStatement{Payload: fixture.payload}
+			for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner"} {
+				sql, err := builtin.RenderSQLWithCapabilities(dialect, capability.Postgres17(), node)
+				c.Assert(err, qt.IsNil)
+				c.Assert(sql, qt.Equals, fixture.wantSQL)
+			}
+			sql, err := builtin.RenderSQL("spanner", node)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Matches, `-- SPANNER: (policy tenant on app.orders|policy comment tenant on app.orders|row-level security on app.orders) is not supported by this target; skipped.\n`)
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+				sql, err := builtin.RenderSQL(dialect, node)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(sql, qt.Equals, "")
+			}
+		})
+	}
+	c := qt.New(t)
+	sql, err := builtin.RenderSQL("cockroachdb", &ast.ExtensionStatement{Payload: policyCommentFixture().payload})
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, "-- COCKROACHDB: policy comment tenant on app.orders is not supported by this target; skipped.\n")
+}
+
+// TestRowSecurityTableFacetsFollowTheirTable pins the lowering of a new table's
+// declared switches: ENABLE and FORCE follow the CREATE TABLE, after a
+// hypertable call the same table carries, and a table declaring both off writes
+// neither.
+func TestRowSecurityTableFacetsFollowTheirTable(t *testing.T) {
+	hypertable := &tsschema.DesiredHypertable{Column: "id"}
+	header := "-- POSTGRES TABLE: orders --\nCREATE TABLE \"orders\" (\n  \"id\" INTEGER\n);\n\n"
+	tests := []struct {
+		name   string
+		facets []schemaext.Value
+		want   string
+	}{
+		{name: "enabled and forced", facets: []schemaext.Value{&pgpolicy.DesiredTableState{Enabled: true, Forced: true}},
+			want: header + "ALTER TABLE \"orders\" ENABLE ROW LEVEL SECURITY;\nALTER TABLE \"orders\" FORCE ROW LEVEL SECURITY;\n"},
+		{name: "after a hypertable", facets: []schemaext.Value{hypertable, &pgpolicy.DesiredTableState{Enabled: true}},
+			want: header + "SELECT create_hypertable('\"orders\"', by_range('id'), create_default_indexes => FALSE);\nALTER TABLE \"orders\" ENABLE ROW LEVEL SECURITY;\n"},
+		{name: "both off", facets: []schemaext.Value{&pgpolicy.DesiredTableState{}},
+			want: header},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			table := ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "INTEGER"))
+			table.Facets = must.Must(schemaext.NewFacets(test.facets...))
+			caps := capability.Postgres17().With(capability.Hypertables, true)
+
+			sql, err := builtin.RenderSQLWithCapabilities("postgres", caps, table)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, test.want)
+		})
+	}
+}
+
 // TestSpannerExtensionOwnerRendersAndNonownersRefuse renders the row deletion
 // policy operation on its owner and refuses it, without partial SQL, on every
 // other target, the PostgreSQL-wire ones that share its renderer included.
@@ -438,4 +531,68 @@ func poolFixture() extensionFixture {
 
 func classifierFixture() extensionFixture {
 	return extensionFixture{payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 0}}, wantSQL: "CREATE RESOURCE POOL CLASSIFIER `route` WITH (RESOURCE_POOL = 'default', RANK = 0);\n"}
+}
+
+// TestRowSecurityPayloadsRenderAfterTheRuntimeRoundTrip drives each
+// row-security operation through the builtin runtime's codecs and renderer, the
+// path a saved plan takes, and each change through the runtime's change codec.
+func TestRowSecurityPayloadsRenderAfterTheRuntimeRoundTrip(t *testing.T) {
+	runtime := must.Must(builtin.New())
+	for _, fixture := range []extensionFixture{policyFixture(), policyCommentFixture(), tableStateFixture()} {
+		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
+			c := qt.New(t)
+			data, err := runtime.Codecs().Marshal(c.Context(), schemaext.Operation, []schemaext.Payload{fixture.payload})
+			c.Assert(err, qt.IsNil)
+			values, err := runtime.Codecs().Unmarshal(c.Context(), data)
+			c.Assert(err, qt.IsNil)
+			node := &ast.ExtensionStatement{Payload: values[0].(ast.ExtensionPayload)}
+
+			result, err := runtime.Render(c.Context(), renderer.Request{Target: "postgres", Capabilities: capability.Postgres17(), Nodes: []ast.Node{node}})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.SQL(), qt.Equals, fixture.wantSQL)
+		})
+	}
+	t.Run("changes", func(t *testing.T) {
+		c := qt.New(t)
+		changes := []schemaext.Payload{
+			&policyFixture().payload.(*pgpolicy.PolicyOperation).Change,
+			&tableStateFixture().payload.(*pgpolicy.TableStateOperation).Change,
+		}
+		data, err := runtime.Codecs().Marshal(c.Context(), schemaext.Change, changes)
+		c.Assert(err, qt.IsNil)
+		values, err := runtime.Codecs().Unmarshal(c.Context(), data)
+		c.Assert(err, qt.IsNil)
+		c.Assert(values, qt.DeepEquals, changes)
+	})
+}
+
+// TestRowSecurityPolicyTransitionsRender pins the statements of a removal and
+// of a change: a change drops the policy and creates it again, because ALTER
+// POLICY changes neither the command nor the composition.
+func TestRowSecurityPolicyTransitionsRender(t *testing.T) {
+	observed := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}, Composition: pgpolicy.Permissive}
+	declared := &pgpolicy.DesiredPolicy{Command: pgpolicy.CommandInsert, WithCheck: new("owner_id = 7")}
+	access := schemaext.AccessEffect{Access: schemaext.AccessUnknown, Reason: "r"}
+	tests := []struct {
+		name   string
+		change pgpolicy.PolicyChange
+		want   string
+	}{
+		{name: "a removal", change: pgpolicy.PolicyChange{Before: observed, Access: access},
+			want: "DROP POLICY \"tenant\" ON \"orders\";\n"},
+		{name: "a change", change: pgpolicy.PolicyChange{Before: observed, After: declared, Access: access},
+			want: "DROP POLICY \"tenant\" ON \"orders\";\nCREATE POLICY \"tenant\" ON \"orders\" FOR INSERT\n    WITH CHECK (owner_id = 7)\n;\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			node := &ast.ExtensionStatement{Payload: &pgpolicy.PolicyOperation{Table: "orders", Name: "tenant", Change: test.change}}
+
+			sql, err := builtin.RenderSQL("postgres", node)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, test.want)
+		})
+	}
 }

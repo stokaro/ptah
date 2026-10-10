@@ -374,6 +374,12 @@ func compareRoles(a, b RoleSelector) int {
 	return cmp.Or(cmp.Compare(a.Keyword, b.Keyword), cmp.Compare(a.Name, b.Name))
 }
 
+// CanonicalRoles returns a copy of roles in canonical order: keywords before
+// names, each by its bytes. The codecs encode a role list in this order, and a
+// statement that writes one in it reads the same before and after a round trip.
+// A nil list stays nil.
+func CanonicalRoles(roles []RoleSelector) []RoleSelector { return sortedRoles(roles) }
+
 // sortedRoles returns roles in their canonical order without changing roles.
 func sortedRoles(roles []RoleSelector) []RoleSelector {
 	if roles == nil {

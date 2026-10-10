@@ -105,6 +105,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/feature/pgpolicy`
+- `ptah.run/feature/pgpolicy/policyrender`
 - `ptah.run/migration/datadiff`
 - `ptah.run/migration/dbtest`
 - `ptah.run/migration/diffpolicy`
@@ -1465,9 +1466,36 @@ a policy named ` p` beside one named `p`.
 of `TableStateKind` that holds ENABLE and FORCE ROW LEVEL SECURITY as
 independent flags. The codecs refuse unknown, null, empty and case-variant
 keys, a clause the command does not take, and an empty expression, and a
-refused value is a `schemaext.InvalidModelError`. The package defines
-the models, their codecs and their coverage, and reads, compares and plans
-nothing.
+refused value is a `schemaext.InvalidModelError`.
+
+Changes and operations carry the owner's access assessment as data.
+`PolicyChange` holds the observed and declared policy, the comparison's
+comment-only finding, which the operands cannot show because the catalog
+respells expressions, and an `AccessEffect`. `TableStateChange` holds both
+switch states. `PolicyAccess` and `TableStateAccess` assess what a change can
+do:
+
+- a permissive policy that reaches more commands or roles can widen access,
+  and a restrictive one can only narrow it;
+- a changed expression, and a role keyword the server resolves when the
+  policy is created, are unknown;
+- ENABLE and FORCE narrow, DISABLE and NO FORCE widen, and FORCE matters only
+  while row security is enabled.
+
+`UnenforcedAccess` is the assessment for a table that enforces row security
+neither before nor after the change. `PolicyOperation`,
+`PolicyCommentOperation` and `TableStateOperation` are the statement payloads.
+A comment is its own operation, gated by `capability.PolicyComments`, because
+CockroachDB holds policies and not their comments.
+
+`feature/pgpolicy/policyrender` renders the payloads for the PostgreSQL
+family. CREATE POLICY writes only what the declaration names, so PostgreSQL
+applies its own defaults; a change drops the policy and creates it again; and
+ENABLE precedes FORCE. The TO list is written in the canonical role order.
+`LowerTableFacets` turns a new table's declared switches into the statements
+that follow its CREATE TABLE. The builtin runtime registers the change and
+operation codecs and composes the handlers on every PostgreSQL-family target.
+No source, comparison or planner produces these payloads.
 
 `dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
 0020. A policy is one feature object of `SecurityPolicyKind`, identified by its
