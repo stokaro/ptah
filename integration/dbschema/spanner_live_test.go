@@ -20,6 +20,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -340,4 +341,70 @@ func spannerLivePrimaryKeyIndexes(live *catalog.Database, tables []string) []str
 		}
 	}
 	return names
+}
+
+// TestSpannerLiveReadsCompositeKeysAsDeclared pins stokaro/ptah#4292. The
+// constraint read joined a key's columns to every column the constraint uses,
+// so a key of two columns arrived as four rows: a composite primary key read
+// back with each column twice, a composite foreign key paired every column
+// with every referenced one, and each plan dropped and added both. The keys
+// now read back as declared, and the plan has nothing to do for them.
+//
+// The foreign key lists its referenced columns in the referenced key's order.
+// Listed in another order, the emulator reports positions that pair them
+// differently from what it enforces; see informationSchemaConstraintQuery.
+func TestSpannerLiveReadsCompositeKeysAsDeclared(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.Spanner)
+	c := qt.New(t)
+	ctx := t.Context()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	suffix := time.Now().UnixNano()
+	parent, child := fmt.Sprintf("ptah_sp_ck_parent_%d", suffix), fmt.Sprintf("ptah_sp_ck_child_%d", suffix)
+	ddl := fmt.Sprintf(`CREATE TABLE %[1]s (a bigint NOT NULL, b bigint NOT NULL, PRIMARY KEY (a, b));
+CREATE TABLE %[2]s (id bigint PRIMARY KEY, x bigint, y bigint, CONSTRAINT fk_%[2]s FOREIGN KEY (x, y) REFERENCES %[1]s (a, b));
+`, parent, child)
+	c.Cleanup(func() {
+		_, _ = conn.ExecContext(context.Background(), `DROP TABLE IF EXISTS "`+child+`"`)
+		_, _ = conn.ExecContext(context.Background(), `DROP TABLE IF EXISTS "`+parent+`"`)
+	})
+	for statement := range strings.SplitSeq(strings.TrimSpace(ddl), "\n") {
+		_, execErr := conn.ExecContext(ctx, strings.TrimSuffix(statement, ";"))
+		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
+	}
+
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"public"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(spannerLiveConstraint(c, live, parent, "PRIMARY KEY").ColumnNames, qt.DeepEquals, []string{"a", "b"})
+	foreignKey := spannerLiveConstraint(c, live, child, "FOREIGN KEY")
+	c.Assert(foreignKey.ColumnNames, qt.DeepEquals, []string{"x", "y"})
+	c.Assert(foreignKey.ForeignColumns, qt.DeepEquals, []string{"a", "b"})
+
+	desired, _, err := sqlschema.Read([]byte(ddl), platform.Spanner)
+	c.Assert(err, qt.IsNil)
+	engine := must.Must(builtin.New())
+	diff, err := schemadiff.CompareWithDatabaseInfo(ctx, &desired, live, conn.Info(), nil, engine)
+	c.Assert(err, qt.IsNil)
+	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, engine, diff, platform.Spanner,
+		planner.Options{Capabilities: conn.Info().Capabilities})
+	c.Assert(err, qt.IsNil)
+	for _, table := range []string{parent, child} {
+		c.Assert(spannerLiveJoined(planned), qt.Not(qt.Contains), table)
+	}
+}
+
+// spannerLiveConstraint is the one constraint of kind on table a read
+// reported.
+func spannerLiveConstraint(c *qt.C, live *catalog.Database, table, kind string) catalog.Constraint {
+	c.Helper()
+	var found []catalog.Constraint
+	for _, constraint := range live.Constraints {
+		if constraint.TableName == table && constraint.Type == kind {
+			found = append(found, constraint)
+		}
+	}
+	c.Assert(found, qt.HasLen, 1)
+	return found[0]
 }
