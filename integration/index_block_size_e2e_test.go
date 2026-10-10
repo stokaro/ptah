@@ -188,3 +188,39 @@ func TestIndexBlockSizeDiscardedByTheRowFormatE2E(t *testing.T) {
 
 	c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"), qt.Contains, "Schema is synced")
 }
+
+// TestPrimaryKeyBlockSizeAloneE2E changes only a primary key's block size on
+// a compressed table. MySQL keeps the old hint through an in-place
+// replacement, so the plan asks for the table copy, and the next plan is
+// empty; without the copy the key was replaced on every run. MariaDB stores
+// the hint in place, so its plan asks for no copy and converges as well.
+func TestPrimaryKeyBlockSizeAloneE2E(t *testing.T) {
+	const tableFormat = "CREATE TABLE pk (id int NOT NULL, a int, PRIMARY KEY (id) KEY_BLOCK_SIZE=%d) ROW_FORMAT=COMPRESSED;"
+	for _, test := range []struct {
+		name   string
+		engine dbtarget.Engine
+		plan   string
+		copies int
+	}{
+		{"MySQL", dbtarget.MySQLAdmin, "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;", 1},
+		{"MariaDB", dbtarget.MariaDBAdmin, "ALTER TABLE `pk` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8;", 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, test.engine)
+			name, target := scratch.builtFrom(c, fmt.Sprintf(tableFormat, 4))
+			desired := fmt.Sprintf(tableFormat, 8)
+			builtName, _ := scratch.builtFrom(c, desired)
+			schema := writeKeyFile(c, desired)
+
+			planned := runPtahNative(c, "migrations", "plan", "--db-url", target, "--schema-file", schema)
+			c.Assert(planned, qt.Contains, test.plan)
+			c.Assert(strings.Count(planned, "ALGORITHM=COPY"), qt.Equals, test.copies)
+			runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
+
+			c.Assert(showCreateTable(c, mySQLDSNForDatabase(c, scratch.adminDSN, name), "pk"), qt.Equals,
+				showCreateTable(c, mySQLDSNForDatabase(c, scratch.adminDSN, builtName), "pk"))
+			c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"), qt.Contains, "Schema is synced")
+		})
+	}
+}

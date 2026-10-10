@@ -7,12 +7,14 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
@@ -1762,7 +1764,7 @@ func (p *Planner) addNewConstraints(
 	// would abort the migration.
 	maps.Copy(state.droppedForModify, bracketDropped)
 
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, state)
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, diff.ObservedConstraintHosts, state)
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAdded,
@@ -1884,6 +1886,7 @@ func newConstraintPlanState(
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
 	additions difftypes.ConstraintAdditions,
+	hosts []schemacapture.TableObservation,
 	state constraintPlanState,
 ) []ast.Node {
 	// Prefer the table-qualified additions when present. A field-level FK from an
@@ -1910,6 +1913,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		}
 		if info, modified := state.removalByTableName[add.Identity]; modified {
 			result = p.dropReplacedPrimaryKey(result, alter, info, state)
+			alter.Algorithm = p.primaryKeyReplacementAlgorithm(add, hosts, state.semantics)
 		}
 		result = append(result, alter)
 		state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
@@ -2370,6 +2374,47 @@ func constraintRecordDescribes(add difftypes.ConstraintAdditionInfo) bool {
 	default:
 		return false
 	}
+}
+
+// primaryKeyReplacementAlgorithm asks MySQL to copy the table when it replaces
+// a primary key for its KEY_BLOCK_SIZE alone, and asks for nothing otherwise.
+// Measured on MySQL 8.4.11 with ROW_FORMAT=COMPRESSED: an in-place `DROP
+// PRIMARY KEY, ADD PRIMARY KEY (id) KEY_BLOCK_SIZE=8` keeps the old hint and
+// reports success, and so does removing the hint, so the next comparison found
+// the same difference and the key was replaced on every run. ALGORITHM=COPY
+// stores it. A replacement that also changes the columns or the comment stores
+// the new hint in place, and a USING HASH that InnoDB ignores changes nothing,
+// so it does not count. MariaDB 11.8.9 stores the hint in place every time.
+// The key the table holds comes from the captured table; without one, nothing
+// is asked for.
+func (p *Planner) primaryKeyReplacementAlgorithm(add difftypes.ConstraintAdditionInfo, hosts []schemacapture.TableObservation, semantics identifier.Semantics) string {
+	if p.targetDialect() != platform.MySQL {
+		return ""
+	}
+	current, found := capturedPrimaryKey(hosts, add.TableName, semantics)
+	if !found || current.KeyBlockSize == add.KeyBlockSize || current.Comment != add.Comment ||
+		!slices.EqualFunc(current.ColumnNamesOrDefault(), add.Columns, func(a, b string) bool {
+			return semantics.ColumnIdentityKey(a) == semantics.ColumnIdentityKey(b)
+		}) {
+		return ""
+	}
+	return "COPY"
+}
+
+// capturedPrimaryKey is the primary key the captured table named table holds.
+func capturedPrimaryKey(hosts []schemacapture.TableObservation, table string, semantics identifier.Semantics) (catalog.Constraint, bool) {
+	key := semantics.QualifiedTableIdentityKey(table)
+	for _, host := range hosts {
+		if semantics.QualifiedTableIdentityKey(host.Table.QualifiedName()) != key {
+			continue
+		}
+		for _, constraint := range host.Constraints {
+			if strings.EqualFold(constraint.Type, "PRIMARY KEY") {
+				return constraint, true
+			}
+		}
+	}
+	return catalog.Constraint{}, false
 }
 
 // dropReplacedPrimaryKey keeps a MySQL-family key present throughout its
