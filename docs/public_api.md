@@ -2093,8 +2093,9 @@ another object. A synonym is one feature object of `Kind`, identified by its
 schema and name through `Synonym.Ref`, which folds case; the target is not part
 of the identity, so a changed target is one change. `TargetParts` reads a
 target of one to four parts from the right and `DeclaredTarget` writes it back,
-an empty middle part included, and `SameTarget` compares two targets without
-their quoting and case. `DeclaredObject` binds a declaration to `Targets`, SQL
+an empty middle part included, and `SameTarget` compares two targets under a
+connection's identifier rules, without their quoting and case and with an
+absent schema read as the default schema. `DeclaredObject` binds a declaration to `Targets`, SQL
 Server and Oracle. The package holds every stage's service: `CompareService`,
 `PlanService`, which joins the host's dependent window, `ReverseService`,
 `ConvertService`, `ReportService` and the render `Handlers` for both targets.
