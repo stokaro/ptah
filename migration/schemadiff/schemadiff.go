@@ -272,7 +272,10 @@ func compareReportingUndecidedAdditions(
 		return strings.Compare(a.Name, b.Name)
 	})
 
-	if err := ctx.Err(); err != nil {
+	// Last, because it reads the whole plan: an object the effective desired
+	// state keeps must not bind what any comparator above drops. It reports
+	// cancellation too.
+	if err := refuseDroppedBindings(ctx, runtime, opts.Dialect, identifierSemantics, caps, featureResult.Desired, diff); err != nil {
 		return nil, Diagnostics{}, err
 	}
 	return diff, Diagnostics{Common: undecided, Features: featureResult.Undecided}, nil

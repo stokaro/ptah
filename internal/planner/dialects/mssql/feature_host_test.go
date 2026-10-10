@@ -111,6 +111,8 @@ func fixtureOrder(nodes []ast.Node) []string {
 			order = append(order, "drop view")
 		case *ast.DropTableNode:
 			order = append(order, "drop table")
+		case *ast.DropFunctionNode:
+			order = append(order, "drop function")
 		case *ast.GrantPrivilegeNode:
 			order = append(order, "grant")
 		case *ast.ExtensionStatement:
@@ -128,8 +130,10 @@ func fixtureOrder(nodes []ast.Node) []string {
 // the tables. A dependent one names objects of every family and nothing
 // common reads it, so it is created after the views and triggers and before
 // the held-back column drops, indexes and grants, and dropped before any of
-// those removals. In the default phase one object is created before another
-// is dropped; in the dependent phase the owner orders the two.
+// those removals. Removed functions go after the tables, so an object stops
+// calling one before it is dropped. In the default phase one object is
+// created before another is dropped; in the dependent phase the owner orders
+// the two.
 func TestPlanner_PlacesFeatureOperations(t *testing.T) {
 	created := &difftypes.SchemaDiff{
 		FeatureChanges:    []schemaext.ChangeRecord{fixtureRecord("guarded", fixtureOwner, plangraph.Create)},
@@ -138,9 +142,10 @@ func TestPlanner_PlacesFeatureOperations(t *testing.T) {
 		GrantsAdded:       []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"}},
 	}
 	dropped := &difftypes.SchemaDiff{
-		FeatureChanges: []schemaext.ChangeRecord{fixtureRecord("guarded", fixtureOwner, plangraph.Drop)},
-		ViewsRemoved:   difftypes.ViewChanges{{Name: "recent"}},
-		TablesRemoved:  difftypes.TableRemovals{{Name: "legacy"}},
+		FeatureChanges:   []schemaext.ChangeRecord{fixtureRecord("guarded", fixtureOwner, plangraph.Drop)},
+		ViewsRemoved:     difftypes.ViewChanges{{Name: "recent"}},
+		TablesRemoved:    difftypes.TableRemovals{{Name: "legacy"}},
+		FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "fn_legacy"}}},
 	}
 	// The drop is the first change, so in the default phase only the windows
 	// order it after the creation.
@@ -159,9 +164,9 @@ func TestPlanner_PlacesFeatureOperations(t *testing.T) {
 		{name: "a dependent creation", phase: featureplan.PhaseDependent, diff: created,
 			want: []string{"create view", fixtureOwner + " creates", "grant"}},
 		{name: "a default removal", phase: featureplan.PhaseDefault, diff: dropped,
-			want: []string{"drop view", fixtureOwner + " drops", "drop table"}},
+			want: []string{"drop view", fixtureOwner + " drops", "drop table", "drop function"}},
 		{name: "a dependent removal", phase: featureplan.PhaseDependent, diff: dropped,
-			want: []string{fixtureOwner + " drops", "drop view", "drop table"}},
+			want: []string{fixtureOwner + " drops", "drop view", "drop table", "drop function"}},
 		{name: "a default exchange", phase: featureplan.PhaseDefault, diff: exchanged,
 			want: []string{fixtureOwner + " creates", fixtureOwner + " drops"}},
 		{name: "a dependent exchange the owner drops first", phase: featureplan.PhaseDependent, diff: exchanged, ordered: [][2]int{{0, 1}},

@@ -15,18 +15,20 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 )
 
-// Service reports the tables and functions a policy's predicates bind. Its
-// zero value is ready for concurrent use.
+// Service reports the tables, argument columns and functions a policy's
+// predicates bind. Its zero value is ready for concurrent use.
 //
 // A policy belongs to its schema and has no table parent, so every table it
-// binds is a dependency, and so is every predicate function. The record is
+// binds is a dependency, and so is every column an argument names and every
+// predicate function. SQL Server refuses to drop any of them while the policy
+// binds it, measured on SQL Server 2025 (Msg 3729, 5074). The record is
 // exhaustive only when every argument is a single column or literal: an
 // argument expression may call functions of its own, which are not parsed
 // out of it.
 type Service struct{}
 
 // DescribeRelations returns one record per value, in input order, with each
-// dependency once, tables before functions.
+// dependency once: tables, then argument columns, then functions.
 func (Service) DescribeRelations(ctx context.Context, request schemaext.RelationRequest) (schemaext.RelationResult, error) {
 	if ctx == nil {
 		return schemaext.RelationResult{}, fmt.Errorf("%w: relation discovery requires a context", schemaext.ErrInvalidValue)
@@ -59,7 +61,7 @@ func (Service) DescribeRelations(ctx context.Context, request schemaext.Relation
 
 func describe(builder objectidentity.Builder, subject schemaext.RelationSubject, predicates []mssqlschema.Predicate) schemaext.ValueRelations {
 	record := schemaext.ValueRelations{Subject: subject, Complete: true}
-	var tables, functions []objectidentity.ID
+	var tables, columns, functions []objectidentity.ID
 	seen := make(map[objectidentity.Key]bool)
 	add := func(list *[]objectidentity.ID, ref objectidentity.ID) {
 		if !seen[ref.Key()] {
@@ -73,6 +75,9 @@ func describe(builder objectidentity.Builder, subject schemaext.RelationSubject,
 		function.Kind = objectidentity.KindFunction
 		add(&functions, function)
 		for _, argument := range predicate.Arguments {
+			if column, ok := mssqlschema.ArgumentColumn(argument); ok {
+				add(&columns, builder.ColumnParts(predicate.Table.Schema, predicate.Table.Name, column))
+			}
 			if record.Complete && !mssqlschema.SimpleArgument(argument) {
 				record.Complete = false
 				record.Reason = fmt.Sprintf("the argument %s of the predicate on %s is an expression, "+
@@ -80,6 +85,6 @@ func describe(builder objectidentity.Builder, subject schemaext.RelationSubject,
 			}
 		}
 	}
-	record.Dependencies = slices.Concat(tables, functions)
+	record.Dependencies = slices.Concat(tables, columns, functions)
 	return record
 }

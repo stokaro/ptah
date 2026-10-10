@@ -2,6 +2,7 @@ package builtin_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -185,19 +186,22 @@ func TestSecurityPolicyConversion(t *testing.T) {
 }
 
 // TestSecurityPolicyRelations pins the dependencies a policy records: every
-// table it binds and every predicate function, complete when each argument is
-// a column or a literal, and not when one is an expression that may call
-// functions of its own.
+// table it binds, every column an argument names and every predicate
+// function, complete when each argument is a column or a literal, and not
+// when one is an expression that may call functions of its own.
 func TestSecurityPolicyRelations(t *testing.T) {
 	builder := objectidentity.NewBuilder(sqlServerNames)
 	function := builder.TableParts("rls", "fn_tenant")
 	function.Kind = objectidentity.KindFunction
+	tables := []objectidentity.ID{builder.TableParts("app", "invoices"), builder.TableParts("app", "orders")}
 	tests := []struct {
 		name         string
 		argument     string
 		wantComplete bool
+		wantColumns  []objectidentity.ID
 	}{
-		{name: "column arguments", argument: "tenant_id", wantComplete: true},
+		{name: "column arguments", argument: "tenant_id", wantComplete: true,
+			wantColumns: []objectidentity.ID{builder.ColumnParts("app", "invoices", "tenant_id"), builder.ColumnParts("app", "orders", "tenant_id")}},
 		{name: "an expression argument", argument: "dbo.tenant_of(tenant_id)"},
 	}
 	for _, test := range tests {
@@ -216,8 +220,7 @@ func TestSecurityPolicyRelations(t *testing.T) {
 			records := snapshot.Records()
 			c.Assert(records, qt.HasLen, 1)
 			c.Assert(records[0].Complete, qt.Equals, test.wantComplete)
-			c.Assert(records[0].Dependencies, qt.DeepEquals, []objectidentity.ID{
-				function, builder.TableParts("app", "invoices"), builder.TableParts("app", "orders")})
+			c.Assert(records[0].Dependencies, qt.DeepEquals, slices.Concat(test.wantColumns, []objectidentity.ID{function}, tables))
 		})
 	}
 }

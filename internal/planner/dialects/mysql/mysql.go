@@ -1545,6 +1545,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// 7. Remove tables (dangerous!)
 	windows.Removal = len(result)
 	result = p.removeTables(result, diff)
+	if p.hostsFeatures() {
+		result = p.removeRoutines(result, diff)
+	}
 
 	// 7a. Remove sequences after the tables whose defaults drew from them.
 	result = p.removeSequences(result, diff)

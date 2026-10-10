@@ -653,8 +653,16 @@ kept whole when the scope holds every table it binds and left out when it holds
 none. A scope that would split one is refused, naming the tables on each side,
 since comparing the object would change bindings outside the scope. A kind the
 scope selects by its own name keeps that selection; for it the tables decide
-only the refusal of a split. Built-in comparison does not yet invoke
-relationship discovery; that integration remains part of #4140.
+only the refusal of a split.
+
+Built-in comparison uses them too. Once the plan is known, it refuses one that
+drops a table, a column or a function a standalone object of the effective
+desired feature state still binds, and one that drops or replaces any function
+while an object's owner could not list every reference. The effective state
+counts unchanged objects and observed ones the description could not express,
+so dropping a table never removes another object's binding silently: the
+declaration removes the binding, which the owner plans, or the comparison
+refuses. Functions count only on a target whose plans write routines.
 
 The external-provider fixture checks the public path without built-in
 providers. Process adapters must map model values and references into explicit

@@ -290,6 +290,25 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
 		result = append(result, node)
 	}
+	if p.hostsFeatures() {
+		// Removed after the tables and the feature objects that may call them;
+		// see [Planner.removeRoutines].
+		return result
+	}
+	return p.removeRoutines(result, diff)
+}
+
+// removeRoutines drops the functions and procedures the desired schema no
+// longer declares. MySQL, MariaDB and Oracle drop them with the other routine
+// changes. SQL Server drops them after the tables and the feature objects
+// that may call them, since it refuses DROP FUNCTION while a schema-bound
+// object, such as a security policy, still references the function (Msg
+// 3729, measured on SQL Server 2025); a policy that stops calling one is
+// changed in the dependent window before.
+func (p *Planner) removeRoutines(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if !p.capabilities().Has(capability.Functions) {
+		return result
+	}
 	for _, routine := range diff.FunctionsRemoved {
 		result = append(result, ast.NewDropFunction(routine.Name).
 			SetIfExists().
