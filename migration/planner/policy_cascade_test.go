@@ -84,7 +84,7 @@ func TestGenerateSchemaDiffSQL_RefusesACascadeThatDropsAPolicy_FailurePath(t *te
 	sql, err := planPolicyCascade(c, "SELECT name, id FROM tenants WHERE active")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops policy "tenant_visible" on table public\.orders.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`)
 	c.Assert(sql, qt.Equals, "")
 }
 

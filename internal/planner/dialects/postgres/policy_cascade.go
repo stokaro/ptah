@@ -3,31 +3,27 @@ package postgres
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"ptah.run/core/ptaherr"
-	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/deporder"
-	"ptah.run/internal/tableref"
+	"ptah.run/core/schemaext"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // refusePoliciesLostToCascade refuses a plan whose DROP ... CASCADE of a view
-// or materialized view would take a row-level security policy with it.
+// or materialized view would take a captured object with it, such as a
+// row-level security policy whose expression reads the relation.
 //
-// A policy whose expression reads a relation depends on it, so the cascade
-// drops the policy too. The row-security owner holds the policy and plans no
-// change for one that did not change, so nothing would put it back: the plan
-// applies, and the table has lost a control the schema still declares
-// (stokaro/ptah#4305). A lost permissive policy hides the rows it admitted; a
-// lost restrictive one reveals the rows it hid. The plan is refused and names
-// the policy, and changing the relation and the policy in separate steps, the
-// policy first, is the way through.
+// The server records that dependency, so the cascade drops the object too. Its
+// owner plans no change for an object that did not change, so nothing would
+// put it back: the plan applies, and the table has lost a control the schema
+// still declares (stokaro/ptah#4305). A lost permissive policy hides the rows
+// it admitted; a lost restrictive one reveals the rows it hid. The plan is
+// refused and names the object, and changing the object so it no longer reads
+// the relation first is the way through.
 //
-// A policy reads a relation when its stored expression names it, the same
-// syntactic test the view recreation makes. A false match refuses a plan that
-// was safe, which is the side to err on. A diff built without a comparison
-// carries no observation and is not checked.
+// The objects answer for themselves through [schemaext.RelationReader], so
+// this planner names no owner. A diff built without a comparison carries no
+// observation and is not checked.
 func refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error {
 	if diff.TablePreparation == nil {
 		return nil
@@ -42,16 +38,15 @@ func refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error {
 			return err
 		}
 		for _, object := range objects {
-			policy, ok := object.Value.(*pgpolicy.ObservedPolicy)
+			reader, ok := object.Value.(schemaext.RelationReader)
 			if !ok {
 				continue
 			}
 			for _, relation := range dropped {
-				if readsRelation(policy, relation) {
-					return fmt.Errorf("%w: the plan drops %s with CASCADE, which also drops policy %q on %s, "+
-						"whose expression reads it, and nothing recreates the policy; change the policy so it no longer "+
-						"reads %s first, then change %s", ptaherr.ErrUnsupportedFeature, relation, object.Ref.Name.Source,
-						pgpolicy.Table(object.Ref), relation, relation)
+				if reader.ReadsRelation(relation) {
+					return fmt.Errorf("%w: the plan drops %s with CASCADE, which also drops %s, whose definition reads it, "+
+						"and nothing recreates it; change it so it no longer reads %s first, then change %s",
+						ptaherr.ErrUnsupportedFeature, relation, object.Ref, relation, relation)
 				}
 			}
 		}
@@ -86,24 +81,4 @@ func relationsDroppedWithCascade(diff *difftypes.SchemaDiff) []string {
 	}
 	slices.Sort(dropped)
 	return slices.Compact(dropped)
-}
-
-// readsRelation reports whether either clause of policy names relation, by
-// its full name or, for a qualified one, by its bare name.
-func readsRelation(policy *pgpolicy.ObservedPolicy, relation string) bool {
-	names := []string{relation}
-	if ref, ok := tableref.Parse(relation); ok && ref.Qualified {
-		names = append(names, ref.Name)
-	}
-	for _, clause := range []*string{policy.Using, policy.WithCheck} {
-		if clause == nil {
-			continue
-		}
-		for _, name := range names {
-			if deporder.ReferencesIdentifier(*clause, strings.Trim(name, `"`)) {
-				return true
-			}
-		}
-	}
-	return false
 }

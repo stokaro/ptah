@@ -301,7 +301,7 @@ func DeclaredTable(tables []schemamodel.Table, structName, table string) (int, e
 }
 
 // TableParts returns the schema and name a written table reference names.
-func TableParts(table string) (string, string, error) {
+func TableParts(table string) (schema, name string, err error) {
 	ref, ok := tableref.Parse(table)
 	if !ok {
 		return "", "", fmt.Errorf("%w: %q is not a table reference", ptaherr.ErrInvalidAttributeValue, table)

@@ -106,16 +106,16 @@ func (s *schemaParseState) collectPolicy(collector *pgpolicysource.Collector, de
 // table attribute names, or the one its struct maps to. A table attribute
 // naming no table in this file is used as written, because a struct-attached
 // policy may name a table another file declares.
-func (s *schemaParseState) policyTable(declared rlsPolicyDeclaration) (string, string, error) {
+func (s *schemaParseState) policyTable(declared rlsPolicyDeclaration) (schemaName, tableName string, err error) {
 	written := declared.policy
 	if written.Table == "" {
-		index, err := s.ownerTable(written.StructName, "", declared.ctx, declared.ctx.directive, "a row-level security policy")
-		if err != nil {
-			return "", "", err
+		index, ownerErr := s.ownerTable(written.StructName, "", declared.ctx, declared.ctx.directive, "a row-level security policy")
+		if ownerErr != nil {
+			return "", "", ownerErr
 		}
 		return s.tableDirectives[index].Schema, s.tableDirectives[index].Name, nil
 	}
-	schemaName, tableName := tableDirectiveName("", written.Table)
+	schemaName, tableName = tableDirectiveName("", written.Table)
 	var matches []schemamodel.Table
 	for _, declared := range s.tableDirectives {
 		if declared.Name == tableName && (schemaName == "" || declared.Schema == schemaName) {
@@ -128,7 +128,7 @@ func (s *schemaParseState) policyTable(declared rlsPolicyDeclaration) (string, s
 	if len(matches) == 0 {
 		return schemaName, tableName, nil
 	}
-	_, err := s.ownerTable(written.StructName, written.Table, declared.ctx, declared.ctx.directive, "a row-level security policy")
+	_, err = s.ownerTable(written.StructName, written.Table, declared.ctx, declared.ctx.directive, "a row-level security policy")
 	return "", "", err
 }
 
