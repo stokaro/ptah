@@ -1361,9 +1361,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseYDBObjects(p.targetDialect(), diff); err != nil {
-		return nil, err
-	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}

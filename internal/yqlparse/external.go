@@ -6,39 +6,47 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbexternal"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbexternal"
 )
 
-func (p *parser) external(replace bool) ast.Node {
+// external reads `CREATE [OR REPLACE] EXTERNAL DATA SOURCE` or `EXTERNAL
+// TABLE` as the owner's creation of a declared object. The path is read by
+// [ydbexternal.ParsePath], so a dot is part of a name and a path written
+// absolute is refused. OR REPLACE, which operation carries, says nothing a
+// declaration keeps: whether a plan replaces the object is the plan's
+// decision.
+func (p *parser) external(operation ydbast.ExternalOperation) ast.Node {
 	if p.word("TABLE") {
 		p.pos++
-		return p.externalTable(replace)
+		return p.externalTable(operation)
 	}
 	p.wantWord("DATA")
 	p.wantWord("SOURCE")
-	name := p.externalPath()
+	schema, name := p.externalPath(ydbexternal.SourceKind)
 	values := p.externalSettings()
-	source := &ast.CreateExternalDataSourceNode{
-		Name: name, Replace: replace,
+	source := ydbexternal.DataSource{
 		SourceType: p.requiredExternalSetting(values, "SOURCE_TYPE"),
 		Location:   takeExternalSetting(values, "LOCATION"),
 		AuthMethod: p.requiredExternalSetting(values, "AUTH_METHOD"),
 	}
-	source.Options = values
-	return source
+	if len(values) > 0 {
+		source.Options = values
+	}
+	return &ast.ExtensionStatement{Payload: &ydbast.ExternalDataSource{Operation: operation, Schema: schema, Name: name, Spec: source}}
 }
 
-func (p *parser) externalTable(replace bool) *ast.CreateExternalTableNode {
-	table := &ast.CreateExternalTableNode{Name: p.externalPath(), Replace: replace}
+func (p *parser) externalTable(operation ydbast.ExternalOperation) ast.Node {
+	schema, name := p.externalPath(ydbexternal.TableKind)
 	p.want("(")
-	var columns []ydbexternal.Column
+	var table ydbexternal.Table
 	for !p.done() && p.peek().Value != ")" {
 		if p.anyWord([]string{"PRIMARY", "FOREIGN"}) && p.pos+1 < len(p.tokens) && p.tokens[p.pos+1].MatchIdentifierValue("KEY") {
 			p.failf("external tables cannot declare keys")
 			break
 		}
-		column := ast.ExternalColumn{Name: decodedName(p.identifier()), Type: p.identifier()}
+		column := ydbexternal.Column{Name: decodedName(p.identifier()), Type: p.identifier()}
 		if p.peek().Value == "(" {
 			column.Type += p.typeParameters()
 		}
@@ -48,33 +56,31 @@ func (p *parser) externalTable(replace bool) *ast.CreateExternalTableNode {
 			column.NotNull = true
 		}
 		table.Columns = append(table.Columns, column)
-		columns = append(columns, ydbexternal.Column{Name: column.Name, Type: column.Type, NotNull: column.NotNull})
 		if !p.accept(",") {
 			break
 		}
 	}
 	p.want(")")
-	if err := ydbexternal.CheckColumns(columns); err != nil {
+	if err := ydbexternal.CheckColumns(table.Columns); err != nil {
 		p.failf("%v", err)
 	}
 	values := p.externalSettings()
 	table.DataSource = p.requiredExternalSetting(values, "DATA_SOURCE")
 	table.Location = p.requiredExternalSetting(values, "LOCATION")
-	table.Options = values
-	return table
+	if len(values) > 0 {
+		table.Options = values
+	}
+	return &ast.ExtensionStatement{Payload: &ydbast.ExternalTable{Operation: operation, Schema: schema, Name: name, Spec: table}}
 }
 
-// externalPath converts the YQL path to the reference the external-object AST
-// uses. A literal dot belongs to a path segment, not a schema separator.
-func (p *parser) externalPath() string {
-	path := decodedName(p.path())
-	if slash := strings.LastIndex(path, "/"); slash >= 0 {
-		if slash == len(path)-1 {
-			p.failf("an external object path needs a name after its directory")
-		}
-		return tableref.Canonical(path[:slash], path[slash+1:])
+// externalPath reads the path of an external object of kind relative to the
+// database root.
+func (p *parser) externalPath(kind schemaext.Kind) (schema, name string) {
+	ref, err := ydbexternal.ParsePath(kind, decodedName(p.path()))
+	if err != nil {
+		p.failf("%v", err)
 	}
-	return tableref.Canonical("", path)
+	return ref.Schema.Source, ref.Name.Source
 }
 
 func (p *parser) externalSettings() map[string]string {

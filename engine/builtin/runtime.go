@@ -100,6 +100,7 @@ func New() (*engine.Runtime, error) {
 			registerWorkloadServices(&provider, name)
 			registerSecretServices(&provider, name)
 			registerTopicServices(&provider, name)
+			registerExternalServices(&provider, name)
 			registerYDBTTLServices(&provider, name)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})

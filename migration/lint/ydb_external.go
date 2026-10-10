@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/internal/ydbexternal"
+	"ptah.run/dialect/ydb/ydbexternal"
 )
 
 // ydbDeprecatedSecretRule reports an external data source that names a

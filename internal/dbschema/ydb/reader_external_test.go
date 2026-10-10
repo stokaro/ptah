@@ -9,9 +9,9 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
-	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbexternal"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -58,34 +58,36 @@ func TestReader_ReadsExternalObjects(t *testing.T) {
 	db, err := ydbschema.NewReaderFromSource(externalSource(), "/local", caps).ReadSchemaContext(context.Background())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.ExternalDataSources, qt.DeepEquals, []catalog.ExternalDataSource{
-		{Name: "pg", Schema: "ext", SourceType: "PostgreSQL", Location: "pg:5432", AuthMethod: "BASIC",
-			Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "ext/pg_password",
-				"PROTOCOL": "native"}},
-		{Name: "s3", Schema: "ext", SourceType: "ObjectStorage", Location: "https://s3.example.test/b/", AuthMethod: "NONE"},
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbexternal.ObservedSourceObject("ext", "pg", ydbexternal.DataSource{SourceType: "PostgreSQL", Location: "pg:5432", AuthMethod: "BASIC",
+			Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "ext/pg_password", "PROTOCOL": "native"}}),
+		ydbexternal.ObservedSourceObject("ext", "s3", ydbexternal.DataSource{SourceType: "ObjectStorage", Location: "https://s3.example.test/b/",
+			AuthMethod: "NONE"}),
+		ydbexternal.ObservedTableObject("ext", "events", ydbexternal.Table{DataSource: "ext/s3", Location: "events/",
+			Columns: []ydbexternal.Column{{Name: "id", Type: "Int64", NotNull: true}, {Name: "amount", Type: "Decimal(22,9)"}},
+			Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`}}),
 	})
-	c.Assert(db.ExternalTables, qt.DeepEquals, []catalog.ExternalTable{{
-		Name: "events", Schema: "ext", DataSource: "ext/s3", Location: "events/",
-		Columns: []catalog.ExternalColumn{{Name: "id", Type: "Int64", NotNull: true}, {Name: "amount", Type: "Decimal(22,9)"}},
-		Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`},
-	}})
-	c.Assert(db.NotDescribed.Describes(coverage.ExternalDataSource), qt.IsTrue)
-	c.Assert(db.NotDescribed.Describes(coverage.ExternalTable), qt.IsTrue)
+	c.Assert(db.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("ext", "gone")).State, qt.Equals, schemaext.Complete)
+	c.Assert(db.FeatureCoverage.Lookup(ydbexternal.TableKind, ydbexternal.TableRef("ext", "gone")).State, qt.Equals, schemaext.Complete)
 }
 
-// On a line without the key both kinds are recorded rather than read, and
-// nothing is described, so a plan never meets an object the renderer would
-// refuse.
+// On a line without the key both kinds are recorded as unread rather than
+// described, so a plan neither keeps nor drops one, and an object the read
+// did not meet is still known absent.
 func TestReader_RecordsExternalObjectsOnALineWithoutThem(t *testing.T) {
 	c := qt.New(t)
 
 	db, err := ydbschema.NewReaderFromSource(externalSource(), "/local", capability.YDB262()).ReadSchemaContext(context.Background())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.ExternalDataSources, qt.HasLen, 0)
-	c.Assert(db.ExternalTables, qt.HasLen, 0)
-	c.Assert(db.NotDescribed.DescribesIn(coverage.ExternalDataSource, "ext", "s3", "ext.s3"), qt.IsFalse)
-	c.Assert(db.NotDescribed.DescribesIn(coverage.ExternalTable, "ext", "events", "ext.events"), qt.IsFalse)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+	unread := schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbexternal.UnsupportedReason}
+	c.Assert(db.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("ext", "s3")), qt.Equals, unread)
+	c.Assert(db.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("ext", "pg")), qt.Equals, unread)
+	c.Assert(db.FeatureCoverage.Lookup(ydbexternal.TableKind, ydbexternal.TableRef("ext", "events")), qt.Equals, unread)
+	c.Assert(db.FeatureCoverage.Lookup(ydbexternal.TableKind, ydbexternal.TableRef("ext", "gone")).State, qt.Equals, schemaext.Complete)
 }
 
 // A table option the server writes as anything but an array of one string is

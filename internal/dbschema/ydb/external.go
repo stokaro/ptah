@@ -10,7 +10,7 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 
 	"ptah.run/catalog"
-	"ptah.run/internal/ydbexternal"
+	"ptah.run/dialect/ydb/ydbexternal"
 )
 
 // DescribeExternalDataSource describes the external data source at path.
@@ -75,8 +75,9 @@ func (r *Reader) externalObject(
 	return r.externalTable(schema, name, described, db)
 }
 
-// externalDataSource adds one described data source. A field the pinned
-// protocol buffers do not model refuses the read, as a column's does.
+// externalDataSource adds one described data source as a feature object. A
+// field the pinned protocol buffers do not model refuses the read, as a
+// column's does.
 func (r *Reader) externalDataSource(
 	schema, name string,
 	described *Ydb_Table.DescribeExternalDataSourceResult,
@@ -89,19 +90,19 @@ func (r *Reader) externalDataSource(
 	properties := maps.Clone(described.GetProperties())
 	authMethod := properties[authMethodProperty]
 	delete(properties, authMethodProperty)
-	db.ExternalDataSources = append(db.ExternalDataSources, catalog.ExternalDataSource{
-		Name:       name,
-		Schema:     schema,
+	var err error
+	db.FeatureObjects, err = db.FeatureObjects.With(ydbexternal.ObservedSourceObject(schema, name, ydbexternal.DataSource{
 		SourceType: described.GetSourceType(),
 		Location:   described.GetLocation(),
 		AuthMethod: authMethod,
 		Options:    ydbexternal.DescribedSourceOptions(properties, r.database),
-	})
-	return nil
+	}))
+	return err
 }
 
-// externalTable adds one described external table, its data source written
-// relative to the root the reader reads where it lies under it.
+// externalTable adds one described external table as a feature object, its
+// data source written relative to the root the reader reads where it lies
+// under it.
 func (r *Reader) externalTable(
 	schema, name string,
 	described *Ydb_Table.DescribeExternalTableResult,
@@ -111,9 +112,7 @@ func (r *Reader) externalTable(
 		return fmt.Errorf("YDB external table %s carries field %s of its description, which this build of Ptah "+
 			"does not read", r.absolute(schema, name), joinNumbers(unknown))
 	}
-	table := catalog.ExternalTable{
-		Name:       name,
-		Schema:     schema,
+	table := ydbexternal.Table{
 		DataSource: ydbexternal.RelativePath(described.GetDataSourcePath(), r.database),
 		Location:   described.GetLocation(),
 	}
@@ -122,7 +121,7 @@ func (r *Reader) externalTable(
 		if err != nil {
 			return fmt.Errorf("YDB external table %s column %s: %w", r.absolute(schema, name), meta.GetName(), err)
 		}
-		table.Columns = append(table.Columns, catalog.ExternalColumn{Name: meta.GetName(), Type: columnType, NotNull: !nullable})
+		table.Columns = append(table.Columns, ydbexternal.Column{Name: meta.GetName(), Type: columnType, NotNull: !nullable})
 	}
 	for key, value := range described.GetContent() {
 		option, err := ydbexternal.DescribedTableOption(key, value)
@@ -134,6 +133,7 @@ func (r *Reader) externalTable(
 		}
 		table.Options[strings.ToUpper(key)] = option
 	}
-	db.ExternalTables = append(db.ExternalTables, table)
-	return nil
+	var err error
+	db.FeatureObjects, err = db.FeatureObjects.With(ydbexternal.ObservedTableObject(schema, name, table))
+	return err
 }

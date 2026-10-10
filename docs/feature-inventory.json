@@ -1144,6 +1144,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-ydb-ydbexternal",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbexternal",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-ydb-ydbplan",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbplan",

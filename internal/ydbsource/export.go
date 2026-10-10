@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -134,6 +135,9 @@ func limitSubjectName(kind schemaext.Kind, ref objectidentity.ID) (string, error
 	case ydbtopic.Kind:
 		// A topic limit is read as a path, as a secret limit is.
 		return ydbtopic.Display(ref.Schema.Source, ref.Name.Source), ydbtopic.ValidateIdentity(ref)
+	case ydbexternal.SourceKind, ydbexternal.TableKind:
+		// An external object limit is read as a path too.
+		return ydbexternal.Display(ref.Schema.Source, ref.Name.Source), ydbexternal.ValidateIdentity(ref)
 	default:
 		return "", fmt.Errorf("%w: no source limit spelling for %s", schemaext.ErrInvalidValue, kind)
 	}

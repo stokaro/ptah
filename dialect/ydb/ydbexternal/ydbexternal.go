@@ -58,6 +58,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbsyntax"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -123,38 +125,38 @@ func (e *DeclarationError) Error() string {
 // DataSource is what declares an external data source, apart from its path.
 type DataSource struct {
 	// SourceType is SOURCE_TYPE, such as ObjectStorage or PostgreSQL.
-	SourceType string
+	SourceType string `json:"source_type"`
 	// Location is LOCATION, or empty where the source type names its server
 	// another way, as MDB_CLUSTER_ID does.
-	Location string
+	Location string `json:"location,omitempty"`
 	// AuthMethod is AUTH_METHOD, such as NONE or BASIC.
-	AuthMethod string
+	AuthMethod string `json:"auth_method"`
 	// Options are every other option, keyed by upper-case name.
-	Options map[string]string
+	Options map[string]string `json:"options,omitempty"`
 }
 
 // Column is one column of an external table.
 type Column struct {
 	// Name is the column's name.
-	Name string
+	Name string `json:"name"`
 	// Type is its YQL type, such as Utf8 or Decimal(22,9).
-	Type string
+	Type string `json:"type"`
 	// NotNull says the column is declared NOT NULL.
-	NotNull bool
+	NotNull bool `json:"not_null,omitempty"`
 }
 
 // Table is what declares an external table, apart from its path.
 type Table struct {
 	// DataSource is the data source's path, relative to the database root or
 	// absolute.
-	DataSource string
+	DataSource string `json:"data_source"`
 	// Location is LOCATION, the files' path under the data source.
-	Location string
+	Location string `json:"location"`
 	// Columns are the table's columns, in order.
-	Columns []Column
+	Columns []Column `json:"columns"`
 	// Options are every other option, such as FORMAT, keyed by upper-case
 	// name.
-	Options map[string]string
+	Options map[string]string `json:"options,omitempty"`
 }
 
 // ParseOptions reads an options attribute, `NAME=value` pairs separated by
@@ -422,6 +424,24 @@ type Refusal struct {
 	Reason string
 }
 
+// Err returns the refusal as the error every surface reports it with: a
+// [ptaherr.CapabilityError] naming the capability the target lacks, or an
+// invalid schema naming why the declaration is wrong. A nil refusal is no
+// error.
+func (r *Refusal) Err(dialect string) error {
+	if r == nil {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	if r.Key != "" {
+		return &ptaherr.CapabilityError{Dialect: normalized, Feature: string(r.Key), Err: ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target", r.Subject, r.Key, normalized)}
+	}
+	return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+		Code: schemavalidation.InvalidSchema, Kind: "external object", Object: r.Subject, Message: r.Reason,
+	}}}).Err(normalized)
+}
+
 // CheckDataSource reports why the data source name, a canonical reference,
 // cannot be created as source says on a target holding caps, or nil.
 func CheckDataSource(name string, source DataSource, caps capability.Capabilities) *Refusal {
@@ -497,20 +517,29 @@ const (
 	Replace Creation = "CREATE OR REPLACE"
 )
 
-// CreateDataSourceStatement writes the creation of the data source name.
-func CreateDataSourceStatement(name string, source DataSource, creation Creation) string {
+// ObjectPath writes the external object name in the directory schema as one
+// quoted YDB path: `<directory>/<name>`, or the name alone at the database
+// root.
+func ObjectPath(schema, name string) string {
+	return sqlident.Qualified(platform.YDB, schema, name)
+}
+
+// CreateDataSourceStatement writes the creation of the data source name in the
+// directory schema.
+func CreateDataSourceStatement(schema, name string, source DataSource, creation Creation) string {
 	settings := []string{optionSetting(optionSourceType, source.SourceType)}
 	if source.Location != "" {
 		settings = append(settings, optionSetting(optionLocation, source.Location))
 	}
 	settings = append(settings, optionSetting(optionAuthMethod, source.AuthMethod))
 	settings = append(settings, sortedSettings(source.Options)...)
-	return fmt.Sprintf("%s EXTERNAL DATA SOURCE %s WITH (\n    %s\n);", creation, Path(name),
+	return fmt.Sprintf("%s EXTERNAL DATA SOURCE %s WITH (\n    %s\n);", creation, ObjectPath(schema, name),
 		strings.Join(settings, ",\n    "))
 }
 
-// CreateTableStatement writes the creation of the external table name.
-func CreateTableStatement(name string, table Table, creation Creation) string {
+// CreateTableStatement writes the creation of the external table name in the
+// directory schema.
+func CreateTableStatement(schema, name string, table Table, creation Creation) string {
 	columns := make([]string, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		definition := sqlident.Quote(platform.YDB, column.Name) + " " + column.Type
@@ -521,18 +550,20 @@ func CreateTableStatement(name string, table Table, creation Creation) string {
 	}
 	settings := []string{optionSetting(optionDataSource, table.DataSource), optionSetting(optionLocation, table.Location)}
 	settings = append(settings, sortedSettings(table.Options)...)
-	return fmt.Sprintf("%s EXTERNAL TABLE %s (\n    %s\n) WITH (\n    %s\n);", creation, Path(name),
+	return fmt.Sprintf("%s EXTERNAL TABLE %s (\n    %s\n) WITH (\n    %s\n);", creation, ObjectPath(schema, name),
 		strings.Join(columns, ",\n    "), strings.Join(settings, ",\n    "))
 }
 
-// DropDataSourceStatement writes what drops the data source name.
-func DropDataSourceStatement(name string) string {
-	return "DROP EXTERNAL DATA SOURCE " + Path(name) + ";"
+// DropDataSourceStatement writes what drops the data source name in the
+// directory schema.
+func DropDataSourceStatement(schema, name string) string {
+	return "DROP EXTERNAL DATA SOURCE " + ObjectPath(schema, name) + ";"
 }
 
-// DropTableStatement writes what drops the external table name.
-func DropTableStatement(name string) string {
-	return "DROP EXTERNAL TABLE " + Path(name) + ";"
+// DropTableStatement writes what drops the external table name in the
+// directory schema.
+func DropTableStatement(schema, name string) string {
+	return "DROP EXTERNAL TABLE " + ObjectPath(schema, name) + ";"
 }
 
 func optionSetting(name, value string) string {

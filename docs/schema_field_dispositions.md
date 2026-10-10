@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-604 fields are reachable from the desired schema, and each one carries
+600 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 523 | reaches rendered SQL on at least one target |
+| `ddl` | 519 | reaches rendered SQL on at least one target |
 | `comparison` | 12 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -227,8 +227,6 @@ None.
 | `schemamodel.Database.Enums` | `ddl` | — |
 | `schemamodel.Database.ExtendedProperties` | `ddl` | — |
 | `schemamodel.Database.Extensions` | `ddl` | — |
-| `schemamodel.Database.ExternalDataSources` | `ddl` | — |
-| `schemamodel.Database.ExternalTables` | `ddl` | — |
 | `schemamodel.Database.Facets` | `ddl` | — |
 | `schemamodel.Database.FeatureCoverage` | `comparison` | records source knowledge for exact feature models and subjects; limits which state can be compared or reconstructed |
 | `schemamodel.Database.FeatureObjects` | `ddl` | — |
@@ -307,23 +305,6 @@ None.
 | `schemamodel.Extension.Provides` | `planning` | what the extension supplies, so a declaration depending on it can be ordered after it |
 | `schemamodel.Extension.Schema` | `ddl` | — |
 | `schemamodel.Extension.Version` | `ddl` | — |
-| `schemamodel.ExternalColumn.Name` | `ddl` | — |
-| `schemamodel.ExternalColumn.NotNull` | `ddl` | — |
-| `schemamodel.ExternalColumn.Type` | `ddl` | — |
-| `schemamodel.ExternalDataSource.AuthMethod` | `ddl` | — |
-| `schemamodel.ExternalDataSource.Location` | `ddl` | — |
-| `schemamodel.ExternalDataSource.Name` | `ddl` | — |
-| `schemamodel.ExternalDataSource.Options` | `ddl` | — |
-| `schemamodel.ExternalDataSource.Schema` | `ddl` | — |
-| `schemamodel.ExternalDataSource.SourceType` | `ddl` | — |
-| `schemamodel.ExternalDataSource.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.ExternalTable.Columns` | `ddl` | — |
-| `schemamodel.ExternalTable.DataSource` | `ddl` | — |
-| `schemamodel.ExternalTable.Location` | `ddl` | — |
-| `schemamodel.ExternalTable.Name` | `ddl` | — |
-| `schemamodel.ExternalTable.Options` | `ddl` | — |
-| `schemamodel.ExternalTable.Schema` | `ddl` | — |
-| `schemamodel.ExternalTable.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Field.APIExpose` | `export` | whether the column reaches an exported API contract, and in which direction; Ptah emits no runtime that could enforce it |
 | `schemamodel.Field.APIName` | `export` | the name an exported API document carries when it differs from the database name |
 | `schemamodel.Field.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |
@@ -607,6 +588,21 @@ None.
 | `ydbcoordination.Spec.ReadConsistencyMode` | `ddl` | — |
 | `ydbcoordination.Spec.SelfCheckPeriodMillis` | `ddl` | — |
 | `ydbcoordination.Spec.SessionGracePeriodMillis` | `ddl` | — |
+| `ydbexternal.Column.Name` | `ddl` | — |
+| `ydbexternal.Column.NotNull` | `ddl` | — |
+| `ydbexternal.Column.Type` | `ddl` | — |
+| `ydbexternal.DataSource.AuthMethod` | `ddl` | — |
+| `ydbexternal.DataSource.Location` | `ddl` | — |
+| `ydbexternal.DataSource.Options` | `ddl` | — |
+| `ydbexternal.DataSource.SourceType` | `ddl` | — |
+| `ydbexternal.DesiredSource.Spec` | `ddl` | — |
+| `ydbexternal.DesiredSource.StructName` | `source` | the annotation holder, independent of the data source's path |
+| `ydbexternal.DesiredTable.Spec` | `ddl` | — |
+| `ydbexternal.DesiredTable.StructName` | `source` | the annotation holder, independent of the external table's path |
+| `ydbexternal.Table.Columns` | `ddl` | — |
+| `ydbexternal.Table.DataSource` | `ddl` | — |
+| `ydbexternal.Table.Location` | `ddl` | — |
+| `ydbexternal.Table.Options` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Consumers` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Disabled` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Format` | `ddl` | — |

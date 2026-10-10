@@ -36,6 +36,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage = s.selectExternalFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage = s.selectTimescaleFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
@@ -83,7 +84,8 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Synonyms = keep(db.Synonyms, func(synonym catalog.Synonym) bool {
 		return s.selected(typeList("synonym"), synonym.Schema, synonym.Name)
 	})
-	// A YDB topic is a feature object; selectTopicFeatures selects it.
+	// A YDB topic, external data source and external table are feature
+	// objects; selectTopicFeatures and selectExternalFeatures select them.
 	// A YDB async replication and a transfer are each selected on their own
 	// name, in the directory that holds them.
 	out.AsyncReplications = keep(db.AsyncReplications, func(replication catalog.AsyncReplication) bool {
@@ -91,12 +93,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	out.Transfers = keep(db.Transfers, func(transfer catalog.Transfer) bool {
 		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
-	})
-	out.ExternalDataSources = keep(db.ExternalDataSources, func(source catalog.ExternalDataSource) bool {
-		return s.selected(typeList("external_data_source"), source.Schema, source.Name)
-	})
-	out.ExternalTables = keep(db.ExternalTables, func(table catalog.ExternalTable) bool {
-		return s.selected(typeList("external_table"), table.Schema, table.Name)
 	})
 	// An extended property rides with the object it hangs off, and is also
 	// selectable on its own name. SQL Server drops the property with the

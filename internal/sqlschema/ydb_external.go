@@ -1,35 +1,30 @@
 package sqlschema
 
 import (
-	"maps"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/tableref"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbexternal"
 )
 
-func appendYDBExternalDeclaration(database *schemamodel.Database, statement ast.Node) bool {
-	switch node := statement.(type) {
-	case *ast.CreateExternalDataSourceNode:
-		ref, _ := tableref.Parse(node.Name)
-		database.ExternalDataSources = append(database.ExternalDataSources, schemamodel.ExternalDataSource{
-			Name: ref.Name, Schema: ref.Schema, SourceType: node.SourceType,
-			Location: node.Location, AuthMethod: node.AuthMethod, Options: maps.Clone(node.Options),
-		})
-	case *ast.CreateExternalTableNode:
-		ref, _ := tableref.Parse(node.Name)
-		table := schemamodel.ExternalTable{
-			Name: ref.Name, Schema: ref.Schema, DataSource: node.DataSource,
-			Location: node.Location, Options: maps.Clone(node.Options),
+// appendExternalDeclaration declares the data source or the external table a
+// CREATE [OR REPLACE] EXTERNAL statement names. A statement that drops one is
+// no declaration.
+func appendExternalDeclaration(database *schemamodel.Database, payload ast.ExtensionPayload) (bool, error) {
+	var err error
+	switch value := payload.(type) {
+	case *ydbast.ExternalDataSource:
+		if value.Operation == ydbast.ExternalDrop {
+			return false, nil
 		}
-		for _, column := range node.Columns {
-			table.Columns = append(table.Columns, schemamodel.ExternalColumn{
-				Name: column.Name, Type: column.Type, NotNull: column.NotNull,
-			})
+		database.FeatureObjects, err = ydbexternal.DeclareSource(database.FeatureObjects, value.Schema, value.Name, "", value.Spec)
+	case *ydbast.ExternalTable:
+		if value.Operation == ydbast.ExternalDrop {
+			return false, nil
 		}
-		database.ExternalTables = append(database.ExternalTables, table)
+		database.FeatureObjects, err = ydbexternal.DeclareTable(database.FeatureObjects, value.Schema, value.Name, "", value.Spec)
 	default:
-		return false
+		return false, nil
 	}
-	return true
+	return true, err
 }

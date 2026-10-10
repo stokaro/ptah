@@ -3,8 +3,6 @@ package ydbscheme
 import (
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -12,12 +10,13 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 )
 
-// CommonEffects describes scheme paths, principals, and secret and topic reads
-// of a common AST node.
+// CommonEffects describes scheme paths, principals, and the secret, topic and
+// external data source reads of a common AST node.
 // The native migration and declaration hosts use the same resource identities.
 // It does not claim complete query or runtime effects; unrecognized nodes have
 // unknown footprints. A process adapter exchanges the resulting metadata in a
@@ -58,12 +57,38 @@ func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) (
 		return nil, err
 	}
 	effects = append(effects, reads...)
-	return append(effects, topicReads(root, node)...), nil
+	effects = append(effects, topicReads(root, node)...)
+	if table, ok := node.(*ast.CreateTableNode); ok && table.YDBColumnTable != nil {
+		effects = append(effects, TieredTTLReads(root, table.YDBColumnTable.TTL)...)
+	}
+	return effects, nil
+}
+
+// TieredTTLReads names the external data sources a column table's tiered TTL
+// moves rows to, by their paths read against root: a statement that creates
+// the table with the policy, or sets it, reads each one, so the data source's
+// owner creates it before and drops it after. A tier that deletes rows reads
+// nothing, and neither does a path outside root, one written absolute where
+// root is not known, or one that cannot name a data source.
+func TieredTTLReads(root string, policy *ast.YDBTieredTTLSpec) []plangraph.Effect {
+	if policy == nil {
+		return nil
+	}
+	var effects []plangraph.Effect
+	seen := make(map[objectidentity.Key]bool)
+	for _, tier := range policy.Tiers {
+		ref, ok := ydbexternal.ResolveSource(root, tier.ExternalSource)
+		if !ok || seen[ref.Key()] {
+			continue
+		}
+		seen[ref.Key()] = true
+		effects = append(effects, plangraph.Effect{Subject: ref, Action: plangraph.Read})
+	}
+	return effects
 }
 
 // secretReads names each YDB secret a statement reads by its path when it
-// runs: the _SECRET_PATH options of an external data source and the
-// credentials of an async replication or a transfer. YDB looks the secret up
+// runs: the credentials of an async replication or a transfer. YDB looks the secret up
 // when the object is created or its connection changes (`secret ... not
 // found`), so a secret's owner orders its creation before these reads. YDB
 // stores the path absolute, so an absolute path under root names the same
@@ -72,12 +97,6 @@ func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) (
 func secretReads(root string, node ast.Node) ([]plangraph.Effect, error) {
 	var paths []string
 	switch n := node.(type) {
-	case *ast.CreateExternalDataSourceNode:
-		for _, option := range slices.Sorted(maps.Keys(n.Options)) {
-			if strings.HasSuffix(strings.ToUpper(option), "_SECRET_PATH") {
-				paths = append(paths, n.Options[option])
-			}
-		}
 	case *ast.CreateAsyncReplicationNode:
 		paths = connectionSecretPaths(n.Spec.Connection)
 	case *ast.AlterAsyncReplicationNode:
@@ -200,20 +219,6 @@ func commonSchemeUse(node ast.Node) schemeUse {
 
 func externalSchemeUse(node ast.Node) schemeUse {
 	switch n := node.(type) {
-	case *ast.CreateExternalDataSourceNode:
-		if n.Replace {
-			return schemeUse{n.Name, plangraph.Alter, false}
-		}
-		return schemeUse{n.Name, plangraph.Create, false}
-	case *ast.DropExternalDataSourceNode:
-		return schemeUse{n.Name, plangraph.Drop, false}
-	case *ast.CreateExternalTableNode:
-		if n.Replace {
-			return schemeUse{n.Name, plangraph.Alter, false}
-		}
-		return schemeUse{n.Name, plangraph.Create, false}
-	case *ast.DropExternalTableNode:
-		return schemeUse{n.Name, plangraph.Drop, false}
 	case *ast.CreateAsyncReplicationNode:
 		return schemeUse{n.Name, plangraph.Create, false}
 	case *ast.AlterAsyncReplicationNode:

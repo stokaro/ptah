@@ -4,35 +4,33 @@ package schemamodel
 // initialized, ready to accumulate schema objects from one or more sources.
 func NewDatabase() *Database {
 	return &Database{
-		Schemas:             make([]Schema, 0),
-		Tables:              make([]Table, 0),
-		Fields:              make([]Field, 0),
-		Indexes:             make([]Index, 0),
-		Constraints:         make([]Constraint, 0),
-		Enums:               make([]Enum, 0),
-		EmbeddedFields:      make([]EmbeddedField, 0),
-		Extensions:          make([]Extension, 0),
-		Functions:           make([]Function, 0),
-		Sequences:           make([]Sequence, 0),
-		Domains:             make([]Domain, 0),
-		CompositeTypes:      make([]CompositeType, 0),
-		Ranges:              make([]Range, 0),
-		Views:               make([]View, 0),
-		Synonyms:            make([]Synonym, 0),
-		AsyncReplications:   make([]AsyncReplication, 0),
-		Transfers:           make([]Transfer, 0),
-		ExternalDataSources: make([]ExternalDataSource, 0),
-		ExternalTables:      make([]ExternalTable, 0),
-		ExtendedProperties:  make([]ExtendedProperty, 0),
-		MaterializedViews:   make([]MaterializedView, 0),
-		Triggers:            make([]Trigger, 0),
-		RLSPolicies:         make([]RLSPolicy, 0),
-		RLSEnabledTables:    make([]RLSEnabledTable, 0),
-		Roles:               make([]Role, 0),
-		Grants:              make([]Grant, 0),
-		DefaultPrivileges:   make([]DefaultPrivilege, 0),
-		RevokedGrants:       make([]Grant, 0),
-		ManagedData:         make([]ManagedData, 0),
+		Schemas:            make([]Schema, 0),
+		Tables:             make([]Table, 0),
+		Fields:             make([]Field, 0),
+		Indexes:            make([]Index, 0),
+		Constraints:        make([]Constraint, 0),
+		Enums:              make([]Enum, 0),
+		EmbeddedFields:     make([]EmbeddedField, 0),
+		Extensions:         make([]Extension, 0),
+		Functions:          make([]Function, 0),
+		Sequences:          make([]Sequence, 0),
+		Domains:            make([]Domain, 0),
+		CompositeTypes:     make([]CompositeType, 0),
+		Ranges:             make([]Range, 0),
+		Views:              make([]View, 0),
+		Synonyms:           make([]Synonym, 0),
+		AsyncReplications:  make([]AsyncReplication, 0),
+		Transfers:          make([]Transfer, 0),
+		ExtendedProperties: make([]ExtendedProperty, 0),
+		MaterializedViews:  make([]MaterializedView, 0),
+		Triggers:           make([]Trigger, 0),
+		RLSPolicies:        make([]RLSPolicy, 0),
+		RLSEnabledTables:   make([]RLSEnabledTable, 0),
+		Roles:              make([]Role, 0),
+		Grants:             make([]Grant, 0),
+		DefaultPrivileges:  make([]DefaultPrivilege, 0),
+		RevokedGrants:      make([]Grant, 0),
+		ManagedData:        make([]ManagedData, 0),
 		EmbeddedSources: EmbeddedSources{
 			Fields:      make([]Field, 0),
 			Definitions: make([]EmbeddedField, 0),
@@ -86,8 +84,6 @@ func AppendDatabase(dst, src *Database) error {
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
-	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
-	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)

@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
@@ -399,15 +400,13 @@ func TestRoundTrip_TimescaleStateSurvives(t *testing.T) {
 
 // hclUnwritableFields are the object families the HCL document has no block
 // for, and the coverage kind its header records each one under instead. A YDB
-// async replication, transfer and external objects are such families: Atlas
-// HCL has none of them, and Ptah does not invent a block the pinned binary
-// would refuse. A topic is a feature object an HCL document makes no claim
-// about, so it is not among them.
+// async replication and a transfer are such families: Atlas HCL has neither,
+// and Ptah does not invent a block the pinned binary would refuse. A topic
+// and an external object are feature objects an HCL document makes no claim
+// about, so they are not among them.
 var hclUnwritableFields = map[string]coverage.Kind{
-	"AsyncReplications":   coverage.Replication,
-	"Transfers":           coverage.Transfer,
-	"ExternalDataSources": coverage.ExternalDataSource,
-	"ExternalTables":      coverage.ExternalTable,
+	"AsyncReplications": coverage.Replication,
+	"Transfers":         coverage.Transfer,
 }
 
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
@@ -463,32 +462,25 @@ func TestYAMLDocument_DescribesSecrets(t *testing.T) {
 }
 
 // The same holds for YDB's external objects: the HCL document leaves both out
-// and records it, so applying it back plans no drop of either, and the YAML
-// surface has keys for both and records nothing.
-func TestRoundTrip_ExternalObjectsAreRecordedNotDropped(t *testing.T) {
+// and makes no claim about either namespace, so applying it back plans no drop
+// of either, while the YAML surface has keys for both and claims them.
+func TestRoundTrip_ExternalObjectsMakeNoHCLClaim(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
-	db.ExternalDataSources = append(db.ExternalDataSources, schemamodel.ExternalDataSource{
-		Name: "s3", SourceType: "ObjectStorage", AuthMethod: "NONE"})
-	db.ExternalTables = append(db.ExternalTables, schemamodel.ExternalTable{Name: "events", DataSource: "s3",
-		Location: "e/", Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64"}}})
-	live := &catalog.Database{
-		Schemas:             []catalog.Schema{{Name: "public"}},
-		Tables:              []catalog.Table{{Schema: "public", Name: "users"}},
-		ExternalDataSources: []catalog.ExternalDataSource{{Name: "s3", SourceType: "ObjectStorage", AuthMethod: "NONE"}},
-		ExternalTables:      []catalog.ExternalTable{{Name: "events", DataSource: "s3", Location: "e/"}},
-	}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(
+		ydbexternal.DesiredSourceObject("", "s3", "", ydbexternal.DataSource{SourceType: "ObjectStorage", AuthMethod: "NONE"}),
+		ydbexternal.DesiredTableObject("", "events", "", ydbexternal.Table{DataSource: "s3", Location: "e/",
+			Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}}),
+	))
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
-	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
 	yaml := loadYAMLDocument(c)
 
-	c.Assert(parsed.ExternalDataSources, qt.HasLen, 0)
-	c.Assert(parsed.ExternalTables, qt.HasLen, 0)
-	c.Assert(diff.ExternalDataSourcesRemoved, qt.HasLen, 0)
-	c.Assert(diff.ExternalTablesRemoved, qt.HasLen, 0)
-	c.Assert(yaml.NotDescribed.Describes(coverage.ExternalDataSource), qt.IsTrue)
-	c.Assert(yaml.NotDescribed.Describes(coverage.ExternalTable), qt.IsTrue)
+	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbexternal.SourceKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbexternal.TableKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(yaml.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
+	c.Assert(yaml.FeatureCoverage.Lookup(ydbexternal.TableKind, ydbexternal.TableRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test

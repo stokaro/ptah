@@ -6,6 +6,7 @@ import (
 	"context"
 	"maps"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,11 +15,13 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	ydbschema "ptah.run/internal/dbschema/ydb"
@@ -77,29 +80,52 @@ var externalLines = []externalLine{
 	},
 }
 
+// externalColumns are the columns of the external table the declaration
+// holds.
+var externalColumns = []ydbexternal.Column{
+	{Name: "id", Type: "Int64", NotNull: true}, {Name: "kind", Type: "Utf8"}, {Name: "amount", Type: "Decimal(22,9)"},
+}
+
+// externalWarehouse is the PostgreSQL source a line declares, with the
+// password named as the line says.
+func externalWarehouse(line externalLine) ydbexternal.DataSource {
+	return ydbexternal.DataSource{SourceType: "PostgreSQL", Location: "pg.invalid:5432", AuthMethod: "BASIC",
+		Options: merged(map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader"}, line.password)}
+}
+
+// externalBucket is the object storage source at location.
+func externalBucket(location string) ydbexternal.DataSource {
+	return ydbexternal.DataSource{SourceType: "ObjectStorage", Location: location, AuthMethod: "NONE"}
+}
+
+// externalEvents is the external table over the bucket with columns, which
+// carries a semicolon in an option.
+func externalEvents(columns []ydbexternal.Column) ydbexternal.Table {
+	return ydbexternal.Table{DataSource: externalSourceSchema + "/bucket", Location: "2026/", Columns: columns,
+		Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`}}
+}
+
 // externalDeclaration declares an object storage source in the nested
 // directory, a PostgreSQL source whose password is named as the line says,
-// with the line's secrets, and an external table over the first that carries
-// a semicolon in an option.
-func externalDeclaration(line externalLine, location string) *schemamodel.Database {
-	return &schemamodel.Database{
-		FeatureObjects: must.Must(schemaext.NewObjects(line.secrets...)),
-		ExternalDataSources: []schemamodel.ExternalDataSource{
-			{Name: "warehouse", Schema: externalSchema, SourceType: "PostgreSQL", Location: "pg.invalid:5432",
-				AuthMethod: "BASIC", Options: merged(map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader"},
-					line.password)},
-			{Name: "bucket", Schema: externalSourceSchema, SourceType: "ObjectStorage", Location: location,
-				AuthMethod: "NONE"},
-		},
-		ExternalTables: []schemamodel.ExternalTable{{
-			Name: "events", Schema: externalSchema, DataSource: externalSourceSchema + "/bucket", Location: "2026/",
-			Columns: []schemamodel.ExternalColumn{
-				{Name: "id", Type: "Int64", NotNull: true}, {Name: "kind", Type: "Utf8"},
-				{Name: "amount", Type: "Decimal(22,9)"},
-			},
-			Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`},
-		}},
-	}
+// with the line's secrets, and an external table with columns over the first.
+func externalDeclaration(line externalLine, location string, columns []ydbexternal.Column) *schemamodel.Database {
+	objects := append(slices.Clone(line.secrets),
+		ydbexternal.DesiredSourceObject(externalSchema, "warehouse", "", externalWarehouse(line)),
+		ydbexternal.DesiredSourceObject(externalSourceSchema, "bucket", "", externalBucket(location)),
+		ydbexternal.DesiredTableObject(externalSchema, "events", "", externalEvents(columns)),
+	)
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...))}
+}
+
+// externalObjects is every external data source and external table db holds.
+func externalObjects(c *qt.C, db *catalog.Database) []schemaext.Object {
+	c.Helper()
+	objects, err := db.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		kind := schemaext.Kind(ref.Kind)
+		return kind == ydbexternal.SourceKind || kind == ydbexternal.TableKind
+	}).All()
+	c.Assert(err, qt.IsNil)
+	return objects
 }
 
 // externalTeardown drops the test's directory and what it holds, with the
@@ -135,7 +161,7 @@ func TestYDBExternal_RoundTrip_NothingLeftToPlan(t *testing.T) {
 			conn := openYDB(c, line)
 			c.Cleanup(func() { externalTeardown(c, conn, test.teardown) })
 			apply(c, conn, test.setup)
-			declared := externalDeclaration(test, "https://storage.invalid/events/")
+			declared := externalDeclaration(test, "https://storage.invalid/events/", externalColumns)
 
 			first := planAgainst(c, conn, declared, externalSchemas)
 			apply(c, conn, first)
@@ -143,27 +169,16 @@ func TestYDBExternal_RoundTrip_NothingLeftToPlan(t *testing.T) {
 			c.Assert(conn.Info().Capabilities.Has(capability.ExternalDataSources), qt.IsTrue)
 			c.Assert(conn.Info().Capabilities.Has(capability.ExternalObjectReplace), qt.IsFalse)
 			c.Assert(first, qt.HasLen, test.statements)
-			described := readScoped(c, conn, externalSchemas)
-			c.Assert(described.ExternalDataSources, qt.DeepEquals, []catalog.ExternalDataSource{
-				{Name: "warehouse", Schema: externalSchema, SourceType: "PostgreSQL", Location: "pg.invalid:5432",
-					AuthMethod: "BASIC", Options: merged(map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader"},
-						test.password)},
-				{Name: "bucket", Schema: externalSourceSchema, SourceType: "ObjectStorage",
-					Location: "https://storage.invalid/events/", AuthMethod: "NONE"},
+			c.Assert(externalObjects(c, readScoped(c, conn, externalSchemas)), qt.DeepEquals, []schemaext.Object{
+				ydbexternal.ObservedSourceObject(externalSchema, "warehouse", externalWarehouse(test)),
+				ydbexternal.ObservedSourceObject(externalSourceSchema, "bucket", externalBucket("https://storage.invalid/events/")),
+				ydbexternal.ObservedTableObject(externalSchema, "events", externalEvents(externalColumns)),
 			})
-			c.Assert(described.ExternalTables, qt.DeepEquals, []catalog.ExternalTable{{
-				Name: "events", Schema: externalSchema, DataSource: externalSourceSchema + "/bucket", Location: "2026/",
-				Columns: []catalog.ExternalColumn{
-					{Name: "id", Type: "Int64", NotNull: true}, {Name: "kind", Type: "Utf8"},
-					{Name: "amount", Type: "Decimal(22,9)"},
-				},
-				Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`},
-			}})
 			c.Assert(planAgainst(c, conn, declared, externalSchemas), qt.HasLen, 0)
 			apply(c, conn, planAgainst(c, conn, declared, externalSchemas))
 			c.Assert(planAgainst(c, conn, declared, externalSchemas), qt.HasLen, 0)
 
-			moved := externalDeclaration(test, "https://storage.invalid/moved/")
+			moved := externalDeclaration(test, "https://storage.invalid/moved/", externalColumns)
 			replacement := planAgainst(c, conn, moved, externalSchemas)
 			apply(c, conn, replacement)
 
@@ -174,8 +189,8 @@ func TestYDBExternal_RoundTrip_NothingLeftToPlan(t *testing.T) {
 				"CREATE EXTERNAL TABLE `ptah_ydb_external/events` (",
 			})
 			c.Assert(planAgainst(c, conn, moved, externalSchemas), qt.HasLen, 0)
-			c.Assert(readScoped(c, conn, externalSchemas).ExternalDataSources[1].Location, qt.Equals,
-				"https://storage.invalid/moved/")
+			c.Assert(externalObjects(c, readScoped(c, conn, externalSchemas))[1], qt.DeepEquals,
+				ydbexternal.ObservedSourceObject(externalSourceSchema, "bucket", externalBucket("https://storage.invalid/moved/")))
 		})
 	}
 }
@@ -193,11 +208,10 @@ func TestYDBExternal_ReplacedInPlace(t *testing.T) {
 			conn := openYDB(c, line)
 			c.Cleanup(func() { externalTeardown(c, conn, test.teardown) })
 			apply(c, conn, test.setup)
-			apply(c, conn, planAgainst(c, conn, externalDeclaration(test, "https://storage.invalid/events/"),
+			apply(c, conn, planAgainst(c, conn, externalDeclaration(test, "https://storage.invalid/events/", externalColumns),
 				externalSchemas))
-			changed := externalDeclaration(test, "https://storage.invalid/moved/")
-			changed.ExternalTables[0].Columns = append(changed.ExternalTables[0].Columns,
-				schemamodel.ExternalColumn{Name: "note", Type: "Utf8"})
+			changed := externalDeclaration(test, "https://storage.invalid/moved/",
+				append(slices.Clone(externalColumns), ydbexternal.Column{Name: "note", Type: "Utf8"}))
 
 			replacement := planAgainst(c, conn, changed, externalSchemas)
 			apply(c, conn, replacement)
@@ -208,15 +222,16 @@ func TestYDBExternal_ReplacedInPlace(t *testing.T) {
 				"CREATE OR REPLACE EXTERNAL TABLE `ptah_ydb_external/events` (",
 			})
 			c.Assert(planAgainst(c, conn, changed, externalSchemas), qt.HasLen, 0)
-			c.Assert(readScoped(c, conn, externalSchemas).ExternalTables[0].Columns, qt.HasLen, 4)
+			table := externalObjects(c, readScoped(c, conn, externalSchemas))[2].Value.(*ydbexternal.ObservedTable)
+			c.Assert(table.Spec.Columns, qt.HasLen, 4)
 		})
 	}
 }
 
 // TestYDBExternal_FailurePath_RefusedWithTheFlagOff plans a declared external
-// object against a line at its default flags: the comparison refuses it by the
-// key before anything is planned, and the connection that read the flags says
-// the key is off.
+// object against a line at its default flags: the declaration is refused by
+// the key before anything is compared, and the connection that read the flags
+// says the key is off.
 func TestYDBExternal_FailurePath_RefusedWithTheFlagOff(t *testing.T) {
 	for _, test := range externalLines {
 		t.Run(test.line, func(t *testing.T) {
@@ -225,10 +240,10 @@ func TestYDBExternal_FailurePath_RefusedWithTheFlagOff(t *testing.T) {
 			info := conn.Info()
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				t.Context(), externalDeclaration(test, "https://storage.invalid/events/"),
+				t.Context(), externalDeclaration(test, "https://storage.invalid/events/", externalColumns),
 				readScoped(c, conn, externalSchemas), info, nil, must.Must(builtin.New()))
 
-			c.Assert(err, qt.ErrorMatches, "external data source ptah_ydb_external.warehouse, which requires target "+
+			c.Assert(err, qt.ErrorMatches, "external data source ptah_ydb_external/warehouse, which requires target "+
 				"capability external_data_sources, unavailable on this ydb target")
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(diff, qt.IsNil)
@@ -273,9 +288,7 @@ func TestYDBExternal_TeardownsDropThem(t *testing.T) {
 
 			c.Assert(conn.SchemaWriter().DropAllTables(c.Context()), qt.IsNil)
 
-			live := readScoped(c, conn, nil)
-			c.Assert(live.ExternalDataSources, qt.HasLen, 0)
-			c.Assert(live.ExternalTables, qt.HasLen, 0)
+			c.Assert(externalObjects(c, readScoped(c, conn, nil)), qt.HasLen, 0)
 			c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), externalSchema)
 		})
 	}

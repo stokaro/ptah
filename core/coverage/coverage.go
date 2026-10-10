@@ -185,14 +185,6 @@ const (
 	// [Set] carrying this kind does not survive a round trip through a
 	// document. Hold the record in memory and consult it there.
 	ReplicaTable Kind = "replica_table"
-	// ExternalDataSource is a YDB external data source. The reader describes
-	// one on a server with the external_data_sources capability, and records
-	// one it meets on a server without it. The comparator consults the kind in
-	// both directions.
-	ExternalDataSource Kind = "external_data_source"
-	// ExternalTable is a YDB external table over an external data source,
-	// described and recorded as an external data source is.
-	ExternalTable Kind = "external_table"
 	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
 	// named by the table's path and the changefeed's name.
 	Changefeed Kind = "changefeed"
@@ -229,7 +221,7 @@ const (
 // constant says what that costs a serialized [Set].
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, DefaultPrivilege, Domain,
-	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
+	Extension, ExtendedProperty, Grant, Policy, Range, Replication,
 	Role, Schema, Sequence, Synonym, TableOption,
 	Transfer, TTL, View, VirtualTable,
 }

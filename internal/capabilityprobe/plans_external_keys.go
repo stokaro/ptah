@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbexternal"
 )
 
 // The statements the external object experiments send. The location names a
@@ -80,20 +81,16 @@ func ydbDescribedExternalObjects(source, table string) check {
 				return attempt, false, "was refused"
 			}
 			attempt.Accepted = true
-			sourceFound := false
-			for _, described := range db.ExternalDataSources {
-				sourceFound = sourceFound || described.Name == source
-			}
-			if !sourceFound {
+			if _, found, err := db.FeatureObjects.Get(ydbexternal.SourceRef(s.namespace, source)); err != nil || !found {
 				return attempt, false, "found no such data source"
 			}
 			if table == "" {
 				return attempt, true, "listed it"
 			}
-			for _, described := range db.ExternalTables {
-				if described.Name == table && described.DataSource == path.Join(s.namespace, source) {
-					return attempt, true, "listed both"
-				}
+			object, found, err := db.FeatureObjects.Get(ydbexternal.TableRef(s.namespace, table))
+			if described, ok := object.Value.(*ydbexternal.ObservedTable); err == nil && found && ok &&
+				described.Spec.DataSource == path.Join(s.namespace, source) {
+				return attempt, true, "listed both"
 			}
 			return attempt, false, "found no external table over it"
 		},

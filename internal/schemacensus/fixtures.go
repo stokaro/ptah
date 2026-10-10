@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -1537,18 +1538,19 @@ func secretFixture() schemamodel.Database {
 // second with every part a declaration writes.
 func externalObjectsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.ExternalDataSources = []schemamodel.ExternalDataSource{
-		{StructName: "ES", Name: "warehouse", Schema: "ext", SourceType: "PostgreSQL", Location: "pg:5432",
+	db.FeatureObjects = must.Must(schemaext.NewObjects(
+		ydbexternal.DesiredSourceObject("ext", "warehouse", "ES", ydbexternal.DataSource{SourceType: "PostgreSQL", Location: "pg:5432",
 			AuthMethod: "BASIC", Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader",
-				"PASSWORD_SECRET_PATH": "ext/pg_password"}},
-		{StructName: "ES", Name: "bucket", Schema: "ext", SourceType: "ObjectStorage",
-			Location: "https://s3.example.test/b/", AuthMethod: "NONE"},
-	}
-	db.ExternalTables = []schemamodel.ExternalTable{{
-		StructName: "ET", Name: "events", Schema: "ext", DataSource: "ext/bucket", Location: "events/",
-		Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64", NotNull: true}},
-		Options: map[string]string{"FORMAT": "json_each_row"},
-	}}
+				"PASSWORD_SECRET_PATH": "ext/pg_password"}}),
+		ydbexternal.DesiredSourceObject("ext", "bucket", "ES", ydbexternal.DataSource{SourceType: "ObjectStorage",
+			Location: "https://s3.example.test/b/", AuthMethod: "NONE"}),
+		ydbexternal.DesiredTableObject("ext", "events", "ET", ydbexternal.Table{DataSource: "ext/bucket", Location: "events/",
+			Columns: []ydbexternal.Column{{Name: "id", Type: "Int64", NotNull: true}},
+			Options: map[string]string{"FORMAT": "json_each_row"}}),
+	))
+	sources := must.Must(ydbexternal.SourceCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	tables := must.Must(ydbexternal.TableCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	db.FeatureCoverage = must.Must(sources.Combine(tables))
 	return db
 }
 

@@ -8,173 +8,242 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// declaredWarehouse is a PostgreSQL data source whose password a secret holds,
-// and an external table over an object storage source.
-func declaredWarehouse() *schemamodel.Database {
-	return &schemamodel.Database{
-		ExternalDataSources: []schemamodel.ExternalDataSource{
-			{Name: "pg", Schema: "ext", SourceType: "PostgreSQL", Location: "pg:5432", AuthMethod: "BASIC",
-				Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "ext/pg_password"}},
-			{Name: "s3", Schema: "ext", SourceType: "ObjectStorage", Location: "https://s3.example.test/b/", AuthMethod: "NONE"},
-		},
-		ExternalTables: []schemamodel.ExternalTable{{
-			Name: "events", Schema: "ext", DataSource: "ext/s3", Location: "events/",
-			Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64", NotNull: true}, {Name: "name", Type: "Utf8"}},
-			Options: map[string]string{"FORMAT": "json_each_row", "PARTITIONED_BY": `["id"]`},
-		}},
-	}
+// warehouseSource is a PostgreSQL data source whose password a secret holds,
+// with the secret's path written as secretPath.
+func warehouseSource(secretPath string) ydbexternal.DataSource {
+	return ydbexternal.DataSource{SourceType: "PostgreSQL", Location: "pg:5432", AuthMethod: "BASIC",
+		Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": secretPath}}
 }
 
-// heldWarehouse is what the reader describes after declaredWarehouse is
-// applied at /local: option names in upper case, the secret's path and the
-// data source written relative to the root, and the type names the server
-// gives.
-func heldWarehouse() catalog.Database {
-	return catalog.Database{
-		DatabasePath: "/local",
-		ExternalDataSources: []catalog.ExternalDataSource{
-			{Name: "pg", Schema: "ext", SourceType: "PostgreSQL", Location: "pg:5432", AuthMethod: "BASIC",
-				Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "ext/pg_password"}},
-			{Name: "s3", Schema: "ext", SourceType: "ObjectStorage", Location: "https://s3.example.test/b/", AuthMethod: "NONE"},
-		},
-		ExternalTables: []catalog.ExternalTable{{
-			Name: "events", Schema: "ext", DataSource: "ext/s3", Location: "events/",
-			Columns: []catalog.ExternalColumn{{Name: "id", Type: "Int64", NotNull: true}, {Name: "name", Type: "Utf8"}},
-			Options: map[string]string{"FORMAT": "json_each_row", "PARTITIONED_BY": `["id"]`},
-		}},
-	}
+// s3Source is an object storage data source.
+func s3Source() ydbexternal.DataSource {
+	return ydbexternal.DataSource{SourceType: "ObjectStorage", Location: "https://s3.example.test/b/", AuthMethod: "NONE"}
+}
+
+// eventsOver is an external table over the data source at source.
+func eventsOver(source string) ydbexternal.Table {
+	return ydbexternal.Table{DataSource: source, Location: "events/",
+		Columns: []ydbexternal.Column{{Name: "id", Type: "Int64", NotNull: true}, {Name: "name", Type: "Utf8"}},
+		Options: map[string]string{"FORMAT": "json_each_row", "PARTITIONED_BY": `["id"]`}}
+}
+
+// externalCoverage claims both external namespaces for representation.
+func externalCoverage(representation schemaext.Representation) schemaext.Coverage {
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	sources := must.Must(ydbexternal.SourceCoverage(representation, complete, nil))
+	return must.Must(sources.Combine(must.Must(ydbexternal.TableCoverage(representation, complete, nil))))
+}
+
+// declaredExternal declares objects from a source that describes both
+// external namespaces.
+func declaredExternal(objects ...schemaext.Object) *schemamodel.Database {
+	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...)), FeatureCoverage: externalCoverage(schemaext.Desired)}
+}
+
+// heldExternal is a read of the database /local that listed every external
+// object and found objects.
+func heldExternal(objects ...schemaext.Object) *catalog.Database {
+	return &catalog.Database{DatabasePath: "/local", FeatureObjects: must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: externalCoverage(schemaext.Observed)}
+}
+
+// heldWarehouse is what the reader describes after the warehouse source, the
+// object storage source and the table over it are applied at /local: the
+// secret's path and the data source written relative to the root.
+func heldWarehouse() *catalog.Database {
+	return heldExternal(
+		ydbexternal.ObservedSourceObject("ext", "pg", warehouseSource("ext/pg_password")),
+		ydbexternal.ObservedSourceObject("ext", "s3", s3Source()),
+		ydbexternal.ObservedTableObject("ext", "events", eventsOver("ext/s3")),
+	)
 }
 
 // TestCompare_YDBExternalObjectsAsDescribed finds nothing to do between a
 // declaration and what the reader describes of it, whether the declaration
-// writes a path relative to the root or absolute, and carries every declared
-// external table.
+// writes the paths relative to the root or absolute under it: the
+// comparison reads them against the database the read describes.
 func TestCompare_YDBExternalObjectsAsDescribed(t *testing.T) {
-	absolute := declaredWarehouse()
-	absolute.ExternalDataSources[0].Options["PASSWORD_SECRET_PATH"] = "/local/ext/pg_password"
-	absolute.ExternalTables[0].DataSource = "/local/ext/s3"
 	tests := []struct {
-		name    string
-		desired *schemamodel.Database
+		name          string
+		secret, table string
 	}{
-		{name: "paths relative to the root", desired: declaredWarehouse()},
-		{name: "absolute paths", desired: absolute},
+		{name: "paths relative to the root", secret: "ext/pg_password", table: "ext/s3"},
+		{name: "absolute paths", secret: "/local/ext/pg_password", table: "/local/ext/s3"}, // #nosec G101 -- a secret's path, not a credential
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			held := heldWarehouse()
-			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, &held, platform.YDB, must.Must(builtin.New())))
-			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
-			c.Assert(diff.DeclaredExternalTables, qt.DeepEquals, test.desired.ExternalTables)
+			desired := declaredExternal(
+				ydbexternal.DesiredSourceObject("ext", "pg", "", warehouseSource(test.secret)),
+				ydbexternal.DesiredSourceObject("ext", "s3", "", s3Source()),
+				ydbexternal.DesiredTableObject("ext", "events", "", eventsOver(test.table)),
+			)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, heldWarehouse(), platform.YDB, must.Must(builtin.New())))
+			c.Assert(diff.FeatureChanges, qt.IsNil)
+			c.Assert(diff.HasChanges(), qt.IsFalse)
 		})
 	}
 }
 
 // TestCompare_YDBExternalObjectChanges plans each difference: a missing
-// object is added, an undeclared one removed, and one that differs in any
+// object is created, an undeclared one dropped, and one that differs in any
 // part changed, carrying both sides.
 func TestCompare_YDBExternalObjectChanges(t *testing.T) {
 	c := qt.New(t)
-	desired := declaredWarehouse()
-	desired.ExternalDataSources = append(desired.ExternalDataSources, schemamodel.ExternalDataSource{
-		Name: "ch", SourceType: "ClickHouse", Location: "ch:8123", AuthMethod: "NONE"})
-	desired.ExternalDataSources[0].Options["LOGIN"] = "writer"
-	desired.ExternalTables[0].Columns = append(desired.ExternalTables[0].Columns,
-		schemamodel.ExternalColumn{Name: "extra", Type: "Utf8"})
+	writer := warehouseSource("ext/pg_password")
+	writer.Options["LOGIN"] = "writer"
+	wider := eventsOver("ext/s3")
+	wider.Columns = append(wider.Columns, ydbexternal.Column{Name: "extra", Type: "Utf8"})
+	clickhouse := ydbexternal.DataSource{SourceType: "ClickHouse", Location: "ch:8123", AuthMethod: "NONE"}
+	old := ydbexternal.DataSource{SourceType: "ObjectStorage", Location: "https://old.example.test/", AuthMethod: "NONE"}
+	stale := ydbexternal.Table{DataSource: "old", Location: "x/", Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}}
+	desired := declaredExternal(
+		ydbexternal.DesiredSourceObject("", "ch", "", clickhouse),
+		ydbexternal.DesiredSourceObject("ext", "pg", "", writer),
+		ydbexternal.DesiredSourceObject("ext", "s3", "", s3Source()),
+		ydbexternal.DesiredTableObject("ext", "events", "", wider),
+	)
 	held := heldWarehouse()
-	held.ExternalDataSources = append(held.ExternalDataSources, catalog.ExternalDataSource{
-		Name: "old", SourceType: "ObjectStorage", Location: "https://old.example.test/", AuthMethod: "NONE"})
-	held.ExternalTables = append(held.ExternalTables, catalog.ExternalTable{Name: "stale", DataSource: "old",
-		Location: "x/", Columns: []catalog.ExternalColumn{{Name: "id", Type: "Int64"}}})
+	held.FeatureObjects = must.Must(held.FeatureObjects.With(ydbexternal.ObservedSourceObject("", "old", old)))
+	held.FeatureObjects = must.Must(held.FeatureObjects.With(ydbexternal.ObservedTableObject("", "stale", stale)))
 
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &held, platform.YDB, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, held, platform.YDB, must.Must(builtin.New())))
 
-	c.Assert(namesOf(diff.ExternalDataSourcesAdded), qt.Equals, `["ch"]`)
-	c.Assert(namesOf(diff.ExternalDataSourcesRemoved), qt.Equals, `["old"]`)
-	c.Assert(diff.ExternalDataSourcesChanged, qt.HasLen, 1)
-	c.Assert(diff.ExternalDataSourcesChanged[0].Declared.Options["LOGIN"], qt.Equals, "writer")
-	c.Assert(diff.ExternalDataSourcesChanged[0].Current.Options["LOGIN"], qt.Equals, "reader")
-	c.Assert(diff.ExternalTablesAdded, qt.HasLen, 0)
-	c.Assert(namesOf(diff.ExternalTablesRemoved), qt.Equals, `["stale"]`)
-	c.Assert(diff.ExternalTablesChanged, qt.HasLen, 1)
-	c.Assert(diff.ExternalTablesChanged[0].Declared.Columns, qt.HasLen, 3)
-	c.Assert(diff.ExternalTablesChanged[0].Current.Columns, qt.HasLen, 2)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{
+		{Subject: ydbexternal.SourceRef("", "ch"), Value: &ydbdiff.ExternalDataSource{After: &ydbexternal.DesiredSource{Spec: clickhouse}}},
+		{Subject: ydbexternal.SourceRef("", "old"), Value: &ydbdiff.ExternalDataSource{Before: &ydbexternal.ObservedSource{Spec: old}}},
+		{Subject: ydbexternal.SourceRef("ext", "pg"), Value: &ydbdiff.ExternalDataSource{
+			Before: &ydbexternal.ObservedSource{Spec: warehouseSource("ext/pg_password")}, After: &ydbexternal.DesiredSource{Spec: writer}}},
+		{Subject: ydbexternal.TableRef("", "stale"), Value: &ydbdiff.ExternalTable{Before: &ydbexternal.ObservedTable{Spec: stale}}},
+		{Subject: ydbexternal.TableRef("ext", "events"), Value: &ydbdiff.ExternalTable{
+			Before: &ydbexternal.ObservedTable{Spec: eventsOver("ext/s3")}, After: &ydbexternal.DesiredTable{Spec: wider}}},
+	})
 }
 
-// namesOf is the JSON a diff writes for a list of objects.
-func namesOf(list interface{ MarshalJSON() ([]byte, error) }) string {
-	data, err := list.MarshalJSON()
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
-}
-
-// TestCompare_YDBExternalObjectsKeptWhereTheDesiredStateCannotNameThem plans
-// no drop of a held external object when the desired state records that it
-// does not describe the kind, and plans it where it does.
-func TestCompare_YDBExternalObjectsKeptWhereTheDesiredStateCannotNameThem(t *testing.T) {
+// TestCompare_YDBExternalTablesOverARecreatedSource asks for every declared
+// table the database holds over a data source the plan drops and creates
+// again, as a change whose operands describe the same table: on a target
+// without CREATE OR REPLACE YDB keeps no table over a dropped source. A source
+// replaced in place keeps its tables.
+func TestCompare_YDBExternalTablesOverARecreatedSource(t *testing.T) {
+	moved := s3Source()
+	moved.Location = "https://s3.example.test/other/"
+	desired := declaredExternal(
+		ydbexternal.DesiredSourceObject("ext", "pg", "", warehouseSource("ext/pg_password")),
+		ydbexternal.DesiredSourceObject("ext", "s3", "", moved),
+		ydbexternal.DesiredTableObject("ext", "events", "", eventsOver("/local/ext/s3")),
+	)
+	sourceChange := schemaext.ChangeRecord{Subject: ydbexternal.SourceRef("ext", "s3"), Value: &ydbdiff.ExternalDataSource{
+		Before: &ydbexternal.ObservedSource{Spec: s3Source()}, After: &ydbexternal.DesiredSource{Spec: moved}}}
 	tests := []struct {
-		name        string
-		desired     *schemamodel.Database
-		wantSources int
-		wantTables  int
+		name    string
+		replace bool
+		want    []schemaext.ChangeRecord
 	}{
-		{name: "a document that cannot name either kind",
-			desired: &schemamodel.Database{NotDescribed: coverage.Set{}.With(
-				coverage.Object{Kind: coverage.ExternalDataSource, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact},
-				coverage.Object{Kind: coverage.ExternalTable, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact},
-			)}},
-		{name: "a document that can, and names none", desired: &schemamodel.Database{}, wantSources: 2, wantTables: 1},
+		{name: "without CREATE OR REPLACE", want: []schemaext.ChangeRecord{sourceChange,
+			{Subject: ydbexternal.TableRef("ext", "events"), Value: &ydbdiff.ExternalTable{
+				Before: &ydbexternal.ObservedTable{Spec: eventsOver("ext/s3")}, After: &ydbexternal.DesiredTable{Spec: eventsOver("/local/ext/s3")}}}}},
+		{name: "with it", replace: true, want: []schemaext.ChangeRecord{sourceChange}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			held := heldWarehouse()
-			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, &held, platform.YDB, must.Must(builtin.New())))
-			c.Assert(diff.ExternalDataSourcesRemoved, qt.HasLen, test.wantSources)
-			c.Assert(diff.ExternalTablesRemoved, qt.HasLen, test.wantTables)
+			caps := capability.YDB262().With(capability.ExternalDataSources, true).With(capability.ExternalObjectReplace, test.replace)
+
+			diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), desired, heldWarehouse(),
+				catalog.ServerInfo{Dialect: platform.YDB, Capabilities: caps}, nil, must.Must(builtin.New())))
+
+			c.Assert(diff.FeatureChanges, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestCompare_YDBExternalObjectsKeptWhereTheDesiredStateCannotNameThem plans
+// no drop of a held external object when the desired state makes no claim
+// about either namespace, as an HCL or DBML document does not, and plans it
+// where it claims to describe them and names none.
+func TestCompare_YDBExternalObjectsKeptWhereTheDesiredStateCannotNameThem(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		want    int
+	}{
+		{name: "a document that cannot name either kind", desired: &schemamodel.Database{}},
+		{name: "a document that can, and names none", desired: declaredExternal(), want: 3},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, heldWarehouse(), platform.YDB, must.Must(builtin.New())))
+			c.Assert(diff.FeatureChanges, qt.HasLen, test.want)
 		})
 	}
 }
 
 // TestCompare_YDBExternalObjectsNotCreatedWhereTheReadDidNotLook withholds
 // the creation of a declared object when the read recorded that it did not
-// describe the kind, as the reader does on a server with external data
-// sources turned off: CREATE EXTERNAL ... has no guard Ptah writes.
+// describe it, as the reader does on a server with external data sources
+// turned off: CREATE EXTERNAL ... has no guard Ptah writes. The withheld
+// creations are reported, and an object the read did look for is still
+// created.
 func TestCompare_YDBExternalObjectsNotCreatedWhereTheReadDidNotLook(t *testing.T) {
 	c := qt.New(t)
-	held := &catalog.Database{NotDescribed: coverage.Set{}.With(
-		coverage.Object{Kind: coverage.ExternalDataSource, Name: "ext.s3", Reason: coverage.Unsupported,
-			Provenance: coverage.Observed},
-		coverage.Object{Kind: coverage.ExternalTable, Name: "ext.events", Reason: coverage.Unsupported,
-			Provenance: coverage.Observed},
-	)}
+	unread := schemaext.Knowledge{State: schemaext.Uninspected, Reason: ydbexternal.UnsupportedReason}
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	sources := must.Must(ydbexternal.SourceCoverage(schemaext.Observed, complete,
+		[]schemaext.SubjectCoverage{{Kind: ydbexternal.SourceKind, Subject: ydbexternal.SourceRef("ext", "s3"), Knowledge: unread}}))
+	tables := must.Must(ydbexternal.TableCoverage(schemaext.Observed, complete,
+		[]schemaext.SubjectCoverage{{Kind: ydbexternal.TableKind, Subject: ydbexternal.TableRef("ext", "events"), Knowledge: unread}}))
+	held := &catalog.Database{DatabasePath: "/local", FeatureCoverage: must.Must(sources.Combine(tables))}
+	desired := declaredExternal(
+		ydbexternal.DesiredSourceObject("ext", "pg", "", warehouseSource("ext/pg_password")),
+		ydbexternal.DesiredSourceObject("ext", "s3", "", s3Source()),
+		ydbexternal.DesiredTableObject("ext", "events", "", eventsOver("ext/s3")),
+	)
 
-	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), declaredWarehouse(), held, &config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()))
+	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, held, &config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()))
+
 	c.Assert(err, qt.IsNil)
-	c.Assert(diagnostics.Common, qt.HasLen, 2)
-
-	c.Assert(namesOf(diff.ExternalDataSourcesAdded), qt.Equals, `["ext.pg"]`)
-	c.Assert(diff.ExternalTablesAdded, qt.HasLen, 0)
+	c.Assert(diagnostics.Features, qt.HasLen, 2)
+	c.Assert(diff.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{{Subject: ydbexternal.SourceRef("ext", "pg"),
+		Value: &ydbdiff.ExternalDataSource{After: &ydbexternal.DesiredSource{Spec: warehouseSource("ext/pg_password")}}}})
 }
 
-// The JSON a diff writes names each changed object.
-func TestExternalChanges_MarshalJSON(t *testing.T) {
-	c := qt.New(t)
-	data, err := difftypes.ExternalTableChange{Declared: schemamodel.ExternalTable{Name: "events", Schema: "ext"}}.MarshalJSON()
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(data), qt.Equals, `"ext.events"`)
-	data, err = difftypes.ExternalDataSourceChange{Declared: schemamodel.ExternalDataSource{Name: "s3"}}.MarshalJSON()
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(data), qt.Equals, `"s3"`)
+// TestCompare_YDBExternalFailurePath refuses a plan that drops a data source
+// a declared external table reads, which would keep the table over a source
+// that is gone, and any change on a target without external data sources.
+func TestCompare_YDBExternalFailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		held    *catalog.Database
+		wantErr string
+	}{
+		{name: "a declared table over a source the plan drops",
+			desired: declaredExternal(ydbexternal.DesiredSourceObject("ext", "pg", "", warehouseSource("ext/pg_password")),
+				ydbexternal.DesiredTableObject("ext", "events", "", eventsOver("ext/s3"))),
+			held: heldWarehouse(),
+			wantErr: ".*external table ext/events reads data source ext/s3, which the plan drops; declare the data source " +
+				"or move the table to one the plan keeps.*"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff, err := schemadiff.CompareWithDialect(t.Context(), test.desired, test.held, platform.YDB, must.Must(builtin.New()))
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
 }

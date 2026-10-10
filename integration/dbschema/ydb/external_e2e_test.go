@@ -11,6 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -71,8 +72,7 @@ func TestYDBBinary_AppliesExternalObjects(t *testing.T) {
 	c.Assert(applied, qt.Contains, "CREATE EXTERNAL TABLE `"+externalE2EDir+"/events`")
 	c.Assert(applied, qt.Not(qt.Contains), "SENTINEL")
 	c.Assert(compared, qt.Not(qt.Contains), "SENTINEL")
-	live := readScoped(c, conn, []string{externalE2EDir})
-	c.Assert(live.ExternalDataSources, qt.HasLen, 2)
-	c.Assert(live.ExternalTables, qt.HasLen, 1)
-	c.Assert(live.ExternalTables[0].Options["CSV_DELIMITER"], qt.Equals, ";")
+	objects := externalObjects(c, readScoped(c, conn, []string{externalE2EDir}))
+	c.Assert(objects, qt.HasLen, 3)
+	c.Assert(objects[2].Value.(*ydbexternal.ObservedTable).Spec.Options["CSV_DELIMITER"], qt.Equals, ";")
 }

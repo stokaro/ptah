@@ -718,8 +718,6 @@ type schemaParseState struct {
 	ranges                []schemamodel.Range
 	views                 []schemamodel.View
 	synonyms              []schemamodel.Synonym
-	externalDataSources   []schemamodel.ExternalDataSource
-	externalTables        []schemamodel.ExternalTable
 	extendedProperties    []schemamodel.ExtendedProperty
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
@@ -1049,39 +1047,37 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	})
 
 	result := schemamodel.Database{
-		FeatureObjects:      state.featureObjects,
-		FeatureCoverage:     state.featureCoverage,
-		Schemas:             state.schemas,
-		Tables:              state.tableDirectives,
-		Fields:              state.schemaFields,
-		Indexes:             state.schemaIndexes,
-		Constraints:         state.schemaConstraints,
-		Enums:               enums,
-		EmbeddedFields:      state.embeddedFields,
-		Extensions:          state.extensions,
-		Functions:           state.functions,
-		Sequences:           state.sequences,
-		Domains:             state.domains,
-		CompositeTypes:      state.compositeTypes,
-		Ranges:              state.ranges,
-		Views:               state.views,
-		Synonyms:            state.synonyms,
-		AsyncReplications:   state.asyncReplications,
-		Transfers:           state.transfers,
-		ExternalDataSources: state.externalDataSources,
-		ExternalTables:      state.externalTables,
-		ExtendedProperties:  state.extendedProperties,
-		MaterializedViews:   state.materializedViews,
-		Triggers:            state.triggers,
-		RLSPolicies:         state.rlsPolicies,
-		RLSEnabledTables:    state.rlsEnabledTables,
-		Roles:               state.roles,
-		Grants:              state.grants,
-		RevokedGrants:       state.revokedGrants,
-		DefaultPrivileges:   state.defaultPrivileges,
-		ManagedData:         state.managedData,
-		NotDescribed:        coverage.Set{}.With(state.notDescribed...),
-		Dependencies:        make(map[string][]string),
+		FeatureObjects:     state.featureObjects,
+		FeatureCoverage:    state.featureCoverage,
+		Schemas:            state.schemas,
+		Tables:             state.tableDirectives,
+		Fields:             state.schemaFields,
+		Indexes:            state.schemaIndexes,
+		Constraints:        state.schemaConstraints,
+		Enums:              enums,
+		EmbeddedFields:     state.embeddedFields,
+		Extensions:         state.extensions,
+		Functions:          state.functions,
+		Sequences:          state.sequences,
+		Domains:            state.domains,
+		CompositeTypes:     state.compositeTypes,
+		Ranges:             state.ranges,
+		Views:              state.views,
+		Synonyms:           state.synonyms,
+		AsyncReplications:  state.asyncReplications,
+		Transfers:          state.transfers,
+		ExtendedProperties: state.extendedProperties,
+		MaterializedViews:  state.materializedViews,
+		Triggers:           state.triggers,
+		RLSPolicies:        state.rlsPolicies,
+		RLSEnabledTables:   state.rlsEnabledTables,
+		Roles:              state.roles,
+		Grants:             state.grants,
+		RevokedGrants:      state.revokedGrants,
+		DefaultPrivileges:  state.defaultPrivileges,
+		ManagedData:        state.managedData,
+		NotDescribed:       coverage.Set{}.With(state.notDescribed...),
+		Dependencies:       make(map[string][]string),
 	}
 	schemamodel.NormalizeTableScopedNames(&result)
 	schemamodel.BuildDependencyGraph(&result)
