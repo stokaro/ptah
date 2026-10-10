@@ -46,6 +46,14 @@ func TestCodecs_RoundTripEveryModel(t *testing.T) {
 			Using: &tenant, WithCheck: &owner, Composition: pgpolicy.Restrictive, Comment: "tenants", StructName: "Tenant",
 		}},
 		{name: "a declared policy taking every default", representation: schemaext.Desired, value: &pgpolicy.DesiredPolicy{}},
+		{name: "a declared policy with a server's spelling", representation: schemaext.Desired, value: &pgpolicy.DesiredPolicy{
+			Command: pgpolicy.CommandUpdate, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.CurrentUser}, {Name: "reader"}},
+			Using: &tenant, WithCheck: &owner,
+			Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "reader"}, {Name: "app"}}, Using: &owner, WithCheck: &tenant},
+		}},
+		{name: "a declared policy whose spelling is PUBLIC", representation: schemaext.Desired, value: &pgpolicy.DesiredPolicy{
+			Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}},
+		}},
 		{name: "a declared INSERT policy", representation: schemaext.Desired,
 			value: &pgpolicy.DesiredPolicy{Command: pgpolicy.CommandInsert, WithCheck: &owner}},
 		{name: "an observed policy", representation: schemaext.Observed, value: &pgpolicy.ObservedPolicy{
@@ -102,6 +110,21 @@ func TestCodecs_EncodeRolesAsASet(t *testing.T) {
 	c.Assert(first.Roles[0], qt.Equals, pgpolicy.RoleSelector{Name: "writer"}, qt.Commentf("encoding leaves the value alone"))
 }
 
+// TestCodecs_EncodeTheServersRolesAsASet pins the same for the role list a
+// server's spelling holds.
+func TestCodecs_EncodeTheServersRolesAsASet(t *testing.T) {
+	c := qt.New(t)
+	codecs := registry(c)
+	first := &pgpolicy.DesiredPolicy{Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "writer"}, {Name: "app"}}}}
+	second := &pgpolicy.DesiredPolicy{Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "app"}, {Name: "writer"}}}}
+
+	encoded := must.Must(codecs.Encode(t.Context(), schemaext.Desired, []schemaext.Payload{first, second}))
+
+	c.Assert(string(encoded[0].Payload), qt.Equals, string(encoded[1].Payload))
+	c.Assert(string(encoded[0].Payload), qt.Equals, `{"normalized":{"roles":[{"name":"app"},{"name":"writer"}]}}`)
+	c.Assert(first.Normalized.Roles[0], qt.Equals, pgpolicy.RoleSelector{Name: "writer"}, qt.Commentf("encoding leaves the value alone"))
+}
+
 // TestCodecs_RefuseWhatTheModelCannotHold pins the wire rules and the
 // invariants the validators keep: unknown, null and case-variant keys, a role
 // that is both or neither a keyword and a name, an empty clause, and the
@@ -152,6 +175,18 @@ func TestCodecs_RefuseWhatTheModelCannotHold(t *testing.T) {
 			input: `{"command":"ALL","roles":[{"name":"public"}],"composition":"permissive"}`},
 		{name: "an observation of PUBLIC beside another role", codec: observed,
 			input: `{"command":"ALL","roles":[{"name":"reader"},{"keyword":"PUBLIC"}],"composition":"permissive"}`},
+		{name: "a null spelling", codec: desired, input: `{"normalized":null}`},
+		{name: "a spelling without roles", codec: desired, input: `{"normalized":{}}`},
+		{name: "a spelling with an unknown key", codec: desired, input: `{"normalized":{"roles":[{"name":"r"}],"command":"ALL"}}`},
+		{name: "a spelling with a key in another case", codec: desired, input: `{"using":"x","normalized":{"roles":[{"name":"r"}],"Using":"x"}}`},
+		{name: "a spelling with an empty role list", codec: desired, input: `{"normalized":{"roles":[]}}`},
+		{name: "a spelling with a keyword the catalog resolves", codec: desired, input: `{"normalized":{"roles":[{"keyword":"CURRENT_USER"}]}}`},
+		{name: "a spelling with a role selector of both kinds", codec: desired, input: `{"normalized":{"roles":[{"keyword":"PUBLIC","name":"r"}]}}`},
+		{name: "a spelling missing a declared clause", codec: desired, input: `{"using":"x","normalized":{"roles":[{"name":"r"}]}}`},
+		{name: "a spelling with a clause nobody declared", codec: desired, input: `{"normalized":{"roles":[{"name":"r"}],"with_check":"x"}}`},
+		{name: "a spelling with an empty clause", codec: desired, input: `{"using":"x","normalized":{"roles":[{"name":"r"}],"using":""}}`},
+		{name: "an observation with a spelling", codec: observed,
+			input: `{"command":"ALL","roles":[{"keyword":"PUBLIC"}],"composition":"permissive","normalized":{"roles":[{"name":"r"}]}}`},
 		{name: "a declared table without its forced flag", codec: desiredTable, input: `{"enabled":true}`},
 		{name: "an observed table with a declaration's key", codec: observedTable, input: `{"enabled":true,"forced":false,"comment":"c"}`},
 	}
@@ -188,7 +223,9 @@ func TestCodecs_EncodingRefusesAnInvalidValue(t *testing.T) {
 func TestValues_CloneIsIndependent(t *testing.T) {
 	c := qt.New(t)
 	using := "true"
-	original := &pgpolicy.DesiredPolicy{Roles: []pgpolicy.RoleSelector{{Name: "reader"}}, Using: &using}
+	spelled := "(true)"
+	original := &pgpolicy.DesiredPolicy{Roles: []pgpolicy.RoleSelector{{Name: "reader"}}, Using: &using,
+		Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "reader"}}, Using: &spelled}}
 	observedUsing := "true"
 	observed := &pgpolicy.ObservedPolicy{Command: pgpolicy.CommandAll, Composition: pgpolicy.Permissive,
 		Roles: []pgpolicy.RoleSelector{{Name: "reader"}}, Using: &observedUsing}
@@ -196,12 +233,16 @@ func TestValues_CloneIsIndependent(t *testing.T) {
 	clone := original.Clone().(*pgpolicy.DesiredPolicy)
 	clone.Roles[0].Name = "writer"
 	*clone.Using = "false"
+	clone.Normalized.Roles[0].Name = "writer"
+	*clone.Normalized.Using = "(false)"
 	observedClone := observed.Clone().(*pgpolicy.ObservedPolicy)
 	observedClone.Roles[0].Name = "writer"
 	*observedClone.Using = "false"
 
 	c.Assert(original.Roles[0].Name, qt.Equals, "reader")
 	c.Assert(*original.Using, qt.Equals, "true")
+	c.Assert(original.Normalized.Roles[0].Name, qt.Equals, "reader")
+	c.Assert(*original.Normalized.Using, qt.Equals, "(true)")
 	c.Assert(observed.Roles[0].Name, qt.Equals, "reader")
 	c.Assert(*observed.Using, qt.Equals, "true")
 	c.Assert(original.Equal(original.Clone()), qt.IsTrue)
@@ -228,6 +269,13 @@ func TestValues_EqualResolvesNoDefault(t *testing.T) {
 		{name: "no WITH CHECK and one", left: &pgpolicy.DesiredPolicy{}, right: &pgpolicy.DesiredPolicy{WithCheck: &predicate}},
 		{name: "permissive and restrictive", left: &pgpolicy.DesiredPolicy{Composition: pgpolicy.Permissive},
 			right: &pgpolicy.DesiredPolicy{Composition: pgpolicy.Restrictive}},
+		{name: "a server's spelling and none", left: &pgpolicy.DesiredPolicy{Using: &predicate},
+			right: &pgpolicy.DesiredPolicy{Using: &predicate, Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}, Using: &predicate}}},
+		{name: "two spellings that differ", left: &pgpolicy.DesiredPolicy{Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "a"}}}},
+			right: &pgpolicy.DesiredPolicy{Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "b"}}}}},
+		{name: "two spellings listing roles in another order",
+			left:  &pgpolicy.DesiredPolicy{Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "a"}, {Name: "b"}}}},
+			right: &pgpolicy.DesiredPolicy{Normalized: &pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: "b"}, {Name: "a"}}}}, want: true},
 		{name: "enabled and forced", left: &pgpolicy.ObservedTableState{Enabled: true}, right: &pgpolicy.ObservedTableState{Forced: true}},
 		{name: "two typed nil values", left: (*pgpolicy.DesiredPolicy)(nil), right: (*pgpolicy.DesiredPolicy)(nil), want: true},
 		{name: "a declaration and an observation", left: &pgpolicy.DesiredTableState{}, right: &pgpolicy.ObservedTableState{}},

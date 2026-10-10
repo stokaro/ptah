@@ -95,6 +95,10 @@ type DesiredPolicy struct {
 	// StructName preserves the Go struct a declaration was read from. It has no
 	// server counterpart and does not change the policy.
 	StructName string `json:"struct_name,omitempty"`
+	// Normalized is the connected server's spelling of this declaration, which
+	// a normalization probe attaches before a comparison. Nil means no server
+	// answered, and a comparison then compares the declared text.
+	Normalized *NormalizedPolicy `json:"normalized,omitempty"`
 }
 
 // ObservedPolicy is a policy as pg_policy reports it. Every value is definite:
@@ -132,6 +136,7 @@ func (v *DesiredPolicy) Copy() *DesiredPolicy {
 	cloned := *v
 	cloned.Roles = slices.Clone(v.Roles)
 	cloned.Using, cloned.WithCheck = cloneText(v.Using), cloneText(v.WithCheck)
+	cloned.Normalized = v.Normalized.Copy()
 	return &cloned
 }
 
@@ -159,7 +164,7 @@ func (v *DesiredPolicy) Equal(other schemaext.Value) bool {
 	}
 	return v.Command == right.Command && sameRoles(v.Roles, right.Roles) && equalText(v.Using, right.Using) &&
 		equalText(v.WithCheck, right.WithCheck) && v.Composition == right.Composition &&
-		v.Comment == right.Comment && v.StructName == right.StructName
+		v.Comment == right.Comment && v.StructName == right.StructName && v.Normalized.equal(right.Normalized)
 }
 
 // Equal compares observations field by field, the role list as a set.
@@ -261,6 +266,9 @@ func ValidateDesiredPolicy(v *DesiredPolicy) error {
 		return modelError(PolicyKind, schemaext.Desired, err)
 	}
 	if err := validTexts("comment", v.Comment, "struct name", v.StructName); err != nil {
+		return modelError(PolicyKind, schemaext.Desired, err)
+	}
+	if err := v.Normalized.validate(v); err != nil {
 		return modelError(PolicyKind, schemaext.Desired, err)
 	}
 	return nil

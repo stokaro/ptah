@@ -83,7 +83,9 @@ const (
 // security is enabled. A planner that holds the table's switches can narrow it
 // with [UnenforcedAccess]. expressions is the comparison's finding about the
 // USING and WITH CHECK expressions. A changed expression is unknown, because
-// which rows it admits is not established.
+// which rows it admits is not established. The declared roles are compared
+// through [DesiredPolicy.ComparedRoles], so a keyword a probe resolved counts
+// as the role it names.
 func PolicyAccess(before *ObservedPolicy, after *DesiredPolicy, expressions ExpressionFinding) schemaext.AccessEffect {
 	switch {
 	case before == nil && after == nil:
@@ -102,7 +104,7 @@ func PolicyAccess(before *ObservedPolicy, after *DesiredPolicy, expressions Expr
 	}
 	var effects []schemaext.AccessEffect
 	effects = append(effects, scopeEffects(composition, commandDifference(before.Command, after.EffectiveCommand()), reasonCommandsAdded, reasonCommandsRemoved)...)
-	effects = append(effects, roleEffects(composition, before.Roles, after.EffectiveRoles())...)
+	effects = append(effects, roleEffects(composition, before.Roles, after.ComparedRoles())...)
 	if expressions != ExpressionsSame {
 		effects = append(effects, schemaext.AccessEffect{Access: schemaext.AccessUnknown, Reason: reasonExpressionChanged})
 	}
@@ -236,6 +238,18 @@ func (v *DesiredPolicy) EffectiveCommand() Command {
 		return CommandAll
 	}
 	return v.Command
+}
+
+// ComparedRoles is the role list a comparison holds against an observation:
+// the server's resolution where a probe attached one, and the
+// [DesiredPolicy.EffectiveRoles] otherwise. A keyword the server resolves when
+// the policy is created stays a keyword without a probe, so it never equals a
+// role name. The result is a new slice.
+func (v *DesiredPolicy) ComparedRoles() []RoleSelector {
+	if v.Normalized != nil {
+		return slices.Clone(v.Normalized.Roles)
+	}
+	return v.EffectiveRoles()
 }
 
 // EffectiveRoles is the role list the declaration requests: PUBLIC when it
