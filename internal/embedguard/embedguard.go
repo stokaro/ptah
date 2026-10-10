@@ -17,11 +17,14 @@
 package embedguard
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -165,11 +168,15 @@ func Declarations(root string) ([]Finding, error) {
 		return nil, err
 	}
 	var declared []Finding
-	err = walkGoFiles(filepath.Join(root, "internal"), func(path string, file *ast.File, fset *token.FileSet) {
-		declared = append(declared, declarationsIn(root, module, path, file, fset)...)
+	err = walkGoFiles(root, inferenceTree, func(rel string, file *ast.File, fset *token.FileSet) {
+		declared = append(declared, declarationsIn(module, rel, file, fset)...)
 	})
 	return declared, err
 }
+
+// inferenceTree is where the inference packages live, as a prefix of a
+// slash-separated path relative to the module root.
+const inferenceTree = "internal/"
 
 // reading is what one walk of the module answers: the inference packages'
 // declarations, and for the whole module the names each file uses and the
@@ -189,21 +196,21 @@ func read(root string) (reading, error) {
 		return reading{}, err
 	}
 	result := reading{called: make(map[string]map[string]bool), viaInterface: make(map[string]bool)}
-	inference := filepath.Join(root, "internal") + string(filepath.Separator)
-	err = walkGoFiles(root, func(path string, file *ast.File, fset *token.FileSet) {
-		if strings.HasPrefix(path, inference) {
-			result.declared = append(result.declared, declarationsIn(root, module, path, file, fset)...)
+	err = walkGoFiles(root, "", func(rel string, file *ast.File, fset *token.FileSet) {
+		if strings.HasPrefix(rel, inferenceTree) {
+			result.declared = append(result.declared, declarationsIn(module, rel, file, fset)...)
 		}
-		noteCalls(result.called, root, module, path, file)
+		noteCalls(result.called, module, rel, file)
 		noteInterfaceMethods(result.viaInterface, file)
 	})
 	return result, err
 }
 
 // declarationsIn is the exported functions and methods one file declares, when
-// the file belongs to the inference vertical.
-func declarationsIn(root, module, path string, file *ast.File, fset *token.FileSet) []Finding {
-	slashed := filepath.ToSlash(path)
+// the file belongs to the inference vertical. rel is the file's slash-separated
+// path relative to the module root.
+func declarationsIn(module, rel string, file *ast.File, fset *token.FileSet) []Finding {
+	slashed := "/" + rel
 	if !strings.Contains(slashed, "/embed") {
 		return nil
 	}
@@ -221,18 +228,10 @@ func declarationsIn(root, module, path string, file *ast.File, fset *token.FileS
 		if !isFunction || !function.Name.IsExported() {
 			continue
 		}
-		relative, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			relative = path
-		}
-		owner, pathErr := importPathOf(root, module, filepath.Dir(path))
-		if pathErr != nil {
-			continue
-		}
 		declared = append(declared, Finding{
 			Name:    function.Name.Name,
-			Package: owner,
-			File:    filepath.ToSlash(relative),
+			Package: importPathOf(module, rel),
+			File:    rel,
 			Line:    fset.Position(function.Name.Pos()).Line,
 		})
 	}
@@ -257,8 +256,8 @@ func declarationsIn(root, module, path string, file *ast.File, fset *token.FileS
 // still masks the declaration. The direction is unchanged -- a false negative
 // stays possible and a false positive stays impossible -- and the set of
 // coincidences that produce one is much smaller.
-func noteCalls(called map[string]map[string]bool, root, module, path string, file *ast.File) {
-	reachable := reachableFrom(root, module, path, file)
+func noteCalls(called map[string]map[string]bool, module, rel string, file *ast.File) {
+	reachable := reachableFrom(module, rel, file)
 	note := func(name string) {
 		if called[name] == nil {
 			called[name] = make(map[string]bool, len(reachable))
@@ -291,27 +290,23 @@ func noteCalls(called map[string]map[string]bool, root, module, path string, fil
 //
 // Its own is not an import and is the half that matters most here -- most calls
 // to a package's declarations come from beside them.
-func reachableFrom(root, module, path string, file *ast.File) map[string]bool {
+func reachableFrom(module, rel string, file *ast.File) map[string]bool {
 	reachable := make(map[string]bool, len(file.Imports)+1)
 	for _, spec := range file.Imports {
 		reachable[strings.Trim(spec.Path.Value, `"`)] = true
 	}
-	if own, err := importPathOf(root, module, filepath.Dir(path)); err == nil {
-		reachable[own] = true
-	}
+	reachable[importPathOf(module, rel)] = true
 	return reachable
 }
 
-// importPathOf turns a directory into the import path the module gives it.
-func importPathOf(root, module, dir string) (string, error) {
-	relative, err := filepath.Rel(root, dir)
-	if err != nil {
-		return "", err
+// importPathOf is the import path of the package a file belongs to, from the
+// file's slash-separated path relative to the module root.
+func importPathOf(module, rel string) string {
+	slash := strings.LastIndexByte(rel, '/')
+	if slash < 0 {
+		return module
 	}
-	if relative == "." {
-		return module, nil
-	}
-	return module + "/" + filepath.ToSlash(relative), nil
+	return module + "/" + rel[:slash]
 }
 
 // modulePath reads the module's own import path out of go.mod.
@@ -333,33 +328,71 @@ func modulePath(root string) (string, error) {
 	return "", fmt.Errorf("no module directive in %s/go.mod", root)
 }
 
-// walkGoFiles parses every non-test Go file under a directory.
+// walkGoFiles parses every non-test Go file of the module whose path starts
+// with prefix, and hands visit its slash-separated path relative to root.
+//
+// git names the files, not a walk of the filesystem. AGENTS.md requires it of
+// every gate that enumerates files: a linked worktree parked under the
+// repository is an ordinary directory to a walk, and its files would count as
+// this checkout's callers. `--others --exclude-standard` keeps a file that is
+// not staged yet in the corpus.
 //
 // Vendored and generated trees are skipped by directory name rather than by
 // content, because a caller in one of them is not a caller this repository
 // maintains.
-func walkGoFiles(root string, visit func(string, *ast.File, *token.FileSet)) error {
+func walkGoFiles(root, prefix string, visit func(string, *ast.File, *token.FileSet)) error {
+	files, err := goFiles(root, prefix)
+	if err != nil {
+		return err
+	}
 	fset := token.NewFileSet()
-	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			switch entry.Name() {
-			case ".git", "node_modules", "vendor", "dist", "testdata":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		file, parseErr := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+	for _, rel := range files {
+		file, parseErr := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(rel)), nil, parser.SkipObjectResolution)
 		if parseErr != nil {
-			return fmt.Errorf("parse %s: %w", path, parseErr)
+			return fmt.Errorf("parse %s: %w", rel, parseErr)
 		}
-		visit(path, file, fset)
-		return nil
+		visit(rel, file, fset)
+	}
+	return nil
+}
+
+// goFiles is the module's non-test Go files under prefix, as git lists them.
+func goFiles(root, prefix string) ([]string, error) {
+	command := exec.Command("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.go")
+	command.Dir = root
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list the Go files of %s: %w", root, err)
+	}
+	var files []string
+	for listed := range strings.SplitSeq(string(output), "\x00") {
+		if !strings.HasPrefix(listed, prefix) || !strings.HasSuffix(listed, ".go") ||
+			strings.HasSuffix(listed, "_test.go") || inSkippedTree(listed) {
+			continue
+		}
+		// --cached still names a file a move took out of the working tree,
+		// until the move is staged. Judge what exists here.
+		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(listed)))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, listed)
+	}
+	return files, nil
+}
+
+// inSkippedTree reports whether a path runs through a directory the scan does
+// not read.
+func inSkippedTree(rel string) bool {
+	return slices.ContainsFunc(strings.Split(rel, "/"), func(directory string) bool {
+		switch directory {
+		case "node_modules", "vendor", "dist", "testdata":
+			return true
+		}
+		return false
 	})
 }
 
