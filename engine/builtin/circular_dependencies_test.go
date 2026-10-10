@@ -5,11 +5,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -843,7 +846,7 @@ func TestGetOrderedCreateStatements_MySQLFamilyRejectsUnsuitableReferencedIndexe
 			c := qt.New(t)
 			database := indexedForeignKeyDatabase()
 			database.Indexes[0].Type = test.indexType
-			database.Indexes[0].Parser = test.parser
+			database.Indexes[0].Facets = mysqlParserFacets(test.parser)
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 				database,
 				test.dialect,
@@ -1502,4 +1505,13 @@ func alterConstraintName(statement string) string {
 	_, suffix, _ := strings.Cut(statement, "ADD CONSTRAINT ")
 	name, _, _ := strings.Cut(suffix, " ")
 	return name
+}
+
+// mysqlParserFacets declares a FULLTEXT parser as the MySQL owner's index
+// option, or nothing for an empty parser.
+func mysqlParserFacets(parser string) schemaext.Facets {
+	if parser == "" {
+		return schemaext.Facets{}
+	}
+	return must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndex{Parser: parser}))
 }

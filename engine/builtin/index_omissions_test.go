@@ -248,33 +248,30 @@ func lostIndexProperties(c *qt.C, database *schemamodel.Database, dialect string
 	return properties
 }
 
-// TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedFulltextParser
-// pins the MySQL FULLTEXT parser.
-//
-// It names a server plugin -- ngram, mecab -- that decides how the indexed text
-// is split, so an index built without it matches different queries. No other
-// family has a clause that could carry the name.
-func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedFulltextParser(t *testing.T) {
+// TestGetOrderedCreateStatementsReportingOmissions_TheMySQLFamilyWritesTheFulltextParser
+// pins the FULLTEXT parser, which a source states as a platform property of
+// the MySQL family, where the MySQL owner reads it: both engines write it and
+// report nothing lost. Another target leaves the property out, as it leaves
+// out any other target's properties.
+func TestGetOrderedCreateStatementsReportingOmissions_TheMySQLFamilyWritesTheFulltextParser(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		want    []string
 	}{
-		{name: "mysql writes it", dialect: platform.MySQL, want: nil},
-		{name: "mariadb writes it", dialect: platform.MariaDB, want: nil},
-		{name: "postgres drops it", dialect: platform.Postgres, want: []string{"fulltext parser"}},
-		{name: "sqlite drops it", dialect: platform.SQLite, want: []string{"fulltext parser"}},
-		{name: "sql server drops it", dialect: platform.SQLServer, want: []string{"fulltext parser"}},
-		{name: "oracle drops it", dialect: platform.Oracle, want: []string{"fulltext parser"}},
-		{name: "clickhouse drops it", dialect: platform.ClickHouse, want: []string{"fulltext parser"}},
+		{name: "mysql writes it", dialect: platform.MySQL},
+		{name: "mariadb writes it", dialect: platform.MariaDB},
 	}
 
-	database := indexSchema(schemamodel.Index{Parser: "ngram"})
+	database := indexSchema(schemamodel.Index{Type: "FULLTEXT",
+		Overrides: map[string]map[string]string{"mysql": {"parser": "ngram"}, "mariadb": {"parser": "ngram"}}})
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(lostIndexProperties(c, database, test.dialect), qt.DeepEquals, test.want)
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, test.dialect, capability.ForDialect(test.dialect))
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, "WITH PARSER `ngram`")
+			c.Assert(lostIndexProperties(c, database, test.dialect), qt.HasLen, 0)
 		})
 	}
 }
@@ -405,7 +402,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_ATargetWritesTheIndexClaus
 		{
 			name:    "mysql writes the fulltext parser",
 			dialect: platform.MySQL,
-			index:   schemamodel.Index{Parser: "ngram"},
+			index:   schemamodel.Index{Type: "FULLTEXT", Overrides: map[string]map[string]string{"mysql": {"parser": "ngram"}}},
 			want:    "WITH PARSER `ngram`",
 		},
 		{

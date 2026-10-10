@@ -1143,10 +1143,6 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 		indexNode.Type = index.Type
 	}
 
-	if index.Parser != "" {
-		indexNode.Parser = index.Parser
-	}
-
 	if index.Condition != "" {
 		indexNode.Condition = index.Condition
 	}

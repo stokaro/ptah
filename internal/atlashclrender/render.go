@@ -1231,7 +1231,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 		r.rawAttr(2, "unique", "true")
 	}
 	r.stringAttr(2, "type", index.Type)
-	r.stringAttr(2, "parser", index.Parser)
+	r.stringAttr(2, "parser", mysqlIndexOptions(index).Parser)
 	r.stringAttr(2, "where", index.Condition)
 	r.stringAttr(2, "comment", index.Comment)
 	r.stringAttr(2, "ops", index.Operator)
@@ -1871,4 +1871,18 @@ func mysqlTableOptions(table schemamodel.Table) mysqlschema.DesiredTable {
 		return *observed.Desired()
 	}
 	return mysqlschema.DesiredTable{}
+}
+
+// mysqlIndexOptions are the MySQL-family index options an index's facet
+// holds, declared or read, written as the index block's parser attribute the
+// HCL parser reads it from. An invalid value holds none here and is refused
+// where it is used.
+func mysqlIndexOptions(index schemamodel.Index) mysqlschema.DesiredIndex {
+	if declared, found, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](index.Facets, mysqlschema.IndexKind); err == nil && found {
+		return *declared
+	}
+	if observed, found, err := schemaext.FacetAs[*mysqlschema.ObservedIndex](index.Facets, mysqlschema.IndexKind); err == nil && found {
+		return *observed.Desired()
+	}
+	return mysqlschema.DesiredIndex{}
 }

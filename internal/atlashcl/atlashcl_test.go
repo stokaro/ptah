@@ -693,7 +693,8 @@ table "users" {
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"bio"})
 	c.Assert(db.Indexes[0].Type, qt.Equals, "FULLTEXT")
-	c.Assert(db.Indexes[0].Parser, qt.Equals, "ngram")
+	c.Assert(db.Indexes[0].Overrides["mysql"]["parser"], qt.Equals, "ngram")
+	c.Assert(db.Indexes[0].Overrides["mariadb"]["parser"], qt.Equals, "ngram")
 }
 
 func TestParseRejectsIndexParserWithoutFulltext(t *testing.T) {

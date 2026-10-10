@@ -372,7 +372,7 @@ SQL:
   `{SPATIAL|FULLTEXT} [INDEX|KEY] [name] (columns)`, and every optional part of
   that is optional here too — `FULLTEXT (bio)` is as readable as
   `FULLTEXT INDEX ft_bio (bio)`. The `WITH PARSER <name>` clause travels with
-  it. `KEY` matters as much as `INDEX`: both dump tools normalize to it, so a
+  it, as the index's `parser` platform property of MySQL and MariaDB. `KEY` matters as much as `INDEX`: both dump tools normalize to it, so a
   table written with `FULLTEXT INDEX` comes back out of `mysqldump` as
   `FULLTEXT KEY`. An index left unnamed takes the name its server would give
   it, by the rule above.
@@ -474,6 +474,23 @@ changes for another reason is rewritten with `MODIFY COLUMN`, and that
 statement writes the declared settings. A database read reports a character
 set for every text column, inherited ones included, and an export writes what
 it read.
+
+## FULLTEXT parser
+
+A FULLTEXT index's parser plugin, such as `ngram`, is an option of the MySQL
+family, declared as the index's `parser` platform property. A Go annotation
+and YAML state it for each target that should write it:
+
+```go
+//ptah:schema:index name="ft_bio" fields="bio" type="FULLTEXT" platform.mysql.parser="ngram" platform.mariadb.parser="ngram"
+```
+
+An HCL index block takes `parser`, as Atlas writes it, for MySQL and MariaDB
+alike, and a schema file's `WITH PARSER` reads the same way. A parser that is
+not a name of letters, digits and underscores is refused where it is written.
+The parser applies when the index is created. A read does not report it, so a
+plan never changes it on an index that exists, and another target leaves it
+out.
 
 ## Dev-database cleanup privileges
 

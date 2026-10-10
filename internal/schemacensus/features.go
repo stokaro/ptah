@@ -50,6 +50,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: crdbschema.Owner, codecs: crdbschema.Codecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.TableCodecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.ColumnSettingsCodecs()},
+		{owner: mysqlschema.Owner, codecs: mysqlschema.IndexCodecs()},
 		{owner: mssqlschema.Owner, codecs: mssqlschema.Codecs()},
 		{owner: mssqlproperty.Owner, codecs: mssqlproperty.Codecs()},
 		{owner: synonym.Owner, codecs: synonym.Codecs()},

@@ -514,20 +514,6 @@ func TestToIndex_BasicIndex(t *testing.T) {
 			},
 		},
 		{
-			name: "fulltext index with parser",
-			index: func() *ast.IndexNode {
-				index := ast.NewIndex("idx_users_bio", "users", "bio")
-				index.Type = "FULLTEXT"
-				index.Parser = "ngram"
-				return index
-			}(),
-			expected: func(index schemamodel.Index) bool {
-				return index.Name == "idx_users_bio" &&
-					index.Type == "FULLTEXT" &&
-					index.Parser == "ngram"
-			},
-		},
-		{
 			name: "structured index parts",
 			index: ast.NewIndex("idx_users_rank_name", "users").
 				SetParts([]ast.IndexPart{

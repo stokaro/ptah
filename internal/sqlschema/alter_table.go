@@ -32,6 +32,9 @@ type alterTarget struct {
 	// [identifierPart]. A name already in the model was read that way once and
 	// is compared as it is.
 	sourcePlatform string
+	// document is the document the statement belongs to, which answers what
+	// the parse found that no node carries; see [Document.foreignKeyIndex].
+	document *Document
 	// statement is what the operations of the statement share. It is set by
 	// [appendAlterTable] and never nil there.
 	statement *alterStatement

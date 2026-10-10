@@ -136,7 +136,7 @@ func ValidateObservedTable(v *ObservedTable) error {
 func validName(option, value string) error {
 	for _, r := range value {
 		if r != '_' && (r > unicode.MaxASCII || (!unicode.IsLetter(r) && !unicode.IsDigit(r))) {
-			return fmt.Errorf("%w: MySQL table %s %q is not a name of letters, digits and underscores", schemaext.ErrInvalidValue, option, value)
+			return fmt.Errorf("%w: MySQL %s %q is not a name of letters, digits and underscores", schemaext.ErrInvalidValue, option, value)
 		}
 	}
 	return nil

@@ -33,7 +33,7 @@ func Definitions() []schemaext.PropertyDefinition {
 	return []schemaext.PropertyDefinition{{Kind: mysqlschema.TableKind, Keys: slices.Sorted(maps.Keys(tableProperties(&table)))}}
 }
 
-func validateRequest(ctx context.Context, target string, format schemaext.PropertyFormat) error {
+func validateRequest(ctx context.Context, target string, format, expected schemaext.PropertyFormat) error {
 	if ctx == nil {
 		return fmt.Errorf("%w: MySQL source requires a context", schemaext.ErrInvalidValue)
 	}
@@ -43,7 +43,7 @@ func validateRequest(ctx context.Context, target string, format schemaext.Proper
 	if target != platform.MySQL && target != platform.MariaDB {
 		return fmt.Errorf("%w: MySQL source target %q", ptaherr.ErrUnsupportedDialect, target)
 	}
-	if format != schemaext.TablePlatformProperties {
+	if format != expected {
 		return fmt.Errorf("%w: MySQL source format %q", ptaherr.ErrUnsupportedFeature, format)
 	}
 	return nil
@@ -55,7 +55,7 @@ func validateRequest(ctx context.Context, target string, format schemaext.Proper
 // schemaext.ErrInvalidValue. Any failure or cancellation returns no partial
 // batch.
 func (Service) DecodeProperties(ctx context.Context, request schemaext.PropertyDecodeRequest) ([]schemaext.Value, error) {
-	if err := validateRequest(ctx, request.Target, request.Format); err != nil {
+	if err := validateRequest(ctx, request.Target, request.Format, schemaext.TablePlatformProperties); err != nil {
 		return nil, err
 	}
 	result := make([]schemaext.Value, 0, len(request.Fragments))
@@ -88,7 +88,7 @@ func (Service) DecodeProperties(ctx context.Context, request schemaext.PropertyD
 // options wrap schemaext.ErrInvalidValue. Returned maps do not alias inputs.
 // Any failure or cancellation returns no partial batch.
 func (Service) EncodeProperties(ctx context.Context, request schemaext.PropertyEncodeRequest) ([]schemaext.PropertyFragment, error) {
-	if err := validateRequest(ctx, request.Target, request.Format); err != nil {
+	if err := validateRequest(ctx, request.Target, request.Format, schemaext.TablePlatformProperties); err != nil {
 		return nil, err
 	}
 	result := make([]schemaext.PropertyFragment, 0, len(request.Values))

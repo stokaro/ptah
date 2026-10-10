@@ -7,6 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/parser"
 )
 
@@ -235,7 +237,7 @@ func TestParse_MySQLTypedIndexReadsWithParser(t *testing.T) {
 			table := parsedTable(c, test.sql)
 
 			c.Assert(table.Indexes, qt.HasLen, 1)
-			c.Assert(table.Indexes[0].Parser, qt.Equals, test.wantParser)
+			c.Assert(indexParser(c, table.Indexes[0]), qt.Equals, test.wantParser)
 			c.Assert(table.Indexes[0].Name, qt.Equals, "ft_b")
 			c.Assert(table.Indexes[0].Type, qt.Equals, "FULLTEXT")
 		})
@@ -289,16 +291,16 @@ func TestParse_MySQLTypedIndexReadsWithParserInsideAnExecutableComment(t *testin
 			name:       "mysql reads the guarded clause",
 			dialect:    platform.MySQL,
 			sql:        dumped,
-			wantParser: "`ngram`",
+			wantParser: "ngram",
 		},
 		{
 			name:       "mariadb reads the guarded clause",
 			dialect:    platform.MariaDB,
 			sql:        dumped,
-			wantParser: "`ngram`",
+			wantParser: "ngram",
 		},
 		{
-			name:       "the name travels with whatever quoting it was written in",
+			name:       "an unquoted name reads as the same name",
 			dialect:    platform.MySQL,
 			sql:        dumpedWithAnUnquotedParser,
 			wantParser: "ngram",
@@ -324,7 +326,7 @@ func TestParse_MySQLTypedIndexReadsWithParserInsideAnExecutableComment(t *testin
 			c.Assert(table.Indexes, qt.HasLen, 1)
 			c.Assert(table.Indexes[0].Name, qt.Equals, "`ft`")
 			c.Assert(table.Indexes[0].Type, qt.Equals, "FULLTEXT")
-			c.Assert(table.Indexes[0].Parser, qt.Equals, test.wantParser)
+			c.Assert(indexParser(c, table.Indexes[0]), qt.Equals, test.wantParser)
 		})
 	}
 }
@@ -431,4 +433,18 @@ func TestParse_MySQLIndexParserBelongsToFulltext_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// indexParser is the FULLTEXT parser the parse declared on index, as the
+// MySQL owner's index option bound to the MySQL family, and empty for an
+// index that declares none.
+func indexParser(c *qt.C, index *ast.IndexNode) string {
+	c.Helper()
+	options, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](index.Facets, mysqlschema.IndexKind)
+	c.Assert(err, qt.IsNil)
+	if options == nil {
+		return ""
+	}
+	c.Assert(index.Facets.TargetScope(mysqlschema.IndexKind), qt.DeepEquals, mysqlschema.Targets())
+	return options.Parser
 }

@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 )
 
@@ -21,6 +22,23 @@ type Document struct {
 	YDBDatabasePath string
 	base            *schemamodel.Database
 	keys            keyIndexes
+	// notes is what the parse of the file being read found about its AST that
+	// no node carries, and nil for an AST that came without one; see
+	// [parseNotes].
+	notes parseNotes
+}
+
+// parseNotes is what a parse of one file found about the AST it returned that
+// no common node carries: the index a MySQL `FOREIGN KEY name (columns)`
+// clause names. internal/parser's Parser answers it.
+type parseNotes interface {
+	ForeignKeyIndex(index *ast.IndexNode) bool
+}
+
+// foreignKeyIndex reports whether the parse found index named by a foreign key
+// clause. A document without notes found none.
+func (d *Document) foreignKeyIndex(index *ast.IndexNode) bool {
+	return d != nil && d.notes != nil && d.notes.ForeignKeyIndex(index)
 }
 
 // NewDocument starts a document whose earlier files built base. base is the

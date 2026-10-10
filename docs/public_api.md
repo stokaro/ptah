@@ -1131,6 +1131,21 @@ creation and removal, and `mysqlrender.CreateTableOptions` writes them into
 CREATE TABLE; `mysqldiff`, `mysqlconvert` and `mysqlreport` complete the
 provider.
 
+`mysqlschema` owns an index's options under `IndexKind` the same way:
+`DesiredIndex` and `ObservedIndex` hold the parser of a FULLTEXT index, read
+from the index's `parser` platform property by `mysqlsource.IndexService`,
+attached by the SQL parser bound to `Targets` with `WithIndexOptions`, and
+written by `mysqlrender.IndexOptions` into `WITH PARSER`. The table and index
+services of `mysqlcompare`, `mysqlconvert`, `mysqlplan` and `mysqlreport`
+share one shape. The index comparison registers no change kinds: it reports
+no change, as the column settings comparison does.
+
+The former `ast.IndexNode.Parser`, `ast.IndexNode.ForeignKeyIndex` and
+`schemamodel.Index.Parser` fields are removed without aliases. A SQL schema
+file's parse answers which index a `FOREIGN KEY name (columns)` clause names,
+which does not travel on a common node; the parser travels as the owner's
+facet.
+
 The former `AutoIncrement` and `Charset` fields of `schemamodel.Table` are
 removed without aliases; `schemamodel.Table.Engine` stays a common declaration
 attribute. This changes behavior; pre-v1, so no compatibility is owed.

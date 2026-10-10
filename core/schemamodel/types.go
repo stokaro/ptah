@@ -456,8 +456,6 @@ type Index struct {
 	// GIN/GIST/BTREE/HASH. On ClickHouse the owner decodes it into the
 	// data-skipping-index facet, so no ClickHouse renderer reads it here.
 	Type string
-	// Parser carries a MySQL FULLTEXT parser name, for example ngram.
-	Parser string
 	// Condition is the WHERE clause for partial or filtered indexes.
 	Condition string
 	// Concurrently records that the source asked for PostgreSQL's non-locking

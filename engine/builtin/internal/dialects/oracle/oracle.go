@@ -429,9 +429,7 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
-	// A FULLTEXT parser names a MySQL plugin and storage parameters are a
-	// PostgreSQL clause; this target has neither.
-	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	// Storage parameters are a PostgreSQL clause; this target has none.
 	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
 	// There is no clause here to name an access method, so a declared one
 	// reaches the output nowhere. A declared BTREE is not reported: it is what

@@ -209,5 +209,5 @@ func withScoped(facets schemaext.Facets, value schemaext.Value) (schemaext.Facet
 	if err != nil {
 		return schemaext.Facets{}, err
 	}
-	return result.WithTargetScope(ColumnSettingsKind, Targets()...)
+	return result.WithTargetScope(value.Kind(), Targets()...)
 }

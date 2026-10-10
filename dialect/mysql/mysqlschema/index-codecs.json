@@ -1,0 +1,32 @@
+{
+  "$id": "ptah.run/mysql/index/v1",
+  "values": {
+    "desired": {
+      "ptah.run/mysql/index": {
+        "type": "object",
+        "properties": {
+          "parser": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The options a declaration states for an index: the parser of a FULLTEXT index. An option left out is the server's to decide. The options apply when the index is created."
+      }
+    },
+    "observed": {
+      "ptah.run/mysql/index": {
+        "type": "object",
+        "properties": {
+          "parser": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false,
+        "constraint": "The options an index created from a declaration holds. The reader reports no parser."
+      }
+    }
+  },
+  "canonicalization": "An option left out is omitted. Names keep the spelling they were written in."
+}

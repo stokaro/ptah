@@ -218,6 +218,8 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 		validate = clickhouse.ValidateIndexFacets
 	case platform.YDB:
 		validate = ydbrender.ValidateIndexFacets
+	case platform.MySQL, platform.MariaDB:
+		validate = mysqlrender.ValidateIndexFacets
 	default:
 		return refuseActiveFacets(dialect, projected)
 	}

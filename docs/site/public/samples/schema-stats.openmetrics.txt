@@ -82,6 +82,9 @@ ptah_schema_mysql_column_character_sets{dialect="sqlite"} 0
 # HELP ptah_schema_mysql_column_on_update_clauses Columns with a captured MySQL-family ON UPDATE clause.
 # TYPE ptah_schema_mysql_column_on_update_clauses gauge
 ptah_schema_mysql_column_on_update_clauses{dialect="sqlite"} 0
+# HELP ptah_schema_mysql_index_options MySQL and MariaDB index options an index states.
+# TYPE ptah_schema_mysql_index_options gauge
+ptah_schema_mysql_index_options{dialect="sqlite"} 0
 # HELP ptah_schema_mysql_table_options MySQL and MariaDB table options a table states.
 # TYPE ptah_schema_mysql_table_options gauge
 ptah_schema_mysql_table_options{dialect="sqlite"} 0

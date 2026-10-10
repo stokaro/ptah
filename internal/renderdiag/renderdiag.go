@@ -378,9 +378,6 @@ func (s *Sink) RecordLostColumnProperties(name string, lost ColumnProperties) {
 // Index properties a target can decline to carry, beyond
 // [ConditionProperty] and [OperatorClassProperty].
 const (
-	// ParserProperty is the MySQL FULLTEXT parser name, such as ngram. Only
-	// the MySQL family has a clause for it.
-	ParserProperty = "fulltext parser"
 	// StorageParamProperty prefixes one index storage parameter. Only the
 	// PostgreSQL family renders these, as WITH (key='value').
 	StorageParamProperty = "index storage parameter"

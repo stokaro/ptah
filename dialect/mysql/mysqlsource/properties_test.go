@@ -74,7 +74,7 @@ func TestDecodeProperties_FailurePath(t *testing.T) {
 		{name: "an auto-increment that is no number", target: "mysql", properties: map[string]string{"auto_increment": "ten"},
 			wantErr: `desired model "ptah.run/mysql/table": invalid feature value: MySQL table auto_increment "ten" is not a whole decimal number`},
 		{name: "an engine that is no name", target: "mariadb", properties: map[string]string{"engine": "MergeTree()"},
-			wantErr: `desired model "ptah.run/mysql/table": invalid feature value: MySQL table engine "MergeTree\(\)" is not a name .*`},
+			wantErr: `desired model "ptah.run/mysql/table": invalid feature value: MySQL engine "MergeTree\(\)" is not a name .*`},
 		{name: "another target", target: "postgres", properties: map[string]string{"charset": "utf8"},
 			wantErr: `unsupported database dialect: MySQL source target "postgres"`},
 	}
