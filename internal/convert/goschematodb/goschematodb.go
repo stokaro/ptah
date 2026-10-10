@@ -227,7 +227,6 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		IsAutoIncrement:       field.AutoInc || field.IdentityGeneration != "",
 		IsPrimaryKey:          field.Primary,
 		IsUnique:              field.Unique,
-		Charset:               field.Charset,
 		Collate:               field.Collate,
 		GeneratedKind:         field.GeneratedKind,
 		// The start and the increment a declaration gives an identity or a

@@ -27,15 +27,35 @@ func EncodeIndexes(ctx context.Context, db *schemamodel.Database, target string,
 	return encode(ctx, db, target, schemaext.IndexPlatformProperties, runtime)
 }
 
-// Decode lowers the selected target's table and then index source properties
-// with the rules of DecodeTables and DecodeIndexes. Every path that renders,
-// validates, or compares a declaration for a target uses it, so a declared
-// property means the same thing on each. Errors and cancellation return no
-// schema.
+// DecodeColumns replaces claimed column source properties with desired column
+// facets, under the ownership, alias, conflict and error rules of
+// DecodeTables. A key no owner claims stays, since the same group carries the
+// common per-target overrides. Field data is copied; other schema data stays
+// shared and read-only. Errors and cancellation return no partial schema.
+func DecodeColumns(ctx context.Context, db *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, error) {
+	return decode(ctx, db, target, schemaext.ColumnPlatformProperties, runtime)
+}
+
+// EncodeColumns exports column facets as properties bound to the selected
+// target, refusing what EncodeTables refuses. Field data is copied and other
+// data remains shared read-only. Errors return no partial schema.
+func EncodeColumns(ctx context.Context, db *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, error) {
+	return encode(ctx, db, target, schemaext.ColumnPlatformProperties, runtime)
+}
+
+// Decode lowers the selected target's table, index and then column source
+// properties with the rules of DecodeTables, DecodeIndexes and DecodeColumns.
+// Every path that renders, validates, or compares a declaration for a target
+// uses it, so a declared property means the same thing on each. Errors and
+// cancellation return no schema.
 func Decode(ctx context.Context, db *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, error) {
 	tables, err := DecodeTables(ctx, db, target, runtime)
 	if err != nil {
 		return nil, err
 	}
-	return DecodeIndexes(ctx, tables, target, runtime)
+	indexes, err := DecodeIndexes(ctx, tables, target, runtime)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeColumns(ctx, indexes, target, runtime)
 }

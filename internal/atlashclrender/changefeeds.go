@@ -49,22 +49,31 @@ func (r *renderer) reportFeatureObjects() {
 				record.Subject, record.Kind, record.Knowledge.Reason),
 		})
 	}
-	// A table's facets name the table, so the reader knows which table's
-	// setting the document leaves out; any other slot names the kind alone.
+	r.reportFacets()
+}
+
+// reportFacets reports each facet the document leaves out. A table's facets
+// name the table, so the reader knows which table's setting is missing; any
+// other slot names the kind alone.
+func (r *renderer) reportFacets() {
 	tables := make(map[*schemaext.Facets]string, len(r.db.Tables))
+	writes := make(map[*schemaext.Facets]func(schemaext.Kind) bool, len(r.db.Tables)+len(r.db.Indexes)+len(r.db.Fields))
 	for i := range r.db.Tables {
 		tables[&r.db.Tables[i].Facets] = "table." + r.db.Tables[i].QualifiedName()
+		writes[&r.db.Tables[i].Facets] = WritesTableFacet
 	}
-	indexes := make(map[*schemaext.Facets]bool, len(r.db.Indexes))
 	for i := range r.db.Indexes {
-		indexes[&r.db.Indexes[i].Facets] = true
+		writes[&r.db.Indexes[i].Facets] = WritesIndexFacet
+	}
+	for i := range r.db.Fields {
+		writes[&r.db.Fields[i].Facets] = WritesColumnFacet
 	}
 	for _, facets := range r.db.FacetSlots() {
 		for _, kind := range facets.Kinds() {
-			path, held := tables[facets]
-			if (held && WritesTableFacet(kind)) || (indexes[facets] && WritesIndexFacet(kind)) {
+			if written, found := writes[facets]; found && written(kind) {
 				continue
 			}
+			path, held := tables[facets]
 			if !held {
 				path = "feature." + string(kind)
 			}

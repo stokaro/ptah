@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
@@ -239,6 +240,10 @@ func (ctx *renderContext) refuseUnwrittenFacets() error {
 	for i := range ctx.db.MaterializedViews {
 		views[&ctx.db.MaterializedViews[i].Facets] = true
 	}
+	columns := make(map[*schemaext.Facets]bool, len(ctx.db.Fields))
+	for i := range ctx.db.Fields {
+		columns[&ctx.db.Fields[i].Facets] = true
+	}
 	for _, facets := range ctx.db.FacetSlots() {
 		if views[facets] {
 			continue
@@ -249,6 +254,10 @@ func (ctx *renderContext) refuseUnwrittenFacets() error {
 			case tables[facets] && isAnnotatedFacet(kind) && active:
 			case indexes[facets] && isAnnotatedIndexFacet(kind) && active:
 				if err := validateVectorDeclaration(*facets); err != nil {
+					return err
+				}
+			case columns[facets] && isAnnotatedColumnFacet(kind) && active:
+				if _, _, err := mysqlschema.Settings(*facets); err != nil {
 					return err
 				}
 			default:

@@ -59,6 +59,18 @@ func validateFacetLowering(database *schemamodel.Database, dialect string) error
 		view := &database.MaterializedViews[i]
 		owners[&view.Facets] = builder.SchemaScoped(objectidentity.KindMatView, view.Name)
 	}
+	// A column's settings are lowered with the column definition that holds
+	// them, so a field is an owner where it belongs to a declared table.
+	tables := make(map[string]*schemamodel.Table, len(database.Tables))
+	for i := range database.Tables {
+		tables[database.Tables[i].StructName] = &database.Tables[i]
+	}
+	for i := range database.Fields {
+		field := &database.Fields[i]
+		if table, found := tables[field.StructName]; found {
+			owners[&field.Facets] = builder.ColumnParts(table.Schema, table.Name, field.Name)
+		}
+	}
 	for _, facets := range database.FacetSlots() {
 		if facets.IsZero() {
 			continue

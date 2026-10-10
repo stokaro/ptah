@@ -124,9 +124,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		r.sink.RecordLostColumnProperties(
 			renderdiag.ColumnName(node.Name, column.Name),
 			renderdiag.ColumnProperties{
-				Charset:               column.Charset,
 				Collate:               column.Collate,
-				UpdateExpression:      column.UpdateExpression,
 				NotNullConstraintName: column.NotNullConstraintName,
 			},
 		)

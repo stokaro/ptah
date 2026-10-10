@@ -575,25 +575,10 @@ func (r *Renderer) refuseColumnDeclarations(subject string, column *ast.ColumnNo
 	case column.NotNullConstraintName != "":
 		return r.keyed(capability.NamedNotNullConstraints, "named NOT NULL constraint",
 			subject+" names its NOT NULL constraint "+column.NotNullConstraintName)
-	case column.UpdateExpression != "":
-		return refuseFact(subject, "ON UPDATE is MySQL's; YDB has no such clause")
 	case column.Collate != "":
 		return refuseFact(subject, "YDB has no column collation (`COLLATE` is a parse error); Utf8 compares bytes")
-	case column.Charset != "" && !isUTF8Charset(column.Charset):
-		return refuseFact(subject, "YDB stores text as UTF-8 only, and the column declares character set "+column.Charset)
 	}
 	return nil
-}
-
-// isUTF8Charset reports a character set that names UTF-8, which is what a
-// YDB Utf8 column holds, so declaring it drops nothing.
-func isUTF8Charset(charset string) bool {
-	switch strings.ToLower(strings.TrimSpace(charset)) {
-	case "utf8", "utf8mb4", "utf8mb3", "utf-8":
-		return true
-	default:
-		return false
-	}
 }
 
 // columnType maps the column's declared type, turning an auto-increment or

@@ -1016,8 +1016,8 @@ func (r *Renderer) appendColumnTail(parts []string, column *ast.ColumnNode) []st
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
-	if column.UpdateExpression != "" {
-		parts = append(parts, "ON UPDATE", column.UpdateExpression)
+	if _, onUpdate := columnSettings(column); onUpdate != "" {
+		parts = append(parts, "ON UPDATE", onUpdate)
 	}
 
 	// Check constraint. When `check_name=` is provided, emit the explicit
@@ -1070,7 +1070,7 @@ func (r *Renderer) renderColumnType(column *ast.ColumnNode, columnType string) s
 }
 
 func (r *Renderer) appendColumnCharsetCollate(parts []string, column *ast.ColumnNode) []string {
-	charset := column.Charset
+	charset, _ := columnSettings(column)
 	collate := column.Collate
 	if r.isMariaDBJSONColumn(column) {
 		if charset == "" {
@@ -1087,6 +1087,18 @@ func (r *Renderer) appendColumnCharsetCollate(parts []string, column *ast.Column
 		parts = append(parts, "COLLATE", collate)
 	}
 	return parts
+}
+
+// columnSettings returns the character set and ON UPDATE expression the MySQL
+// owner's facet states for column. The facets were checked when the column
+// was prepared for this target, which refuses a value this read could not
+// interpret, so a failed read here states nothing.
+func columnSettings(column *ast.ColumnNode) (charset, onUpdate string) {
+	charset, onUpdate, err := mysqlrender.ColumnClauses(column.Facets)
+	if err != nil {
+		return "", ""
+	}
+	return charset, onUpdate
 }
 
 func (r *Renderer) isMariaDBJSONColumn(column *ast.ColumnNode) bool {

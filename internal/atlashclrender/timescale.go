@@ -84,6 +84,11 @@ func WritesTableFacet(kind schemaext.Kind) bool {
 		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind
 }
 
+// WritesColumnFacet reports a column facet kind the renderer writes itself
+// rather than as platform properties: the MySQL owner's column settings,
+// which it writes as the column's charset and on_update attributes.
+func WritesColumnFacet(kind schemaext.Kind) bool { return kind == mysqlschema.ColumnSettingsKind }
+
 // WritesIndexFacet reports an index facet kind the renderer writes itself
 // rather than as platform properties: a YDB vector index's settings and a
 // YDB index's partitioning and read replicas, which it writes as attributes

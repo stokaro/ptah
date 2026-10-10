@@ -1071,8 +1071,11 @@ properties for that target. `DecodeIndexes` and `EncodeIndexes` apply these
 rules to index owners. Index decoding consumes the common `Type` declaration
 only when a selected definition absorbs `schemaext.IndexTypeAttribute`, and it
 refuses an index property of the selected target that no owner claims, because
-nothing else reads index properties. `Decode` applies the table and then the
-index rules. Export writes owned settings to scoped properties.
+nothing else reads index properties. `DecodeColumns` and `EncodeColumns`
+apply the table rules to the fields in `schemaext.ColumnPlatformProperties`;
+an unclaimed key stays, since the same group carries the common per-target
+overrides. `Decode` applies the table, the index and then the column rules.
+Export writes owned settings to scoped properties.
 
 These operations refuse duplicate alias keys and mixed typed and property
 declarations, even when a property's value is empty. They copy the selected
@@ -1102,6 +1105,32 @@ provider.
 The former `AutoIncrement` and `Charset` fields of `schemamodel.Table` are
 removed without aliases; `schemamodel.Table.Engine` stays a common declaration
 attribute. This changes behavior; pre-v1, so no compatibility is owed.
+
+`mysqlschema` also owns the MySQL-family settings of a column that no other
+target has a clause for, its character set and its `ON UPDATE` expression, as
+a column facet under `ColumnSettingsKind`.
+`DesiredColumnSettings` and `ObservedColumnSettings` hold the two settings, an
+empty one stating nothing; a value stating neither is refused. The server
+reports a character set for every text column, so an observed one does not mean
+a declaration wrote it. `Settings` reads either representation from a facet
+collection, and `WithColumnSettings` and `WithObservedColumnSettings` add a
+value bound to `Targets`, mysql and mariadb, which is how the SQL parser and the
+reader declare them; Atlas HCL, Go annotations and YAML state them as platform
+properties.
+`mysqlsource.ColumnService` decodes and encodes the `charset` and `on_update`
+column platform properties. `mysqlcompare.ColumnService` is the comparison
+owner on column subjects: it keeps the declared settings, adopts nothing and
+reports no change, so a column whose only difference is one of these settings
+is not planned, and a column modified for another reason is rewritten with the
+declared settings. It registers no change kinds; `engine.FacetComparison`
+accepts that, and the runtime refuses any change such an owner reports.
+`mysqlplan.ColumnService` accounts for the settings through table creation,
+rebuild and removal. `mysqlrender.ValidateColumnFacets` and `ColumnClauses` serve the MySQL-family
+column definition, and `mysqlconvert.ColumnService` and
+`mysqlreport.ColumnService` complete the provider. The former `UpdateExpression`
+and `Charset` fields of `ast.ColumnNode`, `schemamodel.Field` and
+`catalog.Column`, and their setters and builder methods, are removed without
+aliases.
 
 `dialect/cockroachdb/crdbschema` owns CockroachDB row-level TTL as a table
 facet under `RowTTLKind`. `DesiredRowTTL` and `ObservedRowTTL` each hold a

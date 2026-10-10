@@ -405,7 +405,6 @@ type Column struct {
 	IsNullable         string  `json:"is_nullable"`              // YES/NO
 	ColumnDefault      *string `json:"column_default"`           // Can be NULL
 	CharacterMaxLength *int    `json:"character_max_length"`     // For VARCHAR, etc.
-	Charset            string  `json:"charset,omitempty"`        // MySQL/MariaDB column character set
 	Collate            string  `json:"collate,omitempty"`        // MySQL/MariaDB column collation; on PostgreSQL the declared collation, empty for the database default
 	// Comment is the column's own comment, where the target has one and the
 	// reader reads it. It is empty for a column nobody commented, which is why
@@ -505,18 +504,6 @@ type Column struct {
 	// GeneratedKind names the generated-column kind, for example STORED,
 	// VIRTUAL, MATERIALIZED, ALIAS, or EPHEMERAL. Empty for plain columns.
 	GeneratedKind string `json:"generated_kind,omitempty"`
-
-	// UpdateExpression is the expression a MySQL-family column reassigns itself
-	// to on every UPDATE -- `ON UPDATE CURRENT_TIMESTAMP` and its parameterized
-	// forms. Empty for a column that has none, and for every other engine.
-	//
-	// It is read from `information_schema.COLUMNS.EXTRA`, which reports it
-	// plainly: measured on MySQL 8.4, a column declared `DATETIME ON UPDATE
-	// CURRENT_TIMESTAMP` comes back with EXTRA `on update CURRENT_TIMESTAMP`.
-	// It is on the description because a render that omits it builds a column
-	// that silently stops maintaining itself, which nothing downstream can
-	// notice (stokaro/ptah#1215).
-	UpdateExpression string `json:"update_expression,omitempty"`
 
 	// IdentityGeneration records an identity column's generation mode, mirroring
 	// the goschema-side field: "ALWAYS" (GENERATED ALWAYS AS IDENTITY, which

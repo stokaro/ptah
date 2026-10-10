@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
@@ -85,6 +86,9 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lint.BaselineC
 	var columns []lint.BaselineColumn
 	for _, table := range schema.Tables {
 		for _, column := range table.Columns {
+			// The character set is the MySQL owner's observation of the
+			// column; a column whose type carries none has none.
+			settings, _, _ := mysqlschema.Settings(column.Facets)
 			columns = append(columns, lint.BaselineColumn{
 				Version:          version,
 				Schema:           table.Schema,
@@ -92,7 +96,7 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lint.BaselineC
 				Name:             column.Name,
 				DataType:         compatColumnDataType(column),
 				ColumnType:       baselineTypeSpelling(column),
-				Charset:          column.Charset,
+				Charset:          settings.Charset,
 				TableCharset:     table.Charset,
 				Collation:        column.Collate,
 				TableCollation:   table.Collate,

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/schemaexport"
 )
 
@@ -863,7 +864,10 @@ func isServerOwned(field schemamodel.Field) bool {
 	if strings.TrimSpace(field.GeneratedExpression) != "" {
 		return true
 	}
-	if strings.TrimSpace(field.UpdateExpression) != "" {
+	// A MySQL-family ON UPDATE clause rewrites the column on every change to
+	// its row. A facet the owner's models cannot read states nothing here; the
+	// renderer of the schema refuses it.
+	if settings, _, err := mysqlschema.Settings(field.Facets); err == nil && settings.OnUpdate != "" {
 		return true
 	}
 	base, _ := schemaexport.NormalizeType(field.Type)

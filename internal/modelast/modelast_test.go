@@ -11,7 +11,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/schemaprep"
@@ -349,26 +351,27 @@ func TestFromField_BasicProperties(t *testing.T) {
 			},
 		},
 		{
-			name: "column update expression",
+			name: "column MySQL settings",
 			field: schemamodel.Field{
-				Name:             "updated_at",
-				Type:             "TIMESTAMP",
-				UpdateExpression: "CURRENT_TIMESTAMP",
+				Name: "updated_at",
+				Type: "TIMESTAMP",
+				Facets: must.Must(mysqlschema.WithColumnSettings(schemaext.Facets{},
+					mysqlschema.ColumnSettings{Charset: "hebrew", OnUpdate: "CURRENT_TIMESTAMP"})),
 			},
 			expected: func(col *ast.ColumnNode) bool {
-				return col.UpdateExpression == "CURRENT_TIMESTAMP"
+				settings, found, err := mysqlschema.Settings(col.Facets)
+				return err == nil && found && settings == mysqlschema.ColumnSettings{Charset: "hebrew", OnUpdate: "CURRENT_TIMESTAMP"}
 			},
 		},
 		{
-			name: "column charset and collate",
+			name: "column collate",
 			field: schemamodel.Field{
 				Name:    "name",
 				Type:    "VARCHAR(255)",
-				Charset: "hebrew",
 				Collate: "hebrew_general_ci",
 			},
 			expected: func(col *ast.ColumnNode) bool {
-				return col.Charset == "hebrew" && col.Collate == "hebrew_general_ci"
+				return col.Collate == "hebrew_general_ci"
 			},
 		},
 	}

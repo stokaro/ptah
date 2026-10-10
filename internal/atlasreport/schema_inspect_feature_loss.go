@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/featurereport"
 	"ptah.run/internal/schemaexportloss"
 )
@@ -50,6 +51,9 @@ func attachFeatureJSONLoss(ctx context.Context, realm *atlasSchemaInspectJSONRea
 			destination = projection.root
 		}
 		for _, value := range attached {
+			if representedInJSON(value) {
+				continue
+			}
 			values = append(values, value)
 			destinations = append(destinations, destination)
 		}
@@ -71,6 +75,15 @@ func attachFeatureJSONLoss(ctx context.Context, realm *atlasSchemaInspectJSONRea
 		slices.Sort(destination.omitted)
 	}
 	return ctx.Err()
+}
+
+// representedInJSON reports a facet value the document writes in full: MySQL
+// column settings that state only a character set, which a column carries as
+// its charset attribute. An ON UPDATE clause has no attribute there and is
+// reported as left out.
+func representedInJSON(value schemaext.Value) bool {
+	settings, ok := mysqlschema.ValueSettings(value)
+	return ok && settings.OnUpdate == ""
 }
 
 type jsonFeatureProjection struct {

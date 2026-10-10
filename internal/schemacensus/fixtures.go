@@ -662,15 +662,18 @@ func columnEnumForeignKeyFixture() schemamodel.Database {
 	return db
 }
 
+// columnMySQLFixture declares a column collation, and the MySQL owner's
+// character set and ON UPDATE clause, bound to the MySQL family.
 func columnMySQLFixture() schemamodel.Database {
 	return oneTable("T", schemamodel.Table{Name: "t"},
 		schemamodel.Field{
 			StructName: "T", FieldName: "S", Name: "s", Type: "VARCHAR(32)", Nullable: true,
-			Charset: "utf8mb4", Collate: "utf8mb4_bin",
+			Collate: "utf8mb4_bin",
+			Facets:  must.Must(mysqlschema.WithColumnSettings(schemaext.Facets{}, mysqlschema.ColumnSettings{Charset: "utf8mb4"})),
 		},
 		schemamodel.Field{
 			StructName: "T", FieldName: "U", Name: "u", Type: "TIMESTAMP", Nullable: true,
-			UpdateExpression: "CURRENT_TIMESTAMP",
+			Facets: must.Must(mysqlschema.WithColumnSettings(schemaext.Facets{}, mysqlschema.ColumnSettings{OnUpdate: "CURRENT_TIMESTAMP"})),
 		},
 	)
 }

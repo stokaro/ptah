@@ -73,6 +73,12 @@ ptah_schema_security_policies{dialect="sqlite"} 0
 # HELP ptah_schema_security_predicates Predicates SQL Server security policies bind to tables.
 # TYPE ptah_schema_security_predicates gauge
 ptah_schema_security_predicates{dialect="sqlite"} 0
+# HELP ptah_schema_mysql_column_character_sets Columns with a captured MySQL-family character set.
+# TYPE ptah_schema_mysql_column_character_sets gauge
+ptah_schema_mysql_column_character_sets{dialect="sqlite"} 0
+# HELP ptah_schema_mysql_column_on_update_clauses Columns with a captured MySQL-family ON UPDATE clause.
+# TYPE ptah_schema_mysql_column_on_update_clauses gauge
+ptah_schema_mysql_column_on_update_clauses{dialect="sqlite"} 0
 # HELP ptah_schema_mysql_table_options MySQL and MariaDB table options a table states.
 # TYPE ptah_schema_mysql_table_options gauge
 ptah_schema_mysql_table_options{dialect="sqlite"} 0

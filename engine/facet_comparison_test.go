@@ -303,3 +303,36 @@ func TestUninspectedNamespaceKeepsItsKnowledgeWithoutTargetHandler(t *testing.T)
 	c.Assert(result.Complete, qt.IsTrue)
 	c.Assert(result.Desired.Coverage.KindRecords(), qt.DeepEquals, coverage.KindRecords())
 }
+
+// An owner that registers no change kinds accounts for its settings without
+// changing them: its reply is accepted while it reports no change, and a reply
+// that carries one is refused, so registering no kinds cannot widen what an
+// owner may plan.
+func TestFacetComparisonWithoutChangeKinds_AcceptsNoChange(t *testing.T) {
+	c := qt.New(t)
+	provider := facetProvider(facetComparisonFunc(func(_ context.Context, r schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		return schemaext.FacetComparisonResult{Complete: true, Desired: r.Desired}, nil
+	}))
+	provider.FacetComparisons[0].ChangeKinds = nil
+
+	result, err := mustRuntime(c, provider).CompareFacets(t.Context(), facetRequest())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Complete, qt.IsTrue)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Desired.Records, qt.HasLen, 1)
+}
+
+func TestFacetComparisonWithoutChangeKinds_RefusesAChange(t *testing.T) {
+	c := qt.New(t)
+	provider := facetProvider(facetComparisonFunc(func(_ context.Context, r schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		return facetReply(r), nil
+	}))
+	provider.FacetComparisons[0].ChangeKinds = nil
+
+	result, err := mustRuntime(c, provider).CompareFacets(t.Context(), facetRequest())
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `.*unrelated or duplicate facet change payload .*`)
+	c.Assert(result.Complete, qt.IsFalse)
+}

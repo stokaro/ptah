@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -87,23 +90,23 @@ func TestToField_BasicProperties(t *testing.T) {
 			},
 		},
 		{
-			name: "column update expression",
-			column: ast.NewColumn("updated_at", "TIMESTAMP").
-				SetUpdateExpression("CURRENT_TIMESTAMP"),
+			name: "column MySQL settings",
+			column: &ast.ColumnNode{Name: "updated_at", Type: "TIMESTAMP", Nullable: true,
+				Facets: must.Must(mysqlschema.WithColumnSettings(schemaext.Facets{},
+					mysqlschema.ColumnSettings{Charset: "hebrew", OnUpdate: "CURRENT_TIMESTAMP"}))},
 			structName: "User",
 			expected: func(field schemamodel.Field) bool {
-				return field.UpdateExpression == "CURRENT_TIMESTAMP"
+				settings, found, err := mysqlschema.Settings(field.Facets)
+				return err == nil && found && settings == mysqlschema.ColumnSettings{Charset: "hebrew", OnUpdate: "CURRENT_TIMESTAMP"}
 			},
 		},
 		{
-			name: "column charset and collate",
+			name: "column collate",
 			column: ast.NewColumn("name", "VARCHAR(255)").
-				SetCharset("hebrew").
 				SetCollate("hebrew_general_ci"),
 			structName: "User",
 			expected: func(field schemamodel.Field) bool {
-				return field.Charset == "hebrew" &&
-					field.Collate == "hebrew_general_ci"
+				return field.Collate == "hebrew_general_ci"
 			},
 		},
 	}
@@ -774,7 +777,7 @@ func TestMergeFieldOverrides_BasicMerging(t *testing.T) {
 	c.Assert(result.Overrides["mariadb"]["check"], qt.Equals, "JSON_VALID(data)")
 }
 
-func TestMergeFieldOverrides_CharsetCollate(t *testing.T) {
+func TestMergeFieldOverrides_Collate(t *testing.T) {
 	c := qt.New(t)
 
 	baseField := schemamodel.Field{
@@ -785,14 +788,12 @@ func TestMergeFieldOverrides_CharsetCollate(t *testing.T) {
 		"mysql": {
 			Name:    "name",
 			Type:    "VARCHAR(255)",
-			Charset: "hebrew",
 			Collate: "hebrew_general_ci",
 		},
 	}
 
 	result := sqlschema.MergeFieldOverrides(baseField, platformFields)
 
-	c.Assert(result.Overrides["mysql"]["charset"], qt.Equals, "hebrew")
 	c.Assert(result.Overrides["mysql"]["collate"], qt.Equals, "hebrew_general_ci")
 }
 

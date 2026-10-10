@@ -102,6 +102,13 @@ func isolateOwners(db *schemamodel.Database, format schemaext.PropertyFormat) {
 		}
 		return
 	}
+	if format == schemaext.ColumnPlatformProperties {
+		db.Fields = slices.Clone(db.Fields)
+		for i := range db.Fields {
+			db.Fields[i] = db.Fields[i].Clone()
+		}
+		return
+	}
 	db.Tables = slices.Clone(db.Tables)
 	for i := range db.Tables {
 		db.Tables[i] = db.Tables[i].Clone()
@@ -121,6 +128,16 @@ func ownerSlots(db *schemamodel.Database, format schemaext.PropertyFormat) ([]pr
 		}
 		// Index properties have no reader besides their feature owners.
 		return owners, true
+	}
+	if format == schemaext.ColumnPlatformProperties {
+		owners := make([]propertyOwner, 0, len(db.Fields))
+		for i := range db.Fields {
+			field := &db.Fields[i]
+			owners = append(owners, propertyOwner{"column", field.StructName + "." + field.Name, &field.Facets, &field.Overrides, nil})
+		}
+		// Column properties also carry the common per-target overrides, such
+		// as a type or a default, so unclaimed keys stay for their readers.
+		return owners, false
 	}
 	owners := make([]propertyOwner, 0, len(db.Tables))
 	for i := range db.Tables {

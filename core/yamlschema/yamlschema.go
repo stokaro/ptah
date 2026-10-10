@@ -273,7 +273,6 @@ type fieldSpec struct {
 	Enum               stringList   `yaml:"enum"`
 	Check              stringScalar `yaml:"check"`
 	CheckName          stringScalar `yaml:"check_name"`
-	Charset            stringScalar `yaml:"charset"`
 	Collate            stringScalar `yaml:"collate"`
 	Comment            stringScalar `yaml:"comment"`
 	Platform           platformSpec `yaml:"platform"`
@@ -1037,7 +1036,6 @@ func buildField(structName, key string, spec fieldSpec, db *schemamodel.Database
 		CheckName:           string(spec.CheckName),
 		GeneratedExpression: string(spec.Generated),
 		GeneratedKind:       yamlGeneratedColumnKind(spec),
-		Charset:             string(spec.Charset),
 		Collate:             string(spec.Collate),
 		Comment:             string(spec.Comment),
 		Overrides:           mergePlatform(spec.Platform, spec.Overrides),

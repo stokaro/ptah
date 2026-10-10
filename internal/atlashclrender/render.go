@@ -815,6 +815,21 @@ func (r *renderer) renderTable(
 	r.line("")
 }
 
+// columnSettings returns the MySQL owner's settings of a column, which the
+// column block writes as charset and on_update. A value the owner's models
+// cannot read is reported rather than dropped.
+func (r *renderer) columnSettings(field schemamodel.Field) mysqlschema.ColumnSettings {
+	settings, _, err := mysqlschema.Settings(field.Facets)
+	if err != nil {
+		r.diagnostics = append(r.diagnostics, Diagnostic{
+			Severity: SeverityWarning,
+			Path:     "column." + field.StructName + "." + field.Name,
+			Message:  fmt.Sprintf("column settings are not represented in HCL: %v", err),
+		})
+	}
+	return settings
+}
+
 func (r *renderer) renderColumn(field schemamodel.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
 	r.rawAttr(2, "type", r.columnTypeExpr(field))
@@ -838,8 +853,9 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 	} else if field.DefaultSet || field.Default != "" {
 		r.rawAttr(2, "default", quote(field.Default))
 	}
-	if field.UpdateExpression != "" {
-		r.rawAttr(2, "on_update", sqlCall(field.UpdateExpression))
+	settings := r.columnSettings(field)
+	if settings.OnUpdate != "" {
+		r.rawAttr(2, "on_update", sqlCall(settings.OnUpdate))
 	}
 	if field.GeneratedExpression != "" {
 		r.line("    as {")
@@ -863,7 +879,7 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 	}
 	r.stringAttr(2, "check", field.Check)
 	r.stringAttr(2, "check_name", field.CheckName)
-	r.stringAttr(2, "charset", field.Charset)
+	r.stringAttr(2, "charset", settings.Charset)
 	r.stringAttr(2, "collate", field.Collate)
 	r.stringAttr(2, "comment", field.Comment)
 	r.renderPlatformOverrides(2, field.Overrides)

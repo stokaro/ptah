@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbmlrender"
 	"ptah.run/internal/facetsplit"
@@ -656,12 +657,15 @@ func atlasSchemaInspectTable(
 
 func atlasSchemaInspectColumn(column catalog.Column) atlasSchemaInspectJSONColumn {
 	columnType := atlasSchemaInspectColumnType(column)
+	// The character set is the MySQL owner's observation; the document
+	// carries it as the column's charset attribute.
+	settings, _, _ := mysqlschema.Settings(column.Facets)
 	return atlasSchemaInspectJSONColumn{
 		Name: column.Name,
 		Type: columnType,
 		Null: strings.EqualFold(column.IsNullable, "YES"),
 		atlasSchemaInspectJSONAttrs: atlasSchemaInspectJSONAttrs{
-			Charset: column.Charset,
+			Charset: settings.Charset,
 			Collate: column.Collate,
 		},
 	}

@@ -6,8 +6,19 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 )
+
+// withColumnSettings gives column the MySQL owner's settings, bound to the
+// MySQL family, as the SQL parser declares them.
+func withColumnSettings(c *qt.C, column *ast.ColumnNode, settings mysqlschema.ColumnSettings) *ast.ColumnNode {
+	c.Helper()
+	facets, err := mysqlschema.WithColumnSettings(column.Facets, settings)
+	c.Assert(err, qt.IsNil)
+	column.Facets = facets
+	return column
+}
 
 func TestMariaDBRenderer_JSONColumnUsesLongtextCheck(t *testing.T) {
 	c := qt.New(t)
@@ -26,9 +37,8 @@ func TestMariaDBRenderer_JSONColumnPreservesExplicitCharsetCollate(t *testing.T)
 	c := qt.New(t)
 
 	table := ast.NewCreateTable("users").
-		AddColumn(ast.NewColumn("payload", "json").
-			SetCharset("utf8").
-			SetCollate("utf8_bin"))
+		AddColumn(withColumnSettings(c, ast.NewColumn("payload", "json").
+			SetCollate("utf8_bin"), mysqlschema.ColumnSettings{Charset: "utf8"}))
 
 	sql, err := builtin.RenderSQL("mariadb", table)
 
@@ -40,10 +50,9 @@ func TestMariaDBRenderer_ColumnOnUpdateExpression(t *testing.T) {
 	c := qt.New(t)
 
 	table := ast.NewCreateTable("users").
-		AddColumn(ast.NewColumn("updated_at", "datetime(6)").
+		AddColumn(withColumnSettings(c, ast.NewColumn("updated_at", "datetime(6)").
 			SetNotNull().
-			SetDefaultExpression("CURRENT_TIMESTAMP(6)").
-			SetUpdateExpression("CURRENT_TIMESTAMP(6)"))
+			SetDefaultExpression("CURRENT_TIMESTAMP(6)"), mysqlschema.ColumnSettings{OnUpdate: "CURRENT_TIMESTAMP(6)"}))
 
 	sql, err := builtin.RenderSQL("mariadb", table)
 

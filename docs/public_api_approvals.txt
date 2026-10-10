@@ -572,3 +572,15 @@ v0.13.0 ptah.run/migration/importer
 # caller choosing them. This changes behavior; pre-v1, so no compatibility is
 # owed under the authorized #4140/#4204 clean-break policy.
 v0.13.0 ptah.run/core/goschema
+
+# #4140 moves a column's MySQL-family character set and ON UPDATE clause to the
+# MySQL owner as a column facet (mysqlschema.ColumnSettingsKind). The
+# UpdateExpression and Charset fields of ast.ColumnNode, schemamodel.Field and
+# catalog.Column, ColumnNode.SetUpdateExpression and SetCharset, and the
+# UpdateExpression and Charset methods of ColumnBuilder and SchemaColumnBuilder
+# are removed without aliases; the core/ast, core/schemamodel and catalog
+# approvals above cover the same baseline. A caller declares the settings on
+# the column's Facets with mysqlschema.WithColumnSettings. This changes the Go
+# API; pre-v1, so no compatibility is owed under the authorized #4140/#4204
+# clean-break policy.
+v0.13.0 ptah.run/core/astbuilder

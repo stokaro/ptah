@@ -193,6 +193,26 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	return projected, nil
 }
 
+// prepareColumnFacets projects a column's facets onto the target. The MySQL
+// family writes its own column settings into the column definition; every
+// other active value, and every value on another target, is refused rather
+// than rendered without it.
+func prepareColumnFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
+	projected, err := projectFacets(dialect, facets)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		if err := mysqlrender.ValidateColumnFacets(projected); err != nil {
+			return schemaext.Facets{}, err
+		}
+		return projected, nil
+	default:
+		return refuseActiveFacets(dialect, projected)
+	}
+}
+
 // preparePostgresTableFacets accepts the TimescaleDB settings every
 // PostgreSQL-family renderer writes after CREATE TABLE, the row-security
 // switches it writes there on a target the row-security owner is registered
@@ -258,6 +278,9 @@ func validateDeclaredFacets(dialect string, database *schemamodel.Database) erro
 	}
 	for i := range database.MaterializedViews {
 		owners[&database.MaterializedViews[i].Facets] = prepareMaterializedViewFacets
+	}
+	for i := range database.Fields {
+		owners[&database.Fields[i].Facets] = prepareColumnFacets
 	}
 	for _, facets := range database.FacetSlots() {
 		prepare := prepareFacets

@@ -195,12 +195,26 @@ func loweringFacetSlots(value reflect.Value) []reflect.Value {
 	return result
 }
 
+// tableFieldFacets addresses the facets of every field of a declared table. A
+// column's facets are lowered with its definition, and the renderer decides
+// which of them it accepts.
+func tableFieldFacets(database *schemamodel.Database) []uintptr {
+	var result []uintptr
+	for i := range database.Fields {
+		if slices.ContainsFunc(database.Tables, func(table schemamodel.Table) bool { return table.StructName == database.Fields[i].StructName }) {
+			result = append(result, reflect.ValueOf(&database.Fields[i].Facets).Pointer())
+		}
+	}
+	return result
+}
+
 func TestCollectDatabase_RefusesUnloweredFacetsBeforeVisiting(t *testing.T) {
 	c := qt.New(t)
 	database := unloweredFacetsFixture()
 	slots := loweringFacetSlots(reflect.ValueOf(&database).Elem())
 	c.Assert(len(slots) >= 16, qt.IsTrue)
-	lowered := []uintptr{reflect.ValueOf(&database.Tables[0].Facets).Pointer(), reflect.ValueOf(&database.MaterializedViews[0].Facets).Pointer()}
+	lowered := append([]uintptr{reflect.ValueOf(&database.Tables[0].Facets).Pointer(), reflect.ValueOf(&database.MaterializedViews[0].Facets).Pointer()},
+		tableFieldFacets(&database)...)
 	unsupported := slices.DeleteFunc(slices.Clone(slots), func(slot reflect.Value) bool {
 		return slices.Contains(lowered, slot.Addr().Pointer())
 	})

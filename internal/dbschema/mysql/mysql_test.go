@@ -15,6 +15,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -223,7 +224,10 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(email.ColumnType, qt.Equals, "varchar(255)")
 	c.Assert(email.CharacterMaxLength, qt.IsNotNil)
 	c.Assert(*email.CharacterMaxLength, qt.Equals, 255)
-	c.Assert(email.Charset, qt.Equals, "utf8mb4")
+	settings, found, err := mysqlschema.Settings(email.Facets)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(settings, qt.Equals, mysqlschema.ColumnSettings{Charset: "utf8mb4"})
 	c.Assert(email.Collate, qt.Equals, "utf8mb4_0900_ai_ci")
 
 	emailLC := tables[0].Columns[2]
@@ -264,7 +268,7 @@ func TestApplyMySQLColumnMetadataKeepsGeneratedExpressionWithoutExtra(t *testing
 	c := qt.New(t)
 
 	var col catalog.Column
-	applyMySQLColumnMetadata(
+	err := applyMySQLColumnMetadata(
 		&col,
 		sql.NullString{String: "default", Valid: true},
 		sql.NullInt64{Int64: 255, Valid: true},
@@ -276,6 +280,7 @@ func TestApplyMySQLColumnMetadataKeepsGeneratedExpressionWithoutExtra(t *testing
 		sql.NullString{String: "lower(`email`)", Valid: true},
 	)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(col.GeneratedExpression, qt.IsNotNil)
 	c.Assert(*col.GeneratedExpression, qt.Equals, "lower(`email`)")
 	c.Assert(col.GeneratedKind, qt.Equals, "")

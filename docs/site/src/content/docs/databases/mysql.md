@@ -451,6 +451,30 @@ changes the options of a table that exists. Another target leaves the
 auto-increment value and the character set out, as it leaves out any other
 target's properties.
 
+## Column character set and ON UPDATE
+
+A column's `CHARACTER SET` and its `ON UPDATE` clause, such as
+`ON UPDATE CURRENT_TIMESTAMP(6)`, exist only in MySQL and MariaDB, so the MySQL
+owner holds them rather than the common column. Each source binds them to that
+family:
+
+- SQL: `CHARACTER SET` or `CHARSET`, and `ON UPDATE`, in a column definition.
+- Atlas HCL: the `charset` and `on_update` attributes of a `column` block.
+- Go annotations and YAML: the platform properties `charset` and `on_update`,
+  as `platform.mysql.charset="latin1"` on a `//ptah:schema:field` directive or
+  under a column's `platform: {mysql: {...}}` group. The key is read for the
+  target it names, so a MariaDB target needs `platform.mariadb`.
+
+Another target leaves the settings out without a report, because the binding
+says they are not meant for it. A value bound to no target is refused there.
+
+The comparison does not compare these settings. A column whose only difference
+is its character set or its `ON UPDATE` clause is not changed. A column that
+changes for another reason is rewritten with `MODIFY COLUMN`, and that
+statement writes the declared settings. A database read reports a character
+set for every text column, inherited ones included, and an export writes what
+it read.
+
 ## Dev-database cleanup privileges
 
 Database-realm cleanup requires global `SELECT`, `DROP`, `ALTER`,

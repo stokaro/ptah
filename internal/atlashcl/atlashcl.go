@@ -806,13 +806,11 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemam
 		Unique:              p.optionalBool(block.Body.Attributes["unique"], false),
 		GeneratedExpression: desired.expression,
 		GeneratedKind:       desired.kind,
-		UpdateExpression:    p.optionalSQLExpression(block.Body.Attributes["on_update"]),
 		UniqueExpr:          p.optionalSQLExpression(block.Body.Attributes["unique_expr"]),
 		Enum:                enumValues,
 		Check:               p.optionalSQLExpression(block.Body.Attributes["check"]),
 		CheckName:           p.optionalString(block.Body.Attributes["check_name"]),
 		IdentityOptions:     identity.options,
-		Charset:             p.optionalString(block.Body.Attributes["charset"]),
 		Collate:             p.optionalString(block.Body.Attributes["collate"]),
 		Comment:             p.optionalString(block.Body.Attributes["comment"]),
 		Overrides:           overrides,
@@ -820,7 +818,40 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemam
 	if attr := block.Body.Attributes["default"]; attr != nil {
 		p.setDefault(&field, attr)
 	}
+	// A column's charset and on_update are the MySQL family's: Atlas reads
+	// them from its MySQL driver only. They become the platform properties of
+	// the mysql and mariadb targets, where the MySQL owner reads them.
+	field.Overrides = mysqlColumnSettings(field.Overrides,
+		p.optionalString(block.Body.Attributes["charset"]), p.optionalSQLExpression(block.Body.Attributes["on_update"]))
 	return field, nil
+}
+
+// mysqlColumnSettings states a column's charset and on_update, which only the
+// MySQL family has, as the platform properties of the mysql and mariadb
+// targets. A target group that states one already keeps its own. overrides is
+// not changed.
+func mysqlColumnSettings(overrides map[string]map[string]string, charset, onUpdate string) map[string]map[string]string {
+	if charset == "" && onUpdate == "" {
+		return overrides
+	}
+	result := make(map[string]map[string]string, len(overrides)+2)
+	for target, group := range overrides {
+		result[target] = maps.Clone(group)
+	}
+	for _, target := range []string{"mysql", "mariadb"} {
+		for _, setting := range []struct{ key, value string }{{"charset", charset}, {"on_update", onUpdate}} {
+			if setting.value == "" {
+				continue
+			}
+			if result[target] == nil {
+				result[target] = make(map[string]string)
+			}
+			if _, stated := result[target][setting.key]; !stated {
+				result[target][setting.key] = setting.value
+			}
+		}
+	}
+	return result
 }
 
 type generatedColumnSpec struct {

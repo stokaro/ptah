@@ -5,8 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/graphqlrender"
 )
 
@@ -174,7 +177,8 @@ func TestRenderWriteProjectionExcludesServerOwnedColumns(t *testing.T) {
 			{StructName: "Row", Name: "counter", Type: "INTEGER", AutoInc: true},
 			{StructName: "Row", Name: "legacy_seq", Type: "SERIAL"},
 			{StructName: "Row", Name: "full_name", Type: "TEXT", GeneratedExpression: "first || ' ' || last"},
-			{StructName: "Row", Name: "updated_at", Type: "TIMESTAMP", UpdateExpression: "CURRENT_TIMESTAMP"},
+			{StructName: "Row", Name: "updated_at", Type: "TIMESTAMP", Facets: must.Must(mysqlschema.WithColumnSettings(schemaext.Facets{},
+				mysqlschema.ColumnSettings{OnUpdate: "CURRENT_TIMESTAMP"}))},
 			{StructName: "Row", Name: "note", Type: "TEXT"},
 			{StructName: "Row", Name: "state", Type: "TEXT", DefaultSet: true, Default: "new"},
 			{StructName: "Row", Name: "chosen_at", Type: "TIMESTAMP", DefaultExpr: "NOW()"},

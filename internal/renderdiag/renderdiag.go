@@ -286,8 +286,8 @@ func (s *Sink) RecordLostIdentity(name string, lost Identity) {
 // is named for what the author wrote rather than for the clause a particular
 // target would have used, so one report reads the same across six targets.
 const (
-	// CharsetProperty is a column's character set. Only the MySQL family has a
-	// per-column clause for it.
+	// CharsetProperty is a schema's character set. Only the MySQL family has a
+	// clause for it.
 	CharsetProperty = "character set"
 	// CollateProperty is a column's collation.
 	//
@@ -298,10 +298,6 @@ const (
 	// incapacity, and the record says the same thing either way, because to the
 	// author the outcome is the same.
 	CollateProperty = "collation"
-	// UpdateExpressionProperty is the MySQL-family ON UPDATE expression. A
-	// target without it leaves the column unchanged on every later write, which
-	// the author declared it should not be.
-	UpdateExpressionProperty = "on update expression"
 	// NotNullConstraintNameProperty is the name the author gave a column's NOT
 	// NULL. The PostgreSQL family answers a name it cannot persist with a
 	// refusal instead, so it never records this one.
@@ -332,9 +328,7 @@ const (
 // drops, because which properties survive is dialect knowledge and nothing
 // below the renderer can answer it.
 type ColumnProperties struct {
-	Charset               string
 	Collate               string
-	UpdateExpression      string
 	NotNullConstraintName string
 	Unique                bool
 	AutoIncrement         bool
@@ -354,10 +348,8 @@ func (s *Sink) RecordLostColumnProperties(name string, lost ColumnProperties) {
 		property string
 		value    string
 	}{
-		{CharsetProperty, lost.Charset},
 		{CollateProperty, lost.Collate},
 		{NotNullConstraintNameProperty, lost.NotNullConstraintName},
-		{UpdateExpressionProperty, lost.UpdateExpression},
 	} {
 		s.RecordLostProperty(ColumnKind, name, declared.property, declared.value)
 	}
