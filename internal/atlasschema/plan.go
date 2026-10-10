@@ -238,7 +238,7 @@ func PreparePlanFileReportingUndecided(
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 
-	from, err := planSourceSchema(ctx, conn, computation, opts.Exclude)
+	from, err := planSourceSchema(ctx, conn, computation, opts.Exclude, opts.Runtime)
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
@@ -312,11 +312,12 @@ func planSourceSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	computation applyComputation,
 	exclude []string,
+	runtime any,
 ) (*catalog.Database, error) {
 	if computation.readScope == nil {
 		return computation.current, nil
 	}
-	return planTargetState(ctx, conn, computation.schemasBeyondURL, exclude)
+	return planTargetState(ctx, conn, computation.schemasBeyondURL, exclude, runtime)
 }
 
 // planTargetState reads the database state a saved plan's source fingerprint
@@ -333,6 +334,7 @@ func planSourceSchema(ctx context.Context,
 func planTargetState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	schemasBeyondURL, exclude []string,
+	runtime any,
 ) (*catalog.Database, error) {
 	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 	if err != nil {
@@ -342,11 +344,26 @@ func planTargetState(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("read database schema: %w", err)
 	}
-	current, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(current, exclude, conn.Info().Schema)
+	current, err = excludeCurrentWithBindings(ctx, current, exclude, conn.Info(), runtime)
 	if err != nil {
 		return nil, fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}
 	return current, nil
+}
+
+// excludeCurrentWithBindings subtracts a saved plan's exclude patterns from a
+// fresh read the way the plan was computed: patterns counted from the
+// connection's default schema, and each standalone feature object kept or
+// left out whole by the tables it binds.
+func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, exclude []string, info catalog.ServerInfo, runtime any) (*catalog.Database, error) {
+	scope := atlasfilter.Scope{Exclude: exclude, DefaultSchema: info.Schema}
+	var err error
+	scope.Bindings, err = scopeBindings(ctx, runtime, info.Dialect, scope, databaseSide(current))
+	if err != nil {
+		return nil, err
+	}
+	current, _, err = atlasfilter.ExcludeDatabaseScopeReport(current, scope)
+	return current, err
 }
 
 // classifyPlanStatements records the safety assessment of each raw statement
@@ -665,7 +682,7 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 			plan.Dialect, conn.Info().Dialect)
 	}
 
-	current, err := planTargetState(ctx, conn, plan.SchemasBeyondURL, plan.Exclude)
+	current, err := planTargetState(ctx, conn, plan.SchemasBeyondURL, plan.Exclude, runtime)
 	if err != nil {
 		return err
 	}

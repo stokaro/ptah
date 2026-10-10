@@ -64,7 +64,7 @@ func TestScopeInspectSchema_TakesThePatternScopeFromTheURL(t *testing.T) {
 			c := qt.New(t)
 			info := catalog.ServerInfo{Dialect: "postgres", Schema: "public", URL: test.url}
 
-			got, _, err := scopeInspectSchema(
+			got, _, err := scopeInspectSchema(t.Context(),
 				patternScopeFixture(), info, InspectOptions{Exclude: []string{"public.users.name"}})
 
 			c.Assert(patternScopeError(err), qt.Equals, test.wantErr)

@@ -1,14 +1,18 @@
 package atlasschema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/schemaselection"
 )
 
@@ -166,4 +170,36 @@ func refuseUnmatchedExclude(selectors []string) error {
 // composite desired state's placement check reads too.
 func dialectDefaultSchema(dialect string) string {
 	return schemaselection.DialectDefault(dialect)
+}
+
+// scopeBindings captures, for a scope that selects anything, the tables the
+// standalone feature objects on sides bind, so the selection keeps or leaves
+// out each whole and refuses one it would split. A scope selecting nothing
+// needs none.
+func scopeBindings(ctx context.Context, runtime any, dialect string, scope atlasfilter.Scope, sides ...featureselect.Side) (featureselect.Bindings, error) {
+	if !scope.Positive() && len(scope.Exclude) == 0 {
+		return featureselect.Bindings{}, nil
+	}
+	relations, _ := runtime.(featureselect.RelationRuntime)
+	bindings, err := featureselect.CaptureBindings(ctx, relations, dialect, identifier.ForDialect(dialect), sides...)
+	if err != nil {
+		return featureselect.Bindings{}, fmt.Errorf("capture the tables feature objects bind: %w", err)
+	}
+	return bindings, nil
+}
+
+// generatedSide and databaseSide are the feature states of a declaration and
+// of a read, for capturing bindings. A nil database holds none.
+func generatedSide(db *schemamodel.Database) featureselect.Side {
+	if db == nil {
+		return featureselect.Side{Representation: schemaext.Desired}
+	}
+	return featureselect.Side{Representation: schemaext.Desired, Objects: db.FeatureObjects, Coverage: db.FeatureCoverage}
+}
+
+func databaseSide(db *catalog.Database) featureselect.Side {
+	if db == nil {
+		return featureselect.Side{Representation: schemaext.Observed}
+	}
+	return featureselect.Side{Representation: schemaext.Observed, Objects: db.FeatureObjects, Coverage: db.FeatureCoverage}
 }

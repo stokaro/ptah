@@ -317,3 +317,37 @@ func TestRelationsCancellationAndFailureDiscardAllEarlierResults(t *testing.T) {
 		})
 	}
 }
+
+// TestRelationKinds pins the kinds a caller may ask relations about: those a
+// provider registered for the target, named by an alias too, and the
+// representation, sorted, and none for a representation it did not register.
+func TestRelationKinds(t *testing.T) {
+	c := qt.New(t)
+	runtime, err := engine.New(relationProvider(relationsFunc(func(_ context.Context, request schemaext.RelationRequest) (schemaext.RelationResult, error) {
+		return relationReply(request), nil
+	})))
+	c.Assert(err, qt.IsNil)
+
+	desired, desiredErr := runtime.RelationKinds("alternate", schemaext.Desired)
+	observed, observedErr := runtime.RelationKinds("custom", schemaext.Observed)
+
+	c.Assert(desiredErr, qt.IsNil)
+	c.Assert(observedErr, qt.IsNil)
+	c.Assert(desired, qt.DeepEquals, slices.Sorted(slices.Values([]schemaext.Kind{conversionSecond, conversionFirst})))
+	c.Assert(observed, qt.HasLen, 0)
+}
+
+// TestRelationKinds_FailurePath pins the refusal of a target the runtime does
+// not know.
+func TestRelationKinds_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	runtime, err := engine.New(relationProvider(relationsFunc(func(_ context.Context, request schemaext.RelationRequest) (schemaext.RelationResult, error) {
+		return relationReply(request), nil
+	})))
+	c.Assert(err, qt.IsNil)
+
+	kinds, err := runtime.RelationKinds("unknown", schemaext.Desired)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+	c.Assert(kinds, qt.IsNil)
+}

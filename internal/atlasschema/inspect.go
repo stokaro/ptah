@@ -212,7 +212,7 @@ func renderInspectSchema(
 	if err := validateInspectSchema(ctx, schema, info.Dialect, opts); err != nil {
 		return InspectResult{}, err
 	}
-	schema, excludeReport, err := scopeInspectSchema(schema, info, opts)
+	schema, excludeReport, err := scopeInspectSchema(ctx, schema, info, opts)
 	// Inspection is read-only and its documented answer for an empty selection
 	// is an empty rendering, so it keeps exit 0 and reports the empty selection
 	// on the diagnostics stream instead of failing.
@@ -511,16 +511,23 @@ func omittedVerb(count int) string {
 // to an object it dropped), and without it the established exclusion-only path
 // is kept unchanged.
 func scopeInspectSchema(
+	ctx context.Context,
 	schema *catalog.Database,
 	info catalog.ServerInfo,
 	opts InspectOptions,
 ) (*catalog.Database, atlasfilter.ExcludeReport, error) {
-	return atlasfilter.ScopeDatabaseReport(schema, atlasfilter.Scope{
+	scope := atlasfilter.Scope{
 		Include:               opts.Include,
 		Exclude:               opts.Exclude,
 		DefaultSchema:         info.Schema,
 		RealmRelativePatterns: ConnectionIsRealmScoped(info),
-	})
+	}
+	var err error
+	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, info.Dialect, scope, databaseSide(schema))
+	if err != nil {
+		return nil, atlasfilter.ExcludeReport{}, err
+	}
+	return atlasfilter.ScopeDatabaseReport(schema, scope)
 }
 
 // applyInspectFileExports hands the rendered output plan to the shared

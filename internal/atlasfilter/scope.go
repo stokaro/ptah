@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/schemascope"
 )
 
@@ -39,6 +40,12 @@ type Scope struct {
 	// Exclude subtracts Atlas-style exclude patterns from the positive
 	// selection.
 	Exclude []string
+	// Bindings are the tables each standalone feature object binds, captured
+	// from both comparison sides with [featureselect.CaptureBindings]. An
+	// object binding tables is kept when the scope selects every one of them,
+	// left out when it selects none, and refused when it selects some. The
+	// zero value keeps every standalone object.
+	Bindings featureselect.Bindings
 	// ExtensionSupport keeps every database-wide extension during a
 	// comparison-side reprojection. Comparison callers set it only after either
 	// side reports a matching non-extension resource, so an extension-only
@@ -530,6 +537,7 @@ type scopeSelection struct {
 	// match the exclude subtraction later removed.
 	matched             bool
 	nonExtensionMatched bool
+	bindings            featureselect.Bindings
 }
 
 // emptySelectionError reports an include selection that matched nothing.
@@ -553,6 +561,7 @@ func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection
 		selectors:        selectors,
 		def:              strings.TrimSpace(scope.DefaultSchema),
 		extensionSupport: scope.ExtensionSupport,
+		bindings:         scope.Bindings,
 	}
 }
 

@@ -92,6 +92,29 @@ func (r *Runtime) CaptureRelations(ctx context.Context, request schemaext.Relati
 	return r.codecs.AcceptRelations(ctx, request, result)
 }
 
+// RelationKinds returns the model kinds that have relation discovery for a
+// target and a source representation, sorted. A caller that captures
+// relations only for some values passes these kinds, since CaptureRelations
+// refuses a value of a kind no owner describes. An unknown target is refused
+// with [ptaherr.ErrUnsupportedDialect]; a nil runtime knows no kinds.
+func (r *Runtime) RelationKinds(targetName string, representation schemaext.Representation) ([]schemaext.Kind, error) {
+	if r == nil {
+		return nil, nil
+	}
+	target, found := r.lookup(targetName)
+	if !found {
+		return nil, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, targetName)
+	}
+	var kinds []schemaext.Kind
+	for _, service := range r.relationServices {
+		if service.Target == target.name && service.Representation == representation {
+			kinds = append(kinds, service.Kinds...)
+		}
+	}
+	slices.Sort(kinds)
+	return slices.Compact(kinds), nil
+}
+
 func (r *Runtime) relationKinds(request schemaext.RelationRequest) []schemaext.Kind {
 	var kinds []schemaext.Kind
 	for _, service := range r.relationServices {

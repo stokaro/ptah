@@ -632,7 +632,9 @@ and source representation. `runtime.CaptureRelations` validates a complete
 `schemaext.RelationRequest` before dispatching one batch per owner. Each concrete
 value has an ordered receipt. Missing handlers, malformed receipts, errors, and
 cancellation return no snapshot. A receipt can explicitly report unresolved
-references; source coverage remains unchanged.
+references; source coverage remains unchanged. `runtime.RelationKinds` names the
+kinds that have relation discovery for a target and representation, so a caller
+can ask about those values only.
 
 `RelationSnapshot.CaptureRelated` captures the connected feature context around
 structured object references. It retains each multi-table object once, with its
@@ -643,12 +645,19 @@ from its location. Unknown namespaces or unresolved references return
 does not enroll an older source in a new model. Returned references establish
 neither the existence of their targets nor permission to expand user scope.
 
-These are explicit embedding contracts. Built-in comparison and filtering do
-not yet invoke relationship discovery automatically. Policy extraction and that
-pipeline integration remain part of #4140. The external-provider fixture checks
-the public path without built-in providers. Process adapters must map model
-values and references into explicit records; implicit JSON encoding of a
-relation value or snapshot is refused.
+Built-in scope selection uses these contracts. Before `--include`,
+`--exclude` or `--schema` narrows a comparison or an inspection, it captures
+the tables each standalone feature object binds on either side. An object is
+kept whole when the scope holds every table it binds and left out when it holds
+none. A scope that would split one is refused, naming the tables on each side,
+since comparing the object would change bindings outside the scope. A kind the
+scope selects by its own name keeps that selection; for it the tables decide
+only the refusal of a split. Built-in comparison does not yet invoke
+relationship discovery; that integration remains part of #4140.
+
+The external-provider fixture checks the public path without built-in
+providers. Process adapters must map model values and references into explicit
+records; implicit JSON encoding of a relation value or snapshot is refused.
 
 `ChangeValue` implementations that also implement `OwnerReplacement` report
 whether applying them requires replacing the common owner; `ReplacesOwner`

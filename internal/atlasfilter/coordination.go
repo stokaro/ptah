@@ -3,8 +3,23 @@ package atlasfilter
 import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/dialect/ydb/ydbworkload"
 )
+
+// namedFeatureKinds are the standalone feature kinds a scope selects by their
+// own type and name, each through [selectNamedFeatures]. The tables one of
+// them binds decide only whether a scope splits it; see
+// [featureselect.Bindings.Select]. A kind selected by name is listed here in
+// the same change that adds its selector.
+var namedFeatureKinds = []schemaext.Kind{
+	ydbcoordination.Kind, ydbsecret.Kind, ydbstreaming.Kind, ydbtopic.Kind, tsschema.ContinuousAggregateKind,
+	ydbworkload.PoolKind, ydbworkload.ClassifierKind,
+}
 
 // Coordination objects are standalone. Table selection must not remove them,
 // and the existing coordination_node selectors apply to values and knowledge.
