@@ -42,3 +42,21 @@ func TestPlanningRefusalCannotRetainCommonRewriteClaims(t *testing.T) {
 	}
 	c.Assert(result.Err(featureplan.Request{}), qt.ErrorIs, schemaext.ErrInvalidValue)
 }
+
+func TestPhaseValid(t *testing.T) {
+	tests := []struct {
+		phase featureplan.Phase
+		want  bool
+	}{
+		{phase: featureplan.PhaseDefault, want: true},
+		{phase: featureplan.PhaseDependent, want: true},
+		{phase: "late", want: false},
+		{phase: "Dependent", want: false},
+	}
+	for _, test := range tests {
+		t.Run(string(test.phase), func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.phase.Valid(), qt.Equals, test.want)
+		})
+	}
+}

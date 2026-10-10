@@ -22,12 +22,26 @@ import (
 const commonOwner = "ptah.run/postgres"
 
 // featurePositions records where the common sequence leaves room for feature
-// operations: creation is after the tables and columns a feature object may
-// read and before the views that may read it, and removal is after those views
-// are dropped and before the tables. Both are indexes into the common node
-// list.
+// operations, as indexes into the common node list.
+//
+// The default windows place an object beside the relations it reads: creation
+// is after the tables and columns a feature object may read and before the
+// views that may read it, and removal is after those views are dropped and
+// before the tables. The dependent windows place an object that names objects
+// of every family and that nothing common reads, such as a row-security
+// policy: dependentCreation is after the views, the role changes and the
+// row-security switches, and dependentRemoval is ahead of the removal steps,
+// before row security is disabled and before the columns, constraints, views,
+// tables, routines and roles those steps drop.
+//
+// dependentRemoval follows dependentCreation, so an object replaced under a new
+// name exists throughout. The cost is that the column changes and routine
+// replacements run before a dependent drop: PostgreSQL refuses ALTER COLUMN
+// TYPE on a column a policy uses, and a routine the server cannot replace is
+// dropped while the policy still calls it, so a plan that combines either with
+// removing the policy fails at that statement.
 type featurePositions struct {
-	creation, removal int
+	creation, dependentCreation, dependentRemoval, removal int
 }
 
 // scheduleFeatures dispatches a diff's feature changes to their owners and
@@ -36,10 +50,11 @@ type featurePositions struct {
 //
 // Owners place their steps through dependencies on common steps they can
 // identify from effects. Every other step keeps the common order, and each
-// feature step joins one of two windows: one that drops an object goes after
-// the planner drops the views that may read it, and every other one goes
-// before it creates them. Scheduling validates the complete graph before
-// any node is returned, so a late conflict leaves no successful prefix.
+// feature step joins one window: a step that drops an object joins a removal
+// window and every other one a creation window, the dependent ones when its
+// operation asks for [featureplan.PhaseDependent]. Scheduling validates the
+// complete graph before any node is returned, so a late conflict leaves no
+// successful prefix.
 func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, positions featurePositions) ([]ast.Node, error) {
 	target := p.targetDialect()
 	if diff == nil || !hasFeatureChanges(target, diff) {
@@ -62,16 +77,15 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	}
 	graph := newCommonGraph(semantics, nodes, positions)
 	request.CommonSteps = graph.steps
-	features, err := featurehost.Plan(ctx, runtime, request, names)
+	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent)
 	if err != nil {
 		return nil, err
 	}
 	for _, contribution := range features.Contributions {
 		for _, step := range contribution.Steps {
-			window := graph.creation
-			if slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool { return effect.Action == plangraph.Drop }) {
-				window = graph.removal
-			}
+			window := graph.window(features.Phases[step.ID], slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool {
+				return effect.Action == plangraph.Drop
+			}))
 			graph.contribution.Dependencies = append(graph.contribution.Dependencies,
 				plangraph.Dependency{Before: window[0], After: step.ID}, plangraph.Dependency{Before: step.ID, After: window[1]})
 		}
@@ -96,9 +110,24 @@ func hasFeatureChanges(target string, diff *difftypes.SchemaDiff) bool {
 // commonGraph is the common sequence as graph units, with an empty marker pair
 // around each feature window.
 type commonGraph struct {
-	contribution      plangraph.Contribution[[]ast.Node]
-	steps             []featureplan.CommonStep
-	creation, removal [2]plangraph.StepID
+	contribution                plangraph.Contribution[[]ast.Node]
+	steps                       []featureplan.CommonStep
+	creation, dependentCreation [2]plangraph.StepID
+	dependentRemoval, removal   [2]plangraph.StepID
+}
+
+// window is the marker pair a feature step joins.
+func (g *commonGraph) window(phase featureplan.Phase, drops bool) [2]plangraph.StepID {
+	switch {
+	case phase == featureplan.PhaseDependent && drops:
+		return g.dependentRemoval
+	case phase == featureplan.PhaseDependent:
+		return g.dependentCreation
+	case drops:
+		return g.removal
+	default:
+		return g.creation
+	}
 }
 
 func newCommonGraph(semantics identifier.Semantics, nodes []ast.Node, positions featurePositions) commonGraph {
@@ -109,9 +138,17 @@ func newCommonGraph(semantics identifier.Semantics, nodes []ast.Node, positions 
 		return id
 	}
 	effects := pgeffects.Sequence(objectidentity.NewBuilder(semantics), nodes)
+	// The positions are in this order in the common sequence, so markers that
+	// share an index still nest each window inside its own pair.
 	for i := 0; i <= len(nodes); i++ {
 		if i == positions.creation {
 			graph.creation = [2]plangraph.StepID{marker("common/feature-creations"), marker("common/after-feature-creations")}
+		}
+		if i == positions.dependentCreation {
+			graph.dependentCreation = [2]plangraph.StepID{marker("common/dependent-creations"), marker("common/after-dependent-creations")}
+		}
+		if i == positions.dependentRemoval {
+			graph.dependentRemoval = [2]plangraph.StepID{marker("common/dependent-removals"), marker("common/after-dependent-removals")}
 		}
 		if i == positions.removal {
 			graph.removal = [2]plangraph.StepID{marker("common/feature-removals"), marker("common/after-feature-removals")}

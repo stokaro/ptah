@@ -60,3 +60,42 @@ func TestSequence_ReadsEachStatementInItsHistory(t *testing.T) {
 	c.Assert(pgeffects.CreatesView(effects[3]), qt.IsFalse)
 	c.Assert(pgeffects.CreatesView(effects[0]), qt.IsFalse)
 }
+
+// TestStatement_ReadsColumnDropsRoutinesAndRoles pins the effects an owner
+// orders a dependent object against: the column an ALTER TABLE drops, a routine
+// created or dropped, and a role created, changed or dropped. A routine keeps
+// the argument list the statement names, and a procedure is not a function.
+func TestStatement_ReadsColumnDropsRoutinesAndRoles(t *testing.T) {
+	arguments := "integer"
+	tests := []struct {
+		name string
+		node ast.Node
+		want []plangraph.Effect
+	}{
+		{name: "a dropped column", node: &ast.AlterTableNode{Name: "orders", Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: "tenant"}}},
+			want: []plangraph.Effect{effect(builder.Table("orders"), plangraph.Alter), effect(builder.Column("orders", "tenant"), plangraph.Drop)}},
+		{name: "a function created", node: &ast.CreateFunctionNode{Name: "app.tenant", Parameters: "integer"},
+			want: []plangraph.Effect{effect(builder.Function("app.tenant", "integer"), plangraph.Create)}},
+		{name: "a procedure created", node: &ast.CreateFunctionNode{Name: "app.refresh", Kind: "procedure"},
+			want: []plangraph.Effect{effect(routineOf(objectidentity.KindProcedure, "app.refresh", ""), plangraph.Create)}},
+		{name: "a function dropped with its arguments", node: &ast.DropFunctionNode{Name: "app.tenant", Parameters: &arguments},
+			want: []plangraph.Effect{effect(builder.Function("app.tenant", "integer"), plangraph.Drop)}},
+		{name: "a function dropped by name", node: &ast.DropFunctionNode{Name: "app.tenant"},
+			want: []plangraph.Effect{effect(builder.Function("app.tenant", ""), plangraph.Drop)}},
+		{name: "a role created", node: &ast.CreateRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Create)}},
+		{name: "a role changed", node: &ast.AlterRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Alter)}},
+		{name: "a role dropped", node: &ast.DropRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Drop)}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(pgeffects.Statement(builder, test.node), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func routineOf(kind objectidentity.Kind, name, signature string) objectidentity.ID {
+	ref := builder.Function(name, signature)
+	ref.Kind = kind
+	return ref
+}

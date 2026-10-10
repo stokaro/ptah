@@ -2004,6 +2004,12 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 
+	// Feature operations of the dependent phase that create or change objects
+	// join the plan here: after the views, role changes, row-security switches
+	// and policies they may name, and before the comments and grants that may
+	// name them.
+	positions.dependentCreation = len(result)
+
 	// 9.1. Comments on objects that already existed, after every step that
 	// creates, replaces or recreates one of them. The policies are the last
 	// of those.
@@ -2050,6 +2056,12 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff, released.IndexSet())
+
+	// Feature operations of the dependent phase that drop objects join the
+	// plan here, ahead of the removal steps: before row security is disabled
+	// and before the columns, constraints, views, tables, routines and roles
+	// those steps drop.
+	positions.dependentRemoval = len(result)
 
 	// 12. Remove RLS policies (must be done before disabling RLS and before dropping columns)
 	result = p.removeRLSPolicies(result, diff)

@@ -112,3 +112,42 @@ func TestCommonWalkHonorsCancellationDuringVisitors(t *testing.T) {
 		})
 	}
 }
+
+// phasedDeclarationRuntime plans one standalone statement in the dependent
+// phase.
+type phasedDeclarationRuntime struct{}
+
+func (phasedDeclarationRuntime) Codecs() schemaext.Registry { return schemaext.Registry{} }
+
+func (phasedDeclarationRuntime) PlanDeclarations(context.Context, featureplan.DeclarationRequest) (featureplan.DeclarationResult, error) {
+	step := plangraph.Step[featureplan.Operation]{ID: plangraph.StepID{Owner: "example.org/lowering", Name: "late"},
+		Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &phasedStatement{}, Phase: featureplan.PhaseDependent}}
+	return featureplan.DeclarationResult{Complete: true, Contributions: []plangraph.Contribution[featureplan.Operation]{
+		{Owner: step.ID.Owner, Steps: []plangraph.Step[featureplan.Operation]{step}},
+	}}, nil
+}
+
+type phasedStatement struct{}
+
+func (*phasedStatement) Kind() schemaext.Kind                 { return "example.org/lowering-statement" }
+func (*phasedStatement) CloneExtension() ast.ExtensionPayload { return &phasedStatement{} }
+
+// TestStandaloneLoweringRefusesAPhase pins that a whole-schema render refuses
+// an operation that asks for a phase: it orders an owner's steps by their
+// dependencies alone, so ignoring the phase would place the statement where
+// its owner did not ask for it.
+func TestStandaloneLoweringRefusesAPhase(t *testing.T) {
+	c := qt.New(t)
+	ref := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts(objectidentity.Kind(loweringKind), "public", "owned")
+	objects, err := schemaext.NewObjects(schemaext.Object{Ref: ref, Value: &loweringValue{Name: "retained"}})
+	c.Assert(err, qt.IsNil)
+	database := schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "public"}}, FeatureObjects: objects}
+	visited := 0
+
+	err = modelast.WalkDatabase(database, "postgres", func(ast.Node) error { visited++; return nil },
+		modelast.Lowering{Context: t.Context(), Runtime: phasedDeclarationRuntime{}})
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `.*declaration step example.org/lowering/late asks for the "dependent" phase.*`)
+	c.Assert(visited, qt.Equals, 0)
+}

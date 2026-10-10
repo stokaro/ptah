@@ -168,6 +168,7 @@ func TestHostRejectsIncompleteAndUnlowerableReplies(t *testing.T) {
 		{name: "incomplete", edit: func(r *featureplan.Result) { r.Complete = false }},
 		{name: "unknown role", edit: func(r *featureplan.Result) { r.Contributions[0].Steps[0].Payload.Role = "unknown" }},
 		{name: "unbound parent", edit: func(r *featureplan.Result) { r.Contributions[0].Steps[0].Payload.Parent.Name.Normalized = "other" }},
+		{name: "a phase the host has no window for", edit: func(r *featureplan.Result) { r.Contributions[0].Steps[0].Payload.Phase = featureplan.PhaseDependent }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -195,4 +196,33 @@ func TestHostFailureAndCancellationDiscardOperations(t *testing.T) {
 	result, err = featurehost.Plan(ctx, selected, request, names)
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(result, qt.DeepEquals, featurehost.Result{})
+}
+
+// TestHostCarriesTheOperationPhase pins that a phase the host accepts reaches
+// it beside the lowered step, and that a default one is absent.
+func TestHostCarriesTheOperationPhase(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase featureplan.Phase
+		want  map[plangraph.StepID]featureplan.Phase
+	}{
+		{name: "dependent", phase: featureplan.PhaseDependent,
+			want: map[plangraph.StepID]featureplan.Phase{{Owner: "example.org/host-operation", Name: "change"}: featureplan.PhaseDependent}},
+		{name: "default", phase: featureplan.PhaseDefault, want: make(map[plangraph.StepID]featureplan.Phase)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request, reply, names := fixture()
+			reply.Contributions[0].Steps[0].Payload.Phase = test.phase
+			runtime := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) {
+				return reply, nil
+			}}
+
+			result, err := featurehost.Plan(t.Context(), runtime, request, names, featureplan.PhaseDependent)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Phases, qt.DeepEquals, test.want)
+		})
+	}
 }

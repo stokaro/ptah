@@ -232,6 +232,7 @@ func TestPlanningRejectsMalformedRepliesWithoutPartialResults(t *testing.T) {
 		{"missing parent", func(r *featureplan.Result) { r.Contributions[0].Steps[0].Payload.Parent = objectidentity.ID{} }},
 		{"standalone with parent", func(r *featureplan.Result) { r.Contributions[0].Steps[0].Payload.Role = ast.StatementExtension }},
 		{"multiline note", func(r *featureplan.Result) { r.Contributions[0].Steps[0].Payload.Notes[0] = "note\nSQL" }},
+		{"unknown phase", func(r *featureplan.Result) { r.Contributions[0].Steps[0].Payload.Phase = "late" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -319,4 +320,20 @@ func TestPlanningKeepsValidationInputsSeparateFromTheService(t *testing.T) {
 	result, err := runtime.PlanFeatures(t.Context(), planningRequest())
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(result, qt.DeepEquals, featureplan.Result{})
+}
+
+// TestPlanningKeepsTheOperationPhase pins that a phase the owner chose
+// survives the runtime's snapshot of its reply.
+func TestPlanningKeepsTheOperationPhase(t *testing.T) {
+	c := qt.New(t)
+	runtime := mustRuntime(c, planningProvider(planningFunc(func(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
+		reply, err := plannedFixture(ctx, request)
+		reply.Contributions[0].Steps[0].Payload.Phase = featureplan.PhaseDependent
+		return reply, err
+	})))
+
+	result, err := runtime.PlanFeatures(t.Context(), planningRequest())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Contributions[0].Steps[0].Payload.Phase, qt.Equals, featureplan.PhaseDependent)
 }
