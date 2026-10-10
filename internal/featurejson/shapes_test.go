@@ -247,7 +247,7 @@ func TestUnmarshal_ReadsChangeEnvelopesStrictly_FailurePath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(strings.Contains(document, test.find), qt.IsTrue, qt.Commentf("%s is not in %s", test.find, document))
+			c.Assert(document, qt.Contains, test.find)
 			target := changesDocument{FeatureChanges: []schemaext.ChangeRecord{coordinationChange()}}
 
 			err := featurejson.Unmarshal(t.Context(), codecs(), schemaext.Desired, []byte(strings.Replace(document, test.find, test.replace, 1)), &target)
@@ -273,7 +273,7 @@ func TestUnmarshal_ReadsSchemaEnvelopesStrictly_FailurePath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(strings.Contains(document, test.find), qt.IsTrue, qt.Commentf("%s is not in %s", test.find, document))
+			c.Assert(document, qt.Contains, test.find)
 			target := schemamodel.Database{Tables: []schemamodel.Table{{Name: "kept"}}}
 
 			err := featurejson.Unmarshal(t.Context(), codecs(), schemaext.Desired, []byte(strings.Replace(document, test.find, test.replace, 1)), &target)
