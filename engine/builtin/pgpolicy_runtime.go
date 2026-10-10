@@ -1,10 +1,8 @@
 package builtin
 
 import (
-	"slices"
-
 	"ptah.run/engine"
-	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/pgpolicyprovider"
 )
 
 // pgpolicyProvider assembles the PostgreSQL row-security owner as a provider of
@@ -12,13 +10,10 @@ import (
 // without the PostgreSQL target importing them. Its rendering joins the
 // family's composition in [ownersFor].
 //
-// It registers the change and operation codecs, which a saved plan and a diff
-// report encode. The model codecs join with the comparison and planning that
-// produce owner values: a registered desired model is one the schema census
-// measures, and nothing can declare one yet.
+// No reader or source produces a policy or table-state value yet, so a
+// comparison, a plan or a render reaches these services only with values a
+// caller built itself; the common row-level security path still renders what a
+// declaration asks for.
 func pgpolicyProvider() engine.Provider {
-	return engine.Provider{
-		ID:     pgpolicy.Owner,
-		Codecs: slices.Concat(pgpolicy.ChangeCodecs(), pgpolicy.OperationCodecs()),
-	}
+	return pgpolicyprovider.Provider()
 }

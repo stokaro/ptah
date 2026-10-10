@@ -180,6 +180,8 @@ func Fixtures() []Fixture {
 		{Name: "owned-coordination-node", Schema: ownedCoordinationNodeFixture()},
 		{Name: "secret", Schema: secretFixture()},
 		{Name: "security-policy", Schema: securityPolicyFixture()},
+		{Name: "pgpolicy-policy", Schema: tablePolicyFixture()},
+		{Name: "pgpolicy-table-state", Schema: tableRowSecurityFixture()},
 		{Name: "streaming-query", Schema: streamingQueryFixture(), Flags: []capability.Capability{capability.StreamingQueries}},
 		{Name: "external-objects", Schema: externalObjectsFixture(),
 			Flags: []capability.Capability{capability.ExternalDataSources}},

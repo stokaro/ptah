@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/featureplan"
@@ -48,9 +49,9 @@ func planning(changes ...schemaext.ChangeRecord) featureplan.Request {
 
 // summary spells each contributed step: its name, its operation, its effects,
 // its transaction and its phase.
-func summary(result featureplan.Result) []string {
+func summary(contributions []plangraph.Contribution[featureplan.Operation]) []string {
 	var lines []string
-	for _, contribution := range result.Contributions {
+	for _, contribution := range contributions {
 		for _, step := range contribution.Steps {
 			var effects []string
 			for _, effect := range step.Effects {
@@ -106,7 +107,7 @@ func TestPlanPolicies_Steps(t *testing.T) {
 			result, err := newRuntime(c).PlanFeatures(t.Context(), planning(test.change))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(summary(result), qt.DeepEquals, test.want)
+			c.Assert(summary(result.Contributions), qt.DeepEquals, test.want)
 			c.Assert(result.Changes, qt.HasLen, 1)
 			c.Assert(result.Changes[0].Strategy, qt.Equals, test.strategy)
 			c.Assert(result.Changes[0].Steps, qt.HasLen, len(test.want))
@@ -210,6 +211,136 @@ func TestPlanPolicies_AccountsForATablesOperation(t *testing.T) {
 				receipts = append(receipts, fmt.Sprintf("%s: %s", parent.Kind, parent.Strategy))
 			}
 			c.Assert(receipts, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestPlanPolicies_CreatesACreatedTablesPolicies pins a table the plan
+// creates: each of its policies is created in the dependent phase, with its
+// comment after it and access unchanged, since no role could read the table
+// before. The policy receipt names those steps; the switch receipt names none,
+// because the statements after the CREATE TABLE set the switches.
+func TestPlanPolicies_CreatesACreatedTablesPolicies(t *testing.T) {
+	c := qt.New(t)
+	commented := permissiveDeclared
+	commented.Comment = "tenants"
+	request := planning()
+	request.Tables = []featureplan.Table{{Subject: tableRef("orders"), Action: featureplan.CreateTable,
+		Desired: schemacapture.TableDeclaration{Table: declaredOrders.Table, OwnedObjects: objects(c,
+			desiredPolicy(c, "orders", "tenant", commented), desiredPolicy(c, "orders", "limit", restrictiveDeclared))}}}
+	limit, tenant, table := "ptah.run/pgpolicy/policy app.orders.limit", "ptah.run/pgpolicy/policy app.orders.tenant", "table app.orders"
+
+	result, err := newRuntime(c).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(summary(result.Contributions), qt.DeepEquals, []string{
+		"created/000000/policy/000000 *pgpolicy.PolicyOperation create " + limit + ", read " + table + " allowed dependent",
+		"created/000000/policy/000001 *pgpolicy.PolicyOperation create " + tenant + ", read " + table + ", read role reader allowed dependent",
+		"created/000000/policy/000001/comment *pgpolicy.PolicyCommentOperation alter " + tenant + ", read " + table + " allowed dependent",
+	})
+	c.Assert(result.Contributions[0].Dependencies, qt.DeepEquals, []plangraph.Dependency{{
+		Before: plangraph.StepID{Owner: pgpolicy.Owner, Name: "created/000000/policy/000001"},
+		After:  plangraph.StepID{Owner: pgpolicy.Owner, Name: "created/000000/policy/000001/comment"},
+	}})
+	for _, step := range result.Contributions[0].Steps[:2] {
+		c.Assert(step.Payload.Payload.(*pgpolicy.PolicyOperation).Change.Access, qt.Equals, pgpolicy.CreatedTableAccess())
+	}
+	c.Assert(result.Parents, qt.DeepEquals, []featureplan.ParentPlan{
+		{Subject: tableRef("orders"), Kind: pgpolicy.PolicyKind, Action: featureplan.CreateTable,
+			Strategy: "create the table's policies after the objects their expressions may name", Steps: []plangraph.StepID{
+				{Owner: pgpolicy.Owner, Name: "created/000000/policy/000000"},
+				{Owner: pgpolicy.Owner, Name: "created/000000/policy/000001"},
+				{Owner: pgpolicy.Owner, Name: "created/000000/policy/000001/comment"},
+			}},
+		{Subject: tableRef("orders"), Kind: pgpolicy.TableStateKind, Action: featureplan.CreateTable,
+			Strategy: "set the table's declared row-security switches in the statements after its CREATE TABLE"},
+	})
+}
+
+// TestPlanPolicies_KeepsTheSchemaTheSourceLeftOut pins that a policy on a table
+// in the default schema names its table as the source did. Qualified with the
+// default the identity was built with, the statements would name another
+// table wherever the connection's search_path puts the table elsewhere.
+func TestPlanPolicies_KeepsTheSchemaTheSourceLeftOut(t *testing.T) {
+	c := qt.New(t)
+	commented := permissiveDeclared
+	commented.Comment = "tenants"
+	change := schemaext.ChangeRecord{Subject: pgpolicy.PolicyRef("", "orders", "tenant"),
+		Value: &pgpolicy.PolicyChange{After: &commented, Access: pgpolicy.PolicyAccess(nil, &commented, pgpolicy.ExpressionsSame)}}
+
+	result, err := newRuntime(c).PlanFeatures(t.Context(), planning(change))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Contributions[0].Steps, qt.HasLen, 2)
+	c.Assert(result.Contributions[0].Steps[0].Payload.Payload.(*pgpolicy.PolicyOperation).QualifiedTable(), qt.Equals, "orders")
+	c.Assert(result.Contributions[0].Steps[1].Payload.Payload.(*pgpolicy.PolicyCommentOperation).QualifiedTable(), qt.Equals, "orders")
+}
+
+// TestPlanDeclarations_CreatesEachPolicyLast pins a whole-schema render: each
+// declared policy is created in the default phase after every common step,
+// since its expressions may name anything the render creates, and its comment
+// after it. Each receipt names its policy's steps.
+func TestPlanDeclarations_CreatesEachPolicyLast(t *testing.T) {
+	c := qt.New(t)
+	commented := permissiveDeclared
+	commented.Comment = "tenants"
+	createTable := plangraph.StepID{Owner: "example.org/common", Name: "create-table"}
+	createView := plangraph.StepID{Owner: "example.org/common", Name: "create-view"}
+	request := featureplan.DeclarationRequest{Target: "postgres", Identifiers: postgres,
+		Objects: []schemaext.Object{desiredPolicy(c, "orders", "tenant", commented), desiredPolicy(c, "orders", "limit", restrictiveDeclared)},
+		Tables:  []schemacapture.TableDeclaration{declaredOrders},
+		CommonSteps: []featureplan.CommonStep{
+			{ID: createTable, Effects: []plangraph.Effect{{Subject: tableRef("orders"), Action: plangraph.Create}}, Transaction: plangraph.TransactionAllowed},
+			{ID: createView, Transaction: plangraph.TransactionAllowed},
+		}}
+	limit, tenant, table := "ptah.run/pgpolicy/policy app.orders.limit", "ptah.run/pgpolicy/policy app.orders.tenant", "table app.orders"
+	first, comment, second := plangraph.StepID{Owner: pgpolicy.Owner, Name: "declared/000000"},
+		plangraph.StepID{Owner: pgpolicy.Owner, Name: "declared/000000/comment"}, plangraph.StepID{Owner: pgpolicy.Owner, Name: "declared/000001"}
+
+	result, err := newRuntime(c).PlanDeclarations(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.IsNil)
+	c.Assert(summary(result.Contributions), qt.DeepEquals, []string{
+		"declared/000000 *pgpolicy.PolicyOperation create " + tenant + ", read " + table + ", read role reader allowed ",
+		"declared/000000/comment *pgpolicy.PolicyCommentOperation alter " + tenant + ", read " + table + " allowed ",
+		"declared/000001 *pgpolicy.PolicyOperation create " + limit + ", read " + table + " allowed ",
+	})
+	c.Assert(result.Contributions[0].Dependencies, qt.DeepEquals, []plangraph.Dependency{
+		{Before: createTable, After: first}, {Before: createView, After: first}, {Before: first, After: comment},
+		{Before: createTable, After: second}, {Before: createView, After: second},
+	})
+	c.Assert(result.Declarations, qt.DeepEquals, []featureplan.DeclarationPlan{
+		{Subject: pgpolicy.PolicyRef("app", "orders", "tenant"), Strategy: "create the policy after every object the render creates, since its expressions may name any of them",
+			Steps: []plangraph.StepID{first, comment}},
+		{Subject: pgpolicy.PolicyRef("app", "orders", "limit"), Strategy: "create the policy after every object the render creates, since its expressions may name any of them",
+			Steps: []plangraph.StepID{second}},
+	})
+}
+
+// TestPlanDeclarations_FailurePath pins what the owner refuses when a host asks
+// it directly: another target family, and a value that is not a declared
+// policy.
+func TestPlanDeclarations_FailurePath(t *testing.T) {
+	observed := must.Must(pgpolicy.ObservedPolicyObject(pgpolicy.PolicyRef("app", "orders", "tenant"), permissiveObserved))
+	tests := []struct {
+		name    string
+		request featureplan.DeclarationRequest
+		want    error
+	}{
+		{name: "another family", request: featureplan.DeclarationRequest{Target: "mysql"}, want: ptaherr.ErrUnsupportedDialect},
+		{name: "an observed policy", request: featureplan.DeclarationRequest{Target: "postgres", Objects: []schemaext.Object{observed}},
+			want: schemaext.ErrInvalidValue},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := policyplan.Service{}.PlanDeclarations(t.Context(), test.request)
+
+			c.Assert(err, qt.ErrorIs, test.want)
+			c.Assert(result.Complete, qt.IsFalse)
 		})
 	}
 }

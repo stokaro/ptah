@@ -1649,7 +1649,9 @@ do:
   while row security is enabled.
 
 `UnenforcedAccess` is the assessment for a table that enforces row security
-neither before nor after the change. `PolicyOperation`,
+neither before nor after the change, and `CreatedTableAccess` the assessment
+for a statement on a table the plan creates, which no role could read before.
+`PolicyOperation`,
 `PolicyCommentOperation` and `TableStateOperation` are the statement payloads.
 A comment is its own operation, gated by `capability.PolicyComments`, because
 CockroachDB holds policies and not their comments.
@@ -1698,23 +1700,35 @@ refuses, in a read-only transaction, for a role without SELECT on the table or
 for a role that does not exist yet, leaves the declaration unanswered and is
 not an error.
 
-`feature/pgpolicy/policyplan` plans the changes of surviving tables. Every
-operation asks for the dependent phase. A policy that changes is dropped and
-created again in one step that requires a transaction, a declared comment is
-set after the policy is created, and a table's switches are written under
-`TableStateSubject`, apart from the table the host alters. The steps of one
-table run in access order: what can only narrow access first, what can widen
-it last, and a change of unknown effect between, so a plan without a
-transaction never admits more than its start or its end. A table the host
-drops takes its policies and switches with it, and one it alters keeps them;
-a rebuild is refused.
+`feature/pgpolicy/policyplan` plans the changes of surviving tables and the
+policies of a table the plan creates. Every operation asks for the dependent
+phase. A statement names its table as the source spelled it, so a table the
+source left in the default schema is named without one. A policy that changes
+is dropped and created again in one step that requires a transaction, a
+declared comment is set after the policy is created, and a table's switches are
+written under `TableStateSubject`, apart from the table the host alters. The
+steps of one table run in access order: what can only narrow access first, what
+can widen it last, and a change of unknown effect between, so a plan without a
+transaction never admits more than its start or its end. A table the host drops
+takes its policies and switches with it, and one it alters keeps them; a
+rebuild is refused.
+
+A table the host creates gets its policies from the owner, with unchanged
+access, and its switches from the statements after its CREATE TABLE. A
+whole-schema render has no phases, so there each declared policy is created
+after every common step: its expressions may name any table, view or routine
+the render creates.
 
 `feature/pgpolicy/policyreverse` swaps a change's
 operands, projects the forward declaration as the server reports it, and
 assesses the access of each inverse again. Every inverse states that it does
 not undo access the forward plan granted or withheld, and a policy TO a role
-keyword nobody resolved is irreversible. The bundled runtime does not select
-these services yet.
+keyword nobody resolved is irreversible.
+
+The bundled runtime selects these services on PostgreSQL, CockroachDB and
+YugabyteDB. No source or reader produces the models yet, so they act only on
+values a caller builds. Spanner speaks the PostgreSQL dialect without row
+security, so a declared policy or set of switches is refused there.
 
 `dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
 0020. A policy is one feature object of `SecurityPolicyKind`, identified by its

@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/feature/pgpolicy"
 )
 
 // featureCodecs supplies the concrete models to this bundled-provider census.
@@ -43,6 +44,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: "ptah.run/clickhouse", codecs: chschema.RowPolicyCodecs()},
 		{owner: crdbschema.Owner, codecs: crdbschema.Codecs()},
 		{owner: mssqlschema.Owner, codecs: mssqlschema.Codecs()},
+		{owner: pgpolicy.Owner, codecs: pgpolicy.Codecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
 		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},
 		{owner: ydbschema.Owner, codecs: ydbschema.TTLCodecs()},
