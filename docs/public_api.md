@@ -245,19 +245,22 @@ to each other or to the file's tables, such as a consumer of a changefeed
 declared later in the file, sets `File` instead, and its `FileDecoder` reads
 every declaration of one file before `Finish` contributes what they declare
 together. A `FileDecoder` that also implements `FileCoverage` narrows the
-owner's claim for its file once it has finished.
+owner's claim for its file once it has finished. `Tables.Owning` places a part
+on its table by the rule the frontend applies to owner facets, and
+`Tables.Reference` places a declaration that may name a table another file
+declares. A `DeclarationError` names the attribute a refusal is about and,
+from `Finish`, the declaration it refuses; the frontend reports the refusal
+there as a `ptaherr.ParseError` that wraps the owner's error.
 
 An owner may also read declarations of the frontend's own directives that
 their target scope makes its own. A `TargetScope` names a directive, the
 dialects whose declarations the owner reads, and whether it also reads the
 declarations that name none: the row-security owner reads `rls:policy` and
-`rls:enable` without a scope or scoped to PostgreSQL-family targets.
+`rls:enable` without a scope or scoped to PostgreSQL-family targets, and the
+SQL Server owner reads them scoped to SQL Server.
 `Set.TargetOwner` is the one place that routes a declaration by its scope, and
 it refuses a scope that names one owner's targets beside others. The routed
-declaration carries its `Targets`, and a facet it contributes keeps them. `Tables.Owning` places a part on its table by the rule the frontend
-applies to owner facets. A `DeclarationError` names the attribute a refusal is
-about and, from `Finish`, the declaration it refuses; the frontend reports the
-refusal there as a `ptaherr.ParseError` that wraps the owner's error.
+declaration carries its `Targets`, and a facet it contributes keeps them.
 
 `NewSet` freezes the extensions one parse selects and refuses a directive, an
 attribute of one directive, a not-described kind, or a model that two owners

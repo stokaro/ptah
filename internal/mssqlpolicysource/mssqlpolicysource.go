@@ -5,8 +5,9 @@
 // predicates SQL Server takes, collects the declarations of one document, and
 // says what the document claims to describe.
 //
-// It sits beside package pgpolicysource, which does the same for PostgreSQL:
-// [Owns] decides which of the two, or neither, holds a declaration.
+// It sits beside package pgpolicysource, which does the same for PostgreSQL.
+// [Annotations] is the owner's side of the Go annotation frontend, which hands
+// it the declarations their target scope makes the owner's.
 package mssqlpolicysource
 
 import (
@@ -15,7 +16,6 @@ import (
 	"strings"
 
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlschema"
@@ -26,28 +26,6 @@ import (
 // for a user with no default schema of its own, and the one a predicate's
 // table takes when the declaration names none.
 const DefaultSchema = "dbo"
-
-// Owns reports whether a declaration scoped to targets is a SQL Server
-// security policy: its scope names SQL Server and no other target. A scope
-// naming SQL Server beside another target is refused, since a security policy
-// and another target's policy are different objects with different grammars,
-// and the refusal says how to split it. An empty scope is not SQL Server's.
-func Owns(targets []string) (bool, error) {
-	var sqlServer, other []string
-	for _, target := range targets {
-		if platform.NormalizeDialect(target) == platform.SQLServer {
-			sqlServer = append(sqlServer, target)
-		} else {
-			other = append(other, target)
-		}
-	}
-	if len(sqlServer) > 0 && len(other) > 0 {
-		return false, fmt.Errorf("%w: row-level security scoped to %s mixes SQL Server with other targets; "+
-			"a SQL Server security policy and the other targets' policies are different objects, so declare one scoped to %s and another scoped to %s",
-			ptaherr.ErrInvalidAttributeValue, strings.Join(targets, ","), strings.Join(sqlServer, ","), strings.Join(other, ","))
-	}
-	return len(sqlServer) > 0, nil
-}
 
 // Attributes is one row-level security declaration as a source spells it,
 // with the table it is on already resolved.

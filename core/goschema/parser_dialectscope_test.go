@@ -245,7 +245,7 @@ func TestParse_SQLServerScopedRowSecurity_FailurePath(t *testing.T) {
 			message: `SQL Server has no row-level security switch on a table`},
 		{name: "SQL Server beside ClickHouse",
 			annotation: `//ptah:schema:rls:policy name="p" table="tenants" using="dbo.fn(id)" dialects="clickhouse,mssql"`,
-			message:    `row-level security scoped to clickhouse,sqlserver mixes SQL Server with other targets`},
+			message:    `a declaration scoped to clickhouse,sqlserver mixes SQL Server with others`},
 		{name: "an inline expression", annotation: `//ptah:schema:rls:policy name="p" table="tenants" using="id = 1" dialects="mssql"`,
 			message: `"id = 1" is not a call of a two-part inline table-valued function`},
 		{name: "a role list", annotation: `//ptah:schema:rls:policy name="p" table="tenants" to="app" using="dbo.fn(id)" dialects="mssql"`,
