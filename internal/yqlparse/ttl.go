@@ -2,6 +2,7 @@ package yqlparse
 
 import (
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbttl"
 )
@@ -84,10 +85,29 @@ func (p *parser) applyTTL(table *ast.CreateTableNode, text string) {
 			p.failf("TTL DELETE requires STORE = COLUMN")
 			return
 		}
-		table.RowDeletionPolicy = &ast.RowDeletionPolicySpec{Column: spec.Column, Unit: spec.Unit, Interval: spec.Tiers[0].Interval}
-		err = ydbttl.Validate(table.RowDeletionPolicy)
+		err = p.applyRowTTL(table, spec)
 	}
 	if err != nil {
 		p.failf("%v", err)
 	}
+}
+
+// applyRowTTL records a TTL that only deletes rows as the YDB owner's
+// declaration, whether the table stores rows or columns. The unit is kept in
+// capitals.
+func (p *parser) applyRowTTL(table *ast.CreateTableNode, spec *ast.YDBTieredTTLSpec) error {
+	unit, err := ydbttl.Unit(spec.Unit)
+	if err != nil {
+		return err
+	}
+	policy := &ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: spec.Column, Interval: spec.Tiers[0].Interval, Unit: unit}}
+	if err := ydbschema.ValidateDesiredTTL(policy); err != nil {
+		return err
+	}
+	facets, err := table.Facets.With(policy)
+	if err != nil {
+		return err
+	}
+	table.Facets = facets
+	return nil
 }

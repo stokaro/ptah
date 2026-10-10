@@ -180,7 +180,16 @@ func TestCompare_YDBChangefeedsADeclarationDoesNotDescribeAreTheDatabases(t *tes
 	}
 }
 
+// completeYDBFixtureCoverage is complete knowledge of every YDB owner kind, as
+// the reader records it for the tables it returns.
 func completeYDBFixtureCoverage() schemaext.Coverage {
+	ttl := must.Must(ydbschema.TTLCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	return must.Must(ydbFixtureCoverageExceptTTL().Combine(ttl))
+}
+
+// ydbFixtureCoverageExceptTTL is complete knowledge of every YDB owner kind
+// but the TTL, for a fixture that states its TTL knowledge per table.
+func ydbFixtureCoverageExceptTTL() schemaext.Coverage {
 	feeds := must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil))
 	nodes := must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	queries := must.Must(ydbstreaming.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))

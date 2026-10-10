@@ -240,10 +240,9 @@ func fragmentFixture(c *qt.C, family fragmentFamily, kind string) ast.Node {
 // handlers read and nothing more.
 //
 // A zero value would not do: several handlers return early or refuse on an
-// empty field before they reach the question the matrix asks. PostgreSQL
-// writes nothing for a SetRowDeletionPolicyOperation without a column, for
-// example, and would then report as rendered an operation it refuses for a
-// missing capability once it has one.
+// empty field before they reach the question the matrix asks, and would then
+// report as rendered an operation they refuse for a missing capability once
+// they have one.
 func alterOperationFixtures() map[string]func() ast.Node {
 	changefeed := ydbschema.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}
 	return map[string]func() ast.Node{
@@ -273,9 +272,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		},
 		"DropConstraintOperation": func() ast.Node {
 			return &ast.DropConstraintOperation{ConstraintName: "ck_c"}
-		},
-		"DropRowDeletionPolicyOperation": func() ast.Node {
-			return &ast.DropRowDeletionPolicyOperation{}
 		},
 		"ModifyColumnOperation": func() ast.Node {
 			return &ast.ModifyColumnOperation{Column: ast.NewColumn("c", "INTEGER")}
@@ -311,9 +307,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 			return &ast.SetYDBColumnFamiliesOperation{
 				Families: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"c"}}},
 			}
-		},
-		"SetRowDeletionPolicyOperation": func() ast.Node {
-			return &ast.SetRowDeletionPolicyOperation{Column: "created_at", Interval: "1 day"}
 		},
 		"SetYDBTablePartitioningOperation": func() ast.Node {
 			return &ast.SetYDBTablePartitioningOperation{Partitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 2}}

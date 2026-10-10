@@ -631,7 +631,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.DomainTypeDef,
 		*ast.DropColumnOperation,
 		*ast.DropConstraintOperation,
-		*ast.DropRowDeletionPolicyOperation,
 		*ast.EnumTypeDef,
 		*ast.ModifyColumnOperation,
 		*ast.RangeTypeDef,
@@ -647,8 +646,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameTableOperation,
 		*ast.RenameTypeOperation,
 		*ast.SetCommentOperation,
-		*ast.SetConstraintCommentOperation,
-		*ast.SetRowDeletionPolicyOperation:
+		*ast.SetConstraintCommentOperation:
 		return r.nodeNeedsParent(node)
 
 	default:
@@ -945,11 +943,13 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		r.w.Write(partition)
 	}
 
-	// An owned storage parameter, CockroachDB row-level TTL, takes the WITH
-	// position; the table options the node carries are named above the
-	// statement instead, because this target renders none of them (see
-	// writeTableOptionsSkipped). Its owner refuses a target without the
-	// capability rather than letting the clause drop (stokaro/ptah#1027).
+	// An owned table clause takes this position: CockroachDB row-level TTL as
+	// a WITH clause of storage parameters, or the Spanner row deletion policy
+	// as a TTL clause; no engine has both. The table options the node carries
+	// are named above the statement instead, because this target renders none
+	// of them (see writeTableOptionsSkipped). The owner refuses a target
+	// without the capability rather than letting the clause drop
+	// (stokaro/ptah#1027, stokaro/ptah#2236).
 	following, storageFacets, err := r.lowerTableFacets(node)
 	if err != nil {
 		return err
@@ -959,14 +959,6 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		return err
 	}
 	r.w.Write(storage)
-
-	// The row deletion policy is a clause rather than a storage parameter, so
-	// it follows the WITH position rather than sharing it.
-	rowDeletionPolicy, err := r.renderRowDeletionPolicy(node)
-	if err != nil {
-		return err
-	}
-	r.w.Write(rowDeletionPolicy)
 
 	// The author's own raw tail closes the statement. It goes last because it
 	// is unparsed text: nothing here knows which clause it is, so there is no
@@ -1305,17 +1297,13 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			)
 		case *ast.RenameColumnOperation, *ast.RenameTableOperation:
 			// Both renames share one arm so this switch keeps its complexity
-			// budget, the way the two TTL arms below already do; writeRename
-			// re-selects between them.
+			// budget; writeRename re-selects between them.
 			r.writeRename(node, operation)
-		case *ast.ExtensionAlterOperation,
-			*ast.SetRowDeletionPolicyOperation, *ast.DropRowDeletionPolicyOperation:
-			// The row deletion policy and the owned operations, CockroachDB
-			// row-level TTL among them, share one branch so this switch keeps
-			// its complexity budget; writeRowExpiryOperation re-selects among
-			// them, which is a type switch of its own rather than three arms
-			// here (stokaro/ptah#1027, stokaro/ptah#2236).
-			if err := r.writeRowExpiryOperation(node, operation); err != nil {
+		case *ast.ExtensionAlterOperation:
+			// An owned operation, such as CockroachDB row-level TTL or the
+			// Spanner row deletion policy, is rendered by its owner
+			// (stokaro/ptah#1027, stokaro/ptah#2236).
+			if err := r.writeExtensionOperation(node, op); err != nil {
 				return err
 			}
 		case *ast.SetCommentOperation, *ast.SetConstraintCommentOperation, *ast.RenameConstraintOperation,

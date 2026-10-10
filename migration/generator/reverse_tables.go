@@ -104,13 +104,12 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			// rebuilds is rebuilding what that database held, and the forward
 			// declaration describes the state being rolled back from.
 			Desired: priorTableDeclaration(prior, tableDiff.TableName, semantics),
-			// The three Desired/Current pairs below carry BOTH sides for the
+			// The Desired/Current pairs below carry BOTH sides for the
 			// reason each of their doc comments gives, which is exactly so a
 			// reversal can swap them. None of them was swapped, or carried at
 			// all: a migration that changed a table's comment rolled back to
 			// "No rollback operations needed" (stokaro/ptah#2418).
 			CommentChange:           reverseCommentChange(tableDiff.CommentChange),
-			RowDeletionPolicyChange: reverseRowDeletionPolicyChange(tableDiff.RowDeletionPolicyChange),
 			YDBColumnFamiliesChange: reverseColumnFamiliesChange(tableDiff.YDBColumnFamiliesChange),
 			YDBPartitioningChange:   reversePartitioningChange(tableDiff.YDBPartitioningChange),
 			YDBColumnTableChange:    reverseColumnTableChange(tableDiff.YDBColumnTableChange),

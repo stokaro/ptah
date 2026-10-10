@@ -22,8 +22,10 @@ import (
 type Owners struct {
 	// Extensions renders owned payloads. The zero value has no handler.
 	Extensions renderer.Extensions
-	// TableStorage returns the ` WITH (...)` clause for a CREATE TABLE's
-	// facets, or the empty string for none. Nil means no owner renders one.
+	// TableStorage returns the clause a CREATE TABLE's facets add after its
+	// column list, with its leading space, such as ` WITH (...)` or ` TTL
+	// INTERVAL ...`, or the empty string for none. Nil means no owner renders
+	// one.
 	TableStorage func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, error)
 	// LowerTableFacets takes the table settings a CREATE TABLE cannot carry
 	// and returns the owned statements that follow it, with the facets it left
@@ -140,11 +142,11 @@ func (r *Renderer) renderTableFacets(payloads []ast.ExtensionPayload) error {
 	return nil
 }
 
-// renderOwnedTableStorage returns the ` WITH (...)` clause an owner renders for
-// the facets a CREATE TABLE carries, and the empty string for a table without
-// any. A target whose owners render no facet refuses one rather than dropping
-// it: the builtin preparation refuses first, and this keeps a direct render
-// from emitting a table without the setting it declared.
+// renderOwnedTableStorage returns the clause an owner renders for the facets a
+// CREATE TABLE carries, and the empty string for a table without any. A target
+// whose owners render no facet refuses one rather than dropping it: the
+// builtin preparation refuses first, and this keeps a direct render from
+// emitting a table without the setting it declared.
 func (r *Renderer) renderOwnedTableStorage(node *ast.CreateTableNode, facets schemaext.Facets) (string, error) {
 	if r.owners.TableStorage != nil {
 		return r.owners.TableStorage(r.dialect, r.capabilities(), node.Name, facets)

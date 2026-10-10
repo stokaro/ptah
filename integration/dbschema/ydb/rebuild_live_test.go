@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/migration/migrator"
@@ -168,7 +168,7 @@ func TestYDBRebuild_PreservesTheRows(t *testing.T) {
 func withTTL(interval string) func(*schemamodel.Database) {
 	return func(db *schemamodel.Database) {
 		db.Fields = append(db.Fields, schemamodel.Field{StructName: "Item", Name: "seen", Type: "Timestamp", Nullable: true})
-		db.Tables[0].RowDeletionPolicy = &ast.RowDeletionPolicySpec{Column: "seen", Interval: interval}
+		db.Tables[0].Facets = ttlFacets(&ydbschema.TTL{Column: "seen", Interval: interval})
 	}
 }
 
@@ -193,8 +193,8 @@ func TestYDBRebuild_CarriesTheTTL(t *testing.T) {
 
 			c.Assert(planAgainst(c, conn, after, rebuildSchemas), qt.HasLen, 0)
 			live := readScoped(c, conn, rebuildSchemas)
-			c.Assert(tableNamed(c, live, rebuildSchema, "items").RowDeletionPolicy, qt.DeepEquals,
-				&ast.RowDeletionPolicySpec{Column: "seen", Interval: "P3D"})
+			c.Assert(observedTTL(c, tableNamed(c, live, rebuildSchema, "items")), qt.DeepEquals,
+				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "seen", Interval: "P3D"}})
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+rebuildSchema+"/items`"), qt.Equals, int64(2))
 		})
 	}

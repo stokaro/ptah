@@ -16,7 +16,7 @@ func TestReadYQLTieredTTL(t *testing.T) {
 	c.Assert(database.Tables[0].YDBColumnTable.TTL, qt.DeepEquals, &ast.YDBTieredTTLSpec{Column: "ts", Tiers: []ast.YDBTTLTierSpec{
 		{Interval: "PT1H", ExternalSource: "/local/archive/cold"}, {Interval: "P7D"},
 	}})
-	c.Assert(database.Tables[0].RowDeletionPolicy, qt.IsNil)
+	c.Assert(database.Tables[0].Facets.Len(), qt.Equals, 0)
 }
 
 func TestReadYQLColumnFamilies(t *testing.T) {

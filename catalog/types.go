@@ -262,9 +262,6 @@ type Table struct {
 	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
 	Unlogged     bool `json:"unlogged,omitempty"`
 	WithoutRowID bool `json:"without_rowid,omitempty"` // SQLite WITHOUT ROWID table option
-	// RowDeletionPolicy is the row deletion policy this table carries, nil for
-	// a table with none (stokaro/ptah#2236).
-	RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
 	// YDBColumnFamilies is YDB's, and no other target fills it: the column
 	// families of a YDB row table, each with its settings and the columns it
 	// holds, the default family only where its settings are not YDB's own.

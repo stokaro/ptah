@@ -4,20 +4,34 @@ package ydb_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dbtarget"
 )
 
-// HCL has no spelling for a TTL. `ptah-compat schema inspect` says so for each
-// TTL it leaves out, and the document applied back to the database it came
-// from plans nothing: the loader records that HCL cannot express a TTL, so the
-// table keeps it rather than losing it to a RESET (TTL).
-func TestYDBCompatBinary_KeepsATTLHCLCannotWrite(t *testing.T) {
+// ttlInspectedPlatform is the block `schema inspect` writes for the events
+// table's TTL: the YDB owner's platform properties, in the spelling YDB shows.
+const ttlInspectedPlatform = `  platform "ydb" {
+    override "row_deletion_column" {
+      value = "created_at"
+    }
+    override "row_deletion_interval" {
+      value = "P1D"
+    }
+  }
+`
+
+// `ptah-compat schema inspect` writes a table's TTL into HCL as the YDB
+// owner's platform properties and reports no loss, and the document applied
+// back to the database it came from plans nothing. The same document without
+// the block plans nothing either: HCL that names no TTL leaves the table's
+// TTL alone rather than losing it to a RESET (TTL).
+func TestYDBCompatBinary_InspectWritesTheTTLAsPlatformProperties(t *testing.T) {
 	c := qt.New(t)
 	binary := buildCompatBinary(c, c.Context())
 	for _, line := range ydbLines {
@@ -30,23 +44,25 @@ func TestYDBCompatBinary_KeepsATTLHCLCannotWrite(t *testing.T) {
 			dropTables(c, conn, ttlSchemas)
 			c.Cleanup(func() { dropTables(c, conn, ttlSchemas) })
 			apply(c, conn, planAgainst(c, conn,
-				ttlEvents(&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P1D"}, "created_at"), ttlSchemas))
+				ttlEvents(&ydbschema.TTL{Column: "created_at", Interval: "P1D"}, "created_at"), ttlSchemas))
 
 			inspected, notes, inspectErr := runCompat(ctx, binary, "schema", "inspect", "--url", url, "--schema", ttlSchema)
 			c.Assert(inspectErr, qt.IsNil, qt.Commentf("schema inspect:\n%s", notes))
-			c.Assert(notes, qt.Contains,
-				"warning: table."+ttlSchema+".events: row deletion policy (TTL P1D on created_at) is not represented in HCL")
-			reapplied, _, reapplyErr := runCompat(ctx, binary, "schema", "apply", "--url", url, "--schema", ttlSchema,
-				"--to", "file://"+writeCompatFile(c, c.TempDir(), "inspected.hcl", inspected), "--dry-run")
-			c.Assert(reapplyErr, qt.IsNil, qt.Commentf("schema apply of the inspected document:\n%s", reapplied))
-			c.Assert(reapplied, qt.Equals, "Schema is synced, no changes to be made\n")
-			c.Assert(policyOf(c, conn, "events"), qt.DeepEquals, &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P1D"})
+			c.Assert(inspected, qt.Contains, ttlInspectedPlatform)
+			c.Assert(notes, qt.Not(qt.Contains), string(ydbschema.TTLKind))
+			for _, document := range []string{inspected, strings.Replace(inspected, ttlInspectedPlatform, "", 1)} {
+				reapplied, _, reapplyErr := runCompat(ctx, binary, "schema", "apply", "--url", url, "--schema", ttlSchema,
+					"--to", "file://"+writeCompatFile(c, c.TempDir(), "inspected.hcl", document), "--dry-run")
+				c.Assert(reapplyErr, qt.IsNil, qt.Commentf("schema apply of the document:\n%s\n%s", document, reapplied))
+				c.Assert(reapplied, qt.Equals, "Schema is synced, no changes to be made\n", qt.Commentf("document:\n%s", document))
+			}
+			c.Assert(policyOf(c, conn, "events"), qt.DeepEquals, &ydbschema.TTL{Column: "created_at", Interval: "P1D"})
 		})
 	}
 }
 
-// ttlRebuildDesired is the events table with its n column widened, in HCL,
-// which has no spelling for the table's TTL.
+// ttlRebuildDesired is the events table with its n column widened, in HCL that
+// names no TTL.
 const ttlRebuildDesired = `schema "` + ttlSchema + `" {
 }
 
@@ -69,10 +85,10 @@ table "events" {
 }
 `
 
-// A table rebuilt from an HCL desired state keeps its TTL: the document cannot
-// spell one, so the plan takes the database's TTL as declared and writes it on
-// the new table rather than dropping it with the old one.
-func TestYDBCompatBinary_RebuildKeepsATTLHCLCannotWrite(t *testing.T) {
+// A table rebuilt from an HCL desired state that names no TTL keeps its TTL:
+// the plan takes the database's TTL as declared and writes it on the new table
+// rather than dropping it with the old one.
+func TestYDBCompatBinary_RebuildKeepsATTLTheDocumentLeavesOut(t *testing.T) {
 	c := qt.New(t)
 	binary := buildCompatBinary(c, c.Context())
 	for _, line := range ydbLines {
@@ -94,7 +110,7 @@ func TestYDBCompatBinary_RebuildKeepsATTLHCLCannotWrite(t *testing.T) {
 
 			c.Assert(rebuildErr, qt.IsNil, qt.Commentf("schema apply:\n%s\n%s", rebuilt, notes))
 			c.Assert(rebuilt, qt.Contains, ") WITH (TTL = Interval(\"P1D\") ON `ts`, AUTO_PARTITIONING_BY_SIZE = ENABLED, ")
-			c.Assert(policyOf(c, conn, "events"), qt.DeepEquals, &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"})
+			c.Assert(policyOf(c, conn, "events"), qt.DeepEquals, &ydbschema.TTL{Column: "ts", Interval: "P1D"})
 			synced, _, syncedErr := runCompat(ctx, binary,
 				"schema", "apply", "--url", url, "--schema", ttlSchema, "--to", desired, "--dry-run")
 			c.Assert(syncedErr, qt.IsNil, qt.Commentf("schema apply again:\n%s", synced))

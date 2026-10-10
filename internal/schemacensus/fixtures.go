@@ -115,6 +115,7 @@ func Fixtures() []Fixture {
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
+		{Name: "table-ydb-ttl", Schema: tableYDBTTLFixture()},
 		{Name: "table-column-families", Schema: tableColumnFamiliesFixture()},
 		{Name: "table-column-store", Schema: tableColumnStoreFixture(), Flags: []capability.Capability{capability.TieredTTL}},
 		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
@@ -839,13 +840,6 @@ func tableOverrideFixture() schemamodel.Database {
 	})
 }
 
-func tableRowDeletionFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{
-		Name:              "t",
-		RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30d"},
-	}, schemamodel.Field{StructName: "T", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", Nullable: true})
-}
-
 // tableColumnFamiliesFixture sets every setting of a YDB column family, on a
 // family holding a column, beside a default family with a setting of its own.
 func tableColumnFamiliesFixture() schemamodel.Database {
@@ -887,15 +881,6 @@ func tableChangefeedDisabledFixture() schemamodel.Database {
 	})))
 	db.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
 	return db
-}
-
-// tableRowDeletionEpochFixture is a YDB TTL on an integer column, whose unit
-// says what the column counts.
-func tableRowDeletionEpochFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{
-		Name:              "t",
-		RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "SECONDS"},
-	}, schemamodel.Field{StructName: "T", FieldName: "Expires", Name: "expires", Type: "BIGINT UNSIGNED", Nullable: true})
 }
 
 func twoTables() schemamodel.Database {

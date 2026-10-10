@@ -62,6 +62,9 @@ func New() (*engine.Runtime, error) {
 		if name == platform.CockroachDB {
 			registerCockroachDBServices(&provider, name)
 		}
+		if name == platform.Spanner {
+			registerSpannerServices(&provider, name)
+		}
 		if name == platform.ClickHouse {
 			registerClickHouseServices(&provider, name)
 		}
@@ -90,6 +93,7 @@ func New() (*engine.Runtime, error) {
 			registerWorkloadServices(&provider, name)
 			registerSecretServices(&provider, name)
 			registerTopicServices(&provider, name)
+			registerYDBTTLServices(&provider, name)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
 				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})

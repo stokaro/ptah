@@ -2,29 +2,45 @@ package postgres_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/spanner/spannerdiff"
+	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// rowDeletionChanges is the owner change the comparator attaches to a table
+// whose Spanner row deletion policy differs. A nil side is a known absence.
+func rowDeletionChanges(table string, desired, current *spannerschema.Policy) []schemaext.ChangeRecord {
+	change := &spannerdiff.RowDeletion{}
+	if desired != nil {
+		change.After = &spannerschema.DesiredRowDeletion{Policy: *desired}
+	}
+	if current != nil {
+		change.Before = &spannerschema.ObservedRowDeletion{Policy: *current}
+	}
+	subject := objectidentity.NewBuilder(identifier.ForDialect(platform.Spanner)).Table(table)
+	return []schemaext.ChangeRecord{{Subject: subject, Value: change}}
+}
+
 // policyDiff is a diff whose only content is one table's row deletion policy
 // transition.
-func policyDiff(desired, current *ast.RowDeletionPolicySpec) *difftypes.SchemaDiff {
+func policyDiff(desired, current *spannerschema.Policy) *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
-			TableName: "sessions",
-			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
-				Desired: desired, Current: current,
-			},
+			TableName:      "sessions",
+			FeatureChanges: rowDeletionChanges("sessions", desired, current),
 		}},
 	}
 }
@@ -33,43 +49,41 @@ func policyDiff(desired, current *ast.RowDeletionPolicySpec) *difftypes.SchemaDi
 // produces.
 //
 // Every expectation was executed against the Cloud Spanner emulator behind
-// PGAdapter 0.55.2 and read back from
+// PGAdapter and read back from
 // information_schema.tables.row_deletion_policy_expression, which is what makes
 // these strings a claim about convergence rather than about formatting
 // (stokaro/ptah#2236).
 func TestPlanner_RowDeletionPolicyTransitions(t *testing.T) {
 	tests := []struct {
 		name    string
-		desired *ast.RowDeletionPolicySpec
-		current *ast.RowDeletionPolicySpec
+		desired *spannerschema.Policy
+		current *spannerschema.Policy
 		want    []string
 	}{
 		{
 			name:    "adding a policy",
-			desired: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			current: nil,
+			desired: &spannerschema.Policy{Column: "created_at", Interval: "30 days"},
 			want:    []string{`ALTER TABLE "sessions" ADD TTL INTERVAL '30 days' ON "created_at";`},
 		},
 		{
 			// ADD and ALTER are not interchangeable: the server refuses each in
-			// the other's position, which is why the diff carries both sides.
+			// the other's position, which is why the change carries both sides.
 			name:    "changing the interval",
-			desired: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "60 days"},
-			current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
+			desired: &spannerschema.Policy{Column: "created_at", Interval: "60 days"},
+			current: &spannerschema.Policy{Column: "created_at", Interval: "4 WEEKS 2 DAYS"},
 			want:    []string{`ALTER TABLE "sessions" ALTER TTL INTERVAL '60 days' ON "created_at";`},
 		},
 		{
 			name:    "moving the policy to another column",
-			desired: &ast.RowDeletionPolicySpec{Column: "updated_at", Interval: "30 days"},
-			current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
+			desired: &spannerschema.Policy{Column: "updated_at", Interval: "30 days"},
+			current: &spannerschema.Policy{Column: "created_at", Interval: "4 WEEKS 2 DAYS"},
 			want:    []string{`ALTER TABLE "sessions" ALTER TTL INTERVAL '30 days' ON "updated_at";`},
 		},
 		{
 			// The removal names no column: the clause goes and the timestamp
 			// column it referred to stays.
 			name:    "dropping the policy",
-			desired: nil,
-			current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
+			current: &spannerschema.Policy{Column: "created_at", Interval: "4 WEEKS 2 DAYS"},
 			want:    []string{`ALTER TABLE "sessions" DROP TTL;`},
 		},
 	}
@@ -85,14 +99,12 @@ func TestPlanner_RowDeletionPolicyTransitions(t *testing.T) {
 	}
 }
 
-// TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped pins the ORDER, which
-// is the half a per-transition test cannot see.
+// TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped pins the ORDER,
+// which is the half a per-transition test cannot see.
 //
 // A migration that moves a policy off a column and drops that column is one
 // plan, and the two statements only work in one order: the column the policy
-// still names cannot be dropped while it names it. Placed after the column
-// removal, beside the row-level TTL step, the plan reads correctly statement by
-// statement and fails as a whole.
+// still names cannot be dropped while it names it.
 func TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped(t *testing.T) {
 	c := qt.New(t)
 
@@ -100,15 +112,14 @@ func TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "created_at"}},
-			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
-				Desired: &ast.RowDeletionPolicySpec{Column: "updated_at", Interval: "30 days"},
-				Current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			},
+			FeatureChanges: rowDeletionChanges("sessions",
+				&spannerschema.Policy{Column: "updated_at", Interval: "30 days"},
+				&spannerschema.Policy{Column: "created_at", Interval: "30 days"}),
 		}},
 	})
 
-	c.Assert(indexOfStatement(c, statements, "ALTER TTL") <
-		indexOfStatement(c, statements, "DROP COLUMN"), qt.IsTrue,
+	c.Assert(statementIndex(c, statements, "ALTER TTL") <
+		statementIndex(c, statements, "DROP COLUMN"), qt.IsTrue,
 		qt.Commentf("statements were: %v", statements))
 }
 
@@ -122,21 +133,21 @@ func TestPlanner_TheDroppedPolicyGoesBeforeItsColumn(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "created_at"}},
-			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
-				Current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
-			},
+			FeatureChanges: rowDeletionChanges("sessions", nil, &spannerschema.Policy{Column: "created_at", Interval: "30 days"}),
 		}},
 	})
 
-	c.Assert(indexOfStatement(c, statements, "DROP TTL") <
-		indexOfStatement(c, statements, "DROP COLUMN"), qt.IsTrue,
+	c.Assert(statementIndex(c, statements, "DROP TTL") <
+		statementIndex(c, statements, "DROP COLUMN"), qt.IsTrue,
 		qt.Commentf("statements were: %v", statements))
 }
 
-// TestPlanner_RowDeletionPolicyIsNotPlannedWithoutTheCapability pins the gate:
-// a target without the capability gets the renderer's measured refusal rather
-// than an ALTER the server rejects halfway through a migration.
-func TestPlanner_RowDeletionPolicyIsNotPlannedWithoutTheCapability(t *testing.T) {
+// TestPlanner_RowDeletionPolicyIsRefusedWithoutAnOwner pins the gate: a diff
+// carrying a Spanner row deletion policy change on another target means the
+// comparison saw a policy no owner on that target plans. The plan refuses it
+// rather than emitting nothing, so the explanation arrives before any
+// statement does.
+func TestPlanner_RowDeletionPolicyIsRefusedWithoutAnOwner(t *testing.T) {
 	tests := []struct {
 		dialect string
 		caps    capability.Capabilities
@@ -152,12 +163,11 @@ func TestPlanner_RowDeletionPolicyIsNotPlannedWithoutTheCapability(t *testing.T)
 
 			nodes, err := planner.GenerateMigrationAST(
 				context.Background(), must.Must(builtin.New()),
-				policyDiff(
-					&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"}, nil),
+				policyDiff(&spannerschema.Policy{Column: "created_at", Interval: "30 days"}, nil),
 			)
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(renderedStatements(c, nodes, test.caps, test.dialect), qt.HasLen, 0)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(nodes, qt.IsNil)
 		})
 	}
 }
@@ -174,18 +184,4 @@ func planRowDeletionPolicy(c *qt.C, diff *difftypes.SchemaDiff) []string {
 	c.Assert(err, qt.IsNil)
 
 	return renderedStatements(c, nodes, capability.SpannerPostgres(), platform.Spanner)
-}
-
-// indexOfStatement is where a statement containing fragment appears, and fails
-// the test when nothing does — an ordering assertion between two statements
-// that are not both there would otherwise pass on a plan missing one.
-func indexOfStatement(c *qt.C, statements []string, fragment string) int {
-	c.Helper()
-	for i, statement := range statements {
-		if strings.Contains(statement, fragment) {
-			return i
-		}
-	}
-	c.Fatalf("no statement contains %q, in: %v", fragment, statements)
-	return -1
 }

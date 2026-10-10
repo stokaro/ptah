@@ -265,11 +265,11 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		Schema:     tableSchemaName,
 		Comment:    table.Comment,
 		Partition:  toSchemaPartition(table.Partition, sourcePlatform),
-		// Carried, because the SQL surface is where a row deletion policy is
-		// read back: `db read` emits the clause, and a schema file holding that
-		// output has to describe the same table it came from
-		// (stokaro/ptah#2236).
-		RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
+		// Carried, because the SQL surface is where an owner's table setting,
+		// such as a Spanner row deletion policy or a YDB TTL, is read back:
+		// `db read` emits the clause, and a schema file holding that output
+		// has to describe the same table it came from (stokaro/ptah#2236).
+		Facets:            table.Facets,
 		YDBPartitioning:   table.YDBPartitioning.Clone(),
 		YDBColumnTable:    table.YDBColumnTable.Clone(),
 		YDBColumnFamilies: ast.CloneYDBColumnFamilies(table.YDBColumnFamilies),

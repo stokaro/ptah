@@ -922,6 +922,66 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-spanner-spannerast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerast",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannercompare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannercompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannerconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannerdiff",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerdiff",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannerplan",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannerrender",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannerreport",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannerreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerreverse",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannerschema",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannerschema",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-spanner-spannersource",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/spanner/spannersource",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-timescaledb-tsast",
       "kind": "public-package",
       "surface": "ptah.run/dialect/timescaledb/tsast",

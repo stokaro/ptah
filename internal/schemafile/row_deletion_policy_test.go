@@ -9,11 +9,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
@@ -22,15 +22,18 @@ import (
 
 // A YDB table with a TTL, written as HCL by `schema inspect` and loaded back
 // as the desired state, plans nothing for the TTL: HCL cannot spell one, so
-// its silence is not a request to remove it. Measured on YDB 26.2.1.14, the
-// round trip through `ptah-compat schema inspect` and `schema apply` planned
-// `ALTER TABLE ... RESET (TTL)` without the loader's record.
+// the document claims no knowledge of it, and its silence is not a request to
+// remove it. Measured on YDB 26.2.1.14, the round trip through `ptah-compat
+// schema inspect` and `schema apply` once planned `ALTER TABLE ... RESET
+// (TTL)`.
 func TestAnHCLDocumentKeepsTheTableTTL(t *testing.T) {
 	c := qt.New(t)
-	policy := &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"}
+	policy := ydbschema.TTL{Column: "ts", Interval: "P30D"}
+	declared := must.Must(must.Must(schemaext.NewFacets(&ydbschema.DesiredTTL{Policy: policy})).WithTargetScope(ydbschema.TTLKind, platform.YDB))
+	observed := must.Must(must.Must(schemaext.NewFacets(&ydbschema.ObservedTTL{Policy: policy})).WithTargetScope(ydbschema.TTLKind, platform.YDB))
 	inspected := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Events", Name: "events", PrimaryKey: []string{"id"},
-			RowDeletionPolicy: policy}},
+			Facets: declared}},
 		Fields: []schemamodel.Field{
 			{StructName: "Events", Name: "id", Type: "Uint64", Primary: true},
 			{StructName: "Events", Name: "ts", Type: "Timestamp", Nullable: true},
@@ -43,9 +46,11 @@ func TestAnHCLDocumentKeepsTheTableTTL(t *testing.T) {
 
 	desired, err := schemafile.LoadPath(path, schemafile.Options{})
 	c.Assert(err, qt.IsNil)
+	read := must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	read = must.Must(read.Combine(must.Must(ydbschema.TTLCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{
-		FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
-		Tables: []catalog.Table{{Name: "events", Type: "TABLE", RowDeletionPolicy: policy, Columns: []catalog.Column{
+		FeatureCoverage: read,
+		Tables: []catalog.Table{{Name: "events", Type: "TABLE", Facets: observed, Columns: []catalog.Column{
 			{Name: "id", DataType: "Uint64", ColumnType: "Uint64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			{Name: "ts", DataType: "Timestamp", ColumnType: "Timestamp", IsNullable: "YES", OrdinalPosition: 2},
 		}}},

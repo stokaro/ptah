@@ -153,13 +153,6 @@ type CreateTableNode struct {
 	// A table nothing declared is logged, which is the server's default, so
 	// false and "unset" mean the same and the field needs no pointer.
 	Unlogged bool
-	// RowDeletionPolicy stores the table's row deletion policy, nil for a table
-	// declaring none.
-	//
-	// It is a clause on the table holding exactly one interval and one column.
-	// CockroachDB's row-level TTL is a different thing, a set of storage
-	// parameters its owner carries in Facets (stokaro/ptah#2236).
-	RowDeletionPolicy *RowDeletionPolicySpec
 	// YDBColumnFamilies is YDB's, and every other renderer refuses it: the
 	// column families of a YDB row table, each with the columns it holds. Nil
 	// declares none, and every column then sits in YDB's default family. See
@@ -173,58 +166,6 @@ type CreateTableNode struct {
 	// YDBColumnTable selects column-oriented storage and its hash partitioning.
 	// Nil selects row storage. Other dialects refuse this declaration.
 	YDBColumnTable *YDBColumnTableSpec
-}
-
-// RowDeletionPolicySpec is a table's row deletion policy: the engine deletes a
-// row once Interval has passed since the time in Column.
-//
-// Two engines have it. Spanner spells it `TTL INTERVAL '30 days' ON
-// created_at`, and YDB spells it as the table setting `TTL = Interval("P30D")
-// ON created_at`, where an integer column also names the Unit its value counts
-// in: `TTL = Interval("PT1H") ON expires AS SECONDS`.
-//
-// Interval is stored as the author wrote it and is NOT compared as text. Each
-// server rewrites it: measured against the Cloud Spanner emulator behind
-// PGAdapter 0.55.2, `INTERVAL '30 days'` reads back as
-// `INTERVAL '4 WEEKS 2 DAYS'`, and YDB keeps only a whole number of seconds,
-// so `PT720H` reads back as `P30D`. A declaration compared as text could never
-// converge, so each engine's interval is compared as the value it denotes.
-type RowDeletionPolicySpec struct {
-	// Column is the column the interval is measured from: a date or time
-	// column, or on YDB an integer column that counts Unit since the Unix
-	// epoch.
-	Column string `json:"column,omitempty"`
-	// Interval is the interval literal, without the INTERVAL keyword and
-	// without quotes: `30 days` on Spanner, the ISO 8601 duration `P30D` on
-	// YDB.
-	Interval string `json:"interval,omitempty"`
-	// Unit is what an integer Column counts since the Unix epoch: SECONDS,
-	// MILLISECONDS, MICROSECONDS or NANOSECONDS. It is empty for a date or
-	// time column, and a target without
-	// [ptah.run/core/platform/capability.RowDeletionPolicyEpochColumn] refuses
-	// a policy that sets it.
-	Unit string `json:"unit,omitempty"`
-}
-
-// IsZero reports whether this is a policy at all. Nil is zero, and so is a spec
-// missing either half: a policy needs both, and one without a column deletes
-// nothing while one without an interval has no schedule.
-func (s *RowDeletionPolicySpec) IsZero() bool {
-	if s == nil {
-		return true
-	}
-	return s.Column == "" || s.Interval == ""
-}
-
-// Clone returns an independent copy, so a spec handed to a comparator or a
-// planner cannot be mutated through the pointer it shares with the schema it
-// came from. Nil stays nil.
-func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec {
-	if s == nil {
-		return nil
-	}
-	out := *s
-	return &out
 }
 
 // YDBColumnFamilySpec is YDB's, and no other dialect has column families: one

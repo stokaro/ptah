@@ -5,7 +5,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbttl"
 )
@@ -132,57 +131,20 @@ func TestUnit_FailurePath(t *testing.T) {
 }
 
 // Setting writes the value of the TTL setting, the interval as declared and
-// the unit as YQL spells it.
-func TestSetting_HappyPath(t *testing.T) {
+// the unit after AS for an integer column.
+func TestSetting(t *testing.T) {
 	tests := []struct {
-		name string
-		spec *ast.RowDeletionPolicySpec
-		want string
+		name                   string
+		column, interval, unit string
+		want                   string
 	}{
-		{
-			name: "a date column",
-			spec: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P30D"},
-			want: "Interval(\"P30D\") ON `created_at`",
-		},
-		{
-			name: "an integer column",
-			spec: &ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "milliseconds"},
-			want: "Interval(\"PT1H\") ON `expires` AS MILLISECONDS",
-		},
+		{name: "a date column", column: "created_at", interval: "P30D", want: "Interval(\"P30D\") ON `created_at`"},
+		{name: "an integer column", column: "expires", interval: "PT1H", unit: "MILLISECONDS", want: "Interval(\"PT1H\") ON `expires` AS MILLISECONDS"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := ydbttl.Setting(test.spec, quote)
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, test.want)
-		})
-	}
-}
-
-func TestSetting_FailurePath(t *testing.T) {
-	tests := []struct {
-		name    string
-		spec    *ast.RowDeletionPolicySpec
-		wantErr string
-	}{
-		{
-			name:    "a Spanner interval",
-			spec:    &ast.RowDeletionPolicySpec{Column: "ts", Interval: "30 days"},
-			wantErr: `interval "30 days" is not an ISO 8601 duration YDB takes .*`,
-		},
-		{
-			name:    "a unit YDB does not know",
-			spec:    &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D", Unit: "DAYS"},
-			wantErr: `unit "DAYS" is not one YDB takes: .*`,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := ydbttl.Setting(test.spec, quote)
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.Equals, "")
+			c.Assert(ydbttl.Setting(test.column, test.interval, test.unit, quote), qt.Equals, test.want)
 		})
 	}
 }
@@ -219,83 +181,6 @@ func TestColumnRefusal(t *testing.T) {
 			got := ydbttl.ColumnRefusal("c", test.ydbType, test.unit)
 			c.Assert(got, qt.Contains, test.want)
 			c.Assert(got == "", qt.Equals, test.want == "")
-		})
-	}
-}
-
-// Two policies are one when the column, the unit and the seconds YDB keeps
-// agree, whatever the spelling of each.
-func TestEqual(t *testing.T) {
-	exact := func(name string) string { return name }
-	tests := []struct {
-		name        string
-		a, b        *ast.RowDeletionPolicySpec
-		wantEqual   bool
-		wantApplies bool
-	}{
-		{
-			name:      "the seconds YDB keeps",
-			a:         &ast.RowDeletionPolicySpec{Column: "ts", Interval: "PT720H"},
-			b:         &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"},
-			wantEqual: true, wantApplies: true,
-		},
-		{
-			name:      "the unit in another case",
-			a:         &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1H", Unit: "seconds"},
-			b:         &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT3600S", Unit: "SECONDS"},
-			wantEqual: true, wantApplies: true,
-		},
-		{
-			name:        "another interval",
-			a:           &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"},
-			b:           &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P2D"},
-			wantApplies: true,
-		},
-		{
-			name:        "another unit",
-			a:           &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1H", Unit: "SECONDS"},
-			b:           &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1H", Unit: "MILLISECONDS"},
-			wantApplies: true,
-		},
-		{
-			name:        "another column",
-			a:           &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"},
-			b:           &ast.RowDeletionPolicySpec{Column: "TS", Interval: "P1D"},
-			wantApplies: true,
-		},
-		{
-			name:        "a policy and none",
-			a:           &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"},
-			wantApplies: true,
-		},
-		{
-			name:        "an unreadable interval, spelled differently",
-			a:           &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1.5D"},
-			b:           &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P36H"},
-			wantApplies: true,
-		},
-		{
-			name:      "an unreadable interval, spelled the same",
-			a:         &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1.5D"},
-			b:         &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1.5D"},
-			wantEqual: true, wantApplies: true,
-		},
-		{
-			name: "Spanner's spelling",
-			a:    &ast.RowDeletionPolicySpec{Column: "ts", Interval: "30 days"},
-			b:    &ast.RowDeletionPolicySpec{Column: "ts", Interval: "4 WEEKS 2 DAYS"},
-		},
-		{name: "no policy on either side"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			equal, applies := ydbttl.Equal(test.a, test.b, exact)
-			c.Assert(equal, qt.Equals, test.wantEqual)
-			c.Assert(applies, qt.Equals, test.wantApplies)
-			reversed, reversedApplies := ydbttl.Equal(test.b, test.a, exact)
-			c.Assert(reversed, qt.Equals, test.wantEqual)
-			c.Assert(reversedApplies, qt.Equals, test.wantApplies)
 		})
 	}
 }

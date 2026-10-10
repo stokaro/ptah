@@ -1,18 +1,19 @@
-// Package ydbttl owns a YDB table's TTL: the setting that makes YDB delete a
-// row once an interval has passed since the time one of its columns holds.
+// Package ydbttl holds the grammar of a YDB table's TTL: the setting that
+// makes YDB delete a row once an interval has passed since the time one of its
+// columns holds.
 //
-// Ptah models it as the table's row deletion policy,
-// [ast.RowDeletionPolicySpec], which is the same idea as Spanner's clause: one
-// interval and one column. YDB spells it as a table setting,
+// The YDB owner models it as [ptah.run/dialect/ydb/ydbschema.TTL]: one
+// interval, one column and, for an integer column, a unit. YDB spells it as a
+// table setting,
 //
 //	CREATE TABLE t (...) WITH (TTL = Interval("P30D") ON created_at)
 //	ALTER TABLE t SET (TTL = Interval("PT1H") ON expires AS SECONDS)
 //	ALTER TABLE t RESET (TTL)
 //
 // and DescribeTable reads it back as the column and a whole number of
-// seconds, with the unit for an integer column. The renderer, the reader, the
-// planner and the comparison all read the setting through this package, so
-// the four agree on what a policy is.
+// seconds, with the unit for an integer column. The owner, the renderer, the
+// reader and the planner read the setting's grammar through this package, so
+// they agree on what an interval and a unit are.
 //
 // # Measured
 //
@@ -46,7 +47,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -135,39 +135,18 @@ func FormatInterval(seconds uint64) string {
 	return b.String()
 }
 
-// Validate refuses a policy YDB would refuse or store as something else: an
-// interval [IntervalSeconds] refuses, and a unit [Unit] does not know. A zero
-// policy is valid; it declares no TTL.
-func Validate(spec *ast.RowDeletionPolicySpec) error {
-	if spec.IsZero() {
-		return nil
-	}
-	if _, err := IntervalSeconds(spec.Interval); err != nil {
-		return err
-	}
-	_, err := Unit(spec.Unit)
-	return err
-}
-
-// Setting writes the policy as the value of YQL's TTL setting, without the
-// leading `TTL =`: the interval, ON and the quoted column, and for an integer
-// column AS and the unit, as in `Interval("PT1H") ON expires AS SECONDS`. The
-// interval is written as the author declared it, which YDB reads to the same
-// seconds as the form it shows. quote writes the column name as an
-// identifier.
-func Setting(spec *ast.RowDeletionPolicySpec, quote func(string) string) (string, error) {
-	if err := Validate(spec); err != nil {
-		return "", err
-	}
-	unit, err := Unit(spec.Unit)
-	if err != nil {
-		return "", err
-	}
-	setting := fmt.Sprintf(`Interval("%s") ON %s`, spec.Interval, quote(spec.Column))
+// Setting writes a TTL as the value of YQL's TTL setting, without the leading
+// `TTL =`: the interval, ON and the quoted column, and for an integer column
+// AS and the unit, as in `Interval("PT1H") ON expires AS SECONDS`. The interval
+// is written as the author declared it, which YDB reads to the same seconds as
+// the form it shows. The caller validates the parts first; quote writes the
+// column name as an identifier.
+func Setting(column, interval, unit string, quote func(string) string) string {
+	setting := fmt.Sprintf(`Interval("%s") ON %s`, interval, quote(column))
 	if unit != "" {
 		setting += " AS " + unit
 	}
-	return setting, nil
+	return setting
 }
 
 // ColumnRefusal says why a column of the given YDB type cannot carry a policy
@@ -200,43 +179,6 @@ var dateTypes = map[string]bool{
 
 // epochTypes are the column types a policy reads with a unit.
 var epochTypes = map[string]bool{ydbtype.Uint32: true, ydbtype.Uint64: true, ydbtype.DyNumber: true}
-
-// Equal reports whether two policies delete the same rows on the same
-// schedule, and whether either is spelled the YDB way at all. A policy is
-// YDB's when its interval is an ISO 8601 duration or it names a unit; when
-// neither is, applies is false and the caller compares the two another way.
-//
-// The column is compared with the target's identifier rule, as every other
-// column comparison is, the unit in any case, and the interval as the seconds
-// YDB keeps of it, because the server keeps nothing else: `PT720H` reads back
-// as `P30D`. An interval this package cannot read falls back to comparing the
-// two spellings, which converges: identical spellings are one policy, and
-// different ones plan a change that makes them identical.
-func Equal(a, b *ast.RowDeletionPolicySpec, columnKey func(string) string) (equal, applies bool) {
-	if !spelled(a) && !spelled(b) {
-		return false, false
-	}
-	if a.IsZero() || b.IsZero() {
-		return a.IsZero() && b.IsZero(), true
-	}
-	if columnKey(a.Column) != columnKey(b.Column) || !strings.EqualFold(strings.TrimSpace(a.Unit), strings.TrimSpace(b.Unit)) {
-		return false, true
-	}
-	left, leftErr := IntervalSeconds(a.Interval)
-	right, rightErr := IntervalSeconds(b.Interval)
-	if leftErr != nil || rightErr != nil {
-		return strings.TrimSpace(a.Interval) == strings.TrimSpace(b.Interval), true
-	}
-	return left == right, true
-}
-
-// spelled reports a policy written the YDB way; see [Equal].
-func spelled(spec *ast.RowDeletionPolicySpec) bool {
-	if spec.IsZero() {
-		return false
-	}
-	return strings.TrimSpace(spec.Unit) != "" || strings.HasPrefix(strings.TrimSpace(spec.Interval), "P")
-}
 
 // duration is an ISO 8601 duration as YDB's Interval literal reads it.
 type duration struct {

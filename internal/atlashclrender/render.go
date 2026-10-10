@@ -567,7 +567,6 @@ func (r *renderer) renderBody() {
 	r.reportColumnTables()
 	r.reportFeatureObjects()
 	r.reportExternalObjects()
-	r.reportRowDeletionPolicies()
 	r.reportReplications()
 	r.reportTablePartitioning()
 	r.renderExtensions()

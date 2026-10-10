@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -41,11 +42,10 @@ func TestGenerateMigrationAST_ColumnTTLFromRowPolicy(t *testing.T) {
 	declaration := itemsDeclaration(field("ts", "TIMESTAMP", true))
 	declaration.Table.YDBColumnTable = columnRetention()
 	declaration.Table.PrimaryKey = []string{"ts", "id"}
-	diff := modified(t, difftypes.TableDiff{
+	diff := addTTLChange(modified(t, difftypes.TableDiff{
 		TableName: "items", Desired: declaration,
-		YDBColumnTableChange:    &difftypes.YDBColumnTableChange{Desired: columnRetention(), Current: &ast.YDBColumnTableSpec{HashColumns: []string{"id"}}},
-		RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{Current: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P7D"}},
-	})
+		YDBColumnTableChange: &difftypes.YDBColumnTableChange{Desired: columnRetention(), Current: &ast.YDBColumnTableSpec{HashColumns: []string{"id"}}},
+	}), nil, &ydbschema.TTL{Column: "ts", Interval: "P7D"})
 	got := render(c, capability.YDB262().With(capability.TieredTTL, true), diff)
 	c.Assert(got, qt.Equals, "ALTER TABLE `items` RESET (TTL);\nALTER TABLE `items` SET (TTL = Interval(\"PT86400S\") TO EXTERNAL DATA SOURCE `/local/ext/bucket`, Interval(\"PT604800S\") DELETE ON `ts`);\n")
 }

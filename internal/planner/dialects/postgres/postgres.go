@@ -2052,26 +2052,17 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 11. Disable RLS on tables (must be done after removing policies)
 	result = p.disableRLSOnTables(result, diff)
 
-	// 11.8. Owned table settings, CockroachDB row-level TTL among them, after
-	// the columns a TTL expression may refer to exist and before anything is
-	// dropped -- INCLUDING a column. A plan that moved an expression off a
-	// column and dropped it once emitted `DROP COLUMN … CASCADE` first
-	// (stokaro/ptah#1027, position corrected while placing the row deletion
-	// policy, which carries the same constraint).
+	// 11.8. Owned table settings, CockroachDB row-level TTL and the Spanner
+	// row deletion policy among them, after the columns a policy may refer to
+	// exist and before anything is dropped -- INCLUDING a column. Both halves
+	// are load-bearing: a policy retargeted to a column the same plan adds
+	// cannot run before that column is there, and the column it currently
+	// names cannot be dropped while the policy still points at it. A plan that
+	// moved an expression off a column and dropped it once emitted `DROP
+	// COLUMN … CASCADE` first (stokaro/ptah#1027, stokaro/ptah#2236).
 	result, err = p.planTableFeatures(ctx, runtime, result, diff)
 	if err != nil {
 		return nil, err
-	}
-
-	// 11.9. The row deletion policy, after the columns exist and BEFORE any
-	// column is removed. Both halves are load-bearing: the clause names a
-	// column, so retargeting it to one added in the same plan cannot run
-	// before that column is there -- and the column it currently names cannot
-	// be dropped while the policy still points at it. That is the same
-	// constraint the RLS policies above carry, and the same position
-	// (stokaro/ptah#2236).
-	if p.planningRowDeletionPolicy() {
-		result = p.applyRowDeletionPolicyChanges(result, diff)
 	}
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)

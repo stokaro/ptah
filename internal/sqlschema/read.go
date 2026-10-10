@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/ydbsource"
 )
@@ -76,11 +77,16 @@ func ReadOnto(
 		return schemamodel.Database{}, nil, err
 	}
 	database.NotDescribed = database.NotDescribed.Merge(header)
-	if yql {
+	switch {
+	case yql:
 		database.FeatureCoverage, err = ydbsource.Coverage(limits)
-		if err != nil {
-			return schemamodel.Database{}, nil, err
-		}
+	case platform.NormalizeDialect(dialect) == platform.Spanner:
+		// Spanner SQL spells a row deletion policy as a table clause, so a
+		// table without one requests none.
+		database.FeatureCoverage, err = spannersource.Coverage()
+	}
+	if err != nil {
+		return schemamodel.Database{}, nil, err
 	}
 	schemamodel.Finalize(&database)
 	return database, statements, nil

@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-581 fields are reachable from the desired schema, and each one carries
+584 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 503 | reaches rendered SQL on at least one target |
+| `ddl` | 506 | reaches rendered SQL on at least one target |
 | `comparison` | 11 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -89,9 +89,6 @@ None.
 | `ast.ReplicationConnectionSpec.TokenSecretName` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.TokenSecretPath` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.User` | `ddl` | — |
-| `ast.RowDeletionPolicySpec.Column` | `ddl` | — |
-| `ast.RowDeletionPolicySpec.Interval` | `ddl` | — |
-| `ast.RowDeletionPolicySpec.Unit` | `ddl` | — |
 | `ast.TransferSpec.BatchSizeBytes` | `ddl` | — |
 | `ast.TransferSpec.Connection` | `ddl` | — |
 | `ast.TransferSpec.Consumer` | `ddl` | — |
@@ -530,7 +527,6 @@ None.
 | `schemamodel.Table.PrimaryKeyMethod` | `ddl` | — |
 | `schemamodel.Table.PrimaryKeyName` | `ddl` | — |
 | `schemamodel.Table.PrimaryKeyParts` | `ddl` | — |
-| `schemamodel.Table.RowDeletionPolicy` | `ddl` | — |
 | `schemamodel.Table.Schema` | `ddl` | — |
 | `schemamodel.Table.Strict` | `ddl` | — |
 | `schemamodel.Table.StructName` | `ddl` | — |
@@ -571,6 +567,9 @@ None.
 | `schemamodel.View.Name` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.View.WithCheck` | `ddl` | — |
+| `spannerschema.DesiredRowDeletion.Policy` | `ddl` | — |
+| `spannerschema.Policy.Column` | `ddl` | — |
+| `spannerschema.Policy.Interval` | `ddl` | — |
 | `tsschema.DesiredContinuousAggregate.Body` | `ddl` | — |
 | `tsschema.DesiredContinuousAggregate.Comment` | `ddl` | — |
 | `tsschema.DesiredContinuousAggregate.MaterializedOnly` | `ddl` | — |
@@ -603,9 +602,13 @@ None.
 | `ydbschema.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
 | `ydbschema.DesiredChangefeed.RetainedReplication` | `planning` | retains an observed controller binding and refuses independent changefeed creation or mutation |
 | `ydbschema.DesiredChangefeed.Spec` | `ddl` | — |
+| `ydbschema.DesiredTTL.Policy` | `ddl` | — |
 | `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
 | `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |
 | `ydbschema.ReplicationBinding.SupportsTopicAutopartitioning` | `planning` | preserves observed controller behavior through snapshots and codecs |
+| `ydbschema.TTL.Column` | `ddl` | — |
+| `ydbschema.TTL.Interval` | `ddl` | — |
+| `ydbschema.TTL.Unit` | `ddl` | — |
 | `ydbsecret.Desired.StructName` | `source` | the annotation holder, independent of the secret's path |
 | `ydbsecret.Desired.ValueEnv` | `ddl` | — |
 | `ydbstreaming.Desired.AllowStateReset` | `ddl` | — |

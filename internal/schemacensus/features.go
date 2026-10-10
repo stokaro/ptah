@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/cockroachdb/crdbschema"
+	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -37,6 +38,8 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: "ptah.run/clickhouse", codecs: chschema.IndexCodecs()},
 		{owner: crdbschema.Owner, codecs: crdbschema.Codecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
+		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},
+		{owner: ydbschema.Owner, codecs: ydbschema.TTLCodecs()},
 	} {
 		for _, codec := range provider.codecs {
 			if codec.Representation == schemaext.Desired {

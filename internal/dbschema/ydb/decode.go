@@ -14,9 +14,13 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbcomment"
@@ -65,11 +69,11 @@ func (r *Reader) table(
 		return fmt.Errorf("%s: %w", subject, err)
 	}
 	if columnTable == nil || columnTable.Spec.TTL == nil {
-		policy, err := rowDeletionPolicy(described.GetTtlSettings())
+		facets, err := ttlFacets(described.GetTtlSettings())
 		if err != nil {
 			return fmt.Errorf("%s: %w", subject, err)
 		}
-		table.RowDeletionPolicy = policy
+		table.Facets = facets
 	}
 	if columnTable != nil {
 		table.YDBColumnTable = columnTable.Spec.Clone()
@@ -486,15 +490,33 @@ func quotedList(names []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-// rowDeletionPolicy reads a table's TTL as its row deletion policy: the column,
-// the interval as the seconds YDB keeps written the way YDB shows them, and an
-// integer column's unit. A table with no TTL has no policy.
+// ttlFacets reads a table's TTL as the YDB owner's observed value: the column,
+// the interval as the seconds YDB keeps written the way YDB shows them, an
+// integer column's unit, and the run interval the SDK or the CLI set. A table
+// with no TTL gets no facet; the coverage [Reader.ttlCoverage] records for it
+// is what makes that an observed absence.
 //
 // A TTL the pinned protocol buffers do not model is refused by name. Measured
 // on 25.1.4.7 and 26.2.1.14, a row table describes its TTL in one of the two
 // modes read here even when it was set in the tiered mode, field 4, as one
 // DELETE tier; a tier that moves rows elsewhere is refused on a row table.
-func rowDeletionPolicy(settings *Ydb_Table.TtlSettings) (*ast.RowDeletionPolicySpec, error) {
+func ttlFacets(settings *Ydb_Table.TtlSettings) (schemaext.Facets, error) {
+	policy, err := ttlPolicy(settings)
+	if err != nil || policy == nil {
+		return schemaext.Facets{}, err
+	}
+	observed := &ydbschema.ObservedTTL{Policy: *policy, RunIntervalSeconds: uint64(settings.GetRunIntervalSeconds())}
+	if err := ydbschema.ValidateObservedTTL(observed); err != nil {
+		return schemaext.Facets{}, err
+	}
+	facets, err := schemaext.NewFacets(observed)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return facets.WithTargetScope(ydbschema.TTLKind, platform.YDB)
+}
+
+func ttlPolicy(settings *Ydb_Table.TtlSettings) (*ydbschema.TTL, error) {
 	if settings == nil {
 		return nil, nil
 	}
@@ -509,7 +531,7 @@ func rowDeletionPolicy(settings *Ydb_Table.TtlSettings) (*ast.RowDeletionPolicyS
 			return nil, fmt.Errorf("its TTL on a date column carries field %s, which this build of Ptah does not read",
 				joinNumbers(unknown))
 		}
-		return &ast.RowDeletionPolicySpec{
+		return &ydbschema.TTL{
 			Column:   date.GetColumnName(),
 			Interval: ydbttl.FormatInterval(uint64(date.GetExpireAfterSeconds())),
 		}, nil
@@ -524,7 +546,7 @@ func rowDeletionPolicy(settings *Ydb_Table.TtlSettings) (*ast.RowDeletionPolicyS
 			return nil, fmt.Errorf("its TTL reads column %q in unit %s, which this build of Ptah does not read",
 				epoch.GetColumnName(), epoch.GetColumnUnit())
 		}
-		return &ast.RowDeletionPolicySpec{
+		return &ydbschema.TTL{
 			Column:   epoch.GetColumnName(),
 			Interval: ydbttl.FormatInterval(uint64(epoch.GetExpireAfterSeconds())),
 			Unit:     unit,
@@ -532,6 +554,26 @@ func rowDeletionPolicy(settings *Ydb_Table.TtlSettings) (*ast.RowDeletionPolicyS
 	default:
 		return nil, fmt.Errorf("its TTL has a mode this build of Ptah does not read (%T)", settings.GetMode())
 	}
+}
+
+// ttlCoverage records complete TTL knowledge for exactly the tables the read
+// returned. A table the read did not return is not known to have no TTL.
+func ttlCoverage(db *catalog.Database) error {
+	identities := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB))
+	subjects := make([]schemaext.SubjectCoverage, 0, len(db.Tables))
+	for _, table := range db.Tables {
+		subjects = append(subjects, schemaext.SubjectCoverage{
+			Kind: ydbschema.TTLKind, Subject: identities.TableParts(table.Schema, table.Name),
+			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+		})
+	}
+	known, err := ydbschema.TTLCoverage(schemaext.Observed,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables have an inspected YDB TTL"}, subjects)
+	if err != nil {
+		return fmt.Errorf("failed to record TTL coverage: %w", err)
+	}
+	db.FeatureCoverage, err = db.FeatureCoverage.Combine(known)
+	return err
 }
 
 // epochUnits names the units an integer TTL column counts in.
@@ -550,11 +592,12 @@ var epochUnits = map[Ydb_Table.ValueSinceUnixEpochModeSettings_Unit]string{
 // blobs off with no storage pools named. A row table's partitioning, read
 // replicas and key bloom filter are read, by [tableSettings].
 //
-// The TTL itself is the table's row deletion policy. What is recorded under
-// [coverage.TTL] is what YQL cannot write about it: the run interval, which
-// only the SDK and the CLI set and which `SET (TTL = ...)` resets (a table set
-// to 1800 seconds with `ydb table ttl set --run-interval` reads back with none
-// after it, on 25.1.4.7 and 26.2.1.14), and a column table's tiering policy.
+// The TTL itself is the YDB owner's facet; see [ttlFacets]. What is recorded
+// under [coverage.TTL] is what YQL cannot write about it: the run interval,
+// which only the SDK and the CLI set and which `SET (TTL = ...)` resets (a
+// table set to 1800 seconds with `ydb table ttl set --run-interval` reads back
+// with none after it, on 25.1.4.7 and 26.2.1.14), and a column table's tiering
+// policy. A rebuild of the table could not keep either.
 func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableResult) []coverage.Object {
 	var records []coverage.Object
 	if described.GetTtlSettings().GetRunIntervalSeconds() != 0 || described.GetTiering() != "" {

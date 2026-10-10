@@ -128,7 +128,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.AlterColumnOperation{}},
 	{node: &ast.DropColumnOperation{}},
 	{node: &ast.DropConstraintOperation{}},
-	{node: &ast.DropRowDeletionPolicyOperation{}},
 	{node: &ast.RenameColumnOperation{}},
 	{node: &ast.RenameConstraintOperation{}},
 	{node: &ast.RenameIndexOperation{}},
@@ -142,7 +141,6 @@ var nodeCensus = []censusRow{
 	{node: &ast.RenameTableOperation{}},
 	{node: &ast.SetCommentOperation{}},
 	{node: &ast.SetConstraintCommentOperation{}},
-	{node: &ast.SetRowDeletionPolicyOperation{}},
 
 	// The type definitions and the ALTER TYPE operations. Each is rendered
 	// inside the CREATE TYPE or ALTER TYPE statement that carries it.

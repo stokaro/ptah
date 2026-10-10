@@ -14,11 +14,13 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
-	"ptah.run/core/ast"
+	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
@@ -33,10 +35,11 @@ var ttlSchemas = []string{ttlSchema}
 // ttlEvents is a table whose TTL reads a date column, and whose own columns
 // are the ones fields names, each a nullable Timestamp. The narrow type is
 // spelled as YDB spells it, so both lines build the same column.
-func ttlEvents(policy *ast.RowDeletionPolicySpec, fields ...string) *schemamodel.Database {
+func ttlEvents(policy *ydbschema.TTL, fields ...string) *schemamodel.Database {
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Event", Name: "events", Schema: ttlSchema, RowDeletionPolicy: policy}},
-		Fields: []schemamodel.Field{{StructName: "Event", Name: "id", Type: "BIGINT", Primary: true}},
+		Tables:          []schemamodel.Table{{StructName: "Event", Name: "events", Schema: ttlSchema, Facets: ttlFacets(policy)}},
+		Fields:          []schemamodel.Field{{StructName: "Event", Name: "id", Type: "BIGINT", Primary: true}},
+		FeatureCoverage: must.Must(ydbschema.TTLCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	}
 	for _, name := range fields {
 		db.Fields = append(db.Fields, schemamodel.Field{StructName: "Event", Name: name, Type: "Timestamp", Nullable: true})
@@ -47,9 +50,9 @@ func ttlEvents(policy *ast.RowDeletionPolicySpec, fields ...string) *schemamodel
 
 // ttlTokens is a table whose TTL reads an integer column counting
 // milliseconds since the Unix epoch.
-func ttlTokens(policy *ast.RowDeletionPolicySpec) *schemamodel.Database {
+func ttlTokens(policy *ydbschema.TTL) *schemamodel.Database {
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Token", Name: "tokens", Schema: ttlSchema, RowDeletionPolicy: policy}},
+		Tables: []schemamodel.Table{{StructName: "Token", Name: "tokens", Schema: ttlSchema, Facets: ttlFacets(policy)}},
 		Fields: []schemamodel.Field{
 			{StructName: "Token", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "Token", Name: "expires", Type: "BIGINT UNSIGNED", Nullable: true},
@@ -59,10 +62,43 @@ func ttlTokens(policy *ast.RowDeletionPolicySpec) *schemamodel.Database {
 	return db
 }
 
-// policyOf reads the row deletion policy of one table in the TTL directory.
-func policyOf(c *qt.C, conn *dbschema.DatabaseConnection, table string) *ast.RowDeletionPolicySpec {
+// ttlFacets is the YDB owner's declaration of policy, bound to YDB, and no
+// facet for none.
+func ttlFacets(policy *ydbschema.TTL) schemaext.Facets {
+	if policy == nil {
+		return schemaext.Facets{}
+	}
+	facets := must.Must(schemaext.NewFacets(&ydbschema.DesiredTTL{Policy: *policy}))
+	return must.Must(facets.WithTargetScope(ydbschema.TTLKind, "ydb"))
+}
+
+// observedTTL is the TTL a read found on table, nil for none.
+func observedTTL(c *qt.C, table catalog.Table) *ydbschema.ObservedTTL {
 	c.Helper()
-	return tableNamed(c, readScoped(c, conn, ttlSchemas), ttlSchema, table).RowDeletionPolicy
+	observed, _, err := schemaext.FacetAs[*ydbschema.ObservedTTL](table.Facets, ydbschema.TTLKind)
+	c.Assert(err, qt.IsNil)
+	return observed
+}
+
+// policyOf reads the TTL of one table in the TTL directory, nil for none.
+func policyOf(c *qt.C, conn *dbschema.DatabaseConnection, table string) *ydbschema.TTL {
+	c.Helper()
+	observed := observedTTL(c, tableNamed(c, readScoped(c, conn, ttlSchemas), ttlSchema, table))
+	if observed == nil {
+		return nil
+	}
+	return &observed.Policy
+}
+
+// declaredPolicy is the TTL the first table of db declares, nil for none.
+func declaredPolicy(c *qt.C, db *schemamodel.Database) *ydbschema.TTL {
+	c.Helper()
+	declared, _, err := schemaext.FacetAs[*ydbschema.DesiredTTL](db.Tables[0].Facets, ydbschema.TTLKind)
+	c.Assert(err, qt.IsNil)
+	if declared == nil {
+		return nil
+	}
+	return &declared.Policy
 }
 
 // TestYDBTTL_RoundTrip creates a table whose TTL reads a date column and one
@@ -78,8 +114,8 @@ func TestYDBTTL_RoundTrip(t *testing.T) {
 			dropTables(c, conn, ttlSchemas)
 			c.Cleanup(func() { dropTables(c, conn, ttlSchemas) })
 
-			declared := ttlEvents(&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "PT720H"}, "created_at")
-			tokens := ttlTokens(&ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "milliseconds"})
+			declared := ttlEvents(&ydbschema.TTL{Column: "created_at", Interval: "PT720H"}, "created_at")
+			tokens := ttlTokens(&ydbschema.TTL{Column: "expires", Interval: "PT1H", Unit: "MILLISECONDS"})
 			declared.Tables = append(declared.Tables, tokens.Tables...)
 			declared.Fields = append(declared.Fields, tokens.Fields...)
 
@@ -96,10 +132,10 @@ func TestYDBTTL_RoundTrip(t *testing.T) {
 			c.Assert(planAgainst(c, conn, declared, ttlSchemas), qt.HasLen, 0)
 
 			live := readScoped(c, conn, ttlSchemas)
-			c.Assert(tableNamed(c, live, ttlSchema, "events").RowDeletionPolicy, qt.DeepEquals,
-				&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P30D"})
-			c.Assert(tableNamed(c, live, ttlSchema, "tokens").RowDeletionPolicy, qt.DeepEquals,
-				&ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "MILLISECONDS"})
+			c.Assert(observedTTL(c, tableNamed(c, live, ttlSchema, "events")), qt.DeepEquals,
+				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P30D"}})
+			c.Assert(observedTTL(c, tableNamed(c, live, ttlSchema, "tokens")), qt.DeepEquals,
+				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "expires", Interval: "PT1H", Unit: "MILLISECONDS"}})
 			c.Assert(live.NotDescribed.Describes(coverage.TTL, ttlSchema+".events"), qt.IsTrue)
 		})
 	}
@@ -119,12 +155,12 @@ func TestYDBTTL_ChangesInPlace(t *testing.T) {
 	}{
 		{
 			name:     "another interval",
-			declared: ttlEvents(&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P2D"}, "created_at"),
+			declared: ttlEvents(&ydbschema.TTL{Column: "created_at", Interval: "P2D"}, "created_at"),
 			want:     []string{"ALTER TABLE `ptah_ydb_ttl/events` SET (TTL = Interval(\"P2D\") ON `created_at`)"},
 		},
 		{
 			name:     "another column, the old one dropped",
-			declared: ttlEvents(&ast.RowDeletionPolicySpec{Column: "expires_at", Interval: "P7D"}, "expires_at"),
+			declared: ttlEvents(&ydbschema.TTL{Column: "expires_at", Interval: "P7D"}, "expires_at"),
 			want: []string{
 				"ALTER TABLE `ptah_ydb_ttl/events` ADD COLUMN `expires_at` Timestamp",
 				"ALTER TABLE `ptah_ydb_ttl/events` SET (TTL = Interval(\"P7D\") ON `expires_at`)",
@@ -147,7 +183,7 @@ func TestYDBTTL_ChangesInPlace(t *testing.T) {
 			dropTables(c, conn, ttlSchemas)
 			c.Cleanup(func() { dropTables(c, conn, ttlSchemas) })
 			apply(c, conn, planAgainst(c, conn,
-				ttlEvents(&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P1D"}, "created_at"), ttlSchemas))
+				ttlEvents(&ydbschema.TTL{Column: "created_at", Interval: "P1D"}, "created_at"), ttlSchemas))
 			apply(c, conn, []string{"UPSERT INTO `ptah_ydb_ttl/events` (id, created_at) " +
 				"VALUES (1l, NULL), (2l, CurrentUtcTimestamp())"})
 
@@ -156,7 +192,7 @@ func TestYDBTTL_ChangesInPlace(t *testing.T) {
 				c.Assert(planned, qt.DeepEquals, step.want, qt.Commentf("step %q", step.name))
 				apply(c, conn, planned)
 				c.Assert(planAgainst(c, conn, step.declared, ttlSchemas), qt.HasLen, 0, qt.Commentf("step %q", step.name))
-				c.Assert(policyOf(c, conn, "events"), qt.DeepEquals, step.declared.Tables[0].RowDeletionPolicy,
+				c.Assert(policyOf(c, conn, "events"), qt.DeepEquals, declaredPolicy(c, step.declared),
 					qt.Commentf("step %q", step.name))
 			}
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `ptah_ydb_ttl/events`"), qt.Equals, int64(2))
@@ -210,15 +246,16 @@ func TestYDBTTL_KeepsARunIntervalYQLCannotWrite(t *testing.T) {
 			conn := openYDB(c, line)
 			dropTables(c, conn, ttlSchemas)
 			c.Cleanup(func() { dropTables(c, conn, ttlSchemas) })
-			declared := ttlEvents(&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "PT1H"}, "created_at")
+			declared := ttlEvents(&ydbschema.TTL{Column: "created_at", Interval: "PT1H"}, "created_at")
 			apply(c, conn, planAgainst(c, conn, declared, ttlSchemas))
 			setRunInterval(c, line, ttlSchema+"/events", "created_at", 3600, 1800)
 
 			c.Assert(planAgainst(c, conn, declared, ttlSchemas), qt.HasLen, 0)
 			live := readScoped(c, conn, ttlSchemas)
 			c.Assert(live.NotDescribed.Describes(coverage.TTL, ttlSchema+".events"), qt.IsFalse)
+			c.Assert(observedTTL(c, tableNamed(c, live, ttlSchema, "events")).RunIntervalSeconds, qt.Equals, uint64(1800))
 
-			changed := ttlEvents(&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "PT2H"}, "created_at")
+			changed := ttlEvents(&ydbschema.TTL{Column: "created_at", Interval: "PT2H"}, "created_at")
 			info := conn.Info()
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), changed, live, info, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
@@ -227,8 +264,8 @@ func TestYDBTTL_KeepsARunIntervalYQLCannotWrite(t *testing.T) {
 				diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
 			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `.*the row deletion policy of table "ptah_ydb_ttl.events": the table's TTL carries `+
-				`a run interval or a tiering policy Ptah does not model, and SET \(TTL = \.\.\.\) resets it .*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*the TTL of table "ptah_ydb_ttl/events": the table's TTL runs every 1800 seconds, `+
+				`which only the SDK and the CLI set, and SET \(TTL = \.\.\.\) resets it .*`)
 			c.Assert(statements, qt.IsNil)
 
 			removed := ttlEvents(nil, "created_at")

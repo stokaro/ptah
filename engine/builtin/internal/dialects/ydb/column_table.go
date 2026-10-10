@@ -91,8 +91,12 @@ func columnTableShape(node *ast.CreateTableNode, key []string, types map[string]
 func (r *Renderer) columnTTLSettings(node *ast.CreateTableNode, types map[string]string) error {
 	spec := node.YDBColumnTable
 	subject := fmt.Sprintf("column table %q", node.Name)
-	if !node.RowDeletionPolicy.IsZero() {
-		return refuseFact(subject, "declare either tiered TTL or a row deletion policy, not both")
+	rowTTL, err := declaredTTL(node.Facets)
+	if err != nil {
+		return err
+	}
+	if rowTTL != nil {
+		return refuseFact(subject, "declare either tiered TTL or a TTL that deletes rows, not both")
 	}
 	if !r.caps.Has(capability.TieredTTL) {
 		return refuseKey(capability.TieredTTL, subject)
@@ -120,10 +124,14 @@ func columnTTLKey(node *ast.CreateTableNode, key []string, subject string) error
 		}
 	}
 	ttlColumn := ""
+	rowTTL, err := declaredTTL(node.Facets)
+	if err != nil {
+		return err
+	}
 	if spec.TTL != nil {
 		ttlColumn = spec.TTL.Column
-	} else if !node.RowDeletionPolicy.IsZero() {
-		ttlColumn = node.RowDeletionPolicy.Column
+	} else if rowTTL != nil {
+		ttlColumn = rowTTL.Policy.Column
 	}
 	if reason := ydbcolumn.TTLColumnRefusal(ttlColumn, key, minMaxColumns); reason != "" {
 		return refuseFact(subject, reason)

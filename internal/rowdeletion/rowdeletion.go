@@ -1,101 +1,92 @@
-// Package rowdeletion is a table's row deletion policy as Ptah declares and
-// compares it, across the engines that have one: Spanner's `TTL INTERVAL '30
-// days' ON created_at` and YDB's `TTL = Interval("P30D") ON created_at`.
+// Package rowdeletion is what the two row deletion policy owners share: the
+// property names a declaration uses, the reading of those properties, and the
+// comparison of a table's policy against the one the database holds.
 //
-// The policy is [ast.RowDeletionPolicySpec]. Each engine writes its interval
-// in its own spelling and reads it back rewritten, so what an interval means
-// belongs to the package that owns the engine's spelling --
-// [ptah.run/internal/spannerttl] and [ptah.run/internal/ydbttl] -- and this
-// package holds what the two share: the attributes that declare a policy in a
-// Go annotation or a YAML schema, and the comparison that picks the right
-// reading of the interval.
+// Spanner's ROW DELETION POLICY (`TTL INTERVAL '30 days' ON created_at`) and
+// YDB's TTL (`TTL = Interval("P30D") ON created_at`) are one idea with two
+// spellings, and each is owned by its target: the Spanner owner reads and
+// writes Spanner's interval, the YDB owner YDB's, and each binds its facet to
+// its own target. This package knows neither spelling and imports no owner.
+// Nothing here translates a policy written for one target into the other's.
 package rowdeletion
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
-	"ptah.run/core/ast"
-	"ptah.run/internal/spannerttl"
-	"ptah.run/internal/ydbttl"
+	"ptah.run/core/schemaext"
 )
 
-// The attributes that declare a table's row deletion policy. The annotation
-// parser, the YAML reader, the annotation registry and the Go exporter all
-// read these names, so an attribute one of them accepts is one the others
-// read.
+// The property names of a row deletion policy. Each owner reads them from its
+// own platform group -- platform.spanner.row_deletion_interval and
+// platform.ydb.row_deletion_interval are two declarations -- and the value of
+// the interval is written in that target's spelling.
 const (
-	// AttributeColumn names the column the interval is measured from.
-	AttributeColumn = "row_deletion_column"
-	// AttributeInterval is the interval, in the target's own spelling.
-	AttributeInterval = "row_deletion_interval"
-	// AttributeUnit is what an integer column counts since the Unix epoch.
-	AttributeUnit = "row_deletion_unit"
+	// ColumnProperty names the column the interval is measured from.
+	ColumnProperty = "row_deletion_column"
+	// IntervalProperty is the interval after which a row is deleted.
+	IntervalProperty = "row_deletion_interval"
+	// UnitProperty is what an integer column counts since the Unix epoch,
+	// for a target whose policy can read one.
+	UnitProperty = "row_deletion_unit"
+	// PropertyPrefix is the prefix an owner claims, so that a misspelled or
+	// miscased property is refused by name rather than left unread.
+	PropertyPrefix = "row_deletion"
 )
 
-// Attributes lists the attributes in the order a declaration's errors are
-// reported.
-func Attributes() []string {
-	return []string{AttributeColumn, AttributeInterval, AttributeUnit}
+// Declaration is a policy as a source declares it, before its owner reads the
+// interval: the column, the interval as written, and the unit, empty for a
+// date or time column.
+type Declaration struct {
+	Column   string
+	Interval string
+	Unit     string
 }
 
-// ParseDeclaration reads the row deletion policy of one table declaration out
-// of values, keyed by attribute name, and ignores every other key. It returns
-// nil where none of the attributes is present.
-//
-// A policy needs its column and its interval, so one without the other is
-// refused where it was written. The unit is checked against the four YDB
-// takes and written back in capitals; the interval is left as written,
-// because what spellings are valid is the target's question, which its
-// renderer answers.
-func ParseDeclaration(table string, values map[string]string) (*ast.RowDeletionPolicySpec, error) {
-	spec := ast.RowDeletionPolicySpec{
-		Column:   strings.TrimSpace(values[AttributeColumn]),
-		Interval: strings.TrimSpace(values[AttributeInterval]),
+// Decode reads one table's declaration from its properties. properties holds
+// only the keys the owner claimed; managed lists the names the owner takes, in
+// the order a refusal lists them. A name outside managed is refused, naming
+// the lower-case spelling when that is managed. A policy needs both its column
+// and its interval, and a blank value is refused. Each refusal wraps
+// schemaext.ErrInvalidValue. The values are trimmed; the owner reads the
+// interval and the unit.
+func Decode(properties map[string]string, managed []string) (Declaration, error) {
+	for _, name := range slices.Sorted(maps.Keys(properties)) {
+		if slices.Contains(managed, name) {
+			continue
+		}
+		if lower := strings.ToLower(name); lower != name && slices.Contains(managed, lower) {
+			return Declaration{}, fmt.Errorf("%w: unknown row deletion property %q: property names are lower case, as %q", schemaext.ErrInvalidValue, name, lower)
+		}
+		return Declaration{}, fmt.Errorf("%w: unknown row deletion property %q: the policy takes %s", schemaext.ErrInvalidValue, name, strings.Join(managed, ", "))
 	}
-	unit, declaredUnit := values[AttributeUnit]
-	if spec.Column == "" && spec.Interval == "" && !declaredUnit {
-		return nil, nil
-	}
-	switch {
-	case spec.Column == "":
-		return nil, fmt.Errorf("table %q declares %s without %s: a row deletion policy needs the column its interval "+
-			"is measured from", table, presentAttribute(values), AttributeColumn)
-	case spec.Interval == "":
-		return nil, fmt.Errorf("table %q declares %s without %s: a row deletion policy needs the interval after which "+
-			"a row is deleted", table, presentAttribute(values), AttributeInterval)
-	}
-	parsed, err := ydbttl.Unit(unit)
-	if err != nil {
-		return nil, fmt.Errorf("table %q declares %s: %w", table, AttributeUnit, err)
-	}
-	spec.Unit = parsed
-	return &spec, nil
-}
-
-// presentAttribute names the first declared attribute, for a refusal of a
-// declaration that is missing another.
-func presentAttribute(values map[string]string) string {
-	for _, attribute := range Attributes() {
-		if strings.TrimSpace(values[attribute]) != "" {
-			return attribute
+	for _, name := range slices.Sorted(maps.Keys(properties)) {
+		if strings.TrimSpace(properties[name]) == "" {
+			return Declaration{}, fmt.Errorf("%w: %s is empty; remove it to leave the policy undeclared", schemaext.ErrInvalidValue, name)
 		}
 	}
-	return AttributeUnit
+	declaration := Declaration{
+		Column:   strings.TrimSpace(properties[ColumnProperty]),
+		Interval: strings.TrimSpace(properties[IntervalProperty]),
+		Unit:     strings.TrimSpace(properties[UnitProperty]),
+	}
+	switch {
+	case declaration.Column == "":
+		return Declaration{}, fmt.Errorf("%w: a row deletion policy needs %s, the column its interval is measured from", schemaext.ErrInvalidValue, ColumnProperty)
+	case declaration.Interval == "":
+		return Declaration{}, fmt.Errorf("%w: a row deletion policy needs %s, the interval after which a row is deleted", schemaext.ErrInvalidValue, IntervalProperty)
+	}
+	return declaration, nil
 }
 
-// Equal reports whether two policies delete the same rows on the same
-// schedule, reading each interval in the spelling it is written in: an ISO
-// 8601 duration, or a policy naming a unit, is YDB's and is compared by
-// [ydbttl.Equal]; anything else is Spanner's and is compared by
-// [spannerttl.Equal]. The two spellings cannot be mistaken for each other: a
-// YDB interval begins with P, and a Spanner one is a number and a word.
-//
-// columnKey is the target's identifier rule for a column name, which every
-// column comparison uses.
-func Equal(a, b *ast.RowDeletionPolicySpec, columnKey func(string) string) bool {
-	if equal, ydb := ydbttl.Equal(a, b, columnKey); ydb {
-		return equal
+// Encode writes a declaration as its properties: the column and the interval,
+// and the unit when one is set.
+func Encode(declaration Declaration) map[string]string {
+	properties := map[string]string{ColumnProperty: declaration.Column, IntervalProperty: declaration.Interval}
+	if declaration.Unit != "" {
+		properties[UnitProperty] = declaration.Unit
 	}
-	return spannerttl.Equal(a, b, columnKey)
+	return properties
 }

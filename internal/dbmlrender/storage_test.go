@@ -62,7 +62,7 @@ func storageSchema(c *qt.C) *schemamodel.Database {
 			{
 				StructName: "Events", Name: "events",
 				YDBColumnFamilies: []ast.YDBColumnFamilySpec{{Name: "cold", Columns: []string{"id"}}},
-				RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P1D"},
+				Facets:            ydbTTL(c),
 				YDBPartitioning:   &ast.YDBTablePartitioningSpec{MinPartitions: 4},
 			},
 			{StructName: "Archive", Name: "archive", YDBColumnTable: &ast.YDBColumnTableSpec{}},
@@ -93,6 +93,7 @@ func TestRender_ReportsStorageSettingsItLeavesOut(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Contains, `"id" Int64 [pk, increment, not null]`)
 	c.Assert(result.Omitted, qt.DeepEquals, []string{
+		"TTL settings (1)",
 		"changefeeds (2)",
 		"column families (1)",
 		"column-oriented storage and settings (1)",
@@ -101,7 +102,6 @@ func TestRender_ReportsStorageSettingsItLeavesOut(t *testing.T) {
 		"identity sequence settings (1)",
 		"index partitioning and read replicas (1)",
 		"index storage and analyzer settings (1)",
-		"row deletion policies (1)",
 		"table partitioning, read replicas and key bloom filters (1)",
 		"vector index settings (1)",
 	})
@@ -131,7 +131,7 @@ func TestRender_EmptyOptionalStorageSettingsDoNotWarn(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{
-			StructName: "T", Name: "t", RowDeletionPolicy: &ast.RowDeletionPolicySpec{},
+			StructName: "T", Name: "t",
 			YDBPartitioning: &ast.YDBTablePartitioningSpec{},
 		}},
 		Indexes: []schemamodel.Index{{StructName: "T", Name: "idx", Partitioning: &ast.IndexPartitioningSpec{}}},
@@ -141,4 +141,14 @@ func TestRender_EmptyOptionalStorageSettingsDoNotWarn(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Omitted, qt.HasLen, 0)
+}
+
+// ydbTTL is a YDB TTL on created_at, bound to the YDB target.
+func ydbTTL(c *qt.C) schemaext.Facets {
+	c.Helper()
+	facets, err := schemaext.NewFacets(&ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P1D"}})
+	c.Assert(err, qt.IsNil)
+	facets, err = facets.WithTargetScope(ydbschema.TTLKind, "ydb")
+	c.Assert(err, qt.IsNil)
+	return facets
 }

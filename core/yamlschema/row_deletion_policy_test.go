@@ -5,76 +5,65 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/spanner/spannerschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
-// rowDeletionDocument is a table whose own keys are table.
-func rowDeletionDocument(table string) string {
-	return `
+// TestParse_RowDeletionPolicyIsAPlatformGroup pins the YAML spelling: the
+// Spanner policy and the YDB TTL sit in the table's spanner and ydb platform
+// groups, and the document claims complete knowledge of both, so a table
+// without them requests neither.
+func TestParse_RowDeletionPolicyIsAPlatformGroup(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := yamlschema.Parse([]byte(`
 tables:
   events:
-` + table + `
+    platform:
+      spanner:
+        row_deletion_column: created_at
+        row_deletion_interval: 30 days
+      ydb:
+        row_deletion_column: expires
+        row_deletion_interval: PT1H
+        row_deletion_unit: nanoseconds
     columns:
-      id:
-        type: bigint
-        primary: true
-      created_at:
-        type: timestamp
-      expires:
-        type: bigint unsigned
-`
+      id: { type: bigint, primary: true }
+  plain:
+    columns:
+      id: { type: bigint, primary: true }
+`))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables[0].Name, qt.Equals, "events")
+	c.Assert(db.Tables[0].Overrides, qt.DeepEquals, map[string]map[string]string{
+		"spanner": {"row_deletion_column": "created_at", "row_deletion_interval": "30 days"},
+		"ydb":     {"row_deletion_column": "expires", "row_deletion_interval": "PT1H", "row_deletion_unit": "nanoseconds"},
+	})
+	spanner := objectidentity.NewBuilder(identifier.ForDialect("spanner")).TableParts("", "plain")
+	c.Assert(db.FeatureCoverage.Lookup(spannerschema.RowDeletionKind, spanner).State, qt.Equals, schemaext.Complete)
+	ydb := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "plain")
+	c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, ydb).State, qt.Equals, schemaext.Complete)
 }
 
-// TestParse_RowDeletionPolicy_HappyPath reads a table's row deletion policy
-// under the keys the annotation reads it from.
-func TestParse_RowDeletionPolicy_HappyPath(t *testing.T) {
-	tests := []struct {
-		name  string
-		table string
-		want  *ast.RowDeletionPolicySpec
-	}{
-		{name: "none", table: "    comment: no policy"},
-		{
-			name:  "a date column",
-			table: "    row_deletion_column: created_at\n    row_deletion_interval: P30D",
-			want:  &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P30D"},
-		},
-		{
-			name:  "an integer column",
-			table: "    row_deletion_column: expires\n    row_deletion_interval: PT1H\n    row_deletion_unit: nanoseconds",
-			want:  &ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "NANOSECONDS"},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			db, err := yamlschema.Parse([]byte(rowDeletionDocument(test.table)))
-			c.Assert(err, qt.IsNil)
-			c.Assert(db.Tables, qt.HasLen, 1)
-			c.Assert(db.Tables[0].RowDeletionPolicy, qt.DeepEquals, test.want)
-		})
-	}
-}
+// TestParse_RowDeletionPolicyHasNoBareKey pins that the policy is not a key of
+// the table itself: a document that writes it there is refused.
+func TestParse_RowDeletionPolicyHasNoBareKey(t *testing.T) {
+	c := qt.New(t)
 
-func TestParse_RowDeletionPolicy_FailurePath(t *testing.T) {
-	tests := []struct {
-		name    string
-		table   string
-		wantErr string
-	}{
-		{name: "no interval", table: "    row_deletion_column: created_at",
-			wantErr: `table "events" declares row_deletion_column without row_deletion_interval: .*`},
-		{name: "a unit YDB does not take",
-			table:   "    row_deletion_column: expires\n    row_deletion_interval: PT1H\n    row_deletion_unit: days",
-			wantErr: `table "events" declares row_deletion_unit: unit "days" is not one YDB takes: .*`},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			db, err := yamlschema.Parse([]byte(rowDeletionDocument(test.table)))
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(db, qt.IsNil)
-		})
-	}
+	db, err := yamlschema.Parse([]byte(`
+tables:
+  events:
+    row_deletion_column: created_at
+    row_deletion_interval: P30D
+    columns:
+      id: { type: bigint, primary: true }
+`))
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*row_deletion_column.*`)
+	c.Assert(db, qt.IsNil)
 }

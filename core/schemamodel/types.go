@@ -830,27 +830,21 @@ type Table struct {
 	Partition           *PartitionSpec               // PostgreSQL table partitioning metadata
 	CustomSQL           string                       // Custom SQL to append to CREATE TABLE
 	Overrides           map[string]map[string]string // Platform-specific overrides
-	// RowDeletionPolicy is the row deletion policy this table declares, nil for
-	// a table declaring none.
-	//
-	// It carries the ast type rather than a copy of it. The clause is a closed,
-	// measured set, and a per-layer duplicate is a place for part of it to go
-	// missing between the declaration and the statement -- which for a
-	// row-expiry policy means a table quietly keeping rows it was declared to
-	// delete (stokaro/ptah#2236).
-	RowDeletionPolicy *ast.RowDeletionPolicySpec
 	// YDBColumnFamilies is YDB's, and every other target refuses it: the
 	// column families this row table declares, each with the columns it
 	// holds -- the `//ptah:schema:column_family` annotations and the YAML
 	// `column_families` map. Nil declares none, and every column then sits in
-	// YDB's default family. It carries the ast type for the reason
-	// RowDeletionPolicy does.
+	// YDB's default family.
+	//
+	// It carries the ast type rather than a copy of it. The settings are a
+	// closed, measured set, and a per-layer duplicate is a place for part of
+	// them to go missing between the declaration and the statement.
 	YDBColumnFamilies []ast.YDBColumnFamilySpec
 	// YDBPartitioning is YDB's, and every other target refuses it: how this
 	// row table splits into partitions, its read replicas, its key bloom
 	// filter and the partitions it is created with, nil for a table declaring
-	// none of them. It carries the ast type for the same reason
-	// RowDeletionPolicy does.
+	// none of them. It carries the ast type for the reason YDBColumnFamilies
+	// does.
 	// omitzero keeps the JSON of a table declaring none byte-identical, and
 	// with it the desired-schema fingerprint a plan records.
 	YDBPartitioning *ast.YDBTablePartitioningSpec `json:",omitzero"`
@@ -1286,7 +1280,7 @@ type AsyncReplication struct {
 	Name       string // Replication name, the last segment of its path
 	Schema     string // Directory that holds the replication, relative to the database root
 	// Spec is the replication's connection, items and consistency. It
-	// carries the ast type for the reason Table.RowDeletionPolicy does.
+	// carries the ast type for the reason Table.YDBColumnFamilies does.
 	Spec ast.AsyncReplicationSpec
 }
 
@@ -1544,7 +1538,7 @@ type MaterializedView struct {
 	// dialect, and the ordinary ClickHouse one.
 	//
 	// It carries the ast type rather than a copy of it, for the reason
-	// [Table.RowDeletionPolicy] carries its own: the clauses are a closed,
+	// [Table.YDBColumnFamilies] carries its own: the clauses are a closed,
 	// measured set, and a per-layer duplicate is a place for one of them to go
 	// missing between the declaration and the statement (stokaro/ptah#1802).
 	Refresh *ast.MatViewRefreshSpec

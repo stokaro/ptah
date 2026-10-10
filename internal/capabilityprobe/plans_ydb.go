@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbview"
 )
@@ -467,7 +468,7 @@ func ydbRowDeletionPolicy(t tableSpelling) experiment {
 				` WITH (TTL = Interval("PT720H") ON created_at)`,
 		},
 		after: []check{
-			ydbDescribedPolicy("rdp", &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P30D"}),
+			ydbDescribedPolicy("rdp", &ydbschema.TTL{Column: "created_at", Interval: "P30D"}),
 			accepts("ALTER TABLE rdp DROP COLUMN other"),
 			refuses("ALTER TABLE rdp DROP COLUMN created_at"),
 			accepts("ALTER TABLE rdp RESET (TTL)"),
@@ -489,7 +490,7 @@ func ydbRowDeletionPolicyEpochColumn(t tableSpelling) experiment {
 				` WITH (TTL = Interval("PT1H") ON expires AS SECONDS)`,
 		},
 		after: []check{
-			ydbDescribedPolicy("rdpe", &ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "SECONDS"}),
+			ydbDescribedPolicy("rdpe", &ydbschema.TTL{Column: "expires", Interval: "PT1H", Unit: "SECONDS"}),
 			refuses("ALTER TABLE rdpe DROP COLUMN expires"),
 		},
 	})
@@ -501,7 +502,7 @@ func ydbRowDeletionPolicyEpochColumn(t tableSpelling) experiment {
 // through Ptah's own YDB reader, scoped to the probe's directory, and holds
 // when it is want; nil wants none. The reader is the question, because a
 // policy the reader cannot read back is one no comparison could converge on.
-func ydbDescribedPolicy(table string, want *ast.RowDeletionPolicySpec) check {
+func ydbDescribedPolicy(table string, want *ydbschema.TTL) check {
 	expectation := "no row deletion policy"
 	if want != nil {
 		expectation = fmt.Sprintf("the row deletion policy %s %s %s", want.Column, want.Interval, want.Unit)
@@ -521,10 +522,15 @@ func ydbDescribedPolicy(table string, want *ast.RowDeletionPolicySpec) check {
 				if found.Name != table {
 					continue
 				}
-				read := found.RowDeletionPolicy
-				if read == nil {
+				observed, _, err := schemaext.FacetAs[*ydbschema.ObservedTTL](found.Facets, ydbschema.TTLKind)
+				if err != nil {
+					attempt.ServerErr = err.Error()
+					return attempt, false, "read a TTL Ptah could not take"
+				}
+				if observed == nil {
 					return attempt, want == nil, "read no row deletion policy"
 				}
+				read := &observed.Policy
 				held := want != nil && *read == *want
 				return attempt, held, fmt.Sprintf("read the row deletion policy %s %s %s", read.Column, read.Interval, read.Unit)
 			}

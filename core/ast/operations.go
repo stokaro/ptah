@@ -382,58 +382,6 @@ func (op *AddIndexOperation) Accept(visitor Visitor) error { return visitor.Visi
 
 func (op *AddIndexOperation) alterOperation() {}
 
-// SetRowDeletionPolicyOperation represents the statement that puts a row
-// deletion policy on a table.
-//
-// Adding one and changing one are different verbs on the same clause, which is
-// why Replace is carried rather than derived here. Measured against the Cloud
-// Spanner emulator behind PGAdapter 0.55.2 (stokaro/ptah#2236):
-//
-//	ALTER TABLE t ADD TTL INTERVAL '10 days' ON ts     -> INTERVAL '1 WEEKS 3 DAYS' ON ts
-//	ALTER TABLE t ALTER TTL INTERVAL '20 days' ON ts   -> INTERVAL '2 WEEKS 6 DAYS' ON ts
-//
-// Only the planner knows which side the table was on, because only the diff
-// carries both. YDB has one verb for both, `ALTER TABLE t SET (TTL = ...)`,
-// and its renderer ignores Replace.
-type SetRowDeletionPolicyOperation struct {
-	// Column is the column the interval is measured from.
-	Column string
-	// Interval is the interval literal as the author wrote it.
-	Interval string
-	// Unit is what an integer Column counts since the Unix epoch, and empty
-	// for a date or time column; see [RowDeletionPolicySpec.Unit].
-	Unit string
-	// Replace picks ALTER over ADD, for a table that already has a policy.
-	Replace bool
-}
-
-// Accept implements the Node interface for SetRowDeletionPolicyOperation. The
-// rendering happens inside VisitAlterTable, as it does for the other
-// table-level operations.
-func (op *SetRowDeletionPolicyOperation) Accept(visitor Visitor) error {
-	return visitor.VisitNode(
-
-		// alterOperation implements the marker method for type safety.
-		op)
-}
-
-func (op *SetRowDeletionPolicyOperation) alterOperation() {}
-
-// DropRowDeletionPolicyOperation represents ALTER TABLE ... DROP TTL, which
-// removes the policy and leaves the column it named alone. YDB spells it
-// `ALTER TABLE t RESET (TTL)`.
-type DropRowDeletionPolicyOperation struct{}
-
-// Accept implements the Node interface for DropRowDeletionPolicyOperation.
-func (op *DropRowDeletionPolicyOperation) Accept(visitor Visitor) error {
-	return visitor.VisitNode(
-
-		// alterOperation implements the marker method for type safety.
-		op)
-}
-
-func (op *DropRowDeletionPolicyOperation) alterOperation() {}
-
 // SetCommentOperation carries an object's comment to the state a declaration
 // asks for.
 //

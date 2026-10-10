@@ -9,8 +9,10 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbrender"
+	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/internal/ydbextensions"
 )
@@ -87,10 +89,16 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	if platform.IsPostgresFamily(dialect) {
 		return preparePostgresTableFacets(dialect, projected)
 	}
-	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
+	var validate func(schemaext.Facets) error
+	switch platform.NormalizeDialect(dialect) {
+	case platform.ClickHouse:
+		validate = clickhouse.ValidateTableFacets
+	case platform.YDB:
+		validate = ydbrender.ValidateTableFacets
+	default:
 		return refuseActiveFacets(dialect, projected)
 	}
-	if err := clickhouse.ValidateTableFacets(projected); err != nil {
+	if err := validate(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
 	return projected, nil
@@ -111,16 +119,24 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 }
 
 // preparePostgresTableFacets accepts the TimescaleDB settings every
-// PostgreSQL-family renderer writes after CREATE TABLE, and the row-level TTL a
-// CockroachDB CREATE TABLE carries. Every other kind is refused: no owner
-// composed for this family renders it.
+// PostgreSQL-family renderer writes after CREATE TABLE, the row-level TTL a
+// CockroachDB CREATE TABLE carries, and the row deletion policy a Spanner one
+// carries. Every other kind is refused: no owner composed for this family
+// renders it.
 func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (schemaext.Facets, error) {
 	if err := tsrender.ValidateTableFacets(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
 	rest := projected.Without(tsschema.HypertableKind)
-	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
-		if err := crdbrender.ValidateTableFacets(rest); err != nil {
+	var validate func(schemaext.Facets) error
+	switch platform.NormalizeDialect(dialect) {
+	case platform.CockroachDB:
+		validate = crdbrender.ValidateTableFacets
+	case platform.Spanner:
+		validate = spannerrender.ValidateTableFacets
+	}
+	if validate != nil {
+		if err := validate(rest); err != nil {
 			return schemaext.Facets{}, err
 		}
 		return projected, nil
