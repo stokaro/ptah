@@ -290,7 +290,7 @@ func MarshalPlanFileAs(plan PlanFile, format PlanFormat) ([]byte, error) {
 // Atlas plan. Atlas plan files do not record a dialect, so correctness-sensitive
 // callers must reclassify the SQL after resolving the target dialect.
 func planStatementsFromSQL(raw []string) []PlanStatement {
-	statements, _ := classifyPlanStatements(raw, "")
+	statements, _ := classifyPlanStatements(raw, "", nil)
 	return statements
 }
 

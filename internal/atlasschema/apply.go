@@ -36,6 +36,7 @@ import (
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
+	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -85,6 +86,11 @@ type ApplyOptions struct {
 	// pre-resolver loading behavior. `schema plan` sets it because a saved
 	// plan fingerprints local desired-state files only.
 	LocalFilesOnly bool
+	// assessOwnedOperations also attributes the owned feature operations'
+	// verdicts to the statements they rendered, so a saved plan can record
+	// them. It reads the one planning pass: each statement keeps the node whose
+	// fragment rendered it, and nothing is rendered twice.
+	assessOwnedOperations bool
 	// ToSources carries the same desired-state sources as ToURLs, each with the
 	// variable scope its atlas.hcl `data "hcl_schema"` block put around it. It
 	// is read only on the LocalFilesOnly path, which does not classify and so
@@ -272,6 +278,11 @@ func (c applyComputation) dataIndex() int {
 // re-reading the database.
 type applyComputation struct {
 	statements []string
+	// owned holds, position for position with statements, the verdict of
+	// the owned feature operation that rendered each statement, when
+	// [ApplyOptions.assessOwnedOperations] asked; a zero entry is a statement
+	// no owned operation rendered.
+	owned []safety.StatementAssessment
 	// undecided are the declared objects the comparison withheld because the
 	// read did not describe their kind; see [ApplyRuntimePlan.Undecided].
 	undecided schemadiff.Diagnostics
@@ -430,23 +441,37 @@ func computeApplyPlan(
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
 	if diff.HasChanges() {
-		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		planOptions := planner.Options{
+			Capabilities:         info.Capabilities,
+			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			OnlineAlter:          opts.Policy.OnlineAlter,
+			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
+			),
+			OmitNullBackfill:    opts.OmitNullBackfill,
+			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+		}
+		plan, err := planner.GenerateSchemaDiffRenderedPlan(
 			ctx, opts.Runtime,
-			diff, info.Dialect, planner.Options{
-				Capabilities:         info.Capabilities,
-				ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-				OnlineAlter:          opts.Policy.OnlineAlter,
-				ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-				ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-					opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
-				),
-				OmitNullBackfill:    opts.OmitNullBackfill,
-				AllowTableRebuild:   opts.Policy.AllowTableRebuild,
-				TableRebuildRequest: opts.Policy.TableRebuildRequest,
-			},
+			diff, info.Dialect, planOptions,
 		)
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
+		}
+		planned := plan.PlannedStatements()
+		computation.statements = make([]string, 0, len(planned))
+		statementNodes := make([]int, 0, len(planned))
+		for _, statement := range planned {
+			computation.statements = append(computation.statements, statement.SQL)
+			statementNodes = append(statementNodes, statement.Node)
+		}
+		if opts.assessOwnedOperations {
+			computation.owned, err = safety.OwnerVerdicts(plan.Request.Nodes, statementNodes)
+			if err != nil {
+				return applyComputation{}, fmt.Errorf("assess owned operations: %w", err)
+			}
 		}
 	}
 	// The data stage runs whether or not the schema changed. A release that

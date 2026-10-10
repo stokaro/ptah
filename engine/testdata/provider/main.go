@@ -106,6 +106,35 @@ func operationCodec() schemaext.Codec {
 	}
 }
 
+// grantWidget is an access-control operation. Its owner computes the access
+// assessment while it still holds the captured context and carries the result
+// as data, so the assessment crosses the codec boundary with the operation.
+type grantWidget struct {
+	Role   string                 `json:"role"`
+	Access schemaext.AccessEffect `json:"access"`
+}
+
+func (*grantWidget) Kind() schemaext.Kind { return "example.org/widget/grant" }
+func (p *grantWidget) CloneExtension() ast.ExtensionPayload {
+	cloned := *p
+	return &cloned
+}
+func (p *grantWidget) AccessEffect() schemaext.AccessEffect { return p.Access }
+
+func grantCodec() schemaext.Codec {
+	encode := func(payload schemaext.Payload) (json.RawMessage, error) { return json.Marshal(payload) }
+	return schemaext.Codec{
+		Prototype: &grantWidget{}, Representation: schemaext.Operation, Version: 1,
+		Definition: json.RawMessage(`{"type":"object","required":["role","access"],"additionalProperties":false,"properties":{"role":{"type":"string"},"access":` +
+			string(schemaext.AccessEffectSchema()) + `}}`),
+		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
+			return payload.(*grantWidget).CloneExtension(), nil
+		},
+		Encode: encode, Canonical: encode,
+		Decode: func(data json.RawMessage) (schemaext.Payload, error) { return schemaext.DecodeJSON[*grantWidget](data) },
+	}
+}
+
 func main() {
 	if err := verify(); err != nil {
 		panic(err)
@@ -124,7 +153,7 @@ func verify() error {
 	}
 	observed := codec()
 	observed.Representation = schemaext.Observed
-	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec(), observed, operationCodec()},
+	runtime, err := engine.New(engine.Provider{ID: "example.org/widget", Codecs: []schemaext.Codec{codec(), observed, operationCodec(), grantCodec()},
 		Planning: []engine.Planning{{Target: "widget", ParentKinds: []schemaext.Kind{(&widget{}).Kind()}, OperationKinds: []schemaext.Kind{(&addWidget{}).Kind()}, Service: service{}}},
 		Relations: []engine.RelationDiscovery{{Target: "widget", Representation: schemaext.Desired,
 			Kinds: []schemaext.Kind{(&widget{}).Kind()}, Service: service{}}},
@@ -190,6 +219,9 @@ func verify() error {
 		return err
 	}
 	if err := verifyImport(); err != nil {
+		return err
+	}
+	if err := verifyAccessEffects(runtime); err != nil {
 		return err
 	}
 	value.Levels[0] = "changed"
@@ -403,6 +435,34 @@ func verifyBatchRefusal(runtime *engine.Runtime) error {
 	result, err = runtime.Render(context.Background(), renderer.Request{Target: "widget"})
 	if err != nil || !result.Complete || len(result.Fragments) != 0 {
 		return fmt.Errorf("empty batch was not completed: %+v, %v", result, err)
+	}
+	return nil
+}
+
+// verifyAccessEffects checks that an owner's access assessment survives the
+// selected operation codec, and that an operation declaring one cannot be
+// encoded without it.
+func verifyAccessEffects(runtime *engine.Runtime) error {
+	ctx := context.Background()
+	grant := &grantWidget{Role: "reader", Access: schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: "the reader role gains every widget"}}
+	data, err := runtime.Codecs().Marshal(ctx, schemaext.Operation, []schemaext.Payload{grant})
+	if err != nil {
+		return err
+	}
+	decoded, err := runtime.Codecs().Unmarshal(ctx, data)
+	if err != nil {
+		return err
+	}
+	if len(decoded) != 1 {
+		return fmt.Errorf("operation codec returned %d payloads for one", len(decoded))
+	}
+	source, ok := decoded[0].(schemaext.AccessEffectSource)
+	if !ok || source.AccessEffect() != grant.Access {
+		return fmt.Errorf("operation codec lost the access assessment: %+v", decoded)
+	}
+	_, err = runtime.Codecs().Marshal(ctx, schemaext.Operation, []schemaext.Payload{&grantWidget{Role: "reader"}})
+	if !errors.Is(err, schemaext.ErrInvalidValue) {
+		return fmt.Errorf("an operation without its access assessment was encoded: %v", err)
 	}
 	return nil
 }

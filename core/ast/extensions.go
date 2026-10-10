@@ -76,3 +76,95 @@ func absentPayload(payload ExtensionPayload) bool {
 		return false
 	}
 }
+
+// ExtensionPlacement describes how a node carries owner-defined operations.
+// Safety reports attribute an owner's verdict to the statements a node
+// renders, which is sound only when the node holds that one operation.
+type ExtensionPlacement int
+
+const (
+	// NoExtension is a node that carries no owner operation.
+	NoExtension ExtensionPlacement = iota
+	// IsolatedExtension is a node that is exactly one owner operation: an
+	// ExtensionStatement, an ExtensionAlterOperation, an ALTER TABLE whose only
+	// operation is one, or a statement list holding only such a node.
+	IsolatedExtension
+	// MixedExtension is a node that carries an owner operation beside other
+	// operations or statements, or more than one owner operation.
+	MixedExtension
+)
+
+// PlacementOf classifies node. A typed nil extension envelope counts as an
+// isolated owner operation, so its unknown effects are not lost.
+func PlacementOf(node Node) ExtensionPlacement {
+	owned, other := ownerParts(node)
+	switch {
+	case len(owned) == 0:
+		return NoExtension
+	case len(owned) == 1 && other == 0:
+		return IsolatedExtension
+	default:
+		return MixedExtension
+	}
+}
+
+// OwnerOperations returns the owner payloads node carries, in order: the
+// payload of an extension envelope, of each extension operation of an ALTER
+// TABLE, and of each such node in a statement list. A typed nil envelope
+// contributes a nil payload. It reads the same node shapes [PlacementOf]
+// reads, so the two cannot disagree about what a node carries.
+func OwnerOperations(node Node) []ExtensionPayload {
+	owned, _ := ownerParts(node)
+	return owned
+}
+
+// ownerParts walks the node shapes that can carry owner operations and
+// returns their payloads and the number of other operations and statements
+// beside them.
+func ownerParts(node Node) (owned []ExtensionPayload, other int) {
+	switch typed := node.(type) {
+	case *ExtensionStatement:
+		if typed == nil {
+			return []ExtensionPayload{nil}, 0
+		}
+		return []ExtensionPayload{typed.Payload}, 0
+	case *ExtensionAlterOperation:
+		if typed == nil {
+			return []ExtensionPayload{nil}, 0
+		}
+		return []ExtensionPayload{typed.Payload}, 0
+	case *AlterTableNode:
+		if typed == nil {
+			return nil, 0
+		}
+		for _, operation := range typed.Operations {
+			extension, ok := operation.(*ExtensionAlterOperation)
+			if !ok {
+				other++
+				continue
+			}
+			if extension == nil {
+				owned = append(owned, nil)
+				continue
+			}
+			owned = append(owned, extension.Payload)
+		}
+		return owned, other
+	case *StatementList:
+		if typed == nil {
+			return nil, 0
+		}
+		for _, child := range typed.Statements {
+			childOwned, childOther := ownerParts(child)
+			if len(childOwned) == 0 {
+				other++
+				continue
+			}
+			owned = append(owned, childOwned...)
+			other += childOther
+		}
+		return owned, other
+	default:
+		return nil, 0
+	}
+}

@@ -29,6 +29,12 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// ErrInvalidPlan reports a plan a planner built in breach of the planning
+// contract, such as an owner operation planned beside other work in one node.
+// It names a defect in the planner, not in the diff it was given, which is
+// why it is not [ptaherr.ErrInvalidSchemaDiff].
+var ErrInvalidPlan = errors.New("invalid plan")
+
 var builtInPlannerRegistration struct {
 	once sync.Once
 	err  error
@@ -478,6 +484,10 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime featureplan.Runtime, dif
 //     every built-in planner rather than planned as an empty migration
 //   - a dialect no planner is registered for fails with an error satisfying
 //     errors.Is against ptaherr.ErrUnsupportedDialect
+//   - a plan in which an owner operation shares a node with other work fails
+//     with an error satisfying errors.Is against [ErrInvalidPlan]: each owner
+//     operation is planned as a node of its own, so its verdict belongs to
+//     the statements that node renders
 //
 // Every failure comes back as a *ptaherr.PlanError carrying the dialect, so
 // errors.As selects the structured form and errors.Is the sentinel.
@@ -551,10 +561,30 @@ func GenerateSchemaDiffASTWithOptions(
 		// a pass over the result reaches every column modification.
 		omitNullBackfill(nodes)
 	}
+	if err := requireIsolatedOwnerOperations(nodes); err != nil {
+		return nil, wrapPlanError(dialect, err)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
 	return nodes, nil
+}
+
+// requireIsolatedOwnerOperations refuses a plan in which an owner operation
+// shares a node with anything else. Safety reports and saved plans give each
+// statement the verdict of the owner operation that rendered it, and they can
+// tell which one that is only when the operation is a node of its own:
+// otherwise an ADD COLUMN beside a policy would carry the policy's access
+// verdict, or the policy the DROP TABLE's. The planners build owner operations
+// that way already, so this guards the boundary rather than reshaping a plan.
+func requireIsolatedOwnerOperations(nodes []ast.Node) error {
+	for index, node := range nodes {
+		if ast.PlacementOf(node) == ast.MixedExtension {
+			return fmt.Errorf("%w: planned node %d (%T) carries an owner operation beside other operations; "+
+				"each owner operation must be planned as a node of its own", ErrInvalidPlan, index+1, node)
+		}
+	}
+	return nil
 }
 
 // NodeRequiresNoTransaction reports whether a single planned AST node must run
@@ -609,8 +639,9 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 // The function performs the following processing steps:
 //  1. Generate AST nodes using GenerateSchemaDiffAST
-//  2. Render AST nodes to complete SQL using the renderer package
-//  3. Split the rendered SQL under the dialect's statement grammar
+//  2. Render each AST node to its SQL fragment using the renderer package
+//  3. Split each fragment under the dialect's statement grammar, so no
+//     statement runs into the next node's (see [RenderedPlan.PlannedStatements])
 //  4. Return the statements as a string slice
 //
 // # Usage Example
@@ -640,17 +671,12 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
 func GenerateSchemaDiffSQLStatements(ctx context.Context, runtime Runtime, diff *difftypes.SchemaDiff, dialect string) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(
+	return GenerateSchemaDiffSQLStatementsWithOptions(
 		ctx, runtime,
 		diff, dialect, Options{
 			Capabilities: capability.ForDialect(dialect),
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-	statements := sqlutil.SplitSQLStatementsForDialect(output, dialect)
-	return statements, nil
 }
 
 // GenerateSchemaDiffSQLStatementsWithOptions generates individual SQL
@@ -661,20 +687,150 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 	dialect string,
 	opts Options,
 ) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(
+	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
+	if err != nil {
+		return nil, err
+	}
+	return plan.Statements(), nil
+}
+
+// RenderedPlan is a schema diff planned and rendered once. Request is the
+// rendering request the planned AST nodes went out in, and Result holds one
+// fragment per node, so a statement can be traced to the node that rendered it
+// without planning again. Its SQL and Statements are
+// what [GenerateSchemaDiffSQLWithOptions] and
+// [GenerateSchemaDiffSQLStatementsWithOptions] return for the same input.
+type RenderedPlan struct {
+	// Request holds the planned nodes in Request.Nodes.
+	Request renderer.Request
+	Result  renderer.Result
+	// Dialect is the caller's spelling of the target, which decides where one
+	// statement ends.
+	Dialect string
+}
+
+// SQL returns the rendered plan as one script.
+func (p RenderedPlan) SQL() string { return p.Result.SQL() }
+
+// PlannedStatement is one statement of a rendered plan and the index of the
+// planned node, in Request.Nodes, whose fragment rendered it. Node is -1 for a
+// comment-only piece at the end of the plan, which no statement follows.
+type PlannedStatement struct {
+	SQL  string
+	Node int
+}
+
+// PlannedStatements splits the rendered plan into the statements it executes,
+// one fragment at a time, so each statement keeps the node that rendered it.
+// A comment-only piece of a fragment, such as an owner's note, is joined to the
+// next statement and takes that statement's node, as splitting the joined
+// script would join it. A fragment's statements never run into the next
+// fragment's: a fragment that leaves its last statement unterminated, or ends
+// a SQL Server routine whose body would otherwise reach the end of the batch,
+// still ends where its node ends.
+func (p RenderedPlan) PlannedStatements() []PlannedStatement {
+	var statements []PlannedStatement
+	carry := ""
+	for node, fragment := range p.Result.Fragments {
+		// The dialect decides where one statement ends. The blind splitter
+		// treats every semicolon outside a BEGIN block as a boundary, which is
+		// right for most targets and wrong for the one whose routine body is
+		// opened by IS: an Oracle function with a declaration section came out
+		// of here as four fragments, each of which the server refuses on its own.
+		text := carry + fragment
+		pieces := sqlutil.SplitSQLStatementsForDialect(text, p.Dialect)
+		executable := len(pieces)
+		for executable > 0 && strings.TrimSpace(sqlutil.StripCommentsForDialect(pieces[executable-1], p.Dialect)) == "" {
+			executable--
+		}
+		for _, piece := range pieces[:executable] {
+			statements = append(statements, PlannedStatement{SQL: piece, Node: node})
+		}
+		carry = trailingPieces(text, pieces, executable)
+	}
+	for _, piece := range sqlutil.SplitSQLStatementsForDialect(carry, p.Dialect) {
+		statements = append(statements, PlannedStatement{SQL: piece, Node: -1})
+	}
+	return statements
+}
+
+// trailingPieces is text from the first of pieces[from:] to its end: the
+// comment-only pieces a fragment ends with, as they were written, so the next
+// fragment's first statement takes them byte for byte as a split of the joined
+// plan would, trailing spaces inside a comment included. A piece the splitter
+// rewrote, which a client delimiter directive can do, is not found in text; the
+// pieces are then joined by line instead.
+func trailingPieces(text string, pieces []string, from int) string {
+	if from == len(pieces) {
+		return ""
+	}
+	cursor := 0
+	for i, piece := range pieces {
+		at := strings.Index(text[cursor:], piece)
+		if at < 0 {
+			break
+		}
+		if i == from {
+			return text[cursor+at:]
+		}
+		cursor += at + len(piece)
+	}
+	return strings.Join(pieces[from:], "\n") + "\n"
+}
+
+// Statements returns the SQL of [RenderedPlan.PlannedStatements].
+func (p RenderedPlan) Statements() []string {
+	planned := p.PlannedStatements()
+	statements := make([]string, 0, len(planned))
+	for _, statement := range planned {
+		statements = append(statements, statement.SQL)
+	}
+	return statements
+}
+
+// GenerateSchemaDiffRenderedPlan plans diff and renders the planned nodes
+// once, keeping the nodes, the request, and the per-node result together. It
+// fails with the errors [GenerateSchemaDiffSQLWithOptions] documents, and
+// returns the zero plan on any failure or cancellation.
+func GenerateSchemaDiffRenderedPlan(
+	ctx context.Context, runtime Runtime,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	opts Options,
+) (RenderedPlan, error) {
+	// An extension this plan installs is installed before the statements that
+	// need it. A connection opened before the extension existed answers about
+	// the past, so its capability set alone would emit
+	// `CREATE EXTENSION "timescaledb"` and then skip the create_hypertable that
+	// needs it (stokaro/ptah#1026).
+	//
+	// The names come from the change rather than from the desired schema
+	// because installing is what makes them available: an extension the schema
+	// declares and the target already has is already in the capability set the
+	// connection reported (stokaro/ptah#2315).
+	astNodes, err := GenerateSchemaDiffASTWithOptions(
 		ctx, runtime,
 		diff, dialect, opts,
 	)
 	if err != nil {
-		return nil, err
+		return RenderedPlan{}, err
 	}
-	// The dialect decides where one statement ends. The blind splitter treats
-	// every semicolon outside a BEGIN block as a boundary, which is right for
-	// most targets and wrong for the one whose routine body is opened by IS:
-	// an Oracle function with a declaration section came out of here as four
-	// fragments, each of which the server refuses on its own.
-	statements := sqlutil.SplitSQLStatementsForDialect(output, dialect)
-	return statements, nil
+	caps := capability.WithDeclaredExtensions(opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
+	// The planner resolves built-in transport spellings before selecting a
+	// target. Rendering must use that same target, not reinterpret the spelling.
+	target := platform.NormalizeDialect(dialect)
+	if target == "" {
+		target = dialect
+	}
+	request := renderer.Request{Target: target, Capabilities: caps, Nodes: astNodes}
+	output, err := renderer.Render(ctx, runtime, request)
+	if err != nil {
+		return RenderedPlan{}, wrapRenderError(dialect, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return RenderedPlan{}, wrapRenderError(dialect, err)
+	}
+	return RenderedPlan{Request: request, Result: output, Dialect: dialect}, nil
 }
 
 // GenerateSchemaDiffSQL generates complete SQL for schema differences as a single string.
@@ -761,38 +917,11 @@ func GenerateSchemaDiffSQLWithOptions(
 	dialect string,
 	opts Options,
 ) (string, error) {
-	// An extension this plan installs is installed before the statements that
-	// need it. A connection opened before the extension existed answers about
-	// the past, so its capability set alone would emit
-	// `CREATE EXTENSION "timescaledb"` and then skip the create_hypertable that
-	// needs it (stokaro/ptah#1026).
-	//
-	// The names come from the change rather than from the desired schema
-	// because installing is what makes them available: an extension the schema
-	// declares and the target already has is already in the capability set the
-	// connection reported (stokaro/ptah#2315).
-	astNodes, err := GenerateSchemaDiffASTWithOptions(
-		ctx, runtime,
-		diff, dialect, opts,
-	)
+	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
 	if err != nil {
 		return "", err
 	}
-	caps := capability.WithDeclaredExtensions(opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names())
-	// The planner resolves built-in transport spellings before selecting a
-	// target. Rendering must use that same target, not reinterpret the spelling.
-	target := platform.NormalizeDialect(dialect)
-	if target == "" {
-		target = dialect
-	}
-	output, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: astNodes})
-	if err != nil {
-		return "", wrapRenderError(dialect, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return "", wrapRenderError(dialect, err)
-	}
-	return output.SQL(), nil
+	return plan.SQL(), nil
 }
 
 func wrapPlanError(dialect string, err error) error {

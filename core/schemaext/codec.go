@@ -235,6 +235,11 @@ func (r Registry) encodeOne(representation Representation, payload Payload, enco
 		Version: codec.version, Definition: codec.definition, Payload: data}, nil
 }
 
+// snapshot clones a payload through its codec. Every codec boundary passes
+// through here, so it is also where a declared access assessment is required.
+// The clone is what the caller receives, so the clone is checked: an input
+// without the assessment yields a clone without it, and so does a defective
+// Clone.
 func (c registeredCodec) snapshot(payload Payload) (Payload, error) {
 	if reflect.TypeOf(payload) != c.typeOf {
 		return nil, fmt.Errorf("%w: %q has an unregistered concrete type %T", ErrInvalidValue, payload.Kind(), payload)
@@ -245,6 +250,9 @@ func (c registeredCodec) snapshot(payload Payload) (Payload, error) {
 		return nil, err
 	}
 	if err := samePayload(kind, c.typeOf, cloned); err != nil {
+		return nil, err
+	}
+	if err := validateAccess(cloned); err != nil {
 		return nil, err
 	}
 	return cloned, nil

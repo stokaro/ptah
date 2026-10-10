@@ -24,7 +24,8 @@ type ChangeRecord struct {
 }
 
 // Clone returns an independent change payload and preserves structured identity.
-// Nil payloads and clones that change their kind or concrete type are refused.
+// Nil payloads, clones that change their kind or concrete type, and a payload
+// or clone without the access assessment it declares are refused.
 func (c ChangeRecord) Clone() (ChangeRecord, error) {
 	if err := validChangeSubject(c.Subject); err != nil {
 		return ChangeRecord{}, err
@@ -35,6 +36,11 @@ func (c ChangeRecord) Clone() (ChangeRecord, error) {
 	kind, concrete := c.Value.Kind(), reflect.TypeOf(c.Value)
 	cloned := c.Value.CloneChange()
 	if err := samePayload(kind, concrete, cloned); err != nil {
+		return ChangeRecord{}, err
+	}
+	// The clone is what the caller receives: an input without its declared
+	// assessment yields a clone without it, and so does a defective clone.
+	if err := validateAccess(cloned); err != nil {
 		return ChangeRecord{}, err
 	}
 	return ChangeRecord{Subject: c.Subject, Value: cloned}, nil

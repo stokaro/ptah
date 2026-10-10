@@ -1197,6 +1197,117 @@ Missing, invalid, or unexplained effects require manual review at the
 `Destructive` severity. Schema reversal cannot restore records or consumer
 positions lost when a changefeed is dropped.
 
+A change or operation payload that affects what roles may read or write also
+implements `schemaext.AccessEffectSource`. Its `schemaext.AccessEffect` is
+separate from `Effect`. `Access` is one of these values, and `Reason` is a
+required one-line explanation:
+
+- `AccessWidens`: the change can grant access, even if it also restricts some.
+- `AccessNarrows`: the change can remove access and cannot grant any.
+- `AccessUnchanged`: the owner established that no role gains or loses access.
+  Unchanged predicate text alone does not establish it.
+- `AccessUnknown`: the owner cannot establish the effect.
+
+The owner computes the assessment while it holds the captured model,
+enforcement state, and sibling objects, and stores it in the payload as data.
+`Access.Valid` and `AccessEffect.Validate` reject the zero value, other
+spellings, and a reason that is empty, not valid UTF-8, padded with white
+space, or that holds a control character or a line or paragraph separator,
+with `ErrInvalidValue`. The JSON form is the record
+`{"access": ..., "reason": ...}`. Encoding or decoding an invalid record fails.
+Decoding refuses unknown, duplicate, or missing fields, a key spelled in
+another letter case, and a value that is not a string. An owner embeds
+`schemaext.AccessEffectSchema()` in its codec `Definition`, so the definition
+hash follows the record shape; its reason pattern states the same constraint
+`Validate` enforces.
+
+Codec snapshots, encoding, decoding, and `ChangeRecord.Clone` refuse a payload
+that implements the interface without a valid assessment, and refuse a clone
+that lost it. A codec that drops the record therefore fails when it decodes,
+and a planning reply whose operation lacks one is refused with no partial
+result. `ValidatePayload` checks identity only, so a codec prototype needs no
+assessment. A payload without the interface makes no claim about access.
+
+`migration/safety` reads the assessment beside the lifecycle effect and takes
+the higher severity. `AccessWidens` and `AccessUnknown` are `Destructive`,
+`AccessNarrows` is `Warning`, and `AccessUnchanged` adds nothing. An assessment
+it cannot validate is reported as `AccessUnknown`, never as unchanged.
+
+`core/ast.PlacementOf` classifies how a node carries owner operations:
+`NoExtension`, `IsolatedExtension` for a node that is exactly one owner
+operation (an `ExtensionStatement`, an `ExtensionAlterOperation`, an ALTER
+TABLE whose only operation is one, or a statement list holding only such a
+node), and `MixedExtension` for a node holding an owner operation beside other
+work or more than one. `OwnerOperations` returns the owner payloads a node
+carries, read from the same node shapes.
+`migration/planner.GenerateSchemaDiffASTWithOptions` refuses a plan containing
+a `MixedExtension` node with an error wrapping
+`migration/planner.ErrInvalidPlan`, whichever planner built it. That error
+names a planner that broke the planning contract, not a defect in the diff, so
+it is not `ptaherr.ErrInvalidSchemaDiff`. The bundled planners build every
+owner operation as a node of its own.
+
+`StatementAssessment.Access` and `AccessReason` report the assessment for each
+statement an isolated owner operation rendered, and stay empty for every
+statement no owner operation rendered. Every statement of an isolated node
+takes that node's verdict, and only its own: a policy beside a `DROP TABLE` in
+the plan keeps its verdict, and two policies keep two. A statement rendered by
+a `MixedExtension` node takes the node's verdict raised to `Destructive`, with
+an unknown access effect when the owner operation makes an access claim,
+because which of its statements the operation wrote is not known. Raising
+keeps a widening the node established. Nothing is rendered twice. A node
+carrying several assessed operations reports the strongest, in the order
+unchanged, narrows, unknown, widens. The text and HTML reports print it under
+the statement. `AccessSeverity` is the severity an assessment requires.
+
+`ClassifySchemaDiff` counts assessed changes under
+`feature_access_widened:<kind>`, `feature_access_narrowed:<kind>`,
+`feature_access_unchanged:<kind>`, and `feature_access_unknown:<kind>`, apart
+from their `feature_changes:<kind>` lifecycle finding. A change that cannot be
+snapshotted, an invalid assessment included, is counted as `Destructive` under
+`feature_changes:<kind>` and, when it declares an assessment,
+`feature_access_unknown:<kind>`; the kind is left out only when the change
+names no valid one. Encoding the same diff through the owners' codecs refuses
+that change instead. Comparison snapshots every change through its owner's
+codec, so only a diff assembled by hand carries one.
+
+`migration/planner.GenerateSchemaDiffRenderedPlan` plans and renders a diff
+once and returns a `RenderedPlan`: the rendering request, which holds the
+planned nodes, and one fragment per node. `PlannedStatements` splits it one
+fragment at a time and gives each statement the index of the node that
+rendered it, or -1 for a comment no statement follows. A comment-only piece of
+a fragment joins the next statement and takes its node, and no fragment's
+statements run into the next fragment's. `Statements` is the SQL of
+`PlannedStatements`, and `SQL` the joined script; they are what
+`GenerateSchemaDiffSQLStatementsWithOptions` and
+`GenerateSchemaDiffSQLWithOptions` return for the same input.
+
+`safety.OwnerVerdicts` takes the planned nodes and that provenance and returns,
+position for position, the verdict of the owner operation that rendered each
+statement, or a zero assessment. A statement an owner operation rendered always
+carries a severity. Nothing is split, counted or compared there, and an index
+outside the nodes is refused with `renderer.ErrInvalidResult`. `Fold` attaches
+a verdict to the same statement classified from its text: the severity only
+rises and the strongest access assessment is kept.
+
+A saved schema plan uses `OwnerVerdicts` and `Fold`. The JSON plan marks each
+statement an owner operation rendered with `owned` and records `access`,
+`access_reason`, and the owner's higher verdict. Reading a plan refuses an
+unrecognized access value, an access value without its reason, a reason
+without a value, an access value on a statement that is not `owned`, and a
+severity below the one the access value requires.
+
+An `--edit` that leaves the statement sequence as it was, comments and
+whitespace aside, keeps every recorded verdict by position. After any other
+edit, a statement whose text the plan recorded takes the strongest verdict
+recorded for that text. When the plan carried an `owned` statement, every
+statement that carries an owner verdict and every statement the edit
+introduced is then raised to `Destructive` with an unknown access effect; the
+raise keeps the reason the statement had and never lowers an access value. The
+edit does not try to decide which changes leave an owner's verdict valid;
+planning again gives fresh verdicts. The Atlas `.plan.hcl` format stores SQL
+alone, so a plan read back from it has only the text verdict.
+
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
 creation statements before phase-two foreign keys; SQLite keeps foreign keys

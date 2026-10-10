@@ -394,6 +394,25 @@ requires the strongest review. Removing a coordination node is destructive
 because it also removes application semaphores and rate limiter resources.
 Removing a YDB secret is destructive because nothing can read its value back.
 
+An owner whose changes affect what roles may read or write also implements
+`schemaext.AccessEffectSource` on its change and operation payloads. The verb
+does not decide the direction: creating a policy can widen access and dropping
+one can narrow it, so the owner assesses each change against the enforcement
+state and sibling objects it captured, and stores the result in the payload.
+Embed `schemaext.AccessEffectSchema()` in the codec definition. A payload that
+implements the interface without a valid assessment is refused at every codec
+boundary, so the assessment cannot be dropped on the way to a report. Safety
+reports print it beside the statement, and diff findings count it under
+`feature_access_widened:<kind>`, `feature_access_narrowed:<kind>`,
+`feature_access_unchanged:<kind>` or `feature_access_unknown:<kind>`; a
+widening or unknown effect is destructive, a narrowing is a warning.
+
+Plan each owner operation as a node of its own. Planning refuses a node that
+holds one beside other work with `migration/planner.ErrInvalidPlan`, because a
+report could not tell which statements the operation wrote. Each statement of
+a saved plan keeps the node that rendered it, so an owner's verdict reaches its
+own statements and no others.
+
 YDB inspection records unknown coordination settings as incomplete subject
 coverage. Go and HCL export refuse those limits before writing output, because
 these formats cannot carry the captured inspection limit. Exporting an empty

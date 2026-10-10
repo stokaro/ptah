@@ -120,6 +120,29 @@ The file is what a reviewer reads:
 }
 ```
 
+A statement that a feature owner's operation renders is marked `owned` and
+records the owner's verdict when it is higher than what the SQL text says,
+because the text of such a statement says little about its effect. A YDB
+`DROP CHANGEFEED` is saved as destructive, and a ClickHouse TTL change or
+skipping-index addition as a warning, although the text of each reads as
+safe. When the owner assesses what the statement does to access, the
+statement also carries `access` -- `widens`, `narrows`, `unchanged` or
+`unknown` -- and `access_reason`. A widening or unknown access effect makes the
+statement destructive. Each owner operation is planned on its own, so its
+verdict reaches the statements it rendered and no others.
+
+An `--edit` that leaves the statements as they were, comments and whitespace
+aside, keeps every recorded verdict. After any other edit, a statement whose
+text the plan recorded keeps the strongest verdict recorded for that text, so a
+copy of a destructive statement is destructive too. When the plan has an
+`owned` statement, every `owned` statement and every statement the edit
+introduced becomes destructive with an unknown access effect: SQL text cannot
+say what they do, and an owner judged each statement beside the others, which
+the edit changed. A known widening stays a widening, and the reason each
+statement had stays beside the new one. Plan again to get fresh verdicts. The
+Atlas `.plan.hcl` format stores only the SQL, so a plan read back from it
+carries the text's verdict alone.
+
 `from_fingerprint` describes the schemas the database URL covers. A URL that
 names no schema covers every schema in the database; one pinned with
 `search_path` covers that schema alone. When the desired schema names a schema

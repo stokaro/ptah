@@ -3,6 +3,7 @@ package schemaext_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"ptah.run/core/schemaext"
@@ -95,4 +96,69 @@ func ExampleRegistry_Marshal() {
 	}
 	fmt.Printf("%T: %d days\n", values[0], values[0].(*retention).Days)
 	// Output: *schemaext_test.retention: 30 days
+}
+
+// policyChange is an owner's change payload with its access assessment.
+type policyChange struct {
+	Policy string                 `json:"policy"`
+	Access schemaext.AccessEffect `json:"access"`
+}
+
+func (*policyChange) Kind() schemaext.Kind { return "example.org/policy-change" }
+func (v *policyChange) CloneChange() schemaext.ChangeValue {
+	cloned := *v
+	return &cloned
+}
+func (v *policyChange) AccessEffect() schemaext.AccessEffect { return v.Access }
+
+// ExampleAccessEffectSource shows an owner's access assessment traveling
+// through a versioned change codec. The owner computes the assessment while it
+// still has the captured context and stores it in the payload; the codec embeds
+// the published record schema, so a reader decodes the same assessment.
+func ExampleAccessEffectSource() {
+	encode := func(payload schemaext.Payload) (json.RawMessage, error) {
+		return json.Marshal(payload.(*policyChange))
+	}
+	registry, err := schemaext.NewRegistry(schemaext.OwnedCodec{
+		Owner: "example.org/provider",
+		Codec: schemaext.Codec{
+			Prototype: &policyChange{}, Representation: schemaext.Change, Version: 1,
+			Definition: json.RawMessage(`{"type":"object","required":["policy","access"],"additionalProperties":false,` +
+				`"properties":{"policy":{"type":"string"},"access":` + string(schemaext.AccessEffectSchema()) + `}}`),
+			Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
+				return payload.(*policyChange).CloneChange(), nil
+			},
+			Encode: encode, Canonical: encode,
+			Decode: func(data json.RawMessage) (schemaext.Payload, error) {
+				return schemaext.DecodeJSON[*policyChange](data)
+			},
+		},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	change := &policyChange{Policy: "tenant_rows", Access: schemaext.AccessEffect{
+		Access: schemaext.AccessWidens, Reason: "a new permissive policy admits rows no other policy admits",
+	}}
+	data, err := registry.Marshal(context.Background(), schemaext.Change, []schemaext.Payload{change})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	decoded, err := registry.Unmarshal(context.Background(), data)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	effect := decoded[0].(schemaext.AccessEffectSource).AccessEffect()
+	fmt.Println(effect.Access)
+	fmt.Println(effect.Reason)
+
+	_, err = registry.Marshal(context.Background(), schemaext.Change, []schemaext.Payload{&policyChange{Policy: "unassessed"}})
+	fmt.Println(errors.Is(err, schemaext.ErrInvalidValue))
+	// Output:
+	// widens
+	// a new permissive policy admits rows no other policy admits
+	// true
 }

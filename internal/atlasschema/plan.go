@@ -46,10 +46,20 @@ const (
 
 // PlanStatement is one ordered SQL statement of a saved declarative plan,
 // together with the risk classification recorded when the plan was computed.
+//
+// A statement an owner operation renders carries that owner's verdict as well
+// as what its text says: Owned marks it, Severity is the higher of the two,
+// and Access records the owner's access assessment when the operation makes
+// one (see [ptah.run/migration/safety.StatementAssessment]). A statement read
+// back from SQL alone, as the Atlas plan format stores it, has only the text
+// verdict, no owner mark and no access assessment.
 type PlanStatement struct {
-	SQL      string        `json:"sql"`
-	Severity risk.Severity `json:"severity"`
-	Reason   string        `json:"reason"`
+	SQL          string           `json:"sql"`
+	Severity     risk.Severity    `json:"severity"`
+	Reason       string           `json:"reason"`
+	Owned        bool             `json:"owned,omitempty"`
+	Access       schemaext.Access `json:"access,omitempty"`
+	AccessReason string           `json:"access_reason,omitempty"`
 }
 
 // PlanFile is the local pre-approved declarative migration plan document.
@@ -214,8 +224,11 @@ func PreparePlanFileReportingUndecided(
 		// A saved plan fingerprints local desired-state files; URL sources
 		// stay a `schema plan` follow-up gap.
 		LocalFilesOnly: true,
-		Desired:        opts.Desired,
-		ProjectRoot:    opts.ProjectRoot,
+		// A saved plan records each statement's risk, and the risk of an owned
+		// operation is the owner's verdict rather than what its SQL text says.
+		assessOwnedOperations: true,
+		Desired:               opts.Desired,
+		ProjectRoot:           opts.ProjectRoot,
 
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 		Vars:                  opts.Vars,
@@ -246,7 +259,7 @@ func PreparePlanFileReportingUndecided(
 		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
 	}
 
-	statements, destructive := classifyPlanStatements(computation.statements, conn.Info().Dialect)
+	statements, destructive := classifyPlanStatements(computation.statements, conn.Info().Dialect, computation.owned)
 	// The data statements carry their own severity rather than the analyzer's.
 	// A DELETE of a reference row removes no table and tightens no constraint,
 	// so the analyzer calls it safe; the row it removes is gone all the same.
@@ -341,18 +354,32 @@ func planTargetState(ctx context.Context,
 // behind every plan statement list, so a plan read from the Atlas format and a
 // plan re-derived from operator-edited SQL carry the same per-statement
 // metadata a freshly planned one records.
-func classifyPlanStatements(raw []string, dialect string) (statements []PlanStatement, destructive bool) {
+//
+// owned holds, position for position with raw, the verdict of the owned
+// operation that rendered each statement (see [safety.OwnerVerdicts]); nil
+// means no statement has one. The SQL text of an owned operation says little:
+// CREATE POLICY reads as additive whether it widens or narrows access. A
+// statement with an owner verdict takes its access assessment and, when
+// higher, its severity.
+func classifyPlanStatements(raw []string, dialect string, owned []safety.StatementAssessment) (statements []PlanStatement, destructive bool) {
 	statements = make([]PlanStatement, 0, len(raw))
-	for _, statement := range raw {
+	for i, statement := range raw {
 		// Statements can carry comments and MySQL-family executable comments.
 		// Classify the SQL the plan's dialect may execute, including guarded
 		// executable-comment bodies regardless of server version.
 		assessment := safety.AssessSQL(strings.TrimSpace(sqlsafety.SQLForAssessment(statement, dialect)))
+		ownerVerdict := i < len(owned) && owned[i].Severity != ""
+		if ownerVerdict {
+			safety.Fold(&assessment, owned[i])
+		}
 		destructive = destructive || assessment.Severity == safety.Destructive
 		statements = append(statements, PlanStatement{
-			SQL:      statement,
-			Severity: assessment.Severity,
-			Reason:   assessment.Reason,
+			SQL:          statement,
+			Severity:     assessment.Severity,
+			Reason:       assessment.Reason,
+			Owned:        ownerVerdict,
+			Access:       assessment.Access,
+			AccessReason: assessment.AccessReason,
 		})
 	}
 	return statements, destructive
@@ -396,11 +423,21 @@ func splitPlanStatements(sqlText, dialect string) []string {
 // It is wrong for a statement the plan classified above what its text says.
 // A DELETE of a row the declaration no longer holds reads as safe to the SQL
 // analyzer, because nothing in the text says the row was declared; the data
-// stage assigns that severity itself. So a statement sqlText carries unchanged
-// keeps the severity and reason the plan recorded for it. The rule is
-// monotone — severity only rises — which leaves the analyzer in charge of
-// every statement whose text the edit changed, and of every statement it
-// rates higher than the plan did.
+// stage assigns that severity itself. An owner verdict cannot be read back out
+// of text at all: CREATE POLICY reads as additive whether it widens or narrows
+// access. So the recorded verdicts carry over, and they only raise what the
+// text says:
+//
+//   - An edit that leaves the statement sequence as it was, comments and
+//     whitespace aside, keeps every recorded verdict, position for position.
+//   - Otherwise a statement whose text the plan recorded takes the strongest
+//     verdict recorded for that text, so a copy of a destructive statement is
+//     as destructive as the original.
+//   - Otherwise, when the plan carried an owner verdict, every statement that
+//     carries one and every statement the edit introduced is raised to
+//     Destructive with an unknown access effect. An owner's verdict depends on
+//     the statements beside it, which the edit changed, and deciding which
+//     edits are harmless is not attempted: re-planning gives fresh verdicts.
 //
 // Statement text is preserved verbatim, so feeding back an unmodified
 // [PlanFile.SQL] reproduces the same statements — an editor the operator quits
@@ -415,22 +452,83 @@ func splitPlanStatements(sqlText, dialect string) []string {
 // carries no such replay, so an edited JSON plan is only as good as the review
 // it received. [MarshalPlanFileAs] callers that accept edits must say so.
 func (p PlanFile) WithStatementsFromSQL(sqlText string) PlanFile {
-	recorded := make(map[string]PlanStatement, len(p.Statements))
-	for _, statement := range p.Statements {
-		recorded[planStatementKey(statement.SQL, p.Dialect)] = statement
-	}
-	statements, destructive := classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)
-	for i := range statements {
-		prior, ok := recorded[planStatementKey(statements[i].SQL, p.Dialect)]
-		if !ok || risk.Rank(prior.Severity) <= risk.Rank(statements[i].Severity) {
-			continue
+	statements, destructive := classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil)
+	if sameStatementSequence(p.Statements, statements, p.Dialect) {
+		for i := range statements {
+			raisePlanStatement(&statements[i], p.Statements[i])
+			destructive = destructive || statements[i].Severity == safety.Destructive
 		}
-		statements[i].Severity = prior.Severity
-		statements[i].Reason = prior.Reason
-		destructive = destructive || prior.Severity == safety.Destructive
+		p.Statements, p.Destructive = statements, destructive
+		return p
+	}
+	recorded := make(map[string]PlanStatement, len(p.Statements))
+	carriesOwner := false
+	for _, statement := range p.Statements {
+		key := planStatementKey(statement.SQL, p.Dialect)
+		strongest := recorded[key]
+		raisePlanStatement(&strongest, statement)
+		recorded[key] = strongest
+		carriesOwner = carriesOwner || statement.Owned
+	}
+	for i := range statements {
+		prior, kept := recorded[planStatementKey(statements[i].SQL, p.Dialect)]
+		if kept {
+			raisePlanStatement(&statements[i], prior)
+		}
+		if carriesOwner && (!kept || statements[i].Owned) {
+			failEditedStatementClosed(&statements[i])
+		}
+		destructive = destructive || statements[i].Severity == safety.Destructive
 	}
 	p.Statements, p.Destructive = statements, destructive
 	return p
+}
+
+// sameStatementSequence reports whether edited holds the recorded statements
+// in their recorded order, comments and whitespace aside.
+func sameStatementSequence(recorded, edited []PlanStatement, dialect string) bool {
+	return slices.EqualFunc(recorded, edited, func(a, b PlanStatement) bool {
+		return planStatementKey(a.SQL, dialect) == planStatementKey(b.SQL, dialect)
+	})
+}
+
+// raisePlanStatement raises target's verdict to source's: the severity and its
+// reason only rise, the strongest access assessment either carries is kept,
+// and an owner verdict on either side is an owner verdict on target.
+func raisePlanStatement(target *PlanStatement, source PlanStatement) {
+	verdict := safety.StatementAssessment{
+		Severity: target.Severity, Reason: target.Reason,
+		Access: target.Access, AccessReason: target.AccessReason,
+	}
+	safety.Fold(&verdict, safety.StatementAssessment{
+		Severity: source.Severity, Reason: source.Reason,
+		Access: source.Access, AccessReason: source.AccessReason,
+	})
+	target.Severity, target.Reason = verdict.Severity, verdict.Reason
+	target.Access, target.AccessReason = verdict.Access, verdict.AccessReason
+	target.Owned = target.Owned || source.Owned
+}
+
+// editedOwnerReason is the verdict of an owned or introduced statement once an
+// edit changed a plan that carried an owner verdict.
+const editedOwnerReason = "the edit changed a plan that carried an owner verdict; " +
+	"this statement's effect, access included, is unknown and manual review is required"
+
+// failEditedStatementClosed raises a statement to Destructive with an unknown
+// access effect. It only raises: the reason its text or its owner gave stays
+// beside the new one, and a widening access assessment stays a widening.
+func failEditedStatementClosed(statement *PlanStatement) {
+	if !strings.HasSuffix(statement.Reason, editedOwnerReason) {
+		if statement.Reason == "" {
+			statement.Reason = editedOwnerReason
+		} else {
+			statement.Reason += "; " + editedOwnerReason
+		}
+	}
+	statement.Severity = safety.Destructive
+	raisePlanStatement(statement, PlanStatement{
+		Owned: true, Access: schemaext.AccessUnknown, AccessReason: editedOwnerReason,
+	})
 }
 
 // planStatementKey identifies a statement across an edit round trip, ignoring
@@ -691,6 +789,33 @@ func validatePlanFile(plan PlanFile) error {
 		if strings.TrimSpace(statement.SQL) == "" {
 			return fmt.Errorf("plan statement %d has empty sql", i+1)
 		}
+		if err := validatePlanStatementAccess(statement); err != nil {
+			return fmt.Errorf("plan statement %d: %w", i+1, err)
+		}
+	}
+	return nil
+}
+
+// validatePlanStatementAccess refuses an access assessment the planner could
+// not have written: an unrecognized value, one without its reason, a reason
+// without a value, one on a statement no owner operation rendered, or one
+// recorded beside a severity lower than the assessment requires.
+func validatePlanStatementAccess(statement PlanStatement) error {
+	if statement.Access == "" {
+		if statement.AccessReason != "" {
+			return errors.New("access_reason is recorded without access")
+		}
+		return nil
+	}
+	if err := (schemaext.AccessEffect{Access: statement.Access, Reason: statement.AccessReason}).Validate(); err != nil {
+		return err
+	}
+	if !statement.Owned {
+		return fmt.Errorf("access %q is recorded on a statement no owner operation rendered", statement.Access)
+	}
+	if required := safety.AccessSeverity(statement.Access); risk.Rank(statement.Severity) < risk.Rank(required) {
+		return fmt.Errorf("access %q requires severity %s or higher, and the statement records %s",
+			statement.Access, required, statement.Severity)
 	}
 	return nil
 }
