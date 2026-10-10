@@ -117,6 +117,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
+| `feature/pgpolicy` | PostgreSQL row-security policy and table-state models and codecs. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
 | `migration/diffpolicy` | Declarative policy for which destructive changes a planner may emit. |
