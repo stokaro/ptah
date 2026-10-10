@@ -103,6 +103,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
+- `ptah.run/feature/pgpolicy`
 - `ptah.run/migration/datadiff`
 - `ptah.run/migration/dbtest`
 - `ptah.run/migration/diffpolicy`
@@ -1368,6 +1369,26 @@ raise keeps the reason the statement had and never lowers an access value. The
 edit does not try to decide which changes leave an owner's verdict valid;
 planning again gives fresh verdicts. The Atlas `.plan.hcl` format stores SQL
 alone, so a plan read back from it has only the text verdict.
+
+`feature/pgpolicy` owns the PostgreSQL row-security models of ADR 0020. A
+policy is a feature object of `PolicyKind`, identified by its schema, table and
+name through `PolicyRef`, so two tables may each hold a policy of one name.
+`DesiredPolicy` declares the command, the role selectors, optional USING and
+WITH CHECK expressions, permissive or restrictive composition, and a comment.
+An omitted value requests PostgreSQL's default (ALL, PUBLIC, permissive), and a
+nil expression declares no clause. `ObservedPolicy` holds what `pg_policy`
+reports, every value definite.
+
+A `RoleSelector` is a keyword or a role name and never both, so the PUBLIC
+keyword and a role named `public` stay apart. An observation carries only the
+PUBLIC keyword, because the catalog resolves the others to a role when the
+policy is created. The role list is a set: equality and the canonical encoding
+ignore its order. `DesiredTableState` and `ObservedTableState` are a table facet
+of `TableStateKind` that holds ENABLE and FORCE ROW LEVEL SECURITY as
+independent flags. The codecs refuse unknown, null and case-variant keys, a
+clause the command does not take, and an empty expression. The package defines
+the models, their codecs and their coverage, and reads, compares and plans
+nothing.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table

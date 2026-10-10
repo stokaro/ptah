@@ -1162,6 +1162,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgpolicy",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpolicy",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-migration-datadiff",
       "kind": "public-package",
       "surface": "ptah.run/migration/datadiff",
