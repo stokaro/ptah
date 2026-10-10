@@ -203,34 +203,20 @@ func RefuseReplications(dialect string, diff *difftypes.SchemaDiff) error {
 	}
 }
 
-// RefuseYDBTableSettingChanges refuses a diff that changes a YDB row table's
-// own settings -- its partitioning, read replicas or key bloom filter -- for a
-// planner of dialect that plans none; see [RefuseYDBTablePartitioningChanges].
-// Every planner but YDB's asks it, once. A change of a table's column families
-// is the YDB owner's, and a planner with no such owner refuses it as an owned
-// change it cannot plan.
+// RefuseYDBTableSettingChanges refuses a diff that changes a YDB column
+// table's storage, for a planner of dialect that plans none. Every planner but
+// YDB's asks it, once. A change of a row table's own settings -- its column
+// families, partitioning, read replicas or key bloom filter -- is the YDB
+// owner's, and a planner with no such owner refuses it as an owned change it
+// cannot plan.
 func RefuseYDBTableSettingChanges(dialect string, diff *difftypes.SchemaDiff) error {
-	return RefuseYDBTablePartitioningChanges(dialect, diff)
-}
-
-// RefuseYDBTablePartitioningChanges refuses a diff that changes a table's YDB
-// settings -- how it splits into partitions, its read replicas or its key
-// bloom filter -- for a planner of dialect that plans no such change. Only a
-// YDB catalog reports the settings, so another planner reaches such a change
-// through a declaration that names them, or a diff built by hand, and
-// planning nothing would leave the table at the server's defaults while the
-// comparison kept reporting the difference.
-func RefuseYDBTablePartitioningChanges(dialect string, diff *difftypes.SchemaDiff) error {
 	if diff == nil {
 		return nil
 	}
 	for _, table := range diff.TablesModified {
 		if table.YDBColumnTableChange != nil {
-			return fmt.Errorf("%w: column-table changes require a YDB planner", ptaherr.ErrUnsupportedFeature)
-		}
-		if table.YDBPartitioningChange != nil {
-			return fmt.Errorf("%w: the diff changes the partitioning, read replicas or key bloom filter of table %q, "+
-				"which only a YDB plan does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, table.TableName, dialect)
+			return fmt.Errorf("%w: column-table changes require a YDB planner; the %s planner plans none of table %q",
+				ptaherr.ErrUnsupportedFeature, dialect, table.TableName)
 		}
 	}
 	return nil

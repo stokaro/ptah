@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbpartition"
 )
@@ -46,7 +47,7 @@ func (p *parser) tableSettings(table *ast.CreateTableNode) {
 		if store, ok := values["store"]; ok && !strings.EqualFold(store, "ROW") {
 			p.failf("STORE must be ROW or COLUMN")
 		}
-		table.YDBPartitioning, err = ydbpartition.ParseTableDeclaration(values)
+		err = p.applyPartitioning(table, values)
 	}
 	if err != nil {
 		p.failf("%v", err)
@@ -78,4 +79,19 @@ func (p *parser) tableOptions() map[string]string {
 		}
 	}
 	return values
+}
+
+// applyPartitioning gives a row table the settings its WITH clause states, as
+// the YDB owner's facet, and nothing where it states none.
+func (p *parser) applyPartitioning(table *ast.CreateTableNode, values map[string]string) error {
+	partitioning, err := ydbpartition.ParseTableDeclaration(values)
+	if err != nil || partitioning == nil {
+		return err
+	}
+	facets, err := table.Facets.With(&ydbschema.DesiredTablePartitioning{TablePartitioning: *partitioning})
+	if err != nil {
+		return err
+	}
+	table.Facets = facets
+	return nil
 }

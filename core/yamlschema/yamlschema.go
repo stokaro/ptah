@@ -893,10 +893,6 @@ func (d document) addTables(db *schemamodel.Database) error {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
 		tableName := valueOrDefault(table.Name, tableKey)
-		partitioning, err := ydbpartition.ParseTableDeclaration(table.partitioningValues())
-		if err != nil {
-			return fmt.Errorf("table %q: %w", tableKey, err)
-		}
 
 		if err := ydbcolumn.Validate(table.ColumnStore); err != nil {
 			return fmt.Errorf("table %q: %w", tableKey, err)
@@ -911,7 +907,7 @@ func (d document) addTables(db *schemamodel.Database) error {
 				return err
 			}
 		}
-		families, err := buildColumnFamilies(tableName, table.ColumnFamilies)
+		facets, err := table.ydbFacets(tableKey, tableName)
 		if err != nil {
 			return err
 		}
@@ -932,9 +928,8 @@ func (d document) addTables(db *schemamodel.Database) error {
 			CustomSQL:  string(table.CustomSQL),
 			Overrides:  mergePlatform(table.Platform, table.Overrides),
 
-			Facets:          families,
-			YDBPartitioning: partitioning,
-			YDBColumnTable:  table.ColumnStore.Clone(),
+			Facets:         facets,
+			YDBColumnTable: table.ColumnStore.Clone(),
 		})
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {
@@ -1800,4 +1795,18 @@ func decodeKnownFields[V any](node *yaml.Node, target *V) error {
 	decoder := yaml.NewDecoder(&buffer)
 	decoder.KnownFields(true)
 	return decoder.Decode(target)
+}
+
+// ydbFacets is a table's YDB column families and settings as the YDB owner's
+// facets. tableKey names the table in a refusal of its settings.
+func (spec tableSpec) ydbFacets(tableKey, tableName string) (schemaext.Facets, error) {
+	partitioning, err := ydbpartition.ParseTableDeclaration(spec.partitioningValues())
+	if err != nil {
+		return schemaext.Facets{}, fmt.Errorf("table %q: %w", tableKey, err)
+	}
+	facets, err := buildColumnFamilies(tableName, spec.ColumnFamilies)
+	if err != nil || partitioning == nil {
+		return facets, err
+	}
+	return facets.With(&ydbschema.DesiredTablePartitioning{TablePartitioning: *partitioning})
 }

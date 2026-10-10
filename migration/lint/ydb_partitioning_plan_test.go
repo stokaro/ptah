@@ -9,8 +9,14 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -23,21 +29,21 @@ import (
 func TestYDBRules_LeavePtahsPartitioningPlans(t *testing.T) {
 	tests := []struct {
 		name    string
-		desired *ast.YDBTablePartitioningSpec
-		current *ast.YDBTablePartitioningSpec
+		desired *ydbschema.TablePartitioning
+		current *ydbschema.TablePartitioning
 	}{
 		{name: "splitting by load turned on",
-			desired: &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6},
-			current: &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100, MinPartitions: 6}},
+			desired: &ydbschema.TablePartitioning{PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6},
+			current: &ydbschema.TablePartitioning{PartitionSizeMB: 100, MinPartitions: 6}},
 		{name: "splitting by size turned back on",
-			desired: &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100, MinPartitions: 6},
-			current: &ast.YDBTablePartitioningSpec{BySize: new(false), MinPartitions: 6}},
+			desired: &ydbschema.TablePartitioning{PartitionSizeMB: 100, MinPartitions: 6},
+			current: &ydbschema.TablePartitioning{BySize: new(false), MinPartitions: 6}},
 		{name: "splitting by size turned on over no held size",
-			desired: &ast.YDBTablePartitioningSpec{BySize: new(true)},
-			current: &ast.YDBTablePartitioningSpec{BySize: new(false), MinPartitions: 6}},
+			desired: &ydbschema.TablePartitioning{BySize: new(true)},
+			current: &ydbschema.TablePartitioning{BySize: new(false), MinPartitions: 6}},
 		{name: "settings declared back to the defaults",
-			desired: &ast.YDBTablePartitioningSpec{BySize: new(true), PartitionSizeMB: 2048, ByLoad: new(false), MinPartitions: 1},
-			current: &ast.YDBTablePartitioningSpec{PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6}},
+			desired: &ydbschema.TablePartitioning{BySize: new(true), PartitionSizeMB: 2048, ByLoad: new(false), MinPartitions: 1},
+			current: &ydbschema.TablePartitioning{PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -45,8 +51,16 @@ func TestYDBRules_LeavePtahsPartitioningPlans(t *testing.T) {
 			caps := capability.YDB262()
 			diff := &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{{
-					TableName:             "t",
-					YDBPartitioningChange: &difftypes.YDBTablePartitioningChange{Desired: test.desired, Current: test.current},
+					TableName: "t",
+					Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{StructName: "T", Name: "t"},
+						Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}}},
+					FeatureChanges: []schemaext.ChangeRecord{{
+						Subject: objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "t"),
+						Value: &ydbdiff.TablePartitioning{
+							Before: &ydbschema.ObservedTablePartitioning{TablePartitioning: *test.current},
+							After:  &ydbschema.DesiredTablePartitioning{TablePartitioning: *test.desired},
+						},
+					}},
 				}},
 				IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{
 					TableName: "t", Name: "t_v",

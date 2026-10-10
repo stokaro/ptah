@@ -491,8 +491,12 @@ func (r *Reader) storage(
 		for _, index := range columnTable.Indexes {
 			db.Indexes = append(db.Indexes, catalog.Index{Name: index.Name, TableName: table.Name, Schema: table.Schema, Method: index.Method, Columns: index.Columns, StorageParams: index.Options, Comment: comments.Indexes[index.Name]})
 		}
-		// A column table has no column families.
-		return familyCoverage(db, table.Schema, table.Name, schemaext.Knowledge{State: schemaext.Complete})
+		// A column table has no column families and none of a row table's
+		// settings.
+		if err := familyCoverage(db, table.Schema, table.Name, schemaext.Knowledge{State: schemaext.Complete}); err != nil {
+			return err
+		}
+		return partitioningCoverage(db, table.Schema, table.Name)
 	}
 	families, read := r.columnFamilies(described)
 	knowledge := schemaext.Knowledge{State: schemaext.Complete}
@@ -513,8 +517,37 @@ func (r *Reader) storage(
 	if err != nil {
 		return err
 	}
-	table.YDBPartitioning = ydbpartition.TableSpec(settings)
-	return nil
+	if spec := ydbpartition.TableSpec(settings); spec != nil {
+		facets, err := partitioningFacets(table.Facets, spec)
+		if err != nil {
+			return err
+		}
+		table.Facets = facets
+	}
+	return partitioningCoverage(db, table.Schema, table.Name)
+}
+
+// partitioningFacets adds a row table's settings to facets as the YDB owner's
+// observed value, written as the settings that differ from YDB's documented
+// defaults, bound to YDB.
+func partitioningFacets(facets schemaext.Facets, spec *ydbschema.TablePartitioning) (schemaext.Facets, error) {
+	observed := &ydbschema.ObservedTablePartitioning{TablePartitioning: *spec}
+	if err := ydbschema.ValidateObservedTablePartitioning(observed); err != nil {
+		return schemaext.Facets{}, err
+	}
+	facets, err := facets.With(observed)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	return facets.WithTargetScope(ydbschema.TablePartitioningKind, platform.YDB)
+}
+
+// partitioningCoverage records that the read knows the settings of the table
+// name in the directory schema: a table holding YDB's defaults has no value.
+// A table the read did not return is not known to hold them.
+func partitioningCoverage(db *catalog.Database, schema, name string) error {
+	return tableCoverage(db, ydbschema.TablePartitioningKind, ydbschema.TablePartitioningCoverage,
+		"only returned tables have inspected settings", schema, name, schemaext.Knowledge{State: schemaext.Complete})
 }
 
 // ttlFacets reads a table's TTL as the YDB owner's observed value: the column,

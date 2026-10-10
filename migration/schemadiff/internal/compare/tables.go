@@ -5,7 +5,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
@@ -16,7 +15,6 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcolumn"
-	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/internal/tableidentity"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -255,11 +253,6 @@ func TablesAndColumnsWithTableContext(
 			// different things about what the table is for -- on every run,
 			// with nothing able to fix it (stokaro/ptah#2168).
 			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
-			// A YDB table's settings are compared here for the same reason:
-			// they belong to the table, and a table whose only
-			// difference is how it splits into partitions has to reach
-			// TablesModified or nothing ever sets them.
-			tableDiff.YDBPartitioningChange = partitioningChange(genTable.YDBPartitioning, dbTable.YDBPartitioning)
 			if !ydbcolumn.Equal(genTable.YDBColumnTable, dbTable.YDBColumnTable) {
 				tableDiff.YDBColumnTableChange = &difftypes.YDBColumnTableChange{Desired: genTable.YDBColumnTable.Clone(), Current: dbTable.YDBColumnTable.Clone()}
 			}
@@ -324,30 +317,7 @@ func tableChanged(tableDiff difftypes.TableDiff) bool {
 		len(tableDiff.ColumnsModified) > 0 ||
 		tableDiff.CommentChange != nil ||
 		len(tableDiff.FeatureChanges) > 0 ||
-		tableDiff.YDBPartitioningChange != nil || tableDiff.YDBColumnTableChange != nil
-}
-
-// partitioningChange is the transition a YDB table's settings make, and nil
-// when there is none.
-//
-// The declaration is read over what the table holds
-// ([ydbpartition.ResolveTable]), so a setting it leaves out keeps the held
-// value and is never a difference, and a starting layout counts only through
-// the minimum partition count it gives a new table: YDB
-// keeps no other record of it. A side that does not resolve differs, so the
-// plan reaches the planner, which refuses it with the reason. On a target
-// whose catalog reports no settings, a declaration that names some differs
-// too, and that target's planner refuses it.
-func partitioningChange(desired, current *ast.YDBTablePartitioningSpec) *difftypes.YDBTablePartitioningChange {
-	if desired.IsZero() && current.IsZero() {
-		return nil
-	}
-	currentSettings, currentErr := ydbpartition.HeldTable(current)
-	desiredSettings, desiredErr := ydbpartition.ResolveTable(desired, currentSettings)
-	if desiredErr == nil && currentErr == nil && desiredSettings.Equal(currentSettings) {
-		return nil
-	}
-	return &difftypes.YDBTablePartitioningChange{Desired: desired.Clone(), Current: current.Clone()}
+		tableDiff.YDBColumnTableChange != nil
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

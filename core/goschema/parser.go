@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/routineargs"
@@ -621,7 +622,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
-	partitioning, err := s.tablePartitioning(kv, comment, structName)
+	facets, err := s.tablePartitioning(kv, comment, structName)
 	if err != nil {
 		return err
 	}
@@ -643,25 +644,29 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Checks:              splitCSVAttribute(kv["checks"]),
 		DependsOn:           splitDependsOn(kv["depends_on"]),
 		CustomSQL:           kv["custom"],
-		YDBPartitioning:     partitioning,
 		YDBColumnTable:      columnTable,
+		Facets:              facets,
 		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil
 }
 
 // tablePartitioning reads the settings of a table directive that a YDB row
-// table carries; see [ydbpartition.ParseTableDeclaration].
-func (s *schemaParseState) tablePartitioning(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.YDBTablePartitioningSpec, error) {
+// table carries (see [ydbpartition.ParseTableDeclaration]) as the YDB owner's
+// facet, or no facet where the directive states none.
+func (s *schemaParseState) tablePartitioning(kv map[string]string, comment *ast.Comment, structName string) (schemaext.Facets, error) {
 	partitioning, err := ydbpartition.ParseTableDeclaration(kv)
 	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
-		return nil, &ptaherr.ParseError{
+		return schemaext.Facets{}, &ptaherr.ParseError{
 			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:table", structName).line,
 			Directive: "ptah:schema:table", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
 			Message: fmt.Sprintf("%s on //ptah:schema:table at %s", declaration.Error(), structName),
 		}
 	}
-	return partitioning, err
+	if err != nil || partitioning == nil {
+		return schemaext.Facets{}, err
+	}
+	return schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: *partitioning})
 }
 
 func tableDirectiveName(rawSchema, rawName string) (schemaName, tableName string) {

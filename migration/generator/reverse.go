@@ -14,7 +14,6 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/ydbindex"
-	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -479,30 +478,9 @@ func reverseCommentChange(change *difftypes.CommentChange) *difftypes.CommentCha
 	return &difftypes.CommentChange{Current: change.Desired, Desired: change.Current}
 }
 
-// reversePartitioningChange is the rollback of a YDB table's settings
-// transition: back to every setting the table held, from every setting the
-// change left it with.
-//
-// Both sides are written to name every setting ([ydbpartition.TableSettings.Explicit]).
-// Swapping the two sides would not do: Current is a reader's report, which
-// leaves out each setting at YDB's documented default, and as a declaration a
-// setting left out keeps what the table holds, so a rollback of a minimum
-// raised from 1 would plan nothing. A side that does not resolve is swapped
-// as it is, and the renderer refuses it with the reason.
-func reversePartitioningChange(change *difftypes.YDBTablePartitioningChange) *difftypes.YDBTablePartitioningChange {
-	if change == nil {
-		return nil
-	}
-	held, heldErr := ydbpartition.HeldTable(change.Current)
-	after, afterErr := ydbpartition.ResolveTable(change.Desired, held)
-	if heldErr != nil || afterErr != nil {
-		return &difftypes.YDBTablePartitioningChange{Desired: change.Current.Clone(), Current: change.Desired.Clone()}
-	}
-	return &difftypes.YDBTablePartitioningChange{Desired: held.Explicit(), Current: after.Explicit()}
-}
-
 // reverseIndexPartitioning is the rollback of an index's partitioning change,
-// written to name every setting for the reason [reversePartitioningChange]
+// written to name every setting for the reason the YDB owner's table
+// partitioning reversal gives
 // gives: back to the settings the index held, from the ones the change left it
 // with.
 func reverseIndexPartitioning(change difftypes.IndexPartitioningChange) (partitioning, previous *ast.IndexPartitioningSpec) {

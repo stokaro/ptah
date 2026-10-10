@@ -1177,32 +1177,32 @@ func indexVectorFixture(settings *ast.VectorIndexSpec) schemamodel.Database {
 // a table with, and the two starting layouts, which cannot share a table with
 // each other; the three fixtures after it set those.
 func tablePartitioningFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{
-		Name: "t",
-		YDBPartitioning: &ast.YDBTablePartitioningSpec{
-			PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
-			KeyBloomFilter: new(true),
-		},
-	})
+	return oneTable("T", schemamodel.Table{Name: "t", Facets: tableSettings(ydbschema.TablePartitioning{
+		PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
+		KeyBloomFilter: new(true),
+	})})
 }
 
 func tablePartitioningUnsplitFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{BySize: new(false)}})
+	return oneTable("T", schemamodel.Table{Name: "t", Facets: tableSettings(ydbschema.TablePartitioning{BySize: new(false)})})
 }
 
 // tableUniformPartitionsFixture keys the table on an unsigned column, the
 // only kind whose range YDB splits evenly.
 func tableUniformPartitionsFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}})
+	db := oneTable("T", schemamodel.Table{Name: "t", Facets: tableSettings(ydbschema.TablePartitioning{UniformPartitions: 4})})
 	db.Fields[0].Type = "BIGINT UNSIGNED"
 	return db
 }
 
 func tablePartitionAtKeysFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{
-		Name:            "t",
-		YDBPartitioning: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"20"}}},
-	})
+	return oneTable("T", schemamodel.Table{Name: "t",
+		Facets: tableSettings(ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}, {"20"}}})})
+}
+
+// tableSettings is a YDB row table's settings as the YDB owner's facet.
+func tableSettings(settings ydbschema.TablePartitioning) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: settings}))
 }
 
 func indexConcurrentFixture() schemamodel.Database {

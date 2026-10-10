@@ -1159,11 +1159,34 @@ table's added columns and leaves a dropped column out of it, and
 `ydbreverse.ColumnFamiliesService` reports the families and settings a rollback
 cannot remove, and `ydbconvert` and `ydbreport` complete the provider.
 
+`ydbschema` owns a YDB row table's settings -- how it splits into
+partitions, its read replicas, its key bloom filter and the partitions it
+starts with -- as a table facet under `TablePartitioningKind`.
+`DesiredTablePartitioning` and `ObservedTablePartitioning` hold a
+`TablePartitioning`, each field a setting it states; a read never states a
+starting layout and names only the settings that differ from YDB's
+documented defaults. `TablePartitioningCodecs` and
+`TablePartitioningCoverage` complete the model.
+
+`ydbcompare`, `ydbconvert`,
+`ydbplan`, `ydbreverse` and `ydbreport` carry `TablePartitioningService`, and
+`ydbdiff.TablePartitioning` lowers through `ydbast.AlterTablePartitioning`
+and `ydbrender.TablePartitioningHandler` to one `ALTER TABLE ... SET (...)`.
+`ydbrender.CreateTablePartitioning` writes a new table's settings,
+`ydbplan.RebuiltTablePartitioning` gives a rebuilt table every setting the
+old one holds, and `ydbplan.TablePartitioningRebuildReason` says which change
+only a rebuild makes.
+
 The former `ast.YDBColumnFamilySpec`, `ast.CloneYDBColumnFamilies`,
 `ast.SetYDBColumnFamiliesOperation`, the `YDBColumnFamilies` fields of
 `ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`,
 `difftypes.YDBColumnFamiliesChange` and `coverage.ColumnFamily` are removed
-without aliases. This changes behavior; pre-v1, so no compatibility is owed.
+without aliases, and so are `ast.YDBTablePartitioningSpec`,
+`ast.SetYDBTablePartitioningOperation`, the `YDBPartitioning` fields of
+`ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`,
+`difftypes.YDBTablePartitioningChange`, `TableDiff.YDBPartitioningChange`
+and `YDBHeldSettings.Partitioning`. This changes behavior; pre-v1, so no
+compatibility is owed.
 
 The former `ast.RowDeletionPolicySpec`, `ast.SetRowDeletionPolicyOperation`,
 `ast.DropRowDeletionPolicyOperation`, the `RowDeletionPolicy` fields of

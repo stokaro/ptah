@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
@@ -39,87 +38,35 @@ import (
 // the table holds.
 type ColumnFamiliesService struct{}
 
+var familyPlanning = tableFacetPlanning{
+	name: "YDB column family", facet: ydbschema.ColumnFamiliesKind, change: ydbdiff.ColumnFamiliesKind,
+	plan: planFamilyChange, assess: assessFamilyParent,
+}
+
 // PlanFeatures returns complete receipts or a completed refusal with no usable
 // prefix. Errors describe invalid requests or cancellation. A successful reply
 // must join the host's plan before any operation is rendered or executed.
 func (ColumnFamiliesService) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
-	if ctx == nil {
-		return featureplan.Result{}, fmt.Errorf("%w: planning requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	if request.Target != platform.YDB {
-		return featureplan.Result{}, fmt.Errorf("%w: YDB column family planning on %q", ptaherr.ErrUnsupportedDialect, request.Target)
-	}
-	if len(request.ParentKinds) > 0 && !slices.Equal(request.ParentKinds, []schemaext.Kind{ydbschema.ColumnFamiliesKind}) {
-		return featureplan.Result{}, fmt.Errorf("%w: unsupported YDB column family parent kinds", schemaext.ErrInvalidValue)
-	}
-	result := featureplan.Result{Complete: true}
-	for i, record := range request.Changes {
-		if err := ctx.Err(); err != nil {
-			return featureplan.Result{}, err
-		}
-		contribution, err := planFamilyChange(request, record, i)
-		if err != nil {
-			return familyRefusal(ydbdiff.ColumnFamiliesKind, err, new(i), nil), nil
-		}
-		plan := featureplan.ChangePlan{Subject: record.Subject, Kind: ydbdiff.ColumnFamiliesKind,
-			Strategy: "nothing to change once the columns the plan drops leave their families"}
-		if len(contribution.Steps) > 0 {
-			result.Contributions = append(result.Contributions, contribution)
-			plan.Strategy = "add families, set their settings and move columns in one ALTER TABLE after column additions"
-			plan.Steps = []plangraph.StepID{contribution.Steps[0].ID}
-		}
-		result.Changes = append(result.Changes, plan)
-	}
-	if len(request.ParentKinds) == 0 {
-		if err := ctx.Err(); err != nil {
-			return featureplan.Result{}, err
-		}
-		return result, nil
-	}
-	for i, table := range request.Tables {
-		if table.Action == "" {
-			continue
-		}
-		strategy, err := assessFamilyParent(request.Capabilities, table)
-		if err != nil {
-			return familyRefusal(ydbschema.ColumnFamiliesKind, err, nil, new(i)), nil
-		}
-		result.Parents = append(result.Parents, featureplan.ParentPlan{Subject: table.Subject, Kind: ydbschema.ColumnFamiliesKind, Action: table.Action, Strategy: strategy})
-	}
-	if err := ctx.Err(); err != nil {
-		return featureplan.Result{}, err
-	}
-	return result, nil
+	return familyPlanning.planFeatures(ctx, request)
 }
 
-func familyRefusal(kind schemaext.Kind, err error, change, parent *int) featureplan.Result {
-	refusal := ttlRefusal(kind, err, change, parent)
-	refusal.Diagnostics[0].Problem.Feature = "YDB column family planning"
-	return refusal
-}
-
-func planFamilyChange(request featureplan.Request, record schemaext.ChangeRecord, index int) (plangraph.Contribution[featureplan.Operation], error) {
+func planFamilyChange(request featureplan.Request, record schemaext.ChangeRecord, index int) (plangraph.Contribution[featureplan.Operation], featureplan.ChangePlan, error) {
 	var result plangraph.Contribution[featureplan.Operation]
+	plan := featureplan.ChangePlan{Subject: record.Subject, Kind: ydbdiff.ColumnFamiliesKind,
+		Strategy: "nothing to change once the columns the plan drops leave their families"}
 	change, ok := record.Value.(*ydbdiff.ColumnFamilies)
 	if !ok {
-		return result, fmt.Errorf("%w: expected a YDB column family change", schemaext.ErrInvalidValue)
+		return result, plan, fmt.Errorf("%w: expected a YDB column family change", schemaext.ErrInvalidValue)
 	}
 	if err := ydbdiff.ValidateColumnFamilies(change); err != nil {
-		return result, err
+		return result, plan, err
 	}
-	position := slices.IndexFunc(request.Tables, func(table featureplan.Table) bool { return table.Subject.Key() == record.Subject.Key() })
-	if position < 0 {
-		return result, fmt.Errorf("%w: a column family change requires captured parent state", schemaext.ErrInvalidValue)
-	}
-	table := request.Tables[position]
-	if table.Action != "" && table.Action != featureplan.AlterTable {
-		return result, fmt.Errorf("%w: a column family change requires a table that survives the plan in place", schemaext.ErrInvalidValue)
+	table, err := surviving(request, record, "column family")
+	if err != nil {
+		return result, plan, err
 	}
 	if err := refuseFamilyChange(request.Capabilities, table, change); err != nil {
-		return result, err
+		return result, plan, err
 	}
 	dropped := droppedColumns(table)
 	payload := &ydbast.AlterColumnFamilies{Change: ydbdiff.ColumnFamilies{
@@ -129,7 +76,7 @@ func planFamilyChange(request featureplan.Request, record schemaext.ChangeRecord
 		payload.Change.Before = &ydbschema.ObservedColumnFamilies{Families: ydbfamily.WithoutColumns(change.Before.Families, dropped)}
 	}
 	if len(payload.Actions()) == 0 {
-		return result, nil
+		return result, plan, nil
 	}
 	result.Owner = ydbschema.Owner
 	families := table.Subject
@@ -143,7 +90,9 @@ func planFamilyChange(request featureplan.Request, record schemaext.ChangeRecord
 		Effects:     []plangraph.Effect{{Subject: table.Subject, Action: plangraph.Read}, {Subject: families, Action: plangraph.Alter}},
 		Impact:      payload.Effect(),
 	}}
-	return result, nil
+	plan.Strategy = "add families, set their settings and move columns in one ALTER TABLE after column additions"
+	plan.Steps = []plangraph.StepID{result.Steps[0].ID}
+	return result, plan, nil
 }
 
 // refuseFamilyChange refuses, before anything is emitted, a change of a

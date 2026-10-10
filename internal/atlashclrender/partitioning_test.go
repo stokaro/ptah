@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashclrender"
 )
 
@@ -19,8 +21,8 @@ func TestRender_TablePartitioningIsALoss(t *testing.T) {
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Events", Name: "events", Schema: "app", PrimaryKey: []string{"id"},
-				YDBPartitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 4, KeyBloomFilter: new(true),
-					PartitionAtKeys: [][]string{{"10"}, {"20"}}}},
+				Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: ydbschema.TablePartitioning{
+					MinPartitions: 4, KeyBloomFilter: new(true), PartitionAtKeys: [][]string{{"10"}, {"20"}}}}))},
 			{StructName: "Plain", Name: "plain", Schema: "app", PrimaryKey: []string{"id"}},
 		},
 		Fields: []schemamodel.Field{

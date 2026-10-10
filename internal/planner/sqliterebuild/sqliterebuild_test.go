@@ -124,7 +124,6 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// SQLite planner refuses a diff carrying one before it decides on a
 		// rebuild (schemaprecondition.RefuseYDBTablePartitioningChanges), so
 		// there is nothing here to rebuild for.
-		"YDBPartitioningChange": false,
 		// Column storage is refused by the same YDB-only precondition.
 		"YDBColumnTableChange": false,
 		// The name a column that gains its own UNIQUE takes, which goes with

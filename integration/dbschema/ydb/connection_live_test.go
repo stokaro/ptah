@@ -321,8 +321,8 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsTrue)
 			c.Assert(observedTTL(c, tableNamed(c, live, connectionSchema, "base")), qt.DeepEquals,
 				&ydbschema.ObservedTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "P1D"}, RunIntervalSeconds: 1800})
-			c.Assert(tableNamed(c, live, connectionSchema, "base").YDBPartitioning, qt.DeepEquals,
-				&ast.YDBTablePartitioningSpec{ByLoad: new(true)})
+			c.Assert(heldSettings(c, tableNamed(c, live, connectionSchema, "base")), qt.DeepEquals,
+				&ydbschema.TablePartitioning{ByLoad: new(true)})
 		})
 	}
 }

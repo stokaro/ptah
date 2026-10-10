@@ -1,0 +1,48 @@
+{
+  "$id": "ptah.run/ydb/table-partitioning/v1",
+  "description": "A YDB row table's settings: each key states one, and an absent key states nothing. A desired value is a declaration; an observed value names the settings that differ from YDB's documented defaults for a new table and never states a starting layout.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "by_size": {
+      "type": "boolean"
+    },
+    "partition_size_mb": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "by_load": {
+      "type": "boolean"
+    },
+    "min_partitions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_partitions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "read_replicas": {
+      "type": "string",
+      "pattern": "^(PER_AZ|ANY_AZ):(0|[1-9][0-9]*)$"
+    },
+    "key_bloom_filter": {
+      "type": "boolean"
+    },
+    "uniform_partitions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "partition_at_keys": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

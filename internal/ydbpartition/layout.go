@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -199,7 +199,7 @@ var integerBits = map[string]struct {
 // Split points that are not in ascending order are left to YDB, which refuses
 // them before it creates the table (`Partition ranges are not sorted at index
 // 1`).
-func LayoutClause(spec *ast.YDBTablePartitioningSpec, keyTypes []string, caps capability.Capabilities) (string, error) {
+func LayoutClause(spec *ydbschema.TablePartitioning, keyTypes []string, caps capability.Capabilities) (string, error) {
 	switch {
 	case spec == nil:
 		return "", nil

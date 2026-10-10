@@ -195,7 +195,6 @@ func cloneYDBHeldSettings(settings []difftypes.YDBHeldSettings) []difftypes.YDBH
 	}
 	clone := make([]difftypes.YDBHeldSettings, len(settings))
 	for i, table := range settings {
-		table.Partitioning = table.Partitioning.Clone()
 		if table.Indexes != nil {
 			indexes := make(map[string]*ast.IndexPartitioningSpec, len(table.Indexes))
 			for name, spec := range table.Indexes {

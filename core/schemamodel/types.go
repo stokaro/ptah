@@ -828,17 +828,6 @@ type Table struct {
 	Partition           *PartitionSpec               // PostgreSQL table partitioning metadata
 	CustomSQL           string                       // Custom SQL to append to CREATE TABLE
 	Overrides           map[string]map[string]string // Platform-specific overrides
-	// YDBPartitioning is YDB's, and every other target refuses it: how this
-	// row table splits into partitions, its read replicas, its key bloom
-	// filter and the partitions it is created with, nil for a table declaring
-	// none of them.
-	//
-	// It carries the ast type rather than a copy of it. The settings are a
-	// closed, measured set, and a per-layer duplicate is a place for part of
-	// them to go missing between the declaration and the statement.
-	// omitzero keeps the JSON of a table declaring none byte-identical, and
-	// with it the desired-schema fingerprint a plan records.
-	YDBPartitioning *ast.YDBTablePartitioningSpec `json:",omitzero"`
 	// YDBColumnTable selects column-oriented storage and its hash partitioning.
 	// Nil selects row storage. Other dialects refuse this declaration.
 	YDBColumnTable *ast.YDBColumnTableSpec `json:",omitzero"`
@@ -1271,7 +1260,9 @@ type AsyncReplication struct {
 	Name       string // Replication name, the last segment of its path
 	Schema     string // Directory that holds the replication, relative to the database root
 	// Spec is the replication's connection, items and consistency. It
-	// carries the ast type for the reason Table.YDBPartitioning does.
+	// carries the ast type rather than a copy of it: the settings are a
+	// closed, measured set, and a per-layer duplicate is a place for part of
+	// them to go missing between the declaration and the statement.
 	Spec ast.AsyncReplicationSpec
 }
 

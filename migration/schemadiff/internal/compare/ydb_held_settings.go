@@ -11,11 +11,10 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// CurrentYDBSettings returns what each YDB row table of database holds of its
-// partitioning, read replicas and key bloom filter, and the partitioning of
-// each of its global indexes, for every table holding a setting other than
-// YDB's documented defaults, sorted by table. Only a YDB read reports such a
-// setting, so the list is empty for every other database.
+// CurrentYDBSettings returns the partitioning each global index of a YDB row
+// table of database holds, for every table with an index holding a setting
+// other than YDB's documented defaults, sorted by table. Only a YDB read
+// reports such a setting, so the list is empty for every other database.
 //
 // A plan that recreates a table writes these for each setting the declaration
 // leaves out; see [difftypes.SchemaDiff.CurrentYDBSettings].
@@ -30,11 +29,6 @@ func CurrentYDBSettings(database *catalog.Database) []difftypes.YDBHeldSettings 
 			held[name] = &difftypes.YDBHeldSettings{TableName: name}
 		}
 		return held[name]
-	}
-	for _, table := range database.Tables {
-		if !table.YDBPartitioning.IsZero() {
-			entry(table.Schema, table.Name).Partitioning = table.YDBPartitioning.Clone()
-		}
 	}
 	for _, index := range database.Indexes {
 		if index.Partitioning.IsZero() || strings.TrimSpace(index.Name) == "" {

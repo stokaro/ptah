@@ -84,15 +84,8 @@ func ColumnFamiliesCodec() schemaext.Codec {
 	return schemaext.ModelCodec[*AlterColumnFamilies]{
 		Prototype: &AlterColumnFamilies{}, Representation: schemaext.Operation, Version: 1,
 		Definition: json.RawMessage(fmt.Sprintf(`{"change":%s}`, change.Definition)),
-		Shape: func(data json.RawMessage) error {
-			fields, err := schemaext.DecodeObject(data, columnFamiliesShape)
-			if err != nil {
-				return err
-			}
-			_, err = change.Decode(fields["change"])
-			return err
-		},
-		Validate: (*AlterColumnFamilies).Validate,
-		Clone:    (*AlterColumnFamilies).Copy,
+		Shape:      changeEnvelope(columnFamiliesShape, change),
+		Validate:   (*AlterColumnFamilies).Validate,
+		Clone:      (*AlterColumnFamilies).Copy,
 	}.Codec()
 }

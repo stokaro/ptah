@@ -173,7 +173,6 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		*ast.RenameIndexOperation,
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
-		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.RenameTableOperation,
 		*ast.SetCommentOperation,

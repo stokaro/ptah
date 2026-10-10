@@ -71,13 +71,14 @@ func (r *renderer) captureTimescale() error {
 }
 
 // WritesTableFacet reports a table facet kind the renderer handles itself
-// rather than as platform properties: a hypertable it writes as a block, and
-// YDB column families, whose loss it reports by family and which it leaves
-// out where a table has only the default family stating nothing. A caller
-// that encodes the other facets as platform properties sets these aside
-// first.
+// rather than as platform properties: a hypertable it writes as a block, YDB
+// column families, whose loss it reports by family and which it leaves out
+// where a table has only the default family stating nothing, and a YDB
+// table's settings, whose loss it reports by setting. A caller that encodes
+// the other facets as platform properties sets these aside first.
 func WritesTableFacet(kind schemaext.Kind) bool {
-	return kind == tsschema.HypertableKind || kind == ydbschema.ColumnFamiliesKind || kind == pgpolicy.TableStateKind
+	return kind == tsschema.HypertableKind || kind == ydbschema.ColumnFamiliesKind || kind == ydbschema.TablePartitioningKind ||
+		kind == pgpolicy.TableStateKind
 }
 
 // renderHypertables writes the TimescaleDB hypertable blocks.

@@ -5,8 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // TestParse_YDBTablePartitioning_HappyPath reads a YDB row table's settings in
@@ -38,11 +39,14 @@ tables:
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.Tables[0].Name, qt.Equals, "items")
-	c.Assert(db.Tables[0].YDBPartitioning, qt.DeepEquals, &ast.YDBTablePartitioningSpec{
+	declared, found, err := schemaext.FacetAs[*ydbschema.DesiredTablePartitioning](db.Tables[0].Facets, ydbschema.TablePartitioningKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(declared.TablePartitioning, qt.DeepEquals, ydbschema.TablePartitioning{
 		BySize: new(false), ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "ANY_AZ:2",
 		KeyBloomFilter: new(true), PartitionAtKeys: [][]string{{"10", "a"}, {"20"}},
 	})
-	c.Assert(db.Tables[1].YDBPartitioning, qt.IsNil)
+	c.Assert(db.Tables[1].Facets.Kinds(), qt.HasLen, 0)
 }
 
 // TestParse_YDBTablePartitioning_FailurePath refuses a value YDB would refuse,

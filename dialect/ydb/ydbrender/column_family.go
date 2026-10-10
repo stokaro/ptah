@@ -39,11 +39,11 @@ func validateColumnFamilies(ctx renderer.ExtensionContext, op *ydbast.AlterColum
 	before := heldFamilies(op)
 	for _, requirement := range ydbfamily.ChangeRequirements(op.Change.After.Families, before) {
 		if !ctx.Capabilities.Has(requirement.Key) {
-			return refuseFamilyKey(requirement.Key, fmt.Sprintf("changing the %s of %s", requirement.Settings, subject))
+			return refuseKey(requirement.Key, fmt.Sprintf("changing the %s of %s", requirement.Settings, subject))
 		}
 	}
 	if reason := ydbfamily.ChangeRefusal(op.Change.After.Families, before); reason != "" {
-		return refuseFamilyFact(subject, reason)
+		return refuseFact(subject, reason)
 	}
 	if err := op.Validate(); err != nil {
 		return fmt.Errorf("the column families of %s: %w", subject, err)
@@ -97,14 +97,14 @@ func CreateTableFamilies(caps capability.Capabilities, table string, facets sche
 func RefuseFamilies(caps capability.Capabilities, subject string, families []ydbschema.ColumnFamily, columns, key []string) error {
 	for _, requirement := range ydbfamily.Requirements(families) {
 		if !caps.Has(requirement.Key) {
-			return refuseFamilyKey(requirement.Key, fmt.Sprintf("the %s of %s", requirement.Settings, subject))
+			return refuseKey(requirement.Key, fmt.Sprintf("the %s of %s", requirement.Settings, subject))
 		}
 	}
 	if reason := ydbfamily.Refusal(families, columns, key); reason != "" {
-		return refuseFamilyFact(subject, reason)
+		return refuseFact(subject, reason)
 	}
 	if reason := ydbfamily.CreateRefusal(families); reason != "" {
-		return refuseFamilyFact(subject, reason)
+		return refuseFact(subject, reason)
 	}
 	return nil
 }
@@ -120,14 +120,4 @@ type CreateFamilies struct {
 // or nothing for a column in the default family.
 func (f CreateFamilies) ColumnClause(column string) string {
 	return ydbfamily.ColumnClause(ydbfamily.FamilyOf(f.families, column))
-}
-
-func refuseFamilyKey(key capability.Capability, subject string) error {
-	return &ptaherr.CapabilityError{Dialect: platform.YDB, Feature: string(key), Err: ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target", subject, key, platform.YDB)}
-}
-
-func refuseFamilyFact(subject, reason string) error {
-	return &ptaherr.CapabilityError{Dialect: platform.YDB, Feature: subject, Err: ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: %s", subject, reason)}
 }

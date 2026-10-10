@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -30,7 +30,7 @@ func TestYDBCompatBinary_KeepsTableSettingsHCLCannotWrite(t *testing.T) {
 			conn := openYDB(c, line)
 			dropTables(c, conn, partitioningSchemas)
 			c.Cleanup(func() { dropTables(c, conn, partitioningSchemas) })
-			settings := &ast.YDBTablePartitioningSpec{ByLoad: new(true), MinPartitions: 4, KeyBloomFilter: new(true)}
+			settings := &ydbschema.TablePartitioning{ByLoad: new(true), MinPartitions: 4, KeyBloomFilter: new(true)}
 			apply(c, conn, planAgainst(c, conn, partitionedItems(settings), partitioningSchemas))
 
 			inspected, notes, inspectErr := runCompat(ctx, binary, "schema", "inspect", "--url", url, "--schema", partitioningSchema)
@@ -104,7 +104,7 @@ func TestYDBCompatBinary_RebuildKeepsTableSettingsHCLCannotWrite(t *testing.T) {
 					"AUTO_PARTITIONING_BY_LOAD = DISABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3, "+
 					"READ_REPLICAS_SETTINGS = \"PER_AZ:1\", KEY_BLOOM_FILTER = DISABLED);")
 			c.Assert(partitioningOf(c, conn), qt.DeepEquals,
-				&ast.YDBTablePartitioningSpec{MinPartitions: 3, ReadReplicas: "PER_AZ:1"})
+				&ydbschema.TablePartitioning{MinPartitions: 3, ReadReplicas: "PER_AZ:1"})
 			synced, _, syncedErr := runCompat(ctx, binary,
 				"schema", "apply", "--url", url, "--schema", partitioningSchema, "--to", desired, "--dry-run")
 			c.Assert(syncedErr, qt.IsNil, qt.Commentf("schema apply again:\n%s", synced))

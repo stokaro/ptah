@@ -7,9 +7,6 @@ func CountTableStorage(counts map[string]int, table schemamodel.Table) {
 	if table.YDBColumnTable != nil {
 		counts["column-oriented storage and settings"]++
 	}
-	if !table.YDBPartitioning.IsZero() {
-		counts["table partitioning, read replicas and key bloom filters"]++
-	}
 }
 
 // CountIndexStorage counts index settings absent from DBML and inspection JSON.

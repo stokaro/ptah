@@ -9,7 +9,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbpartition"
 )
 
@@ -71,20 +73,22 @@ func ydbTableSettingExperiments() []experiment {
 		capability.PartitioningOptions: {
 			expectation: "the table to read back as splitting by load with a minimum of 3 partitions",
 			want: func(table catalog.Table) bool {
-				return table.YDBPartitioning != nil && table.YDBPartitioning.ByLoad != nil && *table.YDBPartitioning.ByLoad &&
-					table.YDBPartitioning.MinPartitions == 3
+				read := readSettings(table)
+				return read != nil && read.ByLoad != nil && *read.ByLoad && read.MinPartitions == 3
 			},
 		},
 		capability.ReadReplicas: {
 			expectation: "the table to read back with one read replica in every availability zone",
 			want: func(table catalog.Table) bool {
-				return table.YDBPartitioning != nil && table.YDBPartitioning.ReadReplicas == "PER_AZ:1"
+				read := readSettings(table)
+				return read != nil && read.ReadReplicas == "PER_AZ:1"
 			},
 		},
 		capability.KeyBloomFilter: {
 			expectation: "the table to read back with a key bloom filter",
 			want: func(table catalog.Table) bool {
-				return table.YDBPartitioning != nil && table.YDBPartitioning.KeyBloomFilter != nil && *table.YDBPartitioning.KeyBloomFilter
+				read := readSettings(table)
+				return read != nil && read.KeyBloomFilter != nil && *read.KeyBloomFilter
 			},
 		},
 	}
@@ -120,12 +124,23 @@ func ydbDescribedTable(table, expectation string, want func(catalog.Table) bool)
 				if found.Name != table {
 					continue
 				}
-				if found.YDBPartitioning.IsZero() {
+				read := readSettings(found)
+				if read == nil || read.IsZero() {
 					return attempt, want(found), "read YDB's defaults"
 				}
-				return attempt, want(found), "read " + strings.Join(ydbpartition.CreateClause(found.YDBPartitioning), ", ")
+				return attempt, want(found), "read " + strings.Join(ydbpartition.CreateClause(read), ", ")
 			}
 			return attempt, false, "found no such table"
 		},
 	}
+}
+
+// readSettings is the settings the reader found a table holds, as the YDB
+// owner's observed facet, or nil for a table holding YDB's defaults.
+func readSettings(table catalog.Table) *ydbschema.TablePartitioning {
+	read, found, err := schemaext.FacetAs[*ydbschema.ObservedTablePartitioning](table.Facets, ydbschema.TablePartitioningKind)
+	if err != nil || !found {
+		return nil
+	}
+	return &read.TablePartitioning
 }

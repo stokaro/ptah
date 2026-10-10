@@ -518,36 +518,6 @@ func (op *SetIndexPartitioningOperation) Accept(visitor Visitor) error { return 
 // alterOperation implements the marker method for type safety.
 func (op *SetIndexPartitioningOperation) alterOperation() {}
 
-// SetYDBTablePartitioningOperation is YDB's: it changes how a YDB row table
-// splits into partitions, its read replicas and its key bloom filter, in
-// place: `ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4,
-// ...)`. The YDB renderer writes it; the other renderers refuse it, because
-// their engines have no such setting.
-//
-// It carries the table's settings before the change as well as after it,
-// because a statement that sets one of them can reset another: on YDB, setting
-// AUTO_PARTITIONING_BY_LOAD resets AUTO_PARTITIONING_MIN_PARTITIONS_COUNT to 1.
-// The renderer reads both to write a statement that sets what Partitioning
-// names and keeps every setting it leaves out as the table held it. A table's
-// starting layout is not changed here: YDB takes it only in CREATE TABLE.
-type SetYDBTablePartitioningOperation struct {
-	// Partitioning is the settings the declaration names; a setting it
-	// leaves out keeps what the table holds, and nil changes nothing.
-	Partitioning *YDBTablePartitioningSpec
-	// Previous is the settings the table holds, as YDB's reader reports
-	// them: what differs from YDB's documented defaults, nil for none.
-	Previous *YDBTablePartitioningSpec
-}
-
-// Accept hands the visitor this operation. The rendering is the ALTER TABLE
-// renderer's, which reads the operation out of the statement that carries it.
-func (op *SetYDBTablePartitioningOperation) Accept(visitor Visitor) error {
-	return visitor.VisitNode(op)
-}
-
-// alterOperation implements the marker method for type safety.
-func (op *SetYDBTablePartitioningOperation) alterOperation() {}
-
 // ReplaceIndexOperation drops an index and adds it again under the same name
 // in one statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. It is how
 // the MySQL family changes what it cannot change in place, such as an index

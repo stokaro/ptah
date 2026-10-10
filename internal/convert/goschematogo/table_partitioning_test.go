@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -18,12 +20,12 @@ import (
 func TestRender_TablePartitioning(t *testing.T) {
 	tests := []struct {
 		name         string
-		partitioning *ast.YDBTablePartitioningSpec
+		partitioning ydbschema.TablePartitioning
 		wantText     string
 	}{
 		{
 			name: "every setting but the split points",
-			partitioning: &ast.YDBTablePartitioningSpec{
+			partitioning: ydbschema.TablePartitioning{
 				BySize: new(false), ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
 				KeyBloomFilter: new(true), UniformPartitions: 4,
 			},
@@ -31,7 +33,7 @@ func TestRender_TablePartitioning(t *testing.T) {
 		},
 		{
 			name:         "split points",
-			partitioning: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10", "it's"}, {"20"}}},
+			partitioning: ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10", "it's"}, {"20"}}},
 			wantText:     `partition_at_keys="(10, 'it\\'s'), 20"`,
 		},
 	}
@@ -41,7 +43,7 @@ func TestRender_TablePartitioning(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{
 				Tables: []schemamodel.Table{{StructName: "Item", Name: "items", PrimaryKey: []string{"id", "kind"},
-					YDBPartitioning: test.partitioning}},
+					Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: test.partitioning}))}},
 				Fields: []schemamodel.Field{
 					{StructName: "Item", FieldName: "ID", Name: "id", Type: "BIGINT UNSIGNED", Primary: true},
 					{StructName: "Item", FieldName: "Kind", Name: "kind", Type: "TEXT"},
@@ -56,7 +58,10 @@ func TestRender_TablePartitioning(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(files[0].Data), qt.Contains, test.wantText)
 			c.Assert(reparsed.Tables, qt.HasLen, 1)
-			c.Assert(reparsed.Tables[0].YDBPartitioning, qt.DeepEquals, test.partitioning)
+			declared, found, err := schemaext.FacetAs[*ydbschema.DesiredTablePartitioning](reparsed.Tables[0].Facets, ydbschema.TablePartitioningKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(declared.TablePartitioning, qt.DeepEquals, test.partitioning)
 		})
 	}
 }

@@ -107,8 +107,6 @@ func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.Alte
 			return nil, err
 		}
 		return registry.Render(renderer.ExtensionContext{Target: DialectName, Capabilities: r.caps, Parent: parent}, ast.AlterExtension, op.Payload)
-	case *ast.SetYDBTablePartitioningOperation:
-		return r.setTablePartitioning(table, op)
 	case *ast.AddIndexOperation:
 		return r.addIndex(table, op.Index)
 	case *ast.ReplaceIndexOperation:
