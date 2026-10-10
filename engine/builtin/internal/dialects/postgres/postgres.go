@@ -2394,22 +2394,12 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, op *ast.Modif
 		return
 	}
 	value := r.nullBackfillValue(column)
-	tableIdentifier := r.escapeQualifiedIdentifier(tableName)
 	columnIdentifier := r.escapeIdentifier(column.Name)
-	// First check if there are any NULL values to avoid unnecessary UPDATE operations
-	body := strings.Join([]string{
-		"BEGIN",
-		fmt.Sprintf("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableIdentifier, columnIdentifier),
-		fmt.Sprintf("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, value, columnIdentifier),
-		"    END IF;",
-		"END",
-	}, "\n")
-	// The default is the author's, and a default such as '$$' would end the
-	// block's quoting where it stands.
-	quote := dollarQuote(body)
-	r.w.WriteLinef("DO %s", quote)
-	r.w.WriteLine(body)
-	r.w.WriteLinef("%s;", quote)
+	// A plain UPDATE, not a DO block: an UPDATE that matches no row changes
+	// nothing, and a DO block is a sublanguage whose effects a rehearsal on a
+	// shared dev database cannot confine, so the replay guard refuses it.
+	r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;",
+		r.escapeQualifiedIdentifier(tableName), columnIdentifier, value, columnIdentifier)
 }
 
 // nullBackfillValue is the value updateNullValuesBeforeNotNull writes into a

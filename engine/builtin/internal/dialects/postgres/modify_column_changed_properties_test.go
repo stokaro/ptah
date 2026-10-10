@@ -76,10 +76,7 @@ func TestPostgres_ModifyColumn_RendersOnlyTheChangedProperties(t *testing.T) {
 			column:  ast.NewColumn("c", "INTEGER").SetNotNull().SetDefault("0"),
 			changed: ast.ColumnProperties{Nullability: true},
 			want: "-- ALTER statements: --\n" +
-				"DO $$\nBEGIN\n" +
-				"    IF EXISTS (SELECT 1 FROM \"t\" WHERE \"c\" IS NULL LIMIT 1) THEN\n" +
-				"        UPDATE \"t\" SET \"c\" = '0' WHERE \"c\" IS NULL;\n" +
-				"    END IF;\nEND\n$$;\n" +
+				"UPDATE \"t\" SET \"c\" = '0' WHERE \"c\" IS NULL;\n" +
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n",
 		},
 		{
@@ -102,10 +99,7 @@ func TestPostgres_ModifyColumn_RendersOnlyTheChangedProperties(t *testing.T) {
 			changed: ast.ColumnProperties{Type: true, Nullability: true, Default: true},
 			want: "-- ALTER statements: --\n" +
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" TYPE BIGINT;\n" +
-				"DO $$\nBEGIN\n" +
-				"    IF EXISTS (SELECT 1 FROM \"t\" WHERE \"c\" IS NULL LIMIT 1) THEN\n" +
-				"        UPDATE \"t\" SET \"c\" = '1' WHERE \"c\" IS NULL;\n" +
-				"    END IF;\nEND\n$$;\n" +
+				"UPDATE \"t\" SET \"c\" = '1' WHERE \"c\" IS NULL;\n" +
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n" +
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET DEFAULT 1;\n\n",
 		},
@@ -132,10 +126,7 @@ func TestPostgres_ModifyColumn_UnstatedChangesRestateTheColumn(t *testing.T) {
 
 	c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" TYPE INTEGER;\n"+
-		"DO $$\nBEGIN\n"+
-		"    IF EXISTS (SELECT 1 FROM \"t\" WHERE \"c\" IS NULL LIMIT 1) THEN\n"+
-		"        UPDATE \"t\" SET \"c\" = '7' WHERE \"c\" IS NULL;\n"+
-		"    END IF;\nEND\n$$;\n"+
+		"UPDATE \"t\" SET \"c\" = '7' WHERE \"c\" IS NULL;\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET DEFAULT 7;\n\n")
 }

@@ -48,18 +48,16 @@ func TestPostgres_Trigger_QuotesTheFunctionBodyWithATagItDoesNotHold(t *testing.
 	c.Assert(got, qt.Contains, "RETURNS trigger AS $ptah$\nBEGIN\nNEW.note := $$x$$; RETURN NEW;\nEND;\n$ptah$ LANGUAGE plpgsql;")
 }
 
-// The block that fills NULL rows with the column's default holds the default,
-// which is the author's text and may hold `$$`.
-func TestPostgres_SetNotNull_QuotesTheFillWithATagTheDefaultDoesNotHold(t *testing.T) {
+// The UPDATE that fills NULL rows with the column's default holds the default,
+// which is the author's text and may hold `$$`. It is an ordinary string
+// literal there, with no dollar quoting around the statement to end.
+func TestPostgres_SetNotNull_FillHoldsADefaultThatSpellsADollarQuote(t *testing.T) {
 	c := qt.New(t)
 	column := ast.NewColumn("c", "TEXT").SetNotNull().SetDefault("$$")
 
 	got := renderPostgres(c, modifyColumn(column, ast.ColumnProperties{Nullability: true}, true))
 
 	c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
-		"DO $ptah$\nBEGIN\n"+
-		"    IF EXISTS (SELECT 1 FROM \"t\" WHERE \"c\" IS NULL LIMIT 1) THEN\n"+
-		"        UPDATE \"t\" SET \"c\" = '$$' WHERE \"c\" IS NULL;\n"+
-		"    END IF;\nEND\n$ptah$;\n"+
+		"UPDATE \"t\" SET \"c\" = '$$' WHERE \"c\" IS NULL;\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n")
 }

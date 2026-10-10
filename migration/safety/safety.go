@@ -343,7 +343,7 @@ func assessmentUnits(node ast.Node, dialect string) []ast.Node {
 // renders it.
 //
 // The dialect is not asked here. Only a PostgreSQL-family renderer writes the
-// DO block and the SET NOT NULL judgeNullFillPair recognizes; MySQL's MODIFY,
+// UPDATE and the SET NOT NULL judgeNullFillPair recognizes; MySQL's MODIFY,
 // SQL Server's ALTER COLUMN and Oracle's MODIFY carry the whole definition in
 // one statement that matches neither, and keep the verdict they have.
 func fillsNullRows(node ast.Node) bool {
@@ -359,8 +359,7 @@ func operationFillsNullRows(operation ast.AlterOperation) bool {
 // judgeNullFillPair judges the two statements a filled SET NOT NULL renders
 // as, each for what it does (stokaro/ptah#3660).
 //
-// Read by its words alone, the fill is a DO block that matches no rule and
-// reads safe, while it rewrites every NULL row of the column. The SET NOT NULL
+// Read by its words alone, the fill is an UPDATE of the column's NULL rows. The SET NOT NULL
 // after it reads as a statement that can fail on a NULL row, and the fill
 // before it has just removed those rows. So the fill is a warning for the rows
 // it rewrites, and the SET NOT NULL is safe. A NULL another session writes
@@ -368,13 +367,13 @@ func operationFillsNullRows(operation ast.AlterOperation) bool {
 // migration has; the report judges the plan's statements, not concurrent
 // writers.
 //
-// The fill is the one DO block the PostgreSQL renderer writes for a column
+// The fill is the one UPDATE the PostgreSQL renderer writes for a column
 // modification, which is how it is told from the other statements here;
 // [notnullfill.FillsNullRows] decided that the operation writes it.
 func judgeNullFillPair(assessment *StatementAssessment, statement string) {
 	words := rawWords(sqlutil.StripCommentsForDialect(statement, platform.Postgres))
 	switch {
-	case hasWordPrefix(words, "DO"):
+	case hasWordPrefix(words, "UPDATE"):
 		assessment.Severity = Warning
 		assessment.Reason = "UPDATE rewrites the column's NULL rows with its declared default before SET NOT NULL"
 	case hasWordSequence(words, "SET", "NOT", "NULL"):

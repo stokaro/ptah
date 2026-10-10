@@ -31,10 +31,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.
 			name:    "PostgreSQL, the default plan",
 			dialect: platform.Postgres,
 			want: []string{
-				header + "DO $$\nBEGIN\n" +
-					"    IF EXISTS (SELECT 1 FROM \"flags\" WHERE \"c\" IS NULL LIMIT 1) THEN\n" +
-					"        UPDATE \"flags\" SET \"c\" = '9' WHERE \"c\" IS NULL;\n" +
-					"    END IF;\nEND\n$$",
+				header + "UPDATE \"flags\" SET \"c\" = '9' WHERE \"c\" IS NULL",
 				`ALTER TABLE "flags" ALTER COLUMN "c" SET NOT NULL`,
 				`ALTER TABLE "flags" ALTER COLUMN "c" SET DEFAULT 9`,
 			},

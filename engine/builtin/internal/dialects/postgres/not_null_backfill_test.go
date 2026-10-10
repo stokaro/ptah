@@ -68,10 +68,7 @@ func TestPostgres_SetNotNull_BackfillsWithTheDeclaredDefault(t *testing.T) {
 			got := renderPostgres(c, modifyColumn(test.column, ast.ColumnProperties{Nullability: true}, true))
 
 			c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
-				"DO $$\nBEGIN\n"+
-				"    IF EXISTS (SELECT 1 FROM \"t\" WHERE \"c\" IS NULL LIMIT 1) THEN\n"+
-				"        UPDATE \"t\" SET \"c\" = "+test.value+" WHERE \"c\" IS NULL;\n"+
-				"    END IF;\nEND\n$$;\n"+
+				"UPDATE \"t\" SET \"c\" = "+test.value+" WHERE \"c\" IS NULL;\n"+
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n")
 		})
 	}
