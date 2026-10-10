@@ -27,44 +27,17 @@ func TablePartitioningDefinitions() []schemaext.ReportDefinition {
 // cancellation expose no partial report. Nil context or invalid values wrap
 // schemaext.ErrInvalidValue; inputs remain unchanged.
 func (TablePartitioningService) ReportValues(ctx context.Context, request schemaext.ReportingRequest) ([]schemaext.ValueReport, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("%w: reporting requires a context", schemaext.ErrInvalidValue)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if request.Representation != schemaext.Desired && request.Representation != schemaext.Observed {
-		return nil, fmt.Errorf("%w: reporting requires a schema representation", schemaext.ErrInvalidValue)
-	}
-	reports := make([]schemaext.ValueReport, 0, len(request.Values))
-	for _, value := range request.Values {
-		settings, err := reportedPartitioning(value, request.Representation)
-		if err != nil {
-			return nil, err
+	return reportSettings(ctx, request, ydbschema.TablePartitioningKind, "ydb_table_partitioning", func(value schemaext.Value) (bool, error) {
+		switch value := value.(type) {
+		case *ydbschema.DesiredTablePartitioning:
+			if request.Representation == schemaext.Desired && value != nil {
+				return !value.IsZero(), ydbschema.ValidateDesiredTablePartitioning(value)
+			}
+		case *ydbschema.ObservedTablePartitioning:
+			if request.Representation == schemaext.Observed && value != nil {
+				return !value.IsZero(), ydbschema.ValidateObservedTablePartitioning(value)
+			}
 		}
-		count := 0
-		if !settings.IsZero() {
-			count = 1
-		}
-		reports = append(reports, schemaext.ValueReport{Kind: ydbschema.TablePartitioningKind,
-			Counts: []schemaext.MetricCount{{Name: "ydb_table_partitioning", Value: count}}})
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return reports, nil
-}
-
-func reportedPartitioning(value schemaext.Value, representation schemaext.Representation) (ydbschema.TablePartitioning, error) {
-	switch value := value.(type) {
-	case *ydbschema.DesiredTablePartitioning:
-		if representation == schemaext.Desired && value != nil {
-			return value.TablePartitioning, ydbschema.ValidateDesiredTablePartitioning(value)
-		}
-	case *ydbschema.ObservedTablePartitioning:
-		if representation == schemaext.Observed && value != nil {
-			return value.TablePartitioning, ydbschema.ValidateObservedTablePartitioning(value)
-		}
-	}
-	return ydbschema.TablePartitioning{}, fmt.Errorf("%w: YDB table partitioning report has mismatched value %T for %q", schemaext.ErrInvalidValue, value, representation)
+		return false, fmt.Errorf("%w: YDB table partitioning report has mismatched value %T for %q", schemaext.ErrInvalidValue, value, request.Representation)
+	})
 }

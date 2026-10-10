@@ -7,21 +7,43 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
+	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// indexSettingsChange is the YDB owner's change of the settings of index name
+// of table, from current, nil for YDB's defaults, to desired.
+func indexSettingsChange(schema, table, name string, desired ydbschema.IndexPartitioning, current *ydbschema.IndexPartitioning) schemaext.ChangeRecord {
+	change := &ydbdiff.IndexPartitioning{After: &ydbschema.DesiredIndexPartitioning{IndexPartitioning: desired}}
+	if current != nil {
+		change.Before = &ydbschema.ObservedIndexPartitioning{IndexPartitioning: *current}
+	}
+	subject := objectidentity.NewBuilder(identifier.ForDialect("ydb")).IndexParts(schema, table, name)
+	return schemaext.ChangeRecord{Subject: subject, Value: change}
+}
+
+// declaredIndexSettings is settings as an index's YDB owner facet.
+func declaredIndexSettings(settings ydbschema.IndexPartitioning) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&ydbschema.DesiredIndexPartitioning{IndexPartitioning: settings}))
+}
+
 // TestGenerateMigrationAST_IndexChangesInPlace_HappyPath pins where a rename
-// and a change of partitioning sit in a plan: after the index drops, so a name
-// a dropped index frees is free, and before the column changes and the index
-// additions; each rename in a statement of its own (`RENAME INDEX TO can not
-// be used together with another table action`), and the partitioning set
-// under the name the rename gave. A plan of this shape applied on 26.2.1.14
+// and a change of partitioning sit in a plan: the rename after the index
+// drops, so a name a dropped index frees is free, and before the column
+// changes and the index additions, each in a statement of its own (`RENAME
+// INDEX TO can not be used together with another table action`); the
+// partitioning, the YDB owner's, set under the name the rename gave, after the
+// statements that change the table. A plan of this shape applied on 26.2.1.14
 // and 25.1.4.7 and read back as declared.
 func TestGenerateMigrationAST_IndexChangesInPlace_HappyPath(t *testing.T) {
 	c := qt.New(t)
@@ -30,19 +52,18 @@ func TestGenerateMigrationAST_IndexChangesInPlace_HappyPath(t *testing.T) {
 			TableName:    "items",
 			Desired:      itemsDeclaration(field("note", "TEXT", true)),
 			ColumnsAdded: difftypes.ColumnChanges{field("note", "TEXT", true)},
+			FeatureChanges: []schemaext.ChangeRecord{
+				indexSettingsChange("", "items", "items_by_a", ydbschema.IndexPartitioning{MinPartitions: 4},
+					&ydbschema.IndexPartitioning{MinPartitions: 3}),
+			},
 		}},
 		IndexesRemoved: []difftypes.IndexRef{{Name: "items_gone", TableName: "items"}},
 		IndexesRenamed: []difftypes.IndexRename{
 			{TableName: "items", From: "items_a", To: "items_by_a"},
 			{TableName: "items", From: "items_b", To: "items_by_b"},
 		},
-		IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{
-			TableName: "items", Name: "items_by_a",
-			Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 4},
-			Previous:     &ast.IndexPartitioningSpec{MinPartitions: 3},
-		}},
 		IndexesAdded: difftypes.IndexChanges{{TableName: "items", Index: schemamodel.Index{
-			Name: "items_note", Fields: []string{"note"}, Partitioning: &ast.IndexPartitioningSpec{ByLoad: new(true)},
+			Name: "items_note", Fields: []string{"note"}, Facets: declaredIndexSettings(ydbschema.IndexPartitioning{ByLoad: new(true)}),
 		}}},
 	}
 
@@ -51,26 +72,27 @@ func TestGenerateMigrationAST_IndexChangesInPlace_HappyPath(t *testing.T) {
 	c.Assert(got, qt.Equals, "ALTER TABLE `items` DROP INDEX `items_gone`;\n"+
 		"ALTER TABLE `items` RENAME INDEX `items_a` TO `items_by_a`;\n"+
 		"ALTER TABLE `items` RENAME INDEX `items_b` TO `items_by_b`;\n"+
-		"ALTER TABLE `items` ALTER INDEX `items_by_a` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, "+
-		"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, "+
-		"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4);\n"+
 		"ALTER TABLE `items` ADD COLUMN `note` Utf8;\n"+
 		"ALTER TABLE `items` ADD INDEX `items_note` GLOBAL SYNC ON (`note`);\n"+
-		"ALTER TABLE `items` ALTER INDEX `items_note` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n")
+		"ALTER TABLE `items` ALTER INDEX `items_note` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n"+
+		"ALTER TABLE `items` ALTER INDEX `items_by_a` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, "+
+		"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, "+
+		"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4);\n")
 }
 
 // TestGenerateMigrationAST_IndexChangesInPlace_FailurePath refuses, before any
 // node, a rename or a change of partitioning the target cannot make, by its
 // key, and a change of partitioning YDB refuses on every line, by the server's
-// reason.
+// reason. A change of partitioning is refused by the YDB owner's planning.
 func TestGenerateMigrationAST_IndexChangesInPlace_FailurePath(t *testing.T) {
 	rename := &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "items", From: "a", To: "b"}}}
-	change := func(desired, previous *ast.IndexPartitioningSpec) *difftypes.SchemaDiff {
+	change := func(desired ydbschema.IndexPartitioning, previous *ydbschema.IndexPartitioning) *difftypes.SchemaDiff {
 		return &difftypes.SchemaDiff{
+			TablesModified: []difftypes.TableDiff{{
+				TableName: "items", Desired: itemsDeclaration(),
+				FeatureChanges: []schemaext.ChangeRecord{indexSettingsChange("", "items", "a", desired, previous)},
+			}},
 			IndexesRemoved: []difftypes.IndexRef{{Name: "gone", TableName: "items"}},
-			IndexPartitioningChanged: []difftypes.IndexPartitioningChange{
-				{TableName: "items", Name: "a", Partitioning: desired, Previous: previous},
-			},
 		}
 	}
 	tests := []struct {
@@ -84,14 +106,11 @@ func TestGenerateMigrationAST_IndexChangesInPlace_FailurePath(t *testing.T) {
 			wantFeature: string(capability.IndexRename),
 			wantErr:     `renaming index "a" of table "items" to "b", which requires target capability index_rename, unavailable on this ydb target`},
 		{name: "partitioning without the key", caps: capability.YDB262().With(capability.IndexPartitioning, false),
-			diff: change(&ast.IndexPartitioningSpec{MinPartitions: 2}, nil), wantFeature: string(capability.IndexPartitioning),
-			wantErr: `changing the partitioning of index "a" of table "items", which requires target capability index_partitioning, .*`},
+			diff: change(ydbschema.IndexPartitioning{MinPartitions: 2}, nil), wantFeature: "YDB index partitioning planning",
+			wantErr: `.*changing the partitioning of index "a" of table "items", which requires target capability index_partitioning, .*`},
 		{name: "a declaration YDB refuses", caps: capability.YDB262(),
-			diff: change(&ast.IndexPartitioningSpec{BySize: new(false), PartitionSizeMB: 64}, nil), wantFeature: `index "a" of table "items"`,
-			wantErr: `index "a" of table "items": auto_partitioning_partition_size_mb is set while .*`},
-		{name: "settings the index holds that YDB would refuse", caps: capability.YDB262(),
-			diff: change(nil, &ast.IndexPartitioningSpec{ReadReplicas: "SOME_AZ:1"}), wantFeature: `index "a" of table "items"`,
-			wantErr: `index "a" of table "items": the settings it holds: read replicas "SOME_AZ:1" are not one YDB takes: .*`},
+			diff: change(ydbschema.IndexPartitioning{BySize: new(false), PartitionSizeMB: 64}, nil), wantFeature: "YDB index partitioning planning",
+			wantErr: `.*index "a" of table "items": auto_partitioning_partition_size_mb is set while .*`},
 	}
 
 	for _, test := range tests {
@@ -120,9 +139,10 @@ func TestGenerateMigrationAST_PlansARenameAlone(t *testing.T) {
 		diff *difftypes.SchemaDiff
 	}{
 		{name: "a rename", diff: &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "items", From: "a", To: "b"}}}},
-		{name: "a change of partitioning", diff: &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{
-			{TableName: "items", Name: "a", Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2}},
-		}}},
+		{name: "a change of partitioning", diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+			TableName: "items", Desired: itemsDeclaration(),
+			FeatureChanges: []schemaext.ChangeRecord{indexSettingsChange("", "items", "a", ydbschema.IndexPartitioning{MinPartitions: 2}, nil)},
+		}}}},
 	}
 
 	for _, test := range tests {
@@ -138,27 +158,35 @@ func TestGenerateMigrationAST_PlansARenameAlone(t *testing.T) {
 	}
 }
 
-// TestGenerateMigrationAST_TableRebuild_CarriesIndexChangesInPlace leaves a
-// rename and a change of partitioning on a table the plan rebuilds to the new
-// table: its CREATE TABLE names the index as declared and an ALTER INDEX after
-// it gives the declared settings, so nothing is renamed or set on the old
-// table, which the rebuild drops.
+// TestGenerateMigrationAST_TableRebuild_CarriesIndexChangesInPlace leaves
+// a rename and a change of partitioning on a table the plan rebuilds to the
+// new table: its CREATE TABLE names the index as declared and an ALTER INDEX
+// after it gives the declared settings over the ones the index held under its
+// old name, so nothing is renamed or set on the old table, which the rebuild
+// drops.
 func TestGenerateMigrationAST_TableRebuild_CarriesIndexChangesInPlace(t *testing.T) {
 	c := qt.New(t)
 	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
-	declaration.Indexes[0].Partitioning = &ast.IndexPartitioningSpec{MinPartitions: 4}
+	declaration.Indexes[0].Facets = declaredIndexSettings(ydbschema.IndexPartitioning{MinPartitions: 4})
 	diff := modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: declaration,
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
+		FeatureChanges: []schemaext.ChangeRecord{indexSettingsChange("app", "items", "items_label",
+			ydbschema.IndexPartitioning{MinPartitions: 4}, &ydbschema.IndexPartitioning{MinPartitions: 2, MaxPartitions: 9})},
 	})
+	diff.TablesModified[0].Current.Indexes = []catalog.Index{{Schema: "app", TableName: "items", Name: "items_old_label",
+		Columns: []string{"label"}, Method: "GLOBAL SYNC",
+		Facets: must.Must(schemaext.NewFacets(&ydbschema.ObservedIndexPartitioning{
+			IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 2, MaxPartitions: 9},
+		}))}}
 	diff.IndexesRenamed = []difftypes.IndexRename{{TableName: "app.items", From: "items_old_label", To: "items_label"}}
-	diff.IndexPartitioningChanged = []difftypes.IndexPartitioningChange{{TableName: "app.items", Name: "items_label",
-		Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 4}, Previous: &ast.IndexPartitioningSpec{MinPartitions: 2}}}
 
 	got := renderRebuild(c, capability.YDB262(), diff)
 
 	c.Assert(got, qt.Not(qt.Contains), "RENAME INDEX")
 	c.Assert(got, qt.Not(qt.Contains), "ALTER TABLE `app/items` ALTER INDEX")
 	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n"+heldDefaults+
-		"ALTER TABLE `app/__ptah_rebuild_items` ALTER INDEX `items_label` SET (")
+		"ALTER TABLE `app/__ptah_rebuild_items` ALTER INDEX `items_label` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, "+
+		"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, "+
+		"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 9);\n")
 }

@@ -241,7 +241,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"SQLServerRoutineNode":                    &ast.SQLServerRoutineNode{},
 		"SetCommentOperation":                     &ast.SetCommentOperation{},
 		"SetConstraintCommentOperation":           &ast.SetConstraintCommentOperation{},
-		"SetIndexPartitioningOperation":           &ast.SetIndexPartitioningOperation{},
 		"StatementList":                           &ast.StatementList{},
 		"UpsertNode":                              &ast.UpsertNode{},
 		"ValidateConstraintOperation":             &ast.ValidateConstraintOperation{},

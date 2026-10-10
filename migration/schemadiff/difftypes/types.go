@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
@@ -1007,14 +1006,6 @@ type SchemaDiff struct {
 	// addition.
 	IndexesRenamed []IndexRename `json:"indexes_renamed,omitempty"`
 
-	// IndexPartitioningChanged holds the indexes whose partitioning a plan
-	// changes in place, YDB's `ALTER INDEX ... SET (...)`: both sides hold the
-	// index with the same definition, and its settings differ. A renamed
-	// index is here under the name it takes. An index this diff adds, or
-	// drops and adds again, carries its partitioning in the addition and is
-	// not here.
-	IndexPartitioningChanged []IndexPartitioningChange `json:"index_partitioning_changed,omitempty"`
-
 	// IndexCommentsChanged holds the index comments a plan writes in place,
 	// on a target that keeps an index's comment apart from its definition
 	// ([ptah.run/core/platform/capability.CommentAttributes], which is
@@ -1384,22 +1375,6 @@ type SchemaDiff struct {
 	// table and topic a transfer depends on.
 	Features FeatureContext `json:"-"`
 
-	// CurrentYDBSettings is YDB's: the partitioning of each global index of
-	// the database this plan runs against, for every table with an index that
-	// holds a setting other than YDB's documented defaults. Only a YDB read
-	// fills it, and only the YDB planner reads it.
-	//
-	// A setting a declaration leaves out keeps what the index holds, so a
-	// comparison plans nothing for it and no entry above carries it. A plan
-	// that recreates a table needs it, though: the new table's indexes would
-	// take YDB's settings, which need not be the ones the old indexes hold.
-	// The rebuild writes these for each setting the declaration leaves out.
-	// The table's own settings travel as the YDB owner's facet of its
-	// observation.
-	//
-	// A reversal runs against the same database and carries the same settings.
-	CurrentYDBSettings []YDBHeldSettings `json:"-"`
-
 	// RLSEnabledTablesAdded is the tables that need RLS enabled, each carried
 	// as its declaration; see [RLSEnabledTableChanges].
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
@@ -1676,7 +1651,6 @@ func (d *SchemaDiff) hasIndexChanges() bool {
 		len(d.IndexesRemoved) > 0 ||
 		len(d.IndexVisibilityChanged) > 0 ||
 		len(d.IndexesRenamed) > 0 ||
-		len(d.IndexPartitioningChanged) > 0 ||
 		len(d.IndexCommentsChanged) > 0
 }
 
@@ -1690,24 +1664,6 @@ type IndexRename struct {
 	From string `json:"from"`
 	// To is the name the declaration gives the index.
 	To string `json:"to"`
-}
-
-// IndexPartitioningChange is an index whose partitioning a plan changes in
-// place; see [SchemaDiff.IndexPartitioningChanged].
-type IndexPartitioningChange struct {
-	// TableName is the table the index belongs to, qualified the way
-	// [IndexRef.TableName] is.
-	TableName string `json:"table_name"`
-	// Name is the index's name once the plan's renames have run.
-	Name string `json:"name"`
-	// Partitioning is the settings the declaration names. A setting it leaves
-	// out keeps what the index holds.
-	Partitioning *ast.IndexPartitioningSpec `json:"partitioning,omitempty"`
-	// Previous is the settings the database holds, which a plan reads because
-	// a statement that sets one setting can reset another, and which a
-	// rollback restores. It is written as YDB's reader reports it: what
-	// differs from YDB's documented defaults, nil for none.
-	Previous *ast.IndexPartitioningSpec `json:"previous,omitempty"`
 }
 
 // IndexCommentChange is the comment transition of one index; see
@@ -3724,17 +3680,6 @@ type RoleMembershipRef struct {
 	Role string `json:"role"`
 	// Member is the role that holds Role's privileges.
 	Member string `json:"member"`
-}
-
-// YDBHeldSettings is YDB's: the partitioning the global indexes of one row
-// table of a database hold, as YDB's reader reports them: what differs from
-// YDB's documented defaults.
-type YDBHeldSettings struct {
-	// TableName is the table, qualified as [TableDiff.TableName] is.
-	TableName string
-	// Indexes is each global index's partitioning by index name. An index it
-	// does not name holds YDB's documented defaults.
-	Indexes map[string]*ast.IndexPartitioningSpec
 }
 
 // GrantRef identifies one PostgreSQL privilege grant.

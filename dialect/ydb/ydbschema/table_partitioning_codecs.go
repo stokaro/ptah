@@ -30,23 +30,14 @@ var tablePartitioningShape = wireShape[TablePartitioning]("YDB table partitionin
 // [schemaext.InvalidModelError] wrapping [schemaext.ErrInvalidValue]. The
 // codecs validate representation invariants; they claim no server support.
 func TablePartitioningCodecs() []schemaext.Codec {
-	return []schemaext.Codec{
+	return settingsCodecs(TablePartitioningWireDefinition, tablePartitioningShape,
 		schemaext.ModelCodec[*DesiredTablePartitioning]{
-			Prototype: &DesiredTablePartitioning{}, Representation: schemaext.Desired, Version: 1,
-			Definition: TablePartitioningWireDefinition(), Shape: decodeTablePartitioningShape,
-			Validate: ValidateDesiredTablePartitioning, Clone: (*DesiredTablePartitioning).Copy,
-		}.Codec(),
+			Prototype: &DesiredTablePartitioning{}, Validate: ValidateDesiredTablePartitioning, Clone: (*DesiredTablePartitioning).Copy,
+		},
 		schemaext.ModelCodec[*ObservedTablePartitioning]{
-			Prototype: &ObservedTablePartitioning{}, Representation: schemaext.Observed, Version: 1,
-			Definition: TablePartitioningWireDefinition(), Shape: decodeTablePartitioningShape,
-			Validate: ValidateObservedTablePartitioning, Clone: (*ObservedTablePartitioning).Copy,
-		}.Codec(),
-	}
-}
-
-func decodeTablePartitioningShape(data json.RawMessage) error {
-	_, err := schemaext.DecodeObject(data, tablePartitioningShape)
-	return err
+			Prototype: &ObservedTablePartitioning{}, Validate: ValidateObservedTablePartitioning, Clone: (*ObservedTablePartitioning).Copy,
+		},
+	)
 }
 
 // TablePartitioningCoverage records what one source knows about YDB table

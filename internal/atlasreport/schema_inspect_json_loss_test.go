@@ -9,7 +9,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -81,7 +80,10 @@ func jsonLossFixture(c *qt.C) (*schemamodel.Database, *catalog.Database) {
 		}},
 		Indexes: []schemamodel.Index{{
 			StructName: "AppEvents", Name: "idx", Type: "GLOBAL SYNC", Fields: []string{"id"},
-			IncludeColumns: []string{"created_at"}, Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2},
+			IncludeColumns: []string{"created_at"},
+			Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredIndexPartitioning{
+				IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 2},
+			})),
 		}},
 	}
 	defaultSQL := "'private default'u"

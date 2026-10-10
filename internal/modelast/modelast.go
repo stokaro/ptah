@@ -1150,7 +1150,6 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	indexNode.IncludeColumns = index.IncludeColumns
 	indexNode.NullsDistinct = cloneBoolPtr(index.NullsDistinct)
 	indexNode.StorageParams = maps.Clone(index.StorageParams)
-	indexNode.Partitioning = index.Partitioning.Clone()
 
 	// Set unique constraint
 	if index.Unique {

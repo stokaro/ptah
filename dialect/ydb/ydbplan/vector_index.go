@@ -240,7 +240,7 @@ func vectorIndexCreation(request featureplan.Request, table featureplan.Table, i
 			subject, capability.VectorIndexes, platform.YDB)
 	case index.Unique:
 		return nil, fmt.Errorf("%s: a vector index is not unique (`VECTOR_KMEANS_TREE index can only be GLOBAL [SYNC]`)", subject)
-	case !index.Partitioning.IsZero():
+	case slices.Contains(index.Facets.Kinds(), ydbschema.IndexPartitioningKind):
 		return nil, fmt.Errorf("%s: a vector index keeps the partitioning YDB gives it "+
 			"(`ALTER INDEX ... SET` answers `Only index with one impl table is supported`)", subject)
 	}

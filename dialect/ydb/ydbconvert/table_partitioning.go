@@ -2,7 +2,6 @@ package ydbconvert
 
 import (
 	"context"
-	"fmt"
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -18,8 +17,15 @@ import (
 type TablePartitioningService struct{}
 
 var tablePartitioningConversion = facetConversion[*ydbschema.DesiredTablePartitioning, *ydbschema.ObservedTablePartitioning]{
-	name:     "YDB table partitioning",
-	observe:  observeTablePartitioning,
+	name: "YDB table partitioning",
+	observe: observeSettings(ydbschema.ValidateDesiredTablePartitioning,
+		func(desired *ydbschema.DesiredTablePartitioning) *ydbschema.TablePartitioning {
+			return &desired.TablePartitioning
+		},
+		ydbpartition.HeldTable, ydbpartition.TableSpec,
+		func(settings ydbschema.TablePartitioning) *ydbschema.ObservedTablePartitioning {
+			return &ydbschema.ObservedTablePartitioning{TablePartitioning: settings}
+		}),
 	validate: ydbschema.ValidateObservedTablePartitioning,
 	declare:  (*ydbschema.ObservedTablePartitioning).Desired,
 }
@@ -32,19 +38,4 @@ var tablePartitioningConversion = facetConversion[*ydbschema.DesiredTablePartiti
 // partial result. An empty batch succeeds.
 func (TablePartitioningService) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
 	return tablePartitioningConversion.convert(ctx, request)
-}
-
-func observeTablePartitioning(desired *ydbschema.DesiredTablePartitioning) (*ydbschema.ObservedTablePartitioning, error) {
-	if err := ydbschema.ValidateDesiredTablePartitioning(desired); err != nil {
-		return nil, err
-	}
-	settings, err := ydbpartition.HeldTable(&desired.TablePartitioning)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
-	}
-	observed := &ydbschema.ObservedTablePartitioning{}
-	if spec := ydbpartition.TableSpec(settings); spec != nil {
-		observed.TablePartitioning = *spec
-	}
-	return observed, nil
 }

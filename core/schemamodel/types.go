@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/tableref"
@@ -494,12 +493,6 @@ type Index struct {
 	// StorageParams carries YDB full-text analyzer options and PostgreSQL index storage parameters rendered as
 	// WITH (key='value'), for example pages_per_range for BRIN indexes.
 	StorageParams map[string]string
-	// Partitioning is how a YDB global index's own table splits into
-	// partitions, and its read replicas: the `auto_partitioning_*` and
-	// `read_replicas_settings` attributes of `//ptah:schema:index`. Nil
-	// declares none, which is the settings YDB gives a new index. A renderer
-	// for another dialect drops it and reports the loss.
-	Partitioning *ast.IndexPartitioningSpec
 	// TableName is the cross-table association (overrides StructName-based
 	// resolution when set).
 	TableName string

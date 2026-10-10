@@ -70,7 +70,8 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 		}
 	}
 	// Hypertable settings and YDB column families have annotations of their
-	// own, written beside the table, and no property spelling.
+	// own, written beside the table, and no property spelling; YDB index
+	// partitioning is written as attributes of the index directive.
 	properties, annotated := facetsplit.SetAside(db, isAnnotatedFacet)
 	properties, annotatedIndexes := facetsplit.SetAsideIndexes(properties, isAnnotatedIndexFacet)
 	if slices.ContainsFunc(properties.Tables, func(table schemamodel.Table) bool { return !table.Facets.IsZero() }) {

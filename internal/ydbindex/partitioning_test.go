@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 )
@@ -22,15 +22,15 @@ var tuned = ydbpartition.Settings{
 func TestResolve_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
-		spec *ast.IndexPartitioningSpec
+		spec *ydbschema.IndexPartitioning
 		held ydbpartition.Settings
 		want ydbpartition.Settings
 	}{
 		{name: "nil keeps what the index holds", spec: nil, held: tuned, want: tuned},
-		{name: "empty keeps what the index holds", spec: &ast.IndexPartitioningSpec{}, held: tuned, want: tuned},
+		{name: "empty keeps what the index holds", spec: &ydbschema.IndexPartitioning{}, held: tuned, want: tuned},
 		{
 			name: "every setting",
-			spec: &ast.IndexPartitioningSpec{
+			spec: &ydbschema.IndexPartitioning{
 				BySize: new(true), PartitionSizeMB: 512, ByLoad: new(true),
 				MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "per_az:2",
 			},
@@ -42,7 +42,7 @@ func TestResolve_HappyPath(t *testing.T) {
 		},
 		{
 			name: "one setting keeps the others held",
-			spec: &ast.IndexPartitioningSpec{ByLoad: new(false)},
+			spec: &ydbschema.IndexPartitioning{ByLoad: new(false)},
 			held: tuned,
 			want: ydbpartition.Settings{
 				BySize: true, PartitionSizeMB: 100, MinPartitions: 6, MaxPartitions: 20,
@@ -51,7 +51,7 @@ func TestResolve_HappyPath(t *testing.T) {
 		},
 		{
 			name: "not splitting by size keeps no size",
-			spec: &ast.IndexPartitioningSpec{BySize: new(false)},
+			spec: &ydbschema.IndexPartitioning{BySize: new(false)},
 			held: tuned,
 			want: ydbpartition.Settings{
 				ByLoad: true, MinPartitions: 6, MaxPartitions: 20, ReadReplicas: ydbpartition.Replicas{PerAZ: true, Count: 1},
@@ -59,26 +59,26 @@ func TestResolve_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a size alone splits by size",
-			spec: &ast.IndexPartitioningSpec{PartitionSizeMB: 64},
+			spec: &ydbschema.IndexPartitioning{PartitionSizeMB: 64},
 			held: ydbpartition.Settings{MinPartitions: 1},
 			want: ydbpartition.Settings{BySize: true, PartitionSizeMB: 64, MinPartitions: 1},
 		},
 		{
 			name: "splitting by size turned on takes YDB's size",
-			spec: &ast.IndexPartitioningSpec{BySize: new(true)},
+			spec: &ydbschema.IndexPartitioning{BySize: new(true)},
 			held: ydbpartition.Settings{MinPartitions: 1},
 			want: ydbpartition.Settings{BySize: true, PartitionSizeMB: 2048, MinPartitions: 1},
 		},
 		{
 			name: "replicas declared as none",
-			spec: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:0"},
+			spec: &ydbschema.IndexPartitioning{ReadReplicas: "PER_AZ:0"},
 			held: tuned,
 			want: ydbpartition.Settings{BySize: true, PartitionSizeMB: 100, ByLoad: true, MinPartitions: 6, MaxPartitions: 20,
 				ReadReplicas: ydbpartition.Replicas{PerAZ: true}},
 		},
 		{
 			name: "replicas in all zones together",
-			spec: &ast.IndexPartitioningSpec{ReadReplicas: "ANY_AZ:3"},
+			spec: &ydbschema.IndexPartitioning{ReadReplicas: "ANY_AZ:3"},
 			held: ydbpartition.DefaultSettings(),
 			want: ydbpartition.Settings{
 				BySize: true, PartitionSizeMB: 2048, MinPartitions: 1,
@@ -105,18 +105,18 @@ func TestExplicit(t *testing.T) {
 	tests := []struct {
 		name     string
 		settings ydbpartition.Settings
-		want     *ast.IndexPartitioningSpec
+		want     *ydbschema.IndexPartitioning
 	}{
 		{
 			name:     "the defaults",
 			settings: ydbpartition.DefaultSettings(),
-			want: &ast.IndexPartitioningSpec{BySize: new(true), PartitionSizeMB: 2048, ByLoad: new(false), MinPartitions: 1,
+			want: &ydbschema.IndexPartitioning{BySize: new(true), PartitionSizeMB: 2048, ByLoad: new(false), MinPartitions: 1,
 				ReadReplicas: "PER_AZ:0"},
 		},
 		{
 			name:     "not splitting by size",
 			settings: ydbpartition.Settings{ByLoad: true, MinPartitions: 2, MaxPartitions: 4, ReadReplicas: ydbpartition.Replicas{Count: 1}},
-			want: &ast.IndexPartitioningSpec{BySize: new(false), ByLoad: new(true), MinPartitions: 2, MaxPartitions: 4,
+			want: &ydbschema.IndexPartitioning{BySize: new(false), ByLoad: new(true), MinPartitions: 2, MaxPartitions: 4,
 				ReadReplicas: "ANY_AZ:1"},
 		},
 	}
@@ -140,14 +140,14 @@ func TestExplicit(t *testing.T) {
 func TestCreateClause(t *testing.T) {
 	tests := []struct {
 		name string
-		spec *ast.IndexPartitioningSpec
+		spec *ydbschema.IndexPartitioning
 		want []string
 	}{
 		{name: "nothing declared", spec: nil, want: nil},
-		{name: "one setting", spec: &ast.IndexPartitioningSpec{ByLoad: new(true)}, want: []string{"AUTO_PARTITIONING_BY_LOAD = ENABLED"}},
+		{name: "one setting", spec: &ydbschema.IndexPartitioning{ByLoad: new(true)}, want: []string{"AUTO_PARTITIONING_BY_LOAD = ENABLED"}},
 		{
 			name: "a setting at YDB's default is written as declared",
-			spec: &ast.IndexPartitioningSpec{MinPartitions: 1, ReadReplicas: "PER_AZ:0"},
+			spec: &ydbschema.IndexPartitioning{MinPartitions: 1, ReadReplicas: "PER_AZ:0"},
 			want: []string{"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1"},
 		},
 	}
@@ -165,32 +165,32 @@ func TestCreateClause(t *testing.T) {
 func TestResolve_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
-		spec    *ast.IndexPartitioningSpec
+		spec    *ydbschema.IndexPartitioning
 		wantErr string
 	}{
 		{
 			name:    "a size without splitting by size",
-			spec:    &ast.IndexPartitioningSpec{BySize: new(false), PartitionSizeMB: 100},
+			spec:    &ydbschema.IndexPartitioning{BySize: new(false), PartitionSizeMB: 100},
 			wantErr: `auto_partitioning_partition_size_mb is set while auto_partitioning_by_size is disabled, .*`,
 		},
 		{
 			name:    "replicas with no mode",
-			spec:    &ast.IndexPartitioningSpec{ReadReplicas: "2"},
+			spec:    &ydbschema.IndexPartitioning{ReadReplicas: "2"},
 			wantErr: `read replicas "2" are not one YDB takes: .*`,
 		},
 		{
 			name:    "replicas in an unknown mode",
-			spec:    &ast.IndexPartitioningSpec{ReadReplicas: "EVERY_AZ:2"},
+			spec:    &ydbschema.IndexPartitioning{ReadReplicas: "EVERY_AZ:2"},
 			wantErr: `read replicas "EVERY_AZ:2" are not one YDB takes: .*`,
 		},
 		{
 			name:    "a list of replica settings",
-			spec:    &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:1,ANY_AZ:1"},
+			spec:    &ydbschema.IndexPartitioning{ReadReplicas: "PER_AZ:1,ANY_AZ:1"},
 			wantErr: `read replicas "PER_AZ:1,ANY_AZ:1" are not one YDB takes: .*`,
 		},
 		{
 			name:    "a negative replica count",
-			spec:    &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:-1"},
+			spec:    &ydbschema.IndexPartitioning{ReadReplicas: "PER_AZ:-1"},
 			wantErr: `read replicas "PER_AZ:-1" are not one YDB takes: .*`,
 		},
 	}
@@ -211,7 +211,7 @@ func TestSpec(t *testing.T) {
 	tests := []struct {
 		name     string
 		settings ydbpartition.Settings
-		want     *ast.IndexPartitioningSpec
+		want     *ydbschema.IndexPartitioning
 	}{
 		{name: "the defaults are nil", settings: ydbpartition.DefaultSettings(), want: nil},
 		{
@@ -225,14 +225,14 @@ func TestSpec(t *testing.T) {
 				BySize: true, PartitionSizeMB: 64, ByLoad: true, MinPartitions: 7, MaxPartitions: 9,
 				ReadReplicas: ydbpartition.Replicas{Count: 2},
 			},
-			want: &ast.IndexPartitioningSpec{
+			want: &ydbschema.IndexPartitioning{
 				PartitionSizeMB: 64, ByLoad: new(true), MinPartitions: 7, MaxPartitions: 9, ReadReplicas: "ANY_AZ:2",
 			},
 		},
 		{
 			name:     "not splitting by size",
 			settings: ydbpartition.Settings{MinPartitions: 1},
-			want:     &ast.IndexPartitioningSpec{BySize: new(false)},
+			want:     &ydbschema.IndexPartitioning{BySize: new(false)},
 		},
 	}
 

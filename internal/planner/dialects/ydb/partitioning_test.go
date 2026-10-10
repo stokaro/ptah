@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
+	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -272,10 +272,11 @@ func TestGenerateMigrationAST_TablePartitioning_RebuildKeepsTheHeldSettings(t *t
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	}), &ydbschema.TablePartitioning{BySize: new(false), ByLoad: new(true), MaxPartitions: 20, KeyBloomFilter: new(true)})
 	diff.IndexesRenamed = []difftypes.IndexRename{{TableName: "app.items", From: "items_old_label", To: "items_label"}}
-	diff.CurrentYDBSettings = []difftypes.YDBHeldSettings{{
-		TableName: "app.items",
-		Indexes:   map[string]*ast.IndexPartitioningSpec{"items_old_label": {MinPartitions: 3, ReadReplicas: "ANY_AZ:1"}},
-	}}
+	diff.TablesModified[0].Current.Indexes = []catalog.Index{{Schema: "app", TableName: "items", Name: "items_old_label",
+		Columns: []string{"label"}, Method: "GLOBAL SYNC",
+		Facets: must.Must(schemaext.NewFacets(&ydbschema.ObservedIndexPartitioning{
+			IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 3, ReadReplicas: "ANY_AZ:1"},
+		}))}}
 
 	got := renderRebuild(c, capability.YDB262(), diff)
 

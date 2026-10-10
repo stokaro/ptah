@@ -9,7 +9,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // withIndexKeys adds the questions the YDB planner decides an index change in
@@ -68,7 +70,8 @@ func ydbIndexKeyExperiments() []experiment {
 			after: []check{
 				ydbDescribedIndex("ikp", "ikp_n", "the index's minimum partition count to read back as 3",
 					func(index catalog.Index) bool {
-						return index.Partitioning != nil && index.Partitioning.MinPartitions == 3
+						held, found, err := schemaext.FacetAs[*ydbschema.ObservedIndexPartitioning](index.Facets, ydbschema.IndexPartitioningKind)
+						return err == nil && found && held.MinPartitions == 3
 					}),
 			},
 		}),

@@ -254,7 +254,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, tables.early...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
-	result = append(result, changeIndexPartitioning(diff.IndexPartitioningChanged, rebuilds, semantics)...)
 	facets, err := p.planTableFacets(ctx, runtime, diff, rebuilds, semantics, columnTTL.reads)
 	if err != nil {
 		return nil, err
@@ -432,55 +431,14 @@ func renameIndexes(renames []difftypes.IndexRename, rebuilds map[string]*tableRe
 	return nodes
 }
 
-// changeIndexPartitioning changes each index's partitioning in place, carrying
-// the settings it holds so the renderer can keep each one the declaration
-// leaves out. An index of a table the plan rebuilds takes its settings in the
-// new table, so it is not changed on its own.
-func changeIndexPartitioning(
-	changes []difftypes.IndexPartitioningChange,
-	rebuilds map[string]*tableRebuild,
-	semantics identifier.Semantics,
-) []ast.Node {
-	nodes := make([]ast.Node, 0, len(changes))
-	for _, change := range changes {
-		if _, rebuilt := rebuilds[semantics.TableIdentityKey(change.TableName)]; rebuilt {
-			continue
-		}
-		nodes = append(nodes, &ast.AlterTableNode{
-			Name: change.TableName,
-			Operations: []ast.AlterOperation{&ast.SetIndexPartitioningOperation{
-				IndexName:    change.Name,
-				Partitioning: change.Partitioning.Clone(),
-				Previous:     change.Previous.Clone(),
-			}},
-		})
-	}
-	return nodes
-}
-
-// refuseIndexChangesInPlace refuses, before anything is emitted, a rename or a
-// change of partitioning this target cannot make: by
-// [capability.IndexRename] and [capability.IndexPartitioning], and a
-// declaration YDB refuses whatever the target, which the renderer would
-// otherwise refuse after the statements before it were planned.
+// refuseIndexChangesInPlace refuses, before anything is emitted, a rename
+// this target cannot make ([capability.IndexRename]). A change of an index's
+// partitioning is the YDB owner's, which refuses it in planning.
 func (p *Planner) refuseIndexChangesInPlace(diff *difftypes.SchemaDiff) error {
 	if len(diff.IndexesRenamed) > 0 && !p.caps.Has(capability.IndexRename) {
 		rename := diff.IndexesRenamed[0]
 		return refuseKey(capability.IndexRename, fmt.Sprintf("renaming index %q of table %q to %q",
 			rename.From, rename.TableName, rename.To))
-	}
-	for _, change := range diff.IndexPartitioningChanged {
-		subject := fmt.Sprintf("index %q of table %q", change.Name, change.TableName)
-		if !p.caps.Has(capability.IndexPartitioning) {
-			return refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
-		}
-		previous, err := ydbindex.Held(change.Previous)
-		if err != nil {
-			return refuseFact(subject, "the settings it holds: "+err.Error())
-		}
-		if _, err := ydbindex.Resolve(change.Partitioning, previous); err != nil {
-			return refuseFact(subject, err.Error())
-		}
 	}
 	return nil
 }

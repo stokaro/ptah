@@ -44,7 +44,6 @@ var supplementalDiffCategories = map[string]string{
 	"ObservedConstraintHosts":         "PostgreSQL changes constraints in place; observed rebuild operands do not add PostgreSQL operations",
 	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
 	"CurrentNotDescribed":             "what the read of the database declined to describe, carried for a target that rebuilds a table and must not drop a setting the read left out. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere; a fixture here would assert that a coverage set plans nothing",
-	"CurrentYDBSettings":              "what each YDB row table and global index holds of its partitioning, carried for a YDB plan that rebuilds a table and gives the new one every setting the declaration leaves out. PostgreSQL never rebuilds a table and has no such setting, so this planner reads the field nowhere; a fixture here would assert that a list of settings plans nothing",
 	"CurrentDatabasePath":             "the absolute path of the database the read describes, carried for a target that names a Serial column's sequence, and some objects of a GRANT, by an absolute path. PostgreSQL addresses every object relative to the connection, so this planner reads the field nowhere; a fixture here would assert that a path plans nothing",
 	"Features":                        "every named feature object on each side, carried for a planner whose rule about one object depends on others the change set does not name, such as the YDB planner keeping the tables an async replication owns. It is an INPUT to a planner rather than a change: the changes are FeatureChanges, and a fixture here would assert that a context plans nothing",
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemoved entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
@@ -86,10 +85,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 	"IndexesRenamed": {
 		why:  "the comparison pairs a removed index with an added one only on a target with index_rename, which is YDB's, so a PostgreSQL plan reaches a rename only through a diff built by hand, and planning nothing would leave the index under its old name",
 		diff: &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "users", From: "a", To: "b"}}},
-	},
-	"IndexPartitioningChanged": {
-		why:  "index partitioning is YDB's, and the comparison records a change of it only on a target with index_partitioning; planning nothing would report an index settled that is not",
-		diff: &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{TableName: "users", Name: "a"}}},
 	},
 	"IndexCommentsChanged": {
 		why:  "the comparison records an index comment apart from the index only on a target with comment_attributes, which is YDB's; planning nothing would report a comment written that is not",

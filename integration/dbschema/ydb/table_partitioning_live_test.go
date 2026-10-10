@@ -10,7 +10,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -293,11 +292,11 @@ func TestYDBTablePartitioning_RebuildKeepsWhatTheDeclarationLeavesOut(t *testing
 			})
 			tuned := &ydbschema.TablePartitioning{BySize: new(false), ByLoad: new(true), MinPartitions: 3,
 				MaxPartitions: 9, ReadReplicas: "ANY_AZ:1", KeyBloomFilter: new(true)}
-			indexTuned := &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 2}
+			indexTuned := &ydbschema.IndexPartitioning{ByLoad: new(true), MinPartitions: 2}
 			before := partitionedItems(tuned)
 			before.Fields[2].Type = "INTEGER"
 			before.Indexes = []schemamodel.Index{{StructName: "Item", Name: "items_label", Fields: []string{"label"},
-				Partitioning: indexTuned}}
+				Facets: indexSettings(indexTuned)}}
 			apply(c, conn, planAgainst(c, conn, before, partitioningSchemas))
 			apply(c, conn, []string{"UPSERT INTO `" + partitioningSchema + "/items` (id, code, label) VALUES (1ul, 'a'u, 7)"})
 
@@ -311,7 +310,7 @@ func TestYDBTablePartitioning_RebuildKeepsWhatTheDeclarationLeavesOut(t *testing
 			c.Assert(planAgainst(c, conn, declared, partitioningSchemas), qt.HasLen, 0)
 			live := readScoped(c, conn, partitioningSchemas)
 			c.Assert(heldSettings(c, tableNamed(c, live, partitioningSchema, "items")), qt.DeepEquals, tuned)
-			c.Assert(indexNamed(c, live, "items_label").Partitioning, qt.DeepEquals, indexTuned)
+			c.Assert(heldIndexSettings(c, indexNamed(c, live, "items_label")), qt.DeepEquals, indexTuned)
 		})
 	}
 }

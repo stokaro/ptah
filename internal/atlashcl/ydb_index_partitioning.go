@@ -30,6 +30,8 @@ func (p *parser) indexYDBSettings(block *hclsyntax.Block, index schemamodel.Inde
 	if err != nil {
 		return schemamodel.Index{}, p.blockError(block, "index %q: %v", block.Labels[0], err)
 	}
-	index.Partitioning = partitioning
+	if index.Facets, err = ydbindex.WithPartitioning(index.Facets, partitioning); err != nil {
+		return schemamodel.Index{}, p.blockError(block, "index %q: %v", block.Labels[0], err)
+	}
 	return index, nil
 }

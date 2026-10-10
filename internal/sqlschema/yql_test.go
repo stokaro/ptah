@@ -30,7 +30,7 @@ func TestReadYQLTable(t *testing.T) {
 	c.Assert(database.Indexes[0].Fields, qt.DeepEquals, []string{"v`x.y"})
 	c.Assert(database.Indexes[0].IncludeColumns, qt.DeepEquals, []string{"id"})
 	c.Assert(database.Indexes[0].Type, qt.Equals, "async")
-	c.Assert(database.Indexes[0].Partitioning, qt.IsNotNil)
+	c.Assert(database.Indexes[0].Facets.Kinds(), qt.Contains, ydbschema.IndexPartitioningKind)
 	c.Assert(database.Tables[0].Facets.Kinds(), qt.Contains, ydbschema.TablePartitioningKind)
 }
 

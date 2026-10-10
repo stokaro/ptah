@@ -23,15 +23,23 @@ type comparisonTables struct {
 	capture   *schemapreparation.Capture
 	bySubject map[objectidentity.Key]schemapreparation.Table
 	parents   []schemaext.ParentState
+	// owners is the database the feature comparison reads: a renamed index
+	// under the name the plan gives it; see [renamedIndexOwners].
+	owners *catalog.Database
 }
 
 func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database, current *catalog.Database,
-	target string, semantics identifier.Semantics, caps capability.Capabilities, runtime schemapreparation.Runtime,
+	renames []difftypes.IndexRename, target string, semantics identifier.Semantics, caps capability.Capabilities,
+	runtime schemapreparation.Runtime,
 ) (comparisonTables, error) {
 	if target == "" {
-		return comparisonTables{desired: desired}, nil
+		return comparisonTables{desired: desired, owners: current}, nil
 	}
-	parents, err := featureParents(desired, current, target, semantics)
+	owners, err := renamedIndexOwners(current, renames, semantics)
+	if err != nil {
+		return comparisonTables{}, err
+	}
+	parents, err := featureParents(desired, owners, target, semantics)
 	if err != nil {
 		return comparisonTables{}, err
 	}
@@ -73,7 +81,7 @@ func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database,
 	if err != nil {
 		return comparisonTables{}, err
 	}
-	return comparisonTables{desired: resolved, capture: &capture, bySubject: prepared, parents: parents}, nil
+	return comparisonTables{desired: resolved, capture: &capture, bySubject: prepared, parents: parents, owners: owners}, nil
 }
 
 func applyResolvedFacets(desired *schemamodel.Database, prepared map[objectidentity.Key]schemapreparation.Table,

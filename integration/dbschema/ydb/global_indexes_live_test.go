@@ -7,9 +7,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
+	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/internal/ydbindex"
 )
 
 // globalIndexSchema is the directory the global-index tests write into.
@@ -21,7 +25,7 @@ var globalIndexSchemas = []string{globalIndexSchema}
 // covering and a unique index, each with the partitioning partitioning gives
 // it, keyed by index name; an index partitioning leaves out takes YDB's
 // defaults.
-func globalIndexDeclaration(partitioning map[string]*ast.IndexPartitioningSpec, renamed map[string]string) *schemamodel.Database {
+func globalIndexDeclaration(partitioning map[string]*ydbschema.IndexPartitioning, renamed map[string]string) *schemamodel.Database {
 	name := func(index string) string {
 		if to, ok := renamed[index]; ok {
 			return to
@@ -38,15 +42,32 @@ func globalIndexDeclaration(partitioning map[string]*ast.IndexPartitioningSpec, 
 		},
 		Indexes: []schemamodel.Index{
 			{StructName: "Item", Name: name("idx_items_kind"), Fields: []string{"kind"},
-				Partitioning: partitioning["idx_items_kind"]},
+				Facets: indexSettings(partitioning["idx_items_kind"])},
 			{StructName: "Item", Name: name("idx_items_price"), Fields: []string{"price"}, Type: "async",
-				IncludeColumns: []string{"kind", "sku"}, Partitioning: partitioning["idx_items_price"]},
+				IncludeColumns: []string{"kind", "sku"}, Facets: indexSettings(partitioning["idx_items_price"])},
 			{StructName: "Item", Name: name("uq_items_sku"), Fields: []string{"sku"}, Unique: true,
-				Partitioning: partitioning["uq_items_sku"]},
+				Facets: indexSettings(partitioning["uq_items_sku"])},
 		},
 	}
 	schemamodel.Finalize(db)
 	return db
+}
+
+// indexSettings is spec as an index's YDB owner facet, and no facet for nil.
+func indexSettings(spec *ydbschema.IndexPartitioning) schemaext.Facets {
+	return must.Must(ydbindex.WithPartitioning(schemaext.Facets{}, spec))
+}
+
+// heldIndexSettings is the settings the read attached to index as the YDB
+// owner's observed facet, or nil where it attached none.
+func heldIndexSettings(c *qt.C, index catalog.Index) *ydbschema.IndexPartitioning {
+	c.Helper()
+	value, found, err := schemaext.FacetAs[*ydbschema.ObservedIndexPartitioning](index.Facets, ydbschema.IndexPartitioningKind)
+	c.Assert(err, qt.IsNil)
+	if !found {
+		return nil
+	}
+	return &value.IndexPartitioning
 }
 
 // TestYDBGlobalIndexes_PartitioningRoundTrip applies indexes that declare their
@@ -64,7 +85,7 @@ func TestYDBGlobalIndexes_PartitioningRoundTrip(t *testing.T) {
 			dropTables(c, conn, globalIndexSchemas)
 			c.Cleanup(func() { dropTables(c, conn, globalIndexSchemas) })
 
-			tuned := map[string]*ast.IndexPartitioningSpec{
+			tuned := map[string]*ydbschema.IndexPartitioning{
 				"idx_items_kind":  {ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9},
 				"idx_items_price": {BySize: new(false), ReadReplicas: "PER_AZ:1"},
 				"uq_items_sku":    {PartitionSizeMB: 512, MinPartitions: 2},
@@ -76,17 +97,17 @@ func TestYDBGlobalIndexes_PartitioningRoundTrip(t *testing.T) {
 			c.Assert(planAgainst(c, conn, declared, globalIndexSchemas), qt.HasLen, 0)
 
 			live := readScoped(c, conn, globalIndexSchemas)
-			c.Assert(indexNamed(c, live, "idx_items_kind").Partitioning, qt.DeepEquals,
-				&ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9})
-			c.Assert(indexNamed(c, live, "idx_items_price").Partitioning, qt.DeepEquals,
-				&ast.IndexPartitioningSpec{BySize: new(false), ReadReplicas: "PER_AZ:1"})
-			c.Assert(indexNamed(c, live, "uq_items_sku").Partitioning, qt.DeepEquals,
-				&ast.IndexPartitioningSpec{PartitionSizeMB: 512, MinPartitions: 2})
+			c.Assert(heldIndexSettings(c, indexNamed(c, live, "idx_items_kind")), qt.DeepEquals,
+				&ydbschema.IndexPartitioning{ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9})
+			c.Assert(heldIndexSettings(c, indexNamed(c, live, "idx_items_price")), qt.DeepEquals,
+				&ydbschema.IndexPartitioning{BySize: new(false), ReadReplicas: "PER_AZ:1"})
+			c.Assert(heldIndexSettings(c, indexNamed(c, live, "uq_items_sku")), qt.DeepEquals,
+				&ydbschema.IndexPartitioning{PartitionSizeMB: 512, MinPartitions: 2})
 
 			// In place: one ALTER INDEX per changed index, and each names every
 			// setting, because setting AUTO_PARTITIONING_BY_SIZE resets the size and
 			// the minimum the index holds.
-			retuned := map[string]*ast.IndexPartitioningSpec{
+			retuned := map[string]*ydbschema.IndexPartitioning{
 				"idx_items_kind":  {ByLoad: new(true), MinPartitions: 4, MaxPartitions: 9},
 				"idx_items_price": {BySize: new(true), ReadReplicas: "PER_AZ:0"},
 				"uq_items_sku":    {PartitionSizeMB: 512, MinPartitions: 2},
@@ -104,19 +125,19 @@ func TestYDBGlobalIndexes_PartitioningRoundTrip(t *testing.T) {
 			apply(c, conn, changes)
 			c.Assert(planAgainst(c, conn, declared, globalIndexSchemas), qt.HasLen, 0)
 			live = readScoped(c, conn, globalIndexSchemas)
-			c.Assert(indexNamed(c, live, "idx_items_price").Partitioning, qt.IsNil)
+			c.Assert(heldIndexSettings(c, indexNamed(c, live, "idx_items_price")), qt.IsNil)
 
 			// A maximum the declaration leaves out stays, as YDB has no way to
 			// remove one, and so does every setting once no index declares any.
-			declared = globalIndexDeclaration(map[string]*ast.IndexPartitioningSpec{
+			declared = globalIndexDeclaration(map[string]*ydbschema.IndexPartitioning{
 				"idx_items_kind": {ByLoad: new(true), MinPartitions: 4},
 				"uq_items_sku":   {PartitionSizeMB: 512, MinPartitions: 2},
 			}, nil)
 			c.Assert(planAgainst(c, conn, declared, globalIndexSchemas), qt.HasLen, 0)
 			c.Assert(planAgainst(c, conn, globalIndexDeclaration(nil, nil), globalIndexSchemas), qt.HasLen, 0)
 			live = readScoped(c, conn, globalIndexSchemas)
-			c.Assert(indexNamed(c, live, "idx_items_kind").Partitioning, qt.DeepEquals,
-				&ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 4, MaxPartitions: 9})
+			c.Assert(heldIndexSettings(c, indexNamed(c, live, "idx_items_kind")), qt.DeepEquals,
+				&ydbschema.IndexPartitioning{ByLoad: new(true), MinPartitions: 4, MaxPartitions: 9})
 		})
 	}
 }
@@ -134,7 +155,7 @@ func TestYDBGlobalIndexes_RenameRoundTrip(t *testing.T) {
 			dropTables(c, conn, globalIndexSchemas)
 			c.Cleanup(func() { dropTables(c, conn, globalIndexSchemas) })
 
-			partitioning := map[string]*ast.IndexPartitioningSpec{"idx_items_price": {MinPartitions: 3}}
+			partitioning := map[string]*ydbschema.IndexPartitioning{"idx_items_price": {MinPartitions: 3}}
 			apply(c, conn, planAgainst(c, conn, globalIndexDeclaration(partitioning, nil), globalIndexSchemas))
 			apply(c, conn, []string{"UPSERT INTO `ptah_ydb_global_indexes/items` (id, sku, kind, price) " +
 				"VALUES (1, 'a'u, 'tool'u, 10), (2, 'b'u, 'part'u, 20)"})
@@ -158,7 +179,7 @@ func TestYDBGlobalIndexes_RenameRoundTrip(t *testing.T) {
 			byPrice := indexNamed(c, live, "idx_items_by_price")
 			c.Assert(byPrice.Method, qt.Equals, "GLOBAL ASYNC")
 			c.Assert(byPrice.IncludeColumns, qt.DeepEquals, []string{"kind", "sku"})
-			c.Assert(byPrice.Partitioning, qt.DeepEquals, &ast.IndexPartitioningSpec{MinPartitions: 3})
+			c.Assert(heldIndexSettings(c, byPrice), qt.DeepEquals, &ydbschema.IndexPartitioning{MinPartitions: 3})
 			c.Assert(indexNamed(c, live, "uq_items_code").IsUnique, qt.IsTrue)
 			var count int64
 			c.Assert(conn.QueryRowContext(c.Context(),
@@ -166,7 +187,7 @@ func TestYDBGlobalIndexes_RenameRoundTrip(t *testing.T) {
 			c.Assert(count, qt.Equals, int64(1))
 
 			// Back to the first names, with the partitioning changed on the way.
-			partitioning["idx_items_price"] = &ast.IndexPartitioningSpec{MinPartitions: 5}
+			partitioning["idx_items_price"] = &ydbschema.IndexPartitioning{MinPartitions: 5}
 			back := planAgainst(c, conn, globalIndexDeclaration(partitioning, nil), globalIndexSchemas)
 			c.Assert(back, qt.DeepEquals, []string{
 				"ALTER TABLE `ptah_ydb_global_indexes/items` RENAME INDEX `idx_items_by_price` TO `idx_items_price`",
@@ -199,7 +220,7 @@ func TestYDBGlobalIndexes_AddedToATableThatExists(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, before, globalIndexSchemas))
 			apply(c, conn, []string{"UPSERT INTO `ptah_ydb_global_indexes/items` (id, sku, kind, price) VALUES (1, 'a'u, 'tool'u, 10)"})
 
-			after := globalIndexDeclaration(map[string]*ast.IndexPartitioningSpec{
+			after := globalIndexDeclaration(map[string]*ydbschema.IndexPartitioning{
 				"idx_items_price": {ByLoad: new(true), MinPartitions: 2},
 			}, nil)
 			added := planAgainst(c, conn, after, globalIndexSchemas)
@@ -225,27 +246,27 @@ func TestYDBGlobalIndexes_AddedToATableThatExists(t *testing.T) {
 func TestYDBGlobalIndexes_SettingOneResetsAnother(t *testing.T) {
 	steps := []struct {
 		name   string
-		before map[string]*ast.IndexPartitioningSpec
-		after  map[string]*ast.IndexPartitioningSpec
-		want   *ast.IndexPartitioningSpec
+		before map[string]*ydbschema.IndexPartitioning
+		after  map[string]*ydbschema.IndexPartitioning
+		want   *ydbschema.IndexPartitioning
 	}{
 		{
 			name:   "splitting by load turned on beside a minimum",
-			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {MinPartitions: 5}},
-			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {ByLoad: new(true), MinPartitions: 5}},
-			want:   &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 5},
+			before: map[string]*ydbschema.IndexPartitioning{"idx_items_kind": {MinPartitions: 5}},
+			after:  map[string]*ydbschema.IndexPartitioning{"idx_items_kind": {ByLoad: new(true), MinPartitions: 5}},
+			want:   &ydbschema.IndexPartitioning{ByLoad: new(true), MinPartitions: 5},
 		},
 		{
 			name:   "splitting by size turned back on beside a minimum",
-			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {BySize: new(false), MinPartitions: 6}},
-			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {PartitionSizeMB: 100, MinPartitions: 6}},
-			want:   &ast.IndexPartitioningSpec{PartitionSizeMB: 100, MinPartitions: 6},
+			before: map[string]*ydbschema.IndexPartitioning{"idx_items_kind": {BySize: new(false), MinPartitions: 6}},
+			after:  map[string]*ydbschema.IndexPartitioning{"idx_items_kind": {PartitionSizeMB: 100, MinPartitions: 6}},
+			want:   &ydbschema.IndexPartitioning{PartitionSizeMB: 100, MinPartitions: 6},
 		},
 		{
 			name:   "splitting by load turned on beside a held minimum",
-			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {MinPartitions: 5}},
-			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {ByLoad: new(true)}},
-			want:   &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 5},
+			before: map[string]*ydbschema.IndexPartitioning{"idx_items_kind": {MinPartitions: 5}},
+			after:  map[string]*ydbschema.IndexPartitioning{"idx_items_kind": {ByLoad: new(true)}},
+			want:   &ydbschema.IndexPartitioning{ByLoad: new(true), MinPartitions: 5},
 		},
 	}
 
@@ -263,7 +284,7 @@ func TestYDBGlobalIndexes_SettingOneResetsAnother(t *testing.T) {
 					apply(c, conn, planAgainst(c, conn, declared, globalIndexSchemas))
 
 					c.Assert(planAgainst(c, conn, declared, globalIndexSchemas), qt.HasLen, 0)
-					c.Assert(indexNamed(c, readScoped(c, conn, globalIndexSchemas), "idx_items_kind").Partitioning, qt.DeepEquals,
+					c.Assert(heldIndexSettings(c, indexNamed(c, readScoped(c, conn, globalIndexSchemas), "idx_items_kind")), qt.DeepEquals,
 						step.want)
 				})
 			}

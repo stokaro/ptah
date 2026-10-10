@@ -14,7 +14,6 @@ func (i Index) Clone() Index {
 	i.StorageParams = maps.Clone(i.StorageParams)
 	i.Overrides = cloneOverrides(i.Overrides)
 	i.RequiresExtensions = slices.Clone(i.RequiresExtensions)
-	i.Partitioning = i.Partitioning.Clone()
 	if i.NullsDistinct != nil {
 		i.NullsDistinct = new(*i.NullsDistinct)
 	}

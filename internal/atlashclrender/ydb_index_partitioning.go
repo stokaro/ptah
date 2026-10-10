@@ -3,12 +3,26 @@ package atlashclrender
 import (
 	"strconv"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbpartition"
 )
 
-func (r *renderer) renderIndexPartitioning(spec *ast.IndexPartitioningSpec) {
-	if spec.IsZero() {
+// heldIndexPartitioning is the settings an index's facet states, declared or
+// read; an invalid value states none here and is refused where it is used.
+func heldIndexPartitioning(facets schemaext.Facets) *ydbschema.IndexPartitioning {
+	if declared, found, err := schemaext.FacetAs[*ydbschema.DesiredIndexPartitioning](facets, ydbschema.IndexPartitioningKind); err == nil && found {
+		return &declared.IndexPartitioning
+	}
+	if observed, found, err := schemaext.FacetAs[*ydbschema.ObservedIndexPartitioning](facets, ydbschema.IndexPartitioningKind); err == nil && found {
+		return &observed.IndexPartitioning
+	}
+	return nil
+}
+
+func (r *renderer) renderIndexPartitioning(facets schemaext.Facets) {
+	spec := heldIndexPartitioning(facets)
+	if spec == nil || spec.IsZero() {
 		return
 	}
 	for _, setting := range []struct {

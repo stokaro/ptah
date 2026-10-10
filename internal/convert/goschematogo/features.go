@@ -51,6 +51,9 @@ func (ctx *renderContext) captureFeatureObjects() error {
 	if err := ctx.captureColumnStores(); err != nil {
 		return err
 	}
+	if err := ctx.captureIndexPartitioning(); err != nil {
+		return err
+	}
 	if err := ctx.captureHypertables(); err != nil {
 		return err
 	}

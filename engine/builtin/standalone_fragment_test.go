@@ -297,12 +297,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		"SetConstraintCommentOperation": func() ast.Node {
 			return &ast.SetConstraintCommentOperation{Constraint: "ck_c", Comment: "positive"}
 		},
-		"SetIndexPartitioningOperation": func() ast.Node {
-			return &ast.SetIndexPartitioningOperation{
-				IndexName:    "ix_c",
-				Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2},
-			}
-		},
 		"ValidateConstraintOperation": func() ast.Node {
 			return &ast.ValidateConstraintOperation{ConstraintName: "ck_c"}
 		},

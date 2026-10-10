@@ -205,8 +205,8 @@ func TestRender_VectorIndex_FailurePath(t *testing.T) {
 		{
 			name: "a vector index's partitioning",
 			caps: capability.YDB262(),
-			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree", Facets: vectorFacets(vectorSpec()),
-				Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 3}},
+			node: &ast.IndexNode{Name: "by_emb", Table: "t", Columns: []string{"emb"}, Type: "vector_kmeans_tree",
+				Facets: withIndexSettings(vectorFacets(vectorSpec()), ydbschema.IndexPartitioning{MinPartitions: 3})},
 			wantErr: `index "by_emb": a vector index keeps the partitioning YDB gives it ` +
 				`\(.ALTER INDEX \.\.\. SET. answers .Only index with one impl table is supported.\)`,
 		},
