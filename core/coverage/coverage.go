@@ -85,16 +85,6 @@ const (
 	Domain Kind = "domain"
 	// Extension is a PostgreSQL extension (CREATE EXTENSION).
 	Extension Kind = "extension"
-	// ExtendedProperty is a SQL Server extended property
-	// (sp_addextendedproperty).
-	//
-	// Like VirtualTable it is usually declined by construction rather than by
-	// choice: the HCL surface has no block for one, so a document rendered from
-	// a database that has them carries none of them and its silence is not a
-	// request to drop them. Without this kind the round trip was destructive --
-	// `schema inspect` followed by `schema apply` of its own output planned
-	// sp_dropextendedproperty for every property on the server.
-	ExtendedProperty Kind = "extended_property"
 	// Policy is a PostgreSQL row-level security policy (CREATE POLICY).
 	Policy Kind = "policy"
 	// Range is a PostgreSQL range type (CREATE TYPE ... AS RANGE).
@@ -128,14 +118,16 @@ const (
 	// becomes a DROP (stokaro/ptah#2236).
 	//
 	// It is recorded whenever the target could have them rather than when this
-	// read found some, for the reason [ExtendedProperty] gives: recording only
-	// what was found would assert that the absence of every other one is
-	// authoritative.
+	// read found some: recording only what was found would assert that the
+	// absence of every other one is authoritative.
 	ChangeStream Kind = "change_stream"
 	// Synonym is a SQL Server synonym (CREATE SYNONYM).
 	//
-	// It is declined for the same reason [ExtendedProperty] is, and the same
-	// round trip planned DROP SYNONYM for every synonym the server had.
+	// A document format with no block for one declines it, so a document
+	// rendered from a database that has synonyms carries none of them and its
+	// silence is not a request to drop them; without the record, `schema
+	// inspect` followed by `schema apply` of its own output planned DROP
+	// SYNONYM for every synonym the server had.
 	Synonym Kind = "synonym"
 	// VirtualTable is a SQLite virtual table (CREATE VIRTUAL TABLE ... USING).
 	//
@@ -203,7 +195,7 @@ const (
 // constant says what that costs a serialized [Set].
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnTable, Composite, DefaultPrivilege, Domain,
-	Extension, ExtendedProperty, Grant, Policy, Range,
+	Extension, Grant, Policy, Range,
 	Role, Schema, Sequence, Synonym, TableOption,
 	TTL, View, VirtualTable,
 }

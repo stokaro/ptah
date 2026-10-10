@@ -2,11 +2,15 @@ package atlashclrender
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/systemschema"
@@ -1324,17 +1328,12 @@ func (r *renderer) renderCoordinationNodes() {
 // The schema is written VERBATIM rather than through [renderer.schemaFor]: an
 // empty Schema is the DATABASE scope, a fourth address alongside schema, table
 // and column, and substituting the connection default for it would move a
-// database property onto a schema. [ptah.run/core/schemamodel.ExtendedProperty.QualifiedOwner]
+// database property onto a schema. [ptah.run/dialect/mssql/mssqlproperty.Property.Label]
 // spells that address `(database)`, and the SQL Server renderer emits it by
 // passing no `@level0type` at all.
 func (r *renderer) renderExtendedProperties() {
-	properties := append([]schemamodel.ExtendedProperty(nil), r.db.ExtendedProperties...)
-	slices.SortFunc(properties, func(a, b schemamodel.ExtendedProperty) int {
-		if owner := cmp.Compare(a.QualifiedOwner(), b.QualifiedOwner()); owner != 0 {
-			return owner
-		}
-		return cmp.Compare(a.Name, b.Name)
-	})
+	properties := slices.Clone(r.extendedProperties)
+	slices.SortFunc(properties, func(a, b mssqlproperty.DesiredProperty) int { return cmp.Compare(a.Label(), b.Label()) })
 	for _, property := range properties {
 		r.linef(`extended_property %s {`, quote(property.Name))
 		if strings.TrimSpace(property.Schema) != "" {
@@ -1347,4 +1346,28 @@ func (r *renderer) renderExtendedProperties() {
 		r.line("}")
 		r.line("")
 	}
+}
+
+// captureExtendedProperties validates every SQL Server extended property
+// before rendering, so a malformed value fails the export rather than
+// becoming a warning.
+func (r *renderer) captureExtendedProperties() error {
+	objects, err := r.db.FeatureObjects.All()
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		if object.Ref.Kind != objectidentity.Kind(mssqlproperty.Kind) {
+			continue
+		}
+		property, ok := object.Value.(*mssqlproperty.DesiredProperty)
+		if !ok {
+			return fmt.Errorf("%w: HCL requires desired extended property values", schemaext.ErrInvalidValue)
+		}
+		if err := mssqlproperty.ValidateDesired(property); err != nil {
+			return err
+		}
+		r.extendedProperties = append(r.extendedProperties, *property)
+	}
+	return nil
 }

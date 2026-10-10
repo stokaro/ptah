@@ -1549,21 +1549,32 @@ const commentPropertyName = "MS_Description"
 // not about the desired one.
 func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) error {
 	schemaName, tableName := commentTarget(table)
-	operation := ast.ExtendedPropertyAdd
+	procedure := "sp_addextendedproperty"
 	switch {
 	case op.Comment == "":
-		operation = ast.ExtendedPropertyDrop
+		procedure = "sp_dropextendedproperty"
 	case op.HasCurrent:
-		operation = ast.ExtendedPropertyUpdate
+		procedure = "sp_updateextendedproperty"
 	}
-	return r.renderExtendedProperty(&ast.ExtendedPropertyNode{
-		Name:      commentPropertyName,
-		Value:     op.Comment,
-		Operation: operation,
-		Schema:    schemaName,
-		Table:     tableName,
-		Column:    unquoteIdentifier(strings.TrimSpace(op.Column)),
-	})
+	// Every argument is a string literal, the names of the objects the
+	// comment hangs off included: @level1name is a sysname, so bracket quoting
+	// would address an object literally called `[docs]`. The address stops
+	// where the comment's owner stops, and a drop passes no @value, which
+	// sp_dropextendedproperty refuses.
+	arguments := []string{"@name = N" + escapeStringLiteral(commentPropertyName)}
+	if op.Comment != "" {
+		arguments = append(arguments, "@value = N"+escapeStringLiteral(op.Comment))
+	}
+	for _, level := range []struct{ number, kind, name string }{
+		{"0", "SCHEMA", schemaName}, {"1", "TABLE", tableName}, {"2", "COLUMN", unquoteIdentifier(strings.TrimSpace(op.Column))},
+	} {
+		if strings.TrimSpace(level.name) == "" {
+			break
+		}
+		arguments = append(arguments, "@level"+level.number+"type = N'"+level.kind+"'", "@level"+level.number+"name = N"+escapeStringLiteral(level.name))
+	}
+	r.w.WriteLinef("EXEC %s %s;", procedure, strings.Join(arguments, ", "))
+	return nil
 }
 
 // commentTarget splits a table reference into the schema and table an extended

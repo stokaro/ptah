@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -1586,10 +1587,11 @@ func externalObjectsFixture() schemamodel.Database {
 
 func extendedPropertyFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.ExtendedProperties = []schemamodel.ExtendedProperty{{
-		StructName: "XP", Name: "MS_Description", Schema: "dbo", Table: "t", Column: "id",
-		Value: "identifier", Comment: "docs",
-	}}
+	db.FeatureObjects = must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+		StructName: "XP", Comment: "docs",
+		Property: mssqlproperty.Property{Name: "ptah_note", Schema: "dbo", Table: "t", Column: "id", Value: "identifier"},
+	})))
+	db.FeatureCoverage = must.Must(mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	return db
 }
 

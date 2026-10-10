@@ -26,7 +26,6 @@ func CommonFamilies(db *schemamodel.Database) []string {
 	families := []familyCount{
 		{"composite types", len(db.CompositeTypes)},
 		{"domains", len(db.Domains)},
-		{"extended properties", len(db.ExtendedProperties)},
 		{"extensions", len(db.Extensions)},
 		{"functions", len(db.Functions)},
 		{"grants", len(db.Grants)},

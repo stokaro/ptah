@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 )
 
@@ -122,9 +125,9 @@ func TestHostlessDeclaration_AnExtendedPropertyNeedsNoTable(t *testing.T) {
 	c := qt.New(t)
 
 	schema := twoHostCandidates()
-	schema.ExtendedProperties = []schemamodel.ExtendedProperty{{
-		Name: "MS_Description", Value: "the database",
-	}}
+	schema.FeatureObjects = must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+		Property: mssqlproperty.Property{Name: "ptah_note", Value: "the database"},
+	})))
 
 	statements, err := builtin.GetOrderedCreateStatements(&schema, "sqlserver")
 

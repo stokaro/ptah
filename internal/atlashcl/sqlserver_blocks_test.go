@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/internal/atlashcl"
 )
 
@@ -52,13 +53,16 @@ extended_property "MS_Description" {
 		Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
 		Comment: "the remote users",
 	}})
-	c.Assert(db.ExtendedProperties, qt.DeepEquals, []schemamodel.ExtendedProperty{
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	var properties []mssqlproperty.Property
+	for _, object := range objects {
+		properties = append(properties, object.Value.(*mssqlproperty.DesiredProperty).Property)
+	}
+	c.Assert(properties, qt.ContentEquals, []mssqlproperty.Property{
 		{Name: "ptah_flag", Value: "database scope"},
 		{Name: "schema_note", Schema: "dbo", Value: "schema scope"},
-		{
-			Name: "MS_Description", Schema: "dbo", Table: "users",
-			Column: "title", Value: "the title",
-		},
+		{Name: "MS_Description", Schema: "dbo", Table: "users", Column: "title", Value: "the title"},
 	})
 }
 

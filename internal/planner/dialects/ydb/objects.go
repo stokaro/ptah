@@ -82,10 +82,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 			keyed(capability.RowLevelSecurity, "row-level security", "the plan changes row-level security")},
 		{len(diff.SynonymsAdded)+len(diff.SynonymsRemoved)+len(diff.SynonymsModified) > 0,
 			func() error { return refuseFact("the plan changes a synonym", "YDB has no synonyms") }},
-		{len(diff.ExtendedPropertiesAdded)+len(diff.ExtendedPropertiesRemoved)+len(diff.ExtendedPropertiesModified) > 0,
-			func() error {
-				return refuseFact("the plan changes an extended property", "extended properties are SQL Server's")
-			}},
 		{len(diff.IndexVisibilityChanged) > 0,
 			keyed(capability.InvisibleIndexes, "invisible index", "the plan changes whether an index is visible")},
 		{len(diff.ConstraintsValidated) > 0,

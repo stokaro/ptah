@@ -184,14 +184,14 @@ properties it would leave behind. That guard predates this support and is
 unchanged: adding cleanup for them is a destructive change with its own
 measurement.
 
-Every other target names a declared extended property as skipped rather than
-rendering nothing, for the same reason a synonym is: the object exists in the
-schema model for one engine, and a dialect that dropped it silently would lose
-a declaration without saying so.
+An extended property belongs to the SQL Server owner. A declaration is bound
+to SQL Server, so a schema rendered or planned for another target leaves the
+property out. Two declarations of one property are refused.
 
-Extended properties travel through the schema model, the renderer, the reader
-and the comparison, and the HCL surface `schema inspect` writes carries them —
-as it does synonyms.
+The owner compares, plans and reverses extended properties, and the HCL that
+`schema inspect` writes carries them, as it does synonyms. A plan adds or
+changes a property once the table or column it is on exists, and drops it
+before that object is dropped.
 
 ```hcl
 synonym "current_orders" {

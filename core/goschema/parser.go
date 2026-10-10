@@ -730,7 +730,6 @@ type schemaParseState struct {
 	ranges                []schemamodel.Range
 	views                 []schemamodel.View
 	synonyms              []schemamodel.Synonym
-	extendedProperties    []schemamodel.ExtendedProperty
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
 	rlsPolicies           []rlsPolicyDeclaration
@@ -868,7 +867,6 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:matview":                 (*schemaParseState).parseMaterializedViewComment,
 	"ptah:schema:synonym":                 (*schemaParseState).parseSynonymComment,
 	"ptah:schema:coordinationnode":        (*schemaParseState).parseCoordinationNodeComment,
-	"ptah:schema:extendedproperty":        (*schemaParseState).parseExtendedPropertyComment,
 	"ptah:schema:trigger":                 (*schemaParseState).parseTriggerComment,
 	"ptah:schema:rls:policy":              (*schemaParseState).parseRLSPolicyComment,
 	"ptah:schema:rls:enable":              (*schemaParseState).parseRLSEnableComment,
@@ -1101,35 +1099,34 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File, selection p
 	})
 
 	result := schemamodel.Database{
-		FeatureObjects:     state.featureObjects,
-		FeatureCoverage:    state.featureCoverage,
-		Schemas:            state.schemas,
-		Tables:             state.tableDirectives,
-		Fields:             state.schemaFields,
-		Indexes:            state.schemaIndexes,
-		Constraints:        state.schemaConstraints,
-		Enums:              enums,
-		EmbeddedFields:     state.embeddedFields,
-		Extensions:         state.extensions,
-		Functions:          state.functions,
-		Sequences:          state.sequences,
-		Domains:            state.domains,
-		CompositeTypes:     state.compositeTypes,
-		Ranges:             state.ranges,
-		Views:              state.views,
-		Synonyms:           state.synonyms,
-		ExtendedProperties: state.extendedProperties,
-		MaterializedViews:  state.materializedViews,
-		Triggers:           state.triggers,
-		RLSPolicies:        policies,
-		RLSEnabledTables:   switches,
-		Roles:              state.roles,
-		Grants:             state.grants,
-		RevokedGrants:      state.revokedGrants,
-		DefaultPrivileges:  state.defaultPrivileges,
-		ManagedData:        state.managedData,
-		NotDescribed:       coverage.Set{}.With(state.notDescribed...),
-		Dependencies:       make(map[string][]string),
+		FeatureObjects:    state.featureObjects,
+		FeatureCoverage:   state.featureCoverage,
+		Schemas:           state.schemas,
+		Tables:            state.tableDirectives,
+		Fields:            state.schemaFields,
+		Indexes:           state.schemaIndexes,
+		Constraints:       state.schemaConstraints,
+		Enums:             enums,
+		EmbeddedFields:    state.embeddedFields,
+		Extensions:        state.extensions,
+		Functions:         state.functions,
+		Sequences:         state.sequences,
+		Domains:           state.domains,
+		CompositeTypes:    state.compositeTypes,
+		Ranges:            state.ranges,
+		Views:             state.views,
+		Synonyms:          state.synonyms,
+		MaterializedViews: state.materializedViews,
+		Triggers:          state.triggers,
+		RLSPolicies:       policies,
+		RLSEnabledTables:  switches,
+		Roles:             state.roles,
+		Grants:            state.grants,
+		RevokedGrants:     state.revokedGrants,
+		DefaultPrivileges: state.defaultPrivileges,
+		ManagedData:       state.managedData,
+		NotDescribed:      coverage.Set{}.With(state.notDescribed...),
+		Dependencies:      make(map[string][]string),
 	}
 	schemamodel.NormalizeTableScopedNames(&result)
 	schemamodel.BuildDependencyGraph(&result)
@@ -1811,65 +1808,6 @@ func coordinationNodeError(ctx annotationErrorContext, attribute string, err err
 		Err:       ptaherr.ErrInvalidAttributeValue,
 		Message:   fmt.Sprintf("%s on %s at %s", err.Error(), ctx.directive, ctx.location),
 	}
-}
-
-// parseExtendedPropertyComment reads a SQL Server extended-property
-// declaration.
-//
-// Three refusals, and they are all about identity.
-//
-// A table without a schema and a column without a table are refused because
-// SQL Server has no level N without a level N-1: the statement that writes
-// such a property cannot be composed, and accepting the declaration would
-// defer the failure to a plan that has already been reviewed. Omitting ALL of
-// them is not an omission -- it is the database's own property, which is the
-// one address that names no object.
-//
-// MS_Description is refused because Ptah models it as the object's comment.
-// Accepting it here would give the same live row two owners -- the comment
-// comparator and the property comparator -- each planning against it without
-// seeing the other, so an inspect-then-apply round trip would emit both a
-// comment change and a property change for one value.
-//
-// There is no dialect scope here, and the omission is deliberate, exactly as
-// on a synonym: an extended property is a SQL Server object and nothing else.
-func (s *schemaParseState) parseExtendedPropertyComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//ptah:schema:extendedproperty", structName)
-	if err := validateAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if err := requireAttributes(kv, ctx); err != nil {
-		return err
-	}
-	if strings.TrimSpace(kv["table"]) != "" && strings.TrimSpace(kv["schema"]) == "" {
-		return fmt.Errorf(
-			"%s: extended property %q names a table and no schema; SQL Server addresses a table "+
-				"through the schema that holds it, so there is no property to write",
-			ctx.location, kv["name"])
-	}
-	if strings.TrimSpace(kv["column"]) != "" && strings.TrimSpace(kv["table"]) == "" {
-		return fmt.Errorf(
-			"%s: extended property %q names a column and no table; SQL Server addresses a column "+
-				"through the table that holds it, so there is no property to write",
-			ctx.location, kv["name"])
-	}
-	if strings.EqualFold(strings.TrimSpace(kv["name"]), "MS_Description") {
-		return fmt.Errorf(
-			"%s: extended property MS_Description is the object comment, which Ptah already manages; "+
-				"declare it with the comment attribute of the object it belongs to",
-			ctx.location)
-	}
-	s.extendedProperties = append(s.extendedProperties, schemamodel.ExtendedProperty{
-		StructName: structName,
-		Name:       kv["name"],
-		Schema:     kv["schema"],
-		Table:      kv["table"],
-		Column:     kv["column"],
-		Value:      kv["value"],
-		Comment:    kv["comment"],
-	})
-	return nil
 }
 
 func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, structName string) error {

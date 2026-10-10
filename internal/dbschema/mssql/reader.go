@@ -151,7 +151,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read extended properties: %w", err)
 	}
-	schema.ExtendedProperties = extendedProperties
+	if err := recordExtendedProperties(schema, extendedProperties); err != nil {
+		return nil, fmt.Errorf("sqlserver: record extended properties: %w", err)
+	}
 
 	triggers, err := r.readTriggers(ctx)
 	if err != nil {

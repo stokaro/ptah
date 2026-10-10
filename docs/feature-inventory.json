@@ -958,6 +958,18 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mssql-mssqlprobe",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlprobe",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-mssql-mssqlproperty",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqlproperty",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mssql-mssqlrelation",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mssql/mssqlrelation",

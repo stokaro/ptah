@@ -3,6 +3,7 @@ package schemadiff_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -10,11 +11,14 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestCompare_ARoundTripThroughPtahsOwnOutputKeepsThem is the regression for a
@@ -46,12 +50,12 @@ func TestCompare_ARoundTripThroughPtahsOwnOutputKeepsThem(t *testing.T) {
 
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "sqlserver"}, nil, must.Must(builtin.New())))
 
-	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 0)
+	c.Assert(droppedProperties(diff), qt.Equals, 0)
 	c.Assert(diff.SynonymsRemoved, qt.HasLen, 0)
 	// Non-vacuity: the two empty lists above are the objects surviving rather
 	// than a comparison of two empty sets.
 	c.Assert(parsed.Synonyms, qt.DeepEquals, describedSQLServerSchema().Synonyms)
-	c.Assert(parsed.ExtendedProperties, qt.DeepEquals, describedSQLServerSchema().ExtendedProperties)
+	c.Assert(parsed.FeatureObjects.Refs(), qt.DeepEquals, describedSQLServerSchema().FeatureObjects.Refs())
 	c.Assert(string(document), qt.Contains, "s_users")
 }
 
@@ -70,13 +74,13 @@ func TestCompare_AnHCLDocumentThatOmitsThemDropsThem(t *testing.T) {
 	// The same schema with both declarations taken out, rendered and read back:
 	// a document whose author does not want them.
 	declared := describedSQLServerSchema()
-	declared.ExtendedProperties = nil
+	declared.FeatureObjects = schemaext.Objects{}
 	declared.Synonyms = nil
 	parsed := loadDocument(c, renderInspectedDocument(c, declared))
 
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "sqlserver"}, nil, must.Must(builtin.New())))
 
-	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 1)
+	c.Assert(droppedProperties(diff), qt.Equals, 1)
 	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
 }
 
@@ -93,12 +97,12 @@ func TestCompare_AGoSchemaThatCouldNameThemStillDropsThem(t *testing.T) {
 	// The same schema with both declarations taken out, which is what a Go
 	// source that does not want them looks like.
 	declared := describedSQLServerSchema()
-	declared.ExtendedProperties = nil
+	declared.FeatureObjects = schemaext.Objects{}
 	declared.Synonyms = nil
 
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), declared, live, catalog.ServerInfo{Dialect: "sqlserver"}, nil, must.Must(builtin.New())))
 
-	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 1)
+	c.Assert(droppedProperties(diff), qt.Equals, 1)
 	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
 }
 
@@ -108,10 +112,10 @@ func sqlServerDatabaseWithUnwritableObjects() *catalog.Database {
 	return &catalog.Database{
 		Schemas: []catalog.Schema{{Name: "dbo"}},
 		Tables:  []catalog.Table{{Schema: "dbo", Name: "users"}},
-		ExtendedProperties: []catalog.ExtendedProperty{{
-			Name: "MS_Description", Value: "the users",
-			Schema: "dbo", Table: "users", ValueType: "nvarchar",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(mssqlproperty.ObservedObject(mssqlproperty.ObservedProperty{
+			Property: mssqlproperty.Property{Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users"}, ValueType: "nvarchar",
+		}))),
+		FeatureCoverage: must.Must(mssqlproperty.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		Synonyms: []catalog.Synonym{{
 			Schema: "dbo", Name: "s_users", Target: "other.dbo.users",
 		}},
@@ -125,9 +129,12 @@ func describedSQLServerSchema() *schemamodel.Database {
 		Schemas: []schemamodel.Schema{{Name: "dbo"}},
 		Tables:  []schemamodel.Table{{StructName: "T", Name: "users", Schema: "dbo"}},
 		Fields:  []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
-		ExtendedProperties: []schemamodel.ExtendedProperty{{
-			Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users",
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+			Property: mssqlproperty.Property{Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users"},
+		}))),
+		// A Go schema has an annotation for an extended property, so it
+		// records that it describes them.
+		FeatureCoverage: must.Must(mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 		Synonyms: []schemamodel.Synonym{{
 			Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
 		}},
@@ -148,4 +155,21 @@ func loadDocument(c *qt.C, document []byte) *schemamodel.Database {
 	parsed, err := schemafile.Load(path, schemafile.Options{Dialect: platform.SQLServer})
 	c.Assert(err, qt.IsNil)
 	return parsed
+}
+
+// droppedProperties counts the extended properties a comparison drops: a
+// property on a table is a change of that table, and one on a schema or the
+// database a change of its own.
+func droppedProperties(diff *difftypes.SchemaDiff) int {
+	records := slices.Clone(diff.FeatureChanges)
+	for _, table := range diff.TablesModified {
+		records = append(records, table.FeatureChanges...)
+	}
+	dropped := 0
+	for _, record := range records {
+		if change, ok := record.Value.(*mssqlproperty.Change); ok && change.After == nil {
+			dropped++
+		}
+	}
+	return dropped
 }

@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/cockroachdb/crdbrender"
-	"ptah.run/dialect/mssql/mssqlrender"
 	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
@@ -81,7 +80,7 @@ func ownersFor(dialect string) renderOwners {
 	case platform.ClickHouse:
 		return renderOwners{extensions: chrender.Registry}
 	case platform.SQLServer:
-		return renderOwners{extensions: mssqlrender.Registry}
+		return renderOwners{extensions: mssqlRegistry}
 	case platform.CockroachDB:
 		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause,
 			lowerTableFacets: lowerPostgresFamilyFacets}

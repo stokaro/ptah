@@ -573,8 +573,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderCreateSynonym(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
-	case *ast.ExtendedPropertyNode:
-		return r.renderExtendedProperty(n)
 
 	// Statements carried as text. A routine node holds the whole executable
 	// statement beside the metadata the SQL parser recovered from it, and the
@@ -3947,17 +3945,6 @@ func unsupportedFeaturef(format string, args ...any) error {
 // turn it on.
 func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	r.writeObjectSkipped("synonym", node.Name)
-	return nil
-}
-
-// renderExtendedProperty refuses: an extended property is a SQL Server object,
-// and the PostgreSQL family has no catalog to attach one to.
-//
-// There is no capability key behind this refusal, for the reason
-// renderCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
-	r.writeObjectSkipped("extended property", node.Name)
 	return nil
 }
 

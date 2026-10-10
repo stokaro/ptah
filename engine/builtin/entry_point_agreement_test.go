@@ -214,7 +214,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"DropViewNode":                            &ast.DropViewNode{},
 		"EnumNode":                                &ast.EnumNode{},
 		"EnumTypeDef":                             &ast.EnumTypeDef{},
-		"ExtendedPropertyNode":                    &ast.ExtendedPropertyNode{},
 		"ExtensionNode":                           &ast.ExtensionNode{},
 		"GrantPrivilegeNode":                      &ast.GrantPrivilegeNode{},
 		"GrantRoleMembershipNode":                 &ast.GrantRoleMembershipNode{},

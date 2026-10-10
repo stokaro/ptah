@@ -40,10 +40,10 @@ func TestLoadSources_CarriesTheFamiliesLoadCarries(t *testing.T) {
 	// Non-vacuity: the document really does declare one of each, so two empty
 	// descriptions cannot pass as agreement.
 	c.Assert(direct.Synonyms, qt.HasLen, 1)
-	c.Assert(direct.ExtendedProperties, qt.HasLen, 1)
+	c.Assert(direct.FeatureObjects.Len(), qt.Equals, 1)
 
 	c.Assert(merged.Synonyms, qt.DeepEquals, direct.Synonyms)
-	c.Assert(merged.ExtendedProperties, qt.DeepEquals, direct.ExtendedProperties)
+	c.Assert(merged.FeatureObjects.Refs(), qt.DeepEquals, direct.FeatureObjects.Refs())
 }
 
 // TestLoadSources_MergesTheFamiliesAcrossFiles is the multi-file half, and the

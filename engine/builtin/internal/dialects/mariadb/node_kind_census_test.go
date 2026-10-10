@@ -227,11 +227,6 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 			want: "",
 		},
 		{
-			kind: "ExtendedPropertyNode",
-			node: ast.NewExtendedProperty(ast.ExtendedPropertyAdd, "MS_Description"),
-			want: "-- EXTENDED PROPERTY MS_Description not supported in mariadb\n",
-		},
-		{
 			// Wrapper-owned.
 			kind: "ExtensionNode",
 			node: ast.NewExtension("pg_trgm"),
@@ -373,7 +368,7 @@ func TestMariaDBDispatch_EveryNodeKindCensus_FailurePath(t *testing.T) {
 // What this number does not measure is whether a node kind reaches any renderer
 // at all. [ptah.run/internal/astrouteguard] derives the whole corpus from
 // core/ast and owns that question for every dialect at once.
-const censusKindFloor = 46
+const censusKindFloor = 45
 
 // censusRows is the two censuses joined, which is the set this file answers for.
 func censusRows() []mariadbCensusRow {

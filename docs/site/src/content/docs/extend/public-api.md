@@ -90,6 +90,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/spanner/spannerreverse` | Reverse row deletion policy changes with recovery limits. |
 | `dialect/spanner/spannerconvert` | Conversion between row deletion policy declarations and observations. |
 | `dialect/spanner/spannerreport` | Captured row deletion policy counts and export omission labels. |
+| `dialect/mssql/mssqlproperty` | SQL Server extended property model, codecs and every stage's service. |
 | `dialect/mssql/mssqlschema` | SQL Server security policy model, with every predicate binding, and codecs. |
 | `dialect/mssql/mssqlcompare` | Security policy comparison with access assessment and the one-enabled-policy-per-table refusal. |
 | `dialect/mssql/mssqldiff` | Directional security policy changes, their access effect, and the statements each needs. |

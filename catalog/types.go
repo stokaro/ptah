@@ -71,10 +71,6 @@ type Database struct {
 	Views       []View             `json:"views"`      // Database views
 	MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
 	Synonyms    []Synonym          `json:"synonyms"`   // SQL Server synonyms
-	// ExtendedProperties are the SQL Server extended properties this
-	// description covers: schema-, table- and column-scoped ones. See
-	// [ExtendedProperty] for what is deliberately not in it.
-	ExtendedProperties []ExtendedProperty `json:"extended_properties,omitempty"`
 
 	Triggers    []Trigger   `json:"triggers"`     // Database triggers
 	RLSPolicies []RLSPolicy `json:"rls_policies"` // PostgreSQL RLS policies
@@ -1375,73 +1371,6 @@ type Synonym struct {
 	TargetSchema   string `json:"target_schema,omitempty"`
 	TargetObject   string `json:"target_object"`
 	Comment        string `json:"comment,omitempty"` // Synonym comment/description
-}
-
-// ExtendedProperty is one SQL Server extended property read from
-// sys.extended_properties.
-//
-// SQL Server hangs a property off a three-level address, and this type carries
-// it. No level at all is a DATABASE-scoped property (class 0); Schema alone is
-// a schema-scoped one (class 3); Schema and Table together are object-scoped,
-// and adding Column addresses a column of it (class 1, minor_id 0 or the
-// column's id).
-//
-// A database-scoped property is in no schema, so a read narrowed to one still
-// carries it -- the rule an extension already follows, where placement is not
-// ownership. Dropping it from a narrowed description would plan
-// sp_dropextendedproperty for a property the declaration still names.
-//
-// MS_Description is not read here, because Ptah already models it: the
-// reader turns it into the object's Comment, and reporting it twice would let
-// the comment comparator and this one plan the same change from two places.
-// The declaration side refuses it by name for the same reason, and says to use
-// the comment instead.
-type ExtendedProperty struct {
-	Name   string `json:"name"`             // Property name, as sys.extended_properties records it
-	Schema string `json:"schema"`           // Schema owning the addressed object, or the addressed schema
-	Table  string `json:"table,omitempty"`  // Table the property is on; empty for a schema-scoped property
-	Column string `json:"column,omitempty"` // Column the property is on; requires Table
-	Value  string `json:"value"`            // The value, when ValueType names one this description can carry
-
-	// ValueType is the sql_variant base type SQL_VARIANT_PROPERTY reports:
-	// nvarchar, int, date, and so on.
-	ValueType string `json:"value_type"`
-
-	// ValueNotRepresentable marks a property whose value is stored under a base
-	// type Ptah cannot write back.
-	//
-	// sp_addextendedproperty takes a sql_variant, so a property may hold an int
-	// or a date as well as a string -- measured on SQL Server 2022, @value=42
-	// stores base type `int` and a DATE stores `date`. The renderer writes an
-	// N'' literal, so re-emitting either of those would change its type, and
-	// CONVERT(NVARCHAR, value) on the date answers `Jan  2 2026`, which is a
-	// locale-dependent rendering rather than the value.
-	//
-	// The row is reported rather than dropped so that a description says the
-	// property is there, and the comparator declines it in both directions:
-	// nothing is planned to add it, and nothing is planned to take it away.
-	// Ptah leaves it exactly as it found it.
-	ValueNotRepresentable bool `json:"value_not_representable,omitempty"`
-}
-
-// QualifiedOwner names the object the property is attached to, as
-// schema.table.column, omitting the levels that are absent.
-//
-// A property with no levels is the database's own, and says so rather than
-// rendering as an empty string: it appears in diagnostics beside properties
-// that do name an object, and "" beside "app.docs" reads as a bug.
-func (p ExtendedProperty) QualifiedOwner() string {
-	if p.Schema == "" {
-		return "(database)"
-	}
-	parts := []string{p.Schema}
-	if p.Table != "" {
-		parts = append(parts, p.Table)
-	}
-	if p.Column != "" {
-		parts = append(parts, p.Column)
-	}
-	return strings.Join(parts, ".")
 }
 
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.

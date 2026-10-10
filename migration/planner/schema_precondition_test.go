@@ -11,7 +11,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -219,9 +221,10 @@ func TestGenerateSchemaDiffSQLStatements_EveryAddedFamilyNamesItsSchema(t *testi
 		{
 			name: "an extended property",
 			declare: func(d *schemamodel.Database) {
-				d.ExtendedProperties = append(d.ExtendedProperties, schemamodel.ExtendedProperty{
-					Name: "ptah_flag", Schema: "extra", Value: "on",
-				})
+				d.FeatureObjects = must.Must(d.FeatureObjects.With(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
+					Property: mssqlproperty.Property{Name: "ptah_flag", Schema: "extra", Value: "on"},
+				})))
+				d.FeatureCoverage = must.Must(mssqlproperty.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 			},
 		},
 	}

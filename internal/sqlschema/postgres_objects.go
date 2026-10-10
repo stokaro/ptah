@@ -2,7 +2,6 @@ package sqlschema
 
 import (
 	"fmt"
-	"ptah.run/internal/pgpolicysource"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -11,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/routineargs"
 )
 

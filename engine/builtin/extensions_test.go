@@ -22,6 +22,7 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/dialect/mssql/mssqlast"
 	"ptah.run/dialect/mssql/mssqldiff"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/spanner/spannerast"
 	"ptah.run/dialect/spanner/spannerdiff"
@@ -197,7 +198,15 @@ func continuousAggregateFixture() extensionFixture {
 
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture())
+		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture())
+}
+
+// extendedPropertyFixture adds a property to a column.
+func extendedPropertyFixture() extensionFixture {
+	return extensionFixture{payload: &mssqlproperty.Operation{Action: mssqlproperty.Add, Property: mssqlproperty.DesiredProperty{
+		Property: mssqlproperty.Property{Schema: "app", Table: "orders", Column: "id", Name: "ptah_note", Value: "key"},
+	}}, wantSQL: "EXEC sp_addextendedproperty @name = N'ptah_note', @value = N'key', @level0type = N'SCHEMA', @level0name = N'app', " +
+		"@level1type = N'TABLE', @level1name = N'orders', @level2type = N'COLUMN', @level2name = N'id';\n"}
 }
 
 func securityPolicyFixture() extensionFixture {

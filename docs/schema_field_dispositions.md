@@ -110,6 +110,14 @@ None.
 | `crdbschema.Policy.RowStatsPollInterval` | `ddl` | — |
 | `crdbschema.Policy.SelectBatchSize` | `ddl` | — |
 | `crdbschema.Policy.SelectRateLimit` | `ddl` | — |
+| `mssqlproperty.DesiredProperty.Comment` | `ddl` | — |
+| `mssqlproperty.DesiredProperty.Property` | `ddl` | — |
+| `mssqlproperty.DesiredProperty.StructName` | `source` | the Go struct the declaration was read from; the property's address and name are its identity |
+| `mssqlproperty.Property.Column` | `ddl` | — |
+| `mssqlproperty.Property.Name` | `ddl` | — |
+| `mssqlproperty.Property.Schema` | `ddl` | — |
+| `mssqlproperty.Property.Table` | `ddl` | — |
+| `mssqlproperty.Property.Value` | `ddl` | — |
 | `mssqlschema.DesiredSecurityPolicy.Enabled` | `ddl` | — |
 | `mssqlschema.DesiredSecurityPolicy.Normalized` | `comparison` | a connected server's spelling of the declared predicates, attached before a live comparison; a statement writes the predicates as declared |
 | `mssqlschema.DesiredSecurityPolicy.NotForReplication` | `ddl` | — |
@@ -189,7 +197,6 @@ None.
 | `schemamodel.Database.EmbeddedFields` | `ddl` | — |
 | `schemamodel.Database.EmbeddedSources` | `ddl` | — |
 | `schemamodel.Database.Enums` | `ddl` | — |
-| `schemamodel.Database.ExtendedProperties` | `ddl` | — |
 | `schemamodel.Database.Extensions` | `ddl` | — |
 | `schemamodel.Database.Facets` | `ddl` | — |
 | `schemamodel.Database.FeatureCoverage` | `comparison` | records source knowledge for exact feature models and subjects; limits which state can be compared or reconstructed |
@@ -254,13 +261,6 @@ None.
 | `schemamodel.Enum.Name` | `ddl` | — |
 | `schemamodel.Enum.Schema` | `ddl` | — |
 | `schemamodel.Enum.Values` | `ddl` | — |
-| `schemamodel.ExtendedProperty.Column` | `ddl` | — |
-| `schemamodel.ExtendedProperty.Comment` | `ddl` | — |
-| `schemamodel.ExtendedProperty.Name` | `ddl` | — |
-| `schemamodel.ExtendedProperty.Schema` | `ddl` | — |
-| `schemamodel.ExtendedProperty.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
-| `schemamodel.ExtendedProperty.Table` | `ddl` | — |
-| `schemamodel.ExtendedProperty.Value` | `ddl` | — |
 | `schemamodel.Extension.Comment` | `ddl` | — |
 | `schemamodel.Extension.Dialects` | `ddl` | — |
 | `schemamodel.Extension.IfNotExists` | `ddl` | — |

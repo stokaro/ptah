@@ -155,8 +155,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderExtension(n)
 	case *ast.DropExtensionNode:
 		return r.renderDropExtension(n)
-	case *ast.ExtendedPropertyNode:
-		return r.renderExtendedProperty(n)
 
 	// Data manipulation.
 	case *ast.UpsertNode:

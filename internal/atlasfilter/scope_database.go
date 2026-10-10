@@ -97,17 +97,9 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	// not reach it -- the rule selectedExtension already applies, where
 	// placement is not ownership. Narrowing it away would plan
 	// sp_dropextendedproperty for a property the declaration still names.
-	out.ExtendedProperties = keep(db.ExtendedProperties,
-		func(property catalog.ExtendedProperty) bool {
-			if property.Schema == "" {
-				return s.selectedDatabaseProperty(property.Name)
-			}
-			if property.Table != "" && !s.tableKept(keptTables, property.Schema, property.Table) {
-				return false
-			}
-			return s.selected(typeList("extended_property"), property.Schema, property.Name) ||
-				(property.Table != "" && s.tableKept(keptTables, property.Schema, property.Table))
-		})
+	out.FeatureObjects, out.FeatureCoverage = s.selectPropertyFeatures(out.FeatureObjects, out.FeatureCoverage, func(schema, table string) bool {
+		return s.tableKept(keptTables, schema, table)
+	})
 	out.Functions = keep(db.Functions, func(function catalog.Function) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)
 	})
