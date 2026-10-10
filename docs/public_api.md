@@ -121,6 +121,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgpolicy/policyconvert`
 - `ptah.run/feature/pgpolicy/policyplan`
 - `ptah.run/feature/pgpolicy/policyprobe`
+- `ptah.run/feature/pgpolicy/policyreport`
 - `ptah.run/feature/pgpolicy/policyrender`
 - `ptah.run/feature/pgpolicy/policyreverse`
 - `ptah.run/migration/datadiff`
@@ -674,6 +675,13 @@ whether applying them requires replacing the common owner; `ReplacesOwner`
 answers false for a value that does not. The migration comparator honors it
 for materialized views, which it can replace, and refuses it for tables and
 indexes with `ptaherr.ErrUnsupportedFeature`.
+
+A `ChangeValue` that also implements `StateRemoval` says whether applying it
+takes state away from the database: it drops an object, or turns off a
+setting the database had on. `RemovesState` answers false for a value that
+does not implement it. `migration/dbtest` applies a desired schema
+additively: it leaves out a change that takes state away, and applies one
+whose owner says it does not even beside no structural change.
 
 `Facets.WithTargetScope` binds a value to target names from its source.
 `ForTarget` uses an explicit `TargetSelection`, including its registered aliases.
@@ -1807,6 +1815,10 @@ operands, projects the forward declaration as the server reports it, and
 assesses the access of each inverse again. Every inverse states that it does
 not undo access the forward plan granted or withheld, and a policy TO a role
 keyword nobody resolved is irreversible.
+
+`feature/pgpolicy/policyreport` counts policies, and the tables whose
+switches are on, for inventory and omission reports. A dropped policy and a
+switch turned off are the changes that take state away (`RemovesState`).
 
 The bundled runtime selects these services on PostgreSQL, CockroachDB and
 YugabyteDB. No source or reader produces the models yet, so they act only on

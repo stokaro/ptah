@@ -1,8 +1,8 @@
 // Package pgpolicyprovider assembles the PostgreSQL row-security owner of
 // package pgpolicy as one engine provider: its codecs, and its conversion,
 // comparison, normalization, planning, declaration and reversal services on
-// every PostgreSQL-family target that has row security. The bundled runtime
-// selects it.
+// every PostgreSQL-family target that has row security, and its reports in
+// both representations. The bundled runtime selects it.
 package pgpolicyprovider
 
 import (
@@ -17,6 +17,7 @@ import (
 	"ptah.run/feature/pgpolicy/policyconvert"
 	"ptah.run/feature/pgpolicy/policyplan"
 	"ptah.run/feature/pgpolicy/policyprobe"
+	"ptah.run/feature/pgpolicy/policyreport"
 	"ptah.run/feature/pgpolicy/policyreverse"
 )
 
@@ -53,6 +54,10 @@ func Provider() engine.Provider {
 			Kinds: []schemaext.Kind{pgpolicy.PolicyKind}, OperationKinds: []schemaext.Kind{pgpolicy.PolicyOperationKind, pgpolicy.PolicyCommentOperationKind},
 			Service: policyplan.Service{}})
 		provider.Reversals = append(provider.Reversals, engine.Reversal{Target: target, Kinds: changes, Service: policyreverse.Service{}})
+	}
+	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation,
+			Definitions: policyreport.Definitions(), Service: policyreport.Service{}})
 	}
 	return provider
 }

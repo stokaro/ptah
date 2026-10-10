@@ -284,6 +284,10 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 		semantics,
 	)
 
+	// A feature change whose owner says it takes state away is left out,
+	// wherever it is. One whose owner says it does not is applied on its own;
+	// any other is applied only beside a structural change, as before.
+	diff.FeatureChanges = withoutRemovals(diff.FeatureChanges)
 	tableDiffs := diff.TablesModified[:0]
 	for i := range diff.TablesModified {
 		tableDiff := diff.TablesModified[i]
@@ -293,14 +297,30 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 			tableDiff.ConstraintsAdded,
 			semantics.IndexIdentityKey,
 		)
+		tableDiff.FeatureChanges = withoutRemovals(tableDiff.FeatureChanges)
 		if len(tableDiff.ColumnsAdded) > 0 ||
 			len(tableDiff.ColumnsModified) > 0 ||
 			len(tableDiff.ConstraintsAdded) > 0 ||
-			len(tableDiff.ConstraintsRemoved) > 0 {
+			len(tableDiff.ConstraintsRemoved) > 0 ||
+			slices.ContainsFunc(tableDiff.FeatureChanges, declaresRemoval) {
 			tableDiffs = append(tableDiffs, tableDiff)
 		}
 	}
 	diff.TablesModified = tableDiffs
+}
+
+// withoutRemovals returns the feature changes that do not take state away.
+func withoutRemovals(changes []schemaext.ChangeRecord) []schemaext.ChangeRecord {
+	return slices.DeleteFunc(slices.Clone(changes), func(change schemaext.ChangeRecord) bool {
+		return schemaext.RemovesState(change.Value)
+	})
+}
+
+// declaresRemoval reports a feature change whose owner answers whether it
+// takes state away, so an additive apply can keep it on its own.
+func declaresRemoval(change schemaext.ChangeRecord) bool {
+	_, declares := change.Value.(schemaext.StateRemoval)
+	return declares
 }
 
 func matchingNames(removed, added []string, key func(string) string) []string {

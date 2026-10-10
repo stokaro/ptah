@@ -3,6 +3,7 @@ package goschematogo
 import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/ydbfamily"
 )
 
@@ -32,5 +33,5 @@ func (ctx *renderContext) captureColumnFamilies() error {
 // isAnnotatedFacet reports a table facet the export writes as an annotation of
 // its own rather than as platform properties.
 func isAnnotatedFacet(kind schemaext.Kind) bool {
-	return isTimescaleFacet(kind) || kind == ydbschema.ColumnFamiliesKind
+	return isTimescaleFacet(kind) || kind == ydbschema.ColumnFamiliesKind || kind == pgpolicy.TableStateKind
 }

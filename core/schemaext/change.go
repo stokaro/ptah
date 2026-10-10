@@ -38,6 +38,25 @@ func ReplacesOwner(value ChangeValue) bool {
 	return ok && replacement.ReplacesOwner()
 }
 
+// StateRemoval is implemented by a change value that can take state away from
+// the database: drop an object, or turn off a setting a declaration had on.
+// A caller that applies a desired state additively, leaving alone what the
+// database holds beyond it, leaves out a change reporting true. The answer
+// belongs to the change itself, so it survives serialization.
+type StateRemoval interface {
+	ChangeValue
+	// RemovesState reports whether applying the change takes state away.
+	RemovesState() bool
+}
+
+// RemovesState reports whether value is a [StateRemoval] that takes state
+// away. Any other value, including nil, answers false, so a caller that must
+// not remove state keeps only a value whose owner says it does not.
+func RemovesState(value ChangeValue) bool {
+	removal, ok := value.(StateRemoval)
+	return ok && removal.RemovesState()
+}
+
 // ChangeRecord associates a self-contained change with an individual subject.
 // A table-owned subject occurs in its table's changes, not also at database scope.
 type ChangeRecord struct {

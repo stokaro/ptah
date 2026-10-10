@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/feature/pgpolicy"
 )
 
 // hypertableBlock holds the validated inputs for one hypertable block.
@@ -76,7 +77,7 @@ func (r *renderer) captureTimescale() error {
 // that encodes the other facets as platform properties sets these aside
 // first.
 func WritesTableFacet(kind schemaext.Kind) bool {
-	return kind == tsschema.HypertableKind || kind == ydbschema.ColumnFamiliesKind
+	return kind == tsschema.HypertableKind || kind == ydbschema.ColumnFamiliesKind || kind == pgpolicy.TableStateKind
 }
 
 // renderHypertables writes the TimescaleDB hypertable blocks.

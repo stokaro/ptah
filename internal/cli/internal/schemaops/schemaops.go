@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
@@ -258,6 +259,7 @@ func FilterGeneratedTables(db *schemamodel.Database, ignoredTables []string) *sc
 	filtered.RLSEnabledTables = keep(db.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) bool {
 		return !isIgnoredTable(ignored, table.Table)
 	})
+	filtered.FeatureObjects = withoutIgnoredChildren(db.FeatureObjects, ignored)
 	// A table nobody is checking has no rows to check either. Leaving the
 	// declaration in place would make a row comparison read a table the
 	// structural comparison had already dropped, and --ignore would exclude a
@@ -301,6 +303,7 @@ func FilterDatabaseTables(db *catalog.Database, ignoredTables []string) *catalog
 	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
 		return !isIgnoredTable(ignored, policy.Table)
 	})
+	filtered.FeatureObjects = withoutIgnoredChildren(db.FeatureObjects, ignored)
 	filtered.Enums = keepDatabaseEnums(db.Enums, filtered.Tables, ignoredEnumRefs)
 
 	return &filtered
@@ -315,6 +318,16 @@ func tableSet(names []string) map[string]struct{} {
 		}
 	}
 	return set
+}
+
+// withoutIgnoredChildren leaves out the feature objects an ignored table
+// owns, such as its row-level security policies: a table nobody is checking
+// has no children to check either, and a child left behind names a table the
+// schema no longer holds.
+func withoutIgnoredChildren(objects schemaext.Objects, ignored map[string]struct{}) schemaext.Objects {
+	return objects.Select(func(ref objectidentity.ID) bool {
+		return ref.Parent.Empty() || !isIgnoredTable(ignored, schemamodel.QualifyTableName(ref.Schema.Authored(), ref.Parent.Source), ref.Parent.Source)
+	})
 }
 
 func isIgnoredTable(ignored map[string]struct{}, names ...string) bool {

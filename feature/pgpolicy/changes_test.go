@@ -398,3 +398,31 @@ func TestOperations_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestChanges_RemovesState pins which changes take state away: a dropped
+// policy, and a switch turned off.
+func TestChanges_RemovesState(t *testing.T) {
+	switches := func(before, after pgpolicy.ObservedTableState) schemaext.ChangeValue {
+		return &pgpolicy.TableStateChange{Before: &before, After: &pgpolicy.DesiredTableState{Enabled: after.Enabled, Forced: after.Forced}, Access: unchanged}
+	}
+	tests := []struct {
+		name   string
+		change schemaext.ChangeValue
+		want   bool
+	}{
+		{name: "a creation", change: &pgpolicy.PolicyChange{After: declared("", ""), Access: unchanged}},
+		{name: "a drop", change: &pgpolicy.PolicyChange{Before: permissive, Access: unchanged}, want: true},
+		{name: "a replacement", change: &pgpolicy.PolicyChange{Before: permissive, After: declared("", ""), Access: unchanged}},
+		{name: "enabled", change: switches(pgpolicy.ObservedTableState{}, pgpolicy.ObservedTableState{Enabled: true})},
+		{name: "forced", change: switches(pgpolicy.ObservedTableState{Enabled: true}, pgpolicy.ObservedTableState{Enabled: true, Forced: true})},
+		{name: "disabled", change: switches(pgpolicy.ObservedTableState{Enabled: true}, pgpolicy.ObservedTableState{}), want: true},
+		{name: "unforced", change: switches(pgpolicy.ObservedTableState{Enabled: true, Forced: true}, pgpolicy.ObservedTableState{Enabled: true}), want: true},
+		{name: "a nil policy change", change: (*pgpolicy.PolicyChange)(nil)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemaext.RemovesState(test.change), qt.Equals, test.want)
+		})
+	}
+}
