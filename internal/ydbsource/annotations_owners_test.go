@@ -46,6 +46,7 @@ func TestParseSource_TheOwnerDeclaresAndClaims(t *testing.T) {
 	events := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "events")
 	c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, events).State, qt.Equals, schemaext.Complete)
 	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "other")).State, qt.Equals, schemaext.Complete)
+	c.Assert(db.FeatureCoverage.Lookup(ydbschema.TablePartitioningKind, events).State, qt.Equals, schemaext.Complete)
 }
 
 // TestParseSource_WithoutTheOwnerTheDirectivesDeclareNothing is the control
@@ -63,4 +64,18 @@ func TestParseSource_WithoutTheOwnerTheDirectivesDeclareNothing(t *testing.T) {
 	events := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "events")
 	c.Assert(db.FeatureCoverage.Lookup(ydbschema.TTLKind, events).State, qt.Not(qt.Equals), schemaext.Complete)
 	c.Assert(db.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "other")).State, qt.Not(qt.Equals), schemaext.Complete)
+}
+
+// TestParseSource_WithoutTheOwnerItsSettingsAreUnknown is the control on the
+// attributes the owner adds to the frontend's directives: without the owner,
+// a table's YDB setting is an attribute the directive does not know, and is
+// refused rather than dropped.
+func TestParseSource_WithoutTheOwnerItsSettingsAreUnknown(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := goschema.ParseSource(annotation.None(), "events.go",
+		"package entities\n\n//ptah:schema:table name=\"events\" key_bloom_filter=\"ENABLED\"\ntype Event struct{}\n")
+
+	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "key_bloom_filter" on //ptah:schema:table at Event`)
+	c.Assert(db.Tables, qt.HasLen, 0)
 }

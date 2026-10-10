@@ -6,7 +6,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/feature/pgpolicy"
-	"ptah.run/internal/ydbsource"
 )
 
 // sourceCoverage enrolls the feature namespaces a Go annotation source can
@@ -14,9 +13,8 @@ import (
 // directives, given the not-described declarations of theirs the source
 // wrote in limits, for the attributes they add to the frontend's, such as the
 // ClickHouse refresh schedule, and for the platform properties they decode,
-// such as CockroachDB row-level TTL and the Spanner row deletion policy; the
-// YDB settings a table and an index declare in the frontend's own directives;
-// and both PostgreSQL row-security models. A schema that could have declared
+// such as CockroachDB row-level TTL and the Spanner row deletion policy; and
+// both PostgreSQL row-security models. A schema that could have declared
 // one of them and did not describes a database without it. An owner the
 // caller did not select is not enrolled, so its models stay unknown rather
 // than absent.
@@ -29,7 +27,7 @@ func sourceCoverage(annotations annotation.Set, limits ...coverage.Object) (sche
 	securityPolicies := func() (schemaext.Coverage, error) {
 		return mssqlschema.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 	}
-	for _, claim := range []func() (schemaext.Coverage, error){ydbsource.AttributeCoverage, rowSecurity, securityPolicies} {
+	for _, claim := range []func() (schemaext.Coverage, error){rowSecurity, securityPolicies} {
 		claimed, err := claim()
 		if err != nil {
 			return schemaext.Coverage{}, err

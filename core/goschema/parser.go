@@ -20,15 +20,11 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbcolumn"
-	"ptah.run/internal/ydbindex"
-	"ptah.run/internal/ydbpartition"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so
@@ -357,22 +353,17 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
-	facets, err := s.indexPartitioning(kv, comment, structName)
+	// The attributes owners add to the directive, such as YDB's partitioning
+	// and full-text options, are read by their owners into settings and
+	// options of the index.
+	ctx := s.annotationContext(comment, "//ptah:schema:index", structName)
+	facets, err := s.annotations.DecodeAttributes("ptah:schema:index", kv)
 	if err != nil {
-		return err
+		return ownerAttributeError(ctx, err)
 	}
-	vector, err := s.indexVector(kv, comment, structName)
+	options, err := s.annotations.DecodeParameters("ptah:schema:index", kv)
 	if err != nil {
-		return err
-	}
-	if vector != nil {
-		if facets, err = facets.With(vector); err != nil {
-			return err
-		}
-	}
-	fullText, err := ydbindex.ParseOptionsDeclaration(kv)
-	if err != nil {
-		return fmt.Errorf("index %q at %s: %w", kv["name"], structName, err)
+		return ownerAttributeError(ctx, err)
 	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		Facets:         facets,
@@ -390,44 +381,9 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		IncludeColumns: includeColumns,
 		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
 		TableName:      tableName, // Target table name
-		StorageParams:  fullText,
+		StorageParams:  options,
 	})
 	return nil
-}
-
-// indexPartitioning reads the partitioning attributes of an index directive,
-// which YDB's global indexes carry (see [ydbindex.ParseDeclaration]), as the
-// YDB owner's facet, or no facet where the directive states none.
-func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.Comment, structName string) (schemaext.Facets, error) {
-	partitioning, err := ydbindex.ParseDeclaration(kv)
-	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
-		return schemaext.Facets{}, &ptaherr.ParseError{
-			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
-			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
-			Message: fmt.Sprintf("%s on //ptah:schema:index at %s", declaration.Error(), structName),
-		}
-	}
-	if err != nil {
-		return schemaext.Facets{}, err
-	}
-	return ydbindex.WithPartitioning(schemaext.Facets{}, partitioning)
-}
-
-// indexVector reads the settings of a YDB vector index from an index
-// directive as the YDB owner's facet value; see [ydbindex.DeclareVector].
-func (s *schemaParseState) indexVector(kv map[string]string, comment *ast.Comment, structName string) (*ydbschema.DesiredVectorIndex, error) {
-	vector, err := ydbindex.DeclareVector(kv, kv["type"], kv["ops"])
-	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
-		return nil, &ptaherr.ParseError{
-			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
-			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
-			Message: fmt.Sprintf("%s on //ptah:schema:index at %s", declaration.Error(), structName),
-		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("index %q at %s: %w", kv["name"], structName, err)
-	}
-	return vector, nil
 }
 
 func firstNonEmpty(values ...string) string {
@@ -634,18 +590,11 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
-	facets, err := s.tablePartitioning(kv, comment, structName)
+	// The attributes owners add to the directive, such as a YDB table's
+	// partitioning, are read by their owners into settings of the table.
+	facets, err := s.annotations.DecodeAttributes("ptah:schema:table", kv)
 	if err != nil {
-		return err
-	}
-	columnTable, err := ydbcolumn.Parse(kv)
-	if err != nil {
-		return &ptaherr.ParseError{File: s.filename, Directive: "ptah:schema:table", Err: ptaherr.ErrInvalidAttributeValue, Message: err.Error()}
-	}
-	if columnTable != nil {
-		if facets, err = facets.With(&ydbschema.DesiredColumnStore{ColumnStore: *columnTable}); err != nil {
-			return err
-		}
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:table", structName), err)
 	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
 		StructName:          structName,
@@ -665,24 +614,6 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil
-}
-
-// tablePartitioning reads the settings of a table directive that a YDB row
-// table carries (see [ydbpartition.ParseTableDeclaration]) as the YDB owner's
-// facet, or no facet where the directive states none.
-func (s *schemaParseState) tablePartitioning(kv map[string]string, comment *ast.Comment, structName string) (schemaext.Facets, error) {
-	partitioning, err := ydbpartition.ParseTableDeclaration(kv)
-	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
-		return schemaext.Facets{}, &ptaherr.ParseError{
-			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:table", structName).line,
-			Directive: "ptah:schema:table", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
-			Message: fmt.Sprintf("%s on //ptah:schema:table at %s", declaration.Error(), structName),
-		}
-	}
-	if err != nil || partitioning == nil {
-		return schemaext.Facets{}, err
-	}
-	return schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: *partitioning})
 }
 
 func tableDirectiveName(rawSchema, rawName string) (schemaName, tableName string) {
@@ -1783,12 +1714,18 @@ func ownerAttributeError(ctx annotationErrorContext, err error) error {
 		"location", ctx.location,
 		"error", err,
 	)
+	attribute := ""
+	if declared, ok := errors.AsType[*annotation.DeclarationError](err); ok {
+		attribute = declared.Attribute
+		err = declared.Err
+	}
 	return &ptaherr.ParseError{
 		File:      ctx.file,
 		Line:      ctx.line,
 		Directive: strings.TrimPrefix(ctx.directive, "//"),
-		Err:       ptaherr.ErrInvalidAttributeValue,
-		Message:   fmt.Sprintf("%s at %s: %s", ctx.directive, ctx.location, err),
+		Attribute: attribute,
+		Err:       fmt.Errorf("%w: %w", ptaherr.ErrInvalidAttributeValue, err),
+		Message:   fmt.Sprintf("%s on %s at %s", err, ctx.directive, ctx.location),
 	}
 }
 
