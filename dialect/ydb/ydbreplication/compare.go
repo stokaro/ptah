@@ -257,3 +257,33 @@ func TablePath(schema, name string) string {
 	}
 	return name
 }
+
+// ReplicationRollbackTarget is the replication a rollback of a change from
+// before to after reaches in place: before, except that a credential after
+// holds and before does not stays, since YDB has no statement that takes a
+// credential away.
+func ReplicationRollbackTarget(before, after ReplicationSpec) ReplicationSpec {
+	target := before.Clone()
+	target.Connection = rollbackConnection(before.Connection, after.Connection)
+	return target
+}
+
+// TransferRollbackTarget is the transfer a rollback of a change from before
+// to after reaches in place, as [ReplicationRollbackTarget] reads a
+// replication's.
+func TransferRollbackTarget(before, after TransferSpec) TransferSpec {
+	target := before
+	target.Connection = rollbackConnection(before.Connection, after.Connection)
+	return target
+}
+
+// rollbackConnection is before, with after's credential where before holds
+// none and after holds one.
+func rollbackConnection(before, after Connection) Connection {
+	if HasCredentials(before) || !HasCredentials(after) {
+		return before
+	}
+	kept := after
+	kept.ConnectionString = before.ConnectionString
+	return kept
+}

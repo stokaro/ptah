@@ -25,6 +25,8 @@ func Handlers() []renderer.ExtensionHandler {
 		ydbrender.TopicConsumerHandler(),
 		ydbrender.ExternalDataSourceHandler(),
 		ydbrender.ExternalTableHandler(),
+		ydbrender.AsyncReplicationHandler(),
+		ydbrender.TransferHandler(),
 		ydbrender.StreamingHandler(),
 		ydbrender.ResourcePoolHandler(),
 		ydbrender.ResourcePoolClassifierHandler(),

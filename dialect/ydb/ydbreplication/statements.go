@@ -67,12 +67,13 @@ func AlterReplicationStatement(name string, desired, previous ReplicationSpec) s
 // refuses every write and every ALTER for good (`path is an async replica
 // table`).
 func DropReplicationStatement(name string, cascade bool) string {
-	statement := "DROP ASYNC REPLICATION " + Path(name)
-	if cascade {
-		statement += " CASCADE"
-	}
-	return statement + ";"
+	return "DROP ASYNC REPLICATION " + Path(name) + cascadeClause[cascade] + ";"
 }
+
+// cascadeClause spells a drop's choice about the replica tables. It is a
+// lookup rather than a branch because the choice selects a word, not a code
+// path.
+var cascadeClause = map[bool]string{true: " CASCADE", false: ""}
 
 // CreateTransferStatement writes what creates the transfer name as spec
 // declares it, the lambda as written.

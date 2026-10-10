@@ -38,6 +38,7 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -163,6 +164,20 @@ func externalTableFixture() extensionFixture {
 		wantSQL: "DROP EXTERNAL TABLE `ext/events.v1`;\n"}
 }
 
+func asyncReplicationFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.AsyncReplication{Schema: "app", Name: "mirror.v1", Change: ydbdiff.AsyncReplication{
+		Before: &ydbreplication.ObservedReplication{Spec: ydbreplication.ReplicationSpec{
+			Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod"},
+			Items:      []ydbreplication.Item{{Source: "a", Target: "ra"}}}, State: ydbreplication.StateRunning}}},
+		wantSQL: "DROP ASYNC REPLICATION `app/mirror.v1` CASCADE;\n"}
+}
+
+func transferFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.Transfer{Schema: "etl", Name: "ingest", Change: ydbdiff.Transfer{
+		After: &ydbreplication.DesiredTransfer{Spec: ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }"}}}},
+		wantSQL: "CREATE TRANSFER `etl/ingest` FROM `tp` TO `t` USING ($m) -> { return []; };\n"}
+}
+
 func hypertableFixture() extensionFixture {
 	return extensionFixture{payload: &tsast.CreateHypertable{Table: "items", Hypertable: tsschema.DesiredHypertable{Column: "ts", ChunkInterval: "1 day"}},
 		wantSQL: "SELECT create_hypertable('\"items\"', by_range('ts', INTERVAL '1 day'), create_default_indexes => FALSE);\n"}
@@ -176,7 +191,7 @@ func continuousAggregateFixture() extensionFixture {
 
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		externalSourceFixture(), externalTableFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture())
+		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture())
 }
 
 func securityPolicyFixture() extensionFixture {

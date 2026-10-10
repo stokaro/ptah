@@ -101,6 +101,7 @@ func New() (*engine.Runtime, error) {
 			registerSecretServices(&provider, name)
 			registerTopicServices(&provider, name)
 			registerExternalServices(&provider, name)
+			registerReplicationServices(&provider, name)
 			registerYDBTTLServices(&provider, name)
 			registerYDBColumnFamilyServices(&provider, name)
 			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {

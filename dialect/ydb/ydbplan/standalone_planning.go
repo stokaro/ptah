@@ -55,6 +55,14 @@ type standalonePlanner[P standalonePayload] struct {
 	// refuses the change.
 	dependencies func(id plangraph.StepID, ref, slot objectidentity.ID, action plangraph.Action, common commonSteps) ([]plangraph.Dependency, error)
 	strategy     func(P) string
+	// effects names what a statement does beyond its object and its scheme
+	// path, such as what it reads by path; the host orders the statement
+	// against every other owner's effects on the same subjects. Nil adds
+	// none, and an error refuses the change.
+	effects func(featureplan.Request, P) ([]plangraph.Effect, error)
+	// placed is where one statement prefers to run. Nil runs each statement
+	// at placement.
+	placed func(P) plangraph.Placement
 }
 
 // plan returns one operation per change, or only diagnostics when the batch
@@ -94,11 +102,23 @@ func (p standalonePlanner[P]) plan(ctx context.Context, request featureplan.Requ
 		if err != nil {
 			return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{standaloneDiagnostic(p.kind, change.input, change.ref, err)}}, nil
 		}
+		effects := []plangraph.Effect{{Subject: change.ref, Action: action}, {Subject: slot, Action: action}}
+		if p.effects != nil {
+			more, err := p.effects(request, change.operation)
+			if err != nil {
+				return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{standaloneDiagnostic(p.kind, change.input, change.ref, err)}}, nil
+			}
+			effects = append(effects, more...)
+		}
+		placement := p.placement
+		if p.placed != nil {
+			placement = p.placed(change.operation)
+		}
 		contribution.Dependencies = append(contribution.Dependencies, edges...)
 		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
 			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: change.operation},
-			Effects:     []plangraph.Effect{{Subject: change.ref, Action: action}, {Subject: slot, Action: action}},
-			Transaction: plangraph.TransactionForbidden, Impact: change.operation.Effect(), Placement: p.placement,
+			Effects:     effects,
+			Transaction: plangraph.TransactionForbidden, Impact: change.operation.Effect(), Placement: placement,
 		})
 		result.Changes[change.input] = featureplan.ChangePlan{Subject: change.ref, Kind: p.kind,
 			Strategy: p.strategy(change.operation), Steps: []plangraph.StepID{id}}

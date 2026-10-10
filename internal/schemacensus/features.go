@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -38,6 +39,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: "ptah.run/ydb", codecs: ydbsecret.Codecs()},
 		{owner: "ptah.run/ydb", codecs: ydbtopic.Codecs()},
 		{owner: "ptah.run/ydb", codecs: ydbexternal.Codecs()},
+		{owner: "ptah.run/ydb", codecs: ydbreplication.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.IndexCodecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.RefreshCodecs()},

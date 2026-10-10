@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-617 fields are reachable from the desired schema, and each one carries
+621 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 530 | reaches rendered SQL on at least one target |
+| `ddl` | 532 | reaches rendered SQL on at least one target |
 | `comparison` | 16 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 29 | identifies the source text the declaration was read from |
+| `source` | 31 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -613,6 +613,10 @@ None.
 | `ydbexternal.Table.DataSource` | `ddl` | — |
 | `ydbexternal.Table.Location` | `ddl` | — |
 | `ydbexternal.Table.Options` | `ddl` | — |
+| `ydbreplication.DesiredReplication.Spec` | `ddl` | — |
+| `ydbreplication.DesiredReplication.StructName` | `source` | the annotation holder, independent of the replication's path |
+| `ydbreplication.DesiredTransfer.Spec` | `ddl` | — |
+| `ydbreplication.DesiredTransfer.StructName` | `source` | the annotation holder, independent of the transfer's path |
 | `ydbschema.ChangefeedSpec.Consumers` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Disabled` | `ddl` | — |
 | `ydbschema.ChangefeedSpec.Format` | `ddl` | — |

@@ -32,6 +32,10 @@
 // The annotation parser, the YAML reader, the renderer, the reader, the
 // comparison and the planner each ask this package, so a declaration one of
 // them accepts is one the others read the same way.
+//
+// The package also holds the owned feature models of both kinds: a desired
+// and an observed value each, with their codecs and coverage. The services of
+// the YDB owner packages compare, plan, render, reverse and report them.
 package ydbreplication
 
 import (

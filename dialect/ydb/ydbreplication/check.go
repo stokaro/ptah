@@ -5,7 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 )
 
 // Refusal says why a replication or a transfer cannot be written or changed
@@ -19,6 +21,22 @@ type Refusal struct {
 	Key capability.Capability
 	// Reason is why YDB refuses it, for a refusal without a key.
 	Reason string
+}
+
+// Err returns the refusal as the error every surface reports it with: a
+// [ptaherr.CapabilityError] naming the capability the target lacks, or the
+// reason YDB refuses it on every line. A nil refusal is no error.
+func (r *Refusal) Err(dialect string) error {
+	if r == nil {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	if r.Key != "" {
+		return &ptaherr.CapabilityError{Dialect: normalized, Feature: string(r.Key), Err: ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target", r.Subject, r.Key, normalized)}
+	}
+	return &ptaherr.CapabilityError{Dialect: normalized, Feature: r.Subject, Err: ptaherr.ErrUnsupportedFeature,
+		Message: r.Subject + ": " + r.Reason}
 }
 
 // CheckReplication reports why the replication name, declared as spec, cannot
@@ -35,10 +53,7 @@ func CheckReplication(name string, spec ReplicationSpec, caps capability.Capabil
 	if strings.TrimSpace(name) == "" {
 		return &Refusal{Subject: "an async replication", Reason: "a replication needs a name"}
 	}
-	if _, err := ParseReplication(replicationValues(spec)); err != nil {
-		return &Refusal{Subject: subject, Reason: err.Error()}
-	}
-	if err := ValidateReplicationItems(spec.Items); err != nil {
+	if err := ValidateReplication(spec); err != nil {
 		return &Refusal{Subject: subject, Reason: err.Error()}
 	}
 	if UsesSecretPath(spec.Connection) && !caps.Has(capability.ReplicationSecretPaths) {
@@ -57,13 +72,49 @@ func CheckTransfer(name string, spec TransferSpec, caps capability.Capabilities)
 	if strings.TrimSpace(name) == "" {
 		return &Refusal{Subject: "a transfer", Reason: "a transfer needs a name"}
 	}
-	if _, err := ParseTransfer(transferValues(spec)); err != nil {
+	if err := ValidateTransfer(spec); err != nil {
 		return &Refusal{Subject: subject, Reason: err.Error()}
 	}
 	if UsesSecretPath(spec.Connection) && !caps.Has(capability.ReplicationSecretPaths) {
 		return &Refusal{Subject: subject + " names a secret by its path", Key: capability.ReplicationSecretPaths}
 	}
 	return nil
+}
+
+// RefuseReplication reports why the statement that moves the replication name
+// from before, in state, to after cannot run on a target holding caps, or nil
+// when it can. A nil before is a creation and a nil after a drop. A drop needs
+// the async_replication key alone; a creation or a change needs what
+// [CheckReplication] holds after to, and a change one YDB makes in state, as
+// [ReplicationChangeRefusal] reads it. The planner and the renderer both ask
+// it, so a statement one accepts is one the other writes.
+func RefuseReplication(name string, before, after *ReplicationSpec, state string, caps capability.Capabilities) *Refusal {
+	return refuse(name, before, after, state, caps, CheckReplication, ReplicationChangeRefusal)
+}
+
+// RefuseTransfer reports why the statement that moves the transfer name from
+// before, in state, to after cannot run on a target holding caps, as
+// [RefuseReplication] does for a replication.
+func RefuseTransfer(name string, before, after *TransferSpec, state string, caps capability.Capabilities) *Refusal {
+	return refuse(name, before, after, state, caps, CheckTransfer, TransferChangeRefusal)
+}
+
+// refuse holds a statement of either kind to its key, its declaration's checks
+// and its change's.
+func refuse[S any](name string, before, after *S, state string, caps capability.Capabilities,
+	check func(string, S, capability.Capabilities) *Refusal, change func(string, S, S, string) *Refusal,
+) *Refusal {
+	var none S
+	if refusal := check(name, none, caps); refusal != nil && refusal.Key != "" {
+		return refusal
+	}
+	if after == nil {
+		return nil
+	}
+	if refusal := check(name, *after, caps); refusal != nil || before == nil {
+		return refusal
+	}
+	return change(name, *after, *before, state)
 }
 
 // ReplicationChangeRefusal reports why the replication name cannot move from

@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbrender"
+	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -58,6 +59,10 @@ func validateObject(target string, caps capability.Capabilities, object schemaex
 		return validateExternalSourceObject(target, caps, object, value)
 	case *ydbexternal.DesiredTable:
 		return validateExternalTableObject(target, caps, object, value)
+	case *ydbreplication.DesiredReplication:
+		return validateReplicationObject(target, caps, object, value)
+	case *ydbreplication.DesiredTransfer:
+		return validateTransferObject(target, caps, object, value)
 	default:
 		return fmt.Errorf("%w: YDB does not render feature object %s with payload %T", ptaherr.ErrUnsupportedFeature, object.Ref, object.Value)
 	}
@@ -134,6 +139,29 @@ func ValidateCreationObjects(target string, caps capability.Capabilities, object
 		}
 	}
 	return nil
+}
+
+// validateReplicationObject holds a declared async replication to the rules
+// its creation is rendered with, so schema validation and rendering refuse
+// the same replications.
+func validateReplicationObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbreplication.DesiredReplication) error {
+	if err := ydbreplication.ValidateIdentity(object.Ref); err != nil || schemaext.Kind(object.Ref.Kind) != ydbreplication.ReplicationKind {
+		return fmt.Errorf("%w: %s is not an async replication identity", ptaherr.ErrInvalidSchemaDiff, object.Ref)
+	}
+	operation := &ydbast.AsyncReplication{Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
+		Change: ydbdiff.AsyncReplication{After: value}}
+	return ydbrender.AsyncReplicationHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
+}
+
+// validateTransferObject holds a declared transfer to the rules its creation
+// is rendered with.
+func validateTransferObject(target string, caps capability.Capabilities, object schemaext.Object, value *ydbreplication.DesiredTransfer) error {
+	if err := ydbreplication.ValidateIdentity(object.Ref); err != nil || schemaext.Kind(object.Ref.Kind) != ydbreplication.TransferKind {
+		return fmt.Errorf("%w: %s is not a transfer identity", ptaherr.ErrInvalidSchemaDiff, object.Ref)
+	}
+	operation := &ydbast.Transfer{Schema: object.Ref.Schema.Source, Name: object.Ref.Name.Source,
+		Change: ydbdiff.Transfer{After: value}}
+	return ydbrender.TransferHandler().Validate(renderer.ExtensionContext{Target: target, Capabilities: caps}, operation)
 }
 
 // validateTopicObject holds a declared topic to the rules its creation is
