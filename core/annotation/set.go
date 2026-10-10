@@ -46,6 +46,24 @@ type Contribution struct {
 	Label string
 }
 
+// DirectiveAttributes are attributes an owner adds to one of the frontend's
+// own directives, such as a schedule on a materialized view. The frontend
+// validates them beside the directive's own attributes and hands the ones a
+// declaration wrote to Decode, whose facets join the object the directive
+// declares.
+type DirectiveAttributes struct {
+	// Directive names the frontend's directive, such as
+	// "ptah:schema:matview".
+	Directive string
+	// Attributes are the owner's attributes of the directive. An attribute
+	// name belongs to one owner, and never to the directive itself.
+	Attributes []Attribute
+	// Decode reads the owner's attributes a declaration wrote, keyed by name.
+	// It is called only when the declaration wrote at least one of them, and
+	// it returns facets of the owner's models, with their target scopes.
+	Decode func(attributes map[string]string) (schemaext.Facets, error)
+}
+
 // Extension is what one feature owner contributes to the Go annotation
 // frontend.
 type Extension struct {
@@ -57,6 +75,9 @@ type Extension struct {
 	// Kinds are the models the owner's contributions carry. The provider that
 	// registers the extension owns their desired codecs.
 	Kinds []schemaext.Kind
+	// Attributes are the owner's attributes on the frontend's own
+	// directives.
+	Attributes []DirectiveAttributes
 	// Decode turns one declaration of one of Directives into what it
 	// declares. It is required when Directives is not empty. It must not keep
 	// the declaration, and it returns an error for a value it refuses.
@@ -74,6 +95,9 @@ type Set struct {
 	selected   bool
 	extensions []Extension
 	owners     map[string]int
+	// attributes holds, for each frontend directive, the extension index
+	// that owns each attribute an owner adds to it.
+	attributes map[string]map[string]int
 }
 
 // None returns a selected set without owners. A parse with it reads the
@@ -84,10 +108,11 @@ func None() Set {
 
 // NewSet validates and freezes extensions. It refuses an extension without
 // an owner or a coverage claim, one that declares directives and no decoder,
-// a directive without a name, and a directive name or a kind two extensions
-// claim.
+// a directive without a name, attributes on a directive without a decoder or
+// a name, and a directive name, an attribute of one directive or a kind two
+// extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
-	set := Set{selected: true, owners: make(map[string]int)}
+	set := Set{selected: true, owners: make(map[string]int), attributes: make(map[string]map[string]int)}
 	kinds := make(map[schemaext.Kind]string)
 	for index, extension := range extensions {
 		if strings.TrimSpace(extension.Owner) == "" {
@@ -115,9 +140,98 @@ func NewSet(extensions ...Extension) (Set, error) {
 			}
 			set.owners[directive.Name] = index
 		}
+		if err := set.claimAttributes(index, extension); err != nil {
+			return Set{}, err
+		}
 		set.extensions = append(set.extensions, cloneExtension(extension))
 	}
 	return set, nil
+}
+
+func (s *Set) claimAttributes(index int, extension Extension) error {
+	for _, group := range extension.Attributes {
+		if strings.TrimSpace(group.Directive) == "" || group.Decode == nil {
+			return fmt.Errorf("annotation extension of %s declares attributes without a directive or a decoder", extension.Owner)
+		}
+		claimed := s.attributes[group.Directive]
+		if claimed == nil {
+			claimed = make(map[string]int)
+			s.attributes[group.Directive] = claimed
+		}
+		for _, attribute := range group.Attributes {
+			if strings.TrimSpace(attribute.Name) == "" {
+				return fmt.Errorf("annotation extension of %s declares an attribute of %q without a name", extension.Owner, group.Directive)
+			}
+			if previous, taken := claimed[attribute.Name]; taken {
+				owner := extension.Owner
+				if previous < len(s.extensions) {
+					owner = s.extensions[previous].Owner
+				}
+				return fmt.Errorf("%w: attribute %q of %q is declared by %s and %s", schemaext.ErrDuplicate,
+					attribute.Name, group.Directive, owner, extension.Owner)
+			}
+			claimed[attribute.Name] = index
+		}
+	}
+	return nil
+}
+
+// Attributes returns the attributes the set's owners add to directive, in
+// the order the owners declared them. The results are copies.
+func (s Set) Attributes(directive string) []Attribute {
+	var result []Attribute
+	for _, extension := range s.extensions {
+		for _, group := range extension.Attributes {
+			if group.Directive == directive {
+				result = append(result, group.Attributes...)
+			}
+		}
+	}
+	return result
+}
+
+// AttributedDirectives returns, sorted, the directives to which the set's
+// owners add attributes.
+func (s Set) AttributedDirectives() []string {
+	return slices.Sorted(maps.Keys(s.attributes))
+}
+
+// DecodeAttributes hands each owner the attributes it adds to directive that
+// attributes holds, and joins the facets they return. An owner none of whose
+// attributes was written is not called. A facet of a model the owner does not
+// declare, and one two owners return, are errors.
+func (s Set) DecodeAttributes(directive string, attributes map[string]string) (schemaext.Facets, error) {
+	var joined schemaext.Facets
+	for _, extension := range s.extensions {
+		for _, group := range extension.Attributes {
+			if group.Directive != directive {
+				continue
+			}
+			written := make(map[string]string)
+			for _, attribute := range group.Attributes {
+				if value, found := attributes[attribute.Name]; found {
+					written[attribute.Name] = value
+				}
+			}
+			if len(written) == 0 {
+				continue
+			}
+			facets, err := group.Decode(written)
+			if err != nil {
+				return schemaext.Facets{}, err
+			}
+			for _, kind := range facets.DeclaredKinds() {
+				if !slices.Contains(extension.Kinds, kind) {
+					return schemaext.Facets{}, fmt.Errorf("%w: attributes of %q contributed a model %s does not declare",
+						schemaext.ErrInvalidValue, directive, extension.Owner)
+				}
+			}
+			if joined, err = joined.Merge(facets); err != nil {
+				return schemaext.Facets{}, err
+			}
+		}
+	}
+	return joined, nil
 }
 
 // Selected reports whether the set was built by [NewSet] or [None].
@@ -211,6 +325,12 @@ func cloneExtension(extension Extension) Extension {
 	}
 	extension.Directives = directives
 	extension.Kinds = slices.Clone(extension.Kinds)
+	groups := make([]DirectiveAttributes, 0, len(extension.Attributes))
+	for _, group := range extension.Attributes {
+		group.Attributes = slices.Clone(group.Attributes)
+		groups = append(groups, group)
+	}
+	extension.Attributes = groups
 	return extension
 }
 

@@ -179,3 +179,103 @@ func TestQualifiedName(t *testing.T) {
 		})
 	}
 }
+
+func shading(owner, attribute string, decode func(map[string]string) (schemaext.Facets, error)) annotation.Extension {
+	return annotation.Extension{
+		Owner: owner, Kinds: []schemaext.Kind{levelKind}, Coverage: levelCoverage,
+		Attributes: []annotation.DirectiveAttributes{{
+			Directive:  "ptah:schema:matview",
+			Attributes: []annotation.Attribute{{Name: attribute, Value: "string"}},
+			Decode:     decode,
+		}},
+	}
+}
+
+func decodeLevel(attributes map[string]string) (schemaext.Facets, error) {
+	return schemaext.NewFacets(&level{Value: attributes["shade"]})
+}
+
+// TestSet_DecodeAttributes_HappyPath pins that an owner sees only its own
+// attributes, and only when the declaration wrote one of them.
+func TestSet_DecodeAttributes_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		attributes map[string]string
+		wantSeen   map[string]string
+		want       []schemaext.Value
+	}{
+		{name: "the owner's attribute written", attributes: map[string]string{"name": "mv", "shade": "teal"},
+			wantSeen: map[string]string{"shade": "teal"}, want: []schemaext.Value{&level{Value: "teal"}}},
+		{name: "none of the owner's attributes written", attributes: map[string]string{"name": "mv"}, want: []schemaext.Value{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var seen map[string]string
+			set, err := annotation.NewSet(shading("example.org/paint", "shade", func(attributes map[string]string) (schemaext.Facets, error) {
+				seen = attributes
+				return decodeLevel(attributes)
+			}))
+			c.Assert(err, qt.IsNil)
+
+			facets, err := set.DecodeAttributes("ptah:schema:matview", test.attributes)
+
+			c.Assert(err, qt.IsNil)
+			values, err := facets.Values()
+			c.Assert(err, qt.IsNil)
+			c.Assert(values, qt.DeepEquals, test.want)
+			c.Assert(seen, qt.DeepEquals, test.wantSeen)
+			c.Assert(set.Attributes("ptah:schema:matview"), qt.DeepEquals, []annotation.Attribute{{Name: "shade", Value: "string"}})
+			c.Assert(set.AttributedDirectives(), qt.DeepEquals, []string{"ptah:schema:matview"})
+		})
+	}
+}
+
+func TestSet_DecodeAttributes_FailurePath(t *testing.T) {
+	foreign := func(map[string]string) (schemaext.Facets, error) {
+		return schemaext.NewFacets(&otherLevel{})
+	}
+	c := qt.New(t)
+	set, err := annotation.NewSet(shading("example.org/paint", "shade", foreign))
+	c.Assert(err, qt.IsNil)
+
+	facets, err := set.DecodeAttributes("ptah:schema:matview", map[string]string{"shade": "teal"})
+
+	c.Assert(err, qt.ErrorMatches, `.*attributes of "ptah:schema:matview" contributed a model example.org/paint does not declare`)
+	c.Assert(facets.IsZero(), qt.IsTrue)
+}
+
+func TestNewSet_AttributesFailurePath(t *testing.T) {
+	noDecoder := shading("example.org/paint", "shade", nil)
+	unnamed := shading("example.org/paint", " ", decodeLevel)
+	tests := []struct {
+		name       string
+		extensions []annotation.Extension
+		wantErr    string
+	}{
+		{name: "attributes without a decoder", extensions: []annotation.Extension{noDecoder}, wantErr: `.* declares attributes without a directive or a decoder`},
+		{name: "an attribute without a name", extensions: []annotation.Extension{unnamed}, wantErr: `.* declares an attribute of "ptah:schema:matview" without a name`},
+		{name: "an attribute two owners add", extensions: []annotation.Extension{
+			shading("example.org/paint", "shade", decodeLevel),
+			{Owner: "example.org/other", Coverage: levelCoverage, Attributes: []annotation.DirectiveAttributes{{
+				Directive: "ptah:schema:matview", Attributes: []annotation.Attribute{{Name: "shade"}}, Decode: decodeLevel}}},
+		}, wantErr: `duplicate.*attribute "shade" of "ptah:schema:matview" is declared by example.org/paint and example.org/other`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			set, err := annotation.NewSet(test.extensions...)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(set.Selected(), qt.IsFalse)
+		})
+	}
+}
+
+// otherLevel is a model no extension of these tests declares.
+type otherLevel struct{}
+
+func (*otherLevel) Kind() schemaext.Kind             { return "example.org/other/level" }
+func (*otherLevel) Clone() schemaext.Value           { return &otherLevel{} }
+func (*otherLevel) Equal(other schemaext.Value) bool { _, ok := other.(*otherLevel); return ok }

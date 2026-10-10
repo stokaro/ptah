@@ -20,7 +20,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/annotationmeta"
@@ -1888,20 +1887,15 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	}
 	// No refresh strategy is read. validateAttributes has already refused the
 	// retired attribute by name, so a declaration carrying one never reaches
-	// this line (stokaro/ptah#1625). What IS read is the ClickHouse schedule,
-	// which is the opposite kind of thing: engine-native state the server owns
-	// (stokaro/ptah#1802).
-	// The attribute carries the clause as ClickHouse spells it -- `every 1
-	// hour`, `after 30 minute offset 5 minute` -- rather than a set of
-	// sub-attributes, so an operator moving a schedule out of a CREATE
-	// statement moves the text. Its owner reads it into the ClickHouse
-	// setting, in the spelling the server would store.
-	refresh, err := chsource.RefreshFacets(kv["refresh"])
+	// this line (stokaro/ptah#1625). The attributes owners add to the
+	// directive, such as the ClickHouse refresh schedule, are read by their
+	// owners into settings of the view (stokaro/ptah#1802).
+	owned, err := s.annotations.DecodeAttributes("ptah:schema:matview", kv)
 	if err != nil {
-		return matViewRefreshError(ctx, err)
+		return ownerAttributeError(ctx, err)
 	}
 	s.materializedViews = append(s.materializedViews, schemamodel.MaterializedView{
-		Facets:     refresh,
+		Facets:     owned,
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
@@ -1912,10 +1906,10 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	return nil
 }
 
-// matViewRefreshError reports a refresh declaration the parser refused, in the
-// shape every other attribute refusal in this file takes.
-func matViewRefreshError(ctx annotationErrorContext, err error) error {
-	slog.Error("invalid refresh schedule",
+// ownerAttributeError reports an attribute an owner added to the directive
+// and refused, in the parse error shape every other refusal uses.
+func ownerAttributeError(ctx annotationErrorContext, err error) error {
+	slog.Error("invalid owner attribute",
 		"directive", ctx.directive,
 		"location", ctx.location,
 		"error", err,
@@ -1924,9 +1918,8 @@ func matViewRefreshError(ctx annotationErrorContext, err error) error {
 		File:      ctx.file,
 		Line:      ctx.line,
 		Directive: strings.TrimPrefix(ctx.directive, "//"),
-		Attribute: "refresh",
 		Err:       ptaherr.ErrInvalidAttributeValue,
-		Message:   fmt.Sprintf("refresh on %s at %s: %s", ctx.directive, ctx.location, err),
+		Message:   fmt.Sprintf("%s at %s: %s", ctx.directive, ctx.location, err),
 	}
 }
 

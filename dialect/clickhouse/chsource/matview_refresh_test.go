@@ -1,15 +1,17 @@
-package goschema_test
+package chsource_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/clickhouse/chsource"
 )
 
 // declaredSchedule is the refresh clause a parsed view carries as the
@@ -26,15 +28,15 @@ func declaredSchedule(c *qt.C, view schemamodel.MaterializedView) string {
 }
 
 // parseMatViewRefreshSource parses one file declaring a materialized view with
-// the given refresh attribute.
-func parseMatViewRefreshSource(c *qt.C, attribute string) (*schemamodel.Database, error) {
+// the given refresh attribute, with the ClickHouse owner selected.
+func parseMatViewRefreshSource(c *qt.C, attribute string) (schemamodel.Database, error) {
 	c.Helper()
-	dir := c.TB.TempDir()
+	owner, err := annotation.NewSet(chsource.Annotations())
+	c.Assert(err, qt.IsNil)
 	source := "package models\n\n" +
 		"//ptah:schema:matview name=\"mv\" body=\"SELECT 1\"" + attribute + "\n" +
 		"type MV struct{}\n"
-	writeGoFile(c, dir, "models.go", source)
-	return goschema.ParseDir(noOwners, dir)
+	return goschema.ParseSource(owner, "models.go", source)
 }
 
 // TestParseMatView_CanonicalizesTheDeclaredSchedule is what keeps a declaration
@@ -131,4 +133,17 @@ func TestParseMatView_RefusesAScheduleTheServerWouldRefuse(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 		})
 	}
+}
+
+// TestParseMatView_WithoutTheOwnerTheScheduleIsAnUnknownAttribute is the
+// control on the selection: a parse that does not select the ClickHouse owner
+// refuses the attribute by name rather than dropping the schedule.
+func TestParseMatView_WithoutTheOwnerTheScheduleIsAnUnknownAttribute(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := goschema.ParseSource(annotation.None(), "models.go",
+		"package models\n\n//ptah:schema:matview name=\"mv\" body=\"SELECT 1\" refresh=\"every 1 hour\"\ntype MV struct{}\n")
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
+	c.Assert(err, qt.ErrorMatches, `(?s).*refresh.*`)
 }
