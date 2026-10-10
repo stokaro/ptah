@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,9 +16,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/planner"
@@ -108,12 +111,7 @@ func (f rlsFileFixture) visibleTenants(c *qt.C) string {
 
 func assertNoRLSChanges(c *qt.C, diff *difftypes.SchemaDiff) {
 	c.Helper()
-	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
-	c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
-	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.RLSPoliciesModified))
-	c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 0)
-	c.Assert(diff.RLSEnabledTablesRemoved, qt.HasLen, 0)
-	c.Assert(diff.RLSForceChanged, qt.HasLen, 0)
+	c.Assert(rowSecurityChanges(diff), qt.HasLen, 0)
 }
 
 const rlsFileTable = `CREATE TABLE S.docs (id integer PRIMARY KEY, tenant text NOT NULL);
@@ -229,14 +227,24 @@ ALTER TABLE S.docs FORCE ROW LEVEL SECURITY;
 // the server's roles and grants too, and planning those against a shared
 // server would drop what other tests and users own.
 func rlsPart(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
-	return &difftypes.SchemaDiff{
-		RLSPoliciesAdded:        diff.RLSPoliciesAdded,
-		RLSPoliciesRemoved:      diff.RLSPoliciesRemoved,
-		RLSPoliciesModified:     diff.RLSPoliciesModified,
-		RLSEnabledTablesAdded:   diff.RLSEnabledTablesAdded,
-		RLSEnabledTablesRemoved: diff.RLSEnabledTablesRemoved,
-		RLSForceChanged:         diff.RLSForceChanged,
+	part := &difftypes.SchemaDiff{
+		TablePreparation: diff.TablePreparation, IdentifierSemantics: diff.IdentifierSemantics,
+		FeatureChanges: keepRowSecurity(diff.FeatureChanges),
 	}
+	for _, table := range diff.TablesModified {
+		if changes := keepRowSecurity(table.FeatureChanges); len(changes) > 0 {
+			part.TablesModified = append(part.TablesModified, difftypes.TableDiff{TableName: table.TableName, FeatureChanges: changes})
+		}
+	}
+	return part
+}
+
+// keepRowSecurity keeps the row-security owner's changes.
+func keepRowSecurity(changes []schemaext.ChangeRecord) []schemaext.ChangeRecord {
+	return slices.DeleteFunc(slices.Clone(changes), func(record schemaext.ChangeRecord) bool {
+		kind := record.Value.Kind()
+		return kind != pgpolicy.PolicyChangeKind && kind != pgpolicy.TableStateChangeKind
+	})
 }
 
 // forceStatements keeps the FORCE clause of each planned statement that changes

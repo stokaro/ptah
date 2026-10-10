@@ -5,13 +5,16 @@ package gonative_test
 import (
 	"bytes"
 	"database/sql"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/readdb"
 	"ptah.run/internal/dbtarget"
@@ -314,7 +317,8 @@ func postgresFamilyCatalogHasSequence(schema *catalog.Database, schemaName, sequ
 
 func postgresFamilyCatalogHasRLSEnabledTable(schema *catalog.Database, schemaName, tableName string) bool {
 	for _, table := range schema.Tables {
-		if table.Schema == schemaName && table.Name == tableName && table.RLSEnabled {
+		switches, found, err := schemaext.FacetAs[*pgpolicy.ObservedTableState](table.Facets, pgpolicy.TableStateKind)
+		if err == nil && found && table.Schema == schemaName && table.Name == tableName && switches.Enabled {
 			return true
 		}
 	}
@@ -327,9 +331,14 @@ func postgresFamilyCatalogHasRLSPolicy(
 	tableName,
 	policyName string,
 ) bool {
-	wantTable := catalog.QualifyTableName(schemaName, tableName)
-	for _, policy := range schema.RLSPolicies {
-		if policy.Table == wantTable && policy.Name == policyName && policy.ToRoles == "PUBLIC" {
+	objects, err := schema.FeatureObjects.All()
+	if err != nil {
+		return false
+	}
+	for _, object := range objects {
+		policy, ok := object.Value.(*pgpolicy.ObservedPolicy)
+		if ok && object.Ref.Schema.Source == schemaName && object.Ref.Parent.Source == tableName && object.Ref.Name.Source == policyName &&
+			slices.Equal(policy.Roles, []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}) {
 			return true
 		}
 	}

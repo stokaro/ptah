@@ -5,6 +5,7 @@ package dbschema_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,17 +15,21 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // rlsStrengthSchema declares one table and one policy over it, at the strength
 // the arguments name.
 func rlsStrengthSchema(schemaName string, forced, restrictive bool) *schemamodel.Database {
-	return &schemamodel.Database{
+	composition := map[bool]pgpolicy.Composition{true: pgpolicy.Restrictive, false: pgpolicy.Permissive}[restrictive]
+	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{
 			StructName: "Doc", Name: "docs", Schema: schemaName,
 		}},
@@ -32,15 +37,46 @@ func rlsStrengthSchema(schemaName string, forced, restrictive bool) *schemamodel
 			{StructName: "Doc", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Doc", Name: "tenant", Type: "TEXT"},
 		},
-		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
-			StructName: "Doc", Table: schemaName + ".docs", Forced: forced,
-		}},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			StructName: "Doc", Name: "docs_tenant", Table: schemaName + ".docs",
-			PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "true",
-			Restrictive: restrictive,
-		}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+			pgpolicy.PolicyRef(schemaName, "docs", "docs_tenant"),
+			pgpolicy.DesiredPolicy{Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}},
+				Using: new("true"), Composition: composition})))),
+		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)),
 	}
+	db.Tables[0].Facets = must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true, Forced: forced}))
+	return db
+}
+
+// readPolicy returns the one policy a read reported, as the row-security owner
+// observed it.
+func readPolicy(c *qt.C, live *catalog.Database) *pgpolicy.ObservedPolicy {
+	c.Helper()
+	objects := must.Must(live.FeatureObjects.All())
+	c.Assert(objects, qt.HasLen, 1)
+	return objects[0].Value.(*pgpolicy.ObservedPolicy)
+}
+
+// readSwitches returns the row-level security switches a read reported for
+// table.
+func readSwitches(c *qt.C, table catalog.Table) *pgpolicy.ObservedTableState {
+	c.Helper()
+	switches, found, err := schemaext.FacetAs[*pgpolicy.ObservedTableState](table.Facets, pgpolicy.TableStateKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	return switches
+}
+
+// rowSecurityChanges returns the changes the row-security owner planned,
+// wherever the diff carries them.
+func rowSecurityChanges(diff *difftypes.SchemaDiff) []schemaext.ChangeRecord {
+	changes := slices.Clone(diff.FeatureChanges)
+	for _, table := range diff.TablesModified {
+		changes = append(changes, table.FeatureChanges...)
+	}
+	return slices.DeleteFunc(changes, func(record schemaext.ChangeRecord) bool {
+		kind := record.Value.Kind()
+		return kind != pgpolicy.PolicyChangeKind && kind != pgpolicy.TableStateChangeKind
+	})
 }
 
 // tableNamed returns the table the read reports under the given name.
@@ -103,19 +139,12 @@ func TestPostgresLiveRLSStrengthConverges(t *testing.T) {
 	// 2. The catalog is asked what it holds.
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.RLSPolicies, qt.HasLen, 1)
-	c.Assert(live.RLSPolicies[0].Restrictive, qt.IsTrue)
-	docs := tableNamed(c, live.Tables, "docs")
-	c.Assert(docs.RLSEnabled, qt.IsTrue)
-	c.Assert(docs.RLSForced, qt.IsTrue)
+	c.Assert(readPolicy(c, live).Composition, qt.Equals, pgpolicy.Restrictive)
+	c.Assert(readSwitches(c, tableNamed(c, live.Tables, "docs")), qt.DeepEquals, &pgpolicy.ObservedTableState{Enabled: true, Forced: true})
 
 	// 3. The convergence assertion.
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(settled.RLSPoliciesAdded, qt.HasLen, 0)
-	c.Assert(settled.RLSPoliciesRemoved, qt.HasLen, 0)
-	c.Assert(settled.RLSPoliciesModified, qt.HasLen, 0)
-	c.Assert(settled.RLSEnabledTablesAdded, qt.HasLen, 0)
-	c.Assert(settled.RLSEnabledTablesRemoved, qt.HasLen, 0)
+	c.Assert(rowSecurityChanges(settled), qt.HasLen, 0)
 }
 
 // TestPostgresLiveRLSStrengthReadsBackTheWeakerHalf is the control for the read
@@ -154,14 +183,11 @@ func TestPostgresLiveRLSStrengthReadsBackTheWeakerHalf(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	c.Assert(live.RLSPolicies, qt.HasLen, 1)
-	c.Assert(live.RLSPolicies[0].Restrictive, qt.IsFalse)
-	docs := tableNamed(c, live.Tables, "docs")
-	c.Assert(docs.RLSEnabled, qt.IsTrue)
-	c.Assert(docs.RLSForced, qt.IsFalse)
+	c.Assert(readPolicy(c, live).Composition, qt.Equals, pgpolicy.Permissive)
+	c.Assert(readSwitches(c, tableNamed(c, live.Tables, "docs")), qt.DeepEquals, &pgpolicy.ObservedTableState{Enabled: true})
 
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(settled.RLSPoliciesModified, qt.HasLen, 0)
+	c.Assert(rowSecurityChanges(settled), qt.HasLen, 0)
 }
 
 // TestPostgresLiveRLSStrengthDifferenceIsPlanned pins that a strength the
@@ -202,6 +228,11 @@ func TestPostgresLiveRLSStrengthDifferenceIsPlanned(t *testing.T) {
 	diff := must.Must(schemadiff.CompareWithDialect(
 		t.Context(), rlsStrengthSchema(schemaName, true, true), live, platform.Postgres, must.Must(builtin.New())))
 
-	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
-	c.Assert(diff.RLSPoliciesModified[0].Changes["as"], qt.Equals, "PERMISSIVE -> RESTRICTIVE")
+	// One change for the policy's AS clause and one for FORCE.
+	kinds := make([]schemaext.Kind, 0, 2)
+	for _, change := range rowSecurityChanges(diff) {
+		kinds = append(kinds, change.Value.Kind())
+	}
+	slices.Sort(kinds)
+	c.Assert(kinds, qt.DeepEquals, []schemaext.Kind{pgpolicy.PolicyChangeKind, pgpolicy.TableStateChangeKind})
 }

@@ -121,11 +121,7 @@ func assertNothingPlannedForTheFile(c *qt.C, diff *difftypes.SchemaDiff) {
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.IndexesRemoved))
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("%+v", diff.ConstraintsAdded))
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.ConstraintsRemoved))
-	c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 0)
-	c.Assert(diff.RLSEnabledTablesRemoved, qt.HasLen, 0)
-	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
-	c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
-	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.RLSPoliciesModified))
+	c.Assert(rowSecurityChanges(diff), qt.HasLen, 0)
 }
 
 // fileStatements splits the fixture file into the statements a client sends.
