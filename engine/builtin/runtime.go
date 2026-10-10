@@ -27,6 +27,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbextensions"
+	"ptah.run/internal/ydblowering"
 	"ptah.run/internal/ydbsource"
 )
 
@@ -90,6 +91,10 @@ func New() (*engine.Runtime, error) {
 			registerSQLiteServices(&provider)
 		}
 		if name == platform.YDB {
+			// A YDB read reports a UNIQUE constraint as an index and a
+			// privilege as a permission name; the comparison lowers the
+			// desired schema to match.
+			provider.Targets[0].Lowering = ydblowering.Service{}
 			provider.Codecs = ydbextensions.Codecs()
 			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, Service: ydbconvert.Service{}}}
 			provider.Comparisons = []engine.ObjectComparison{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, ChangeKinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbcompare.Service{}}}

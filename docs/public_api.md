@@ -1546,6 +1546,15 @@ target scopes. Source facets, target bindings, observations, and knowledge stay
 unchanged. The runtime validates ownership and snapshots values through codecs
 before comparison. Incomplete or invalid replies and cancellation return no result.
 
+`Target.Lowering` selects `schemapreparation.Lowering`. It rewrites the whole
+desired schema into the shape the target's reader reports it in before a
+comparison reads it, such as a YDB UNIQUE constraint as the unique index the
+server holds. A nil service leaves the declaration as written.
+`Runtime.LowerDesired` sends the scoped desired schema, the database's read, the
+resolved capabilities and the identifier semantics under the target's canonical
+name. A service must not modify the request. An error, a nil result and
+cancellation return no schema.
+
 `Target.Creations` selects `schemaprojection.TableCreationService` for offline
 source projection. It receives decoded table captures and returns a complete
 ordered batch of computed facets and column key membership. `TableCreation.Facets`

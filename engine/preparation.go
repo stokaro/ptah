@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 )
 
@@ -100,4 +101,35 @@ func (r *Runtime) snapshotResolvedFacets(ctx context.Context, owner string, face
 		}
 	}
 	return r.codecs.SnapshotFacets(ctx, schemaext.Desired, facets)
+}
+
+// LowerDesired rewrites a whole desired schema through the selected target's
+// lowering service, before comparison. A target without one, or a nil desired
+// schema, returns request.Desired unchanged. The request is not cloned, so a
+// service must not modify it. An unregistered target fails with
+// [ptaherr.ErrUnsupportedDialect], and a nil result from a service with
+// [schemapreparation.ErrInvalid].
+func (r *Runtime) LowerDesired(ctx context.Context, request schemapreparation.LoweringRequest) (*schemamodel.Database, error) {
+	if err := schemaext.RequireRuntime(ctx, r); err != nil {
+		return nil, err
+	}
+	selected, found := r.lookup(request.Target)
+	if !found {
+		return nil, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
+	}
+	if selected.lowering == nil || request.Desired == nil {
+		return request.Desired, nil
+	}
+	request.Target = selected.name
+	lowered, err := selected.lowering.LowerDesired(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if lowered == nil {
+		return nil, fmt.Errorf("%w: target %q lowered the desired schema to nothing", schemapreparation.ErrInvalid, selected.name)
+	}
+	return lowered, nil
 }

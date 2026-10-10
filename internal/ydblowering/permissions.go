@@ -1,4 +1,4 @@
-package schemaprep
+package ydblowering
 
 import (
 	"slices"

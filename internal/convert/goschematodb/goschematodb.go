@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/pgdefaultacl"
@@ -59,12 +60,15 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 	if err != nil {
 		return nil, err
 	}
-	// A UNIQUE constraint is a unique index on YDB, so a document converted to
-	// stand for a YDB database holds the index its database would.
-	db = schemaprep.UniqueConstraintsAsIndexesFor(db, dialect, capability.ForDialect(dialect))
-	// A YDB privilege is held under its permission name, whichever spelling
-	// the document used.
-	db = schemaprep.YDBPermissionNamesFor(db, dialect)
+	// A document converted to stand for a database holds what the target's
+	// reader would report, such as the unique index YDB holds for a UNIQUE
+	// constraint. No database is read, so nothing is adopted from one.
+	db, err = runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{
+		Target: dialect, Desired: db, Capabilities: capability.ForDialect(dialect), Semantics: identifier.ForDialect(dialect),
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	tableByStruct := make(map[string]schemamodel.Table, len(db.Tables))
 	for _, table := range db.Tables {
