@@ -667,8 +667,11 @@ declaration removes the binding, which the owner plans, or the comparison
 refuses. Functions count only on a target whose plans write routines.
 
 The external-provider fixture checks the public path without built-in
-providers. Process adapters must map model values and references into explicit
-records; implicit JSON encoding of a relation value or snapshot is refused.
+providers. It builds as a module of its own, imports only packages this ledger
+lists under Stable Embedder API, and links no package under `engine/builtin`,
+`dialect` or `feature`. Process adapters must map model values and references
+into explicit records; implicit JSON encoding of a relation value or snapshot is
+refused.
 
 `ChangeValue` implementations that also implement `OwnerReplacement` report
 whether applying them requires replacing the common owner; `ReplacesOwner`
