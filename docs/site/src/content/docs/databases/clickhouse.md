@@ -307,10 +307,14 @@ before adopting them:
   supported` and 26.9 answers `Changing APPEND or INCREMENTAL is not supported`.
   That drop empties the view, and the plan reports it as destructive.
 
-  `OFFSET`, `RANDOMIZE FOR`, `DEPENDS ON` and `APPEND` are carried too. `OFFSET`
-  belongs to `EVERY` alone, and an interval mixing calendar units with clock
-  ones is refused where it is declared, both matching the server. 24.10 also
-  refuses `DEPENDS ON` with `AFTER`.
+  `OFFSET`, `RANDOMIZE FOR`, `DEPENDS ON` and `APPEND` are carried too, each
+  at most once and in that order, as the server takes them. `OFFSET` belongs to
+  `EVERY` alone, and an interval mixing calendar units with clock ones is
+  refused where it is declared, both matching the server. 24.10 also refuses
+  `DEPENDS ON` with `AFTER`. A refresh `SETTINGS` list is not modeled: a
+  declaration cannot state one, and a view the server stores with one has a
+  schedule Ptah could not read. A view created elsewhere with `TO <table>`
+  has its schedule read up to the target table.
 
   The schedule is a ClickHouse setting of the view, not part of the shared
   materialized view, and only Go annotations can declare it. A Go source states
@@ -320,9 +324,18 @@ before adopting them:
   no change to it, and a view replaced for a changed query is created again
   with it.
 
-  A schedule the server stores in a form Ptah cannot read is left undecided
-  rather than read as no schedule, so it is never planned as a drop and a
-  create. Other targets do not carry the schedule. A PostgreSQL or Oracle view
+  A schedule Ptah could not read is never read as no schedule. A Go source
+  that declares one, or that declares the view plain, leaves the view
+  undecided; a change to the view's query from any source is refused, because
+  the replacement would recreate the view without the schedule; `ptah db read`
+  and other renders of the database write the view with a comment saying its
+  schedule was not captured; and exporting the database to Go annotations is
+  refused, because the export would declare the view plain. An account that
+  may not read `system.view_refreshes` reads the database all the same, with
+  every view's schedule uninspected: a source that declares a schedule is then
+  undecided, and one that declares plain views plans nothing for them.
+
+  Other targets do not carry the schedule. A PostgreSQL or Oracle view
   rendered from the same declaration has none, and
   [`ptah schema validate --no-skipped`](../../schema/validate-and-format/)
   does not report it, because the declaration was made for ClickHouse alone.

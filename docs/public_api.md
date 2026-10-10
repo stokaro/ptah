@@ -856,7 +856,7 @@ the reader could not read is undecided. `chdiff.Refresh` carries an observed
 `Before` and a desired `After`, where nil is a plain view; its codec writes
 null for that side. `ReplacesOwner` is true when a schedule is gained or lost,
 or `APPEND` changes, because `MODIFY REFRESH` refuses those; the effect of such
-a change is destructive.
+a change is destructive. `String` writes the transition as two clauses.
 
 `chplan.RefreshService` plans an in-place change as `chast.ModifyRefresh`
 inside the ALTER envelope that names the view, outside a transaction, and
@@ -1011,9 +1011,19 @@ Planning changes to storage settings other than TTL remains part of
 A refreshable materialized view carries a `chschema.ObservedRefresh` read from
 its CREATE statement, for the views `system.view_refreshes` lists. Refresh
 coverage is complete for each view read, except a view whose stored clause
-cannot be read, which is unrepresentable. A server without
-`system.view_refreshes` has no refreshable views; any other failure to read it
-fails the read.
+cannot be read, such as one with refresh `SETTINGS`, which is unrepresentable.
+`system.view_refreshes` is read only when the database holds a materialized
+view. When the server refuses it for privilege or answers that it is unknown,
+every view's refresh coverage is uninspected and the read goes on; any other
+failure fails the read.
+
+Rendering a desired schema whose coverage marks a table, index or materialized
+view setting unrepresentable or uninspected lowers the object without it and
+emits a comment naming the setting and the reason. A comparison refuses to
+replace a materialized view while the current side marks one of its settings
+that way and the desired side neither states the setting nor asks for its
+absence. `objectidentity.Builder.SchemaScoped` builds a schema-scoped identity
+from a declared name that may carry its schema.
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register
