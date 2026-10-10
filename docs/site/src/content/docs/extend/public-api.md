@@ -109,6 +109,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbreverse` | Feature reversal and recovery limits. |
 | `dialect/ydb/ydbplan` | Feature declaration and migration planning. |
 | `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
+| `dialect/mssql/mssqlschema` | SQL Server security policy model, with every predicate binding, and codecs. |
 | `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
 | `dialect/ydb/ydbsecret` | Secret declarations, observations, rotation requests, statements, and codecs, without values. |
 | `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |

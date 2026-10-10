@@ -63,6 +63,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/cockroachdb/crdbreverse`
 - `ptah.run/dialect/cockroachdb/crdbschema`
 - `ptah.run/dialect/cockroachdb/crdbsource`
+- `ptah.run/dialect/mssql/mssqlschema`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/spanner/spannerast`
 - `ptah.run/dialect/spanner/spannercompare`
@@ -1467,6 +1468,27 @@ keys, a clause the command does not take, and an empty expression, and a
 refused value is a `schemaext.InvalidModelError`. The package defines
 the models, their codecs and their coverage, and reads, compares and plans
 nothing.
+
+`dialect/mssql/mssqlschema` owns the SQL Server security policy model of ADR
+0020. A policy is one feature object of `SecurityPolicyKind`, identified by its
+schema and name through `SecurityPolicyRef`, with no table parent, because one
+policy may bind several tables. `DesiredSecurityPolicy` holds its predicates,
+its state, its schema binding, whether replication agents skip it, and the Go
+struct it was read from. A nil `Enabled` or `SchemaBinding` requests SQL
+Server's default, ON. `ObservedSecurityPolicy` holds what
+`sys.security_policies` and `sys.security_predicates` report, every value
+definite. Either may hold no predicate, as SQL Server allows.
+
+Each `Predicate` keeps its table and its function as schema-qualified
+`ObjectName`s, the function's arguments in parameter order, FILTER or BLOCK,
+and for a block predicate the exact operation: AFTER INSERT, AFTER UPDATE,
+BEFORE UPDATE or BEFORE DELETE, or none for every write. The predicates are a
+set: equality and the canonical encoding ignore their order. Validation
+refuses a filter predicate with an operation and two predicates for one
+operation on one table, where a block predicate for every operation conflicts
+with any other. A refused value is a
+`schemaext.InvalidModelError`. The package defines the model, its codecs and
+its coverage, and reads, compares and plans nothing.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
