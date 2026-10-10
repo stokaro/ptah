@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -120,4 +121,17 @@ func (Service) EncodeProperties(ctx context.Context, request schemaext.PropertyE
 // not enroll it, and its tables leave an existing policy unmanaged.
 func Coverage() (schemaext.Coverage, error) {
 	return spannerschema.RowDeletionCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+}
+
+// Annotations is the owner's contribution to the Go annotation frontend. A Go
+// table annotation carries platform.spanner properties, so the source could
+// have declared a row deletion policy on any table, and the claim is
+// [Coverage]. The owner declares no directive of its own; the properties are
+// decoded by [Service] once a target is selected.
+func Annotations() annotation.Extension {
+	return annotation.Extension{
+		Owner:    spannerschema.Owner,
+		Kinds:    []schemaext.Kind{spannerschema.RowDeletionKind},
+		Coverage: Coverage,
+	}
 }

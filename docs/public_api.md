@@ -1097,9 +1097,10 @@ properties, one per storage parameter. Its definition also claims the derived
 that begins with `ttl` in any case, so a misspelled or upper-case parameter is
 refused by name.
 `crdbsource.Coverage` is the knowledge a source format with platform properties
-holds. Go annotations and YAML enroll it, so a table without the properties
-requests no TTL; HCL, SQL and hand-built schemas do not, and leave a live policy
-unmanaged.
+holds. YAML enrolls it, and Go annotations enroll it through
+`crdbsource.Annotations` when the parse selects the owner, so a table without
+the properties requests no TTL; HCL, SQL, hand-built schemas and a Go parse
+without the owner do not, and leave a live policy unmanaged.
 
 `crdbcompare.Service` compares the facet on tables both sides hold and reads
 `ttl_expire_after` and `ttl_row_stats_poll_interval` through the value each
@@ -1143,8 +1144,10 @@ provider identity `Owner`.
 `spannersource.Service` decodes and encodes the `platform.spanner` table
 properties `row_deletion_column` and `row_deletion_interval`, and claims every
 key that begins with `row_deletion`, so an unknown one is refused by name.
-`spannersource.Coverage` is the knowledge Go annotations, YAML and Spanner SQL
-enroll; HCL and hand-built schemas do not, and leave a live policy unmanaged.
+`spannersource.Coverage` is the knowledge YAML and Spanner SQL enroll, and Go
+annotations through `spannersource.Annotations` when the parse selects the
+owner; HCL, hand-built schemas and a Go parse without the owner do not, and
+leave a live policy unmanaged.
 
 `spannercompare.Service` compares the facet with the same undecided cases as
 the CockroachDB owner, and `spannerdiff.RowDeletion` carries the change.

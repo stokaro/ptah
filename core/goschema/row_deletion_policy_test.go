@@ -10,15 +10,15 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // TestParse_RowDeletionPolicyIsAPlatformProperty pins the Go annotation
 // spelling: the Spanner policy and the YDB TTL are platform.spanner and
 // platform.ydb properties their owners decode, each in its own target's
-// spelling, and the source claims complete knowledge of both, so a table
-// without the properties requests neither.
+// spelling. The source claims complete knowledge of the YDB TTL, so a table
+// without the properties requests none; the Spanner claim belongs to the
+// Spanner owner, which spannersource tests.
 func TestParse_RowDeletionPolicyIsAPlatformProperty(t *testing.T) {
 	c := qt.New(t)
 
@@ -43,8 +43,6 @@ type Plain struct {
 		"ydb":     {"row_deletion_column": "expires", "row_deletion_interval": "PT1H", "row_deletion_unit": "seconds"},
 	})
 	c.Assert(database.Tables[0].Facets.IsZero(), qt.IsTrue)
-	spanner := objectidentity.NewBuilder(identifier.ForDialect("spanner")).TableParts("", "plain")
-	c.Assert(database.FeatureCoverage.Lookup(spannerschema.RowDeletionKind, spanner).State, qt.Equals, schemaext.Complete)
 	ydb := objectidentity.NewBuilder(identifier.ForDialect("ydb")).TableParts("", "plain")
 	c.Assert(database.FeatureCoverage.Lookup(ydbschema.TTLKind, ydb).State, qt.Equals, schemaext.Complete)
 }
