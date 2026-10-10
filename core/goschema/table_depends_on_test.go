@@ -56,7 +56,7 @@ func TestParseTableDependsOnFoldsTheQualifier_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			dir := writeQualifiedDependsOnPackage(c, row.declared)
 
-			db, err := goschema.ParseDir(dir)
+			db, err := goschema.ParseDir(noOwners, dir)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 2)

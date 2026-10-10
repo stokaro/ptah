@@ -48,7 +48,7 @@ func TestParseSource_CoordinationNode_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("locks.go", coordinationNodeSource(test.attributes))
+			db, err := goschema.ParseSource(noOwners, "locks.go", coordinationNodeSource(test.attributes))
 			c.Assert(err, qt.IsNil)
 			objects, err := db.FeatureObjects.All()
 			c.Assert(err, qt.IsNil)
@@ -94,7 +94,7 @@ func TestParseSource_CoordinationNode_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("locks.go", coordinationNodeSource(test.attributes))
+			db, err := goschema.ParseSource(noOwners, "locks.go", coordinationNodeSource(test.attributes))
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})

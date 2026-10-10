@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -19,7 +20,7 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test entities with RLS annotations
-	desired, err := goschema.ParseDir("../../integration/internal/fixtures/entities/016-rls-multiple-files")
+	desired, err := goschema.ParseDir(builtintest.Annotations(), "../../integration/internal/fixtures/entities/016-rls-multiple-files")
 	c.Assert(err, qt.IsNil)
 
 	// Create an empty database schema (simulating a fresh database)

@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/shadow"
 )
 
@@ -198,7 +199,7 @@ type OrderItem struct {
 }
 `
 	c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(content), 0o600), qt.IsNil)
-	desired, err := goschema.ParseFS(os.DirFS(dir), "entities")
+	desired, err := goschema.ParseFS(builtintest.Annotations(), os.DirFS(dir), "entities")
 	c.Assert(err, qt.IsNil)
 	return desired
 }

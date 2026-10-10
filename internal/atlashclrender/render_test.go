@@ -8,12 +8,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/feature/pgpolicy"
-
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
@@ -344,7 +344,7 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 
 func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db, err := goschema.ParseDir("../../integration/internal/fixtures/entities/023-go-annotations-objects")
+	db, err := goschema.ParseDir(builtintest.Annotations(), "../../integration/internal/fixtures/entities/023-go-annotations-objects")
 	c.Assert(err, qt.IsNil)
 
 	rendered, err := atlashclrender.Render(db)

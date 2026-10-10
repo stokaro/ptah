@@ -88,7 +88,7 @@ func TestParseSource_RoutineGrantAndRevoke_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			source := "package models\n\n" + test.directive + "\ntype AccessControl struct{}\n"
 
-			db, err := goschema.ParseSource("access.go", source)
+			db, err := goschema.ParseSource(noOwners, "access.go", source)
 
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -109,7 +109,7 @@ func TestParseDir_RefusesAPrivilegeBothGrantedAndRevoked(t *testing.T) {
 	writeGoFile(c, dir, "b.go", "package models\n\n"+
 		`//ptah:schema:revoke role="app" privilege="EXECUTE" on_function="purge(UUID)"`+"\ntype Revoked struct{}\n")
 
-	db, err := goschema.ParseDir(dir)
+	db, err := goschema.ParseDir(noOwners, dir)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*EXECUTE on ROUTINE purge\(uuid\) is both granted to and revoked from "app"; declare one or the other.*`)
 	c.Assert(db, qt.IsNil)

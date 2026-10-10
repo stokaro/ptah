@@ -46,7 +46,7 @@ func TestParseMatView_RefusesTheRetiredRefreshStrategy(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := goschema.ParseSource("s.go", "package m\n\n"+test.annotation+"\ntype S struct{}\n")
+			_, err := goschema.ParseSource(noOwners, "s.go", "package m\n\n"+test.annotation+"\ntype S struct{}\n")
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrRetiredAttribute)
 			c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrUnknownAttribute)
@@ -60,7 +60,7 @@ func TestParseMatView_RefusesTheRetiredRefreshStrategy(t *testing.T) {
 func TestParseMatView_AcceptsAMaterializedViewWithoutTheAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := goschema.ParseSource("s.go", `package m
+	db, err := goschema.ParseSource(noOwners, "s.go", `package m
 
 //ptah:schema:matview name="user_stats" body="SELECT count(*) FROM users" comment="stats"
 type S struct{}

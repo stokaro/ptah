@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/datamigrate"
 )
 
@@ -75,6 +76,7 @@ func TestGenerate_EmptiesATableTheEngineFolded(t *testing.T) {
 	writeFoldedFixture(t, root, "[]\n")
 
 	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:      builtintest.Annotations(),
 		RootDir:          root,
 		AllowDestructive: true,
 	})
@@ -102,8 +104,9 @@ func TestInspect_CountsAConvergedFoldedTableAsClean(t *testing.T) {
 	writeFoldedFixture(t, root, "- code: US\n  name: United States\n- code: CZ\n  name: Czechia\n")
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
-		RootDir: root,
-		Live:    liveSchema(c, conn),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		Live:        liveSchema(c, conn),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -125,6 +128,7 @@ func TestGenerate_RefusesAnUndeclaredColumnOnAFoldedTable(t *testing.T) {
 	writeFoldedFixture(t, root, "- code: US\n  name: United States\n  iso3: USA\n")
 
 	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		Annotations:      builtintest.Annotations(),
 		RootDir:          root,
 		AllowDestructive: true,
 	})

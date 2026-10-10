@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/modelast"
 )
 
@@ -43,7 +44,7 @@ func convertedStatements(database schemamodel.Database, dialect string) []string
 }
 
 func spellingFixture(c *qt.C) schemamodel.Database {
-	database, err := goschema.ParseDir("testdata/dialectspellings")
+	database, err := goschema.ParseDir(builtintest.Annotations(), "testdata/dialectspellings")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database, qt.IsNotNil)
 	return *database

@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/feature/pgpolicy"
-
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -137,7 +137,7 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	c.Assert(orderItemSource, qt.Contains, "createdAt time.Time")
 	c.Assert(orderItemSource, qt.Contains, `"time"`)
 
-	parsed, err := goschema.ParseDir(dir)
+	parsed, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Enums, qt.DeepEquals, db.Enums)
 	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
@@ -201,7 +201,7 @@ func TestRenderGrantsRoundTripThroughParser(t *testing.T) {
 				filepath.Join(sourceDir, "schema.go"),
 				"package models\n\n"+test.annotation+"\ntype PtahSchemaObjects struct{}\n",
 			)
-			before, err := goschema.ParseDir(sourceDir)
+			before, err := goschema.ParseDir(builtintest.Annotations(), sourceDir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(before.Grants, qt.HasLen, 1)
 
@@ -252,7 +252,7 @@ func TestRenderDefaultPrivilegesRoundTripThroughParser(t *testing.T) {
 				filepath.Join(sourceDir, "schema.go"),
 				"package models\n\n"+test.annotation+"\ntype PtahSchemaObjects struct{}\n",
 			)
-			before, err := goschema.ParseDir(sourceDir)
+			before, err := goschema.ParseDir(builtintest.Annotations(), sourceDir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(before.DefaultPrivileges, qt.HasLen, 1)
 
@@ -475,7 +475,7 @@ func renderAndParseGrants(c *qt.C, dir string, grants []schemamodel.Grant) []sch
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
-	parsed, err := goschema.ParseDir(dir)
+	parsed, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 	return parsed.Grants
 }
@@ -492,7 +492,7 @@ func renderAndParseDefaultPrivileges(
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
-	parsed, err := goschema.ParseDir(dir)
+	parsed, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 	return parsed.DefaultPrivileges
 }
@@ -547,7 +547,7 @@ func TestRenderRolesRoundTripThroughParser(t *testing.T) {
 		`//ptah:schema:role name="readers" group="true"`+"\n"+
 		`//ptah:schema:revoke role="app" privilege="DROP" on_database="true"`+"\n"+
 		"type PtahSchemaObjects struct{}\n")
-	before, err := goschema.ParseDir(sourceDir)
+	before, err := goschema.ParseDir(builtintest.Annotations(), sourceDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(before.Roles, qt.HasLen, 2)
 
@@ -558,7 +558,7 @@ func TestRenderRolesRoundTripThroughParser(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	dir := t.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
-	after, err := goschema.ParseDir(dir)
+	after, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(after.Roles, qt.DeepEquals, before.Roles)

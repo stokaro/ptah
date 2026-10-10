@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbschema/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -44,7 +45,7 @@ type User struct {
 }
 `, strings.Join(values, ","))
 
-	database, err := goschema.ParseFS(fstest.MapFS{
+	database, err := goschema.ParseFS(builtintest.Annotations(), fstest.MapFS{
 		"models/models.go": &fstest.MapFile{Data: []byte(source)},
 	}, "models")
 	c.Assert(err, qt.IsNil)

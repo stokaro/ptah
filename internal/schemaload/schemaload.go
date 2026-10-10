@@ -16,6 +16,7 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
 	"ptah.run/core/manageddata"
@@ -36,6 +37,11 @@ type Options struct {
 
 	// RootDirs are Go entity roots scanned for migrator directives (repeatable).
 	RootDirs []string
+	// Annotations selects the feature owners whose Go annotation directives
+	// RootDirs may declare, usually the set of the runtime the command renders
+	// and compares with. A load with RootDirs refuses the zero value: pass
+	// annotation.None to read the frontend's own directives only.
+	Annotations annotation.Set
 	// SchemaFiles are SQL, YAML, HCL, DBML, or OCI desired-schema sources (repeatable).
 	SchemaFiles []string
 	// ProjectEnv is the evaluated atlas.hcl environment an `env://` schema file
@@ -189,7 +195,7 @@ func (o Options) loadCompositeContext(
 		}
 		for _, absPath := range absRoots {
 			o.logf("Scanning directory: %s", absPath)
-			goDB, err := goschema.ParseDirRaw(absPath)
+			goDB, err := goschema.ParseDirRaw(o.Annotations, absPath)
 			if err != nil {
 				return nil, fmt.Errorf("error parsing packages: %w", err)
 			}
@@ -270,7 +276,7 @@ func (o Options) loadGoRoots(rootDirs []string) (*schemamodel.Database, error) {
 		o.logf("Scanning directory: %s", absPath)
 	}
 
-	result, err := goschema.ParseDirs(absRoots...)
+	result, err := goschema.ParseDirs(o.Annotations, absRoots...)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing packages: %w", err)
 	}

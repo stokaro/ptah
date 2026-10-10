@@ -55,7 +55,7 @@ func TestParseFileReadsTheAPIName(t *testing.T) {
 				"}\n"
 			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-			db, err := goschema.ParseFile(path)
+			db, err := goschema.ParseFile(noOwners, path)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
@@ -102,7 +102,7 @@ func TestParseFileReadsTheTableAPIName(t *testing.T) {
 				"}\n"
 			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-			db, err := goschema.ParseFile(path)
+			db, err := goschema.ParseFile(noOwners, path)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
@@ -156,7 +156,7 @@ func TestParseFileReadsTheAPIType(t *testing.T) {
 				"}\n"
 			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-			db, err := goschema.ParseFile(path)
+			db, err := goschema.ParseFile(noOwners, path)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
@@ -218,7 +218,7 @@ func TestParseFileReadsThePerTargetNames(t *testing.T) {
 				"}\n"
 			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-			db, err := goschema.ParseFile(path)
+			db, err := goschema.ParseFile(noOwners, path)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
@@ -243,7 +243,7 @@ func TestParseFileReadsThePerTargetTableNames(t *testing.T) {
 		"}\n"
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	db, err := goschema.ParseFile(path)
+	db, err := goschema.ParseFile(noOwners, path)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)

@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/goannotationexport"
 )
 
@@ -55,7 +56,7 @@ type Item struct {
 }
 
 func exportOptions(dir, out string, cleanup bool) goannotationexport.Options {
-	return goannotationexport.Options{RootDir: dir, OutputPath: out, Cleanup: cleanup}
+	return goannotationexport.Options{Annotations: builtintest.Annotations(), RootDir: dir, OutputPath: out, Cleanup: cleanup}
 }
 
 func TestExportReportsNonNFCAttributeValue(t *testing.T) {

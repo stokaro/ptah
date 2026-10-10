@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/ast"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbworkload"
 )
@@ -15,7 +14,7 @@ import (
 // There is no dialect scope here, for the reason a synonym has none: a pool is
 // a YDB object and nothing else, and every other target refuses one.
 func (s *schemaParseState) parseResourcePoolComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:resourcepool", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -36,7 +35,7 @@ func (s *schemaParseState) parseResourcePoolComment(comment *ast.Comment, struct
 // where it is written, since it may name the pool `default`, which no
 // declaration creates.
 func (s *schemaParseState) parseResourcePoolClassifierComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:resourcepool:classifier", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err

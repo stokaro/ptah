@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 )
 
 // Example 1: Room booking system with EXCLUDE constraint to prevent overlapping bookings
@@ -93,7 +94,11 @@ func runExcludeConstraintsExample() {
 	fmt.Println("=====================================")
 
 	// Parse the current package to extract schema information
-	database, err := goschema.ParseDir(".")
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		log.Fatalf("Failed to assemble the bundled owners: %v", err)
+	}
+	database, err := goschema.ParseDir(annotations, ".")
 	if err != nil {
 		log.Fatalf("Failed to parse schema: %v", err)
 	}

@@ -48,7 +48,14 @@ func main() {
 
 	// Build the complete database schema by parsing the directory
 	dir := filepath.Dir(filename)
-	database, err := goschema.ParseDir(dir)
+	// The bundled owners decode their own directives, such as a TimescaleDB
+	// hypertable, so the parse reads every directive the renderer below knows.
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		fmt.Printf("Error assembling the bundled owners: %v\n", err)
+		return
+	}
+	database, err := goschema.ParseDir(annotations, dir)
 	if err != nil {
 		fmt.Printf("Error parsing directory %s: %v\n", dir, err)
 		return

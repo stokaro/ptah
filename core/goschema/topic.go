@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/ydb/ydbtopic"
 )
@@ -36,7 +35,7 @@ type pendingTopicConsumer struct {
 // There is no dialect scope here, for the reason a synonym has none: a topic
 // is a YDB object and nothing else, and every other target refuses one.
 func (s *schemaParseState) parseTopicComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:topic", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -61,7 +60,7 @@ func (s *schemaParseState) parseTopicComment(comment *ast.Comment, structName st
 // parseTopicConsumerComment reads a consumer of a YDB topic, attached to its
 // topic once the whole file is read.
 func (s *schemaParseState) parseTopicConsumerComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:topic:consumer", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err

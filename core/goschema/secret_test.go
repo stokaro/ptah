@@ -47,7 +47,7 @@ func TestParseSource_Secret_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("secrets.go", secretSource(test.onStruct, test.onField))
+			db, err := goschema.ParseSource(noOwners, "secrets.go", secretSource(test.onStruct, test.onField))
 			c.Assert(err, qt.IsNil)
 			objects, err := db.FeatureObjects.All()
 			c.Assert(err, qt.IsNil)
@@ -108,7 +108,7 @@ func TestParseSource_Secret_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("secrets.go", secretSource(test.annotation+"\n", ""))
+			db, err := goschema.ParseSource(noOwners, "secrets.go", secretSource(test.annotation+"\n", ""))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.Not(qt.ErrorMatches), ".*SENTINEL.*")
 			var parseErr *ptaherr.ParseError
@@ -124,7 +124,7 @@ func TestParseSource_Secret_FailurePath(t *testing.T) {
 func TestParseSource_Secret_DeclaredTwice(t *testing.T) {
 	c := qt.New(t)
 	annotation := `//ptah:schema:secret name="pw" schema="ext" value_env="PTAH_SECRET_PW"`
-	db, err := goschema.ParseSource("secrets.go", secretSource(annotation+"\n", "\t"+annotation))
+	db, err := goschema.ParseSource(noOwners, "secrets.go", secretSource(annotation+"\n", "\t"+annotation))
 	c.Assert(err, qt.ErrorMatches, `secret ext/pw is declared twice on //ptah:schema:secret at Credentials.*`)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)

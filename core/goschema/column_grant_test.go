@@ -23,7 +23,7 @@ type AccessControl struct{}
 		`//ptah:schema:grant role="app" privilege="USAGE" on_schema="app" columns="a"` + "\ntype AccessControl struct{}\n"
 
 	db := mustParseSource(c, "access.go", source)
-	_, err := goschema.ParseSource("refused.go", refused)
+	_, err := goschema.ParseSource(noOwners, "refused.go", refused)
 
 	c.Assert(db.Grants, qt.HasLen, 1)
 	c.Assert(db.Grants[0].Columns, qt.DeepEquals, []string{"state", "decided_at"})

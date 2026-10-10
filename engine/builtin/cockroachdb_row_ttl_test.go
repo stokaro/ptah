@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbdiff"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 // TestCockroachDBRowTTL_OwnerSpellsTheTableAsTheRenderer pins the agreement
@@ -65,7 +66,7 @@ func tableSpellings(sql string) []string {
 // spelling: platform.cockroachdb properties render on CockroachDB and are
 // scoped away from every other target, as every platform property is.
 func TestCockroachDBRowTTL_PlatformPropertiesFollowTheTarget(t *testing.T) {
-	database := must.Must(goschema.ParseSource("sessions.go", `package entities
+	database := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", `package entities
 
 //ptah:schema:table name="sessions" platform.cockroachdb.ttl_expiration_expression="expires_at + INTERVAL '1 day'" platform.cockroachdb.ttl_select_batch_size="500"
 type Session struct {
@@ -143,7 +144,7 @@ func TestCockroachDBRowTTL_AMisspelledParameterIsRefused(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := must.Must(goschema.ParseSource("sessions.go", "package entities\n\n//ptah:schema:table name=\"sessions\" "+test.property+`
+			database := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", "package entities\n\n//ptah:schema:table name=\"sessions\" "+test.property+`
 type Session struct {
 	//ptah:schema:field name="id" type="INT8" primary="true"
 	ID int64
@@ -164,7 +165,7 @@ type Session struct {
 // option is left for the readers of table options, as before.
 func TestCockroachDBRowTTL_AnUnrelatedPlatformKeyIsNotClaimed(t *testing.T) {
 	c := qt.New(t)
-	database := must.Must(goschema.ParseSource("sessions.go", `package entities
+	database := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", `package entities
 
 //ptah:schema:table name="sessions" platform.cockroachdb.fillfactor="70"
 type Session struct {

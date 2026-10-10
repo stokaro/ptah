@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/annotation"
 )
 
 func TestExport_FailurePath_RevalidatesManagedDataAliasAfterOutputStaging(t *testing.T) {
@@ -35,9 +37,10 @@ type Country struct {
 	c.Assert(os.WriteFile(output, []byte("previous schema\n"), 0o600), qt.IsNil)
 
 	result, err := export(Options{
-		RootDir:    root,
-		OutputPath: output,
-		Cleanup:    true,
+		Annotations: annotation.None(),
+		RootDir:     root,
+		OutputPath:  output,
+		Cleanup:     true,
 	}, exportHooks{afterOutputStage: func() {
 		c.Assert(os.Remove(output), qt.IsNil)
 		c.Assert(os.Link(dataPath, output), qt.IsNil)

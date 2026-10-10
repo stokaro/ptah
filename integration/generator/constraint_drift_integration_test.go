@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/generator"
@@ -89,7 +90,7 @@ type Product struct {
 
 	execScript(c, conn, upSQL, "UP")
 
-	desired, err := goschema.ParseFS(os.DirFS(root), "entities")
+	desired, err := goschema.ParseFS(builtintest.Annotations(), os.DirFS(root), "entities")
 	c.Assert(err, qt.IsNil)
 	dbAfter, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
@@ -172,7 +173,7 @@ type Product struct {
 
 			execScript(c, conn, upSQL, "UP")
 
-			desired, err := goschema.ParseFS(os.DirFS(root), "entities")
+			desired, err := goschema.ParseFS(builtintest.Annotations(), os.DirFS(root), "entities")
 			c.Assert(err, qt.IsNil)
 			dbAfter, err := conn.Reader().ReadSchemaContext(ctx)
 			c.Assert(err, qt.IsNil)

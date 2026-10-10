@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/feature/pgpolicy"
-
 	"ptah.run/core/goschema"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 func TestParseRowSecurityComment(t *testing.T) {
@@ -59,7 +59,7 @@ table "users" {
 func TestRowSecurityCommentGoAnnotationParity(t *testing.T) {
 	c := qt.New(t)
 
-	goDB, err := goschema.ParseSource("users.go", `package models
+	goDB, err := goschema.ParseSource(builtintest.Annotations(), "users.go", `package models
 
 //ptah:schema:table name="users"
 type User struct {

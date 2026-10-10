@@ -71,7 +71,7 @@ func TestParseSource_VectorIndex_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("docs.go", vectorIndexSource(test.attributes))
+			db, err := goschema.ParseSource(noOwners, "docs.go", vectorIndexSource(test.attributes))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Indexes, qt.HasLen, 1)
 			c.Assert(declaredVector(c, db.Indexes[0]), qt.DeepEquals, test.want)
@@ -100,7 +100,7 @@ func TestParseSource_VectorIndex_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("docs.go", vectorIndexSource(test.attributes))
+			db, err := goschema.ParseSource(noOwners, "docs.go", vectorIndexSource(test.attributes))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
@@ -126,7 +126,7 @@ func TestParseSource_VectorIndexOperatorClass_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("docs.go", vectorIndexSource(test.attributes))
+			db, err := goschema.ParseSource(noOwners, "docs.go", vectorIndexSource(test.attributes))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 		})

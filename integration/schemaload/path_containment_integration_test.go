@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaload"
 )
 
@@ -97,6 +98,7 @@ func TestLoad_SchemaFileSpellingsReachTheSameDestination(t *testing.T) {
 			fixture := newContainmentFixture(t, c)
 
 			database, err := schemaload.Load(schemaload.Options{
+				Annotations: builtintest.Annotations(),
 				SchemaFiles: []string{tc.spelling(fixture)},
 				Dialect:     "sqlite",
 			})
@@ -134,6 +136,7 @@ func TestLoad_SchemaFileContainmentAllowsContainedDestinations(t *testing.T) {
 			fixture := newContainmentFixture(t, c)
 
 			database, err := schemaload.Load(schemaload.Options{
+				Annotations: builtintest.Annotations(),
 				SchemaFiles: []string{tc.spelling(fixture)},
 				Dialect:     "sqlite",
 			})

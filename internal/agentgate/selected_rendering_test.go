@@ -13,6 +13,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/builtintest"
 )
 
 type selectedSchemaRenderer func(context.Context, renderer.SchemaRequest) (renderer.SchemaResult, error)
@@ -32,7 +33,7 @@ func TestSchemaGatePresentsCompletedRenderingRefusal(t *testing.T) {
 		c.Assert(request.Schema.Tables, qt.HasLen, 1)
 		return renderer.SchemaResult{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{Code: schemavalidation.InvalidSchema, Kind: "schema", Message: "provider schema refusal"}}}, nil
 	})
-	selected, err := agentgate.New(agentgate.Options{Dialect: "postgres", Validation: must.Must(builtin.New()), Rendering: service})
+	selected, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Dialect: "postgres", Validation: must.Must(builtin.New()), Rendering: service})
 	c.Assert(err, qt.IsNil)
 	report, err := selected.Run(t.Context(), scope)
 	c.Assert(err, qt.IsNil)
@@ -59,7 +60,7 @@ func TestSchemaGateDoesNotReportRenderingFailureAsSchemaRefusal(t *testing.T) {
 			service := selectedSchemaRenderer(func(context.Context, renderer.SchemaRequest) (renderer.SchemaResult, error) {
 				return renderer.SchemaResult{Complete: test.complete, Statements: []string{"partial;"}}, test.failure
 			})
-			selected, err := agentgate.New(agentgate.Options{Dialect: "postgres", Validation: must.Must(builtin.New()), Rendering: service})
+			selected, err := agentgate.New(agentgate.Options{Annotations: builtintest.Annotations(), Dialect: "postgres", Validation: must.Must(builtin.New()), Rendering: service})
 			c.Assert(err, qt.IsNil)
 			report, err := selected.Run(t.Context(), scope)
 			c.Assert(err, qt.ErrorIs, test.want)

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -21,12 +22,12 @@ func TestRender_PreservesTableProperties(t *testing.T) {
 		t.Run(map[bool]string{true: "single", false: "per table"}[single], func(t *testing.T) {
 			c := qt.New(t)
 			source := "package models\n" + `//ptah:schema:table name="events" platform.clickhouse.engine="ReplacingMergeTree(version)" platform.clickhouse.primary_key="" platform.clickhouse.order_by="tuple(id, version)" platform.postgres.comment="line\n\"quote\"\\path"` + "\ntype Events struct {\n//ptah:schema:field type=\"UInt64\"\nID uint64\n}\n"
-			db, err := goschema.ParseSource("input.go", source)
+			db, err := goschema.ParseSource(builtintest.Annotations(), "input.go", source)
 			c.Assert(err, qt.IsNil)
 			files, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{SingleFile: single})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
-			got, err := goschema.ParseSource(files[0].Name, files[0].Data)
+			got, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Tables[0].Overrides, qt.DeepEquals, db.Tables[0].Overrides)
 			c.Assert(string(files[0].Data), qt.Contains, `platform.clickhouse.primary_key=""`)
@@ -50,7 +51,7 @@ func TestRender_EncodesSelectedOwnedTableFacets(t *testing.T) {
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "clickhouse", Runtime: runtime})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource("schema.go", files[0].Data)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", files[0].Data)
 	c.Assert(err, qt.IsNil)
 	decoded, err := schemaproperties.DecodeTables(c.Context(), &parsed, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)

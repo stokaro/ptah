@@ -186,11 +186,13 @@ type User struct {
 `)},
 }
 
-db, err := goschema.ParseFS(fsys, "models")
+runtime, err := builtin.New()
 if err != nil {
 	return err
 }
-runtime, err := builtin.New()
+// The runtime's owners decode their own directives, such as a TimescaleDB
+// hypertable. annotation.None() reads the frontend's own directives only.
+db, err := goschema.ParseFS(runtime.Annotations(), fsys, "models")
 if err != nil {
 	return err
 }
@@ -327,14 +329,14 @@ if err != nil {
 	return err
 }
 
-desired, err := goschema.ParseDir("./models")
-if err != nil {
-	return err
-}
-
 runtime, err := builtin.New()
 if err != nil {
     return err
+}
+
+desired, err := goschema.ParseDir(runtime.Annotations(), "./models")
+if err != nil {
+	return err
 }
 diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil, runtime)
 if err != nil {

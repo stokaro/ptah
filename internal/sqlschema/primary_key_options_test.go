@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/sqlschema"
 )
@@ -30,7 +31,7 @@ func TestRead_PrimaryKeyOptions_HappyPath(t *testing.T) {
 				files, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{SingleFile: true})
 				c.Assert(err, qt.IsNil)
 				c.Assert(files, qt.HasLen, 1)
-				again, err := goschema.ParseSource("schema.go", string(files[0].Data))
+				again, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
 				c.Assert(err, qt.IsNil)
 				c.Assert(again.Tables[0].PrimaryKeyBlockSize, qt.Equals, uint64(8))
 				c.Assert(again.Tables[0].PrimaryKeyComment, qt.Equals, "lookup")

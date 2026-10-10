@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -40,7 +39,7 @@ type pendingConsumer struct {
 // belongs to the table the struct maps to, or to the table its `table`
 // attribute names, and is attached to it once the whole file is read.
 func (s *schemaParseState) parseChangefeedComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:changefeed", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -64,7 +63,7 @@ func (s *schemaParseState) parseChangefeedComment(comment *ast.Comment, structNa
 // parseChangefeedConsumerComment reads a consumer of a YDB changefeed's
 // topic, attached to its changefeed once the whole file is read.
 func (s *schemaParseState) parseChangefeedConsumerComment(comment *ast.Comment, structName string) error {
-	kv := parseutils.ParseKeyValueComment(comment.Text)
+	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:changefeed:consumer", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -150,7 +149,7 @@ func (s *schemaParseState) attachChangefeeds() error {
 		}
 	}
 	var err error
-	s.featureCoverage, err = sourceCoverage(s.featureLimits)
+	s.featureCoverage, err = sourceCoverage(s.featureLimits, s.annotations)
 	return err
 }
 

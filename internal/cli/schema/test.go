@@ -364,7 +364,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 			// Leave a missing path to the runner, which names it in its own error.
 			return nil, nil //nolint:nilerr // the runner reports this source
 		}
-		parsed, parseErr := goschema.ParseDir(opts.rootDir)
+		parsed, parseErr := goschema.ParseDir(opts.runtime.Annotations(), opts.rootDir)
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.rootDir, parseErr)
 		}
@@ -548,6 +548,7 @@ func loadTestSchemaFiles(ctx context.Context, opts testOptions, files []string) 
 		return nil, err
 	}
 	return schemaload.LoadContext(ctx, schemaload.Options{
+		Annotations: opts.runtime.Annotations(),
 		SchemaFiles: files, Vars: opts.vars, PlainHTTP: opts.plainHTTP,
 		Dialect: dialect, DatabaseURL: opts.dbURL,
 	})

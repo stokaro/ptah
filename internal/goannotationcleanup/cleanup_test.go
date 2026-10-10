@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/goannotationcleanup"
 	"ptah.run/internal/goannotationsource"
 )
@@ -467,7 +468,7 @@ func TestPlanAnnotations_HappyPath_ReturnsMetadata(t *testing.T) {
 func TestNewPlan_FailurePath_RejectsNilSnapshot(t *testing.T) {
 	c := qt.New(t)
 
-	plan, err := goannotationcleanup.NewPlan(nil)
+	plan, err := goannotationcleanup.NewPlan(annotationmeta.Common(), nil)
 
 	c.Assert(err, qt.ErrorMatches, "Go annotation source snapshot is nil")
 	c.Assert(plan, qt.IsNil)
@@ -478,5 +479,5 @@ func planDir(root string) (*goannotationcleanup.Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return goannotationcleanup.NewPlan(snapshot)
+	return goannotationcleanup.NewPlan(annotationmeta.Common(), snapshot)
 }

@@ -20,6 +20,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/introspect"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/ydbcomment"
@@ -86,7 +87,7 @@ func parseModels(c *qt.C, source string) *schemamodel.Database {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0o600), qt.IsNil)
-	models, err := goschema.ParseDir(dir)
+	models, err := goschema.ParseDir(builtintest.Annotations(), dir)
 	c.Assert(err, qt.IsNil)
 	return models
 }
@@ -310,7 +311,7 @@ func TestYDBComments_IntrospectedModelsPlanNothing(t *testing.T) {
 			stdout, err := runCommand(introspect.NewIntrospectCommand(),
 				"--db-url", dbtarget.URL(c, line.engine), "--schemas", commentsSchema, "--out", out)
 			c.Assert(err, qt.IsNil, qt.Commentf("introspect:\n%s", stdout))
-			models, err := goschema.ParseDir(out)
+			models, err := goschema.ParseDir(builtintest.Annotations(), out)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(models.Tables, qt.HasLen, 1)

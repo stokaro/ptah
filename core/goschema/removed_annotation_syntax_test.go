@@ -70,7 +70,7 @@ type Account struct{}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := goschema.ParseSource("models.go", test.source)
+			_, err := goschema.ParseSource(noOwners, "models.go", test.source)
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}

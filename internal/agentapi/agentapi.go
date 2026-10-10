@@ -119,8 +119,13 @@ func (s SchemaSource) load(ctx context.Context, dialect string) (*schemamodel.Da
 		return nil, agentdiag.Errorf(agentdiag.CodeInvalidRequest,
 			"no schema source: name at least one root_dirs entry or schema_files entry")
 	}
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return nil, agentdiag.Wrap(agentdiag.CodeSchemaSourceUnreadable, err)
+	}
 	database, err := schemaload.LoadContext(ctx, schemaload.Options{
 		RootDirs:    s.RootDirs,
+		Annotations: annotations,
 		SchemaFiles: s.SchemaFiles,
 		Dialect:     dialect,
 	})

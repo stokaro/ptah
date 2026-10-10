@@ -26,6 +26,7 @@ import (
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
@@ -307,7 +308,7 @@ func TestYDBSecrets_LimitNamesADottedRootSecret(t *testing.T) {
 	for _, path := range []string{secretsLimitKept, secretsLimitDropped} {
 		c.Assert(conn.Writer().ExecuteSQL(c.Context(), "CREATE SECRET "+sqlident.Quote("ydb", path)+" WITH (value = 'probe')"), qt.IsNil)
 	}
-	source, err := goschema.ParseSource("limits.go",
+	source, err := goschema.ParseSource(builtintest.Annotations(), "limits.go",
 		"package entities\n//ptah:schema:notdescribed kind=\"secret\" name=\""+secretsLimitKept+"\"\ntype Unmanaged struct{}\n")
 	c.Assert(err, qt.IsNil)
 	declared := &schemamodel.Database{FeatureCoverage: source.FeatureCoverage.SelectKinds([]schemaext.Kind{ydbsecret.Kind})}

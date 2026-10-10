@@ -1,4 +1,4 @@
-package goschema_test
+package tssource_test
 
 import (
 	"testing"
@@ -6,11 +6,51 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/dialect/timescaledb/tssource"
 )
+
+// timescaleOwner selects this owner alone, so each test reads TimescaleDB's
+// directives through the frontend the way a runtime that registers the owner
+// does.
+func timescaleOwner(c *qt.C) annotation.Set {
+	c.Helper()
+	set, err := annotation.NewSet(tssource.Annotations())
+	c.Assert(err, qt.IsNil)
+	return set
+}
+
+func parse(c *qt.C, filename string, source any) schemamodel.Database {
+	c.Helper()
+	db, err := goschema.ParseSource(timescaleOwner(c), filename, source)
+	c.Assert(err, qt.IsNil)
+	return db
+}
+
+// TestParseSource_WithoutTheOwnerTheDirectivesDeclareNothing is the control
+// on the selection: a parse that selects no owner reads a TimescaleDB
+// directive no more than one it does not know, and claims no knowledge of
+// either model, so a comparison leaves an existing hypertable alone rather
+// than reading its absence as a removal.
+func TestParseSource_WithoutTheOwnerTheDirectivesDeclareNothing(t *testing.T) {
+	c := qt.New(t)
+	source := "package models\n\n//ptah:schema:table name=\"readings\"\ntype Reading struct{}\n\n" +
+		"//ptah:schema:hypertable table=\"readings\" column=\"time\"\ntype H struct{}\n" +
+		"//ptah:schema:continuousaggregate name=\"hourly\" body=\"SELECT 1\"\ntype Hourly struct{}\n"
+
+	db, err := goschema.ParseSource(annotation.None(), "readings.go", source)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Facets.IsZero(), qt.IsTrue)
+	c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
+	c.Assert(db.FeatureCoverage.Lookup(tsschema.HypertableKind, tsschema.ContinuousAggregateRef("", "hourly")).State, qt.Not(qt.Equals), schemaext.Complete)
+}
 
 // TestParseSource_ReadsTheContinuousAggregateAnnotation pins what the
 // annotation carries, and that the body is kept as it was WRITTEN.
@@ -28,7 +68,7 @@ func TestParseSource_ReadsTheContinuousAggregateAnnotation(t *testing.T) {
 		"materialized_only=\"true\" comment=\"one row per hour\"\n" +
 		"type Hourly struct{}\n"
 
-	db := mustParseSource(c, "aggregate.go", source)
+	db := parse(c, "aggregate.go", source)
 
 	c.Assert(must.Must(db.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
 		tsschema.DesiredContinuousAggregateObject("metrics", "hourly", tsschema.DesiredContinuousAggregate{
@@ -45,7 +85,7 @@ func TestParseSource_TheAggregateOptionDefaultsOff(t *testing.T) {
 		"//ptah:schema:continuousaggregate name=\"hourly\" body=\"SELECT 1\"\n" +
 		"type Hourly struct{}\n"
 
-	db := mustParseSource(c, "aggregate.go", source)
+	db := parse(c, "aggregate.go", source)
 
 	c.Assert(must.Must(db.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{
 		tsschema.DesiredContinuousAggregateObject("", "hourly", tsschema.DesiredContinuousAggregate{StructName: "Hourly", Body: "SELECT 1"}),
@@ -80,7 +120,7 @@ func TestParseSource_AttachesTheHypertableToItsTable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db := mustParseSource(c, "readings.go", test.source)
+			db := parse(c, "readings.go", test.source)
 
 			c.Assert(db.Tables, qt.HasLen, 1)
 			hypertable, found := must.Must2(schemaext.FacetAs[*tsschema.DesiredHypertable](db.Tables[0].Facets, tsschema.HypertableKind))
@@ -106,7 +146,7 @@ func TestParseSource_AGoSchemaDescribesBothTimescaleModels(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db := mustParseSource(c, "plain.go", "package models\n\n//ptah:schema:table name=\"plain\"\ntype Plain struct{}\n")
+			db := parse(c, "plain.go", "package models\n\n//ptah:schema:table name=\"plain\"\ntype Plain struct{}\n")
 
 			// The claim is per kind, so it answers for a subject the schema never names.
 			knowledge := db.FeatureCoverage.Lookup(test.kind, tsschema.ContinuousAggregateRef("", "absent"))
@@ -168,7 +208,7 @@ func TestParseSource_TimescaleAnnotationsRefuseWhatTheyCannotPlace(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := goschema.ParseSource("timescale.go", "package models\n\n"+test.source)
+			db, err := goschema.ParseSource(timescaleOwner(c), "timescale.go", "package models\n\n"+test.source)
 
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -189,7 +229,7 @@ const twoReadings = "package models\n\n" +
 func TestParseSource_ANamedTableResolvesInTheSchemaItNames(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c, "readings.go", twoReadings+
+	db := parse(c, "readings.go", twoReadings+
 		"//ptah:schema:hypertable table=\"archive.readings\" column=\"time\"\ntype ArchiveHypertable struct{}\n")
 
 	c.Assert(db.Tables, qt.HasLen, 2)
@@ -204,7 +244,7 @@ func TestParseSource_ANamedTableResolvesInTheSchemaItNames(t *testing.T) {
 // refusal for an annotation that names a table without its schema when the
 // file declares the name in two schemas. Attaching the part to whichever came
 // first partitions -- or streams from -- a table the author may not have
-// meant. Changefeeds share the lookup, so they are held to the same rule.
+// meant.
 func TestParseSource_AnUnqualifiedTableTwoSchemasDeclareIsRefused(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -212,14 +252,13 @@ func TestParseSource_AnUnqualifiedTableTwoSchemasDeclareIsRefused(t *testing.T) 
 		directive  string
 	}{
 		{name: "a hypertable", annotation: "//ptah:schema:hypertable table=\"readings\" column=\"time\"\ntype H struct{}\n", directive: "hypertable"},
-		{name: "a changefeed", annotation: "type H struct {\n\t//ptah:schema:changefeed name=\"feed\" table=\"readings\" mode=\"UPDATES\" format=\"JSON\"\n\t_ int\n}\n", directive: "changefeed"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := goschema.ParseSource("readings.go", twoReadings+test.annotation)
+			db, err := goschema.ParseSource(timescaleOwner(c), "readings.go", twoReadings+test.annotation)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(err, qt.ErrorMatches, `(?s).*table "readings" is declared in schemas "public" and "archive"; name the schema in the table attribute.*`+test.directive+`.*`)
@@ -249,7 +288,7 @@ func TestParseSource_AQualifiedAggregateNameNamesItsSchema(t *testing.T) {
 			c := qt.New(t)
 			source := "package models\n\n//ptah:schema:continuousaggregate " + test.attributes + " body=\"SELECT 1\"\ntype Hourly struct{}\n"
 
-			db := mustParseSource(c, "aggregate.go", source)
+			db := parse(c, "aggregate.go", source)
 
 			refs := db.FeatureObjects.Refs()
 			c.Assert(refs, qt.HasLen, 1)

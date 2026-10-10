@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/datamigrate"
@@ -124,8 +125,13 @@ func migrateDataCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	upSQL, downSQL, err := datamigrate.Generate(ctx, conn, datamigrate.Options{
 		RootDir:          opts.rootDir,
+		Annotations:      annotations,
 		AllowDestructive: opts.allowDestructive,
 		ProtectedTables:  opts.protectedTables,
 		AllowProd:        opts.allowProd,

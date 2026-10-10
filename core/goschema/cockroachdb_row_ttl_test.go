@@ -20,7 +20,7 @@ import (
 func TestParse_RowTTLIsACockroachDBPlatformProperty(t *testing.T) {
 	c := qt.New(t)
 
-	database, err := goschema.ParseSource("sessions.go", `package entities
+	database, err := goschema.ParseSource(noOwners, "sessions.go", `package entities
 
 //ptah:schema:table name="sessions" platform.cockroachdb.ttl_expire_after="3 days" platform.crdb.ttl_job_cron="@daily"
 type Session struct {
@@ -50,7 +50,7 @@ type Event struct {
 func TestParse_RowTTLHasNoBareAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschema.ParseSource("sessions.go", `package entities
+	_, err := goschema.ParseSource(noOwners, "sessions.go", `package entities
 
 //ptah:schema:table name="sessions" ttl_expire_after="3 days"
 type Session struct {

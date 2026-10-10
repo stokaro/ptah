@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"ptah.run/core/annotation"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -14,6 +15,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsreport"
 	"ptah.run/dialect/timescaledb/tsreverse"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/dialect/timescaledb/tssource"
 	"ptah.run/engine"
 )
 
@@ -30,8 +32,9 @@ func timescaleProvider() engine.Provider {
 	models := []schemaext.Kind{tsschema.HypertableKind, tsschema.ContinuousAggregateKind}
 	changes := []schemaext.Kind{tsdiff.HypertableKind, tsdiff.ContinuousAggregateKind}
 	provider := engine.Provider{
-		ID:     tsschema.Owner,
-		Codecs: append(append(tsschema.Codecs(), tsdiff.Codecs()...), tsast.Codecs()...),
+		ID:          tsschema.Owner,
+		Codecs:      append(append(tsschema.Codecs(), tsdiff.Codecs()...), tsast.Codecs()...),
+		Annotations: []annotation.Extension{tssource.Annotations()},
 	}
 	for _, target := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
 		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: models, Service: tsconvert.Service{}})

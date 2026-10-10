@@ -16,12 +16,13 @@ import (
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 // policySource is one table keyed on id, with a timestamp column created_at
 // and an integer column expires, whose table directive carries attributes.
 func policySource(attributes string) *schemamodel.Database {
-	database := must.Must(goschema.ParseSource("events.go", `package entities
+	database := must.Must(goschema.ParseSource(builtintest.Annotations(), "events.go", `package entities
 
 //ptah:schema:table name="events" `+attributes+`
 type Event struct {

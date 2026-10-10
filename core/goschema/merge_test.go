@@ -36,7 +36,7 @@ type Order struct {
 // parseRaw parses a single Go source into a raw (un-finalized) Database, the
 // form Merge expects — the same thing ParseFS accumulates per file.
 func parseRaw(c *qt.C, filename, source string) *schemamodel.Database {
-	db, err := goschema.ParseSource(filename, source)
+	db, err := goschema.ParseSource(noOwners, filename, source)
 	c.Assert(err, qt.IsNil)
 	return &db
 }
@@ -147,7 +147,7 @@ func TestParseFS_FinalizationMatchesMerge(t *testing.T) {
 		"orders.go": {Data: []byte(ordersSource)},
 		"users.go":  {Data: []byte(usersSource)},
 	}
-	parsed, err := goschema.ParseFS(fsys, ".")
+	parsed, err := goschema.ParseFS(noOwners, fsys, ".")
 	c.Assert(err, qt.IsNil)
 
 	users := parseRaw(c, "users.go", usersSource)
@@ -179,7 +179,7 @@ type User struct {
 }
 `)},
 	}
-	finalized, err := goschema.ParseFS(fsys, ".")
+	finalized, err := goschema.ParseFS(noOwners, fsys, ".")
 	c.Assert(err, qt.IsNil)
 
 	merged, err := schemamodel.Merge(finalized)

@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/dbtarget"
@@ -167,7 +168,7 @@ func TestLiveTableIdentity_IntrospectedModelsCompareEqual(t *testing.T) {
 	dir := c.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
 
-	models, err := goschema.ParseDir(dir)
+	models, err := goschema.ParseDir(builtintest.Annotations(), dir)
 
 	c.Assert(err, qt.IsNil)
 	f.assertNothingPlanned(c, models)

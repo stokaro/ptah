@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -37,7 +38,7 @@ func TestRender_ResourcePool_RoundTrip(t *testing.T) {
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.FeatureObjects.Len(), qt.Equals, len(want))
@@ -61,7 +62,7 @@ func TestRender_ResourcePool_AloneKeepsItsStruct(t *testing.T) {
 			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
-			parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+			parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.FeatureObjects.Refs(), qt.DeepEquals, []objectidentity.ID{object.Ref})
 		})

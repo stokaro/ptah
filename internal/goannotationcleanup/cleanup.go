@@ -117,17 +117,20 @@ type stagedPlan struct {
 // Plan is an immutable set of validated annotation removals.
 type Plan struct {
 	snapshot *goannotationsource.Snapshot
+	catalog  annotationmeta.Catalog
 	changes  []filePlan
 }
 
-// NewPlan plans annotation removals from one captured source view.
-func NewPlan(snapshot *goannotationsource.Snapshot) (*Plan, error) {
+// NewPlan plans annotation removals from one captured source view. catalog
+// decides which comments are directives, the selected owners' among them, and
+// which attribute values the diff redacts.
+func NewPlan(catalog annotationmeta.Catalog, snapshot *goannotationsource.Snapshot) (*Plan, error) {
 	if snapshot == nil {
 		return nil, errors.New("Go annotation source snapshot is nil")
 	}
-	cleanupPlan := &Plan{snapshot: snapshot}
+	cleanupPlan := &Plan{snapshot: snapshot, catalog: catalog}
 	for _, source := range snapshot.Files() {
-		file, err := planFile(source)
+		file, err := planFile(catalog, source)
 		if err != nil {
 			return nil, err
 		}
@@ -181,8 +184,8 @@ func (p *Plan) Apply() error {
 	return applyPlans(p.changes, applyHooks{revalidate: p.snapshot.Revalidate})
 }
 
-func planFile(source goannotationsource.File) (filePlan, error) {
-	after, removed, err := removeAnnotationLines(source.Path, source.Contents)
+func planFile(catalog annotationmeta.Catalog, source goannotationsource.File) (filePlan, error) {
+	after, removed, err := removeAnnotationLines(catalog, source.Path, source.Contents)
 	if err != nil {
 		return filePlan{}, err
 	}
@@ -198,7 +201,7 @@ func planFile(source goannotationsource.File) (filePlan, error) {
 		Path:         source.Path,
 		Changed:      !bytes.Equal(source.Contents, after),
 		RemovedLines: len(removed),
-		Diff:         unifiedRemovalDiff(source.Path, source.Contents, removed),
+		Diff:         unifiedRemovalDiff(catalog, source.Path, source.Contents, removed),
 	}
 	return filePlan{
 		result:  result,
@@ -764,9 +767,9 @@ func closeOpenedPlans(opened []openedPlan) error {
 	return closeErr
 }
 
-func removeAnnotationLines(path string, data []byte) ([]byte, []removedLine, error) {
+func removeAnnotationLines(catalog annotationmeta.Catalog, path string, data []byte) ([]byte, []removedLine, error) {
 	lines := bytes.SplitAfter(data, []byte("\n"))
-	lineNumbers, err := annotationLineNumbers(path, data, lines)
+	lineNumbers, err := annotationLineNumbers(catalog, path, data, lines)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -783,7 +786,7 @@ func removeAnnotationLines(path string, data []byte) ([]byte, []removedLine, err
 	return bytes.Join(filtered, nil), removed, nil
 }
 
-func annotationLineNumbers(path string, data []byte, lines [][]byte) (map[int]removedLine, error) {
+func annotationLineNumbers(catalog annotationmeta.Catalog, path string, data []byte, lines [][]byte) (map[int]removedLine, error) {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, path, data, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
@@ -795,13 +798,13 @@ func annotationLineNumbers(path string, data []byte, lines [][]byte) (map[int]re
 	for _, group := range file.Comments {
 		for _, comment := range group.List {
 			lineNumber := fileSet.PositionFor(comment.Pos(), false).Line
-			directive, ok := annotationmeta.MatchCommentDirective(comment.Text)
+			directive, ok := catalog.MatchCommentDirective(comment.Text)
 			if !ok || lineNumber < 1 ||
 				lineNumber > len(lines) ||
 				strings.TrimSpace(string(lines[lineNumber-1])) != strings.TrimSpace(comment.Text) {
 				continue
 			}
-			attributes, values := annotationAttributes(comment.Text)
+			attributes, values := annotationAttributes(catalog, comment.Text)
 			lineNumbers[lineNumber] = removedLine{
 				number: lineNumber,
 				annotation: Annotation{
@@ -822,7 +825,7 @@ func annotationLineNumbers(path string, data []byte, lines [][]byte) (map[int]re
 	return lineNumbers, nil
 }
 
-func unifiedRemovalDiff(path string, before []byte, removed []removedLine) string {
+func unifiedRemovalDiff(catalog annotationmeta.Catalog, path string, before []byte, removed []removedLine) string {
 	if len(removed) == 0 {
 		return ""
 	}
@@ -855,10 +858,10 @@ func unifiedRemovalDiff(path string, before []byte, removed []removedLine) strin
 		for lineNumber := oldStart; lineNumber <= oldEnd; lineNumber++ {
 			line := lines[lineNumber-1]
 			if _, ok := removedSet[lineNumber]; ok {
-				writeDiffLine(&builder, '-', line)
+				writeDiffLine(catalog, &builder, '-', line)
 				continue
 			}
-			writeDiffLine(&builder, ' ', line)
+			writeDiffLine(catalog, &builder, ' ', line)
 		}
 
 		removedBefore += j - i
@@ -913,11 +916,11 @@ const redactionMarker = "***"
 // those were computed against the comment text, whose offsets differ from the
 // raw source line by the leading indentation. Masking is done by ValueRange
 // offsets, not by matching the value, because a value may contain a quote.
-func redactSensitiveValues(line string) string {
+func redactSensitiveValues(catalog annotationmeta.Catalog, line string) string {
 	if !strings.Contains(line, "ptah:") {
 		return line
 	}
-	sensitive := annotationmeta.AllSensitiveAttributes()
+	sensitive := catalog.AllSensitiveAttributes()
 	if len(sensitive) == 0 {
 		return line
 	}
@@ -971,8 +974,8 @@ func widenAmbiguousValue(line string, start, end int) int {
 	return end + len(strings.TrimRight(line[end:], "\r\n"))
 }
 
-func writeDiffLine(builder *strings.Builder, prefix byte, line string) {
-	line = redactSensitiveValues(line)
+func writeDiffLine(catalog annotationmeta.Catalog, builder *strings.Builder, prefix byte, line string) {
+	line = redactSensitiveValues(catalog, line)
 	builder.WriteByte(prefix)
 	builder.WriteString(line)
 	if !strings.HasSuffix(line, "\n") {

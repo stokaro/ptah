@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 // customSQLDatabase is one table carrying the raw tail the `custom` table
@@ -94,7 +95,7 @@ type Event struct {
 }
 `
 
-	database, err := goschema.ParseSource("models.go", source)
+	database, err := goschema.ParseSource(builtintest.Annotations(), "models.go", source)
 	c.Assert(err, qt.IsNil)
 
 	statements, renderErr := builtin.GetOrderedCreateStatements(&database, "postgres")

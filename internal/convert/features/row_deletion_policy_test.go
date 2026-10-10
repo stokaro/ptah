@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -71,7 +72,7 @@ func TestSpannerRowDeletion_GoExportRoundTrip(t *testing.T) {
 	c.Assert(string(files[0].Data), qt.Contains, `platform.spanner.row_deletion_column="created_at"`)
 	c.Assert(string(files[0].Data), qt.Contains, `platform.spanner.row_deletion_interval="4 WEEKS 2 DAYS"`)
 
-	parsed := must.Must(goschema.ParseSource("schema.go", string(files[0].Data)))
+	parsed := must.Must(goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data)))
 	decoded, err := schemaproperties.DecodeTables(t.Context(), &parsed, "spanner", runtime)
 	c.Assert(err, qt.IsNil)
 	restored, found, err := schemaext.FacetAs[*spannerschema.DesiredRowDeletion](decoded.Tables[0].Facets, spannerschema.RowDeletionKind)
@@ -94,7 +95,7 @@ func TestYDBTTL_GoExportRoundTrip(t *testing.T) {
 	c.Assert(files, qt.HasLen, 1)
 	c.Assert(string(files[0].Data), qt.Contains, `platform.ydb.row_deletion_unit="SECONDS"`)
 
-	parsed := must.Must(goschema.ParseSource("schema.go", string(files[0].Data)))
+	parsed := must.Must(goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data)))
 	decoded, err := schemaproperties.DecodeTables(t.Context(), &parsed, "ydb", runtime)
 	c.Assert(err, qt.IsNil)
 	restored, found, err := schemaext.FacetAs[*ydbschema.DesiredTTL](decoded.Tables[0].Facets, ydbschema.TTLKind)

@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -43,7 +44,7 @@ func TestRender_Changefeed(t *testing.T) {
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
-	reparsed, err := goschema.ParseSource("schema.go", string(files[0].Data))
+	reparsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(files[0].Data), qt.Contains, `//ptah:schema:changefeed:consumer changefeed="updates" name="late"`)

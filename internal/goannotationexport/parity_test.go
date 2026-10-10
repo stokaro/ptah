@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/goannotationexport"
 )
 
@@ -25,12 +26,13 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 		c.Check(os.RemoveAll(outputDir), qt.IsNil)
 	})
 	output := filepath.Join(outputDir, "schema.hcl")
-	before, err := goschema.ParseDir(root)
+	before, err := goschema.ParseDir(builtintest.Annotations(), root)
 	c.Assert(err, qt.IsNil)
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
-		RootDir:    root,
-		OutputPath: output,
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
 	})
 
 	c.Assert(err, qt.IsNil)

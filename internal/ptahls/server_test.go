@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/annotation"
 )
 
 func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
@@ -49,7 +51,7 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	err := RunWithOptions(context.Background(), strings.NewReader(input), &out, ServerOptions{Version: "v-test"})
+	err := RunWithOptions(context.Background(), strings.NewReader(input), &out, ServerOptions{Version: "v-test", Annotations: annotation.None()})
 	c.Assert(err, qt.IsNil)
 
 	messages := readFramedMessages(c, out.String())
@@ -78,10 +80,10 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 func TestRunReturnsErrorWhenExitArrivesBeforeShutdown(t *testing.T) {
 	c := qt.New(t)
 
-	err := Run(context.Background(), strings.NewReader(framedMessage(map[string]any{
+	err := RunWithOptions(context.Background(), strings.NewReader(framedMessage(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "exit",
-	})), &bytes.Buffer{})
+	})), &bytes.Buffer{}, ServerOptions{Annotations: annotation.None()})
 
 	c.Assert(err, qt.ErrorIs, errExitBeforeShutdown)
 }

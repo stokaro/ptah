@@ -10,6 +10,7 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/dialect/cockroachdb/crdbsource"
 	"ptah.run/engine"
+	"ptah.run/internal/builtintest"
 )
 
 // ExampleService shows a Go annotation declaring CockroachDB row-level TTL
@@ -17,7 +18,7 @@ import (
 // provider into the owner's declaration. The bundled engine runtime is not
 // needed.
 func ExampleService() {
-	database, err := goschema.ParseSource("sessions.go", `package entities
+	database, err := goschema.ParseSource(builtintest.Annotations(), "sessions.go", `package entities
 
 //ptah:schema:table name="sessions" platform.cockroachdb.ttl_expire_after="3 days" platform.cockroachdb.ttl_job_cron="@daily"
 type Session struct {

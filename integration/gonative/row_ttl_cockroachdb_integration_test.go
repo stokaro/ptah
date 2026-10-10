@@ -20,6 +20,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -182,7 +183,7 @@ func rowTTLDeclaration(policy *crdbschema.Policy) *schemamodel.Database {
 		"\t//ptah:schema:field name=\"id\" type=\"INT8\" primary=\"true\"\n\tID int64\n" +
 		"\t//ptah:schema:field name=\"expires_at\" type=\"TIMESTAMPTZ\"\n\tExpiresAt *time.Time\n" +
 		"}\n"
-	database := must.Must(goschema.ParseSource("sessions.go", source))
+	database := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", source))
 	return &database
 }
 
@@ -557,7 +558,7 @@ func TestCockroachDBRowLevelTTL_RollsBackBesideAnRLSToggleLive(t *testing.T) {
 	_, err = db.Exec(`CREATE TABLE ` + rowTTLTable + ` (id INT8 PRIMARY KEY, expires_at TIMESTAMPTZ)`)
 	c.Assert(err, qt.IsNil)
 
-	declared := must.Must(goschema.ParseSource("sessions.go", "package entities\n\n"+
+	declared := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", "package entities\n\n"+
 		"//ptah:schema:rls:enable table=\""+rowTTLTable+"\"\n"+
 		"//ptah:schema:table name=\""+rowTTLTable+"\" platform.cockroachdb.ttl_expire_after=\"3 days\"\n"+
 		"type Sessions struct {\n"+

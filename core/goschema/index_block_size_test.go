@@ -20,7 +20,7 @@ func TestParseSource_IndexBlockSize_FailurePath(t *testing.T) {
 			t.Run(sourceFormat+"/"+value, func(t *testing.T) {
 				c := qt.New(t)
 				source := fmt.Sprintf(sourceFormat, value)
-				_, err := goschema.ParseSource("entities.go", source)
+				_, err := goschema.ParseSource(noOwners, "entities.go", source)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			})
 		}

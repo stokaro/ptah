@@ -6,12 +6,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema/internal/parseutils"
+	"ptah.run/internal/annotationmeta"
 )
 
 func TestParseKeyValueComment_UnquotesEscapedValues(t *testing.T) {
 	c := qt.New(t)
 
-	kv := parseutils.ParseKeyValueComment(`//ptah:schema:function name="normalize" body="BEGIN RAISE NOTICE \"hello\";\nRETURN NEW; END;" path="C:\\tmp"`)
+	kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(`//ptah:schema:function name="normalize" body="BEGIN RAISE NOTICE \"hello\";\nRETURN NEW; END;" path="C:\\tmp"`)
 
 	c.Assert(kv["name"], qt.Equals, "normalize")
 	c.Assert(kv["body"], qt.Equals, "BEGIN RAISE NOTICE \"hello\";\nRETURN NEW; END;")
@@ -21,7 +22,7 @@ func TestParseKeyValueComment_UnquotesEscapedValues(t *testing.T) {
 func TestParseKeyValueComment_EnumDirectiveTokenIsNotBooleanAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	kv := parseutils.ParseKeyValueComment(`//ptah:schema:enum name="status" values="active,inactive"`)
+	kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(`//ptah:schema:enum name="status" values="active,inactive"`)
 
 	c.Assert(kv["enum"], qt.Equals, "")
 	c.Assert(kv["name"], qt.Equals, "status")

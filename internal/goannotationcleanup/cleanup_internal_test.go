@@ -11,6 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/fsdurable"
 	"ptah.run/internal/goannotationsource"
 )
@@ -104,7 +105,7 @@ func TestApplyPlans_FailurePath_RevalidatesCompleteSourceSetAfterStaging(t *test
 			c.Assert(os.WriteFile(plainPath, plain, 0o600), qt.IsNil)
 			snapshot, err := goannotationsource.Capture(root)
 			c.Assert(err, qt.IsNil)
-			plan, err := NewPlan(snapshot)
+			plan, err := NewPlan(annotationmeta.Common(), snapshot)
 			c.Assert(err, qt.IsNil)
 			var mutateErr error
 
@@ -146,7 +147,7 @@ func TestApplyPlans_FailurePath_PreservesConcurrentEditAndRecoveryBackup(t *test
 	c.Assert(os.Chmod(secondPath, 0o640), qt.IsNil)
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
-	plan, err := NewPlan(snapshot)
+	plan, err := NewPlan(annotationmeta.Common(), snapshot)
 	c.Assert(err, qt.IsNil)
 
 	applyErr := applyPlans(plan.changes, applyHooks{
@@ -192,7 +193,7 @@ func TestApplyPlans_FailurePath_RollbackRestoresBytesAndMode(t *testing.T) {
 	c.Assert(os.Chmod(secondPath, 0o640), qt.IsNil)
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
-	plan, err := NewPlan(snapshot)
+	plan, err := NewPlan(annotationmeta.Common(), snapshot)
 	c.Assert(err, qt.IsNil)
 
 	applyErr := applyPlans(plan.changes, applyHooks{
@@ -224,7 +225,7 @@ func TestApplyPlans_FailurePath_RejectsReplacedStagedFile(t *testing.T) {
 	c.Assert(os.WriteFile(sourcePath, original, 0o600), qt.IsNil)
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
-	plan, err := NewPlan(snapshot)
+	plan, err := NewPlan(annotationmeta.Common(), snapshot)
 	c.Assert(err, qt.IsNil)
 
 	applyErr := applyPlans(plan.changes, applyHooks{
@@ -266,7 +267,7 @@ func applyPlansOverConcurrentEdit(
 	c.Assert(os.WriteFile(sourcePath, concurrentEditOriginal, 0o600), qt.IsNil)
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
-	plan, err := NewPlan(snapshot)
+	plan, err := NewPlan(annotationmeta.Common(), snapshot)
 	c.Assert(err, qt.IsNil)
 	var injectErr error
 
@@ -407,7 +408,7 @@ func TestApplyPlans_FailurePath_RefusesRollbackOverPostCommitEdit(t *testing.T) 
 			c.Assert(os.Chmod(secondPath, 0o640), qt.IsNil)
 			snapshot, err := goannotationsource.Capture(root)
 			c.Assert(err, qt.IsNil)
-			plan, err := NewPlan(snapshot)
+			plan, err := NewPlan(annotationmeta.Common(), snapshot)
 			c.Assert(err, qt.IsNil)
 			base := applyHooks{
 				revalidate: snapshot.Revalidate,

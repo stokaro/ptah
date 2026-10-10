@@ -764,9 +764,14 @@ func loadGenerateSchema(
 	if err != nil {
 		return nil, err
 	}
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return nil, err
+	}
 	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		DatabaseURL: databaseURL,
 		RootDirs:    rootDirs,
+		Annotations: annotations,
 		SchemaFiles: schemaFiles,
 		Commands:    commands,
 		Dialect:     dialect,

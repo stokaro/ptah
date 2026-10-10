@@ -19,6 +19,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/safety"
 )
@@ -34,7 +35,7 @@ func TestPlanLive_RecordsTheOwnersVerdictForOwnedOperations(t *testing.T) {
 	ctx := context.Background()
 	conn := newCockroachPlanConnection(c, ctx,
 		"CREATE TABLE public.sessions (id INT8 PRIMARY KEY, expires_at TIMESTAMPTZ)")
-	declared := must.Must(goschema.ParseSource("sessions.go", "package entities\n\n"+
+	declared := must.Must(goschema.ParseSource(builtintest.Annotations(), "sessions.go", "package entities\n\n"+
 		"//ptah:schema:table name=\"sessions\" platform.cockroachdb.ttl_expiration_expression=\"expires_at\"\n"+
 		"type Session struct {\n"+
 		"\t//ptah:schema:field name=\"id\" type=\"INT8\" primary=\"true\"\n\tID int64\n"+

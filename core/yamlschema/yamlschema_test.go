@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 )
 
 func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []string {
@@ -35,7 +36,7 @@ tables:
 `))
 	c.Assert(err, qt.IsNil)
 
-	goDB, err := goschema.ParseSource("schema.go", `
+	goDB, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", `
 package test
 
 //ptah:schema:table name="users"

@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/schemaartifact"
@@ -70,8 +71,13 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return err
+	}
 	db, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    opts.rootDirs,
+		Annotations: annotations,
 		SchemaFiles: opts.schemaFiles,
 		Dialect:     opts.dialect,
 		PlainHTTP:   opts.plainHTTP,

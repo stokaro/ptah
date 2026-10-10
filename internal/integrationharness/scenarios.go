@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrator"
 )
 
@@ -366,7 +367,11 @@ func testGenerateDesiredSchema(ctx context.Context, conn *dbschema.DatabaseConne
 	}
 
 	// Parse entities
-	result, err := goschema.ParseDir(entitiesDir)
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return err
+	}
+	result, err := goschema.ParseDir(annotations, entitiesDir)
 	if err != nil {
 		return fmt.Errorf("failed to parse entities: %w", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/ociartifact"
@@ -33,8 +34,13 @@ func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*schemamodel.Data
 	if err != nil {
 		return nil, err
 	}
+	annotations, err := builtin.Annotations()
+	if err != nil {
+		return nil, err
+	}
 	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    rootDirs,
+		Annotations: annotations,
 		SchemaFiles: opts.schemaFiles,
 		PlainHTTP:   opts.plainHTTP,
 		Vars:        declaredVars,

@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/clickhouse/chcompare"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -65,7 +66,7 @@ func TestGoExportPreservesClickHouseStorageLive(t *testing.T) {
 			files, err := goschematogo.Render(c.Context(), model, goschematogo.Options{SingleFile: true, Dialect: "clickhouse", Runtime: runtime})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
-			reparsed, err := goschema.ParseSource("schema.go", files[0].Data)
+			reparsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", files[0].Data)
 			c.Assert(err, qt.IsNil)
 			reparsed.Tables[0].Name = copyName
 			statements, err := builtin.GetOrderedCreateStatements(&reparsed, "clickhouse")

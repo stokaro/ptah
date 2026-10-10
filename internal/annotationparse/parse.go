@@ -42,12 +42,13 @@ type Annotation struct {
 	Known          bool
 }
 
-// Scan returns every Ptah annotation comment found in text.
-func Scan(text string) []Annotation {
+// Scan returns every Ptah annotation comment found in text. catalog decides
+// which directives are known, the selected owners' among them.
+func Scan(catalog annotationmeta.Catalog, text string) []Annotation {
 	lines := strings.Split(text, "\n")
 	out := make([]Annotation, 0)
 	for lineNo, line := range lines {
-		annotation, ok := scanLine(lineNo, line)
+		annotation, ok := scanLine(catalog, lineNo, line)
 		if ok {
 			out = append(out, annotation)
 		}
@@ -55,7 +56,7 @@ func Scan(text string) []Annotation {
 	return out
 }
 
-func scanLine(lineNo int, line string) (Annotation, bool) {
+func scanLine(catalog annotationmeta.Catalog, lineNo int, line string) (Annotation, bool) {
 	commentStart := strings.Index(line, "//")
 	if commentStart < 0 {
 		return Annotation{}, false
@@ -71,7 +72,7 @@ func scanLine(lineNo int, line string) (Annotation, bool) {
 		return Annotation{}, false
 	}
 
-	directive, end := readDirective(line[bodyStart:])
+	directive, end := readDirective(catalog, line[bodyStart:])
 	annotation := Annotation{
 		Line:      lineNo,
 		Directive: directive,
@@ -85,13 +86,13 @@ func scanLine(lineNo int, line string) (Annotation, bool) {
 		},
 		Attributes: scanAttributes(lineNo, line),
 	}
-	_, annotation.Known = annotationmeta.Lookup(directive)
+	_, annotation.Known = catalog.Lookup(directive)
 	return annotation, true
 }
 
-func readDirective(body string) (string, int) {
+func readDirective(catalog annotationmeta.Catalog, body string) (string, int) {
 	best := ""
-	for _, directive := range annotationmeta.Directives() {
+	for _, directive := range catalog.Directives() {
 		name := directive.Name
 		if !strings.HasPrefix(body, name) {
 			continue

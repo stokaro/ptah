@@ -40,7 +40,7 @@ func TestParseSource_NotDescribed_HappyPath(t *testing.T) {
 	t.Run("a named object and a whole family", func(t *testing.T) {
 		c := qt.New(t)
 
-		database, err := goschema.ParseSource("entities.go", notDescribedSource)
+		database, err := goschema.ParseSource(noOwners, "entities.go", notDescribedSource)
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(database.NotDescribed.Directives(), qt.DeepEquals, []string{
@@ -52,7 +52,7 @@ func TestParseSource_NotDescribed_HappyPath(t *testing.T) {
 	t.Run("a schema that declines nothing claims everything", func(t *testing.T) {
 		c := qt.New(t)
 
-		database, err := goschema.ParseSource("entities.go", `package entities
+		database, err := goschema.ParseSource(noOwners, "entities.go", `package entities
 
 //ptah:schema:table name="notes"
 type Note struct {
@@ -70,7 +70,7 @@ func TestParseSource_NotDescribed_FailurePath(t *testing.T) {
 	t.Run("a kind the closed list does not hold", func(t *testing.T) {
 		c := qt.New(t)
 
-		_, err := goschema.ParseSource("entities.go", `package entities
+		_, err := goschema.ParseSource(noOwners, "entities.go", `package entities
 
 //ptah:schema:notdescribed kind="widget"
 type _ struct{}
@@ -82,7 +82,7 @@ type _ struct{}
 	t.Run("no kind at all", func(t *testing.T) {
 		c := qt.New(t)
 
-		_, err := goschema.ParseSource("entities.go", `package entities
+		_, err := goschema.ParseSource(noOwners, "entities.go", `package entities
 
 //ptah:schema:notdescribed name="pg_trgm"
 type _ struct{}
@@ -94,7 +94,7 @@ type _ struct{}
 	t.Run("an attribute the directive does not take", func(t *testing.T) {
 		c := qt.New(t)
 
-		_, err := goschema.ParseSource("entities.go", `package entities
+		_, err := goschema.ParseSource(noOwners, "entities.go", `package entities
 
 //ptah:schema:notdescribed kind="extension" reason="because"
 type _ struct{}
@@ -112,9 +112,9 @@ func TestParseSource_NotDescribed_WithholdsTheRemoval(t *testing.T) {
 		Extensions: []catalog.Extension{{Name: "pg_trgm", Schema: "public"}},
 	}
 
-	declining, err := goschema.ParseSource("entities.go", notDescribedSource)
+	declining, err := goschema.ParseSource(noOwners, "entities.go", notDescribedSource)
 	c.Assert(err, qt.IsNil)
-	silent, err := goschema.ParseSource("entities.go", `package entities
+	silent, err := goschema.ParseSource(noOwners, "entities.go", `package entities
 
 //ptah:schema:table name="notes"
 type Note struct {
@@ -142,10 +142,10 @@ func TestParseSource_NotDescribed_AgreesWithTheSerializedSpelling(t *testing.T) 
 		Extensions: []catalog.Extension{{Name: "pg_trgm", Schema: "public"}},
 	}
 
-	annotated, err := goschema.ParseSource("entities.go", notDescribedSource)
+	annotated, err := goschema.ParseSource(noOwners, "entities.go", notDescribedSource)
 	c.Assert(err, qt.IsNil)
 
-	byHeader, err := goschema.ParseSource("entities.go", `package entities
+	byHeader, err := goschema.ParseSource(noOwners, "entities.go", `package entities
 
 //ptah:schema:table name="notes"
 type Note struct {

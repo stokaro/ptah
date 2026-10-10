@@ -27,7 +27,7 @@ type Replicas struct{}
 // transfer.
 func TestParseSource_AsyncReplication_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	db, err := goschema.ParseSource("replicas.go", replicationSource(
+	db, err := goschema.ParseSource(noOwners, "replicas.go", replicationSource(
 		`//ptah:schema:async_replication:item replication="mirror" schema="replicas" source="/prod/ledger" target="replica/ledger"
 //ptah:schema:async_replication name="mirror" schema="/replicas/" connection_string="grpc://primary:2136/?database=/prod" token_secret_name="token" consistency_level="GLOBAL"
 //ptah:schema:async_replication:item replication="mirror" schema="replicas" source="accounts" target="replica/accounts"
@@ -91,7 +91,7 @@ func TestParseSource_AsyncReplication_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := goschema.ParseSource("replicas.go", replicationSource(test.annotations))
+			db, err := goschema.ParseSource(noOwners, "replicas.go", replicationSource(test.annotations))
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.DeepEquals, schemamodel.Database{})
 		})
@@ -102,10 +102,10 @@ func TestParseSource_AsyncReplication_FailurePath(t *testing.T) {
 // sentinels a replication declaration is refused with.
 func TestParseSource_AsyncReplication_RefusesAnInvalidValueAsSuch(t *testing.T) {
 	c := qt.New(t)
-	_, err := goschema.ParseSource("replicas.go", replicationSource(
+	_, err := goschema.ParseSource(noOwners, "replicas.go", replicationSource(
 		`//ptah:schema:transfer name="ingest" source="tp" target="t" using="($m) -> { return []; }" batch_size_bytes="0"`))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
-	_, err = goschema.ParseSource("replicas.go", replicationSource(
+	_, err = goschema.ParseSource(noOwners, "replicas.go", replicationSource(
 		`//ptah:schema:async_replication name="mirror" connection_string="grpc://p:2136/?database=/prod"`))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrMissingRequiredAttribute)
 }

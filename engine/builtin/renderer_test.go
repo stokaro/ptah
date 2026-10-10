@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 )
 
 func TestSupportedDialects(t *testing.T) {
@@ -475,7 +476,7 @@ func TestNewVisitorMethods_UnitTests(t *testing.T) {
 func TestPlatformSpecificOverrides(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../internal/stubs")
+	result, err := goschema.ParseDir(builtintest.Annotations(), "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Test PostgreSQL (default)
@@ -522,7 +523,7 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 func TestEmbeddedFieldsInPackageParser(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../internal/stubs")
+	result, err := goschema.ParseDir(builtintest.Annotations(), "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Find the articles table statement
@@ -551,7 +552,7 @@ func TestEmbeddedFieldsInPackageParser(t *testing.T) {
 func TestGetOrderedCreateStatements(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../internal/stubs")
+	result, err := goschema.ParseDir(builtintest.Annotations(), "../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	statements, err := builtin.GetOrderedCreateStatements(result, "postgres")
@@ -587,7 +588,7 @@ func TestGetOrderedCreateStatements(t *testing.T) {
 }
 
 func TestGetOrderedCreateStatements_MySQLFamilyInlineEnumsAreExecutable(t *testing.T) {
-	database, err := goschema.ParseSource("model.go", `package models
+	database, err := goschema.ParseSource(builtintest.Annotations(), "model.go", `package models
 
 //ptah:schema:table name="accounts"
 type Account struct {
@@ -617,7 +618,7 @@ type Account struct {
 }
 
 func TestGetOrderedCreateStatements_MySQLBooleanDefaultsAreExecutable(t *testing.T) {
-	database, err := goschema.ParseSource("model.go", `package models
+	database, err := goschema.ParseSource(builtintest.Annotations(), "model.go", `package models
 
 //ptah:schema:table name="products"
 type Product struct {
@@ -680,7 +681,7 @@ func TestGenerateSchema_Deterministic(t *testing.T) {
 
 			var first string
 			for i := range 100 {
-				result, err := goschema.ParseDir(fixtureDir)
+				result, err := goschema.ParseDir(builtintest.Annotations(), fixtureDir)
 				c.Assert(err, qt.IsNil)
 
 				statements, err := builtin.GetOrderedCreateStatements(result, dialect)
