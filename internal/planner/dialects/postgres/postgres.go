@@ -26,7 +26,6 @@ import (
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
-	"ptah.run/internal/rlsscope"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
@@ -1847,19 +1846,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	); err != nil {
 		return nil, err
 	}
-	// Row-level security entries are validated before any node is emitted: an
-	// entry the plan cannot render, skipped instead, makes the plan come back
-	// successful with an access-control operation missing from it
-	// (stokaro/ptah#1311). Validating the diff as it arrived,
-	// ahead of the skip policy below, means a malformed reference is refused
-	// even when the policy would have removed it -- the diff is either coherent
-	// or it is not.
-	//
-	// It reads the diff and nothing else now: every policy travels with its
-	// entry, and the one thing the entries cannot show -- two declarations that
-	// resolved to one identity -- is recorded by the comparison for this check
-	// to find (stokaro/ptah#2440).
-	if err := rlsscope.Validate(p.targetDialect(), diff); err != nil {
+	// Row-level security belongs to its feature owner on this family, which
+	// plans it through the runtime. A shared row-security entry reaches this
+	// planner only in a diff built by hand, and planning nothing for it
+	// would report an access-control change applied.
+	if err := refuseSharedRowSecurity(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 
@@ -1870,6 +1861,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		var skipped []diffpolicy.SkippedChange
 		diff, skipped = diffpolicy.ApplyForDialect(diff, p.skip, p.targetDialect())
 		result = appendSkipComments(result, skipped)
+	}
+	// After the skip policy, which may leave a removal out: only the drops
+	// the plan makes can take a policy with them.
+	if err := refusePoliciesLostToCascade(diff); err != nil {
+		return nil, err
 	}
 	// Hand-built diffs may lack identities. Resolve them before either the
 	// early dependency releases or the later replacement pairing uses them.
@@ -1989,20 +1985,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeDefaultPrivileges(result, diff)
 	result = p.revokeDefaultPrivilegeOptions(result, diff)
 
-	// 8. Enable RLS on tables (must be done after table creation and modification)
-	result = p.enableRLSOnTables(result, diff, semantics)
-	result = p.changeRLSForce(result, diff)
-
-	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
-	result, err = p.addNewRLSPolicies(result, diff)
-	if err != nil {
-		return nil, err
-	}
-	result, err = p.modifyExistingRLSPolicies(result, diff)
-	if err != nil {
-		return nil, err
-	}
-
 	// Feature operations of the dependent phase join the plan here: after the
 	// views, role changes, row-security switches and policies they may name,
 	// and before every removal step. Their owner orders its creations and
@@ -2055,12 +2037,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff, released.IndexSet())
-
-	// 12. Remove RLS policies (must be done before disabling RLS and before dropping columns)
-	result = p.removeRLSPolicies(result, diff)
-
-	// 11. Disable RLS on tables (must be done after removing policies)
-	result = p.disableRLSOnTables(result, diff)
 
 	// 11.8. Owned table settings, CockroachDB row-level TTL and the Spanner
 	// row deletion policy among them, after the columns a policy may refer to
@@ -3077,255 +3053,16 @@ func findMaterializedView(
 	return objectlookup.MaterializedView(views, name, semantics)
 }
 
-// enableRLSOnTables emits ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
-//
-// Two sources feed it, and both are needed.
-//
-// RLSEnabledTablesAdded is the comparator's verdict on the desired schema's
-// enablement declarations against pg_class.relrowsecurity. It is the only
-// source that covers an existing table whose row-level security was turned off
-// in the database, and a table that declares enablement without declaring a
-// policy. Nothing else covers those: a planner that does not read it produces
-// no statement at all for a database with RLS off and a schema demanding it on.
-//
-// New tables carrying a policy are the second source. A desired schema may
-// declare a policy without a separate enablement annotation, and CREATE POLICY
-// on a table whose row-level security is off protects nothing, so the
-// enablement is emitted with the table rather than left to the operator.
-//
-// That second source is read off the DIFF rather than off the desired schema
-// (stokaro/ptah#2315). The two are the same set here: a policy on a table this
-// plan creates cannot already exist, so it is an addition, and a policy on an
-// existing table is skipped by the isNew test either way.
-//
-// Which table a policy belongs to is decided under the target's identifier
-// semantics, the same rules [addNewRLSPolicies] resolves the policy itself
-// with. `orders` and `public.orders` are one relation and two strings, so
-// asking `slices.Contains(diff.TablesAdded, policy.Table)` answered no whenever
-// the desired table and the policy's declaration were spelled differently: the
-// plan emitted CREATE POLICY and no ENABLE ROW LEVEL SECURITY, applied cleanly,
-// and left a pg_policy row on a relation whose pg_class.relrowsecurity was
-// still false. The policy was inert and the plan reported success. Measured on
-// PostgreSQL 17.10 -- the fourth appearance of one mistake, after
-// stokaro/ptah#1276, stokaro/ptah#1311 and stokaro/ptah#1347.
-//
-// The map is keyed by identity and carries the spelling to render, so a table
-// named by both sources is enabled once. The rendered spelling comes from the
-// diff -- the comparator's own verdict, or the name the plan creates the table
-// under -- rather than from the declaration, so the statement always names an
-// object this plan is known to have produced.
-func (p *Planner) enableRLSOnTables(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	semantics identifier.Semantics,
-) []ast.Node {
-	tablesNeedingRLS := make(map[string]string)
-	// Which of them the declaration also binds the owner to. It is keyed the
-	// same way, so a table named by both sources answers once and the two maps
-	// cannot come apart.
-	forcedTables := make(map[string]bool)
-	rememberTable := func(tableName string) {
-		key := semantics.QualifiedTableIdentityKey(tableName)
-		if _, seen := tablesNeedingRLS[key]; !seen {
-			tablesNeedingRLS[key] = tableName
-		}
+// refuseSharedRowSecurity refuses every shared row-level security entry. The
+// PostgreSQL family plans row-level security through the owner of package
+// pgpolicy, whose sources and reader never fill these lists.
+func refuseSharedRowSecurity(dialect string, diff *difftypes.SchemaDiff) error {
+	if len(diff.RLSPoliciesAdded)+len(diff.RLSPoliciesRemoved)+len(diff.RLSPoliciesModified)+len(diff.RLSEnabledTablesAdded)+
+		len(diff.RLSEnabledTablesRemoved)+len(diff.RLSForceChanged)+len(diff.RLSPolicyIdentityConflicts) == 0 {
+		return nil
 	}
-	for _, enabled := range diff.RLSEnabledTablesAdded {
-		rememberTable(enabled.Table)
-		if enabled.Forced {
-			forcedTables[semantics.QualifiedTableIdentityKey(enabled.Table)] = true
-		}
-	}
-
-	addedTables := make(map[string]string, len(diff.TablesAdded))
-	for _, tableName := range diff.TablesAdded.Names() {
-		key := semantics.QualifiedTableIdentityKey(tableName)
-		if _, seen := addedTables[key]; !seen {
-			addedTables[key] = tableName
-		}
-	}
-	for _, policy := range diff.RLSPoliciesAdded {
-		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.TableName)]
-		if !isNew {
-			continue
-		}
-		rememberTable(addedTable)
-	}
-
-	// Iterate in sorted order so migration output is deterministic (issue #59).
-	for _, tableName := range slices.Sorted(maps.Values(tablesNeedingRLS)) {
-		enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
-			SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
-		if forcedTables[semantics.QualifiedTableIdentityKey(tableName)] {
-			enableRLSNode.SetForce()
-		}
-		result = append(result, enableRLSNode)
-	}
-	return result
-}
-
-// changeRLSForce emits ALTER TABLE ... FORCE / NO FORCE ROW LEVEL SECURITY for
-// the tables the comparator recorded in RLSForceChanged.
-//
-// It runs after enableRLSOnTables because an enablement this plan makes already
-// carries the FORCE its declaration asks for, and the comparator lists such a
-// table here only to turn a leftover flag off. Every entry is a declared table,
-// so none of them is one this plan drops.
-func (p *Planner) changeRLSForce(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, change := range diff.RLSForceChanged {
-		node := ast.NewAlterTableForceRLS(change.Table)
-		if change.Forced {
-			node.SetComment(fmt.Sprintf("Apply the policies of %s to its owner", change.Table))
-		} else {
-			node.SetNoForce().SetComment(fmt.Sprintf("Exempt the owner of %s from its policies", change.Table))
-		}
-		result = append(result, node)
-	}
-	return result
-}
-
-// disableRLSOnTables emits ALTER TABLE ... DISABLE ROW LEVEL SECURITY for the
-// tables the comparator recorded in RLSEnabledTablesRemoved, and keeps the
-// advisory comment for a table that merely lost policies.
-//
-// A table that is being dropped is left out: DROP TABLE removes its row-level
-// security with it, and disabling first would emit a statement whose only
-// effect is on an object that no longer exists two statements later.
-//
-// Losing every policy is not the same as losing enablement. The desired schema
-// may keep row-level security on to deny by default, which is what a table with
-// enablement and no policy means, so a table with removed policies that the
-// comparator did not list for disablement keeps its enablement and gets the
-// comment.
-func (p *Planner) disableRLSOnTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	droppedTables := make(map[string]bool, len(diff.TablesRemoved))
-	for _, tableName := range diff.TablesRemoved.Names() {
-		droppedTables[tableName] = true
-	}
-
-	tablesToDisable := make(map[string]bool)
-	for _, tableName := range diff.RLSEnabledTablesRemoved.Names() {
-		if droppedTables[tableName] {
-			continue
-		}
-		tablesToDisable[tableName] = true
-	}
-
-	// Iterate in sorted order so migration output is deterministic (issue #59).
-	for _, tableName := range slices.Sorted(maps.Keys(tablesToDisable)) {
-		disableRLSNode := ast.NewAlterTableDisableRLS(tableName).
-			SetComment(fmt.Sprintf("Disable RLS for %s table", tableName))
-		result = append(result, disableRLSNode)
-	}
-
-	tablesWithRemovedPolicies := make(map[string]bool)
-	for _, policyRef := range diff.RLSPoliciesRemoved {
-		if tablesToDisable[policyRef.TableName] || droppedTables[policyRef.TableName] {
-			continue
-		}
-		tablesWithRemovedPolicies[policyRef.TableName] = true
-	}
-
-	for _, tableName := range slices.Sorted(maps.Keys(tablesWithRemovedPolicies)) {
-		warningComment := ast.NewComment(fmt.Sprintf("NOTE: RLS policies were removed from table %s - verify if RLS should be disabled", tableName))
-		result = append(result, warningComment)
-	}
-	return result
-}
-
-// addNewRLSPolicies emits one CREATE POLICY per added reference.
-//
-// The reference is resolved through [rlsscope.Resolver], which keys by the
-// owning table under the target's identifier semantics and by the policy's own
-// name. Two consequences follow, and both are the point of the resolver existing.
-//
-// The name alone does not identify a policy: two tables may each carry a
-// policy called "tenant_isolation", and matching on the name picked whichever
-// was declared first. And the table alone is not a string comparison either:
-// `orders` and `public.orders` are one table, which is exactly the pair the
-// comparator normalizes and a raw-string lookup missed.
-//
-// An unresolved reference is an error rather than a skip. A plan that omits a
-// CREATE POLICY and still reports success leaves the database without the
-// protection the migration was generated to add (stokaro/ptah#1311).
-// unrenderableRLSPolicy refuses an entry that names a policy and carries no
-// declaration to build it from.
-//
-// It is a refusal rather than a skip for the reason the whole family is: the
-// only alternative is emitting no statement, and a plan that silently drops an
-// access-control operation reports success while leaving the database
-// unprotected (stokaro/ptah#1311).
-func unrenderableRLSPolicy(operation, policyName, tableName string) error {
-	return fmt.Errorf(
-		"%w: %s RLS policy %s on table %s carries no declaration to render it from",
-		ptaherr.ErrInvalidSchemaDiff,
-		operation,
-		policyName,
-		tableName,
-	)
-}
-
-func (p *Planner) addNewRLSPolicies(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-) ([]ast.Node, error) {
-	for _, policyRef := range diff.RLSPoliciesAdded {
-		policy := policyRef.Desired
-		if policy.Name == "" {
-			return nil, unrenderableRLSPolicy("added", policyRef.PolicyName, policyRef.TableName)
-		}
-		policyNode := modelast.FromRLSPolicy(policy)
-		// Set Replace flag to handle conflicts gracefully during migrations
-		policyNode.Replace = true
-		result = append(result, policyNode)
-	}
-	return result, nil
-}
-
-// modifyExistingRLSPolicies re-renders each modified policy from the
-// declaration the change carries.
-//
-// Resolving the name against the schema the plan targets cannot work, because
-// the two sides of a modification do not spell the owning table the same way:
-// the comparator normalizes `orders` and `public.orders` to one table and then
-// reports the DESIRED side's spelling, while a rollback plans against the
-// INTROSPECTED schema, whose policy carries the database's spelling. A
-// raw-string lookup then finds nothing on the down direction and the generated
-// rollback is `-- No rollback operations needed` (stokaro/ptah#1311). The
-// operand travels with the change, so there is no spelling to reconcile here.
-func (p *Planner) modifyExistingRLSPolicies(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-) ([]ast.Node, error) {
-	for _, policyDiff := range diff.RLSPoliciesModified {
-		policy := policyDiff.Desired
-		if policy.Name == "" {
-			return nil, unrenderableRLSPolicy("modified", policyDiff.PolicyName, policyDiff.TableName)
-		}
-		// The note is a statement of its own, for the reason the modified
-		// function's is.
-		result = append(result, ast.NewComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
-			policyDiff.PolicyName,
-			policyDiff.TableName,
-			summarizeRLSChanges(policyDiff),
-		)), modelast.FromRLSPolicy(policy).SetReplace())
-	}
-	return result, nil
-}
-
-func summarizeRLSChanges(policyDiff difftypes.RLSPolicyDiff) string {
-	return strings.Join(slices.Sorted(maps.Keys(policyDiff.Changes)), ", ")
-}
-
-func (p *Planner) removeRLSPolicies(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, policyRef := range diff.RLSPoliciesRemoved {
-		// Now we have both policy name and table name, so we can generate proper DROP POLICY statements
-		dropPolicyNode := ast.NewDropPolicy(policyRef.PolicyName, policyRef.TableName).
-			SetIfExists().
-			SetComment(fmt.Sprintf("Drop RLS policy %s from table %s", policyRef.PolicyName, policyRef.TableName))
-		result = append(result, dropPolicyNode)
-	}
-	return result
+	return fmt.Errorf("%w: shared row-level security entries on %s; the row-security owner plans "+
+		"row-level security on this target from its own models", ptaherr.ErrUnsupportedFeature, dialect)
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.

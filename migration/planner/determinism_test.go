@@ -2,14 +2,13 @@ package planner_test
 
 import (
 	"context"
-	"sort"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
@@ -149,6 +148,14 @@ func planWithFreshRuntime(ctx context.Context, desired *schemamodel.Database, cu
 }
 
 func determinismInputsForDialect(desired *schemamodel.Database, current *catalog.Database, dialect string) (*schemamodel.Database, *catalog.Database) {
+	if platform.IsPostgresFamily(dialect) {
+		// The PostgreSQL family's row-level security belongs to its owner,
+		// whose sources and reader never fill the shared lists.
+		generatedClone, databaseClone := *desired, *current
+		generatedClone.RLSPolicies, generatedClone.RLSEnabledTables = nil, nil
+		databaseClone.RLSPolicies = nil
+		return &generatedClone, &databaseClone
+	}
 	if dialect != "mysql" && dialect != "mariadb" {
 		return desired, current
 	}
@@ -192,30 +199,5 @@ func TestGenerateSchemaDiffSQL_DriftedFixtureCoverage(t *testing.T) {
 	c.Assert(multiChangeRoles > 1, qt.IsTrue,
 		qt.Commentf("fixture must produce 2+ roles with 2+ changes each, got %d", multiChangeRoles))
 
-	c.Assert(len(diff.RLSPoliciesRemoved) > 1, qt.IsTrue)
 	c.Assert(len(diff.ConstraintsRemoved) > 1, qt.IsTrue)
-}
-
-// TestGenerateSchemaDiffSQL_EnableRLSSorted pins the ENABLE ROW LEVEL
-// SECURITY statements to alphabetical table order — a stronger guarantee than
-// run-to-run stability alone.
-func TestGenerateSchemaDiffSQL_EnableRLSSorted(t *testing.T) {
-	c := qt.New(t)
-
-	gen := multiTenantRLSSchema()
-	sql, err := planner.GenerateSchemaDiffSQL(
-		context.Background(), must.Must(builtin.New()),
-		must.Must(schemadiff.Compare(t.Context(), gen, &catalog.Database{}, must.Must(builtin.New()))), "postgres",
-	)
-	c.Assert(err, qt.IsNil)
-
-	var enableStmts []string
-	for line := range strings.SplitSeq(sql, "\n") {
-		if strings.Contains(line, "ENABLE ROW LEVEL SECURITY") {
-			enableStmts = append(enableStmts, line)
-		}
-	}
-	c.Assert(enableStmts, qt.HasLen, len(gen.Tables))
-	c.Assert(sort.StringsAreSorted(enableStmts), qt.IsTrue,
-		qt.Commentf("ENABLE RLS statements not in sorted table order:\n%s", strings.Join(enableStmts, "\n")))
 }

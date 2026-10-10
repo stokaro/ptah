@@ -96,11 +96,35 @@ var refusedDiffCategories = map[string]refusedFixture{
 		diff: &difftypes.SchemaDiff{IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "users", Name: "a", Desired: "x"}}},
 	},
 	"RLSPolicyIdentityConflicts": {
-		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",
+		why: "row-level security on this family belongs to its owner, and two declared policies that resolve to one identity are refused by the source that read them (stokaro/ptah#2440)",
 		diff: &difftypes.SchemaDiff{RLSPolicyIdentityConflicts: []difftypes.RLSPolicyConflict{{
 			First:  schemamodel.RLSPolicy{Name: "tenant", Table: "orders", PolicyFor: "ALL", UsingExpression: "a = 1"},
 			Second: schemamodel.RLSPolicy{Name: "tenant", Table: "public.orders", PolicyFor: "ALL", UsingExpression: "b = 2"},
 		}}},
+	},
+	"RLSPoliciesAdded": {
+		why:  "row-level security on this family belongs to its owner, whose sources never fill the shared lists, so a shared entry reaches the planner only in a diff built by hand",
+		diff: &difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "pol", TableName: "t", Desired: schemamodel.RLSPolicy{Name: "pol", Table: "t"}}}},
+	},
+	"RLSPoliciesRemoved": {
+		why:  "the PostgreSQL reader reports policies to their owner, for the same reason",
+		diff: &difftypes.SchemaDiff{RLSPoliciesRemoved: []difftypes.RLSPolicyRef{{PolicyName: "pol", TableName: "t"}}},
+	},
+	"RLSPoliciesModified": {
+		why:  "a changed shared policy is the owner's for the same reason",
+		diff: &difftypes.SchemaDiff{RLSPoliciesModified: []difftypes.RLSPolicyDiff{{PolicyName: "pol", TableName: "t", Changes: map[string]string{"using": "a -> b"}}}},
+	},
+	"RLSEnabledTablesAdded": {
+		why:  "a table's switches are a facet of the owner's on this family",
+		diff: &difftypes.SchemaDiff{RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "t"}}},
+	},
+	"RLSEnabledTablesRemoved": {
+		why:  "a table's switches are a facet of the owner's on this family",
+		diff: &difftypes.SchemaDiff{RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "t"}}},
+	},
+	"RLSForceChanged": {
+		why:  "FORCE is one of the switches the owner holds",
+		diff: &difftypes.SchemaDiff{RLSForceChanged: difftypes.RLSForceChanges{{Table: "t", Forced: true}}},
 	},
 }
 
@@ -471,28 +495,6 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{},
 		},
 		{
-			"RLSPoliciesAdded",
-			&difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
-				PolicyName: "pol", TableName: "t",
-				Desired: schemamodel.RLSPolicy{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"},
-			}}},
-			&schemamodel.Database{},
-		},
-		{
-			"RLSPoliciesRemoved",
-			&difftypes.SchemaDiff{RLSPoliciesRemoved: []difftypes.RLSPolicyRef{{PolicyName: "pol", TableName: "t"}}},
-			&schemamodel.Database{},
-		},
-		{
-			"RLSPoliciesModified",
-			&difftypes.SchemaDiff{RLSPoliciesModified: []difftypes.RLSPolicyDiff{{
-				PolicyName: "pol", TableName: "t",
-				Changes: map[string]string{"using": "a -> b"},
-				Desired: schemamodel.RLSPolicy{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"},
-			}}},
-			&schemamodel.Database{},
-		},
-		{
 			// Planned so the renderer refuses it by capability; PostgreSQL has
 			// no invisible index.
 			"IndexVisibilityChanged",
@@ -520,9 +522,6 @@ func diffCategoryFixtures() []categoryFixture {
 			}}},
 			&schemamodel.Database{},
 		},
-		{"RLSEnabledTablesAdded", &difftypes.SchemaDiff{RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
-		{"RLSEnabledTablesRemoved", &difftypes.SchemaDiff{RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
-		{"RLSForceChanged", &difftypes.SchemaDiff{RLSForceChanged: difftypes.RLSForceChanges{{Table: "t", Forced: true}}}, &schemamodel.Database{}},
 		{
 			"RolesAdded",
 			&difftypes.SchemaDiff{RolesAdded: difftypes.RoleChanges{{Name: "app"}}},

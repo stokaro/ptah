@@ -10,8 +10,8 @@ import (
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
-	"ptah.run/feature/pgpolicy"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 )
 
 // writeTestFile writes a parseable Go source file into a directory this test

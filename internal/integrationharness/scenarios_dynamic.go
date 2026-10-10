@@ -169,7 +169,7 @@ func GetDynamicScenarios() []TestScenario {
 		},
 		{
 			Name:             "dynamic_rls_cross_database",
-			Description:      "Test PostgreSQL RLS features are skipped gracefully on MySQL/MariaDB",
+			Description:      "Test PostgreSQL RLS scoped to its family is left out on MySQL/MariaDB",
 			EnhancedTestFunc: testDynamicRLSCrossDatabase,
 		},
 		{
@@ -2643,7 +2643,7 @@ func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.Databas
 	})
 }
 
-// testDynamicRLSCrossDatabase tests PostgreSQL RLS features are skipped gracefully on MySQL/MariaDB
+// testDynamicRLSCrossDatabase tests that PostgreSQL RLS scoped to its family is left out on MySQL/MariaDB
 func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
 	vem, err := NewVersionedEntityManager(fixtures)
 	if err != nil {
@@ -2676,24 +2676,14 @@ func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseCon
 			if len(schema.Functions) == 0 {
 				return fmt.Errorf("PostgreSQL should have functions in schema")
 			}
-			if len(schema.RLSPolicies) == 0 {
+			// Row-level security reaches the PostgreSQL row-security owner.
+			if schema.FeatureObjects.Len() == 0 {
 				return fmt.Errorf("PostgreSQL should have RLS policies in schema")
 			}
-			if len(schema.RLSEnabledTables) == 0 {
-				return fmt.Errorf("PostgreSQL should have RLS enabled tables in schema")
-			}
-		} else if len(schema.Tables) == 0 {
-			// For MySQL/MariaDB, the schema still contains all features from entity fixtures
-			// but they should be ignored during SQL generation and migration
-			// This test verifies that the migration completed successfully without errors
-			// which means the PostgreSQL-specific features were properly skipped
-
-			// The fact that we reached this point means the migration succeeded,
-			// which proves that PostgreSQL-specific features were gracefully skipped
-
-			// Verify that basic schema elements are still present
-			return fmt.Errorf("schema should contain tables for MySQL/MariaDB")
 		}
+		// On MySQL and MariaDB the fixture's row-level security is scoped to
+		// the PostgreSQL family, so reaching this point means the migration
+		// left it out rather than refusing it.
 
 		return nil
 	})

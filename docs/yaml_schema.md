@@ -462,9 +462,12 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `matviews`: `name`, `body`, `comment`
 - `triggers`: `name`, `table`, `timing`, `event`, `for`, `body`, `comment`
 - `rls_enabled_tables` or `rls_enabled`: map of tables with optional `table`,
-  `struct_name`, and `comment`
+  `struct_name`, `comment` and `dialects`
 - `rls_policies`: `name`, `table`, `for`, `to`, `using`, `with_check`,
-  `comment`
+  `comment` and `dialects`. Without `dialects`, or scoped to PostgreSQL,
+  CockroachDB and YugabyteDB, an entry is PostgreSQL row-level security and
+  is refused on any other target; scoped to SQL Server or ClickHouse it is
+  that target's policy. A scope naming both families is refused.
 - `roles`: `name`, `login`, `password`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, `comment`, and on YDB `group` and
   `member_of`

@@ -278,11 +278,11 @@ func indexHostStructTwoTablesFixture() schemamodel.Database {
 
 func rlsHostStructTwoTablesFixture() schemamodel.Database {
 	db := twoNamedTables()
-	db.Roles = []schemamodel.Role{{Name: "app_reader", Login: true}}
-	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: "B"}}
+	db.Roles = []schemamodel.Role{{Name: "app_reader"}}
+	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: "B", Dialects: []string{"clickhouse", "sqlserver"}}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		StructName: "B", Name: "b_read", PolicyFor: "SELECT",
-		ToRoles: "app_reader", UsingExpression: "true",
+		ToRoles: "app_reader", UsingExpression: "true", Dialects: []string{"clickhouse", "sqlserver"},
 	}}
 	return db
 }
@@ -306,22 +306,22 @@ func indexHostStructOnlyFixture() schemamodel.Database {
 
 func rlsHostStructOnlyFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{Name: "app_reader", Login: true}}
-	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: "T"}}
+	db.Roles = []schemamodel.Role{{Name: "app_reader"}}
+	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: "T", Dialects: []string{"clickhouse", "sqlserver"}}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		StructName: "T", Name: "t_read", PolicyFor: "SELECT",
-		ToRoles: "app_reader", UsingExpression: "true",
+		ToRoles: "app_reader", UsingExpression: "true", Dialects: []string{"clickhouse", "sqlserver"},
 	}}
 	return db
 }
 
 func rlsHostTableOnlyFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{Name: "app_reader", Login: true}}
-	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{Table: "t"}}
+	db.Roles = []schemamodel.Role{{Name: "app_reader"}}
+	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{Table: "t", Dialects: []string{"clickhouse", "sqlserver"}}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		Table: "t", Name: "t_read", PolicyFor: "SELECT",
-		ToRoles: "app_reader", UsingExpression: "true",
+		ToRoles: "app_reader", UsingExpression: "true", Dialects: []string{"clickhouse", "sqlserver"},
 	}}
 	return db
 }
@@ -1799,15 +1799,15 @@ func defaultPrivilegeGlobalFixture() schemamodel.Database {
 
 func rlsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader"}}
 	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{
 		StructName: "T", Table: "t", Comment: "rls",
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+		Dialects: []string{"clickhouse", "sqlserver"},
 	}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		StructName: "T", Name: "t_read", Table: "t", PolicyFor: "SELECT",
 		ToRoles: "app_reader", UsingExpression: "true", WithCheckExpression: "true",
-		Comment: "read policy", Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+		Comment: "read policy", Dialects: []string{"clickhouse", "sqlserver"},
 	}}
 	return db
 }
@@ -1822,15 +1822,15 @@ func rlsFixture() schemamodel.Database {
 // measuring that.
 func rlsStrengthFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader"}}
 	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{
 		StructName: "T", Table: "t", Forced: true,
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+		Dialects: []string{"clickhouse", "sqlserver"},
 	}}
 	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		StructName: "T", Name: "t_tenant", Table: "t", PolicyFor: "ALL",
 		ToRoles: "app_reader", UsingExpression: "true", Restrictive: true,
-		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+		Dialects: []string{"clickhouse", "sqlserver"},
 	}}
 	return db
 }

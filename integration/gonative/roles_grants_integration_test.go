@@ -4,6 +4,7 @@ package gonative_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	"os/exec"
@@ -18,10 +19,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/readdb"
 	"ptah.run/internal/dbschema/postgres"
@@ -42,7 +46,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Cleanup(func() { cleanupRolesGrantsIntegration(c, db) })
 
 	target := rolesGrantsTarget()
-	diff := must.Must(schemadiff.Compare(t.Context(), target, &catalog.Database{}, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, &catalog.Database{}, "postgres", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
 	nodes, err := planner.GenerateSchemaDiffAST(
@@ -61,7 +65,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	filtered := filterRolesGrantsIntegrationSchema(live)
 
-	roundTrip := must.Must(schemadiff.Compare(t.Context(), target, filtered, must.Must(builtin.New())))
+	roundTrip := must.Must(schemadiff.CompareWithDialect(t.Context(), target, filtered, "postgres", must.Must(builtin.New())))
 	c.Assert(roundTrip.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", roundTrip))
 
 	_, err = db.Exec("GRANT ptah_grants_reader TO CURRENT_USER")
@@ -175,20 +179,17 @@ func rolesGrantsTarget() *schemamodel.Database {
 			{Role: "ptah_grants_writer", Privileges: []string{"SELECT", "INSERT", "UPDATE", "DELETE"}, OnTable: "ptah_grants_users"},
 			{Role: "ptah_grants_writer", Privileges: []string{"INSERT"}, OnTable: "ptah_grants_audit_log"},
 		},
-		RLSEnabledTables: []schemamodel.RLSEnabledTable{
-			{Table: "ptah_grants_users"},
-		},
-		RLSPolicies: []schemamodel.RLSPolicy{
-			{
-				Name:                "ptah_grants_tenant_isolation",
-				Table:               "ptah_grants_users",
-				PolicyFor:           "ALL",
-				ToRoles:             "ptah_grants_reader,ptah_grants_writer",
-				UsingExpression:     "(tenant_id = (current_setting('app.tenant_id'::text))::integer)",
-				WithCheckExpression: "(tenant_id = (current_setting('app.tenant_id'::text))::integer)",
-			},
-		},
 	}
+	// Row-level security is the PostgreSQL row-security owner's.
+	isolation := "(tenant_id = (current_setting('app.tenant_id'::text))::integer)"
+	target.FeatureObjects = must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+		pgpolicy.PolicyRef("", "ptah_grants_users", "ptah_grants_tenant_isolation"),
+		pgpolicy.DesiredPolicy{
+			Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: "ptah_grants_reader"}, {Name: "ptah_grants_writer"}},
+			Using: new(isolation), WithCheck: new(isolation),
+		}))))
+	target.Tables[0].Facets = must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true}))
+	target.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))
 	schemamodel.Finalize(target)
 	return target
 }
@@ -300,9 +301,13 @@ func filterRolesGrantsIntegrationSchema(in *catalog.Database) *catalog.Database 
 		Tables:      filterTables(in.Tables, keepTables),
 		Indexes:     filterIndexes(in.Indexes, keepTables),
 		Constraints: filterConstraints(in.Constraints, keepTables),
-		RLSPolicies: filterRLSPolicies(in.RLSPolicies, keepTables),
 		Roles:       filterRoles(in.Roles, keepRoles),
 		Grants:      filterGrants(in.Grants, keepRoles),
+		FeatureObjects: in.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+			_, kept := keepTables[ref.Parent.Source]
+			return kept
+		}),
+		FeatureCoverage: in.FeatureCoverage,
 	}
 	return out
 }
@@ -466,9 +471,15 @@ func rolesNamedByDescription(schema *catalog.Database) []string {
 			named = append(named, grant.GrantedBy)
 		}
 	}
-	for _, policy := range schema.RLSPolicies {
-		for role := range strings.SplitSeq(policy.ToRoles, ",") {
-			named = append(named, strings.TrimSpace(role))
+	policies, err := schema.FeatureObjects.All()
+	if err != nil {
+		return nil
+	}
+	for _, object := range policies {
+		if policy, ok := object.Value.(*pgpolicy.ObservedPolicy); ok {
+			for _, role := range policy.Roles {
+				named = append(named, cmp.Or(string(role.Keyword), role.Name))
+			}
 		}
 	}
 	return slices.DeleteFunc(named, func(name string) bool {

@@ -37,10 +37,6 @@ func rewrittenObjects(comment string) *schemamodel.Database {
 			Name: "tg", Table: "app.t", Timing: "AFTER", Event: "INSERT", ForEach: "ROW",
 			ExecuteFunction: "app.touch", Comment: comment,
 		}},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name: "pol", Table: "app.t", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "(id > 0)", Comment: comment,
-		}},
-		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "app.t"}},
 	}
 }
 
@@ -49,7 +45,7 @@ func rewrittenObjects(comment string) *schemamodel.Database {
 func rewrittenInDatabase(comment string) *catalog.Database {
 	return &catalog.Database{
 		Tables: []catalog.Table{{
-			Name: "t", Schema: "app", Type: "TABLE", RLSEnabled: true,
+			Name: "t", Schema: "app", Type: "TABLE",
 			Columns: []catalog.Column{{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1}},
 		}},
 		Enums:    []catalog.Enum{{Name: "e", Schema: "app", Values: []string{"a", "b"}, Comment: comment}},
@@ -61,9 +57,6 @@ func rewrittenInDatabase(comment string) *catalog.Database {
 		Triggers: []catalog.Trigger{{
 			Name: "tg", Schema: "app", Table: "t", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW",
 			ExecuteFunction: "app.touch", Comment: comment,
-		}},
-		RLSPolicies: []catalog.RLSPolicy{{
-			Name: "pol", Table: "app.t", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "true", Comment: comment,
 		}},
 	}
 }
@@ -84,7 +77,7 @@ func commentLines(sql string) []string {
 //
 // The routine and the trigger are replaced in place and keep the comment they
 // had, so a kept or a changed comment is written after the replacement and a
-// removed one is cleared. The enum, the materialized view and the policy are
+// removed one is cleared. The enum and the materialized view are
 // new objects after the plan, so a kept or a changed comment is written with
 // them and a removed one needs nothing. The enum is the one no create node
 // describes: it is rebuilt with a rename, a CREATE TYPE and a drop, and
@@ -104,7 +97,6 @@ func TestGenerateSchemaDiffSQL_ARewrittenObjectEndsWithTheDeclaredComment(t *tes
 				`COMMENT ON TYPE "app"."e" IS 'same';`,
 				`COMMENT ON MATERIALIZED VIEW "app"."m" IS 'same';`,
 				`COMMENT ON TRIGGER "tg" ON "app"."t" IS 'same';`,
-				`COMMENT ON POLICY "pol" ON "app"."t" IS 'same';`,
 			},
 		},
 		{
@@ -114,7 +106,6 @@ func TestGenerateSchemaDiffSQL_ARewrittenObjectEndsWithTheDeclaredComment(t *tes
 				`COMMENT ON TYPE "app"."e" IS 'new';`,
 				`COMMENT ON MATERIALIZED VIEW "app"."m" IS 'new';`,
 				`COMMENT ON TRIGGER "tg" ON "app"."t" IS 'new';`,
-				`COMMENT ON POLICY "pol" ON "app"."t" IS 'new';`,
 			},
 		},
 		{
@@ -153,7 +144,6 @@ func TestGenerateSchemaDiffSQL_ARecreatedObjectsCommentFollowsItsCreate(t *testi
 	}{
 		{name: "the enum", create: `CREATE TYPE "app"."e" AS ENUM`, comment: `COMMENT ON TYPE "app"."e"`},
 		{name: "the materialized view", create: `CREATE MATERIALIZED VIEW "app"."m"`, comment: `COMMENT ON MATERIALIZED VIEW "app"."m"`},
-		{name: "the policy", create: `CREATE POLICY "pol" ON "app"."t"`, comment: `COMMENT ON POLICY "pol" ON "app"."t"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -175,7 +165,7 @@ func TestGenerateSchemaDiffSQL_ARecreatedObjectsCommentFollowsItsCreate(t *testi
 
 // An object the plan creates is written with its comment, once, whatever
 // path builds its create node: the enum through the enum step, the routine,
-// the view, the trigger and the policy through their own.
+// the view and the trigger through their own.
 func TestGenerateSchemaDiffSQL_ACreatedObjectIsWrittenWithItsComment(t *testing.T) {
 	c := qt.New(t)
 	database := &catalog.Database{Tables: rewrittenInDatabase("").Tables}
@@ -192,6 +182,5 @@ func TestGenerateSchemaDiffSQL_ACreatedObjectIsWrittenWithItsComment(t *testing.
 		`COMMENT ON TYPE "app"."e" IS 'note';`,
 		`COMMENT ON MATERIALIZED VIEW "app"."m" IS 'note';`,
 		`COMMENT ON TRIGGER "tg" ON "app"."t" IS 'note';`,
-		`COMMENT ON POLICY "pol" ON "app"."t" IS 'note';`,
 	}, qt.Commentf("plan:\n%s", sql))
 }

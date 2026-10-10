@@ -7,73 +7,16 @@ package generator
 // nothing is a plan that succeeds.
 
 import (
-	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
-	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
-
-// TestGenerateDownMigrationSQL_RecreatesAnRLSPolicyTheUpDirectionDropped drives
-// the whole pipeline, which is the only way this direction can be pinned.
-//
-// A forward removal holds two names, which is all `DROP POLICY name ON table`
-// needs. Reversed it becomes an addition, and CREATE POLICY needs a
-// declaration -- so the operand has to be recovered from the pre-change
-// database. Restoring the plain exchange leaves the rollback with an entry
-// carrying nothing, and the planner then refuses it; before the refusal existed
-// it emitted nothing and reported success, which is the shape
-// stokaro/ptah#1311 was reviewed for.
-func TestGenerateDownMigrationSQL_RecreatesAnRLSPolicyTheUpDirectionDropped(t *testing.T) {
-	c := qt.New(t)
-
-	const priorPredicate = "tenant_id = current_setting('app.tenant')::uuid"
-
-	// The declaration does not name the policy; the database has it. That is
-	// what puts it in RLSPoliciesRemoved.
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
-		Fields: []schemamodel.Field{{StructName: "Order", Name: "id", Type: "SERIAL", Primary: true}},
-	}
-	database := &catalog.Database{
-		Tables: []catalog.Table{{Schema: "public", Name: "orders"}},
-		RLSPolicies: []catalog.RLSPolicy{{
-			Name: "tenant_isolation", Table: "public.orders",
-			PolicyFor: "ALL", ToRoles: "app", UsingExpression: priorPredicate,
-		}},
-	}
-
-	caps := capability.Postgres17()
-	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
-		desired, database, platform.Postgres, must.Must(builtin.New()),
-	))
-	c.Assert(upDiff.RLSPoliciesRemoved, qt.HasLen, 1)
-	c.Assert(upDiff.RLSPoliciesAdded, qt.HasLen, 0)
-
-	up, err := generateUpMigrationSQL(
-		context.Background(), must.Must(builtin.New()),
-		upDiff, desired, platform.Postgres, caps,
-	)
-	c.Assert(err, qt.IsNil)
-	c.Assert(up, qt.Contains, "DROP POLICY")
-
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
-		upDiff, desired, database, platform.Postgres, caps)
-	c.Assert(err, qt.IsNil)
-	c.Assert(down, qt.Contains, "CREATE POLICY",
-		qt.Commentf("the rollback puts back the policy the up direction dropped\n%s", down))
-	c.Assert(down, qt.Contains, priorPredicate,
-		qt.Commentf("with the predicate the database held\n%s", down))
-}
 
 // TestReverseSchemaDiff_ARolledBackRLSModificationRestoresThePriorPredicate is
 // the second of the three directions.

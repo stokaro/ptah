@@ -302,7 +302,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 	c := qt.New(t)
 
-	planned := strings.Join(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.Postgres), "\n")
+	planned := strings.Join(planStatements(c, withoutSharedRowSecurity(unhostableCreationDiff()), unhostableSchema(), platform.Postgres), "\n")
 
 	tests := []struct {
 		name string
@@ -326,7 +326,7 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 
 	t.Run("no diagnostics", func(t *testing.T) {
 		c := qt.New(t)
-		c.Assert(diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.Postgres)),
+		c.Assert(diagnosticLines(planStatements(c, withoutSharedRowSecurity(unhostableCreationDiff()), unhostableSchema(), platform.Postgres)),
 			qt.HasLen, 0)
 	})
 }
@@ -864,4 +864,11 @@ func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
 			c.Assert(nodes, qt.HasLen, 1)
 		})
 	}
+}
+
+// withoutSharedRowSecurity leaves out the shared row-level security entries,
+// which the PostgreSQL family plans through its owner and refuses here.
+func withoutSharedRowSecurity(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
+	diff.RLSEnabledTablesAdded, diff.RLSPoliciesAdded = nil, nil
+	return diff
 }

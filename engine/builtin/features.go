@@ -275,6 +275,11 @@ func validateDeclaredFacets(dialect string, database *schemamodel.Database) erro
 // offered to every target, and SQL Server's security policy and ClickHouse's
 // row policy are declared with their own scope.
 func validateDeclaredRowSecurity(dialect string, database *schemamodel.Database) error {
+	if platform.IsPostgresFamily(dialect) {
+		if err := refuseSharedRowSecurity(dialect, database); err != nil {
+			return err
+		}
+	}
 	if slices.Contains(pgpolicyprovider.Targets(), platform.NormalizeDialect(dialect)) {
 		return nil
 	}
@@ -296,4 +301,17 @@ func validateDeclaredRowSecurity(dialect string, database *schemamodel.Database)
 	return fmt.Errorf("%w: PostgreSQL %s cannot be planned on %s; scope its declaration to the targets that host it, "+
 		`as dialects="%s" does in a Go annotation`,
 		ptaherr.ErrUnsupportedFeature, subject, platform.NormalizeDialect(dialect), strings.Join(pgpolicyprovider.Targets(), ","))
+}
+
+// refuseSharedRowSecurity refuses shared row-level security declarations on a
+// PostgreSQL-family target. Every source hands PostgreSQL row-level security
+// to the owner, so a shared declaration that reaches this family was built by
+// hand; planning it would bypass the owner, and leaving it out would report a
+// control applied that is not.
+func refuseSharedRowSecurity(dialect string, database *schemamodel.Database) error {
+	if len(database.RLSPolicies) == 0 && len(database.RLSEnabledTables) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: shared row-level security declarations on %s; the PostgreSQL family declares "+
+		"row-level security through the row-security owner's models", ptaherr.ErrUnsupportedFeature, platform.NormalizeDialect(dialect))
 }

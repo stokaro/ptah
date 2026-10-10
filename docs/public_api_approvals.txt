@@ -510,6 +510,10 @@ v0.13.0 ptah.run/atlascompat
 # carries ContinuousAggregateBodies and ContinuousAggregateBody is removed.
 # This changes behavior; pre-v1, so no compatibility is owed under the
 # authorized #4140/#4204 clean-break policy.
+# #4140 removes CompareOptions.PolicyExpressions and PolicyExpression: the
+# PostgreSQL row-security owner normalizes policy clauses through its own
+# probe, and no other target reads them. This changes behavior; pre-v1, so no
+# compatibility is owed under the authorized #4140/#4204 policy.
 v0.13.0 ptah.run/config
 
 # #4140 makes comparison context-aware and runtime-selected. All entry points

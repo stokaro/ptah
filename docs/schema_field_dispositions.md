@@ -49,12 +49,12 @@ exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 523 | reaches rendered SQL on at least one target |
-| `comparison` | 16 | read when two schemas are compared, and written into no statement |
+| `ddl` | 520 | reaches rendered SQL on at least one target |
+| `comparison` | 18 | read when two schemas are compared, and written into no statement |
 | `planning` | 11 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 29 | identifies the source text the declaration was read from |
-| `export` | 10 | what a generated document carries, or reports that it cannot |
+| `export` | 11 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
 ### Fields that should render and do not
@@ -396,16 +396,16 @@ None.
 | `schemamodel.PrimaryKeyPart.Prefix` | `ddl` | — |
 | `schemamodel.PrivilegeGrant.Privilege` | `ddl` | — |
 | `schemamodel.PrivilegeGrant.WithOption` | `ddl` | — |
-| `schemamodel.RLSEnabledTable.Comment` | `ddl` | — |
+| `schemamodel.RLSEnabledTable.Comment` | `export` | the comment a shared enablement carries for the HCL and Go writers; SQL Server and ClickHouse, the targets left on the shared model, have no enablement statement to write it on |
 | `schemamodel.RLSEnabledTable.Dialects` | `ddl` | — |
-| `schemamodel.RLSEnabledTable.Forced` | `ddl` | — |
+| `schemamodel.RLSEnabledTable.Forced` | `comparison` | FORCE is PostgreSQL's, whose switches the row-security owner holds; the dialect-neutral comparison of two shared declarations still compares it |
 | `schemamodel.RLSEnabledTable.StructName` | `ddl` | — |
 | `schemamodel.RLSEnabledTable.Table` | `ddl` | — |
 | `schemamodel.RLSPolicy.Comment` | `ddl` | — |
 | `schemamodel.RLSPolicy.Dialects` | `ddl` | — |
 | `schemamodel.RLSPolicy.Name` | `ddl` | — |
 | `schemamodel.RLSPolicy.PolicyFor` | `ddl` | — |
-| `schemamodel.RLSPolicy.Restrictive` | `ddl` | — |
+| `schemamodel.RLSPolicy.Restrictive` | `comparison` | the shared targets write every policy permissive; the dialect-neutral comparison of two shared declarations still compares AS |
 | `schemamodel.RLSPolicy.StructName` | `ddl` | — |
 | `schemamodel.RLSPolicy.Table` | `ddl` | — |
 | `schemamodel.RLSPolicy.ToRoles` | `ddl` | — |

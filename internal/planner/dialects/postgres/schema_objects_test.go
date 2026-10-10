@@ -839,42 +839,6 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 
 	assertBefore(t, sql, "CREATE MATERIALIZED VIEW z_base AS", "CREATE VIEW a_report AS")
 }
-
-func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
-	c := qt.New(t)
-	planner := postgres.New()
-
-	desired := &schemamodel.Database{
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name:            "tenant_isolation",
-			Table:           "accounts",
-			PolicyFor:       "SELECT",
-			ToRoles:         "app_user",
-			UsingExpression: "tenant_id = current_setting('app.tenant_id')::uuid",
-		}},
-	}
-	diff := &difftypes.SchemaDiff{
-		RLSPoliciesModified: []difftypes.RLSPolicyDiff{{
-			PolicyName: "tenant_isolation",
-			TableName:  "accounts",
-			Changes:    map[string]string{"using_expression": "old -> new"},
-			Desired:    desired.RLSPolicies[0],
-		}},
-	}
-
-	nodes, err := planner.GenerateMigrationAST(
-		context.Background(), must.Must(builtin.New()),
-		diff,
-	)
-	c.Assert(err, qt.IsNil)
-	sql, err := builtin.RenderSQL("postgres", nodes...)
-	c.Assert(err, qt.IsNil)
-	sql = legacyRenderedSQL(sql)
-
-	c.Assert(sql, qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts;")
-	c.Assert(sql, qt.Contains, "CREATE POLICY tenant_isolation ON accounts FOR SELECT TO app_user")
-}
-
 func assertBefore(t *testing.T, sql, earlier, later string) {
 	t.Helper()
 	c := qt.New(t)

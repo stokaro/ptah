@@ -104,7 +104,7 @@ func TestRLSEnabledTablesWithSemantics_ComparesForce(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			compare.RLSEnabledTablesWithSemantics(
-				desired, database, diff, identifier.ForDialect(platform.Postgres), platform.Postgres)
+				desired, database, diff, identifier.ForDialect(platform.Postgres), "")
 
 			c.Assert(diff.RLSEnabledTablesAdded.Names(), qt.DeepEquals, test.wantAdded)
 			c.Assert(forceChanges(diff.RLSForceChanged), qt.DeepEquals, test.wantChanges)
@@ -124,8 +124,7 @@ func TestRLSEnabledTablesWithSemantics_ForceOnlyWhereTheTargetHasIt(t *testing.T
 		dialect     string
 		wantChanges []forceChange
 	}{
-		{name: "postgres", dialect: platform.Postgres, wantChanges: []forceChange{{Table: "public.secured", Forced: true}}},
-		{name: "yugabytedb", dialect: platform.YugabyteDB, wantChanges: []forceChange{{Table: "public.secured", Forced: true}}},
+		{name: "postgres, whose switches belong to the row-security owner", dialect: platform.Postgres, wantChanges: make([]forceChange, 0)},
 		{name: "dialect neutral", dialect: "", wantChanges: []forceChange{{Table: "public.secured", Forced: true}}},
 		{name: "sqlserver", dialect: platform.SQLServer, wantChanges: make([]forceChange, 0)},
 		{name: "mysql", dialect: platform.MySQL, wantChanges: make([]forceChange, 0)},

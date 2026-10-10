@@ -341,27 +341,6 @@ func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
 	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
 }
 
-func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
-	c := qt.New(t)
-
-	diff := &difftypes.SchemaDiff{
-		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
-			{PolicyName: "tenant_isolation", TableName: "accounts"},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(
-		context.Background(), must.Must(builtin.New()),
-		diff, platform.Postgres,
-	)
-	c.Assert(err, qt.IsNil)
-	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), nodes, platform.Postgres)
-	c.Assert(err, qt.IsNil)
-	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
-	c.Assert(assessments[0].Severity, qt.Equals, safety.Destructive)
-	c.Assert(legacyRenderedSQL(assessments[0].Statement), qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts")
-}
-
 func TestGenerateMigrationAST(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -216,10 +216,6 @@ func SurfaceDifferences() []SurfaceDifference {
 			Reason: "the same leading `--` line, above ALTER DEFAULT PRIVILEGES",
 		},
 		{
-			Field: "schemamodel.RLSEnabledTable.Comment", RenderOnly: true,
-			Reason: "the same leading `--` line, above ALTER TABLE ... ENABLE ROW LEVEL SECURITY",
-		},
-		{
 			Field: "schemamodel.Index.Concurrently", RenderOnly: true,
 			Reason: "the render writes what the source declared, because its output is a " +
 				"script the reader runs and a concurrent build is a promise about the lock " +
