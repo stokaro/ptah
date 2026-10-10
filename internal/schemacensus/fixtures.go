@@ -1927,7 +1927,10 @@ func coverageFixture() schemamodel.Database {
 // indexKeyBlockSizeFixture isolates the MySQL-family index block-size hint.
 func indexKeyBlockSizeFixture() schemamodel.Database {
 	db := indexedTable()
-	db.Indexes = []schemamodel.Index{{StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, KeyBlockSize: 8}}
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
+		Facets: must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 8})),
+	}}
 	return db
 }
 

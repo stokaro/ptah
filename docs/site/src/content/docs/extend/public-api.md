@@ -103,14 +103,15 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/mssql/mssqlrelation` | Tables and predicate functions a security policy binds. |
 | `dialect/mssql/mssqlreverse` | Reverse security policy changes with recovery limits. |
 | `dialect/mssql/mssqlconvert` | Conversion between security policy declarations and observations. |
-| `dialect/mysql/mysqlschema` | Desired and observed MySQL-family table options and column settings with versioned codecs. |
-| `dialect/mysql/mysqlsource` | Table and column platform property decoding and encoding. |
-| `dialect/mysql/mysqlcompare` | Table option and column setting comparison that keeps declared values and plans no change of them. |
-| `dialect/mysql/mysqldiff` | Table option and column setting change models that a planner and a reversal read. |
-| `dialect/mysql/mysqlplan` | Table option and column setting accounting through table creation, rebuild and removal. |
-| `dialect/mysql/mysqlrender` | Owner-selected CREATE TABLE options and column clauses. |
-| `dialect/mysql/mysqlconvert` | Conversion between table option and column setting declarations and observations. |
-| `dialect/mysql/mysqlreport` | Captured table option and column setting counts. |
+| `dialect/mysql/mysqlschema` | Desired and observed MySQL-family table options, index options and block sizes, and column settings with versioned codecs. |
+| `dialect/mysql/mysqlsource` | Table, index and column platform property decoding and encoding, and the Go index block-size attribute. |
+| `dialect/mysql/mysqlast` | Typed index replacement operation with an explicit codec. |
+| `dialect/mysql/mysqlcompare` | Table option and column setting comparison that keeps declared values, and index block-size comparison. |
+| `dialect/mysql/mysqldiff` | Table option and index block-size change models that a planner and a reversal read. |
+| `dialect/mysql/mysqlplan` | Index block-size replacement and reversal, and option and setting accounting through table creation, rebuild and removal. |
+| `dialect/mysql/mysqlrender` | Owner-selected CREATE TABLE options, column clauses, index definitions and the index replacement handler. |
+| `dialect/mysql/mysqlconvert` | Conversion between table option, index option and block size, and column setting declarations and observations. |
+| `dialect/mysql/mysqlreport` | Captured table option, index option and block size, and column setting counts. |
 | `dialect/mssql/mssqlreport` | Captured security policy and predicate counts. |
 | `dialect/timescaledb/tsast` | TimescaleDB operations and codecs. |
 | `dialect/timescaledb/tscompare` | TimescaleDB comparison. |
@@ -294,6 +295,13 @@ new bindings are refused. The host validates completeness, column names, ownersh
 and codecs. Source bindings, exclusions, and knowledge limits stay intact. New
 kinds are target-bound with coverage only for predicted owners, not their siblings.
 Predictions prove no inspection or execution.
+
+`TableCreation.Observed` holds what the CREATE leaves that the declared values
+do not convert to, because it depends on the table: a conversion sees one value
+at a time. These records are in the observed representation and are applied
+after conversion, replacing the converted value of their kind or adding one.
+They must be models the target converts.
+
 Providers with no additional effects register `IdentityCreations` explicitly;
 a missing service is unavailable.
 

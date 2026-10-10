@@ -133,10 +133,16 @@ SQL:
   server keeps it. `ptah db read` preserves compression so replay retains the
   hint. Zero selects the engine default. Values above 65,535 on MariaDB or
   4,294,967,295 on MySQL are refused because the servers truncate them.
-  Changing or removing a stored secondary-index hint on MySQL requires
-  `ALGORITHM=COPY`: an in-place drop and add keeps the old hint. This can copy
-  the whole table. With `online_alter`, `LOCK=NONE` makes the server refuse
-  that blocking operation. Other dialects refuse the hint.
+  Changing or removing only a stored secondary-index hint on MySQL requires
+  `ALGORITHM=COPY`: an in-place drop and add of an unchanged key keeps the old
+  hint. This can copy the whole table, and the safety classification says so.
+  With `online_alter`, `LOCK=NONE` makes the server refuse that blocking
+  operation. When the key, the uniqueness or the comment changes too, the one
+  rebuild writes the new hint without a copy: measured on MySQL 8.4.11, an
+  in-place rebuild that changes the definition stores it. MariaDB 11.8.9
+  stores a new hint in place in every case. An index a YAML or HCL source
+  declares has no hint, so applying one removes a stored hint. Other dialects
+  refuse the hint.
 - Go index annotations use `key_block_size="8"`. A table annotation can use
   `primary_key="id" primary_key_block_size="8" primary_key_comment="lookup"`;
   a `PRIMARY KEY` constraint annotation uses `key_block_size` and `comment`.

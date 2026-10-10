@@ -349,13 +349,9 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
 	tableName := kv["table"]
 
-	keyBlockSize, err := s.unsignedAttribute(kv, comment, structName, "index", "key_block_size")
-	if err != nil {
-		return err
-	}
 	// The attributes owners add to the directive, such as YDB's partitioning
-	// and full-text options, are read by their owners into settings and
-	// options of the index.
+	// and full-text options and the MySQL block-size hint, are read by their
+	// owners into settings and options of the index.
 	ctx := s.annotationContext(comment, "//ptah:schema:index", structName)
 	facets, err := s.annotations.DecodeAttributes("ptah:schema:index", kv)
 	if err != nil {
@@ -374,7 +370,6 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Comment:        kv["comment"],
 		Overrides:      parseutils.ParsePlatformProperties(kv),
 		Invisible:      kv["invisible"] == "true",
-		KeyBlockSize:   keyBlockSize,
 		Type:           kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; the ClickHouse owner consumes it as the skipping-index type
 		Condition:      firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
 		Operator:       kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)

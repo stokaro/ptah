@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
+	"ptah.run/dialect/mysql/mysqlconvert"
 	"ptah.run/dialect/postgres/pgproject"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcompare"
@@ -75,6 +76,12 @@ func New() (*engine.Runtime, error) {
 		}
 		if name == platform.ClickHouse {
 			registerClickHouseServices(&provider, name)
+		}
+		if name == platform.MariaDB {
+			// MariaDB's tables are created by the MySQL owner's rules too; the
+			// rest of that owner registers its MariaDB services on the mysql
+			// provider.
+			provider.Targets[0].Creations = mysqlconvert.CreationService{}
 		}
 		if name == platform.MySQL {
 			registerMySQLServices(&provider)

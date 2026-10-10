@@ -7,23 +7,29 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/internal/pgeffects"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/schemaprecondition"
+	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// featureOwner is the contribution owner of the common steps a SQL Server or
-// Oracle plan joins feature operations to.
+// featureOwner is the contribution owner of the common steps a plan of this
+// planner joins feature operations to, on every dialect it serves.
 const featureOwner = "ptah.run/sqlserver"
 
 // hostsFeatures reports whether this planner dispatches feature changes to
-// their owners. SQL Server and Oracle do; MySQL and MariaDB have no feature
-// owner and refuse every feature change.
+// their owners. Every dialect it serves does: SQL Server, Oracle, MySQL and
+// MariaDB, whose owner plans the changes of its index options.
 func (p *Planner) hostsFeatures() bool {
-	target := p.targetDialect()
-	return target == platform.SQLServer || target == platform.Oracle
+	switch p.targetDialect() {
+	case platform.SQLServer, platform.Oracle, platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }
 
 // dropsRoutinesLate reports whether routines are dropped after the tables and
@@ -35,7 +41,7 @@ func (p *Planner) dropsRoutinesLate() bool { return p.targetDialect() == platfor
 
 // refuseUnhostedFeatureChanges refuses the feature changes this planner has
 // no window for: every one on a target without owners, and the settings of a
-// materialized view on SQL Server, which has none.
+// materialized view, which no dialect of this planner has a window for.
 func (p *Planner) refuseUnhostedFeatureChanges(diff *difftypes.SchemaDiff) error {
 	if p.hostsFeatures() {
 		return schemaprecondition.RefuseMaterializedViewFeatureChanges(p.targetDialect(), diff)
@@ -43,7 +49,7 @@ func (p *Planner) refuseUnhostedFeatureChanges(diff *difftypes.SchemaDiff) error
 	return schemaprecondition.RefuseFeatureChanges(p.targetDialect(), diff)
 }
 
-// scheduleFeatures dispatches a SQL Server diff's feature changes, standalone
+// scheduleFeatures dispatches a diff's feature changes, standalone
 // and attached to surviving tables, to their owners and joins the operations
 // to the common sequence in the windows recorded while it was planned. A diff
 // with no feature change is returned as it was planned, without asking the
@@ -73,7 +79,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		request.Changes = append(request.Changes, table.FeatureChanges...)
 		names[subject.Key()] = table.TableName
 	}
-	graph, err := featurehost.NewGraph(featureOwner, nodes, pgeffects.Sequence(builder, nodes), windows)
+	graph, err := featurehost.NewGraph(featureOwner, nodes, withIndexReplacements(builder, nodes, pgeffects.Sequence(builder, nodes)), windows)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,6 +93,35 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		return nil, nil, err
 	}
 	return scheduled, createdOwnedSchemas(features), nil
+}
+
+// withIndexReplacements adds to the common effects the index each one-statement
+// replacement writes, `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`, as an
+// alteration: the index exists before the statement and after it, with the
+// declared definition. An owner whose setting the replacement writes too
+// learns from it that the common plan already applies the declaration. A
+// visibility change in place writes no index effect, since it leaves the rest
+// of the definition as the server holds it. Only the MySQL family plans the
+// replacement; no other target of this planner has a node that adds one.
+func withIndexReplacements(builder objectidentity.Builder, nodes []ast.Node, effects [][]plangraph.Effect) [][]plangraph.Effect {
+	for i, node := range nodes {
+		alter, ok := node.(*ast.AlterTableNode)
+		if !ok {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			replace, ok := operation.(*ast.ReplaceIndexOperation)
+			if !ok || replace.Index == nil || replace.Index.Name == "" {
+				continue
+			}
+			subject := builder.Index(alter.Name, replace.Index.Name)
+			if ref, valid := tableref.Parse(alter.Name); valid {
+				subject = builder.IndexParts(ref.Schema, ref.Name, replace.Index.Name)
+			}
+			effects[i] = append(effects[i], plangraph.Effect{Subject: subject, Action: plangraph.Alter})
+		}
+	}
+	return effects
 }
 
 func hasFeatureChanges(diff *difftypes.SchemaDiff) bool {

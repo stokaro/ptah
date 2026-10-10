@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/synonym"
@@ -179,6 +180,9 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 	combined, err = combined.Combine(properties)
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(synonym.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)))
+	c.Assert(err, qt.IsNil)
+	// It describes every index's MySQL block size, which it cannot spell.
+	combined, err = combined.Combine(must.Must(mysqlsource.BlockSizeCoverage()))
 	c.Assert(err, qt.IsNil)
 	combined, err = combined.Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))
 	c.Assert(err, qt.IsNil)

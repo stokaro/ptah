@@ -157,10 +157,12 @@ func reverseFeatureTableState(
 	if err != nil {
 		return schemacapture.TableObservation{}, err
 	}
+	// A target that cannot project the constraint effects leaves the reverse
+	// without a capture too, for the reason a pending projection above does:
+	// refusing here lost the whole plan, forward included, for every table
+	// feature change beside a key constraint change on a target without a
+	// projector, which is every target but PostgreSQL.
 	if unavailable != "" {
-		if len(recovery) > 0 {
-			return schemacapture.TableObservation{}, fmt.Errorf("cannot reverse feature changes of %q: %s", table.TableName, unavailable)
-		}
 		return schemacapture.TableObservation{}, nil
 	}
 	if table.CommentChange != nil {

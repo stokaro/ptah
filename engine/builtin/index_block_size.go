@@ -5,8 +5,17 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/mysqlindex"
 )
+
+// indexBlockSize is the hint the MySQL owner's facet holds, zero for none. A
+// facet of another type is refused when the facets are prepared.
+func indexBlockSize(facets schemaext.Facets) uint64 {
+	size, _, _ := mysqlschema.IndexBlockSize(facets)
+	return size
+}
 
 // validateIndexBlockSize rejects a hint that a dialect cannot render.
 func validateIndexBlockSize(dialect, name string, size uint64) error {

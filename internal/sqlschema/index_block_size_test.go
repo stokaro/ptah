@@ -6,6 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
@@ -29,13 +31,13 @@ func TestRead_IndexBlockSize_HappyPath(t *testing.T) {
 				db, _, err := sqlschema.Read([]byte(test.sql), dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].KeyBlockSize, qt.Equals, test.size)
+				c.Assert(blockSize(c, db.Indexes[0].Facets), qt.Equals, test.size)
 				statements, err := builtin.GetOrderedCreateStatements(&db, dialect)
 				c.Assert(err, qt.IsNil)
 				again, _, err := sqlschema.Read([]byte(strings.Join(statements, "\n")), dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(again.Indexes, qt.HasLen, 1)
-				c.Assert(again.Indexes[0].KeyBlockSize, qt.Equals, test.size)
+				c.Assert(blockSize(c, again.Indexes[0].Facets), qt.Equals, test.size)
 			})
 		}
 	}
@@ -49,4 +51,12 @@ func TestRead_IndexBlockSize_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, `(?s).*KEY_BLOCK_SIZE.*expected a non-negative integer.*`)
 		})
 	}
+}
+
+// blockSize is the hint the MySQL owner's facet holds, zero for none.
+func blockSize(c *qt.C, facets schemaext.Facets) uint64 {
+	c.Helper()
+	size, _, err := mysqlschema.IndexBlockSize(facets)
+	c.Assert(err, qt.IsNil)
+	return size
 }

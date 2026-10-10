@@ -26,8 +26,9 @@ func ColumnDefinitions() []schemaext.ReportDefinition {
 	}}}
 }
 
-// ReportValues counts each value's character set and ON UPDATE clause. A
-// value of the other representation is refused.
+// ReportValues counts each value's character set and ON UPDATE clause,
+// reporting both metrics for every value: the runtime refuses a report that
+// leaves one out. A value of the other representation is refused.
 func (ColumnService) ReportValues(ctx context.Context, request schemaext.ReportingRequest) ([]schemaext.ValueReport, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: reporting requires a context", schemaext.ErrInvalidValue)
@@ -41,14 +42,10 @@ func (ColumnService) ReportValues(ctx context.Context, request schemaext.Reporti
 		if err != nil {
 			return nil, err
 		}
-		report := schemaext.ValueReport{Kind: mysqlschema.ColumnSettingsKind}
-		if settings.Charset != "" {
-			report.Counts = append(report.Counts, schemaext.MetricCount{Name: ColumnCharsetMetric, Value: 1})
-		}
-		if settings.OnUpdate != "" {
-			report.Counts = append(report.Counts, schemaext.MetricCount{Name: ColumnOnUpdateMetric, Value: 1})
-		}
-		reports = append(reports, report)
+		reports = append(reports, schemaext.ValueReport{Kind: mysqlschema.ColumnSettingsKind, Counts: []schemaext.MetricCount{
+			{Name: ColumnCharsetMetric, Value: counted[settings.Charset != ""]},
+			{Name: ColumnOnUpdateMetric, Value: counted[settings.OnUpdate != ""]},
+		}})
 	}
 	return reports, ctx.Err()
 }
@@ -66,3 +63,7 @@ func reportedSettings(value schemaext.Value, representation schemaext.Representa
 	}
 	return mysqlschema.ColumnSettings{}, fmt.Errorf("%w: MySQL column settings report has mismatched value %T for %q", schemaext.ErrInvalidValue, value, representation)
 }
+
+// counted is what a value adds to a metric: one when it states what the metric
+// counts, zero otherwise.
+var counted = map[bool]int{true: 1, false: 0}

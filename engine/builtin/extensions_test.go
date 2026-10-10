@@ -24,6 +24,7 @@ import (
 	"ptah.run/dialect/mssql/mssqldiff"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
+	"ptah.run/dialect/mysql/mysqlast"
 	"ptah.run/dialect/spanner/spannerast"
 	"ptah.run/dialect/spanner/spannerdiff"
 	"ptah.run/dialect/spanner/spannerschema"
@@ -197,8 +198,16 @@ func continuousAggregateFixture() extensionFixture {
 		wantSQL: "CREATE MATERIALIZED VIEW \"app\".\"hourly\" WITH (timescaledb.continuous) AS\nSELECT 1\nWITH NO DATA\n;\n"}
 }
 
+// mysqlReplaceIndexFixture replaces an index for its block size with the
+// table copy MySQL needs to store it. The MySQL-family renderer writes its
+// header and closing blank line around every ALTER TABLE.
+func mysqlReplaceIndexFixture() extensionFixture {
+	return extensionFixture{payload: &mysqlast.ReplaceIndex{Index: mysqlast.Index{Name: "k", Parts: []mysqlast.IndexPart{{Column: "a"}}, KeyBlockSize: 8},
+		TableCopy: true}, wantSQL: "-- ALTER statements: --\nALTER TABLE `items` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
+	return append(extensionFixtures(), mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
 		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture())
 }
 
@@ -350,6 +359,36 @@ func TestClickHouseExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(sql, qt.Equals, "")
 		}
+	}
+}
+
+// TestMySQLExtensionOwnerRendersAndNonownersRefuse renders the index
+// replacement on both MySQL-family targets and refuses it, without partial
+// SQL, on every other target, and on its own targets outside an ALTER TABLE.
+func TestMySQLExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	fixture := mysqlReplaceIndexFixture()
+	parent := func() *ast.AlterTableNode {
+		return &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}}
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			sql, err := builtin.RenderSQL(dialect, parent())
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, fixture.wantSQL)
+			sql, err = builtin.RenderSQL(dialect, &ast.ExtensionStatement{Payload: fixture.payload})
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(sql, qt.Equals, "")
+		})
+	}
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			sql, err := builtin.RenderSQL(dialect, parent())
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(fmt.Sprint(err), qt.Contains, string(mysqlast.ReplaceIndexKind))
+			c.Assert(sql, qt.Equals, "")
+		})
 	}
 }
 

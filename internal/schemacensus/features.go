@@ -53,6 +53,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: mysqlschema.Owner, codecs: mysqlschema.ColumnSettingsCodecs()},
 		{owner: sqlitetable.Owner, codecs: sqlitetable.TableCodecs()},
 		{owner: mysqlschema.Owner, codecs: mysqlschema.IndexCodecs()},
+		{owner: mysqlschema.Owner, codecs: mysqlschema.IndexBlockSizeCodecs()},
 		{owner: mssqlschema.Owner, codecs: mssqlschema.Codecs()},
 		{owner: mssqlproperty.Owner, codecs: mssqlproperty.Codecs()},
 		{owner: synonym.Owner, codecs: synonym.Codecs()},

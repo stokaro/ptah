@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chsource"
+	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/ydbsource"
@@ -93,6 +94,10 @@ func ReadOnto(
 		// A ClickHouse materialized view states its refresh schedule in its
 		// CREATE statement, so a view without one declares a plain view.
 		database.FeatureCoverage, err = chsource.RefreshCoverage()
+	case platform.NormalizeDialect(dialect) == platform.MySQL || platform.NormalizeDialect(dialect) == platform.MariaDB:
+		// An index states its KEY_BLOCK_SIZE in its own definition, so an
+		// index without one declares none.
+		database.FeatureCoverage, err = mysqlsource.BlockSizeCoverage()
 	}
 	if err != nil {
 		return schemamodel.Database{}, nil, err

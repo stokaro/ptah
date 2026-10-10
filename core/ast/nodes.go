@@ -786,8 +786,6 @@ type IndexNode struct {
 	// Invisible asks for an index the optimizer does not use; see
 	// [ptah.run/core/schemamodel.Index.Invisible].
 	Invisible bool
-	// KeyBlockSize is the MySQL-family index block-size hint; zero omits it.
-	KeyBlockSize uint64
 	// IfNotExists indicates whether to use IF NOT EXISTS clause for idempotent migrations
 	IfNotExists bool
 

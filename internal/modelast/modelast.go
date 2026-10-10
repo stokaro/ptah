@@ -1121,7 +1121,6 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 		indexNode.Comment = index.Comment
 	}
 	indexNode.Invisible = index.Invisible
-	indexNode.KeyBlockSize = index.KeyBlockSize
 
 	// Set dialect-specific features. Type is the access method or kind a
 	// dialect reads; ClickHouse skipping-index settings travel in Facets.

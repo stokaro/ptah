@@ -1137,8 +1137,7 @@ func (p *Planner) addNewIndexes(
 		if p.replacesIndexInOneStatement(removals, ref, semantics) {
 			_, ownedByConstraint := constraintBacked[removals[0]]
 			result = append(result, &ast.AlterTableNode{
-				Name:      ref.TableName,
-				Algorithm: indexReplacementAlgorithm(change),
+				Name: ref.TableName,
 				Operations: []ast.AlterOperation{&ast.ReplaceIndexOperation{
 					Index: indexNode, DropsUniqueConstraint: ownedByConstraint,
 				}},
@@ -2371,15 +2370,6 @@ func constraintRecordDescribes(add difftypes.ConstraintAdditionInfo) bool {
 	default:
 		return false
 	}
-}
-
-// indexReplacementAlgorithm forces MySQL to rewrite the stored block-size
-// hint. INPLACE reuses the old index definition for an otherwise equal key.
-func indexReplacementAlgorithm(change difftypes.IndexChange) string {
-	if change.RequiresTableCopy {
-		return "COPY"
-	}
-	return ""
 }
 
 // dropReplacedPrimaryKey keeps a MySQL-family key present throughout its

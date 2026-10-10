@@ -12,12 +12,12 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/mysql/mysqlast"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/renderdiag"
-	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -68,9 +68,7 @@ func NewWithCapabilities(dialect string, buf *bufwriter.Writer, caps capability.
 
 // escapeValue properly escapes a string value for use in SQL
 func (r *Renderer) escapeValue(value string) string {
-	// Escape single quotes by doubling them (MySQL/MariaDB standard)
-	escaped := strings.ReplaceAll(value, "'", "''")
-	return "'" + escaped + "'"
+	return mysqlrender.QuoteString(value)
 }
 
 func (r *Renderer) renderDefaultLiteral(column *ast.ColumnNode) string {
@@ -152,21 +150,14 @@ func isMySQLTemporalDefaultExpression(columnType, value string) bool {
 	}
 }
 
+// escapeIdentifier and escapeQualifiedIdentifier quote as the MySQL owner's
+// index writer does, so the two cannot spell one name differently.
 func escapeIdentifier(identifier string) string {
-	return escapeIdentifierValue(unquoteIdentifier(identifier))
-}
-
-func escapeIdentifierValue(identifier string) string {
-	escaped := strings.ReplaceAll(identifier, "`", "``")
-	return "`" + escaped + "`"
+	return mysqlrender.QuoteIdentifier(identifier)
 }
 
 func escapeQualifiedIdentifier(identifier string) string {
-	parts := splitQualifiedIdentifier(identifier)
-	for i, part := range parts {
-		parts[i] = escapeIdentifierValue(part)
-	}
-	return strings.Join(parts, ".")
+	return mysqlrender.QuoteQualifiedIdentifier(identifier)
 }
 
 func escapeIdentifierList(identifiers []string) []string {
@@ -175,32 +166,6 @@ func escapeIdentifierList(identifiers []string) []string {
 		escaped[i] = escapeQualifiedIdentifier(identifier)
 	}
 	return escaped
-}
-
-func unquoteIdentifier(identifier string) string {
-	if len(identifier) < 2 {
-		return identifier
-	}
-	switch {
-	case identifier[0] == '`' && identifier[len(identifier)-1] == '`':
-		return strings.ReplaceAll(identifier[1:len(identifier)-1], "``", "`")
-	case identifier[0] == '"' && identifier[len(identifier)-1] == '"':
-		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
-	case identifier[0] == '[' && identifier[len(identifier)-1] == ']':
-		return strings.ReplaceAll(identifier[1:len(identifier)-1], "]]", "]")
-	}
-	return identifier
-}
-
-func splitQualifiedIdentifier(identifier string) []string {
-	ref, ok := tableref.Parse(identifier)
-	if !ok {
-		return []string{identifier}
-	}
-	if !ref.Qualified {
-		return []string{ref.Name}
-	}
-	return []string{ref.Schema, ref.Name}
 }
 
 // dropConstraintSQL renders a single ALTER TABLE constraint drop.
@@ -580,9 +545,11 @@ func (r *Renderer) renderConstraintNode(node *ast.ConstraintNode) error {
 // renderIndex renders a CREATE INDEX statement for MySQL
 func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	r.recordLostIndexProperties(node)
-	parts := []string{"CREATE"}
-	parts = append(parts, r.indexDefinition(node, "ON "+escapeQualifiedIdentifier(node.Table))...)
-	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	definition, err := r.indexDefinition(node, "ON "+escapeQualifiedIdentifier(node.Table))
+	if err != nil {
+		return err
+	}
+	r.w.WriteLinef("CREATE %s;", strings.Join(definition, " "))
 	return nil
 }
 
@@ -609,79 +576,21 @@ func (r *Renderer) recordLostIndexProperties(node *ast.IndexNode) {
 }
 
 // indexDefinition is an index from its kind to its options, as CREATE INDEX
-// and ALTER TABLE ... ADD INDEX both write it. placement is what stands
-// between the name and the key parts: `ON table` for CREATE INDEX, and nothing
-// for ADD INDEX.
-func (r *Renderer) indexDefinition(node *ast.IndexNode, placement string) []string {
-	var parts []string
-	if node.Unique {
-		parts = append(parts, "UNIQUE")
+// and ALTER TABLE ... ADD INDEX both write it; see
+// [mysqlrender.IndexDefinition], which the owner's index replacement writes
+// with too. The node's facets were validated when it was prepared.
+func (r *Renderer) indexDefinition(node *ast.IndexNode, placement string) ([]string, error) {
+	index, err := mysqlast.IndexFromNode(node)
+	if err != nil {
+		return nil, err
 	}
-	if indexType := mysqlIndexPrefixType(node.Type); indexType != "" {
-		parts = append(parts, indexType)
-	}
-	parts = append(parts, "INDEX", escapeIdentifier(node.Name))
-	if placement != "" {
-		parts = append(parts, placement)
-	}
-	columnSpec := fmt.Sprintf("(%s)", strings.Join(renderIndexParts(node.EffectiveParts()), ", "))
-	// The FULLTEXT parser is the MySQL owner's index option, which the
-	// node's preparation validated.
-	if options, err := mysqlrender.IndexOptions(node.Facets); err == nil && options != nil && options.Parser != "" {
-		columnSpec += fmt.Sprintf(" /*!50100 WITH PARSER %s */", escapeIdentifier(options.Parser))
-	}
-	parts = append(parts, columnSpec)
-
-	// After the column list, which is where both engines take it: measured
-	// 2026-09-03, MySQL 8.4.11 and MariaDB 11.8.9 each accept
-	// `CREATE INDEX k ON t (a) USING HASH`, the UNIQUE form of it, and the
-	// spelling that puts the clause before ON. Emitting it is what keeps a
-	// declared HASH from being dropped on the way out (stokaro/ptah#2825).
-	if method := mysqlindex.Method(node.Type); method != "" {
-		parts = append(parts, "USING", method)
-	}
-	// The comment and the visibility follow, as MySQL 8.4.11 and MariaDB 11.8.9
-	// print them in SHOW CREATE TABLE; both keep the comment in
-	// STATISTICS.INDEX_COMMENT (stokaro/ptah#3853).
-	if node.KeyBlockSize != 0 {
-		parts = append(parts, fmt.Sprintf("KEY_BLOCK_SIZE=%d", node.KeyBlockSize))
-	}
-	if node.Comment != "" {
-		parts = append(parts, "COMMENT", r.escapeValue(node.Comment))
-	}
-	if node.Invisible {
-		parts = append(parts, r.hiddenIndexWord(true))
-	}
-	return parts
+	return mysqlrender.IndexDefinition(r.dialect, index, placement), nil
 }
 
-// hiddenIndexWord is how the dialect says whether the optimizer uses an index:
-// MySQL's INVISIBLE and VISIBLE, MariaDB's IGNORED and NOT IGNORED. Each
-// engine answers ERROR 1064 to the other's words.
+// hiddenIndexWord is how the dialect says whether the optimizer uses an
+// index; see [mysqlrender.HiddenIndexWord].
 func (r *Renderer) hiddenIndexWord(invisible bool) string {
-	words := map[bool]string{true: "INVISIBLE", false: "VISIBLE"}
-	if r.dialect == "mariadb" {
-		words = map[bool]string{true: "IGNORED", false: "NOT IGNORED"}
-	}
-	return words[invisible]
-}
-
-func renderIndexParts(parts []ast.IndexPart) []string {
-	specs := make([]string, 0, len(parts))
-	for _, part := range parts {
-		spec := escapeQualifiedIdentifier(part.Reference())
-		if part.Expr != "" {
-			spec = fmt.Sprintf("(%s)", part.Expr)
-		}
-		if part.Prefix != "" && part.Expr == "" {
-			spec += " (" + part.Prefix + ")"
-		}
-		if part.Desc {
-			spec += " DESC"
-		}
-		specs = append(specs, spec)
-	}
-	return specs
+	return mysqlrender.HiddenIndexWord(r.dialect, invisible)
 }
 
 // mysqlIndexPrefixType is the access-method keyword this index's DDL carries.
@@ -1306,6 +1215,11 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, enums map[string][]string) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
+		case *ast.ExtensionAlterOperation:
+			if err := r.renderOwnedExtension(node, ast.AlterExtension, op.Payload); err != nil {
+				return err
+			}
+
 		case *ast.AddColumnOperation:
 			// Get enum values for this column type
 			var enumValues []string
@@ -1399,8 +1313,12 @@ func (r *Renderer) writeIndexAlteration(node *ast.AlterTableNode, operation ast.
 			return fmt.Errorf("replace-index operation on table %s carries no index", node.Name)
 		}
 		r.recordLostIndexProperties(op.Index)
+		definition, err := r.indexDefinition(op.Index, "")
+		if err != nil {
+			return err
+		}
 		r.writeAlterStatementf(node, "ALTER TABLE %s DROP INDEX %s, ADD %s",
-			table, escapeIdentifier(op.Index.Name), strings.Join(r.indexDefinition(op.Index, ""), " "))
+			table, escapeIdentifier(op.Index.Name), strings.Join(definition, " "))
 	default:
 		return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, r.dialect, operation)
 	}

@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/feature/synonym"
@@ -2643,7 +2644,10 @@ func targetProperties(overrides map[string]map[string]string, targets []string, 
 
 // withBlockCoverage adds the knowledge the format's own blocks give: one for
 // each TimescaleDB model, one for a SQL Server extended property and one for a
-// synonym, so a document without one describes a database without one.
+// synonym, so a document without one describes a database without one. It
+// adds the claim of the MySQL index block size too, which the format has no
+// spelling for: an index a document declares has none, and applying the
+// document removes a hint the table holds, as the HCL export warns.
 func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
 	timescale, err := tsschema.CompleteCoverage(schemaext.Desired)
 	if err != nil {
@@ -2658,7 +2662,11 @@ func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, claim := range []schemaext.Coverage{timescale, properties, synonyms} {
+	blockSizes, err := mysqlsource.BlockSizeCoverage()
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	for _, claim := range []schemaext.Coverage{timescale, properties, synonyms, blockSizes} {
 		if known, err = known.Combine(claim); err != nil {
 			return schemaext.Coverage{}, err
 		}

@@ -892,7 +892,7 @@ func indexDefinitionAttrs(index schemamodel.Index) []attr {
 		{name: "table", value: index.TableName, set: index.TableName != ""},
 		{name: "comment", value: index.Comment, set: index.Comment != ""},
 		{name: "invisible", value: strconv.FormatBool(index.Invisible), set: index.Invisible},
-		{name: "key_block_size", value: strconv.FormatUint(index.KeyBlockSize, 10), set: index.KeyBlockSize != 0},
+		blockSizeAttr(index.Facets),
 	}
 }
 

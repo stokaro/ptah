@@ -758,9 +758,6 @@ type Index struct {
 	// STATISTICS.IS_VISIBLE NO on MySQL, STATISTICS.IGNORED YES on MariaDB,
 	// and a definition ending in NOT VISIBLE on CockroachDB.
 	Invisible bool `json:"invisible,omitempty"`
-	// KeyBlockSize is the index hint reported by SHOW CREATE TABLE. Zero
-	// means the server reports no explicit hint.
-	KeyBlockSize uint64 `json:"key_block_size,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`

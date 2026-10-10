@@ -9,19 +9,25 @@ import (
 )
 
 // ValidateIndexFacets checks the index values the MySQL-family renderer
-// consumes: an index's declared options. An empty collection is valid. Any
-// other active kind wraps ptaherr.ErrUnsupportedFeature, and an invalid
-// declaration wraps schemaext.ErrInvalidValue.
+// consumes: an index's declared options and its block-size hint. An empty
+// collection is valid. Any other active kind wraps
+// ptaherr.ErrUnsupportedFeature, and an invalid declaration wraps
+// schemaext.ErrInvalidValue. The MariaDB limit on the hint is checked where
+// the target is known.
 func ValidateIndexFacets(facets schemaext.Facets) error {
-	_, err := IndexOptions(facets)
+	if _, err := IndexOptions(facets); err != nil {
+		return err
+	}
+	_, _, err := mysqlschema.IndexBlockSize(facets)
 	return err
 }
 
 // IndexOptions returns the options an index declares, or nil for an index
-// that declares none. Any other active kind is refused.
+// that declares none. A kind other than the options and the block-size hint
+// is refused.
 func IndexOptions(facets schemaext.Facets) (*mysqlschema.DesiredIndex, error) {
 	for _, kind := range facets.Kinds() {
-		if kind != mysqlschema.IndexKind {
+		if kind != mysqlschema.IndexKind && kind != mysqlschema.IndexBlockSizeKind {
 			return nil, fmt.Errorf("%w: MySQL index facet %q is not supported", ptaherr.ErrUnsupportedFeature, kind)
 		}
 	}

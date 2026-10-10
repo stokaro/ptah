@@ -78,6 +78,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mssql/mssqlreport`
 - `ptah.run/dialect/mssql/mssqlreverse`
 - `ptah.run/dialect/mssql/mssqlschema`
+- `ptah.run/dialect/mysql/mysqlast`
 - `ptah.run/dialect/mysql/mysqlcompare`
 - `ptah.run/dialect/mysql/mysqlconvert`
 - `ptah.run/dialect/mysql/mysqldiff`
@@ -1173,6 +1174,39 @@ services of `mysqlcompare`, `mysqlconvert`, `mysqlplan` and `mysqlreport`
 share one shape. The index comparison registers no change kinds: it reports
 no change, as the column settings comparison does.
 
+`mysqlschema` owns an index's `KEY_BLOCK_SIZE` hint under its own kind,
+`IndexBlockSizeKind`, because it is compared and planned where the options of
+`IndexKind` are not. `DesiredIndexBlockSize` holds a declared hint, zero for
+none; `ObservedIndexBlockSize` holds the hint a read reports and whether the
+server keeps one on the index at all, which MariaDB does on every table and
+MySQL only with `ROW_FORMAT=COMPRESSED`. The reader describes every index's
+hint and gives an index the observation where `ObservationNeeded` says it says
+more than its absence. `mysqlconvert.CreationService` gives a converted
+declaration the same observations through `TableCreation.Observed`, from the
+row format its table declares.
+
+`IndexBlockSizeCoverage` builds the claim a source makes;
+`mysqlsource.BlockSizeCoverage` is the one the Go, SQL, YAML and HCL sources
+make, so an index they declare without a hint requests none.
+`mysqlsource.Annotations` reads the Go index directive's `key_block_size`
+attribute, and `mysqlsource.YAML` makes the YAML claim.
+
+`mysqlcompare.IndexBlockSizeService` reports a `mysqldiff.IndexBlockSize`
+change where a retained hint differs from the declared one.
+`mysqlplan.IndexBlockSizeService` plans it as one
+`mysqlast.ReplaceIndex` operation that drops and adds the index with its
+declared definition, asking MySQL for `ALGORITHM=COPY`; where a common step
+already writes the index, it plans nothing, since that rebuild writes the
+declared hint. `mysqlplan.ReversalService` reverses the change.
+`mysqlrender.IndexDefinition` is the one writer of a MySQL-family index
+definition, used by the common renderer and by the operation's handler in
+`mysqlrender.Handlers`.
+
+The former `ast.IndexNode.KeyBlockSize`, `schemamodel.Index.KeyBlockSize`,
+`catalog.Index.KeyBlockSize` and `difftypes.IndexChange.RequiresTableCopy`
+fields are removed without aliases. A primary key's hint stays on the common
+constraint model.
+
 The former `ast.IndexNode.Parser`, `ast.IndexNode.ForeignKeyIndex` and
 `schemamodel.Index.Parser` fields are removed without aliases. A SQL schema
 file's parse answers which index a `FOREIGN KEY name (columns)` clause names,
@@ -1497,6 +1531,16 @@ they may describe creation defaults absent from the source. Duplicate or invente
 owners, changed identity spelling, excluded kinds, and new bindings are refused.
 The runtime validates keys, model ownership, and codecs. Missing services, partial replies, errors, and cancellation
 return no prediction. `IdentityCreations` explicitly selects no additional effects.
+
+`TableCreation.Observed` holds what a CREATE of the declaration leaves that its
+declared values do not convert to, because it depends on the table rather than
+on one value: a conversion sees each value alone. Its records name the table or
+a declared index and hold values in the observed representation. Document
+projection applies them after conversion, so each replaces the converted value
+of its kind on that owner, or adds one where the declaration holds none, bound
+to the selected target. The runtime refuses the same malformed records it
+refuses in `Facets`, and a model the selected target does not convert, since an
+observation stands in for a conversion.
 
 Document projection preserves explicit source knowledge limits. New computed
 kinds are bound to the selected target and gain coverage only for their captured

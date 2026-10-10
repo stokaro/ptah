@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/indexbacking"
@@ -311,7 +312,6 @@ func convertIndexes(
 			Condition:     dbIndex.Condition,
 			Comment:       dbIndex.Comment,
 			Invisible:     dbIndex.Invisible,
-			KeyBlockSize:  dbIndex.KeyBlockSize,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
 			Type:          dbIndex.Method,
 
@@ -1393,7 +1393,12 @@ func uniqueNeedsIndexDescription(index catalog.Index, dialect string) bool {
 		return true
 	}
 	if dialect == platform.MySQL || dialect == platform.MariaDB {
-		return index.KeyBlockSize != 0 || index.Comment != "" || mysqlindex.Method(index.Method) != ""
+		// The MySQL owner's block-size observation is one only an index
+		// carries; a reader gives one to an index with a hint or on a table
+		// that keeps one. A facet of another type is refused when the facets
+		// are converted.
+		_, observed, _ := mysqlschema.IndexBlockSize(index.Facets)
+		return observed || index.Comment != "" || mysqlindex.Method(index.Method) != ""
 	}
 	return false
 }
