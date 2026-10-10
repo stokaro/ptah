@@ -1186,6 +1186,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgpolicy-policyplan",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpolicy/policyplan",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgpolicy-policyprobe",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgpolicy/policyprobe",
@@ -1195,6 +1201,12 @@
       "id": "gopkg-feature-pgpolicy-policyrender",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgpolicy/policyrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpolicy-policyreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpolicy/policyreverse",
       "claimed_by": null
     },
     {
