@@ -53,8 +53,20 @@ func (r *Runtime) registerDeclarationPlanning(owner string, declaration Declarat
 	return nil
 }
 
-// PlanDeclarations dispatches authored standalone objects to their selected
-// owners after validating the entire request. Services receive isolated batches;
+// DeclaresKind reports whether target has a declaration service for kind. An
+// unknown target declares nothing.
+func (r *Runtime) DeclaresKind(target string, kind schemaext.Kind) bool {
+	selected, found := r.lookup(target)
+	if !found {
+		return false
+	}
+	_, declared := r.declarations[conversionKey{target: selected.name, kind: kind}]
+	return declared
+}
+
+// PlanDeclarations dispatches authored objects to their selected owners after
+// validating the entire request: standalone objects, and children of a table
+// the request declares. Services receive isolated batches;
 // every declaration and contributed step requires a receipt. Refusals discard all
 // operations and retain diagnostic indexes in the caller's order. Errors discard
 // the whole reply. Successful contributions still need the complete host graph.

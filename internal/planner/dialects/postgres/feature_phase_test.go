@@ -101,6 +101,8 @@ func phaseOrder(nodes []ast.Node) []string {
 	var order []string
 	for _, node := range nodes {
 		switch typed := node.(type) {
+		case *ast.CreateTableNode:
+			order = append(order, "create table")
 		case *ast.CreateViewNode:
 			order = append(order, "create view")
 		case *ast.DropViewNode:
@@ -303,4 +305,65 @@ func TestPlanner_PlacesADependentOperationOfARemovedTable(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"owner drops", "drop table"})
+}
+
+// phaseChild is a named child of a table, owned by the phase owner.
+type phaseChild struct{}
+
+func (*phaseChild) Kind() schemaext.Kind             { return phaseOwner + "/child" }
+func (*phaseChild) Clone() schemaext.Value           { return &phaseChild{} }
+func (*phaseChild) Equal(other schemaext.Value) bool { _, ok := other.(*phaseChild); return ok }
+
+// creationRuntime answers every table the plan creates with one dependent
+// step that creates its children, and records the request it was sent.
+type creationRuntime struct {
+	*engine.Runtime
+	received *featureplan.Request
+}
+
+func (r creationRuntime) PlanFeatures(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
+	*r.received = request
+	result := featureplan.Result{Complete: true}
+	contribution := plangraph.Contribution[featureplan.Operation]{Owner: phaseOwner}
+	for i, table := range request.Tables {
+		id := plangraph.StepID{Owner: phaseOwner, Name: fmt.Sprintf("children/%06d", i)}
+		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
+			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: &phaseOperation{Action: plangraph.Create}, Phase: featureplan.PhaseDependent},
+			Effects:     []plangraph.Effect{{Subject: phaseSubject("child"), Action: plangraph.Create}, {Subject: table.Subject, Action: plangraph.Read}},
+			Transaction: plangraph.TransactionAllowed, Impact: schemaext.Effect{Impact: schemaext.Additive, Reason: "test"},
+		})
+		result.Parents = append(result.Parents, featureplan.ParentPlan{Subject: table.Subject, Kind: phaseOwner + "/child", Action: table.Action,
+			Strategy: "create the children", Steps: []plangraph.StepID{id}})
+	}
+	result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
+	return result, nil
+}
+
+// TestPlanner_HandsACreatedTablesChildrenToTheirOwner pins a table the plan
+// creates with a named child: its CREATE TABLE does not carry the child, the
+// owner is sent the table as a creation with its declaration, and the owner's
+// creation step lands in the dependent window, after the views.
+func TestPlanner_HandsACreatedTablesChildrenToTheirOwner(t *testing.T) {
+	c := qt.New(t)
+	table := objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("", "orders")
+	child := objectidentity.ID{Kind: objectidentity.Kind(phaseOwner + "/child"), Schema: table.Schema, Parent: table.Name,
+		Name: objectidentity.Part{Source: "tenant", Normalized: "tenant"}}
+	diff := &difftypes.SchemaDiff{
+		TablesAdded: difftypes.TableChanges{{Name: "orders", Table: schemamodel.Table{StructName: "Order", Name: "orders"},
+			Fields:       []schemamodel.Field{{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true}},
+			OwnedObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: child, Value: &phaseChild{}}))}},
+		ViewsAdded:        difftypes.ViewChanges{{Name: "recent", Body: "SELECT 1"}},
+		DeclaredViewLikes: difftypes.ViewLikeVocabulary{Views: []schemamodel.View{{Name: "recent", Body: "SELECT 1"}}},
+	}
+	var received featureplan.Request
+
+	nodes, err := postgres.New().GenerateMigrationAST(context.Background(), creationRuntime{Runtime: must.Must(builtin.New()), received: &received}, diff)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"create table", "create view", "owner creates"})
+	c.Assert(received.Tables, qt.HasLen, 1)
+	c.Assert(received.Tables[0].Action, qt.Equals, featureplan.CreateTable)
+	c.Assert(received.Tables[0].Subject, qt.DeepEquals, table)
+	c.Assert(received.Tables[0].Desired.OwnedObjects.Len(), qt.Equals, 1)
+	c.Assert(received.Tables[0].Current.HasTable(), qt.IsFalse)
 }

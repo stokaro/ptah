@@ -26,19 +26,8 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	seen := make(map[objectidentity.Key]bool)
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for i, table := range request.Tables {
-		switch table.Action {
-		case "", featureplan.DropTable, featureplan.RebuildTable, featureplan.AlterTable:
-		default:
-			return featureplan.Request{}, fmt.Errorf("%w: unknown parent action %q", schemaext.ErrInvalidValue, table.Action)
-		}
-		if table.Action != "" && !table.Current.HasTable() {
-			return featureplan.Request{}, fmt.Errorf("%w: parent operation has no observed table state", schemaext.ErrInvalidValue)
-		}
-		if (table.Action == featureplan.RebuildTable || table.Action == featureplan.AlterTable) && !table.Desired.HasTable() {
-			return featureplan.Request{}, fmt.Errorf("%w: surviving parent has no declared table state", schemaext.ErrInvalidValue)
-		}
-		if table.Action == featureplan.DropTable && table.Desired.HasTable() {
-			return featureplan.Request{}, fmt.Errorf("%w: removed table carries a declaration", schemaext.ErrInvalidValue)
+		if err := validateParentAction(table); err != nil {
+			return featureplan.Request{}, err
 		}
 		if table.Subject.Kind != objectidentity.KindTable || seen[table.Subject.Key()] {
 			return featureplan.Request{}, fmt.Errorf("%w: duplicate or invalid planning table", schemaext.ErrInvalidValue)
@@ -64,6 +53,31 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 		return featureplan.Request{}, err
 	}
 	return request, ctx.Err()
+}
+
+// validateParentAction checks that a table carries the captures its action
+// needs: an observation for an operation on a table that exists, a declaration
+// for one that survives, none for one the plan drops, and a declaration and no
+// observation for one the plan creates.
+func validateParentAction(table featureplan.Table) error {
+	switch table.Action {
+	case "", featureplan.DropTable, featureplan.RebuildTable, featureplan.AlterTable, featureplan.CreateTable:
+	default:
+		return fmt.Errorf("%w: unknown parent action %q", schemaext.ErrInvalidValue, table.Action)
+	}
+	if table.Action == featureplan.CreateTable && (!table.Desired.HasTable() || table.Current.HasTable()) {
+		return fmt.Errorf("%w: a created table carries its declaration and no observation", schemaext.ErrInvalidValue)
+	}
+	if table.Action != "" && table.Action != featureplan.CreateTable && !table.Current.HasTable() {
+		return fmt.Errorf("%w: parent operation has no observed table state", schemaext.ErrInvalidValue)
+	}
+	if (table.Action == featureplan.RebuildTable || table.Action == featureplan.AlterTable) && !table.Desired.HasTable() {
+		return fmt.Errorf("%w: surviving parent has no declared table state", schemaext.ErrInvalidValue)
+	}
+	if table.Action == featureplan.DropTable && table.Desired.HasTable() {
+		return fmt.Errorf("%w: removed table carries a declaration", schemaext.ErrInvalidValue)
+	}
+	return nil
 }
 
 func (r *Runtime) validateCapturedTableModels(ctx context.Context, declared schemacapture.TableDeclaration, observed schemacapture.TableObservation) error {

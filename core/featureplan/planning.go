@@ -71,6 +71,12 @@ const (
 	DropTable ParentAction = "drop-table"
 	// RebuildTable replaces a table and restores its effective declaration.
 	RebuildTable ParentAction = "rebuild-table"
+	// CreateTable creates the declared table, which nothing observed. The
+	// CREATE TABLE statement carries the settings attached to the table; the
+	// table's named children are not part of it, and each owner creates its
+	// own in steps it contributes, placed where the objects they name exist.
+	// A receipt with no steps says the owner has nothing to create there.
+	CreateTable ParentAction = "create-table"
 )
 
 // ParentPlan accounts for one model's state through a parent operation, even

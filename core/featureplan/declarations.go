@@ -13,11 +13,14 @@ import (
 	"ptah.run/core/schemavalidation"
 )
 
-// DeclarationRequest lowers authored standalone objects into creation operations.
-// It describes a schema document, without asserting inspected absence in a live
-// database. Tables supplies declared dependencies; CommonSteps describes the
-// host's creation operations. Process adapters map these local types to explicit
-// protocol records, rather than serializing the common Go schema model.
+// DeclarationRequest lowers authored objects into creation operations: standalone
+// objects, and the named children of a declared table that their owner creates
+// in steps of its own rather than with the table. It describes a schema
+// document, without asserting inspected absence in a live database. Tables
+// supplies declared dependencies, the parent of every child among them;
+// CommonSteps describes the host's creation operations. Process adapters map
+// these local types to explicit protocol records, rather than serializing the
+// common Go schema model.
 type DeclarationRequest struct {
 	Target       string
 	Identifiers  identifier.Semantics
@@ -104,7 +107,14 @@ type DeclarationService interface {
 
 // DeclarationRuntime combines explicit owner dispatch with local model codecs.
 // A missing owner is an error; implementations never select a built-in fallback.
+//
+// DeclaresKind reports whether target has a declaration service for kind. A
+// whole-schema render asks it of a table's named child: one whose kind is
+// declared is planned by its owner, scheduled against the common creation
+// operations, and every other one is created with its table. An unknown target
+// declares nothing.
 type DeclarationRuntime interface {
 	schemaext.ModelRuntime
 	DeclarationService
+	DeclaresKind(target string, kind schemaext.Kind) bool
 }

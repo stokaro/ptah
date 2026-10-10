@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/pgeffects"
 	"ptah.run/internal/planner/featurehost"
@@ -19,11 +20,14 @@ import (
 // commonOwner is the contribution owner of the PostgreSQL family's own steps.
 const commonOwner = "ptah.run/postgres"
 
-// scheduleFeatures dispatches a diff's feature changes to their owners and
-// joins the contributed operations to the common sequence through
-// [featurehost.Graph], which places each step in its window, orders the
-// effects of different owners by their lifecycle and refuses what no window
-// can order. A diff with no feature change is returned as it was planned,
+// scheduleFeatures dispatches a diff's feature changes, and the tables it
+// creates with named children, to their owners and joins the contributed
+// operations to the common sequence through [featurehost.Graph], which places
+// each step in its window, orders the effects of different owners by their
+// lifecycle and refuses what no window can order. A created table's CREATE TABLE carries its attached settings and
+// none of its named children: each owner is sent the table as a
+// [featureplan.CreateTable] and creates its own children in its window. A diff
+// with no feature change and no such table is returned as it was planned,
 // without asking the runtime.
 //
 // The default creation window is after the tables, columns and sequences a
@@ -58,6 +62,18 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		request.Changes = append(request.Changes, table.FeatureChanges...)
 		names[subject.Key()] = table.TableName
 	}
+	// A created table's named children are not part of its CREATE TABLE: each
+	// owner creates its own, in its window, after the objects they name.
+	for _, creation := range diff.TablesAdded {
+		if creation.OwnedObjects.IsZero() {
+			continue
+		}
+		subject := builder.TableParts(creation.Table.Schema, creation.Table.Name)
+		request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Action: featureplan.CreateTable,
+			Desired: schemacapture.TableDeclaration{OwnedObjects: creation.OwnedObjects, FeatureCoverage: creation.FeatureCoverage,
+				Table: creation.Table, Fields: creation.Fields, Enums: creation.Enums, Constraints: creation.Constraints}})
+		names[subject.Key()] = creation.Name
+	}
 	graph, err := featurehost.NewGraph(commonOwner, nodes, pgeffects.Sequence(builder, nodes), windows)
 	if err != nil {
 		return nil, err
@@ -73,7 +89,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 func hasFeatureChanges(target string, diff *difftypes.SchemaDiff) bool {
 	return len(diff.FeatureChanges) > 0 || (target != platform.CockroachDB && slices.ContainsFunc(diff.TablesModified, func(table difftypes.TableDiff) bool {
 		return len(table.FeatureChanges) > 0
-	}))
+	})) || slices.ContainsFunc(diff.TablesAdded, func(creation difftypes.TableCreation) bool { return !creation.OwnedObjects.IsZero() })
 }
 
 // planTableFeatures lowers the owner-planned changes of surviving CockroachDB

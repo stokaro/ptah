@@ -3063,7 +3063,10 @@ type RoleDiff struct {
 // from a schema means filtering it. That filtering happens once, where the
 // schema is already in hand, and its result travels here with the change.
 type TableCreation struct {
-	// OwnedObjects captures the named feature children created with this table.
+	// OwnedObjects captures the named feature children declared on this table.
+	// The PostgreSQL-family planner hands them to their owners, which create
+	// them in steps of their own (a create-table parent request); a target
+	// whose CREATE TABLE writes its children carries them with the table.
 	OwnedObjects schemaext.Objects
 	// FeatureCoverage preserves the source claims used to capture the children.
 	FeatureCoverage schemaext.Coverage
