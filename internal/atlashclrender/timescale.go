@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/feature/pgpolicy"
@@ -76,12 +77,14 @@ func (r *renderer) captureTimescale() error {
 // column families, whose loss it reports by family and which it leaves out
 // where a table has only the default family stating nothing, a YDB table's
 // settings, whose loss it reports by setting, YDB column storage, whose loss
-// it reports by table, and MySQL table options, which it writes as the table's
-// engine, charset and auto_increment. A caller that encodes the other facets
-// as platform properties sets these aside first.
+// it reports by table, MySQL table options, which it writes as the table's
+// engine, charset and auto_increment, and SQLite table options, which it
+// writes as the table's strict and without_rowid attributes, the spelling the
+// community binary reads. A caller that encodes the other facets as platform
+// properties sets these aside first.
 func WritesTableFacet(kind schemaext.Kind) bool {
 	return kind == tsschema.HypertableKind || kind == ydbschema.ColumnFamiliesKind || kind == mysqlschema.TableKind || kind == ydbschema.TablePartitioningKind ||
-		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind
+		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind || kind == sqlitetable.TableKind
 }
 
 // WritesColumnFacet reports a column facet kind the renderer writes itself
