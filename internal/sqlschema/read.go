@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chsource"
 	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/ydbsource"
@@ -85,6 +86,10 @@ func ReadOnto(
 		// Spanner SQL spells a row deletion policy as a table clause, so a
 		// table without one requests none.
 		database.FeatureCoverage, err = spannersource.Coverage()
+	case platform.NormalizeDialect(dialect) == platform.ClickHouse:
+		// A ClickHouse materialized view states its refresh schedule in its
+		// CREATE statement, so a view without one declares a plain view.
+		database.FeatureCoverage, err = chsource.RefreshCoverage()
 	}
 	if err != nil {
 		return schemamodel.Database{}, nil, err
