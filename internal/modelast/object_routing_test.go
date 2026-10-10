@@ -45,8 +45,6 @@ var routedKinds = []routedKind{
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
 	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
-	{name: "external data source", want: 1, count: countNodes[*ast.CreateExternalDataSourceNode]},
-	{name: "external table", want: 1, count: countNodes[*ast.CreateExternalTableNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
 	{name: "revoked grant", want: 1, count: countNodes[*ast.RevokePrivilegeNode]},
@@ -97,11 +95,6 @@ func routingFixture() schemamodel.Database {
 		Transfers: []schemamodel.Transfer{{StructName: "TF", Name: "transfer_probe", Spec: ast.TransferSpec{
 			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
 		}}},
-
-		ExternalDataSources: []schemamodel.ExternalDataSource{{StructName: "ES", Name: "source_probe",
-			SourceType: "ObjectStorage", Location: "https://storage.example.test/b/", AuthMethod: "NONE"}},
-		ExternalTables: []schemamodel.ExternalTable{{StructName: "ET", Name: "external_probe",
-			DataSource: "source_probe", Location: "f/", Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64"}}}},
 		ExtendedProperties: []schemamodel.ExtendedProperty{{
 			StructName: "XP", Name: "property_probe", Schema: "dbo",
 			Table: "table_probe", Value: "probe",

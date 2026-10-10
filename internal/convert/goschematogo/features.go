@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -151,8 +152,9 @@ func (ctx *renderContext) captureChangefeed(object schemaext.Object, feed *ydbsc
 	return nil
 }
 
-// capturePathObject writes a declared secret, or a declared topic and its
-// consumers, as their annotations, and reports whether object is either.
+// capturePathObject writes a declared secret, a declared topic and its
+// consumers, or a declared external object as their annotations, and reports
+// whether object is one of them.
 func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, error) {
 	switch value := object.Value.(type) {
 	case *ydbsecret.Desired:
@@ -170,6 +172,26 @@ func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, erro
 			return true, err
 		}
 		ctx.topicAnnotations = append(ctx.topicAnnotations, topicAnnotations(object.Ref.Schema.Source, object.Ref.Name.Source, value.Spec)...)
+		return true, nil
+	case *ydbexternal.DesiredSource:
+		if err := ydbexternal.ValidateIdentity(object.Ref); err != nil {
+			return true, err
+		}
+		if err := value.Validate(); err != nil {
+			return true, err
+		}
+		ctx.externalAnnotations[0] = append(ctx.externalAnnotations[0],
+			externalDataSourceAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, value.Spec))
+		return true, nil
+	case *ydbexternal.DesiredTable:
+		if err := ydbexternal.ValidateIdentity(object.Ref); err != nil {
+			return true, err
+		}
+		if err := value.Validate(); err != nil {
+			return true, err
+		}
+		ctx.externalAnnotations[1] = append(ctx.externalAnnotations[1],
+			externalTableAnnotation(object.Ref.Schema.Source, object.Ref.Name.Source, value.Spec))
 		return true, nil
 	default:
 		return false, nil

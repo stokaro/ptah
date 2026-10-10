@@ -5,8 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/dialect/ydb/ydbexternal"
 )
 
 // TestParse_YDBExternalObjects_HappyPath reads a data source and an external
@@ -35,15 +36,16 @@ external_tables:
       FORMAT: json_each_row
 `))
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.ExternalDataSources, qt.DeepEquals, []schemamodel.ExternalDataSource{{
-		Name: "warehouse", Schema: "ext", SourceType: "PostgreSQL", Location: "pg.example.test:5432", AuthMethod: "BASIC",
-		Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "ext/pg_password"},
-	}})
-	c.Assert(db.ExternalTables, qt.DeepEquals, []schemamodel.ExternalTable{{
-		Name: "events", Schema: "ext", DataSource: "ext/events_bucket", Location: "2026/",
-		Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64", NotNull: true}, {Name: "amount", Type: "Decimal(22,9)"}},
-		Options: map[string]string{"FORMAT": "json_each_row"},
-	}})
+	objects, err := db.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbexternal.DesiredSourceObject("ext", "warehouse", "", ydbexternal.DataSource{SourceType: "PostgreSQL",
+			Location: "pg.example.test:5432", AuthMethod: "BASIC",
+			Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "ext/pg_password"}}),
+		ydbexternal.DesiredTableObject("ext", "events", "", ydbexternal.Table{DataSource: "ext/events_bucket", Location: "2026/",
+			Columns: []ydbexternal.Column{{Name: "id", Type: "Int64", NotNull: true}, {Name: "amount", Type: "Decimal(22,9)"}},
+			Options: map[string]string{"FORMAT": "json_each_row"}}),
+	})
 }
 
 // TestParse_YDBExternalObjects_FailurePath refuses what the annotation
@@ -73,6 +75,12 @@ func TestParse_YDBExternalObjects_FailurePath(t *testing.T) {
 			name:     "a column without a type",
 			document: "external_tables:\n  events:\n    columns:\n      - {name: id}\n",
 			wantErr:  `external table "events": invalid columns: column id has no type`,
+		},
+		{
+			name: "a data source declared twice",
+			document: "external_data_sources:\n  s3:\n    source_type: ObjectStorage\n    auth_method: NONE\n" +
+				"  other:\n    name: s3\n    source_type: ObjectStorage\n    auth_method: NONE\n",
+			wantErr: `external data source "s3": external data source s3 is declared twice`,
 		},
 		{
 			name:     "a path in a name",

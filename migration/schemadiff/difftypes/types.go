@@ -135,66 +135,6 @@ func (s SynonymChanges) Names() []string {
 	return names
 }
 
-// ExternalDataSourceChanges is a set of YDB external data sources one change
-// applies to, each carrying everything a CREATE needs: an added one is created
-// from it, and a removed one is created again from it by a rollback.
-type ExternalDataSourceChanges []schemamodel.ExternalDataSource
-
-// MarshalJSON writes the data source names alone, as the other object lists
-// of a diff write theirs.
-func (s ExternalDataSourceChanges) MarshalJSON() ([]byte, error) {
-	if s == nil {
-		return []byte("null"), nil
-	}
-	names := make([]string, 0, len(s))
-	for _, source := range s {
-		names = append(names, source.QualifiedName())
-	}
-	return json.Marshal(names)
-}
-
-// ExternalTableChanges is a set of YDB external tables one change applies to,
-// each carrying everything a CREATE needs.
-type ExternalTableChanges []schemamodel.ExternalTable
-
-// MarshalJSON writes the external table names alone.
-func (s ExternalTableChanges) MarshalJSON() ([]byte, error) {
-	if s == nil {
-		return []byte("null"), nil
-	}
-	names := make([]string, 0, len(s))
-	for _, table := range s {
-		names = append(names, table.QualifiedName())
-	}
-	return json.Marshal(names)
-}
-
-// ExternalDataSourceChange is a YDB external data source both sides hold that
-// differs: its declaration and what the database holds. YDB alters neither
-// part of one, so a plan replaces it, and a rollback replaces it again with
-// Current.
-type ExternalDataSourceChange struct {
-	Declared schemamodel.ExternalDataSource
-	Current  schemamodel.ExternalDataSource
-}
-
-// MarshalJSON writes the data source's name.
-func (c ExternalDataSourceChange) MarshalJSON() ([]byte, error) {
-	return json.Marshal(c.Declared.QualifiedName())
-}
-
-// ExternalTableChange is a YDB external table both sides hold that differs,
-// which a plan replaces.
-type ExternalTableChange struct {
-	Declared schemamodel.ExternalTable
-	Current  schemamodel.ExternalTable
-}
-
-// MarshalJSON writes the external table's name.
-func (c ExternalTableChange) MarshalJSON() ([]byte, error) {
-	return json.Marshal(c.Declared.QualifiedName())
-}
-
 // ColumnChanges is a set of columns one table change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -1228,21 +1168,6 @@ type SchemaDiff struct {
 	// declaration and database differ.
 	TransfersModified []TransferDiff `json:"transfers_modified,omitempty"`
 
-	// ExternalDataSourcesAdded, ExternalDataSourcesRemoved and
-	// ExternalDataSourcesChanged are YDB's external data sources the target
-	// schema declares and the database does not hold, the reverse, and the
-	// ones both hold that differ. Dropping one loses no data YDB stores.
-	ExternalDataSourcesAdded   ExternalDataSourceChanges  `json:"external_data_sources_added,omitempty"`
-	ExternalDataSourcesRemoved ExternalDataSourceChanges  `json:"external_data_sources_removed,omitempty"`
-	ExternalDataSourcesChanged []ExternalDataSourceChange `json:"external_data_sources_changed,omitempty"`
-
-	// ExternalTablesAdded, ExternalTablesRemoved and ExternalTablesChanged are
-	// the same for YDB's external tables. Dropping one leaves its files where
-	// its data source keeps them.
-	ExternalTablesAdded   ExternalTableChanges  `json:"external_tables_added,omitempty"`
-	ExternalTablesRemoved ExternalTableChanges  `json:"external_tables_removed,omitempty"`
-	ExternalTablesChanged []ExternalTableChange `json:"external_tables_changed,omitempty"`
-
 	// ExtendedPropertiesAdded contains the SQL Server extended properties the
 	// target schema declares and the database does not have.
 	ExtendedPropertiesAdded []ExtendedPropertyRef `json:"extended_properties_added"`
@@ -1345,12 +1270,6 @@ type SchemaDiff struct {
 	// It holds the tables, not their columns: what a reference resolution reads
 	// is the name and the schema.
 	DeclaredTables []schemamodel.Table `json:"-"`
-
-	// DeclaredExternalTables is every YDB external table the declaration
-	// holds, carried once for the whole diff and off the wire, so a plan that
-	// drops a data source and creates it again can create again the external
-	// tables over it, which YDB refuses to keep while their source is dropped.
-	DeclaredExternalTables []schemamodel.ExternalTable `json:"-"`
 
 	// DeclaredSchemas is every schema the declaration holds, carried once for
 	// the whole diff and off the wire.
@@ -2008,19 +1927,10 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 }
 
 // hasYDBObjectChanges reports a change to the objects only YDB has outside a
-// table that the common model still carries: topics, async replications,
-// transfers and external objects.
+// table that the common model still carries: async replications and
+// transfers.
 func (d *SchemaDiff) hasYDBObjectChanges() bool {
-	return d.hasReplicationChanges() || d.hasExternalChanges()
-}
-
-func (d *SchemaDiff) hasExternalChanges() bool {
-	return len(d.ExternalDataSourcesAdded) > 0 ||
-		len(d.ExternalDataSourcesRemoved) > 0 ||
-		len(d.ExternalDataSourcesChanged) > 0 ||
-		len(d.ExternalTablesAdded) > 0 ||
-		len(d.ExternalTablesRemoved) > 0 ||
-		len(d.ExternalTablesChanged) > 0
+	return d.hasReplicationChanges()
 }
 
 func (d *SchemaDiff) hasExtendedPropertyChanges() bool {

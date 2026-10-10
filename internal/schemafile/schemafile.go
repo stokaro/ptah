@@ -374,8 +374,8 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     claim about the secret namespace, so applying one to a database that
 //     holds a secret keeps it rather than planning `DROP SECRET`, which loses
 //     a value nothing can read back. A YDB external data source and an
-//     external table are declared only in YAML and a Go schema, so the other
-//     formats record them as not described.
+//     external table are the same: YAML, YQL and a Go schema declare them,
+//     and the other formats make no claim about either namespace.
 func withFormatLimits(database *schemamodel.Database, resolved, dialect string) *schemamodel.Database {
 	if database == nil {
 		return nil
@@ -402,8 +402,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 	// refusal every time the parser gains another object family.
 	if !slices.Contains(yamlOnlyExtensions, extension) && !yql {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Replication, coverage.Transfer,
-			coverage.ExternalDataSource, coverage.ExternalTable)...)
+			coverage.Replication, coverage.Transfer)...)
 	}
 	if extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
@@ -891,8 +890,6 @@ func appendDatabase(dst, src *schemamodel.Database) error {
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
-	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
-	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only

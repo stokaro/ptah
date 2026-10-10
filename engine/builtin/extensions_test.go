@@ -37,6 +37,7 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
@@ -148,6 +149,17 @@ func topicConsumerFixture() extensionFixture {
 		wantSQL: "ALTER TOPIC `ext/events.v1` ADD CONSUMER `audit`;\n"}
 }
 
+func externalSourceFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.ExternalDataSource{Operation: ydbast.ExternalCreate, Schema: "ext", Name: "s3.v1",
+		Spec: ydbexternal.DataSource{SourceType: "ObjectStorage", AuthMethod: "NONE"}},
+		wantSQL: "CREATE EXTERNAL DATA SOURCE `ext/s3.v1` WITH (\n    SOURCE_TYPE = 'ObjectStorage',\n    AUTH_METHOD = 'NONE'\n);\n"}
+}
+
+func externalTableFixture() extensionFixture {
+	return extensionFixture{payload: &ydbast.ExternalTable{Operation: ydbast.ExternalDrop, Schema: "ext", Name: "events.v1"},
+		wantSQL: "DROP EXTERNAL TABLE `ext/events.v1`;\n"}
+}
+
 func hypertableFixture() extensionFixture {
 	return extensionFixture{payload: &tsast.CreateHypertable{Table: "items", Hypertable: tsschema.DesiredHypertable{Column: "ts", ChunkInterval: "1 day"}},
 		wantSQL: "SELECT create_hypertable('\"items\"', by_range('ts', INTERVAL '1 day'), create_default_indexes => FALSE);\n"}
@@ -161,7 +173,7 @@ func continuousAggregateFixture() extensionFixture {
 
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture())
+		externalSourceFixture(), externalTableFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture())
 }
 
 func securityPolicyFixture() extensionFixture {

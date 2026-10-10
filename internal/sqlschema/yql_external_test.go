@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
@@ -20,19 +20,19 @@ func TestReadYQLExternalObjects(t *testing.T) {
 		"CREATE EXTERNAL TABLE `a/t` (id Int64 NOT NULL, amount Decimal(22,9), body Utf8) WITH (DATA_SOURCE = 'a.b', LOCATION = '2026/', FORMAT = 'csv_with_names', CSV_DELIMITER = ';', PARTITIONED_BY = '[\"id\"]');"
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.ExternalDataSources, qt.DeepEquals, []schemamodel.ExternalDataSource{
-		{Name: "a.b", SourceType: "ObjectStorage", Location: "https://storage.invalid/root/", AuthMethod: "NONE", Options: make(map[string]string)},
-		{Name: "b", Schema: "a", SourceType: "PostgreSQL", Location: "pg.invalid:5432", AuthMethod: "BASIC", Options: map[string]string{
-			"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "secrets/password",
-		}},
+	objects, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		ydbexternal.DesiredSourceObject("", "a.b", "", ydbexternal.DataSource{SourceType: "ObjectStorage",
+			Location: "https://storage.invalid/root/", AuthMethod: "NONE"}),
+		ydbexternal.DesiredSourceObject("a", "b", "", ydbexternal.DataSource{SourceType: "PostgreSQL", Location: "pg.invalid:5432",
+			AuthMethod: "BASIC", Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "secrets/password"}}),
+		ydbexternal.DesiredTableObject("a", "t", "", ydbexternal.Table{DataSource: "a.b", Location: "2026/",
+			Columns: []ydbexternal.Column{{Name: "id", Type: "Int64", NotNull: true}, {Name: "amount", Type: "Decimal(22,9)"}, {Name: "body", Type: "Utf8"}},
+			Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`}}),
 	})
-	c.Assert(database.ExternalTables, qt.DeepEquals, []schemamodel.ExternalTable{{
-		Name: "t", Schema: "a", DataSource: "a.b", Location: "2026/",
-		Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64", NotNull: true}, {Name: "amount", Type: "Decimal(22,9)"}, {Name: "body", Type: "Utf8"}},
-		Options: map[string]string{"FORMAT": "csv_with_names", "CSV_DELIMITER": ";", "PARTITIONED_BY": `["id"]`},
-	}})
-	c.Assert(database.NotDescribed.Describes(coverage.ExternalDataSource), qt.IsTrue)
-	c.Assert(database.NotDescribed.Describes(coverage.ExternalTable), qt.IsTrue)
+	c.Assert(database.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
+	c.Assert(database.FeatureCoverage.Lookup(ydbexternal.TableKind, ydbexternal.TableRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 func TestReadYQLExternalObjectsRoundTrip(t *testing.T) {
@@ -41,14 +41,16 @@ func TestReadYQLExternalObjectsRoundTrip(t *testing.T) {
 		"CREATE OR REPLACE EXTERNAL TABLE `dir/data.v1` (`d` Date, `body` Utf8) WITH (DATA_SOURCE = 'dir/bucket', LOCATION = '/', FORMAT = 'csv_with_names', CSV_DELIMITER = ' ', PARTITIONED_BY = '[\"d\"]');"
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.ExternalTables[0].Options["CSV_DELIMITER"], qt.Equals, " ")
+	table, found, err := database.FeatureObjects.Get(ydbexternal.TableRef("dir", "data.v1"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(table.Value.(*ydbexternal.DesiredTable).Spec.Options["CSV_DELIMITER"], qt.Equals, " ")
 	for _, caps := range []capability.Capabilities{capability.YDB251(), capability.YDB262()} {
 		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ExternalDataSources, true))
 		c.Assert(renderErr, qt.IsNil)
 		again, _, readErr := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
 		c.Assert(readErr, qt.IsNil)
-		c.Assert(again.ExternalDataSources, qt.DeepEquals, database.ExternalDataSources)
-		c.Assert(again.ExternalTables, qt.DeepEquals, database.ExternalTables)
+		c.Assert(again.FeatureObjects.Equal(database.FeatureObjects), qt.IsTrue)
 	}
 }
 
@@ -79,8 +81,20 @@ func TestReadYQLExternalObjectsRefusals(t *testing.T) {
 			database, statements, err := sqlschema.Read([]byte(source), "ydb")
 			c.Assert(err, qt.ErrorMatches, "YQL schema at position .*")
 			c.Assert(statements, qt.IsNil)
-			c.Assert(database.ExternalDataSources, qt.HasLen, 0)
-			c.Assert(database.ExternalTables, qt.HasLen, 0)
+			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})
 	}
+}
+
+// TestReadYQLExternalObjectDeclaredTwice refuses a second declaration of one
+// path with the owner's duplicate error, as every source format does.
+func TestReadYQLExternalObjectDeclaredTwice(t *testing.T) {
+	c := qt.New(t)
+	source := "CREATE EXTERNAL DATA SOURCE s WITH (SOURCE_TYPE = 'ObjectStorage', AUTH_METHOD = 'NONE');" +
+		"CREATE OR REPLACE EXTERNAL DATA SOURCE s WITH (SOURCE_TYPE = 'ObjectStorage', AUTH_METHOD = 'NONE');"
+
+	_, _, err := sqlschema.Read([]byte(source), "ydb")
+
+	c.Assert(err, qt.ErrorMatches, "external data source s is declared twice")
+	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
 }

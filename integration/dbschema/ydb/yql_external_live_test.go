@@ -9,6 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/internal/schemafile"
 )
 
@@ -39,10 +42,19 @@ func TestYDBDesiredYQL_ExternalObjects(t *testing.T) {
 						c.Assert(statements, qt.Not(qt.HasLen), 0)
 						apply(c, conn, statements)
 						c.Assert(planAgainst(c, conn, desired, nil), qt.HasLen, 0)
-						described := readScoped(c, conn, nil)
-						c.Assert(described.ExternalTables, qt.HasLen, len(desired.ExternalTables))
-						for _, table := range described.ExternalTables {
-							c.Assert(table.Options["CSV_DELIMITER"], qt.Equals, desired.ExternalTables[0].Options["CSV_DELIMITER"])
+						tables := func(objects schemaext.Objects) schemaext.Objects {
+							return objects.Select(func(ref objectidentity.ID) bool { return schemaext.Kind(ref.Kind) == ydbexternal.TableKind })
+						}
+						declared, err := tables(desired.FeatureObjects).All()
+						c.Assert(err, qt.IsNil)
+						held := tables(readScoped(c, conn, nil).FeatureObjects)
+						c.Assert(held.Len(), qt.Equals, len(declared))
+						for _, object := range declared {
+							table, found, err := held.Get(object.Ref)
+							c.Assert(err, qt.IsNil)
+							c.Assert(found, qt.IsTrue)
+							c.Assert(table.Value.(*ydbexternal.ObservedTable).Spec.Options["CSV_DELIMITER"], qt.Equals,
+								object.Value.(*ydbexternal.DesiredTable).Spec.Options["CSV_DELIMITER"])
 						}
 					}
 				})

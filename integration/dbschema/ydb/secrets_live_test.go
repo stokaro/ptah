@@ -23,6 +23,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
@@ -470,12 +471,12 @@ func absoluteSecret() schemaext.Object {
 // secret, and a PostgreSQL source at location whose password the secret at
 // path holds.
 func absoluteSecretSource(location, path string, secrets ...schemaext.Object) *schemamodel.Database {
+	objects := append(slices.Clone(secrets), ydbexternal.DesiredSourceObject(externalSchema, "warehouse", "", ydbexternal.DataSource{
+		SourceType: "PostgreSQL", Location: location, AuthMethod: "BASIC",
+		Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": path}}))
 	return &schemamodel.Database{
-		FeatureObjects:  must.Must(schemaext.NewObjects(secrets...)),
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
 		FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
-		ExternalDataSources: []schemamodel.ExternalDataSource{{Name: "warehouse", Schema: externalSchema, SourceType: "PostgreSQL",
-			Location: location, AuthMethod: "BASIC",
-			Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": path}}},
 	}
 }
 
@@ -528,7 +529,7 @@ func TestYDBSecrets_FailurePath_ReadThroughAnAbsolutePath(t *testing.T) {
 	outside := planFailure(c, conn, absoluteSecretSource("pg2.invalid:5432", "/elsewhere/abs_pw", absoluteSecret()), externalSchemas)
 
 	c.Assert(dropped, qt.ErrorMatches, ".*secret ptah_ydb_external/abs_pw is dropped while a statement of this plan reads it by its path.*")
-	c.Assert(outside, qt.ErrorMatches, `.*secret path "/elsewhere/abs_pw" is outside the database `+root+`.*`)
+	c.Assert(outside, qt.ErrorMatches, `.*option PASSWORD_SECRET_PATH names secret "/elsewhere/abs_pw", which is outside the database `+root+`.*`)
 }
 
 // TestYDBSecrets_NotRefusedWithoutTheKeyWhenNothingRuns compares the secret a

@@ -9,6 +9,7 @@ import (
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -24,11 +25,14 @@ func Codecs() []schemaext.Codec {
 	models = append(models, ydbworkload.Codecs()...)
 	models = append(models, ydbsecret.Codecs()...)
 	models = append(models, ydbtopic.Codecs()...)
+	models = append(models, ydbexternal.Codecs()...)
 	return append(append(models, ydbdiff.Codecs()...), []schemaext.Codec{
 		ydbast.CoordinationCodec(),
 		ydbast.SecretCodec(),
 		ydbast.TopicCodec(),
 		ydbast.TopicConsumerCodec(),
+		ydbast.ExternalDataSourceCodec(),
+		ydbast.ExternalTableCodec(),
 		ydbast.StreamingCodec(),
 		ydbast.ResourcePoolCodec(),
 		ydbast.ResourcePoolClassifierCodec(),

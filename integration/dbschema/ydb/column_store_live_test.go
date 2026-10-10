@@ -7,10 +7,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 )
 
@@ -72,11 +75,16 @@ func TestYDBColumnStore_TieredTTL(t *testing.T) {
 		}
 	})
 	declared := columnStoreDeclaration(capability.YDB251())
-	declared.ExternalDataSources = []schemamodel.ExternalDataSource{{Name: "archive", Schema: columnStoreSchema, SourceType: "ObjectStorage", Location: "https://column.invalid/archive/", AuthMethod: "AWS", Options: map[string]string{"AWS_REGION": "us-east-1", "AWS_ACCESS_KEY_ID_SECRET_NAME": access, "AWS_SECRET_ACCESS_KEY_SECRET_NAME": secret}}}
+	archive := func(location string) schemaext.Objects {
+		return must.Must(schemaext.NewObjects(ydbexternal.DesiredSourceObject(columnStoreSchema, "archive", "", ydbexternal.DataSource{
+			SourceType: "ObjectStorage", Location: location, AuthMethod: "AWS",
+			Options: map[string]string{"AWS_REGION": "us-east-1", "AWS_ACCESS_KEY_ID_SECRET_NAME": access, "AWS_SECRET_ACCESS_KEY_SECRET_NAME": secret}})))
+	}
+	declared.FeatureObjects = archive("https://column.invalid/archive/")
 	declared.Tables[0].YDBColumnTable.TTL = &ast.YDBTieredTTLSpec{Column: "id", Unit: "SECONDS", Tiers: []ast.YDBTTLTierSpec{{Interval: "P1D", ExternalSource: "/local/" + columnStoreSchema + "/archive"}, {Interval: "P7D"}}}
 	apply(c, conn, planAgainst(c, conn, declared, schemas))
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
-	declared.ExternalDataSources[0].Location = "https://column.invalid/replaced/"
+	declared.FeatureObjects = archive("https://column.invalid/replaced/")
 	apply(c, conn, planAgainst(c, conn, declared, schemas))
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 	declared.Tables[0].YDBColumnTable.TTL = nil

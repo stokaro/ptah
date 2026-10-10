@@ -16,7 +16,6 @@
 //     replication held;
 //  2. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
-//     External tables are dropped before their data sources.
 //  3. DROP TOPIC for removed topics, then the coordination nodes the
 //     plan drops, so a table created under one's path finds the path free.
 //     YQL has no statement for a coordination node, so the plan carries Ptah's
@@ -48,8 +47,7 @@
 //  11. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
 //     one, then the coordination nodes the plan creates and changes, after
 //     the tables are dropped, so an object created under a dropped table's
-//     path finds the path free; then external data sources and external
-//     tables;
+//     path finds the path free;
 //  12. CREATE ASYNC REPLICATION and ALTER ASYNC REPLICATION, then CREATE
 //     TRANSFER and ALTER TRANSFER, once the tables, changefeeds, topics and
 //     consumers a transfer uses exist and the paths a replication creates its
@@ -71,7 +69,12 @@
 // statement runs before these phases, except a creation at a path the plan
 // frees, which follows the drop that frees it, and every external data source,
 // async replication and transfer that names a secret by its path follows the
-// secret's creation or rotation.
+// secret's creation or rotation. External data sources and external tables are
+// planned by their owner the same way. A column table's tiered TTL reads the
+// sources its tiers name, so the RESET (TTL) of a policy precedes the drop or
+// replacement of a source it reads, its SET (TTL) follows the source's
+// creation, and a removed column table is dropped before the source its policy
+// read; see [columnTTLPlan] and [dropRemovedTables].
 //
 // Users, groups, memberships and permissions are planned around these phases:
 // revokes, removed memberships and new or changed principals before them, new
@@ -225,10 +228,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := p.refuseUnplannableObjectChanges(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
-	external, err := p.planExternal(diff)
-	if err != nil {
-		return nil, err
-	}
 	columnTTL, err := p.planColumnTTL(diff)
 	if err != nil {
 		return nil, err
@@ -248,8 +247,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
 	result = append(result, columnTTL.before...)
-	result = append(result, removedTablesBeforeSources(diff, external)...)
-	result = append(result, external.drops...)
+	removed := dropRemovedTables(diff, columnTTL.reads)
 	earlyTables, lateTables := splitColumnTTLCreations(p.createTables(diff, inlineIndexes, sequences.created, semantics))
 	result = append(result, earlyTables...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
@@ -269,8 +267,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, indexComments(diff, removedTables, rebuilds, semantics)...)
 	beforeChangefeeds := result
 	result = nil
-	result = append(result, removedTablesAfterSources(diff, external)...)
-	result = append(result, external.creations...)
+	result = append(result, removed...)
 	result = append(result, lateTables...)
 	result = append(result, columnTTL.after...)
 	result = append(result, changeReplications(diff)...)
@@ -278,7 +275,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, viewComments(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)
-	return p.scheduleFeatureChanges(ctx, runtime, diff, rebuilds, semantics, beforeChangefeeds, result)
+	return p.scheduleFeatureChanges(ctx, runtime, diff, rebuilds, semantics, columnTTL.reads, beforeChangefeeds, result)
 }
 
 // refuseUnplannableObjectChanges refuses every index addition, in-place index

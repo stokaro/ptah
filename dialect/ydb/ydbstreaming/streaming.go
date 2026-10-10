@@ -11,8 +11,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/yqlquery"
 )
 

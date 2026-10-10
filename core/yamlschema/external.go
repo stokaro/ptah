@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbexternal"
+	"ptah.run/dialect/ydb/ydbexternal"
 )
 
 // externalDataSourceSpec is one YDB external data source in a YAML document.
@@ -35,8 +35,9 @@ type externalColumnSpec struct {
 	NotNull bool         `yaml:"not_null"`
 }
 
-// addExternalObjects reads the document's external data sources and external
-// tables, each checked by the rules the annotation parser reads one with.
+// addExternalObjects declares the document's external data sources and
+// external tables as feature objects, each checked by the rules the
+// annotation parser reads one with.
 func (d document) addExternalObjects(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.ExternalDataSources) {
 		spec := d.ExternalDataSources[key]
@@ -48,34 +49,34 @@ func (d document) addExternalObjects(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("external data source %q: %w", key, err)
 		}
-		db.ExternalDataSources = append(db.ExternalDataSources, schemamodel.ExternalDataSource{
-			Name:       name,
-			Schema:     strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"),
+		objects, err := ydbexternal.DeclareSource(db.FeatureObjects, string(spec.Schema), name, "", ydbexternal.DataSource{
 			SourceType: strings.TrimSpace(string(spec.SourceType)),
 			Location:   strings.TrimSpace(string(spec.Location)),
 			AuthMethod: strings.TrimSpace(string(spec.AuthMethod)),
 			Options:    options,
 		})
+		if err != nil {
+			return fmt.Errorf("external data source %q: %w", key, err)
+		}
+		db.FeatureObjects = objects
 	}
 	for _, key := range sortedKeys(d.ExternalTables) {
-		table, err := d.ExternalTables[key].toModel(key)
-		if err != nil {
+		if err := d.ExternalTables[key].declare(db, key); err != nil {
 			return fmt.Errorf("external table %q: %w", key, err)
 		}
-		db.ExternalTables = append(db.ExternalTables, table)
 	}
 	return nil
 }
 
-// toModel reads one external table, named key unless it names itself.
-func (spec externalTableSpec) toModel(key string) (schemamodel.ExternalTable, error) {
+// declare adds one external table to db, named key unless it names itself.
+func (spec externalTableSpec) declare(db *schemamodel.Database, key string) error {
 	options, err := ydbexternal.CheckOptions(scalarMap(spec.Options), ydbexternal.TableReserved...)
 	if err != nil {
-		return schemamodel.ExternalTable{}, err
+		return err
 	}
 	name, err := externalObjectName(spec.Name, key)
 	if err != nil {
-		return schemamodel.ExternalTable{}, err
+		return err
 	}
 	columns := make([]ydbexternal.Column, 0, len(spec.Columns))
 	for _, column := range spec.Columns {
@@ -85,21 +86,19 @@ func (spec externalTableSpec) toModel(key string) (schemamodel.ExternalTable, er
 		})
 	}
 	if err := ydbexternal.CheckColumns(columns); err != nil {
-		return schemamodel.ExternalTable{}, err
+		return err
 	}
-	table := schemamodel.ExternalTable{
-		Name:       name,
-		Schema:     strings.Trim(strings.TrimSpace(string(spec.Schema)), "/"),
+	objects, err := ydbexternal.DeclareTable(db.FeatureObjects, string(spec.Schema), name, "", ydbexternal.Table{
 		DataSource: strings.TrimSpace(string(spec.DataSource)),
 		Location:   strings.TrimSpace(string(spec.Location)),
+		Columns:    columns,
 		Options:    options,
+	})
+	if err != nil {
+		return err
 	}
-	for _, column := range columns {
-		table.Columns = append(table.Columns, schemamodel.ExternalColumn{
-			Name: column.Name, Type: column.Type, NotNull: column.NotNull,
-		})
-	}
-	return table, nil
+	db.FeatureObjects = objects
+	return nil
 }
 
 // externalObjectName is the name an external object's entry gives, or its

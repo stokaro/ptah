@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
@@ -29,7 +30,6 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
-	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
@@ -251,19 +251,22 @@ type renderContext struct {
 	streamingAnnotations    []string
 	workloadAnnotations     []string
 	secretAnnotations       []string
-	aggregateAnnotations    []string
-	hypertablesByTable      map[string]*tsschema.DesiredHypertable
-	changefeedsByTable      map[objectidentity.Key][]ydbschema.ChangefeedSpec
-	db                      *schemamodel.Database
-	opts                    Options
-	enumsByName             map[string]schemamodel.Enum
-	fieldsByTable           map[string][]schemamodel.Field
-	indexesByTable          map[string][]schemamodel.Index
-	constraintsByTable      map[string][]schemamodel.Constraint
-	rlsByTable              map[string][]schemamodel.RLSPolicy
-	rlsEnabledByTable       map[string][]schemamodel.RLSEnabledTable
-	triggersByTable         map[string][]schemamodel.Trigger
-	imports                 map[string]struct{}
+	// externalAnnotations are the declared external data sources, then the
+	// external tables.
+	externalAnnotations  [2][]string
+	aggregateAnnotations []string
+	hypertablesByTable   map[string]*tsschema.DesiredHypertable
+	changefeedsByTable   map[objectidentity.Key][]ydbschema.ChangefeedSpec
+	db                   *schemamodel.Database
+	opts                 Options
+	enumsByName          map[string]schemamodel.Enum
+	fieldsByTable        map[string][]schemamodel.Field
+	indexesByTable       map[string][]schemamodel.Index
+	constraintsByTable   map[string][]schemamodel.Constraint
+	rlsByTable           map[string][]schemamodel.RLSPolicy
+	rlsEnabledByTable    map[string][]schemamodel.RLSEnabledTable
+	triggersByTable      map[string][]schemamodel.Trigger
+	imports              map[string]struct{}
 }
 
 func newRenderContext(db *schemamodel.Database, opts Options) *renderContext {
@@ -425,7 +428,7 @@ func (ctx *renderContext) hasYDBObjects() bool {
 
 // hasExternalObjects reports declarations for external access and its credentials.
 func (ctx *renderContext) hasExternalObjects() bool {
-	return len(ctx.secretAnnotations) > 0 || len(ctx.db.ExternalDataSources) > 0 || len(ctx.db.ExternalTables) > 0
+	return len(ctx.secretAnnotations) > 0 || len(ctx.externalAnnotations[0]) > 0 || len(ctx.externalAnnotations[1]) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -553,13 +556,13 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 }
 
-// writeExternalObjects writes sources and tables in stable order.
+// writeExternalObjects writes the data sources and then the external tables,
+// each in path order.
 func (ctx *renderContext) writeExternalObjects(w *sourceWriter) {
-	for _, source := range sortedByName(ctx.db.ExternalDataSources, schemamodel.ExternalDataSource.QualifiedName) {
-		w.writeComment(externalDataSourceAnnotation(source))
-	}
-	for _, table := range sortedByName(ctx.db.ExternalTables, schemamodel.ExternalTable.QualifiedName) {
-		w.writeComment(externalTableAnnotation(table))
+	for _, annotations := range ctx.externalAnnotations {
+		for _, text := range annotations {
+			w.writeComment(text)
+		}
 	}
 }
 
@@ -1142,12 +1145,13 @@ func transferAnnotation(transfer schemamodel.Transfer) string {
 	return annotation("ptah:schema:transfer", attrs...)
 }
 
-// externalDataSourceAnnotation writes a YDB external data source as its
-// annotation. A credential is an option naming a secret, never a value.
-func externalDataSourceAnnotation(source schemamodel.ExternalDataSource) string {
+// externalDataSourceAnnotation writes the YDB external data source name in the
+// directory schema as its annotation. A credential is an option naming a
+// secret, never a value.
+func externalDataSourceAnnotation(schema, name string, source ydbexternal.DataSource) string {
 	return annotation("ptah:schema:externaldatasource",
-		attr{name: ydbexternal.AttributeName, value: source.Name, set: true},
-		attr{name: ydbexternal.AttributeSchema, value: source.Schema, set: source.Schema != ""},
+		attr{name: ydbexternal.AttributeName, value: name, set: true},
+		attr{name: ydbexternal.AttributeSchema, value: schema, set: schema != ""},
 		attr{name: ydbexternal.AttributeSourceType, value: source.SourceType, set: true},
 		attr{name: ydbexternal.AttributeLocation, value: source.Location, set: source.Location != ""},
 		attr{name: ydbexternal.AttributeAuthMethod, value: source.AuthMethod, set: true},
@@ -1156,28 +1160,18 @@ func externalDataSourceAnnotation(source schemamodel.ExternalDataSource) string 
 	)
 }
 
-// externalTableAnnotation writes a YDB external table as its annotation.
-func externalTableAnnotation(table schemamodel.ExternalTable) string {
-	columns := make([]ydbexternal.Column, 0, len(table.Columns))
-	for _, column := range table.Columns {
-		columns = append(columns, ydbexternal.Column{Name: column.Name, Type: column.Type, NotNull: column.NotNull})
-	}
+// externalTableAnnotation writes the YDB external table name in the directory
+// schema as its annotation.
+func externalTableAnnotation(schema, name string, table ydbexternal.Table) string {
 	return annotation("ptah:schema:externaltable",
-		attr{name: ydbexternal.AttributeName, value: table.Name, set: true},
-		attr{name: ydbexternal.AttributeSchema, value: table.Schema, set: table.Schema != ""},
+		attr{name: ydbexternal.AttributeName, value: name, set: true},
+		attr{name: ydbexternal.AttributeSchema, value: schema, set: schema != ""},
 		attr{name: ydbexternal.AttributeDataSource, value: table.DataSource, set: true},
 		attr{name: ydbexternal.AttributeLocation, value: table.Location, set: true},
-		attr{name: ydbexternal.AttributeColumns, value: ydbexternal.FormatColumns(columns), set: true},
+		attr{name: ydbexternal.AttributeColumns, value: ydbexternal.FormatColumns(table.Columns), set: true},
 		attr{name: ydbexternal.AttributeOptions, value: ydbexternal.FormatOptions(table.Options),
 			set: len(table.Options) > 0},
 	)
-}
-
-// sortedByName returns values ordered by the name each one has.
-func sortedByName[T any](values []T, name func(T) string) []T {
-	sorted := slices.Clone(values)
-	sort.SliceStable(sorted, func(i, j int) bool { return name(sorted[i]) < name(sorted[j]) })
-	return sorted
 }
 
 func roleAnnotation(role schemamodel.Role) string {

@@ -8,16 +8,17 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/ydbsource"
 )
 
 // reportFeatureObjects names every feature value the HCL document leaves out,
-// and every secret or topic the source records as not described without
-// holding it, which HCL has no directive for. It reads identities without interpreting
-// payloads, so an unrecognized provider cannot turn export loss into a
-// successful cleanup of the source annotations.
+// and every secret, topic or external object the source records as not
+// described without holding it, which HCL has no directive for. It reads
+// identities without interpreting payloads, so an unrecognized provider cannot
+// turn export loss into a successful cleanup of the source annotations.
 func (r *renderer) reportFeatureObjects() {
 	for _, ref := range r.db.FeatureObjects.Refs() {
 		if ref.Kind == objectidentity.Kind(ydbcoordination.Kind) || ref.Kind == objectidentity.Kind(tsschema.ContinuousAggregateKind) {
@@ -70,32 +71,10 @@ func (r *renderer) reportFeatureObjects() {
 
 // unrecordableLimits are the kinds whose source limits HCL has no directive
 // for. Changefeeds, streaming queries and pools report their own losses.
-var unrecordableLimits = []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind}
+var unrecordableLimits = []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind}
 
 func featurePath(ref objectidentity.ID) string {
 	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)
-}
-
-// reportExternalObjects names every YDB external data source and external
-// table the document leaves out, because HCL has no block for either. Like a
-// changefeed's, the loss makes `--cleanup-go-annotations` refuse, and reading
-// the document back drops no such object: the loader records that HCL cannot
-// express one.
-func (r *renderer) reportExternalObjects() {
-	for _, source := range r.db.ExternalDataSources {
-		r.diagnostics = append(r.diagnostics, Diagnostic{
-			Severity: SeverityWarning,
-			Path:     "external_data_source." + source.QualifiedName(),
-			Message:  fmt.Sprintf("external data source %s is not represented in HCL", source.QualifiedName()),
-		})
-	}
-	for _, table := range r.db.ExternalTables {
-		r.diagnostics = append(r.diagnostics, Diagnostic{
-			Severity: SeverityWarning,
-			Path:     "external_table." + table.QualifiedName(),
-			Message:  fmt.Sprintf("external table %s is not represented in HCL", table.QualifiedName()),
-		})
-	}
 }
 
 // coordinationNode holds the validated inputs for one HCL block.

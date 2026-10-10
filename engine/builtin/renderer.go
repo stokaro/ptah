@@ -404,9 +404,6 @@ func prepareNode(
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		key, subject := replicationNodeSubject(typed)
 		return node, refuseReplicationFamily(dialect, caps, key, subject)
-	case *ast.CreateExternalDataSourceNode, *ast.DropExternalDataSourceNode, *ast.CreateExternalTableNode,
-		*ast.DropExternalTableNode:
-		return node, refuseYDBObject(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
 	}
@@ -1109,106 +1106,12 @@ func refuseVectorIndex(dialect string, caps capability.Capabilities, name string
 	}
 }
 
-// validateDeclaredYDBObjects refuses the YDB table settings and objects a
-// declaration holds that the target cannot write: a table's row deletion
-// policy and changefeeds, and the external data sources and tables. A secret
-// is a feature object its owner validates.
+// validateDeclaredYDBObjects refuses the YDB table settings a declaration
+// holds that the target cannot write: a table's row deletion policy and
+// changefeeds. A secret, a topic and an external object are feature objects
+// their owner validates.
 func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	if err := validateDeclaredTableSettings(dialect, caps, database); err != nil {
-		return err
-	}
-	return validateDeclaredExternalObjects(dialect, caps, database)
-}
-
-// refuseYDBObject refuses node, a YDB external object statement, on a target
-// without the key it needs, naming the object.
-func refuseYDBObject(dialect string, caps capability.Capabilities, node ast.Node) error {
-	switch typed := node.(type) {
-	case *ast.CreateExternalDataSourceNode:
-		return refuseExternal(dialect, caps, "external data source "+typed.Name)
-	case *ast.DropExternalDataSourceNode:
-		return refuseExternal(dialect, caps, "DROP EXTERNAL DATA SOURCE "+typed.Name)
-	case *ast.CreateExternalTableNode:
-		return refuseExternal(dialect, caps, "external table "+typed.Name)
-	case *ast.DropExternalTableNode:
-		return refuseExternal(dialect, caps, "DROP EXTERNAL TABLE "+typed.Name)
-	default:
-		return nil
-	}
-}
-
-// refuseExternal refuses subject, a YDB external data source or external
-// table, on a target without [capability.ExternalDataSources].
-func refuseExternal(dialect string, caps capability.Capabilities, subject string) error {
-	if caps.Has(capability.ExternalDataSources) {
-		return nil
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.ExternalDataSources),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, capability.ExternalDataSources, normalized),
-	}
-}
-
-// validateDeclaredExternalObjects refuses a declared external data source or
-// external table the target cannot create, before any statement is emitted:
-// on a target without [capability.ExternalDataSources]; on YDB one whose path
-// another declared table or external object holds, since a path names one
-// object (measured on
-// 25.1.4.7 and 26.2.1.14: `unexpected path type`); and an external table over
-// a declared data source that is not object storage, which the server refuses
-// (`Only ObjectStorage source type supported but got PostgreSQL`).
-func validateDeclaredExternalObjects(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	paths := make(map[string]string)
-	for _, table := range database.Tables {
-		paths[table.QualifiedName()] = "table"
-	}
-	sourceTypes := make(map[string]string, len(database.ExternalDataSources))
-	claim := func(name, kind string) error {
-		if other, taken := paths[name]; taken {
-			return &ptaherr.RenderError{
-				Dialect: platform.NormalizeDialect(dialect),
-				Err:     ptaherr.ErrUnsupportedFeature,
-				Message: fmt.Sprintf("%s %s has the path of a declared %s, and YDB keeps one object at a path "+
-					"(`unexpected path type`)", kind, name, other),
-			}
-		}
-		paths[name] = kind
-		return nil
-	}
-	for _, source := range database.ExternalDataSources {
-		name := source.QualifiedName()
-		if err := refuseExternal(dialect, caps, "external data source "+name); err != nil {
-			return err
-		}
-		if err := claim(name, "external data source"); err != nil {
-			return err
-		}
-		sourceTypes[strings.Trim(source.Schema+"/"+source.Name, "/")] = source.SourceType
-	}
-	for _, table := range database.ExternalTables {
-		name := table.QualifiedName()
-		if err := refuseExternal(dialect, caps, "external table "+name); err != nil {
-			return err
-		}
-		if err := claim(name, "external table"); err != nil {
-			return err
-		}
-		sourceType, declared := sourceTypes[strings.Trim(table.DataSource, "/")]
-		if declared && sourceType != "ObjectStorage" {
-			return &ptaherr.RenderError{
-				Dialect: platform.NormalizeDialect(dialect),
-				Err:     ptaherr.ErrUnsupportedFeature,
-				Message: fmt.Sprintf("external table %s reads data source %s, a %s source; an external table reads "+
-					"files, from an ObjectStorage source (`Only ObjectStorage source type supported`)",
-					name, table.DataSource, sourceType),
-			}
-		}
-	}
-	return nil
+	return validateDeclaredTableSettings(dialect, caps, database)
 }
 
 // refuseReplicationFamily refuses subject, an async replication or a

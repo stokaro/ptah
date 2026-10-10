@@ -1534,51 +1534,6 @@ func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.
 	return nil
 }
 
-// FromExternalDataSource converts a schemamodel.ExternalDataSource to the node
-// that creates it, or replaces it when replace is set.
-func FromExternalDataSource(source schemamodel.ExternalDataSource, replace bool) *ast.CreateExternalDataSourceNode {
-	return &ast.CreateExternalDataSourceNode{
-		Name:       source.QualifiedName(),
-		SourceType: source.SourceType,
-		Location:   source.Location,
-		AuthMethod: source.AuthMethod,
-		Options:    maps.Clone(source.Options),
-		Replace:    replace,
-	}
-}
-
-// FromExternalTable converts a schemamodel.ExternalTable to the node that
-// creates it, or replaces it when replace is set.
-func FromExternalTable(table schemamodel.ExternalTable, replace bool) *ast.CreateExternalTableNode {
-	node := &ast.CreateExternalTableNode{
-		Name:       table.QualifiedName(),
-		DataSource: table.DataSource,
-		Location:   table.Location,
-		Options:    maps.Clone(table.Options),
-		Replace:    replace,
-	}
-	for _, column := range table.Columns {
-		node.Columns = append(node.Columns, ast.ExternalColumn{Name: column.Name, Type: column.Type, NotNull: column.NotNull})
-	}
-	return node
-}
-
-// appendExternalStatements adds a CREATE node for each declared external data
-// source and then for each external table, which reads one.
-func appendExternalStatements(visit func(ast.Node) error, database *schemamodel.Database) error {
-	for _, source := range database.ExternalDataSources {
-		if err := visit(FromExternalDataSource(source, false)); err != nil {
-			return err
-		}
-	}
-	for _, table := range database.ExternalTables {
-		if err := visit(FromExternalTable(table, false)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // fromExtendedProperty converts a schemamodel.ExtendedProperty into the node that
 // writes it.
 //
@@ -2246,14 +2201,6 @@ func appendPreTableStatements(
 	// Roles precede the objects that name them: a grant or a policy names a
 	// role. They go ahead of the routines, as in a migration plan.
 	if err := appendRoleStatements(visit, database); err != nil {
-		return err
-	}
-
-	// A data source names a secret by its path, and the server looks the
-	// secret up when the source is created, so the secret's owner places its
-	// creation before the source; an external table reads a data source, and
-	// a view may read an external table.
-	if err := appendExternalStatements(visit, &database); err != nil {
 		return err
 	}
 

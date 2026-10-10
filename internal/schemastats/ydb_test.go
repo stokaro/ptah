@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
@@ -19,15 +20,9 @@ import (
 func TestCollect_YDBFamilies(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{Name: "orders"}, {Name: "users"}},
-		ExternalTables: []schemamodel.ExternalTable{
-			{Columns: make([]schemamodel.ExternalColumn, 2)},
-			{Columns: make([]schemamodel.ExternalColumn, 3)},
-			{},
-		},
-		AsyncReplications:   make([]schemamodel.AsyncReplication, 7),
-		Transfers:           make([]schemamodel.Transfer, 8),
-		ExternalDataSources: make([]schemamodel.ExternalDataSource, 10),
+		Tables:            []schemamodel.Table{{Name: "orders"}, {Name: "users"}},
+		AsyncReplications: make([]schemamodel.AsyncReplication, 7),
+		Transfers:         make([]schemamodel.Transfer, 8),
 	}
 	var err error
 	db.FeatureObjects, err = schemaext.NewObjects(
@@ -51,6 +46,7 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 	}
 	db.FeatureObjects = addStreamingMetricFixtures(c, db.FeatureObjects)
+	db.FeatureObjects = addExternalMetricFixtures(c, db.FeatureObjects)
 	for i := range 9 {
 		db.FeatureObjects, err = db.FeatureObjects.With(ydbsecret.DesiredObject("ext", fmt.Sprintf("secret_%d", i), "", "PTAH_SECRET_X"))
 		c.Assert(err, qt.IsNil)
@@ -64,7 +60,7 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		{"resource_pool_classifiers", "6"}, {"async_replications", "7"},
 		{"transfers", "8"}, {"secrets", "9"},
 		{"external_data_sources", "10"}, {"external_tables", "3"},
-		{"external_columns", "5"}, {"streaming_queries", "11"},
+		{"external_columns", "6"}, {"streaming_queries", "11"},
 	} {
 		c.Check(metricValue(c, body, "ptah_schema_"+test.name), qt.Equals, test.want, qt.Commentf("metric %s", test.name))
 		c.Check(metricValue(c, render(c, nil, nil), "ptah_schema_"+test.name), qt.Equals, "0", qt.Commentf("empty metric %s", test.name))
@@ -76,6 +72,28 @@ func addStreamingMetricFixtures(c *qt.C, objects schemaext.Objects) schemaext.Ob
 	for i := range 11 {
 		var err error
 		objects, err = objects.With(ydbstreaming.DesiredObject("", fmt.Sprintf("query_%d", i), "", ydbstreaming.Spec{Text: "SELECT 1;"}, false))
+		c.Assert(err, qt.IsNil)
+	}
+	return objects
+}
+
+// addExternalMetricFixtures adds ten data sources and three external tables
+// holding six columns between them.
+func addExternalMetricFixtures(c *qt.C, objects schemaext.Objects) schemaext.Objects {
+	c.Helper()
+	for i := range 10 {
+		var err error
+		objects, err = objects.With(ydbexternal.DesiredSourceObject("ext", fmt.Sprintf("source_%d", i), "",
+			ydbexternal.DataSource{SourceType: "ObjectStorage", AuthMethod: "NONE"}))
+		c.Assert(err, qt.IsNil)
+	}
+	for i, columns := range []int{2, 3, 1} {
+		table := ydbexternal.Table{DataSource: "ext/source_0", Location: "f/"}
+		for column := range columns {
+			table.Columns = append(table.Columns, ydbexternal.Column{Name: fmt.Sprintf("c%d", column), Type: "Int64"})
+		}
+		var err error
+		objects, err = objects.With(ydbexternal.DesiredTableObject("ext", fmt.Sprintf("table_%d", i), "", table))
 		c.Assert(err, qt.IsNil)
 	}
 	return objects

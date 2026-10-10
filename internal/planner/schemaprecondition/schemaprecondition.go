@@ -163,15 +163,6 @@ func RefuseYDBColumnFamilyChanges(dialect string, diff *difftypes.SchemaDiff) er
 	return nil
 }
 
-// RefuseYDBObjects refuses a diff that changes a YDB external data source or
-// external table, for a planner of dialect that plans none of them, through
-// [RefuseExternalObjects]. Each planner calls it at the point it refuses YDB
-// objects, before it emits anything; a topic or a secret is a feature change
-// its owner refuses on a target without it.
-func RefuseYDBObjects(dialect string, diff *difftypes.SchemaDiff) error {
-	return RefuseExternalObjects(dialect, diff)
-}
-
 // RefuseRoleMemberships refuses a diff that adds or removes the membership of
 // a role in another, for a planner of dialect that plans none. The comparison
 // records memberships only on a target with capability.RoleMembership, which
@@ -264,39 +255,4 @@ func RefuseYDBTablePartitioningChanges(dialect string, diff *difftypes.SchemaDif
 		}
 	}
 	return nil
-}
-
-// RefuseExternalObjects refuses a diff that creates, drops or replaces a YDB
-// external data source or external table, for a planner of dialect that plans
-// none. Only the YDB planner plans one, so planning nothing here would report
-// the object applied while the database has none.
-func RefuseExternalObjects(dialect string, diff *difftypes.SchemaDiff) error {
-	if diff == nil {
-		return nil
-	}
-	var subject string
-	switch {
-	case len(diff.ExternalDataSourcesAdded) > 0:
-		subject = "creates external data source " + diff.ExternalDataSourcesAdded[0].QualifiedName()
-	case len(diff.ExternalDataSourcesRemoved) > 0:
-		subject = "drops external data source " + diff.ExternalDataSourcesRemoved[0].QualifiedName()
-	case len(diff.ExternalDataSourcesChanged) > 0:
-		subject = "replaces external data source " + diff.ExternalDataSourcesChanged[0].Declared.QualifiedName()
-	case len(diff.ExternalTablesAdded) > 0:
-		subject = "creates external table " + diff.ExternalTablesAdded[0].QualifiedName()
-	case len(diff.ExternalTablesRemoved) > 0:
-		subject = "drops external table " + diff.ExternalTablesRemoved[0].QualifiedName()
-	case len(diff.ExternalTablesChanged) > 0:
-		subject = "replaces external table " + diff.ExternalTablesChanged[0].Declared.QualifiedName()
-	default:
-		return nil
-	}
-	return &ptaherr.CapabilityError{
-		Dialect: dialect,
-		Feature: string(capability.ExternalDataSources),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("the diff %s, which requires target capability %s, unavailable on this %s target; "+
-			"only a YDB plan changes an external data source or an external table", subject,
-			capability.ExternalDataSources, dialect),
-	}
 }

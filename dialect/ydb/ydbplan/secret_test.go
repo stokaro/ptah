@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbplan"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/dialect/ydb/ydbsecret"
@@ -65,6 +66,10 @@ func scheduledNames(c *qt.C, chain hostChain, result featureplan.Result) []strin
 			names = append(names, string(operation.Operation)+" "+operation.Path())
 		case *ydbast.Topic:
 			names = append(names, topicOperationName(operation))
+		case *ydbast.ExternalDataSource:
+			names = append(names, string(operation.Operation)+" source "+ydbexternal.Display(operation.Schema, operation.Name))
+		case *ydbast.ExternalTable:
+			names = append(names, string(operation.Operation)+" table "+ydbexternal.Display(operation.Schema, operation.Name))
 		default:
 			names = append(names, step.ID.Name)
 		}
