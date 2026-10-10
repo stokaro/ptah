@@ -487,7 +487,17 @@ func (r *Reader) storage(
 	db *catalog.Database,
 ) error {
 	if columnTable != nil {
-		table.YDBColumnTable = columnTable.Spec.Clone()
+		observed := &ydbschema.ObservedColumnStore{ColumnStore: columnTable.Spec.Clone()}
+		if err := ydbschema.ValidateObservedColumnStore(observed); err != nil {
+			return err
+		}
+		facets, err := table.Facets.With(observed)
+		if err != nil {
+			return err
+		}
+		if table.Facets, err = facets.WithTargetScope(ydbschema.ColumnStoreKind, platform.YDB); err != nil {
+			return err
+		}
 		for _, index := range columnTable.Indexes {
 			db.Indexes = append(db.Indexes, catalog.Index{Name: index.Name, TableName: table.Name, Schema: table.Schema, Method: index.Method, Columns: index.Columns, StorageParams: index.Options, Comment: comments.Indexes[index.Name]})
 		}
@@ -614,6 +624,36 @@ func ttlPolicy(settings *Ydb_Table.TtlSettings) (*ydbschema.TTL, error) {
 	default:
 		return nil, fmt.Errorf("its TTL has a mode this build of Ptah does not read (%T)", settings.GetMode())
 	}
+}
+
+// tableFacetCoverage records what the read knows about the table facets
+// whose coverage spans every returned table: the TTL and the column storage.
+func tableFacetCoverage(db *catalog.Database) error {
+	if err := ttlCoverage(db); err != nil {
+		return err
+	}
+	return storeCoverage(db)
+}
+
+// storeCoverage records complete column storage knowledge for exactly the
+// tables the read returned, so a returned table without the value is a row
+// table. A table the read did not return is not known to be one.
+func storeCoverage(db *catalog.Database) error {
+	identities := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB))
+	subjects := make([]schemaext.SubjectCoverage, 0, len(db.Tables))
+	for _, table := range db.Tables {
+		subjects = append(subjects, schemaext.SubjectCoverage{
+			Kind: ydbschema.ColumnStoreKind, Subject: identities.TableParts(table.Schema, table.Name),
+			Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+		})
+	}
+	known, err := ydbschema.ColumnStoreCoverage(schemaext.Observed,
+		schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables have inspected YDB storage"}, subjects)
+	if err != nil {
+		return fmt.Errorf("failed to record column storage coverage: %w", err)
+	}
+	db.FeatureCoverage, err = db.FeatureCoverage.Combine(known)
+	return err
 }
 
 // ttlCoverage records complete TTL knowledge for exactly the tables the read

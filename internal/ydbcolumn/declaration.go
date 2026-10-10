@@ -1,5 +1,7 @@
-// Package ydbcolumn owns column-table declarations shared by schema readers,
-// renderers and migration planning. Row tables have a nil column-table spec.
+// Package ydbcolumn reads and writes YDB column-table declarations for the
+// sources, the reader and the renderers: the Go annotation attributes, the
+// monitoring description and the TTL clause. The model is the YDB owner's
+// [ydbschema.ColumnStore]; a row table has none.
 package ydbcolumn
 
 import (
@@ -9,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbttl"
 )
 
@@ -21,13 +23,13 @@ const (
 	AttributeHash = "partition_by_hash"
 	// AttributeShards names the initial column-shard count.
 	AttributeShards = "column_shards"
-	// AttributeTTL carries a JSON-encoded YDBTieredTTLSpec.
+	// AttributeTTL carries a JSON-encoded ydbschema.TieredTTL.
 	AttributeTTL = "column_ttl"
 )
 
 // Parse reads column-table annotations. Storage must be selected explicitly;
 // a hash key or a shard count alone must not change a row table's storage kind.
-func Parse(values map[string]string) (*ast.YDBColumnTableSpec, error) {
+func Parse(values map[string]string) (*ydbschema.ColumnStore, error) {
 	if value, present := values[AttributeStore]; present && strings.TrimSpace(value) == "" {
 		return nil, fmt.Errorf("store must be ROW or COLUMN")
 	}
@@ -43,7 +45,7 @@ func Parse(values map[string]string) (*ast.YDBColumnTableSpec, error) {
 		}
 		return nil, nil
 	}
-	spec := &ast.YDBColumnTableSpec{}
+	spec := &ydbschema.ColumnStore{}
 	if raw, present := values[AttributeHash]; present {
 		for name := range strings.SplitSeq(raw, ",") {
 			name = strings.TrimSpace(name)
@@ -61,74 +63,38 @@ func Parse(values map[string]string) (*ast.YDBColumnTableSpec, error) {
 		spec.Partitions = count
 	}
 	if raw, present := values[AttributeTTL]; present {
-		decoder := json.NewDecoder(strings.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&spec.TTL); err != nil {
-			return nil, fmt.Errorf("%s: %w", AttributeTTL, err)
+		ttl, err := parseTTL(raw)
+		if err != nil {
+			return nil, err
 		}
-		var extra any
-		if err := decoder.Decode(&extra); err != io.EOF {
-			return nil, fmt.Errorf("%s must contain exactly one JSON object", AttributeTTL)
-		}
-		if spec.TTL == nil {
-			return nil, fmt.Errorf("%s must be an object, not null", AttributeTTL)
-		}
+		spec.TTL = ttl
 	}
-	if err := Validate(spec); err != nil {
+	if err := ydbschema.CheckColumnStore(*spec); err != nil {
 		return nil, err
 	}
 	return spec, nil
 }
 
-// Validate checks facts independent of the table's columns and server capabilities.
-func Validate(spec *ast.YDBColumnTableSpec) error {
-	if spec == nil {
-		return nil
+// parseTTL reads the JSON object of the column_ttl attribute, with its unit
+// written as YQL writes it.
+func parseTTL(raw string) (*ydbschema.TieredTTL, error) {
+	var ttl *ydbschema.TieredTTL
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&ttl); err != nil {
+		return nil, fmt.Errorf("%s: %w", AttributeTTL, err)
 	}
-	seen := make(map[string]bool, len(spec.HashColumns))
-	for _, name := range spec.HashColumns {
-		if strings.TrimSpace(name) == "" || seen[name] {
-			return fmt.Errorf("hash partitioning column %q is empty or repeated", name)
-		}
-		seen[name] = true
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return nil, fmt.Errorf("%s must contain exactly one JSON object", AttributeTTL)
 	}
-	if spec.Partitions > 1<<32-1 {
-		return fmt.Errorf("column shard count exceeds a 32-bit integer")
+	if ttl == nil {
+		return nil, fmt.Errorf("%s must be an object, not null", AttributeTTL)
 	}
-	return validateTTL(spec.TTL)
-}
-
-func validateTTL(spec *ast.YDBTieredTTLSpec) error {
-	if spec == nil {
-		return nil
+	unit, err := ydbttl.Unit(ttl.Unit)
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(spec.Column) == "" || len(spec.Tiers) == 0 {
-		return fmt.Errorf("tiered TTL requires a column and at least one tier")
-	}
-	if _, err := ydbttl.Unit(spec.Unit); err != nil {
-		return err
-	}
-	var previous uint64
-	hasEviction := false
-	for position, tier := range spec.Tiers {
-		seconds, err := ydbttl.IntervalSeconds(tier.Interval)
-		if err != nil {
-			return fmt.Errorf("TTL tier %d: %w", position+1, err)
-		}
-		if position > 0 && seconds <= previous {
-			return fmt.Errorf("TTL tier intervals must increase strictly")
-		}
-		if tier.ExternalSource == "" && position != len(spec.Tiers)-1 {
-			return fmt.Errorf("only the last TTL tier may delete data")
-		}
-		if tier.ExternalSource != "" && !strings.HasPrefix(tier.ExternalSource, "/") {
-			return fmt.Errorf("TTL tier external source must be an absolute database path")
-		}
-		hasEviction = hasEviction || tier.ExternalSource != ""
-		previous = seconds
-	}
-	if !hasEviction {
-		return fmt.Errorf("column_ttl requires an eviction tier; use row_deletion_policy for deletion alone")
-	}
-	return nil
+	ttl.Unit = unit
+	return ttl, nil
 }

@@ -109,8 +109,7 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			// reversal can swap them. None of them was swapped, or carried at
 			// all: a migration that changed a table's comment rolled back to
 			// "No rollback operations needed" (stokaro/ptah#2418).
-			CommentChange:        reverseCommentChange(tableDiff.CommentChange),
-			YDBColumnTableChange: reverseColumnTableChange(tableDiff.YDBColumnTableChange),
+			CommentChange: reverseCommentChange(tableDiff.CommentChange),
 		}
 	}
 	return reversed
@@ -269,11 +268,4 @@ func priorTableCreation(prior *schemamodel.Database, name string, semantics iden
 	// nestedCoverageExempt records that, so it is a decision and not a gap.
 	creation.SelfReferencingForeignKeys = nil
 	return creation
-}
-
-func reverseColumnTableChange(change *difftypes.YDBColumnTableChange) *difftypes.YDBColumnTableChange {
-	if change == nil {
-		return nil
-	}
-	return &difftypes.YDBColumnTableChange{Desired: change.Current.Clone(), Current: change.Desired.Clone()}
 }

@@ -8,7 +8,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 func withColumnStoreKeys(p plan, dialect string) plan {
@@ -53,8 +55,8 @@ func ydbColumnStoreReadback(table string) check {
 		attempt.Accepted = true
 		for _, found := range db.Tables {
 			if found.Name == table {
-				spec := found.YDBColumnTable
-				return attempt, spec != nil && spec.Partitions == 1 && slices.Equal(spec.HashColumns, []string{"id"}), "read column storage and hash partitioning"
+				spec, held, err := schemaext.FacetAs[*ydbschema.ObservedColumnStore](found.Facets, ydbschema.ColumnStoreKind)
+				return attempt, err == nil && held && spec.Partitions == 1 && slices.Equal(spec.HashColumns, []string{"id"}), "read column storage and hash partitioning"
 			}
 		}
 		return attempt, false, "found no such table"

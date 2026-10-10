@@ -37,8 +37,11 @@ func TestReadYQLColumnTable(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE TABLE events (`a,b` Uint64 NOT NULL, body Utf8, PRIMARY KEY (`a,b`), INDEX body_bloom LOCAL USING bloom_filter ON (body) WITH (false_positive_probability = 0.05)) PARTITION BY HASH (`a,b`) WITH (STORE = COLUMN, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 8);"), "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Tables[0].YDBColumnTable.HashColumns, qt.DeepEquals, []string{"a,b"})
-	c.Assert(database.Tables[0].YDBColumnTable.Partitions, qt.Equals, uint64(8))
+	store, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnStore](database.Tables[0].Facets, ydbschema.ColumnStoreKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(store.HashColumns, qt.DeepEquals, []string{"a,b"})
+	c.Assert(store.Partitions, qt.Equals, uint64(8))
 	c.Assert(database.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"false_positive_probability": "0.05"})
 }
 

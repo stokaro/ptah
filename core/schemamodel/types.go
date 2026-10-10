@@ -828,9 +828,6 @@ type Table struct {
 	Partition           *PartitionSpec               // PostgreSQL table partitioning metadata
 	CustomSQL           string                       // Custom SQL to append to CREATE TABLE
 	Overrides           map[string]map[string]string // Platform-specific overrides
-	// YDBColumnTable selects column-oriented storage and its hash partitioning.
-	// Nil selects row storage. Other dialects refuse this declaration.
-	YDBColumnTable *ast.YDBColumnTableSpec `json:",omitzero"`
 
 	// DependsOn names tables this one must be created after, beyond the ones
 	// its foreign keys imply. See [BuildDependencyGraph] for what a declared

@@ -194,8 +194,7 @@ func convertTablesAndFields(
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
 			// other (stokaro/ptah#1027).
-			YDBColumnTable: dbTable.YDBColumnTable.Clone(),
-			Overrides:      tableStorageOverrides(dbTable),
+			Overrides: tableStorageOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)
 

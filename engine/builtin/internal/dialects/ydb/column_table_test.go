@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
@@ -15,7 +18,7 @@ func TestRender_ColumnTable(t *testing.T) {
 	node := ast.NewCreateTable("events")
 	node.AddColumn(ast.NewColumn("id", "Uint64").SetPrimary())
 	node.AddColumn(ast.NewColumn("body", "Utf8"))
-	node.YDBColumnTable = &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 1}
+	node.Facets = must.Must(schemaext.NewFacets(&ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{HashColumns: []string{"id"}, Partitions: 1}}))
 	node.AddIndex(&ast.IndexNode{Name: "bf", Type: "bloom_filter", Columns: []string{"body"}})
 	got, err := ydb.NewWithCapabilities(capability.YDB262()).Render(node)
 	c.Assert(err, qt.IsNil)
@@ -27,7 +30,7 @@ func TestRender_ColumnTableRejectsGlobalIndex(t *testing.T) {
 	node := ast.NewCreateTable("events")
 	node.AddColumn(ast.NewColumn("id", "Uint64").SetPrimary())
 	node.AddColumn(ast.NewColumn("body", "Utf8"))
-	node.YDBColumnTable = &ast.YDBColumnTableSpec{}
+	node.Facets = must.Must(schemaext.NewFacets(&ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{}}))
 	node.AddIndex(&ast.IndexNode{Name: "global", Columns: []string{"body"}})
 	_, err := ydb.NewWithCapabilities(capability.YDB262()).Render(node)
 	c.Assert(err, qt.ErrorMatches, `.*column tables require LOCAL indexes.*`)

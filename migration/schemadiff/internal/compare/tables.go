@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbcolumn"
 	"ptah.run/migration/internal/tableidentity"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -253,9 +252,6 @@ func TablesAndColumnsWithTableContext(
 			// different things about what the table is for -- on every run,
 			// with nothing able to fix it (stokaro/ptah#2168).
 			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
-			if !ydbcolumn.Equal(genTable.YDBColumnTable, dbTable.YDBColumnTable) {
-				tableDiff.YDBColumnTableChange = &difftypes.YDBColumnTableChange{Desired: genTable.YDBColumnTable.Clone(), Current: dbTable.YDBColumnTable.Clone()}
-			}
 			if tableChanged(tableDiff) {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
@@ -316,8 +312,7 @@ func tableChanged(tableDiff difftypes.TableDiff) bool {
 	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 		len(tableDiff.ColumnsModified) > 0 ||
 		tableDiff.CommentChange != nil ||
-		len(tableDiff.FeatureChanges) > 0 ||
-		tableDiff.YDBColumnTableChange != nil
+		len(tableDiff.FeatureChanges) > 0
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

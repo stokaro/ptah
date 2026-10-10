@@ -1687,9 +1687,6 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 // their owners through the runtime instead, which refuses a YDB-owned change
 // on this target because no owner plans it here.
 func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
-	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
-		return err
-	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
 		return err
 	}

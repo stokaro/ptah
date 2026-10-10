@@ -1,51 +1,24 @@
 package ydb
 
 import (
-	"fmt"
 	"maps"
 	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/schemadiff/difftypes"
 )
-
-func (p *Planner) refuseColumnTableChange(table difftypes.TableDiff) error {
-	change := table.YDBColumnTableChange
-	if change == nil {
-		return nil
-	}
-	subject := fmt.Sprintf("table %q", table.TableName)
-	if !p.caps.Has(capability.ColumnStoreTables) {
-		return refuseKey(capability.ColumnStoreTables, subject)
-	}
-	if change.Desired == nil || change.Current == nil {
-		return refuseFact(subject, "changing between row and column storage requires an explicit data migration")
-	}
-	if err := ydbcolumn.Validate(change.Desired); err != nil {
-		return refuseFact(subject, err.Error())
-	}
-	if (change.Desired.Partitions != 0 && change.Desired.Partitions != change.Current.Partitions) ||
-		(len(change.Desired.HashColumns) > 0 && !slices.Equal(change.Desired.HashColumns, change.Current.HashColumns)) {
-		return refuseFact(subject, "changing a column table's hash key or shard count requires an explicit data migration")
-	}
-	if change.Desired.TTL != nil && !p.caps.Has(capability.TieredTTL) {
-		return refuseKey(capability.TieredTTL, subject)
-	}
-	if change.Desired.TTL != nil {
-		ttl := change.Desired.TTL
-		return p.refuseTTLColumn(subject, table.Desired, ttl.Column, ttl.Unit)
-	}
-	return nil
-}
 
 // columnTTLPlan detaches existing policies before source replacement or column
 // removal, then installs desired policies after indexes and sources exist.
@@ -68,39 +41,48 @@ func (p *Planner) planColumnTTL(diff *difftypes.SchemaDiff) (columnTTLPlan, erro
 	for _, table := range diff.TablesAdded {
 		added[table.Name] = true
 	}
-	resets := make(map[string]bool)
-	policies := make(map[string]*ast.YDBTieredTTLSpec)
-	previous := make(map[string]*ast.YDBTieredTTLSpec)
+	// The owner of a table's column storage plans the RESET and the SET of a
+	// policy the diff changes; see [ptah.run/dialect/ydb/ydbplan.ColumnStoreService].
+	owned := make(map[string]bool)
+	for _, table := range diff.TablesModified {
+		if slices.ContainsFunc(table.FeatureChanges, func(record schemaext.ChangeRecord) bool {
+			_, ok := record.Value.(*ydbdiff.ColumnStore)
+			return ok
+		}) {
+			owned[table.TableName] = true
+		}
+	}
+	policies := make(map[string]*ydbschema.TieredTTL)
 	for _, table := range diff.DeclaredTables {
-		if table.YDBColumnTable == nil || table.YDBColumnTable.TTL == nil {
+		store, err := ydbschema.DeclaredColumnStore(table.Facets)
+		if err != nil {
+			return columnTTLPlan{}, err
+		}
+		if store == nil || store.TTL == nil {
 			continue
 		}
-		for _, tier := range table.YDBColumnTable.TTL.Tiers {
+		for _, tier := range store.TTL.Tiers {
 			source, found := ydbexternal.ResolveSource(diff.CurrentDatabasePath, tier.ExternalSource)
 			if found && sources.removed[source.Key()] {
 				return columnTTLPlan{}, refuseFact("table "+table.QualifiedName(), "its TTL reads external data source "+tier.ExternalSource+", which the plan drops")
 			}
-			if found && sources.changed[source.Key()] && !added[table.QualifiedName()] {
-				resets[table.QualifiedName()] = true
-				policies[table.QualifiedName()] = table.YDBColumnTable.TTL
-				previous[table.QualifiedName()] = table.YDBColumnTable.TTL
+			if found && sources.changed[source.Key()] && !added[table.QualifiedName()] && !owned[table.QualifiedName()] {
+				policies[table.QualifiedName()] = store.TTL
 			}
 		}
 	}
-	changedColumnTTLPolicies(diff.TablesModified, resets, policies, previous)
 	if len(policies) > 0 && !p.caps.Has(capability.TieredTTL) {
 		return columnTTLPlan{}, refuseKey(capability.TieredTTL, "restoring column-table TTL after source replacement")
 	}
 	plan := columnTTLPlan{reads: commonReads{}}
-	for _, name := range slices.Sorted(maps.Keys(resets)) {
-		node := columnTTLStatement(name, nil)
-		plan.before = append(plan.before, node)
-		plan.reads.add(node, ydbscheme.TieredTTLReads(diff.CurrentDatabasePath, previous[name]), true)
-	}
 	for _, name := range slices.Sorted(maps.Keys(policies)) {
-		node := columnTTLStatement(name, policies[name])
-		plan.after = append(plan.after, node)
-		plan.reads.add(node, ydbscheme.TieredTTLReads(diff.CurrentDatabasePath, policies[name]), false)
+		reads := ydbscheme.TieredTTLReads(diff.CurrentDatabasePath, policies[name])
+		reset := columnTTLStatement(name, nil)
+		plan.before = append(plan.before, reset)
+		plan.reads.add(reset, reads, true)
+		set := columnTTLStatement(name, policies[name])
+		plan.after = append(plan.after, set)
+		plan.reads.add(set, reads, false)
 	}
 	return plan, nil
 }
@@ -127,7 +109,7 @@ func externalSourceChanges(diff *difftypes.SchemaDiff) sourceChanges {
 	return sources
 }
 
-func columnTTLStatement(name string, policy *ast.YDBTieredTTLSpec) ast.Node {
+func columnTTLStatement(name string, policy *ydbschema.TieredTTL) ast.Node {
 	statement := "ALTER TABLE " + ydbexternal.Path(name)
 	if policy == nil {
 		return ast.NewRawSQL(statement + " RESET (TTL)")
@@ -138,17 +120,17 @@ func columnTTLStatement(name string, policy *ast.YDBTieredTTLSpec) ast.Node {
 // refuseColumnTTLShape checks the complete desired table, including changes
 // that remove a TTL column or its min-max index without changing the policy.
 func refuseColumnTTLShape(table schemacapture.TableDeclaration) error {
-	spec := table.Table.YDBColumnTable
-	if spec == nil {
-		return nil
+	store, err := ydbschema.DeclaredColumnStore(table.Table.Facets)
+	if err != nil || store == nil {
+		return err
 	}
 	column := ""
 	rowTTL, err := declaredTTL(table.Table.Facets)
 	if err != nil {
 		return err
 	}
-	if spec.TTL != nil {
-		column = spec.TTL.Column
+	if store.TTL != nil {
+		column = store.TTL.Column
 	} else if rowTTL != nil {
 		column = rowTTL.Policy.Column
 	}
@@ -172,16 +154,21 @@ func refuseColumnTTLShape(table schemacapture.TableDeclaration) error {
 	return nil
 }
 
-func splitColumnTTLCreations(nodes []ast.Node) (early, late []ast.Node) {
+func splitColumnTTLCreations(nodes []ast.Node) (early, late []ast.Node, err error) {
 	for _, node := range nodes {
-		table, ok := node.(*ast.CreateTableNode)
-		if ok && table.YDBColumnTable != nil && table.YDBColumnTable.TTL != nil {
+		var store *ydbschema.DesiredColumnStore
+		if table, ok := node.(*ast.CreateTableNode); ok {
+			if store, err = ydbschema.DeclaredColumnStore(table.Facets); err != nil {
+				return nil, nil, err
+			}
+		}
+		if store != nil && store.TTL != nil {
 			late = append(late, node)
 		} else {
 			early = append(early, node)
 		}
 	}
-	return early, late
+	return early, late, nil
 }
 
 // dropRemovedTables drops every table the plan removes, and records the
@@ -190,33 +177,42 @@ func splitColumnTTLCreations(nodes []ast.Node) (early, late []ast.Node) {
 // replaces it only after the table is gone, which YDB requires of a drop. The
 // engine refuses a removal captured with no table, so each one names its
 // policy.
-func dropRemovedTables(diff *difftypes.SchemaDiff, reads commonReads) []ast.Node {
+func dropRemovedTables(diff *difftypes.SchemaDiff, reads commonReads) ([]ast.Node, error) {
 	var nodes []ast.Node
 	for _, removal := range diff.TablesRemoved {
 		node := ast.NewDropTable(removal.Name)
 		nodes = append(nodes, node)
-		if column := removal.Current.Table.YDBColumnTable; column != nil {
-			reads.add(node, ydbscheme.TieredTTLReads(diff.CurrentDatabasePath, column.TTL), true)
+		store, held, err := schemaext.FacetAs[*ydbschema.ObservedColumnStore](removal.Current.Table.Facets, ydbschema.ColumnStoreKind)
+		if err != nil {
+			return nil, err
+		}
+		if held {
+			reads.add(node, ydbscheme.TieredTTLReads(diff.CurrentDatabasePath, store.TTL), true)
 		}
 	}
-	return nodes
+	return nodes, nil
 }
 
-// changedColumnTTLPolicies adds the tables whose policy the diff changes: the
-// RESET of the policy each holds, recorded in previous, and the SET of the one
-// it declares.
-func changedColumnTTLPolicies(changes []difftypes.TableDiff, resets map[string]bool, policies, previous map[string]*ast.YDBTieredTTLSpec) {
-	for _, change := range changes {
-		column := change.YDBColumnTableChange
-		if column == nil || column.Current == nil || column.Desired == nil || ydbcolumn.TTLEqual(column.Current.TTL, column.Desired.TTL) {
-			continue
-		}
-		if column.Current.TTL != nil {
-			resets[change.TableName] = true
-			previous[change.TableName] = column.Current.TTL
-		}
-		if column.Desired.TTL != nil {
-			policies[change.TableName] = column.Desired.TTL
-		}
+// tableStatements are the plan's DROP TABLE statements, and the CREATE TABLE
+// statements it writes early and late: a column table whose tiered TTL reads
+// a data source is created after the common statements.
+type tableStatements struct {
+	removed, early, late []ast.Node
+}
+
+// tableLifecycle returns the plan's table drops and creations, recording what
+// each statement reads in reads.
+func (p *Planner) tableLifecycle(
+	diff *difftypes.SchemaDiff,
+	inlineIndexes map[string]bool,
+	sequences map[string][]*ast.AlterSerialSequenceNode,
+	semantics identifier.Semantics,
+	reads commonReads,
+) (tableStatements, error) {
+	removed, err := dropRemovedTables(diff, reads)
+	if err != nil {
+		return tableStatements{}, err
 	}
+	early, late, err := splitColumnTTLCreations(p.createTables(diff, inlineIndexes, sequences, semantics))
+	return tableStatements{removed: removed, early: early, late: late}, err
 }

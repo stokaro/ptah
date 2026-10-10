@@ -65,7 +65,7 @@ func storageSchema(c *qt.C) *schemamodel.Database {
 				Facets: must.Must(must.Must(ydbTTL(c).With(&ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"id"}}}})).
 					With(&ydbschema.DesiredTablePartitioning{TablePartitioning: ydbschema.TablePartitioning{MinPartitions: 4}})),
 			},
-			{StructName: "Archive", Name: "archive", YDBColumnTable: &ast.YDBColumnTableSpec{}},
+			{StructName: "Archive", Name: "archive", Facets: must.Must(schemaext.NewFacets(&ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{}}))},
 		},
 		Fields: []schemamodel.Field{
 			{StructName: "Plain", Name: "id", Type: "Int64", Primary: true, AutoInc: true},
@@ -96,7 +96,7 @@ func TestRender_ReportsStorageSettingsItLeavesOut(t *testing.T) {
 		"TTL settings (1)",
 		"changefeeds (2)",
 		"column families (1)",
-		"column-oriented storage and settings (1)",
+		"column storage (1)",
 		"covering columns on indexes (1)",
 		"identity generation modes (1)",
 		"identity sequence settings (1)",

@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbtopic"
 )
@@ -58,8 +59,14 @@ func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) (
 	}
 	effects = append(effects, reads...)
 	effects = append(effects, topicReads(root, node)...)
-	if table, ok := node.(*ast.CreateTableNode); ok && table.YDBColumnTable != nil {
-		effects = append(effects, TieredTTLReads(root, table.YDBColumnTable.TTL)...)
+	if table, ok := node.(*ast.CreateTableNode); ok {
+		store, err := ydbschema.DeclaredColumnStore(table.Facets)
+		if err != nil {
+			return nil, err
+		}
+		if store != nil {
+			effects = append(effects, TieredTTLReads(root, store.TTL)...)
+		}
 	}
 	return effects, nil
 }
@@ -70,7 +77,7 @@ func CommonEffects(builder objectidentity.Builder, root string, node ast.Node) (
 // owner creates it before and drops it after. A tier that deletes rows reads
 // nothing, and neither does a path outside root, one written absolute where
 // root is not known, or one that cannot name a data source.
-func TieredTTLReads(root string, policy *ast.YDBTieredTTLSpec) []plangraph.Effect {
+func TieredTTLReads(root string, policy *ydbschema.TieredTTL) []plangraph.Effect {
 	if policy == nil {
 		return nil
 	}

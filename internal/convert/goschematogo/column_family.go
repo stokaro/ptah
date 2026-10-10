@@ -56,5 +56,5 @@ func (ctx *renderContext) captureTablePartitioning() error {
 // properties.
 func isAnnotatedFacet(kind schemaext.Kind) bool {
 	return isTimescaleFacet(kind) || kind == ydbschema.ColumnFamiliesKind || kind == ydbschema.TablePartitioningKind ||
-		kind == pgpolicy.TableStateKind
+		kind == ydbschema.ColumnStoreKind || kind == pgpolicy.TableStateKind
 }

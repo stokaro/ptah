@@ -71,6 +71,7 @@ func extensionFixtures() []extensionFixture {
 		{payload: &ydbast.AlterTablePartitioning{Change: ydbdiff.TablePartitioning{After: &ydbschema.DesiredTablePartitioning{
 			TablePartitioning: ydbschema.TablePartitioning{KeyBloomFilter: new(true)},
 		}}}, wantSQL: "ALTER TABLE `items` SET (KEY_BLOOM_FILTER = ENABLED);\n"},
+		{payload: &ydbast.AlterColumnStoreTTL{}, wantSQL: "ALTER TABLE `items` RESET (TTL);\n"},
 	}
 }
 

@@ -168,7 +168,6 @@ func toDBTables(
 			// output is read back. See stokaro/ptah#1028.
 			VirtualModule:    table.VirtualModule,
 			VirtualArguments: table.VirtualArguments,
-			YDBColumnTable:   table.YDBColumnTable.Clone(),
 		})
 	}
 	return out

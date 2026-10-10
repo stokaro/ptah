@@ -4,12 +4,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbscheme"
 )
 
@@ -22,11 +25,12 @@ import (
 func TestCommonEffects_AColumnTableReadsTheSourcesItsTTLMovesRowsTo(t *testing.T) {
 	builder := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
 	table := func(sources ...string) *ast.CreateTableNode {
-		policy := &ast.YDBTieredTTLSpec{Column: "at"}
+		policy := &ydbschema.TieredTTL{Column: "at"}
 		for _, source := range sources {
-			policy.Tiers = append(policy.Tiers, ast.YDBTTLTierSpec{Interval: "P1D", ExternalSource: source})
+			policy.Tiers = append(policy.Tiers, ydbschema.TTLTier{Interval: "P1D", ExternalSource: source})
 		}
-		return &ast.CreateTableNode{Name: "app.events", YDBColumnTable: &ast.YDBColumnTableSpec{TTL: policy}}
+		store := &ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{TTL: policy}}
+		return &ast.CreateTableNode{Name: "app.events", Facets: must.Must(schemaext.NewFacets(store))}
 	}
 	created := []plangraph.Effect{
 		{Subject: ydbscheme.Path("app", "events"), Action: plangraph.Create},

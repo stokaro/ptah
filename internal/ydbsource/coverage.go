@@ -139,35 +139,26 @@ func HCLCoverage(limits Limits) (schemaext.Coverage, error) {
 }
 
 // Coverage enrolls only namespaces these source formats can declare,
-// including a table's TTL, column families and settings, which each of them
-// can write. HCL enrolls coordination separately and leaves the TTL, the
-// families and the settings unmanaged. Runtime registration never expands a
-// source's vocabulary.
+// including a table's TTL, column families, settings and column storage,
+// which each of them can write. HCL enrolls coordination separately and leaves
+// the TTL, the families, the settings and the storage unmanaged. Runtime
+// registration never expands a source's vocabulary.
 func Coverage(limits Limits) (schemaext.Coverage, error) {
 	feeds, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	ttl, err := ydbschema.TTLCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	if feeds, err = feeds.Combine(ttl); err != nil {
-		return schemaext.Coverage{}, err
-	}
-	families, err := ydbschema.ColumnFamiliesCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	if feeds, err = feeds.Combine(families); err != nil {
-		return schemaext.Coverage{}, err
-	}
-	partitioning, err := ydbschema.TablePartitioningCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
-	if feeds, err = feeds.Combine(partitioning); err != nil {
-		return schemaext.Coverage{}, err
+	// A table's own facets, which every one of these formats can write.
+	for _, facet := range []func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error){
+		ydbschema.TTLCoverage, ydbschema.ColumnFamiliesCoverage, ydbschema.TablePartitioningCoverage, ydbschema.ColumnStoreCoverage,
+	} {
+		known, err := facet(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
+		if feeds, err = feeds.Combine(known); err != nil {
+			return schemaext.Coverage{}, err
+		}
 	}
 	nodes, err := namespaceCoverage(limits.Coordination, ydbcoordination.Kind, schemeIdentity(ydbcoordination.Ref), ydbcoordination.ValidateIdentity, ydbcoordination.Coverage)
 	if err != nil {

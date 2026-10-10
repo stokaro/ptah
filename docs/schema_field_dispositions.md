@@ -96,14 +96,6 @@ None.
 | `ast.VectorIndexSpec.Levels` | `ddl` | — |
 | `ast.VectorIndexSpec.Similarity` | `ddl` | — |
 | `ast.VectorIndexSpec.VectorType` | `ddl` | — |
-| `ast.YDBColumnTableSpec.HashColumns` | `ddl` | — |
-| `ast.YDBColumnTableSpec.Partitions` | `ddl` | — |
-| `ast.YDBColumnTableSpec.TTL` | `ddl` | — |
-| `ast.YDBTTLTierSpec.ExternalSource` | `ddl` | — |
-| `ast.YDBTTLTierSpec.Interval` | `ddl` | — |
-| `ast.YDBTieredTTLSpec.Column` | `ddl` | — |
-| `ast.YDBTieredTTLSpec.Tiers` | `ddl` | — |
-| `ast.YDBTieredTTLSpec.Unit` | `ddl` | — |
 | `chschema.DesiredIndex.Granularity` | `ddl` | — |
 | `chschema.DesiredIndex.IndexType` | `ddl` | — |
 | `chschema.DesiredRefresh.Schedule` | `ddl` | — |
@@ -537,7 +529,6 @@ None.
 | `schemamodel.Table.VirtualArguments` | `ddl` | — |
 | `schemamodel.Table.VirtualModule` | `ddl` | — |
 | `schemamodel.Table.WithoutRowID` | `ddl` | — |
-| `schemamodel.Table.YDBColumnTable` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |
@@ -626,9 +617,13 @@ None.
 | `ydbschema.ColumnFamily.Data` | `ddl` | — |
 | `ydbschema.ColumnFamily.KeepInMemory` | `comparison` | keep_in_memory as a read finds it on a YDB family; no YQL statement writes it, and it decides whether a change or a rebuild is refused |
 | `ydbschema.ColumnFamily.Name` | `ddl` | — |
+| `ydbschema.ColumnStore.HashColumns` | `ddl` | — |
+| `ydbschema.ColumnStore.Partitions` | `ddl` | — |
+| `ydbschema.ColumnStore.TTL` | `ddl` | — |
 | `ydbschema.DesiredChangefeed.RetainedReplication` | `planning` | retains an observed controller binding and refuses independent changefeed creation or mutation |
 | `ydbschema.DesiredChangefeed.Spec` | `ddl` | — |
 | `ydbschema.DesiredColumnFamilies.Families` | `ddl` | — |
+| `ydbschema.DesiredColumnStore.ColumnStore` | `ddl` | — |
 | `ydbschema.DesiredTTL.Policy` | `ddl` | — |
 | `ydbschema.DesiredTablePartitioning.TablePartitioning` | `ddl` | — |
 | `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
@@ -637,6 +632,8 @@ None.
 | `ydbschema.TTL.Column` | `ddl` | — |
 | `ydbschema.TTL.Interval` | `ddl` | — |
 | `ydbschema.TTL.Unit` | `ddl` | — |
+| `ydbschema.TTLTier.ExternalSource` | `ddl` | — |
+| `ydbschema.TTLTier.Interval` | `ddl` | — |
 | `ydbschema.TablePartitioning.ByLoad` | `ddl` | — |
 | `ydbschema.TablePartitioning.BySize` | `ddl` | — |
 | `ydbschema.TablePartitioning.KeyBloomFilter` | `ddl` | — |
@@ -646,6 +643,9 @@ None.
 | `ydbschema.TablePartitioning.PartitionSizeMB` | `ddl` | — |
 | `ydbschema.TablePartitioning.ReadReplicas` | `ddl` | — |
 | `ydbschema.TablePartitioning.UniformPartitions` | `ddl` | — |
+| `ydbschema.TieredTTL.Column` | `ddl` | — |
+| `ydbschema.TieredTTL.Tiers` | `ddl` | — |
+| `ydbschema.TieredTTL.Unit` | `ddl` | — |
 | `ydbsecret.Desired.StructName` | `source` | the annotation holder, independent of the secret's path |
 | `ydbsecret.Desired.ValueEnv` | `ddl` | — |
 | `ydbstreaming.Desired.AllowStateReset` | `ddl` | — |

@@ -4,12 +4,12 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbttl"
 )
 
 // TTLClause renders a validated retention policy with an injected identifier quoter.
-func TTLClause(spec *ast.YDBTieredTTLSpec, quote func(string) string) string {
+func TTLClause(spec *ydbschema.TieredTTL, quote func(string) string) string {
 	parts := make([]string, 0, len(spec.Tiers))
 	for _, tier := range spec.Tiers {
 		seconds, _ := ydbttl.IntervalSeconds(tier.Interval)

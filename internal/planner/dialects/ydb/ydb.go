@@ -105,6 +105,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
@@ -247,13 +248,15 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
 	result = append(result, columnTTL.before...)
-	removed := dropRemovedTables(diff, columnTTL.reads)
-	earlyTables, lateTables := splitColumnTTLCreations(p.createTables(diff, inlineIndexes, sequences.created, semantics))
-	result = append(result, earlyTables...)
+	tables, err := p.tableLifecycle(diff, inlineIndexes, sequences.created, semantics, columnTTL.reads)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tables.early...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
 	result = append(result, changeIndexPartitioning(diff.IndexPartitioningChanged, rebuilds, semantics)...)
-	facets, err := p.planTableFacets(ctx, runtime, diff, rebuilds, semantics)
+	facets, err := p.planTableFacets(ctx, runtime, diff, rebuilds, semantics, columnTTL.reads)
 	if err != nil {
 		return nil, err
 	}
@@ -267,8 +270,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, indexComments(diff, removedTables, rebuilds, semantics)...)
 	beforeChangefeeds := result
 	result = nil
-	result = append(result, removed...)
-	result = append(result, lateTables...)
+	result = append(result, tables.removed...)
+	result = append(result, tables.late...)
 	result = append(result, columnTTL.after...)
 	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
@@ -305,9 +308,6 @@ func (p *Planner) refuseModification(
 	semantics identifier.Semantics,
 ) error {
 	if err := refuseColumnTTLShape(tableDiff.Desired); err != nil {
-		return err
-	}
-	if err := p.refuseColumnTableChange(tableDiff); err != nil {
 		return err
 	}
 	if _, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]; rebuilt {
@@ -641,7 +641,7 @@ func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration schemac
 		declared, ok := columns[name]
 		return declared, ok
 	}
-	if kind.IsLocal() != (declaration.Table.YDBColumnTable != nil) {
+	if kind.IsLocal() != slices.Contains(declaration.Table.Facets.Kinds(), ydbschema.ColumnStoreKind) {
 		return "LOCAL indexes require column storage and GLOBAL indexes require row storage"
 	}
 	shape := ydbindex.Shape{Kind: kind, Columns: indexKeyColumns(index), Cover: index.IncludeColumns}
@@ -668,9 +668,6 @@ func indexKeyColumns(index schemamodel.Index) []string {
 // this target.
 func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
-	if err := p.refuseColumnTableChange(tableDiff); err != nil {
-		return err
-	}
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
 		return err
 	}

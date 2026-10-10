@@ -69,3 +69,21 @@ func registerYDBTablePartitioningServices(provider *engine.Provider, target stri
 		reporting:  ydbreport.TablePartitioningService{},
 	})
 }
+
+// A YDB table's column storage and its tiered TTL are a table facet of the
+// YDB owner. A Go annotation, YAML and YQL declare them through their own
+// syntax, not table properties.
+func registerYDBColumnStoreServices(provider *engine.Provider, target string) {
+	registerTableFacetOwner(provider, target, tableFacetOwner{
+		codecs:     slices.Concat(ydbschema.ColumnStoreCodecs(), []schemaext.Codec{ydbdiff.ColumnStoreCodec(), ydbast.ColumnStoreTTLCodec()}),
+		facet:      ydbschema.ColumnStoreKind,
+		change:     ydbdiff.ColumnStoreKind,
+		operation:  ydbast.AlterColumnStoreTTLKind,
+		conversion: ydbconvert.ColumnStoreService{},
+		comparison: ydbcompare.ColumnStoreService{},
+		reversal:   ydbreverse.ColumnStoreService{},
+		planning:   ydbplan.ColumnStoreService{},
+		reports:    ydbreport.ColumnStoreDefinitions(),
+		reporting:  ydbreport.ColumnStoreService{},
+	})
+}

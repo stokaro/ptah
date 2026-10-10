@@ -1606,7 +1606,7 @@ func TestReader_ColumnTableMetadata(t *testing.T) {
 	c := qt.New(t)
 	described := plainTable(&Ydb_Table.ColumnMeta{Name: "body", Type: primitive(Ydb.Type_UTF8)})
 	described.StoreType = Ydb_Table.StoreType_STORE_TYPE_COLUMN
-	spec := &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 8}
+	spec := &ydbschema.ColumnStore{HashColumns: []string{"id"}, Partitions: 8}
 	source := fakeSource{
 		directories:  map[string][]*Ydb_Scheme.Entry{"/local": {entry("events", Ydb_Scheme.Entry_COLUMN_TABLE)}},
 		tables:       map[string]*Ydb_Table.DescribeTableResult{"/local/events": described},
@@ -1614,7 +1614,10 @@ func TestReader_ColumnTableMetadata(t *testing.T) {
 	}
 	db := readFrom(c, source)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].YDBColumnTable, qt.DeepEquals, spec)
+	store, held, err := schemaext.FacetAs[*ydbschema.ObservedColumnStore](db.Tables[0].Facets, ydbschema.ColumnStoreKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(held, qt.IsTrue)
+	c.Assert(&store.ColumnStore, qt.DeepEquals, spec)
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Method, qt.Equals, "bloom_filter")
 	c.Assert(db.Indexes[0].Columns, qt.DeepEquals, []string{"body"})

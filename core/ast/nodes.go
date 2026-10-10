@@ -153,9 +153,6 @@ type CreateTableNode struct {
 	// A table nothing declared is logged, which is the server's default, so
 	// false and "unset" mean the same and the field needs no pointer.
 	Unlogged bool
-	// YDBColumnTable selects column-oriented storage and its hash partitioning.
-	// Nil selects row storage. Other dialects refuse this declaration.
-	YDBColumnTable *YDBColumnTableSpec
 }
 
 // IndexPartitioningSpec is how a YDB global index's own table splits into

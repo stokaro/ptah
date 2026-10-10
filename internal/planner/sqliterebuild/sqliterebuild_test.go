@@ -120,12 +120,6 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// rebuild forced by it would rebuild for nothing (stokaro/ptah#2315).
 		"Desired": false,
 		"Current": false, // captured state, not a requested transition
-		// A YDB table's partitioning, read replicas and key bloom filter. The
-		// SQLite planner refuses a diff carrying one before it decides on a
-		// rebuild (schemaprecondition.RefuseYDBTablePartitioningChanges), so
-		// there is nothing here to rebuild for.
-		// Column storage is refused by the same YDB-only precondition.
-		"YDBColumnTableChange": false,
 		// The name a column that gains its own UNIQUE takes, which goes with
 		// the change ColumnsAdded or ColumnsModified already carries rather than
 		// being a change of its own (stokaro/ptah#3859).

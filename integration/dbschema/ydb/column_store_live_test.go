@@ -9,7 +9,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -19,9 +18,15 @@ import (
 
 const columnStoreSchema = "ptah_ydb_column_store"
 
+// columnStoreFacets declares the events table a column table hashed by id in
+// one shard, with ttl as its tiered TTL.
+func columnStoreFacets(ttl *ydbschema.TieredTTL) schemaext.Facets {
+	return must.Must(schemaext.NewFacets(&ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{HashColumns: []string{"id"}, Partitions: 1, TTL: ttl}}))
+}
+
 func columnStoreDeclaration(caps capability.Capabilities) *schemamodel.Database {
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Event", Name: "events", Schema: columnStoreSchema, YDBColumnTable: &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 1}}},
+		Tables: []schemamodel.Table{{StructName: "Event", Name: "events", Schema: columnStoreSchema, Facets: columnStoreFacets(nil)}},
 		Fields: []schemamodel.Field{{StructName: "Event", Name: "id", Type: "Uint64", Primary: true}, {StructName: "Event", Name: "body", Type: "Utf8", Nullable: true}},
 	}
 	if caps.Has(capability.LocalBloomIndexes) {
@@ -48,7 +53,10 @@ func TestYDBColumnStore_RoundTrip(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, declared, schemas))
 			live := readScoped(c, conn, schemas)
 			c.Assert(live.Tables, qt.HasLen, 1)
-			c.Assert(live.Tables[0].YDBColumnTable, qt.DeepEquals, declared.Tables[0].YDBColumnTable)
+			store, held, err := schemaext.FacetAs[*ydbschema.ObservedColumnStore](live.Tables[0].Facets, ydbschema.ColumnStoreKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(held, qt.IsTrue)
+			c.Assert(store.Desired(), qt.DeepEquals, must.Must(ydbschema.DeclaredColumnStore(declared.Tables[0].Facets)))
 			c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 		})
 	}
@@ -81,14 +89,13 @@ func TestYDBColumnStore_TieredTTL(t *testing.T) {
 			Options: map[string]string{"AWS_REGION": "us-east-1", "AWS_ACCESS_KEY_ID_SECRET_NAME": access, "AWS_SECRET_ACCESS_KEY_SECRET_NAME": secret}})))
 	}
 	declared.FeatureObjects = archive("https://column.invalid/archive/")
-	declared.Tables[0].YDBColumnTable.TTL = &ast.YDBTieredTTLSpec{Column: "id", Unit: "SECONDS", Tiers: []ast.YDBTTLTierSpec{{Interval: "P1D", ExternalSource: "/local/" + columnStoreSchema + "/archive"}, {Interval: "P7D"}}}
+	declared.Tables[0].Facets = columnStoreFacets(&ydbschema.TieredTTL{Column: "id", Unit: "SECONDS", Tiers: []ydbschema.TTLTier{{Interval: "P1D", ExternalSource: "/local/" + columnStoreSchema + "/archive"}, {Interval: "P7D"}}})
 	apply(c, conn, planAgainst(c, conn, declared, schemas))
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 	declared.FeatureObjects = archive("https://column.invalid/replaced/")
 	apply(c, conn, planAgainst(c, conn, declared, schemas))
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
-	declared.Tables[0].YDBColumnTable.TTL = nil
-	declared.Tables[0].Facets = ttlFacets(&ydbschema.TTL{Column: "id", Interval: "P7D", Unit: "SECONDS"})
+	declared.Tables[0].Facets = must.Must(ttlFacets(&ydbschema.TTL{Column: "id", Interval: "P7D", Unit: "SECONDS"}).Merge(columnStoreFacets(nil)))
 	apply(c, conn, planAgainst(c, conn, declared, schemas))
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 }
