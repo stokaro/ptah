@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintcatalog"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -22,7 +23,7 @@ func ydbAnalysis(c *qt.C, files map[string]string) lint.Analysis {
 	for name, content := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(content)}
 	}
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Dialect:   "ydb",
 		DirFormat: migrationfile.DirFormatPtah,
 		Naming:    &lint.NamingConfig{Match: "^z+$"},
@@ -139,7 +140,7 @@ func TestYDBVerdicts_UniqueIndexRulesReportYQLWhereTheTargetAllowsIt(t *testing.
 				fsys[name] = &fstest.MapFile{Data: []byte(content)}
 			}
 
-			analysis, err := lint.AnalyzeFS(fsys, lint.Options{Dialect: "ydb", Target: target, DirFormat: migrationfile.DirFormatPtah})
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "ydb", Target: target, DirFormat: migrationfile.DirFormatPtah})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(reported(analysis), qt.Contains, code)

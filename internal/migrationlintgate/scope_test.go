@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/migration/lint"
 )
@@ -62,7 +63,7 @@ func codesOutsideReportedFamily(findings []lint.Finding) []string {
 func fullPass(tb testing.TB, fsys fstest.MapFS, dialect string) []lint.Finding {
 	c := qt.New(tb)
 
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: dialect})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: dialect})
 	c.Assert(err, qt.IsNil)
 	return findings
 }
@@ -71,7 +72,7 @@ func fullPass(tb testing.TB, fsys fstest.MapFS, dialect string) []lint.Finding {
 func gatePass(tb testing.TB, fsys fstest.MapFS, dialect string) []lint.Finding {
 	c := qt.New(tb)
 
-	findings, err := migrationlintgate.Analyze(fsys, []int64{1}, dialect, "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, []int64{1}, dialect, "")
 	c.Assert(err, qt.IsNil)
 	return findings
 }

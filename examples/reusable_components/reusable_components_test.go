@@ -134,7 +134,7 @@ func TestMigrationIntegrityAndLint(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(sum.Entries, qt.HasLen, 2)
 
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "sqlite"})
+	findings, err := lint.LintFS(c.Context(), must.Must(builtin.New()), fsys, lint.Options{Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)
 }
@@ -150,7 +150,7 @@ func TestCustomLintRule(t *testing.T) {
 		},
 	}
 
-	findings, err := lint.LintFS(fsys, lint.Options{
+	findings, err := lint.LintFS(c.Context(), must.Must(builtin.New()), fsys, lint.Options{
 		Dialect: "postgres",
 		ExtraRules: []lint.Rule{{
 			Code:     "ORG101",

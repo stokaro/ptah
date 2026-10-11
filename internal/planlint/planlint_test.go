@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/planlint"
 	migrationlint "ptah.run/migration/lint"
 )
@@ -90,7 +91,7 @@ func TestAnalyze_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := planlint.Analyze(test.sql, test.dialect)
+			analysis, err := planlint.Analyze(c.Context(), builtintest.Runtime(), test.sql, test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(findingRules(analysis), qt.DeepEquals, test.wantRules)
@@ -116,7 +117,7 @@ func TestAnalyzeIgnoresMigrationDirectoryForm(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := planlint.Analyze("ALTER TABLE users ADD COLUMN nick text;\n", "sqlite")
+			analysis, err := planlint.Analyze(c.Context(), builtintest.Runtime(), "ALTER TABLE users ADD COLUMN nick text;\n", "sqlite")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(findingRules(analysis), qt.Not(qt.Contains), test.rule)
@@ -141,7 +142,7 @@ func TestAnalyze_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := planlint.Analyze("DROP TABLE users;", test.dialect)
+			analysis, err := planlint.Analyze(c.Context(), builtintest.Runtime(), "DROP TABLE users;", test.dialect)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(analysis.Findings(), qt.HasLen, 0)
@@ -163,7 +164,7 @@ func TestHasErrorSeverity_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := planlint.Analyze(test.sql, "postgres")
+			analysis, err := planlint.Analyze(c.Context(), builtintest.Runtime(), test.sql, "postgres")
 			c.Assert(err, qt.IsNil)
 
 			got := planlint.HasErrorSeverity(analysis)

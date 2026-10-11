@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationsnapshot"
 	migrationlint "ptah.run/migration/lint"
@@ -27,7 +28,7 @@ func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);")},
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;")},
 	}
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		Selection: migrationlint.VersionSelection{
@@ -57,7 +58,7 @@ func TestWriteMigrateLintFormat_JSONFiles(t *testing.T) {
 	fsys := fstest.MapFS{
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);")},
 	}
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -83,7 +84,7 @@ func TestNewMigrateLint_OmitsAtlasIgnoredFilesAndCounts(t *testing.T) {
 			Data: []byte("CREATE TABLE accounts (id integer);\n"),
 		},
 	}
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -106,7 +107,7 @@ func TestNewMigrateLint_DuplicateBasenamesKeepFindingsScoped(t *testing.T) {
 		"a/1_change.sql": {Data: []byte("DROP TABLE users;")},
 		"b/1_change.sql": {Data: []byte("SELECT 1;")},
 	}
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -135,7 +136,7 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 `),
 		},
 	}
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
@@ -160,7 +161,7 @@ func TestNewMigrateLint_OrdersMigrationsByVersion(t *testing.T) {
 		"10_later.sql":  {Data: []byte("SELECT 10;")},
 		"2_earlier.sql": {Data: []byte("SELECT 2;")},
 	}
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -182,7 +183,7 @@ func TestNewMigrateLint_PathPrefixCannotCrossAttachFindings(t *testing.T) {
 		"1_change.sql":            {Data: []byte("DROP TABLE users;")},
 		"migrations/1_change.sql": {Data: []byte("SELECT 1;")},
 	}
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		PathPrefix:    "migrations",
@@ -204,7 +205,7 @@ func TestNewMigrateLint_PathPrefixCannotCrossAttachFindings(t *testing.T) {
 
 func TestNewMigrateLint_LoadsSemanticChangeCountForMultiActionAlter(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_alter.sql": {Data: []byte("ALTER TABLE users ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
@@ -225,7 +226,7 @@ func TestNewMigrateLint_LoadsSemanticChangeCountForMultiActionAlter(t *testing.T
 
 func TestNewMigrateLint_LoadsZeroChangesForNonDDLFile(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_seed.sql": {Data: []byte("INSERT INTO users (id) VALUES (1);\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
@@ -244,7 +245,7 @@ func TestNewMigrateLint_LoadsZeroChangesForNonDDLFile(t *testing.T) {
 
 func TestNewMigrateLint_LoadsSemanticChangeCountForMixedFile(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_mixed.sql": {Data: []byte(
 			"CREATE TABLE t (id INTEGER);\n" +
 				"INSERT INTO t (id) VALUES (1);\n" +
@@ -265,7 +266,7 @@ func TestNewMigrateLint_LoadsSemanticChangeCountForMixedFile(t *testing.T) {
 
 func TestNewMigrateLint_LoadsOneChangePerSingleStatementFixtureFile(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_create_users.sql":    {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2_create_accounts.sql": {Data: []byte("CREATE TABLE accounts (id INTEGER);\n")},
 	}, migrationlint.Options{
@@ -286,7 +287,7 @@ func TestNewMigrateLint_LoadsOneChangePerSingleStatementFixtureFile(t *testing.T
 
 func TestNewMigrateLint_IncludesAtlasRepeatableFiles(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
@@ -316,7 +317,7 @@ func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
 		"&api_key=" + "secret" +
 		"&client_secret=" + "secret" +
 		"&sslmode=disable"
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_empty.sql": {Data: []byte("-- no changes\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
@@ -350,7 +351,7 @@ func TestWriteMigrateLintFormat_ValidAtlasSumAddsIntegrityStep(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot, covered)
 	c.Assert(err, qt.IsNil)
-	analysis, err := migrationlint.AnalyzeFS(snapshot, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), snapshot, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})

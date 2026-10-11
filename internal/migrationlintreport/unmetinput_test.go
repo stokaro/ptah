@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -20,7 +21,7 @@ import (
 // second pass has nothing to re-read with.
 func unmetInputAnalysis(c *qt.C, baseline []lint.BaselineColumn) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fstest.MapFS{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_base.sql":   {Data: []byte("CREATE TABLE users (id int NOT NULL);")},
 		"2_rename.sql": {Data: []byte("ALTER TABLE users RENAME COLUMN id TO oid;")},
 	}, lint.Options{

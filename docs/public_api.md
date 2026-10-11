@@ -20,6 +20,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/coverage`
 - `ptah.run/core/featureplan`
 - `ptah.run/core/goschema`
+- `ptah.run/core/lintext`
 - `ptah.run/core/manageddata`
 - `ptah.run/core/objectidentity`
 - `ptah.run/core/plangraph`
@@ -304,6 +305,36 @@ projection. `ConstraintsFor` and `EnumsFor` select independent child definitions
 settings of a table's primary key: those of the first PRIMARY KEY constraint
 the table owns, or the table's `PrimaryKeyFacets`, so a comparison and an owner
 planning the key read the same place.
+
+`core/lintext` is the contract between migration lint and the engine owners
+that contribute to it. It carries no Go closure, so an owner may answer it
+from another process:
+
+- `Rule` describes a rule as data: its code, title, default severity, the
+  targets it judges, whether it applies to a rollback half, what it reads
+  besides the text, and the rules it subsumes. `Rule.Validate` refuses one a
+  host cannot publish.
+- `Splitter` splits a lint run's sources for one dialect, every file in one
+  call, into `Statement` values that carry each form rules read: the span and
+  line, the canonical text, the words, the routine a statement defines, and
+  the comments directly above it, which the host reads suppression
+  directives from.
+- `Service` checks the rules an owner publishes over a whole run, one call
+  per run with every file. A `CheckResult` must be `Complete`; an error is
+  never a clean run.
+- `ValidateSplit` and `ValidateCheck` refuse a reply that does not answer its
+  request, wrapping `ErrInvalid`.
+- `Checks` is the in-process `Service` over Go functions that a built-in owner
+  registers instead of answering requests by hand.
+
+`engine.Provider.Lint` publishes an owner's rules and the service that checks
+them, and `engine.Target.Splitter` registers a target's splitter; the bundled
+runtime registers one for every built-in dialect. `engine.Runtime` answers
+`lintext.Runtime`: `LintRules` reads the published rules without calling an
+owner, `SplitStatements` asks the target's splitter under its canonical name,
+and `CheckMigrations` sends each owner its codes in one call and joins the
+findings. A code belongs to one rule across every provider, and a rule judges
+targets the runtime registers; registration refuses anything else.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and
@@ -2703,7 +2734,11 @@ CockroachDB, YugabyteDB or Spanner target on its own preset, because all three
 speak the PostgreSQL wire protocol and may report exactly that banner.
 
 `migration/lint` provides the compact `LintFS` findings API and the richer
-`AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
+`AnalyzeFS` API. Both take a context and a `lintext.Runtime`, and a nil
+runtime is refused: the run's target's owner splits the migrations through
+`Runtime.SplitStatements`, all files in one call, and a run that names no
+dialect splits with the dialect-blind scanner. `AnalyzeFS` captures each
+migration input once: SQL files,
 integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
 prepared files and findings together with a read-only source snapshot. Capture
 does not apply the lint policy automatically: embedders call `LoadConfigFS`

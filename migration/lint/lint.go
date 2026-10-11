@@ -44,7 +44,6 @@ import (
 	"strings"
 
 	"ptah.run/internal/atlaslint"
-	"ptah.run/internal/sqlcompound"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/risk"
 )
@@ -675,130 +674,6 @@ func ruleAppliesToDialect(rule Rule, dialect string) bool {
 // migrator would execute and MF103 explains the ambiguity.
 var strictNameRe = regexp.MustCompile(`^\d{10}_.+\.(up|down)\.sql$`)
 
-// rawStatement is one raw SQL statement plus the line it starts on.
-type rawStatement struct {
-	text            string
-	line            int
-	start           int
-	end             int
-	suppressedRules []atlaslint.Target
-}
-
-// splitStatementsWithLines splits SQL into statements using the dialect-aware
-// scanner (so semicolons inside strings, comments, executable comments and
-// dollar-quoted bodies do not terminate statements) while tracking each
-// statement's starting line.
-//
-// A semicolon inside a compound routine body does not terminate one either.
-// That question is [sqlcompound]'s, the same one core/sqlutil asks, because a
-// linter that answered it differently cut `CREATE PROCEDURE p() BEGIN … ; …
-// END` into fragments no parser could model: the routine reached the change
-// model as nothing at all, and every body statement after the first reached the
-// rules as a statement the migration performs (stokaro/ptah#2069).
-func splitStatementsWithLines(
-	raw string,
-	mode scanMode,
-	compatibility CompatibilityProfile,
-	registered map[string]struct{},
-) []rawStatement {
-	var statements []rawStatement
-	start := -1
-	end := 0
-	startLine := 0
-	lastStatementEndLine := 0
-	var pendingSuppressions []atlaslint.Target
-	var activeSuppressions []atlaslint.Target
-	compound := sqlcompound.New(mode.dialect)
-	for _, tok := range scanSQL(raw, mode) {
-		observeCompoundToken(&compound, tok, mode)
-		switch tok.kind {
-		case tokSemicolon:
-			if compound.KeepSemicolonInsideStatement() {
-				// Body text. It extends the statement exactly as a word would,
-				// so a routine keeps the semicolons it was written with.
-				end = tok.end
-				continue
-			}
-			if compound.TerminatorBelongsToStatement() {
-				// PL/SQL: the block's own syntax requires this semicolon, so it
-				// is the last byte of the statement rather than the client's
-				// terminator.
-				end = tok.end
-			}
-			compound.Reset()
-			if start >= 0 {
-				statements = append(statements, rawStatement{
-					text:            raw[start:end],
-					line:            startLine,
-					start:           start,
-					end:             end,
-					suppressedRules: activeSuppressions,
-				})
-				start = -1
-				activeSuppressions = nil
-				lastStatementEndLine = tok.line
-			}
-		case tokWhitespace:
-			// Never starts a statement; keep end untouched so trailing
-			// comments/whitespace are not included in the statement text.
-			//
-			// A blank line detaches a pending directive from whatever comes
-			// next: a statement-local nolint has to sit directly above its
-			// statement. Measured against atlas community version v1.3.0 on
-			// `-- atlas:nolint DS103`, a blank line, then a DROP COLUMN — it
-			// reports DS103 and exits 1, while the same two lines with no
-			// blank line between them exit 0. A directive on the file's first
-			// line followed by a blank line is the file-wide header form,
-			// handled by [parseAtlasFileNoLint] on the compatibility surface
-			// only.
-			if start < 0 && strings.Count(tok.text, "\n") > 1 {
-				pendingSuppressions = nil
-			}
-		case tokComment:
-			if start < 0 && tok.line != lastStatementEndLine {
-				pendingSuppressions = append(
-					pendingSuppressions,
-					parseNoLintDirective(tok.text, compatibility, registered)...,
-				)
-			}
-		default:
-			if start < 0 {
-				start = tok.start
-				startLine = tok.line
-				activeSuppressions = slices.Clone(pendingSuppressions)
-				pendingSuppressions = nil
-			}
-			end = tok.end
-		}
-	}
-	if start >= 0 {
-		statements = append(statements, rawStatement{
-			text:            raw[start:end],
-			line:            startLine,
-			start:           start,
-			end:             end,
-			suppressedRules: activeSuppressions,
-		})
-	}
-	return statements
-}
-
-// observeCompoundToken feeds one token to the compound-body tracker the way
-// core/sqlutil feeds it the same text, so the linter and the migrator cut a
-// statement at the same semicolon. Words are fed on every dialect. YQL also
-// needs its punctuation, for the braces around a lambda's body, and its
-// backticked names, which core/sqlutil feeds as words because the YQL lexer
-// reads them as identifiers; neither changes the answer for another dialect,
-// whose quoted names were never fed.
-func observeCompoundToken(compound *sqlcompound.State, tok lintToken, mode scanMode) {
-	switch {
-	case tok.kind == tokWord, mode.yql && tok.kind == tokQuotedIdent:
-		compound.Word(tok.text)
-	case mode.yql && tok.kind == tokOp:
-		compound.Symbol(tok.text)
-	}
-}
-
 func parseNoLintDirective(
 	comment string,
 	compatibility CompatibilityProfile,
@@ -929,66 +804,6 @@ func nativeNoLintTargets(registered map[string]struct{}) func(string) []atlaslin
 
 func isNoLintSeparator(r rune) bool {
 	return strings.ContainsRune(",;:/*)([]{}\"'` \t\r\n", r)
-}
-
-// canonicalize renders a statement in its display form: comments removed,
-// every whitespace run collapsed to one space, everything except string
-// literals and quoted identifiers uppercased.
-func canonicalize(sql string, mode scanMode) string {
-	var b strings.Builder
-	pendingSpace := false
-	for _, tok := range scanSQL(sql, mode) {
-		switch tok.kind {
-		case tokComment, tokWhitespace:
-			// A comment separates tokens exactly like whitespace does
-			// (DROP/*x*/TABLE must not canonicalize to DROPTABLE).
-			pendingSpace = b.Len() > 0
-		case tokString, tokQuotedIdent:
-			if pendingSpace {
-				b.WriteByte(' ')
-				pendingSpace = false
-			}
-			b.WriteString(tok.text)
-		default:
-			if pendingSpace {
-				b.WriteByte(' ')
-				pendingSpace = false
-			}
-			b.WriteString(strings.ToUpper(tok.text))
-		}
-	}
-	return b.String()
-}
-
-// tokenizeWords renders a statement as the word sequence rules scan (see
-// Statement.Words). String literals and quoted identifiers keep their quotes
-// and case, so quoted names never collide with SQL keywords in the scans.
-func tokenizeWords(sql string, mode scanMode) []string {
-	var words []string
-	for _, tok := range scanSQL(sql, mode) {
-		switch tok.kind {
-		case tokComment, tokWhitespace:
-			continue
-		case tokString, tokQuotedIdent:
-			words = append(words, tok.text)
-		default:
-			words = append(words, strings.ToUpper(tok.text))
-		}
-	}
-	return words
-}
-
-func tokenizeSourceWords(sql string, mode scanMode) []string {
-	var words []string
-	for _, tok := range scanSQL(sql, mode) {
-		switch tok.kind {
-		case tokComment, tokWhitespace:
-			continue
-		default:
-			words = append(words, tok.text)
-		}
-	}
-	return words
 }
 
 // onlineRuleSelected reports whether an ON rule may run.

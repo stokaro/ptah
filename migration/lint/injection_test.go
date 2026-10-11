@@ -5,13 +5,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
 
 func analyzeRoutine(c *qt.C, dialect, sql string) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{"1_routine.sql": sql}), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"1_routine.sql": sql}), lint.Options{
 		Dialect:   dialect,
 		DirFormat: migrationfile.DirFormatAtlas,
 	})

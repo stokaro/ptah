@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -14,7 +15,7 @@ import (
 func dropEmailAnalysis(c *qt.C, dependents []lint.BaselineDependent) lint.Analysis {
 	c.Helper()
 
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"1_drop.sql": "ALTER TABLE users DROP COLUMN email;",
 	}), lint.Options{
 		Dialect:            "postgres",

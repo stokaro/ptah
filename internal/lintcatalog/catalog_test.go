@@ -12,6 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintcatalog"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/sqllint"
@@ -74,7 +75,7 @@ func findingCodes(c *qt.C, files map[string]string, profile lint.CompatibilityPr
 	for name, content := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(content)}
 	}
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat:     migrationfile.DirFormatPtah,
 		Compatibility: profile,
 	})
@@ -97,7 +98,7 @@ func dialectFindingCodes(tb testing.TB, dialect, up, down string, baseline ...li
 		"0000000001_change.up.sql":   &fstest.MapFile{Data: []byte(up)},
 		"0000000001_change.down.sql": &fstest.MapFile{Data: []byte(down)},
 	}
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: dialect, Baseline: baseline})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: dialect, Baseline: baseline})
 	c.Assert(err, qt.IsNil)
 
 	var codes []string
@@ -155,7 +156,7 @@ func messagesFor(tb testing.TB, files map[string]string, profile lint.Compatibil
 	for name, content := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(content)}
 	}
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat:     migrationfile.DirFormatPtah,
 		Compatibility: profile,
 	})

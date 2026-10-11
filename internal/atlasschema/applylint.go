@@ -1,11 +1,13 @@
 package atlasschema
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
 )
@@ -39,7 +41,7 @@ type PlanLintOptions struct {
 //
 // The statements are linted as a migration file in a scratch directory because
 // the engine reads a filesystem. Nothing is left behind.
-func LintPlan(statements []string, opts PlanLintOptions) ([]lint.Finding, error) {
+func LintPlan(ctx context.Context, runtime lintext.Runtime, statements []string, opts PlanLintOptions) ([]lint.Finding, error) {
 	enabled := lintPlanEnabledCodes(opts.RuleConfigs, opts.Dialect)
 	if len(enabled) == 0 {
 		return nil, nil
@@ -54,7 +56,7 @@ func LintPlan(statements []string, opts PlanLintOptions) ([]lint.Finding, error)
 		return nil, fmt.Errorf("stage schema apply lint input: %w", err)
 	}
 
-	findings, err := lint.LintFS(os.DirFS(dir), lint.Options{
+	findings, err := lint.LintFS(ctx, runtime, os.DirFS(dir), lint.Options{
 		Dialect:     opts.Dialect,
 		Disabled:    append(lintPlanDisabledCodes(enabled), opts.Disabled...),
 		RuleConfigs: opts.RuleConfigs,

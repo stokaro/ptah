@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -27,7 +28,7 @@ import (
 func TestAnalyzeFS_EmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(fstest.MapFS{}, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{}, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -40,7 +41,7 @@ func TestAnalyzeFS_EmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 func TestAnalyzeFS_EmptyDirectoryFailurePathOnNativeProfile(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(fstest.MapFS{}, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{}, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 
@@ -57,7 +58,7 @@ func TestAnalyzeFS_NonEmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 		"1_drop.sql": "DROP TABLE users;",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})

@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -90,7 +91,7 @@ ALTER TABLE accounts ALTER COLUMN note TYPE varchar(10);
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"1_collision.sql": test.sql,
 			}), lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
@@ -132,7 +133,7 @@ func TestAnalyzeFS_AtlasMF103SelectorReachesBothProducers(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"weird_name.up.sql": test.header +
 					"ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;\n",
 			}), lint.Options{
@@ -183,14 +184,14 @@ func TestAnalyzeFS_AtlasNoLintSelectorsAgreeAcrossSurfaces(t *testing.T) {
 				"1_index.sql": test.directive + "CREATE INDEX idx_users_id ON users (id);\n",
 			})
 
-			native, err := lint.AnalyzeFS(fsys, lint.Options{
+			native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "postgres",
 			})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(native.Findings()), qt.DeepEquals, test.want)
 
-			atlas, err := lint.AnalyzeFS(fsys, lint.Options{
+			atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
 				DirFormat:     migrationfile.DirFormatAtlas,
 				Dialect:       "postgres",
@@ -236,7 +237,7 @@ func TestAnalyzeFS_AtlasSelectorsMatchTheCommunityBinaryOnADroppedColumn(t *test
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"1_drop.sql": test.directive + "ALTER TABLE t DROP COLUMN legacy;\n",
 			}), lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
@@ -292,7 +293,7 @@ ALTER TABLE t DROP COLUMN legacy;
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"1_gap.sql": test.sql,
 			}), lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,

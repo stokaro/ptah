@@ -666,3 +666,11 @@ v0.13.0 ptah.run/core/schemamodel
 # clean-break policy.
 v0.13.0 ptah.run/core/coverage
 v0.13.0 ptah.run/engine
+
+# Migration lint splits a run's statements with the target's owner, through
+# the engine runtime, so a dialect's statement boundaries, comments and word
+# forms are the owner's answers rather than a scanner the lint package keeps
+# for every engine. AnalyzeFS and LintFS therefore take a context and a
+# lintext.Runtime; a caller passes the runtime it already selects, which for
+# the bundled engines is builtin.New. Pre-v1, so no compatibility is owed.
+v0.13.0 ptah.run/migration/lint

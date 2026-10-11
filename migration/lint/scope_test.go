@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -17,7 +18,7 @@ import (
 // is exempt for an unrelated reason.
 func analyzeScoped(c *qt.C, base, sql, scope string) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"1.sql": base,
 		"2.sql": sql,
 	}), lint.Options{

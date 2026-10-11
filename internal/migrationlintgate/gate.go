@@ -3,11 +3,13 @@
 package migrationlintgate
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"slices"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
@@ -149,6 +151,8 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 // Analyze loads policy and returns blocking data-safety findings for the
 // selected pending migration versions.
 func Analyze(
+	ctx context.Context,
+	runtime lintext.Runtime,
 	fsys fs.FS,
 	pending []int64,
 	databaseDialect,
@@ -158,12 +162,14 @@ func Analyze(
 	if err != nil {
 		return nil, err
 	}
-	return AnalyzeWithPolicy(fsys, pending, policy, pathPrefix)
+	return AnalyzeWithPolicy(ctx, runtime, fsys, pending, policy, pathPrefix)
 }
 
 // AnalyzeWithPolicy returns blocking data-safety findings using a policy that
 // was loaded before migration planning.
 func AnalyzeWithPolicy(
+	ctx context.Context,
+	runtime lintext.Runtime,
 	fsys fs.FS,
 	pending []int64,
 	policy Policy,
@@ -174,7 +180,7 @@ func AnalyzeWithPolicy(
 		Versions:   pending,
 		Restricted: true,
 	}
-	findings, err := lint.LintFS(fsys, options)
+	findings, err := lint.LintFS(ctx, runtime, fsys, options)
 	if err != nil {
 		return nil, err
 	}

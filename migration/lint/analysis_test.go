@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -27,7 +28,7 @@ func TestAnalyzeFS_VersionSelectionPreservesCompleteSnapshot(t *testing.T) {
 		"2_drop.sql":   "DROP TABLE users;",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{
 			Versions:   []int64{2},
@@ -56,7 +57,7 @@ func TestAnalyzeFS_ExplicitEmptyVersionSelectionSelectsNothing(t *testing.T) {
 		"2_drop.sql":   "DROP TABLE users;",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Restricted: true},
 	})
@@ -91,7 +92,7 @@ func TestAnalyzeFS_DataDependentExemptsSameFileCreatedTable(t *testing.T) {
 			c := qt.New(t)
 			fsys := fixture(map[string]string{"1_users.sql": tc.sql})
 
-			analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "sqlite",
 			})
@@ -110,7 +111,7 @@ func TestAnalyzeFS_DataDependentReportsColumnAddedToLaterCreatedTable(t *testing
 		"1_users.sql": "ALTER TABLE users ADD COLUMN tenant_id INTEGER NOT NULL;\nCREATE TABLE users (id INTEGER);\n",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
@@ -125,7 +126,7 @@ func TestAnalyzeFS_RejectsUnknownCompatibilityProfile(t *testing.T) {
 		"1_select.sql": "SELECT 1;",
 	})
 
-	_, err := lint.AnalyzeFS(fsys, lint.Options{
+	_, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfile("unknown"),
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -139,7 +140,7 @@ func TestAnalyzeFS_ReturnedDataCannotMutateSnapshot(t *testing.T) {
 		"1_drop.sql": "DROP TABLE users;",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
@@ -169,7 +170,7 @@ func TestAnalyzeFS_SameLineStatementsHaveStableContexts(t *testing.T) {
 		"1_hazards.sql": "DROP TABLE users; ALTER TABLE accounts DROP COLUMN legacy;\n",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
@@ -253,7 +254,7 @@ func TestAnalyzeFS_MultiTargetDropReportsOnlyUnsafeTables(t *testing.T) {
 		"1_cleanup.sql": "CREATE TABLE staging (id INTEGER); DROP TABLE staging, users, audit_log;",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
@@ -275,7 +276,7 @@ func TestAnalyzeFS_DropTableSubjectsPreserveIdentifierSpelling(t *testing.T) {
 		"1_cleanup.sql": `DROP TABLE ONLY "Users", ONLY public."users" *;`,
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
@@ -344,7 +345,7 @@ func TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable(t *testing.T) {
 				"2_drop.sql": test.drop,
 			})
 
-			analysis, err := lint.AnalyzeFS(fsys, lint.Options{DirFormat: migrationfile.DirFormatAtlas})
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{DirFormat: migrationfile.DirFormatAtlas})
 
 			c.Assert(err, qt.IsNil)
 			findings := analysis.Findings()
@@ -367,7 +368,7 @@ func TestAnalyzeFS_MultiTargetDropNamesEachTableInItsMessage(t *testing.T) {
 		"2_drop.sql": `DROP TABLE zeta, public."Alpha";`,
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
@@ -418,7 +419,7 @@ func TestAnalyzeFS_MultiTargetDropOrdersByLogicalName(t *testing.T) {
 			c := qt.New(t)
 			fsys := fixture(map[string]string{"1_drop.sql": test.drop})
 
-			analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "postgres",
 			})
@@ -439,7 +440,7 @@ func TestAnalyzeFS_UnparsableDropTargetsStillReport(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{"1_drop.sql": "DROP TABLE IF EXISTS;"})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{DirFormat: migrationfile.DirFormatAtlas})
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{DirFormat: migrationfile.DirFormatAtlas})
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
@@ -464,7 +465,7 @@ func TestAnalyzeFS_MultiClauseAddNotNullReportsEveryColumn(t *testing.T) {
 		"2_add.sql":  "ALTER TABLE t ADD COLUMN zeta int NOT NULL, ADD COLUMN alpha int NOT NULL;",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
@@ -490,7 +491,7 @@ func TestAnalyzeFS_SQLiteBracketedDropTableRetainsFindingContext(t *testing.T) {
 		"1_cleanup.sql": "DROP TABLE [Users];",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
@@ -510,7 +511,7 @@ func TestAnalyzeFS_ColumnFindingsExposeStructuredSubjects(t *testing.T) {
 		"1_change.sql": `ALTER TABLE public."Users" DROP COLUMN "Legacy", ADD COLUMN "TenantID" UUID NOT NULL;`,
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
@@ -541,14 +542,14 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 `,
 	})
 
-	native, err := lint.AnalyzeFS(fsys, lint.Options{
+	native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102", "DD101"})
 
-	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
+	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
@@ -567,13 +568,13 @@ ALTER TABLE accounts DROP COLUMN legacy;
 `,
 	})
 
-	native, err := lint.AnalyzeFS(fsys, lint.Options{
+	native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102"})
 
-	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
+	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -627,7 +628,7 @@ BEGIN;
 `,
 	})
 
-	native, err := lint.AnalyzeFS(fsys, lint.Options{
+	native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
@@ -638,7 +639,7 @@ BEGIN;
 	// deployed versions that still query the name.
 	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC101", "BC103"})
 
-	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
+	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "postgres",
@@ -658,7 +659,7 @@ BEGIN;
 `,
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "postgres",
@@ -689,7 +690,7 @@ DROP TABLE users;
 `,
 	})
 
-	native, err := lint.AnalyzeFS(fsys, lint.Options{
+	native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
@@ -698,7 +699,7 @@ DROP TABLE users;
 	c.Assert(nativeFiles[0].Ignored, qt.IsFalse)
 	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101"})
 
-	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
+	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 	})
@@ -721,7 +722,7 @@ func TestAnalyzeFS_CustomRuleCannotMutateCompletedAnalysis(t *testing.T) {
 		},
 	}
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		ExtraRules: []lint.Rule{
 			{
@@ -769,7 +770,7 @@ func TestAnalyzeFS_CapturesAtlasTemplateInputsOnce(t *testing.T) {
 		reads: make(map[string]int),
 	}
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 

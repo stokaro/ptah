@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,12 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	"ptah.run/core/ast"
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
-	"ptah.run/internal/parser"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -253,6 +254,11 @@ type File struct {
 	// before this file runs, for the YD rules that read it; see
 	// [ydbHistory]. It is nil on every other dialect.
 	ydbBefore *ydbSchema
+	// split reports a file whose SQL is split into statements: an up or a
+	// down file. lineOffset is the line of Source its SQL starts on, which a
+	// statement's line in the SQL is moved by.
+	split      bool
+	lineOffset int
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -377,9 +383,9 @@ func cloneFindings(findings []Finding) []Finding {
 		if cloned[i].Context == nil {
 			continue
 		}
-		context := *cloned[i].Context
-		context.Subjects = slices.Clone(context.Subjects)
-		cloned[i].Context = &context
+		findingContext := *cloned[i].Context
+		findingContext.Subjects = slices.Clone(findingContext.Subjects)
+		cloned[i].Context = &findingContext
 	}
 	return cloned
 }
@@ -427,7 +433,10 @@ func validateOptions(opts Options) (migrationfile.DirFormat, []Rule, error) {
 // which is the community binary's exit-0 behavior on an empty directory
 // (stokaro/ptah#1241). The divergence is deliberate, so a caller branching on
 // "empty directory" needs to know which profile it runs under.
-func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
+func AnalyzeFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Options) (Analysis, error) {
+	if ctx == nil || runtime == nil {
+		return Analysis{}, errors.New("lint analysis requires a context and an engine runtime")
+	}
 	dirFormat, rules, err := validateOptions(opts)
 	if err != nil {
 		return Analysis{}, err
@@ -463,7 +472,6 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 		}
 	}
 
-	mode := modeForDialect(opts.Dialect)
 	// A run that named no server still analyzes against a resolved set, so a
 	// rule reading Capabilities never has to tell an unresolved target apart
 	// from a server that answers false to every key.
@@ -491,14 +499,12 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			present,
 			versionDirs,
 			opts.PathPrefix,
-			mode,
 			opts.Dialect,
 			target,
 			opts.AtlasTemplateData,
 			dirFormat,
 			opts.Selection,
 			opts.Compatibility,
-			scope,
 			baseline,
 			dependents,
 			registered,
@@ -509,6 +515,11 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 		}
 		files = append(files, file)
 	}
+	split, err := splitFiles(ctx, runtime, opts.Dialect, files)
+	if err != nil {
+		return Analysis{}, err
+	}
+	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope)
 	if opts.Dialect == platform.YDB {
 		ydbHistory(files)
 	}
@@ -545,8 +556,8 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 // file, line, and rule code. Call [AnalyzeFS] when prepared files or the source
 // snapshot are also needed; option validation and the empty-directory behavior
 // are [AnalyzeFS]'s.
-func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
-	analysis, err := AnalyzeFS(fsys, opts)
+func LintFS(ctx context.Context, runtime lintext.Runtime, fsys fs.FS, opts Options) ([]Finding, error) {
+	analysis, err := AnalyzeFS(ctx, runtime, fsys, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -636,22 +647,21 @@ func isAtlasTemplateSupportFile(sql string) bool {
 	return migrationfile.LooksAtlasTemplateSQL(sql) && strings.Contains(sql, "define ")
 }
 
-// prepareFile loads one migration file into the forms rules consume.
+// prepareFile loads one migration file into the forms rules consume, all but
+// its statements: the statements of every file are split in one call, by
+// [attachStatements].
 func prepareFile(
 	snapshot fsnapshot.Snapshot,
 	sources sqlSources,
 	name string,
 	present map[string]struct{},
 	versionDirs map[int64]map[string]bool,
-	pathPrefix string,
-	mode scanMode,
-	dialect string,
+	pathPrefix, dialect string,
 	target Target,
 	atlasTemplateData any,
 	dirFormat migrationfile.DirFormat,
 	selection VersionSelection,
 	compatibility CompatibilityProfile,
-	scope schemaScope,
 	baseline map[int64]baselineColumns,
 	dependents map[int64]baselineDependents,
 	registered map[string]struct{},
@@ -736,25 +746,81 @@ func prepareFile(
 		}
 		file.SQL = up.SQL
 		file.NoTransaction = up.TxMode == migrationfile.FileTxModeNone
-		for index, rawStmt := range splitStatementsWithLines(up.SQL, mode, compatibility, registered) {
+		file.split = true
+		file.lineOffset = up.SourceLineOffset
+	}
+	return file, nil
+}
+
+// splitFiles splits the SQL of every file that holds statements in one
+// call: by the run's target's owner where the run names a target, and by the
+// dialect-blind scanner where it names none.
+func splitFiles(ctx context.Context, runtime lintext.Runtime, dialect string, files []File) ([][]lintext.Statement, error) {
+	var sources []lintext.Source
+	for _, file := range files {
+		if file.split {
+			sources = append(sources, lintext.Source{Name: file.Name, SQL: file.SQL})
+		}
+	}
+	if dialect == "" {
+		split := make([][]lintext.Statement, 0, len(sources))
+		for _, source := range sources {
+			split = append(split, lintscan.Split(source.SQL, lintscan.ForDialect("")))
+		}
+		return split, nil
+	}
+	result, err := runtime.SplitStatements(ctx, lintext.SplitRequest{Target: dialect, Sources: sources})
+	if err != nil {
+		return nil, fmt.Errorf("split the statements for %s: %w", dialect, err)
+	}
+	return result.Files, nil
+}
+
+// attachStatements gives each file that holds statements its share of a
+// split, reads the suppression directives above each statement, and models
+// an up file's schema changes.
+func attachStatements(
+	files []File,
+	split [][]lintext.Statement,
+	dialect string,
+	target Target,
+	compatibility CompatibilityProfile,
+	registered map[string]struct{},
+	scope schemaScope,
+) {
+	next := 0
+	for i := range files {
+		file := &files[i]
+		if !file.split {
+			continue
+		}
+		for index, statement := range split[next] {
+			var suppressed []atlaslint.Target
+			for _, comment := range statement.Comments {
+				suppressed = append(suppressed, parseNoLintDirective(comment, compatibility, registered)...)
+			}
+			var routine *RoutineDefinition
+			if statement.Routine != nil {
+				routine = &RoutineDefinition{BodyWords: slices.Clone(statement.Routine.BodyWords)}
+			}
 			file.Statements = append(file.Statements, Statement{
 				Target:          target,
 				Index:           index,
-				Span:            SourceSpan{Start: rawStmt.start, End: rawStmt.end},
-				SQL:             rawStmt.text,
-				Canonical:       canonicalize(rawStmt.text, mode),
-				Words:           tokenizeWords(rawStmt.text, mode),
-				Routine:         routineDefinitionOf(rawStmt.text, mode),
-				Line:            rawStmt.line + up.SourceLineOffset,
-				sourceWords:     tokenizeSourceWords(rawStmt.text, mode),
-				suppressedRules: rawStmt.suppressedRules,
+				Span:            SourceSpan{Start: statement.Start, End: statement.End},
+				SQL:             statement.SQL,
+				Canonical:       statement.Canonical,
+				Words:           statement.Words,
+				Routine:         routine,
+				Line:            statement.Line + file.lineOffset,
+				sourceWords:     statement.SourceWords,
+				suppressedRules: suppressed,
 			})
 		}
+		next++
 		if file.IsUp {
-			file.Changes, file.scopeExcluded = extractSchemaChanges(&file, dialect, scope)
+			file.Changes, file.scopeExcluded = extractSchemaChanges(file, dialect, scope)
 		}
 	}
-	return file, nil
 }
 
 func selectionIncludes(selection VersionSelection, version int64, revisionVersion string, hasVersion bool) bool {
@@ -780,55 +846,4 @@ type RoutineDefinition struct {
 	// Verbatim literals are what lets a rule match a call by name without
 	// firing on `EXECUTE 'SELECT now()'` or on a commented-out one.
 	BodyWords []string
-}
-
-// routineDefinitionOf parses a statement that defines a routine, returning nil
-// for one that does not and for a dialect that was not given.
-//
-// A cheap word test comes first so that an ordinary migration -- which defines
-// no routine -- pays nothing.
-func routineDefinitionOf(sql string, mode scanMode) *RoutineDefinition {
-	if strings.TrimSpace(mode.dialect) == "" {
-		return nil
-	}
-	if !looksLikeRoutineDefinition(sql) {
-		return nil
-	}
-	list, err := parser.NewParser(sql, parser.WithDialect(mode.dialect)).Parse()
-	if err != nil || list == nil {
-		return nil
-	}
-	for _, node := range list.Statements {
-		if body, ok := routineBodySQL(node); ok {
-			return &RoutineDefinition{BodyWords: tokenizeWords(body, mode)}
-		}
-	}
-	return nil
-}
-
-// looksLikeRoutineDefinition is the cheap test that keeps the parse off every
-// other statement.
-func looksLikeRoutineDefinition(sql string) bool {
-	upper := strings.ToUpper(sql)
-	return strings.Contains(upper, "FUNCTION") || strings.Contains(upper, "PROCEDURE")
-}
-
-// routineBodySQL returns the body text of whichever node a routine arrived as.
-//
-// Four node types, because four dialect paths claim a routine, and the fifth --
-// the opaque node -- is the one the parser preserves verbatim when no path
-// claimed it, so there is no parsed body to read.
-func routineBodySQL(node ast.Node) (string, bool) {
-	switch routine := node.(type) {
-	case *ast.CreateFunctionNode:
-		return routine.Body, true
-	case *ast.PostgresRoutineNode:
-		return routine.Body.SQL, true
-	case *ast.MySQLRoutineNode:
-		return routine.Body.SQL, true
-	case *ast.SQLServerRoutineNode:
-		return routine.Body.SQL, true
-	default:
-		return "", false
-	}
 }

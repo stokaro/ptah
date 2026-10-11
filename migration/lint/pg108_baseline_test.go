@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -46,7 +47,7 @@ func measurementsColumns(partitioned bool, schemas ...string) []lint.BaselineCol
 // no_transaction file so PG103 stays out of the way of a CONCURRENTLY row.
 func analyzeMeasurements(c *qt.C, migration string, columns []lint.BaselineColumn, disabled ...string) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"1_measurements.sql": "CREATE TABLE measurements (id bigint, taken_on date, value int) PARTITION BY RANGE (taken_on);",
 		"2_change.sql":       "-- atlas:txmode none\n\n" + migration,
 	}), lint.Options{

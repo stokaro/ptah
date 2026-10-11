@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -55,7 +56,7 @@ func TestYD141_NamesTheSourceAndThePathOptions(t *testing.T) {
 	target, err := lint.ResolveTarget("ydb", "")
 	c.Assert(err, qt.IsNil)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0001_s.up.sql": "CREATE EXTERNAL DATA SOURCE old WITH (SOURCE_TYPE = 'ObjectStorage', AUTH_METHOD = 'AWS', " +
 			"AWS_ACCESS_KEY_ID_SECRET_NAME = 'a', AWS_SECRET_ACCESS_KEY_SECRET_NAME = 'b', AWS_REGION = 'r');\n",
 	}), lint.Options{Dialect: "ydb", Target: target})

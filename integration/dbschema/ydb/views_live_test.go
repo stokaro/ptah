@@ -248,7 +248,7 @@ func lintPlans(c *qt.C, conn *dbschema.DatabaseConnection, first, second []strin
 		"0000000001_first.up.sql":  {Data: []byte(strings.Join(first, ";\n") + ";\n")},
 		"0000000002_second.up.sql": {Data: []byte(strings.Join(second, ";\n") + ";\n")},
 	}
-	findings, err := lint.LintFS(files, lint.Options{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), files, lint.Options{
 		Dialect: info.Dialect,
 		Target:  lint.TargetFromServer(info.Dialect, info.Version, info.Capabilities, ""),
 	})

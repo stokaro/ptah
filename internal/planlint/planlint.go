@@ -9,8 +9,10 @@
 package planlint
 
 import (
+	"context"
 	"fmt"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
@@ -41,7 +43,7 @@ const sourceName = "20060102150405_plan.sql"
 // on the same terms as a migration file holding the same SQL is analyzed by
 // `ptah-compat migrate lint`: the same rules, the same codes, and the same
 // `atlas:nolint` directives.
-func Analyze(sql, dialect string) (lint.Analysis, error) {
+func Analyze(ctx context.Context, runtime lintext.Runtime, sql, dialect string) (lint.Analysis, error) {
 	canonical, ok := lintdialect.Canonical(dialect)
 	if !ok {
 		return lint.Analysis{}, fmt.Errorf(
@@ -51,7 +53,7 @@ func Analyze(sql, dialect string) (lint.Analysis, error) {
 	if err != nil {
 		return lint.Analysis{}, fmt.Errorf("prepare plan for analysis: %w", err)
 	}
-	return lint.AnalyzeFS(snapshot, lint.Options{
+	return lint.AnalyzeFS(ctx, runtime, snapshot, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		Dialect:       canonical,
 		DirFormat:     migrationfile.DirFormatAtlas,

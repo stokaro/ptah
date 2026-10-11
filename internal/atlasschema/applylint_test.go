@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -70,7 +71,7 @@ func TestLintPlan_RunsOnlyTheRulesThePolicyNames(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := atlasschema.LintPlan(destructivePlan, atlasschema.PlanLintOptions{
+			findings, err := atlasschema.LintPlan(c.Context(), builtintest.Runtime(), destructivePlan, atlasschema.PlanLintOptions{
 				Dialect:     "postgres",
 				RuleConfigs: row.configs,
 			})

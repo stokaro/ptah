@@ -20,8 +20,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -535,6 +537,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}
+	// The gate splits the pending migrations with the target's owner.
+	lintRuntime, err := builtin.New()
+	if err != nil {
+		return fmt.Errorf("error loading migration lint policy: %w", err)
+	}
 	// Before the first migration, because it says which server the gate about
 	// to run planned against.
 	emitLintPolicyVersionNote(emit, lintPolicy)
@@ -639,7 +646,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(
-			lockedDestructiveLintHook(migrationsFS, lintPolicy, lintPathPrefix),
+			lockedDestructiveLintHook(lintRuntime, migrationsFS, lintPolicy, lintPathPrefix),
 			preflightHook,
 		)
 	}
@@ -1164,21 +1171,24 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 }
 
 func lintPendingDestructive(
+	ctx context.Context,
+	runtime lintext.Runtime,
 	fsys fs.FS,
 	pending []int64,
 	dialect,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
-	return migrationlintgate.Analyze(fsys, pending, dialect, pathPrefix)
+	return migrationlintgate.Analyze(ctx, runtime, fsys, pending, dialect, pathPrefix)
 }
 
 func lockedDestructiveLintHook(
+	runtime lintext.Runtime,
 	fsys fs.FS,
 	policy migrationlintgate.Policy,
 	pathPrefix string,
 ) migrator.PreMigrationHook {
-	return func(_ context.Context, plan migrator.MigrationPlan) error {
-		findings, err := migrationlintgate.AnalyzeWithPolicy(fsys, plan.Versions, policy, pathPrefix)
+	return func(ctx context.Context, plan migrator.MigrationPlan) error {
+		findings, err := migrationlintgate.AnalyzeWithPolicy(ctx, runtime, fsys, plan.Versions, policy, pathPrefix)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
 		}

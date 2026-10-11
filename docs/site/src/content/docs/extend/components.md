@@ -581,7 +581,11 @@ lintOptions := lint.Options{
 	Disabled:    lintConfig.DisabledRules,
 	RuleConfigs: lintConfig.Rules,
 }
-findings, err := lint.LintFS(fsys, lintOptions)
+runtime, err := builtin.New()
+if err != nil {
+	return err
+}
+findings, err := lint.LintFS(ctx, runtime, fsys, lintOptions)
 if err != nil {
 	return err
 }
@@ -592,6 +596,13 @@ if len(findings) > 0 {
 	return fmt.Errorf("migration lint failed")
 }
 ```
+
+`LintFS` and `AnalyzeFS` take the engine runtime as well as a context. The
+target's owner splits the migrations into statements through
+`Runtime.SplitStatements`, so where a statement ends and what a comment is
+are the dialect's own answers; a run that names no dialect splits with the
+dialect-blind scanner. The bundled `builtin.New` runtime splits every
+built-in dialect.
 
 `LintFS` and `AnalyzeFS` validate `lint.Options` before reading migrations. A
 host that can return early when no work is pending, or that offers an execution
@@ -608,7 +619,7 @@ migration-provider code can consume that snapshot without reopening a changing
 migration directory:
 
 ```go
-analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+analysis, err := lint.AnalyzeFS(ctx, runtime, fsys, lint.Options{
 	Dialect: "postgres",
 	Selection: lint.VersionSelection{
 		Versions:   []int64{42, 43},
@@ -659,7 +670,7 @@ built-in rules scan, and `Statement.Canonical` is the uppercased display
 form. This example is compile-checked in `examples/reusable_components`:
 
 ```go
-findings, err = lint.LintFS(fsys, lint.Options{
+findings, err = lint.LintFS(ctx, runtime, fsys, lint.Options{
 	Dialect: "postgres",
 	ExtraRules: []lint.Rule{{
 		Code:     "ORG101",

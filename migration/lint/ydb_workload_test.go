@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -58,7 +59,7 @@ func TestYDBWorkloadRules_LeaveWhatTheServerKeeps(t *testing.T) {
 func TestYDBWorkloadRules_SayWhatToDo(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0001_ops.up.sql": "DROP RESOURCE POOL default;\nDROP BACKUP COLLECTION nightly;\nANALYZE t;\n",
 	}), lint.Options{Dialect: "ydb"})
 

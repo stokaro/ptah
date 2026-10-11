@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -49,7 +50,7 @@ func TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor(t *testing.T) {
 func lintFS(c *qt.C, sql string, opts lint.Options) []lint.Finding {
 	c.Helper()
 	opts.Dialect = "postgres"
-	findings, err := lint.LintFS(fstest.MapFS{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"0000000001_change.up.sql":   &fstest.MapFile{Data: []byte(sql)},
 		"0000000001_change.down.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 	}, opts)

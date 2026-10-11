@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -34,7 +35,7 @@ func gapOptions(dialect string) lint.Options {
 // reported for version 2.
 func analyzeGap(c *qt.C, dialect, statement string) []string {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(gapFS(statement)), gapOptions(dialect))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(gapFS(statement)), gapOptions(dialect))
 	c.Assert(err, qt.IsNil)
 	var codes []string
 	for _, finding := range analysis.Findings() {
@@ -46,7 +47,7 @@ func analyzeGap(c *qt.C, dialect, statement string) []string {
 // gapMessage returns the message one rule reported, or "".
 func gapMessage(c *qt.C, dialect, statement, rule string) string {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(gapFS(statement)), gapOptions(dialect))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(gapFS(statement)), gapOptions(dialect))
 	c.Assert(err, qt.IsNil)
 	return messageOf(analysis.Findings(), rule)
 }
@@ -443,7 +444,7 @@ func TestPartitionedIndexRule_NeedsTheDeclarationItReadsFrom(t *testing.T) {
 	t.Run("the parent is declared partitioned in the same file", func(t *testing.T) {
 		c := qt.New(t)
 
-		analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 			"1_base.sql": "CREATE TABLE unrelated (id int);",
 			"2_change.sql": "CREATE TABLE events (id int, at timestamptz) PARTITION BY RANGE (at);\n" +
 				"CREATE INDEX events_at ON events (at);",
@@ -537,13 +538,13 @@ func TestRolloutBreakRules_ReportOnTheNativeSurfaceOnly(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			native, err := lint.AnalyzeFS(fixture(gapFS(test.sql)), gapOptions("postgres"))
+			native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(gapFS(test.sql)), gapOptions("postgres"))
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(native.Findings()), qt.DeepEquals, test.wantNative)
 
 			atlasOptions := gapOptions("postgres")
 			atlasOptions.Compatibility = lint.CompatibilityProfileAtlas
-			atlas, err := lint.AnalyzeFS(fixture(gapFS(test.sql)), atlasOptions)
+			atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(gapFS(test.sql)), atlasOptions)
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(atlas.Findings()), qt.DeepEquals, test.wantAtlas)
 		})
@@ -595,7 +596,7 @@ func TestRolloutBreakRules_SurviveADestructiveExemption(t *testing.T) {
 			c := qt.New(t)
 			options := gapOptions("postgres")
 			options.Disabled = test.disabled
-			analysis, err := lint.AnalyzeFS(fixture(gapFS(test.sql)), options)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(gapFS(test.sql)), options)
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.want)
 		})

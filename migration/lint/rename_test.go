@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -16,12 +17,12 @@ import (
 func analyzeRename(c *qt.C, files map[string]string) (native, atlas []lint.Finding) {
 	c.Helper()
 	fsys := fixture(files)
-	nativeAnalysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	nativeAnalysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
 	c.Assert(err, qt.IsNil)
-	atlasAnalysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	atlasAnalysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "postgres",
@@ -531,7 +532,7 @@ func TestAnalyzeFS_TableRenameIsTwoSchemaChanges(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(),
 				fixture(map[string]string{"1_rename.sql": test.sql + "\n"}),
 				lint.Options{DirFormat: migrationfile.DirFormatAtlas, Dialect: "postgres"},
 			)

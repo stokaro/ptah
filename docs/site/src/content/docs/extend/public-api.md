@@ -35,6 +35,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/objectidentity` | Structured object identities, target-aware name comparison, and reference resolution. |
 | `core/plangraph` | Owner-contributed steps, object effects, and validated dependency ordering. |
 | `core/featureplan` | Contextual feature-planning batches, captured parents, and typed graph contributions. |
+| `core/lintext` | The migration lint contract: rules as data, statement splitting per dialect, and the batched check an owner answers. |
 | `core/goschema` | Go annotation parser. Produces a `schemamodel.Database`. |
 | `core/manageddata` | YAML row-data loading and resolution, separate from captured declarations. |
 | `core/schemamodel` | The desired-schema model every authoring source produces: Go annotations, HCL, YAML, SQL, DBML and live-catalog conversion. |

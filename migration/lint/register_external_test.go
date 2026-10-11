@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -31,7 +32,7 @@ func TestRegisterCustomRuleFromExternalPackage(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_custom.up.sql":   "SELECT 424242;\n",
 		"0000000001_custom.down.sql": "-- restore\n",
 	}), lint.Options{})

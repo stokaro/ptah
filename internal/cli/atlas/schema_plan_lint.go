@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
@@ -175,7 +176,11 @@ func runAtlasSchemaPlanLint(cmd *cobra.Command, opts atlasSchemaPlanLintOptions)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	analysis, err := planlint.Analyze(verified.plan.SQL(), verified.dialect)
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	analysis, err := planlint.Analyze(cmd.Context(), runtime, verified.plan.SQL(), verified.dialect)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
