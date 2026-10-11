@@ -98,12 +98,11 @@ None.
 
 ### Round trips that plan a change
 
-16 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+15 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `constraint-pk` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops a primary key declared as a named table constraint, so the converted-back declaration drops the key |
 | `column-enum` | `mariadb`, `mysql`, `oracle`, `sqlserver` | to-catalog | an inline enum's values do not survive the conversion: MySQL plans MODIFY to the same enum, SQL Server a varchar and a CHECK, SQLite a table rebuild |
 | `column-enum` | `sqlite` | both | an inline enum's values do not survive the conversion: MySQL plans MODIFY to the same enum, SQL Server a varchar and a CHECK, SQLite a table rebuild |
 | `view` | `cockroachdb`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | a view's CHECK OPTION and comment do not survive goschematodb, so the view is replaced |
