@@ -32,10 +32,10 @@ func TestScope_Secrets(t *testing.T) {
 		scope atlasfilter.Scope
 		want  []string
 	}{
-		{name: "include", scope: atlasfilter.Scope{Include: []string{"pg[type=secret]"}}, want: []string{"pg"}},
-		{name: "include in a directory", scope: atlasfilter.Scope{Include: []string{"ext.s3[type=secret]"}}, want: []string{"ext/s3"}},
-		{name: "exclude by name", scope: atlasfilter.Scope{Exclude: []string{"pg[type=secret]"}}, want: []string{"ext/s3"}},
-		{name: "schema", scope: atlasfilter.Scope{Schemas: []string{"ext"}}, want: []string{"ext/s3"}},
+		{name: "include", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"pg[type=secret]"}}, want: []string{"pg"}},
+		{name: "include in a directory", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"ext.s3[type=secret]"}}, want: []string{"ext/s3"}},
+		{name: "exclude by name", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"pg[type=secret]"}}, want: []string{"ext/s3"}},
+		{name: "schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"ext"}}, want: []string{"ext/s3"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -68,9 +68,9 @@ func TestExclude_Secrets(t *testing.T) {
 	held := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 		ydbsecret.ObservedObject("", "pg"), ydbsecret.ObservedObject("ext", "s3")))}
 
-	generated, err := atlasfilter.ExcludeGenerated(declared, []string{"ext.*[type=secret]"})
+	generated, err := atlasfilter.ExcludeGenerated(ownerSelections(), declared, []string{"ext.*[type=secret]"})
 	c.Assert(err, qt.IsNil)
-	live, err := atlasfilter.ExcludeDatabase(held, []string{"ext.*[type=secret]"})
+	live, err := atlasfilter.ExcludeDatabase(ownerSelections(), held, []string{"ext.*[type=secret]"})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(secretNames(generated.FeatureObjects), qt.DeepEquals, []string{"pg"})

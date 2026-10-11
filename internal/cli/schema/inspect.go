@@ -325,6 +325,7 @@ func materializeOCISchemaFiles(
 		return nil, nil, err
 	}
 	if err := atlasschema.ValidateNonDatabaseInspectPreconditions(atlasschema.InspectSourceOptions{
+		Runtime: owners,
 		Format:  opts.format,
 		Include: opts.include,
 		Exclude: opts.exclude,

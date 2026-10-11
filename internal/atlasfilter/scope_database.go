@@ -27,19 +27,12 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 	var err error
 	out.FeatureObjects, out.FeatureCoverage, err = s.bindings.Select(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
 		return s.tableKept(keptTables, schema, table)
-	}, namedFeatureKinds...)
+	}, s.vocabulary.namedKinds()...)
 	if err != nil {
 		return nil, err
 	}
 
-	out.FeatureObjects, out.FeatureCoverage = s.selectCoordinationFeatures(out.FeatureObjects, out.FeatureCoverage)
-	out.FeatureObjects, out.FeatureCoverage = s.selectStreamingFeatures(out.FeatureObjects, out.FeatureCoverage)
-	out.FeatureObjects, out.FeatureCoverage = s.selectSecretFeatures(out.FeatureObjects, out.FeatureCoverage)
-	out.FeatureObjects, out.FeatureCoverage = s.selectTopicFeatures(out.FeatureObjects, out.FeatureCoverage)
-	out.FeatureObjects, out.FeatureCoverage = s.selectExternalFeatures(out.FeatureObjects, out.FeatureCoverage)
-	out.FeatureObjects, out.FeatureCoverage = s.selectReplicationFeatures(out.FeatureObjects, out.FeatureCoverage)
-	out.FeatureObjects, out.FeatureCoverage = s.selectTimescaleFeatures(out.FeatureObjects, out.FeatureCoverage)
-	out.FeatureObjects, out.FeatureCoverage, err = s.selectWorkloadFeatures(out.FeatureObjects, out.FeatureCoverage)
+	out.FeatureObjects, out.FeatureCoverage, err = s.selectOwnerFeatures(out.FeatureObjects, out.FeatureCoverage)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +89,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.FeatureObjects, out.FeatureCoverage = s.selectPropertyFeatures(out.FeatureObjects, out.FeatureCoverage, func(schema, table string) bool {
 		return s.tableKept(keptTables, schema, table)
 	})
-	out.FeatureObjects, out.FeatureCoverage = s.selectSynonymFeatures(out.FeatureObjects, out.FeatureCoverage)
 	out.Functions = keep(db.Functions, func(function catalog.Function) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)
 	})

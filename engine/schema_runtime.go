@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 )
@@ -22,6 +23,7 @@ type SchemaRuntime interface {
 	yamlext.Runtime
 	sqlext.Runtime
 	hclext.Runtime
+	selectext.Runtime
 	coverage.Runtime
 	schemapreparation.Runtime
 	schemaprojection.TableCreationService

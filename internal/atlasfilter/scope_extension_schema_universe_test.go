@@ -24,6 +24,7 @@ func TestScopeGenerated_SchemaUniverseRetainsDatabaseWideExtensions(t *testing.T
 	}
 
 	got, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		DefaultSchema: "public",
 	})
@@ -57,6 +58,7 @@ func TestScopeDatabase_SchemaUniverseRetainsDatabaseWideExtensions(t *testing.T)
 	}
 
 	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		DefaultSchema: "public",
 	})
@@ -80,6 +82,7 @@ func TestScopeGenerated_NonExtensionIncludeCarriesDatabaseWideExtensions(t *test
 	}
 
 	got, reports, err := atlasfilter.ScopeGeneratedSelectionReport(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"app.users", "other.unrelated"},
 		DefaultSchema: "public",
@@ -115,6 +118,7 @@ func TestScopeDatabase_NonExtensionIncludeCarriesDatabaseWideExtensions(t *testi
 	}
 
 	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"app.users", "other.unrelated"},
 		DefaultSchema: "public",
@@ -134,6 +138,7 @@ func TestScopeGenerated_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	}}
 
 	qualified, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"extensions.citext"},
 		DefaultSchema: "public",
@@ -143,6 +148,7 @@ func TestScopeGenerated_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	c.Assert(qualified.NotDescribed.IsZero(), qt.IsTrue)
 
 	bare, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"citext"},
 		DefaultSchema: "public",
@@ -151,6 +157,7 @@ func TestScopeGenerated_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	c.Assert(generatedExtensionNames(bare.Extensions), qt.DeepEquals, []string{"extensions.citext"})
 
 	missed, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"extensions.typo"},
 		DefaultSchema: "public",
@@ -168,6 +175,7 @@ func TestScopeDatabase_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	}}
 
 	qualified, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"extensions.citext"},
 		DefaultSchema: "public",
@@ -178,6 +186,7 @@ func TestScopeDatabase_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	}})
 
 	bare, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"citext"},
 		DefaultSchema: "public",
@@ -188,6 +197,7 @@ func TestScopeDatabase_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	}})
 
 	missed, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"app"},
 		Include:       []string{"extensions.typo"},
 		DefaultSchema: "public",

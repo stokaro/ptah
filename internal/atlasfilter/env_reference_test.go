@@ -44,7 +44,7 @@ func TestExclude_RefusesAnEnvReference(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlasfilter.ExcludeDatabase(envReferenceSchema(), []string{test.value})
+			_, err := atlasfilter.ExcludeDatabase(ownerSelections(), envReferenceSchema(), []string{test.value})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, "--exclude does not resolve env:// references")
@@ -62,7 +62,7 @@ func TestExclude_RefusesAnEnvReference(t *testing.T) {
 func TestExclude_AnOrdinaryPatternStillWorks(t *testing.T) {
 	c := qt.New(t)
 
-	filtered, err := atlasfilter.ExcludeDatabase(envReferenceSchema(), []string{"keepme"})
+	filtered, err := atlasfilter.ExcludeDatabase(ownerSelections(), envReferenceSchema(), []string{"keepme"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(filtered.Tables, qt.HasLen, 1)
@@ -75,7 +75,7 @@ func TestExclude_AnOrdinaryPatternStillWorks(t *testing.T) {
 func TestInclude_RefusesAnEnvReference(t *testing.T) {
 	c := qt.New(t)
 
-	err := atlasfilter.ValidateIncludeSelectors([]string{"env://src"})
+	err := atlasfilter.ValidateIncludeSelectors([]string{"env://src"}, ownerSelections())
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "--include does not resolve env:// references")
@@ -87,7 +87,7 @@ func TestInclude_RefusesAnEnvReference(t *testing.T) {
 func TestInclude_AnOrdinaryPatternStillWorks(t *testing.T) {
 	c := qt.New(t)
 
-	err := atlasfilter.ValidateIncludeSelectors([]string{"keepme"})
+	err := atlasfilter.ValidateIncludeSelectors([]string{"keepme"}, ownerSelections())
 
 	c.Assert(err, qt.IsNil)
 }
@@ -103,7 +103,7 @@ func TestExclude_APatternThatMerelyContainsTheSchemeIsNotRefused(t *testing.T) {
 	schema := envReferenceSchema()
 	schema.Tables = append(schema.Tables, catalog.Table{Name: "my_env_table", Schema: "public"})
 
-	filtered, err := atlasfilter.ExcludeDatabase(schema, []string{"my_env*"})
+	filtered, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"my_env*"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(filtered.Tables, qt.HasLen, 2)

@@ -42,6 +42,7 @@ func scopeAtlasSchemaCleanPlan(
 	excludeSelection, err := atlasfilter.ScopeResources(resources, atlasfilter.Scope{
 		Exclude:       scope.Exclude,
 		DefaultSchema: scope.DefaultSchema,
+		Selections:    scope.Selections,
 	})
 	if err != nil {
 		return schemaclean.Plan{}, fmt.Errorf("apply cleanup exclusions: %w", err)

@@ -39,6 +39,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/schemaext`
 - `ptah.run/core/schemaprojection`
 - `ptah.run/core/schemavalidation`
+- `ptah.run/core/selectext`
 - `ptah.run/engine`
 - `ptah.run/engine/builtin`
 - `ptah.run/core/schemasource`
@@ -918,6 +919,26 @@ none. A scope that would split one is refused, naming the tables on each side,
 since comparing the object would change bindings outside the scope. A kind the
 scope selects by its own name keeps that selection; for it the tables decide
 only the refusal of a split.
+
+`core/selectext` is how an owner tells a scope to name its objects. A
+`Selection` states, as data, the selector type that names an object of one
+kind (`topic` in `*[type=topic]`), whether a selector reads its name in its
+schema (`InSchema`) or as a database-wide name (`DatabaseWide`), whether
+excluding it excludes a table of its name (`Relation`), and the `Fields` an
+exclusion may subtract from it. What only the owner can compute is one batched
+`Service.SelectObjects` call for each side: it returns the kept objects with
+the requested fields cleared, and the objects the kept ones require, such as
+the resource pool a kept classifier routes to, which a scope keeps and an
+exclusion ignores.
+
+`engine.Provider.Selections` registers an `Extension`, and
+`engine.Runtime.Selections` returns the frozen `Set`, ordered by selector type;
+`engine.SchemaRuntime` includes `selectext.Runtime`. The zero set is refused
+with `selectext.ErrUnselected`, and `selectext.None` names the common objects
+alone. The YDB owner names its standalone objects in their directory and its
+resource pools and classifiers by database-wide name. `tssource.Selections`
+names a continuous aggregate, and `synonym.Selections` a synonym, whose
+comment an exclusion may subtract.
 
 Built-in comparison uses them too. Once the plan is known, it refuses one that
 drops a table, a column or a function a standalone object of the effective

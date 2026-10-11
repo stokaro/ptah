@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
@@ -312,12 +313,19 @@ func planSourceSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	computation applyComputation,
 	exclude []string,
-	runtime any,
+	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
 	if computation.readScope == nil {
 		return computation.current, nil
 	}
 	return planTargetState(ctx, conn, computation.schemasBeyondURL, exclude, runtime)
+}
+
+// PlanTargetRuntime fingerprints a database state with its owners' models,
+// and scopes it with their selections.
+type PlanTargetRuntime interface {
+	schemaext.ModelRuntime
+	selectext.Runtime
 }
 
 // planTargetState reads the database state a saved plan's source fingerprint
@@ -334,7 +342,7 @@ func planSourceSchema(ctx context.Context,
 func planTargetState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	schemasBeyondURL, exclude []string,
-	runtime any,
+	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
 	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 	if err != nil {
@@ -355,8 +363,10 @@ func planTargetState(ctx context.Context,
 // fresh read the way the plan was computed: patterns counted from the
 // connection's default schema, and each standalone feature object kept or
 // left out whole by the tables it binds.
-func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, exclude []string, info catalog.ServerInfo, runtime any) (*catalog.Database, error) {
-	scope := atlasfilter.Scope{Exclude: exclude, DefaultSchema: info.Schema}
+func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, exclude []string, info catalog.ServerInfo,
+	runtime selectext.Runtime,
+) (*catalog.Database, error) {
+	scope := atlasfilter.Scope{Exclude: exclude, DefaultSchema: info.Schema, Selections: runtime.Selections()}
 	var err error
 	scope.Bindings, err = scopeBindings(ctx, runtime, info.Dialect, scope, databaseSide(current))
 	if err != nil {
@@ -668,7 +678,7 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // plan's source fingerprint. The schema is read at the connection URL's scope
 // together with the plan's [PlanFile.SchemasBeyondURL]. A fingerprint mismatch
 // returns *StalePlanError.
-func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile, runtime schemaext.ModelRuntime) error {
+func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile, runtime PlanTargetRuntime) error {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return err
 	}

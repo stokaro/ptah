@@ -262,7 +262,7 @@ func TestExcludeDatabase_LeadingSchemaTypeSelector(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(grammarFixture(), test.patterns, "public")
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), grammarFixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(grammarRemoved(grammarCensus(grammarFixture()), grammarCensus(got)), qt.DeepEquals, test.wantRemoved)
@@ -321,7 +321,7 @@ func TestExcludeGenerated_LeadingSchemaTypeSelector(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(fixture(), test.patterns, "public")
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), fixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(grammarGeneratedTableNames(got.Tables), qt.DeepEquals, test.wantTables)
@@ -408,7 +408,7 @@ func TestExcludeDatabase_FieldSelectorsSubtractFields(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(grammarFixture(), test.patterns, "public")
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), grammarFixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(grammarRemoved(grammarFieldCensus(grammarFixture()), grammarFieldCensus(got)),
@@ -461,7 +461,7 @@ func TestExcludeGenerated_FieldSelectorsSubtractFields(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(fixture(), test.patterns, "public")
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), fixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(grammarRemoved(grammarGeneratedFieldCensus(fixture()), grammarGeneratedFieldCensus(got)),
@@ -481,7 +481,7 @@ func TestExcludeGenerated_FieldSelectorsSubtractFields(t *testing.T) {
 func TestExcludeDatabase_FieldSelectorCountsAsAMatch(t *testing.T) {
 	c := qt.New(t)
 
-	_, report, err := atlasfilter.ExcludeDatabaseReport(
+	_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 		grammarFixture(), []string{"*[type=table].comment", "*[type=view].comment"}, "public")
 
 	c.Assert(err, qt.IsNil)
@@ -535,10 +535,10 @@ func TestExcludeDatabase_SelectorGrammarRefusals(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(grammarFixture(), []string{test.pattern}, "public")
+			_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), grammarFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(atlasfilter.ValidateExcludeSelectors([]string{test.pattern}), qt.ErrorMatches, test.wantErr)
+			c.Assert(atlasfilter.ValidateExcludeSelectors([]string{test.pattern}, ownerSelections()), qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
@@ -563,7 +563,7 @@ func TestExcludeDatabase_SelectorGrammarRefusals(t *testing.T) {
 func TestExcludeDatabase_QualifiedFieldSelectorStaysADepthError(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 		grammarFixture(), []string{"public.*[type=table].comment"}, "public")
 
 	c.Assert(err, qt.ErrorMatches, `too many parts in pattern "public\.\*\[type=table\]\.comment": this connection is bound to schema "public", so a pattern names object or object\.child; write "\*\[type=table\]\.comment"`)
@@ -575,7 +575,7 @@ func TestExcludeDatabase_QualifiedFieldSelectorStaysADepthError(t *testing.T) {
 func TestExcludeDatabase_LeadingSchemaSegmentIsNotCountedTwice(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 		grammarFixture(), []string{"*[type=schema].*[type=table]"}, "public")
 
 	c.Assert(err, qt.IsNil)

@@ -1204,9 +1204,10 @@ a column. A comment can go, and the table is still that table.
 anything else is refused rather than ignored, because a selector that silently
 does nothing is how a user comes to believe a field was excluded.
 
-Adding a field is a change to `excludeFieldSelectors` in
-`internal/atlasfilter`, and this table is checked against it
-(`TestExcludeFieldSelectors_MatchTheDocumentedSet`) — the two cannot drift.
+A common type's fields are `excludeFieldSelectors` in `internal/atlasfilter`,
+and an owner's are the `Fields` of its scope selection, such as the synonym
+owner's `comment`. This table is checked against both
+(`TestExcludeFieldSelectors_MatchTheDocumentedSet`), so they cannot drift.
 
 <!-- END GENERATED EXCLUDE FIELD SELECTORS -->
 

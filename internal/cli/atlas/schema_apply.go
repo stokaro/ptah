@@ -1375,7 +1375,7 @@ func validateAtlasSchemaApplyOptions(
 	}
 	// Malformed or unsupported --include selectors fail before the target
 	// database is contacted.
-	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+	if err := atlasfilter.ValidateIncludeSelectors(opts.include, opts.runtime.Selections()); err != nil {
 		return err
 	}
 	// Classification rejects unsupported schemes and source conflicts before

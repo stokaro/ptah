@@ -41,6 +41,7 @@ func TestScopeDatabase_TypeReferences_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	got, err := atlasfilter.ScopeDatabase(scopeDatabaseTypesFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users"},
 		DefaultSchema: "public",
 	})
@@ -70,6 +71,7 @@ func TestScopeDatabase_TypeReferences_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			got, err := atlasfilter.ScopeDatabase(scopeDatabaseTypesFixture(), atlasfilter.Scope{
+				Selections:    ownerSelections(),
 				Include:       []string{"users"},
 				Exclude:       []string{test.exclude},
 				DefaultSchema: "public",

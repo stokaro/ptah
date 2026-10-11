@@ -249,7 +249,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 				typeObjectKindsFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -281,7 +281,7 @@ func TestExcludeDatabaseReport_SelectorNamingATypeObjectIsNotEmpty(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, report, err := atlasfilter.ExcludeDatabaseReport(
+			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 				typeObjectKindsFixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
@@ -298,7 +298,7 @@ func TestExcludeDatabaseReport_SelectorNamingATypeObjectIsNotEmpty(t *testing.T)
 func TestExcludeDatabaseReport_StillNamesASelectorThatMatchedNoTypeObject(t *testing.T) {
 	c := qt.New(t)
 
-	_, report, err := atlasfilter.ExcludeDatabaseReport(
+	_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 		typeObjectKindsFixture(), []string{"positive_int", "nosuch_domain"}, "public")
 
 	c.Assert(err, qt.IsNil)
@@ -317,7 +317,7 @@ func TestExcludeGenerated_SubtractsTheSameTypeObjectKinds(t *testing.T) {
 		Ranges:         []schemamodel.Range{{Name: "intrange", Subtype: "integer"}, {Schema: "app", Name: "app_range", Subtype: "integer"}},
 	}
 
-	got, report, err := atlasfilter.ExcludeGeneratedReport(
+	got, report, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(),
 		schema,
 		[]string{"public.positive_int", "order_seq", "app.app_addr", "intrange"},
 		"public")
@@ -403,7 +403,7 @@ func TestExcludeDatabaseReport_ColumnSelectorUnderAnExcludedTableIsNotEmpty(t *t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, report, err := atlasfilter.ExcludeDatabaseReport(
+			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
 				&catalog.Database{
 					Tables: []catalog.Table{
 						{Name: "users", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
@@ -431,11 +431,11 @@ func TestExcludeDatabase_ColumnSelectorUnderAnExcludedTableChangesNothing(t *tes
 		}
 	}
 
-	withColumn, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+	withColumn, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 		fixture(), []string{"users", "users.id"}, "public")
 	c.Assert(err, qt.IsNil)
 
-	withoutColumn, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+	withoutColumn, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(),
 		fixture(), []string{"users"}, "public")
 	c.Assert(err, qt.IsNil)
 

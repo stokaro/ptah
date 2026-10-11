@@ -14,10 +14,12 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/featureselect"
 )
 
@@ -137,13 +139,19 @@ func TestSelectApplyStates_ScopesAPolicyWhole(t *testing.T) {
 	options := ApplyOptions{Runtime: must.Must(builtin.New())}
 
 	_, _, splitErr := selectApplyStates(t.Context(), platform.SQLServer, boundRead(), boundDeclaration(),
-		atlasfilter.Scope{Exclude: []string{"invoices"}, DefaultSchema: "dbo"}, options)
+		atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"invoices"}, DefaultSchema: "dbo"}, options)
 	current, desired, err := selectApplyStates(t.Context(), platform.SQLServer, boundRead(), boundDeclaration(),
-		atlasfilter.Scope{Exclude: []string{"orders", "invoices"}, DefaultSchema: "dbo"}, options)
+		atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"orders", "invoices"}, DefaultSchema: "dbo"}, options)
 
 	c.Assert(splitErr, qt.ErrorIs, featureselect.ErrPartialScope)
 	c.Assert(splitErr, qt.ErrorMatches, splitPolicyErr)
 	c.Assert(err, qt.IsNil)
 	c.Assert(current.FeatureObjects.Len(), qt.Equals, 0)
 	c.Assert(desired.FeatureObjects.Len(), qt.Equals, 0)
+}
+
+// ownerSelections are the scope selections of the bundled owners, which a
+// command passes from its runtime.
+func ownerSelections() selectext.Set {
+	return builtintest.Runtime().Selections()
 }

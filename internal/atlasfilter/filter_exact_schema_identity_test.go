@@ -23,7 +23,7 @@ func TestExcludeDatabaseWithDefaultSchema_BareSchemaPreservesCatalogCase(t *test
 				},
 			}
 
-			got, report, err := atlasfilter.ExcludeDatabaseReport(database, []string{pattern}, "dbo")
+			got, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), database, []string{pattern}, "dbo")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(report.Unmatched, qt.IsNil)
@@ -48,7 +48,7 @@ func TestExcludeGeneratedWithDefaultSchema_BareSchemaPreservesCatalogCase(t *tes
 				},
 			}
 
-			got, report, err := atlasfilter.ExcludeGeneratedReport(database, []string{pattern}, "dbo")
+			got, report, err := atlasfilter.ExcludeGeneratedReport(ownerSelections(), database, []string{pattern}, "dbo")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(report.Unmatched, qt.IsNil)
@@ -75,7 +75,7 @@ func TestExcludeDatabaseWithDefaultSchema_QuotedSchemaTakesItsExactObjects(t *te
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(database, []string{`" app "`}, "public")
+	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), database, []string{`" app "`}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: "app"}})
@@ -99,7 +99,7 @@ func TestExcludeDatabaseWithDefaultSchema_UnquotedSchemaKeepsWhitespaceIdentity(
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(database, []string{"app"}, "public")
+	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), database, []string{"app"}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: " app "}})
@@ -123,7 +123,7 @@ func TestExcludeGeneratedWithDefaultSchema_QuotedSchemaTakesItsExactObjects(t *t
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(database, []string{`" app "`}, "public")
+	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), database, []string{`" app "`}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "app"}})
@@ -148,7 +148,7 @@ func TestExcludeGeneratedWithDefaultSchema_UnquotedSchemaKeepsWhitespaceIdentity
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(database, []string{"app"}, "public")
+	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), database, []string{"app"}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: " app "}})
@@ -169,7 +169,7 @@ func TestExcludeDatabaseWithDefaultSchema_WhitespaceOnlySchemaIsNotTheDefault(t 
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(database, []string{`" "`}, "public")
+	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), database, []string{`" "`}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: "public"}})
@@ -186,7 +186,7 @@ func TestExcludeGeneratedWithDefaultSchema_WhitespaceOnlySchemaIsNotTheDefault(t
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(database, []string{`" "`}, "public")
+	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), database, []string{`" "`}, "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "public"}})

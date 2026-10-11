@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
 )
 
@@ -65,7 +67,7 @@ func TestScopeInspectSchema_TakesThePatternScopeFromTheURL(t *testing.T) {
 			info := catalog.ServerInfo{Dialect: "postgres", Schema: "public", URL: test.url}
 
 			got, _, err := scopeInspectSchema(t.Context(),
-				patternScopeFixture(), info, InspectOptions{Exclude: []string{"public.users.name"}})
+				patternScopeFixture(), info, InspectOptions{Exclude: []string{"public.users.name"}, Runtime: must.Must(builtin.New())})
 
 			c.Assert(patternScopeError(err), qt.Equals, test.wantErr)
 			c.Assert(patternScopeColumns(got), qt.DeepEquals, test.wantColumns)

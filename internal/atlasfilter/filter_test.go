@@ -14,7 +14,7 @@ func TestExcludeDatabase_RemovesTableAndDependentObjects(t *testing.T) {
 	c := qt.New(t)
 	schema := filterFixtureSchema()
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.audit_log"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
@@ -37,7 +37,7 @@ func TestExcludeDatabase_KeepsWhichRolesTheServerHas(t *testing.T) {
 	schema := filterFixtureSchema()
 	schema.RolesOutOfScope = []catalog.Role{{Name: "other_tenants_role"}}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.audit_log"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(roleNames(got.RolesOutOfScope), qt.DeepEquals, []string{"other_tenants_role"})
@@ -47,7 +47,7 @@ func TestExcludeDatabase_TypeSelectorRemovesOnlyIndexes(t *testing.T) {
 	c := qt.New(t)
 	schema := filterFixtureSchema()
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.users.*[type=index]"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.users.*[type=index]"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"auth.users", "auth.audit_log"})
@@ -64,7 +64,7 @@ func TestExcludeDatabase_TableSubtypeSelector(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"public.*[type=foreign_table]"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"public.*[type=foreign_table]"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"public.users"})
@@ -83,7 +83,7 @@ func TestExcludeDatabase_PreservesStructuralTableIdentity(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{`"tenant.data"`})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{`"tenant.data"`})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Tables, qt.HasLen, 1)
@@ -98,7 +98,7 @@ func TestExcludeDatabase_ColumnFilterRemovesDependentObjects(t *testing.T) {
 	c := qt.New(t)
 	schema := filterFixtureSchema()
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.users.email[type=column]"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.users.email[type=column]"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, []string{"id"})
@@ -143,7 +143,7 @@ func TestExcludeDatabase_ReferencedColumnFilterRemovesForeignKeys(t *testing.T) 
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.users.email[type=column]"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.users.email[type=column]"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"auth.users", "billing.invoices"})
@@ -172,7 +172,7 @@ func TestExcludeDatabase_CrossSchemaDependenciesStayIsolated(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.users"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.users"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"billing.users"})
@@ -192,7 +192,7 @@ func TestExcludeDatabase_ViewFilterRemovesDependentGrants(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"public.active_users[type=view]"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"public.active_users[type=view]"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(viewNames(got.Views), qt.DeepEquals, make([]string, 0))
@@ -203,7 +203,7 @@ func TestExcludeDatabase_CommaSeparatedPatterns(t *testing.T) {
 	c := qt.New(t)
 	schema := filterFixtureSchema()
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.users.email[type=column],auth.audit_log"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.users.email[type=column],auth.audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
@@ -221,7 +221,7 @@ func TestExcludeDatabase_RetainsUnfilteredObjectKinds(t *testing.T) {
 	schema.Composites = []catalog.CompositeType{{Schema: "auth", Name: "address"}}
 	schema.Ranges = []catalog.Range{{Schema: "auth", Name: "floatrange", Subtype: "float8"}}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.audit_log"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.HasLen, 1)
@@ -240,7 +240,7 @@ func TestExcludeGenerated_RemovesEnums(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGenerated(schema, []string{"user_status"})
+	got, err := atlasfilter.ExcludeGenerated(ownerSelections(), schema, []string{"user_status"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Enums, qt.HasLen, 1)
@@ -283,7 +283,7 @@ func TestExcludeGenerated_EnumIdentityIncludesSchema(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(&schemamodel.Database{
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), &schemamodel.Database{
 				Enums: []schemamodel.Enum{
 					{Schema: "app", Name: "color"},
 					{Schema: "public", Name: "color"},
@@ -300,7 +300,7 @@ func TestExcludeGenerated_EnumIdentityIncludesSchema(t *testing.T) {
 func TestExcludeDatabase_InvalidGlob(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"["})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), filterFixtureSchema(), []string{"["})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `invalid Atlas exclude glob "["`)
@@ -310,7 +310,7 @@ func TestExcludeDatabase_InvalidGlob(t *testing.T) {
 func TestExcludeDatabase_EmptyTypeSelector(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"*[type=]"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), filterFixtureSchema(), []string{"*[type=]"})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `empty Atlas exclude type selector "type="`)
@@ -320,7 +320,7 @@ func TestExcludeDatabase_EmptyTypeSelector(t *testing.T) {
 func TestExcludeDatabase_UnsupportedSelector(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"auth.users[owner=app].version"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), filterFixtureSchema(), []string{"auth.users[owner=app].version"})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `unsupported Atlas exclude selector "owner=app"`)
@@ -336,7 +336,7 @@ func TestExcludeDatabase_ExtensionVersionFieldSelector(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"pg_trgm[type=extension].version"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"pg_trgm[type=extension].version"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, []string{"pg_trgm:", "citext:1.6"})
@@ -352,7 +352,7 @@ func TestExcludeDatabase_SchemaQualifiedExtensionVersionFieldSelector(t *testing
 		},
 	}
 
-	got, err := atlasfilter.ExcludeDatabase(schema, []string{"public.*[type=extension].version"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"public.*[type=extension].version"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, []string{"pg_trgm:", "citext:1.6"})
@@ -371,7 +371,7 @@ func TestExcludeGenerated_ExtensionVersionFieldSelector(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGenerated(schema, []string{"pg_trgm[type=extension].version"})
+	got, err := atlasfilter.ExcludeGenerated(ownerSelections(), schema, []string{"pg_trgm[type=extension].version"})
 
 	c.Assert(err, qt.IsNil)
 	versions := make([]string, 0, len(got.Extensions))
@@ -385,7 +385,7 @@ func TestExcludeGenerated_ExtensionVersionFieldSelector(t *testing.T) {
 func TestExcludeDatabase_UnsupportedFieldSelector(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"*[type=table].version"})
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), filterFixtureSchema(), []string{"*[type=table].version"})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `unsupported Atlas exclude field selector ".version"`)
@@ -399,7 +399,7 @@ func TestExcludeDatabase_UnsupportedFieldSelector(t *testing.T) {
 func TestExcludeDatabase_NonFinalTypeSelectorRejected(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(),
 		filterFixtureSchema(),
 		[]string{"public.*[type=table].c*[type=column]"},
 	)
@@ -440,7 +440,7 @@ func TestExcludeGenerated_RemovesTableAndDependentObjects(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGenerated(schema, []string{"auth.audit_log"})
+	got, err := atlasfilter.ExcludeGenerated(ownerSelections(), schema, []string{"auth.audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
@@ -471,7 +471,7 @@ func TestExcludeGenerated_ColumnFilterRemovesDependentObjects(t *testing.T) {
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGenerated(schema, []string{"auth.users.email[type=column]"})
+	got, err := atlasfilter.ExcludeGenerated(ownerSelections(), schema, []string{"auth.users.email[type=column]"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"User.id"})
@@ -495,7 +495,7 @@ func TestExcludeGenerated_ReferencedColumnFilterRemovesFieldForeignKey(t *testin
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGenerated(schema, []string{"auth.users.email[type=column]"})
+	got, err := atlasfilter.ExcludeGenerated(ownerSelections(), schema, []string{"auth.users.email[type=column]"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"User.id", "Invoice.id", "Invoice.user_email"})
@@ -516,7 +516,7 @@ func TestExcludeGenerated_PreservesSelfReferencingForeignKeyMetadata(t *testing.
 		},
 	}
 
-	got, err := atlasfilter.ExcludeGenerated(schema, []string{"audit_log"})
+	got, err := atlasfilter.ExcludeGenerated(ownerSelections(), schema, []string{"audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"nodes"})

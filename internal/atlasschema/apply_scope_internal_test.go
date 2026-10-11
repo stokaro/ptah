@@ -33,6 +33,7 @@ func TestScopeApplyStatesDoesNotReAddCurrentSupportExtension(t *testing.T) {
 		},
 	}
 	scope := atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"app.users", "extensions.citext"},
 		DefaultSchema: "public",
 	}

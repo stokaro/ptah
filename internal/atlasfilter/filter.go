@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/tableref"
 )
@@ -19,8 +20,8 @@ import (
 // Atlas-style exclude globs removed. Objects that carry no schema are treated
 // as unqualified; use [ExcludeDatabaseWithDefaultSchema] when the connection
 // names the schema those objects live in.
-func ExcludeDatabase(schema *catalog.Database, patterns []string) (*catalog.Database, error) {
-	return ExcludeDatabaseWithDefaultSchema(schema, patterns, "")
+func ExcludeDatabase(selections selectext.Set, schema *catalog.Database, patterns []string) (*catalog.Database, error) {
+	return ExcludeDatabaseWithDefaultSchema(selections, schema, patterns, "")
 }
 
 // ExcludeDatabaseWithDefaultSchema is [ExcludeDatabase] told which schema owns
@@ -33,11 +34,12 @@ func ExcludeDatabase(schema *catalog.Database, patterns []string) (*catalog.Data
 // and on `schema apply` and `schema diff` it reaches a DROP: the user writes
 // the qualified spelling to protect an object and the plan destroys it.
 func ExcludeDatabaseWithDefaultSchema(
+	selections selectext.Set,
 	schema *catalog.Database,
 	patterns []string,
 	defaultSchema string,
 ) (*catalog.Database, error) {
-	filtered, _, err := ExcludeDatabaseReport(schema, patterns, defaultSchema)
+	filtered, _, err := ExcludeDatabaseReport(selections, schema, patterns, defaultSchema)
 	return filtered, err
 }
 
@@ -61,11 +63,12 @@ type ExcludeReport struct {
 // The filtering is identical; only the extra return value is new, so callers
 // that do not care about emptiness keep the two-value form.
 func ExcludeDatabaseReport(
+	selections selectext.Set,
 	schema *catalog.Database,
 	patterns []string,
 	defaultSchema string,
 ) (*catalog.Database, ExcludeReport, error) {
-	return excludeDatabase(schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
+	return excludeDatabase(selections, schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
 }
 
 // ExcludeDatabaseScopeReport is [ExcludeDatabaseReport] for a caller holding
@@ -80,16 +83,21 @@ func ExcludeDatabaseScopeReport(
 	schema *catalog.Database,
 	scope Scope,
 ) (*catalog.Database, ExcludeReport, error) {
-	return excludeDatabase(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
+	return excludeDatabase(scope.Selections, schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
 }
 
 func excludeDatabase(
+	selections selectext.Set,
 	schema *catalog.Database,
 	patterns []string,
 	patternScope, defaultSchema string,
 	bindings featureselect.Bindings,
 ) (*catalog.Database, ExcludeReport, error) {
-	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope))
+	if !selections.Selected() {
+		return nil, ExcludeReport{}, selectext.ErrUnselected
+	}
+	words := vocabulary{selections: selections}
+	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope), words)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -97,7 +105,7 @@ func excludeDatabase(
 		return schema, unfilteredReport(filters), nil
 	}
 
-	state := newExclusionState(filters, defaultSchema)
+	state := newExclusionState(filters, defaultSchema, words)
 	filtered := cloneDatabase(schema)
 	// Schemas go first: every filter below asks whether its object's schema
 	// left, and that answer has to exist before the first object is judged.
@@ -105,18 +113,14 @@ func excludeDatabase(
 	filtered.Tables = state.filterTables(filtered.Tables)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
-	}, namedFeatureKinds...)
+	}, state.vocabulary.namedKinds()...)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterExternalFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterReplicationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	if filtered.FeatureObjects, err = state.clearOwnerFields(filtered.FeatureObjects); err != nil {
+		return nil, ExcludeReport{}, err
+	}
 	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
 	filtered.Sequences = state.filterSequences(filtered.Sequences)
@@ -132,7 +136,6 @@ func excludeDatabase(
 	}
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSynonymFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterPropertyFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
@@ -160,8 +163,8 @@ func unfilteredReport(filters []resourcePattern) ExcludeReport {
 
 // ExcludeGenerated returns a shallow copy of schema with generated-schema IR
 // resources matching Atlas-style exclude globs removed.
-func ExcludeGenerated(schema *schemamodel.Database, patterns []string) (*schemamodel.Database, error) {
-	return ExcludeGeneratedWithDefaultSchema(schema, patterns, "")
+func ExcludeGenerated(selections selectext.Set, schema *schemamodel.Database, patterns []string) (*schemamodel.Database, error) {
+	return ExcludeGeneratedWithDefaultSchema(selections, schema, patterns, "")
 }
 
 // ExcludeGeneratedWithDefaultSchema is [ExcludeGenerated] told which schema
@@ -171,22 +174,24 @@ func ExcludeGenerated(schema *schemamodel.Database, patterns []string) (*schemam
 // removed a table from the introspected side but not from the desired side
 // would turn a filtered-out object into a CREATE.
 func ExcludeGeneratedWithDefaultSchema(
+	selections selectext.Set,
 	schema *schemamodel.Database,
 	patterns []string,
 	defaultSchema string,
 ) (*schemamodel.Database, error) {
-	filtered, _, err := ExcludeGeneratedReport(schema, patterns, defaultSchema)
+	filtered, _, err := ExcludeGeneratedReport(selections, schema, patterns, defaultSchema)
 	return filtered, err
 }
 
 // ExcludeGeneratedReport is [ExcludeGeneratedWithDefaultSchema] plus the
 // [ExcludeReport] for the generated side.
 func ExcludeGeneratedReport(
+	selections selectext.Set,
 	schema *schemamodel.Database,
 	patterns []string,
 	defaultSchema string,
 ) (*schemamodel.Database, ExcludeReport, error) {
-	return excludeGenerated(schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
+	return excludeGenerated(selections, schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
 }
 
 // ExcludeGeneratedScopeReport is [ExcludeDatabaseScopeReport] for the generated
@@ -195,16 +200,21 @@ func ExcludeGeneratedScopeReport(
 	schema *schemamodel.Database,
 	scope Scope,
 ) (*schemamodel.Database, ExcludeReport, error) {
-	return excludeGenerated(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
+	return excludeGenerated(scope.Selections, schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
 }
 
 func excludeGenerated(
+	selections selectext.Set,
 	schema *schemamodel.Database,
 	patterns []string,
 	patternScope, defaultSchema string,
 	bindings featureselect.Bindings,
 ) (*schemamodel.Database, ExcludeReport, error) {
-	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope))
+	if !selections.Selected() {
+		return nil, ExcludeReport{}, selectext.ErrUnselected
+	}
+	words := vocabulary{selections: selections}
+	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope), words)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -212,7 +222,7 @@ func excludeGenerated(
 		return schema, unfilteredReport(filters), nil
 	}
 
-	state := newExclusionState(filters, defaultSchema)
+	state := newExclusionState(filters, defaultSchema, words)
 	filtered := cloneGenerated(schema)
 	// Same ordering rule as the database side, and the same reason both sides
 	// have this pass at all: a schema removed from one side only would come
@@ -226,19 +236,15 @@ func excludeGenerated(
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
-	}, namedFeatureKinds...)
+	}, state.vocabulary.namedKinds()...)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
 
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterCoordinationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterStreamingFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterSecretFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTopicFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterExternalFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterReplicationFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterTimescaleFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
-	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterWorkloadFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage = state.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	if filtered.FeatureObjects, err = state.clearOwnerFields(filtered.FeatureObjects); err != nil {
+		return nil, ExcludeReport{}, err
+	}
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
 	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
@@ -307,8 +313,11 @@ const (
 // only learn once a connection is open, so this pre-connect pass applies the
 // scope-independent half of it: a pattern too deep for any scope is rejected
 // before a database is contacted, and the rest is caught by the filter.
-func ValidateExcludeSelectors(values []string) error {
-	_, err := parsePatterns(values, depthScope{})
+func ValidateExcludeSelectors(values []string, selections selectext.Set) error {
+	if !selections.Selected() {
+		return selectext.ErrUnselected
+	}
+	_, err := parsePatterns(values, depthScope{}, vocabulary{selections: selections})
 	return err
 }
 
@@ -332,11 +341,11 @@ func resolvedDepthScope(schema string) depthScope {
 	return depthScope{schema: strings.TrimSpace(schema), resolved: true}
 }
 
-func parsePatterns(values []string, scope depthScope) ([]resourcePattern, error) {
+func parsePatterns(values []string, scope depthScope, words vocabulary) ([]resourcePattern, error) {
 	var patterns []resourcePattern
 	for _, value := range values {
 		for part := range strings.SplitSeq(value, ",") {
-			pattern, err := parsePattern(part, filterKindExclude)
+			pattern, err := parsePattern(part, filterKindExclude, words)
 			if err != nil {
 				return nil, err
 			}
@@ -480,7 +489,7 @@ func envReferenceRemedy(kind string) string {
 	return "write the object pattern itself"
 }
 
-func parsePattern(value, kind string) (resourcePattern, error) {
+func parsePattern(value, kind string, words vocabulary) (resourcePattern, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return resourcePattern{}, nil
@@ -504,7 +513,7 @@ func parsePattern(value, kind string) (resourcePattern, error) {
 	types := make(map[string]struct{})
 	var fields map[string]struct{}
 	if open := strings.LastIndex(body, "[type="); open >= 0 {
-		selector, err := parseTypeSelector(body, open, kind)
+		selector, err := parseTypeSelector(body, open, kind, words)
 		if err != nil {
 			return resourcePattern{}, err
 		}
@@ -565,7 +574,7 @@ func stripSchemaTypeSegment(raw, kind string) (body string, found bool, err erro
 	return glob + rest, true, nil
 }
 
-func parseTypeSelector(raw string, open int, kind string) (typeSelector, error) {
+func parseTypeSelector(raw string, open int, kind string, words vocabulary) (typeSelector, error) {
 	closeIdx := strings.Index(raw[open:], "]")
 	if closeIdx < 0 {
 		return typeSelector{}, fmt.Errorf("unsupported Atlas %s selector %q", kind, raw)
@@ -590,7 +599,7 @@ func parseTypeSelector(raw string, open int, kind string) (typeSelector, error) 
 	if len(types) == 0 {
 		return typeSelector{}, fmt.Errorf("empty Atlas %s type selector %q", kind, selector)
 	}
-	fields, err := parseFieldSelector(raw[closeIdx+1:], types, kind)
+	fields, err := parseFieldSelector(raw[closeIdx+1:], types, kind, words)
 	if err != nil {
 		return typeSelector{}, err
 	}
@@ -613,13 +622,12 @@ var excludeFieldSelectors = map[string]map[string]struct{}{
 	"base_table":        {"comment": {}},
 	"view":              {"comment": {}},
 	"materialized_view": {"comment": {}},
-	"synonym":           {"comment": {}},
 }
 
 // parseFieldSelector resolves the `.field` suffix behind a type selector into
 // the set of fields the pattern subtracts. `.*` names every field Ptah can
 // subtract for the selected types.
-func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (map[string]struct{}, error) {
+func parseFieldSelector(suffix string, types map[string]struct{}, kind string, words vocabulary) (map[string]struct{}, error) {
 	if suffix == "" {
 		return nil, nil
 	}
@@ -632,7 +640,7 @@ func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (
 	}
 	fields := make(map[string]struct{})
 	for resourceType := range types {
-		for honored := range excludeFieldSelectors[resourceType] {
+		for _, honored := range words.fields(resourceType) {
 			if field == "*" || field == honored {
 				fields[honored] = struct{}{}
 			}
@@ -641,17 +649,17 @@ func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (
 	if len(fields) == 0 {
 		return nil, fmt.Errorf(
 			"unsupported Atlas %s field selector %q: Ptah refuses a field selector it would have to ignore; %s",
-			kind, suffix, supportedFieldsMessage(types))
+			kind, suffix, supportedFieldsMessage(types, words))
 	}
 	return fields, nil
 }
 
 // supportedFieldsMessage names the fields the selected types do support, so a
 // refusal says what would have worked.
-func supportedFieldsMessage(types map[string]struct{}) string {
+func supportedFieldsMessage(types map[string]struct{}, words vocabulary) string {
 	supported := make(map[string]struct{})
 	for resourceType := range types {
-		for honored := range excludeFieldSelectors[resourceType] {
+		for _, honored := range words.fields(resourceType) {
 			supported[honored] = struct{}{}
 		}
 	}
@@ -722,7 +730,9 @@ func selectorLikeSuffix(raw string) (selector string, ok bool) {
 }
 
 type exclusionState struct {
-	patterns []resourcePattern
+	// vocabulary is the run's owners' selector types and fields.
+	vocabulary vocabulary
+	patterns   []resourcePattern
 	// defaultSchema owns objects that carry no schema of their own. It is the
 	// connection's schema for introspected states and the dialect default for
 	// file-backed ones; empty means "no default", which restores the
@@ -782,8 +792,9 @@ var exactIdentities = objectidentity.NewBuilder(identifier.Semantics{
 	IndexNames:  identifier.ComparisonExact,
 })
 
-func newExclusionState(patterns []resourcePattern, defaultSchema string) *exclusionState {
+func newExclusionState(patterns []resourcePattern, defaultSchema string, words vocabulary) *exclusionState {
 	return &exclusionState{
+		vocabulary:             words,
 		patterns:               patterns,
 		defaultSchema:          strings.TrimSpace(defaultSchema),
 		matched:                make([]bool, len(patterns)),

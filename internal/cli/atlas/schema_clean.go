@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
@@ -28,8 +29,15 @@ import (
 	"ptah.run/internal/schemaclean"
 )
 
+// atlasSchemaCleanRuntime converts the inspected catalog and scopes the
+// cleanup plan with the run's owners.
+type atlasSchemaCleanRuntime interface {
+	dbschematogo.Runtime
+	selectext.Runtime
+}
+
 type atlasSchemaCleanOptions struct {
-	runtime     dbschematogo.Runtime
+	runtime     atlasSchemaCleanRuntime
 	url         string
 	dryRun      bool
 	format      string
@@ -150,10 +158,10 @@ func runAtlasSchemaClean(
 	}
 	// Selector syntax is checked before the database is contacted, so a
 	// malformed pattern cannot half-clean a database on its way to failing.
-	if err := atlasfilter.ValidateResourceIncludeSelectors(opts.include); err != nil {
+	if err := atlasfilter.ValidateResourceIncludeSelectors(opts.include, opts.runtime.Selections()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := atlasfilter.ValidateExcludeSelectors(opts.exclude); err != nil {
+	if err := atlasfilter.ValidateExcludeSelectors(opts.exclude, opts.runtime.Selections()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// Absent and empty are different answers on this verb. The pinned community
@@ -195,6 +203,7 @@ func runAtlasSchemaClean(
 			Exclude:               opts.exclude,
 			DefaultSchema:         conn.Info().Schema,
 			RealmRelativePatterns: atlasschema.ConnectionIsRealmScoped(conn.Info()),
+			Selections:            opts.runtime.Selections(),
 		}, conn.Info().Dialect)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

@@ -1,8 +1,9 @@
 package atlasfilter
 
 // White-box testing required: the documented table is checked against
-// excludeFieldSelectors, which is unexported and has no accessor. Exporting one
-// for a test would be a public API surface existing only to be read here.
+// excludeFieldSelectors and the vocabulary that adds the bundled owners'
+// fields to it, which are unexported and have no accessor. Exporting one for a
+// test would be a public API surface existing only to be read here.
 
 import (
 	"os"
@@ -12,6 +13,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/builtintest"
 )
 
 // referencePage is the page whose table this test holds to the registry.
@@ -32,15 +35,7 @@ func TestExcludeFieldSelectors_MatchTheDocumentedSet(t *testing.T) {
 	c := qt.New(t)
 
 	documented := documentedExcludeFields(c)
-	registered := make(map[string][]string, len(excludeFieldSelectors))
-	for resourceType, fields := range excludeFieldSelectors {
-		names := make([]string, 0, len(fields))
-		for field := range fields {
-			names = append(names, field)
-		}
-		slices.Sort(names)
-		registered[resourceType] = names
-	}
+	registered := registeredExcludeFields(vocabulary{selections: builtintest.Runtime().Selections()})
 
 	c.Assert(documented, qt.DeepEquals, registered,
 		qt.Commentf("the reference table and excludeFieldSelectors disagree; update %s", referencePage))
@@ -123,4 +118,20 @@ func backtickedName(cell string) (string, bool) {
 		return "", false
 	}
 	return trimmed[1 : len(trimmed)-1], true
+}
+
+// registeredExcludeFields reads the fields an exclusion may subtract, by
+// resource type, in the shape the documented table holds: every common type
+// and every owner type that names a field.
+func registeredExcludeFields(words vocabulary) map[string][]string {
+	registered := make(map[string][]string, len(excludeFieldSelectors))
+	for resourceType := range excludeFieldSelectors {
+		registered[resourceType] = words.fields(resourceType)
+	}
+	for _, selection := range words.selections.Selections() {
+		if len(selection.Fields) > 0 {
+			registered[selection.Type] = slices.Sorted(slices.Values(words.fields(selection.Type)))
+		}
+	}
+	return registered
 }

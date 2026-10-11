@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/schemascope"
 )
@@ -46,6 +47,12 @@ type Scope struct {
 	// left out when it selects none, and refused when it selects some. The
 	// zero value keeps every standalone object.
 	Bindings featureselect.Bindings
+	// Selections say how the run's owners name their objects: their selector
+	// types, the fields an exclusion may subtract, and what only the owner
+	// computes, usually the caller's runtime's. It is required: the zero
+	// value is refused with [selectext.ErrUnselected], and [selectext.None]
+	// names the common objects alone.
+	Selections selectext.Set
 	// ExtensionSupport keeps every database-wide extension during a
 	// comparison-side reprojection. Comparison callers set it only after either
 	// side reports a matching non-extension resource, so an extension-only
@@ -128,28 +135,17 @@ func (e *CrossScopeError) Error() string {
 // constraints, triggers, policies, grants) ride along with their parent and
 // are not independently includable.
 var includeSelectableTypes = map[string]struct{}{
-	"table":                    {},
-	"view":                     {},
-	"materialized_view":        {},
-	"synonym":                  {},
-	"topic":                    {},
-	"async_replication":        {},
-	"transfer":                 {},
-	"coordination_node":        {},
-	"secret":                   {},
-	"external_data_source":     {},
-	"external_table":           {},
-	"streaming_query":          {},
-	"function":                 {},
-	"enum":                     {},
-	"extension":                {},
-	"sequence":                 {},
-	"domain":                   {},
-	"composite_type":           {},
-	"range":                    {},
-	"role":                     {},
-	"resource_pool":            {},
-	"resource_pool_classifier": {},
+	"table":             {},
+	"view":              {},
+	"materialized_view": {},
+	"function":          {},
+	"enum":              {},
+	"extension":         {},
+	"sequence":          {},
+	"domain":            {},
+	"composite_type":    {},
+	"range":             {},
+	"role":              {},
 }
 
 // Resource is one top-level identity offered to Atlas selector matching.
@@ -166,11 +162,15 @@ type Resource struct {
 // such as schema-clean plans whose writer-owned kinds do not all have a field
 // in Database. The boolean result aligns one-for-one with resources.
 func ScopeResources(resources []Resource, scope Scope) ([]bool, error) {
-	selectors, err := parseResourceIncludeSelectors(scope.Include)
+	if !scope.Selections.Selected() {
+		return nil, selectext.ErrUnselected
+	}
+	words := vocabulary{selections: scope.Selections}
+	selectors, err := parseResourceIncludeSelectors(scope.Include, words)
 	if err != nil {
 		return nil, err
 	}
-	patterns, err := parsePatterns(scope.Exclude, resolvedDepthScope(scope.patternScopeSchema()))
+	patterns, err := parsePatterns(scope.Exclude, resolvedDepthScope(scope.patternScopeSchema()), words)
 	if err != nil {
 		return nil, err
 	}
@@ -199,13 +199,16 @@ var additionalResourceSelectableTypes = map[string]struct{}{
 // writer-owned top-level resources. It is the pre-connect counterpart of
 // [ScopeResources]; the ordinary schema validator intentionally remains
 // narrower because a Database cannot represent these additional catalog kinds.
-func ValidateResourceIncludeSelectors(values []string) error {
-	_, err := parseResourceIncludeSelectors(values)
+func ValidateResourceIncludeSelectors(values []string, selections selectext.Set) error {
+	if !selections.Selected() {
+		return selectext.ErrUnselected
+	}
+	_, err := parseResourceIncludeSelectors(values, vocabulary{selections: selections})
 	return err
 }
 
-func parseResourceIncludeSelectors(values []string) ([]resourcePattern, error) {
-	allowed := maps.Clone(includeSelectableTypes)
+func parseResourceIncludeSelectors(values []string, words vocabulary) ([]resourcePattern, error) {
+	allowed := words.includeSelectable()
 	maps.Copy(allowed, additionalResourceSelectableTypes)
 	var selectors []resourcePattern
 	for _, value := range values {
@@ -214,7 +217,7 @@ func parseResourceIncludeSelectors(values []string) ([]resourcePattern, error) {
 			if raw == "" {
 				continue
 			}
-			selector, err := parsePattern(raw, filterKindInclude)
+			selector, err := parsePattern(raw, filterKindInclude, words)
 			if err != nil {
 				return nil, err
 			}
@@ -323,16 +326,19 @@ func quoteSelectors(selectors []string) string {
 // types, and unknown resource types. Commands run it before any database work,
 // so a selector that can never be honored fails without contacting a database
 // or resetting a dev database.
-func ValidateIncludeSelectors(values []string) error {
-	_, err := parseIncludeSelectors(values)
+func ValidateIncludeSelectors(values []string, selections selectext.Set) error {
+	if !selections.Selected() {
+		return selectext.ErrUnselected
+	}
+	_, err := parseIncludeSelectors(values, vocabulary{selections: selections})
 	return err
 }
 
-func parseIncludeSelectors(values []string) ([]resourcePattern, error) {
+func parseIncludeSelectors(values []string, words vocabulary) ([]resourcePattern, error) {
 	var selectors []resourcePattern
 	for _, value := range values {
 		for part := range strings.SplitSeq(value, ",") {
-			selector, err := parseIncludeSelector(part)
+			selector, err := parseIncludeSelector(part, words)
 			if err != nil {
 				return nil, err
 			}
@@ -344,16 +350,16 @@ func parseIncludeSelectors(values []string) ([]resourcePattern, error) {
 	return selectors, nil
 }
 
-func parseIncludeSelector(value string) (resourcePattern, error) {
+func parseIncludeSelector(value string, words vocabulary) (resourcePattern, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return resourcePattern{}, nil
 	}
-	pattern, err := parsePattern(raw, filterKindInclude)
+	pattern, err := parsePattern(raw, filterKindInclude, words)
 	if err != nil {
 		return resourcePattern{}, err
 	}
-	if err := validateIncludeSelectorTypes(raw, pattern.types); err != nil {
+	if err := validateIncludeSelectorTypesAgainst(raw, pattern.types, words.includeSelectable()); err != nil {
 		return resourcePattern{}, err
 	}
 	return pattern, nil
@@ -373,10 +379,6 @@ func includeSelectorSpellings(values []string) []string {
 		}
 	}
 	return out
-}
-
-func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
-	return validateIncludeSelectorTypesAgainst(raw, types, includeSelectableTypes)
 }
 
 func validateIncludeSelectorTypesAgainst(
@@ -466,7 +468,10 @@ func scopeReport[T any](
 		filtered, report, err := exclude(db, scope)
 		return filtered, ScopeReports{Exclude: report}, err
 	}
-	selectors, err := parseIncludeSelectors(scope.Include)
+	if !scope.Selections.Selected() {
+		return nil, ScopeReports{}, selectext.ErrUnselected
+	}
+	selectors, err := parseIncludeSelectors(scope.Include, vocabulary{selections: scope.Selections})
 	if err != nil {
 		return nil, ScopeReports{}, err
 	}
@@ -538,6 +543,8 @@ type scopeSelection struct {
 	matched             bool
 	nonExtensionMatched bool
 	bindings            featureselect.Bindings
+	// vocabulary is the run's owners' selector types.
+	vocabulary vocabulary
 }
 
 // emptySelectionError reports an include selection that matched nothing.
@@ -562,6 +569,7 @@ func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection
 		def:              strings.TrimSpace(scope.DefaultSchema),
 		extensionSupport: scope.ExtensionSupport,
 		bindings:         scope.Bindings,
+		vocabulary:       vocabulary{selections: scope.Selections},
 	}
 }
 

@@ -58,7 +58,7 @@ func TestExcludeDatabaseReport_AContinuousAggregateAnswersItsSelector(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			filtered, report, err := atlasfilter.ExcludeDatabaseReport(timescaleCatalog(c), test.patterns, "public")
+			filtered, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), timescaleCatalog(c), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(report.Unmatched, qt.DeepEquals, test.wantUnmatched)
@@ -84,8 +84,8 @@ func TestScope_SelectsContinuousAggregatesOnBothSides(t *testing.T) {
 		scope atlasfilter.Scope
 		want  []string
 	}{
-		{name: "a schema", scope: atlasfilter.Scope{Schemas: []string{"app"}}, want: []string{"app.daily_totals"}},
-		{name: "an include selector", scope: atlasfilter.Scope{Include: []string{"public.hourly_totals"}}, want: []string{"public.hourly_totals"}},
+		{name: "a schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}}, want: []string{"app.daily_totals"}},
+		{name: "an include selector", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"public.hourly_totals"}}, want: []string{"public.hourly_totals"}},
 	}
 
 	for _, test := range tests {
@@ -124,7 +124,7 @@ func TestExcludeDatabase_AHypertableTravelsWithItsTable(t *testing.T) {
 				{Name: "other"},
 			}}
 
-			filtered, err := atlasfilter.ExcludeDatabase(source, test.patterns)
+			filtered, err := atlasfilter.ExcludeDatabase(ownerSelections(), source, test.patterns)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(hypertableTables(c, filtered.Tables), qt.DeepEquals, test.want)
@@ -173,16 +173,16 @@ func TestFilters_ResolveAnUnqualifiedAggregateUnderTheirOwnDefault(t *testing.T)
 		want   []string
 	}{
 		{name: "a scope of the default schema keeps it", want: []string{"daily"}, filter: func(db *catalog.Database) (*catalog.Database, error) {
-			return atlasfilter.ScopeDatabase(db, atlasfilter.Scope{Schemas: []string{"app"}, DefaultSchema: "app"})
+			return atlasfilter.ScopeDatabase(db, atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"app"}, DefaultSchema: "app"})
 		}},
 		{name: "a scope of another schema drops it", filter: func(db *catalog.Database) (*catalog.Database, error) {
-			return atlasfilter.ScopeDatabase(db, atlasfilter.Scope{Schemas: []string{"public"}, DefaultSchema: "app"})
+			return atlasfilter.ScopeDatabase(db, atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}, DefaultSchema: "app"})
 		}},
 		{name: "an exclude of its qualified name takes it", filter: func(db *catalog.Database) (*catalog.Database, error) {
-			return atlasfilter.ExcludeDatabaseWithDefaultSchema(db, []string{"app.daily"}, "app")
+			return atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), db, []string{"app.daily"}, "app")
 		}},
 		{name: "an exclude of another schema keeps it", want: []string{"daily"}, filter: func(db *catalog.Database) (*catalog.Database, error) {
-			return atlasfilter.ExcludeDatabaseWithDefaultSchema(db, []string{"public"}, "app")
+			return atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), db, []string{"public"}, "app")
 		}},
 	}
 
@@ -196,4 +196,18 @@ func TestFilters_ResolveAnUnqualifiedAggregateUnderTheirOwnDefault(t *testing.T)
 			c.Assert(aggregateNames(c, filtered.FeatureObjects), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestScopeDatabase_IncludesContinuousAggregatesByType accepts an include
+// selector naming the continuous aggregate type, which the TimescaleDB owner
+// registers, and keeps the aggregates it names.
+func TestScopeDatabase_IncludesContinuousAggregatesByType(t *testing.T) {
+	c := qt.New(t)
+
+	scoped, err := atlasfilter.ScopeDatabase(timescaleCatalog(c),
+		atlasfilter.Scope{Include: []string{"app.*[type=continuous_aggregate]"}, DefaultSchema: "public", Selections: ownerSelections()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(aggregateNames(c, scoped.FeatureObjects), qt.DeepEquals, []string{"app.daily_totals"})
+	c.Assert(atlasfilter.ValidateIncludeSelectors([]string{"*[type=continuous_aggregate]"}, ownerSelections()), qt.IsNil)
 }

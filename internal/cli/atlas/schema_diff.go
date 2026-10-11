@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/selectext"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
@@ -212,15 +213,14 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		}
 		projectEnv.ProjectSourceURLs = atlasProjectSourceURLs("--to", projectToURLs)
 	}
-	if err := validateAtlasSchemaDiffOptions(opts, projectEnv, withoutDevURL); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	schemaVars, err := atlasVarFlagValues(cmd)
+	runtime, err := builtin.New()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-
-	runtime, err := builtin.New()
+	if err := validateAtlasSchemaDiffOptions(opts, projectEnv, withoutDevURL, runtime.Selections()); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	schemaVars, err := atlasVarFlagValues(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -297,6 +297,7 @@ func validateAtlasSchemaDiffOptions(
 	opts atlasSchemaDiffOptions,
 	projectEnv atlassource.ProjectEnv,
 	withoutDevURL bool,
+	selections selectext.Set,
 ) error {
 	if len(opts.fromURLs) == 0 {
 		return fmt.Errorf("--from is required")
@@ -317,7 +318,7 @@ func validateAtlasSchemaDiffOptions(
 	}
 	// Malformed or unsupported --include selectors fail before any database
 	// is contacted.
-	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+	if err := atlasfilter.ValidateIncludeSelectors(opts.include, selections); err != nil {
 		return err
 	}
 	// Classification rejects unsupported schemes and source conflicts, and a

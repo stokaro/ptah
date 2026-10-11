@@ -52,12 +52,12 @@ func TestScope_ExternalObjects(t *testing.T) {
 		scope atlasfilter.Scope
 		want  []string
 	}{
-		{name: "include a data source", scope: atlasfilter.Scope{Include: []string{"s3[type=external_data_source]"}}, want: []string{sourceS3}},
-		{name: "include a table in a directory", scope: atlasfilter.Scope{Include: []string{"ext.files[type=external_table]"}},
+		{name: "include a data source", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"s3[type=external_data_source]"}}, want: []string{sourceS3}},
+		{name: "include a table in a directory", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"ext.files[type=external_table]"}},
 			want: []string{tableExtFiles}},
-		{name: "exclude by name", scope: atlasfilter.Scope{Exclude: []string{"events[type=external_table]"}},
+		{name: "exclude by name", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"events[type=external_table]"}},
 			want: []string{sourceS3, sourceExtLake, tableExtFiles}},
-		{name: "schema", scope: atlasfilter.Scope{Schemas: []string{"ext"}}, want: []string{sourceExtLake, tableExtFiles}},
+		{name: "schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"ext"}}, want: []string{sourceExtLake, tableExtFiles}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -94,9 +94,9 @@ func TestExclude_ExternalObjects(t *testing.T) {
 			c := qt.New(t)
 			declared, held := externalSides()
 
-			generated, err := atlasfilter.ExcludeGenerated(declared, test.exclude)
+			generated, err := atlasfilter.ExcludeGenerated(ownerSelections(), declared, test.exclude)
 			c.Assert(err, qt.IsNil)
-			live, err := atlasfilter.ExcludeDatabase(held, test.exclude)
+			live, err := atlasfilter.ExcludeDatabase(ownerSelections(), held, test.exclude)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(externalNames(generated.FeatureObjects), qt.DeepEquals, test.want)

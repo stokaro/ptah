@@ -16,11 +16,11 @@ func TestScopePositive(t *testing.T) {
 		scope atlasfilter.Scope
 		want  bool
 	}{
-		{name: "zero scope", scope: atlasfilter.Scope{}, want: false},
-		{name: "exclude only", scope: atlasfilter.Scope{Exclude: []string{"users"}}, want: false},
-		{name: "blank values", scope: atlasfilter.Scope{Schemas: []string{" ", ","}, Include: []string{"  "}}, want: false},
-		{name: "schema scope", scope: atlasfilter.Scope{Schemas: []string{"public"}}, want: true},
-		{name: "include selector", scope: atlasfilter.Scope{Include: []string{"users"}}, want: true},
+		{name: "zero scope", scope: atlasfilter.Scope{Selections: ownerSelections()}, want: false},
+		{name: "exclude only", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"users"}}, want: false},
+		{name: "blank values", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{" ", ","}, Include: []string{"  "}}, want: false},
+		{name: "schema scope", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}}, want: true},
+		{name: "include selector", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"users"}}, want: true},
 	}
 
 	for _, test := range tests {
@@ -79,7 +79,7 @@ func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(atlasfilter.ValidateIncludeSelectors(test.values), qt.IsNil)
+			c.Assert(atlasfilter.ValidateIncludeSelectors(test.values, ownerSelections()), qt.IsNil)
 		})
 	}
 }
@@ -140,7 +140,7 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(atlasfilter.ValidateIncludeSelectors(test.values), qt.ErrorMatches, test.wantErr)
+			c.Assert(atlasfilter.ValidateIncludeSelectors(test.values, ownerSelections()), qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
@@ -167,7 +167,7 @@ func TestExcludeSelectorsReachChildResources(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(atlasfilter.ValidateExcludeSelectors(test.values), qt.IsNil)
+			c.Assert(atlasfilter.ValidateExcludeSelectors(test.values, ownerSelections()), qt.IsNil)
 		})
 	}
 }
@@ -228,6 +228,7 @@ func TestScopeGenerated_SchemaUniverse(t *testing.T) {
 	schema := scopeGeneratedFixture()
 
 	got, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"billing"},
 		DefaultSchema: "public",
 	})
@@ -247,6 +248,7 @@ func TestScopeGenerated_IncludeTableRideAlongs(t *testing.T) {
 	schema := scopeGeneratedFixture()
 
 	got, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users"},
 		DefaultSchema: "public",
 	})
@@ -272,6 +274,7 @@ func TestScopeGenerated_IncludeSelectsInsideSchemaUniverse(t *testing.T) {
 	t.Run("selector inside the universe matches", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Schemas:       []string{"app"},
 			Include:       []string{"users"},
 			DefaultSchema: "public",
@@ -283,6 +286,7 @@ func TestScopeGenerated_IncludeSelectsInsideSchemaUniverse(t *testing.T) {
 	t.Run("selector outside the universe matches nothing", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Schemas:       []string{"app"},
 			Include:       []string{"invoices"},
 			DefaultSchema: "public",
@@ -299,11 +303,13 @@ func TestScopeGenerated_UnionIsDeterministic(t *testing.T) {
 	c := qt.New(t)
 
 	first, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users", "audit_log"},
 		DefaultSchema: "public",
 	})
 	c.Assert(err, qt.IsNil)
 	second, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"audit_log,users"},
 		DefaultSchema: "public",
 	})
@@ -317,6 +323,7 @@ func TestScopeGenerated_ExcludeSubtractsFromSelection(t *testing.T) {
 	c := qt.New(t)
 
 	got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users", "invoices"},
 		Exclude:       []string{"invoices"},
 		DefaultSchema: "public",
@@ -330,6 +337,7 @@ func TestScopeGenerated_EmptyMatchProjectsNothing(t *testing.T) {
 	c := qt.New(t)
 
 	got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"does_not_exist"},
 		DefaultSchema: "public",
 	})
@@ -350,10 +358,11 @@ func TestScopeGenerated_NonPositiveDelegatesToExclude(t *testing.T) {
 	c := qt.New(t)
 
 	scoped, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
-		Exclude: []string{"app.audit_log"},
+		Selections: ownerSelections(),
+		Exclude:    []string{"app.audit_log"},
 	})
 	c.Assert(err, qt.IsNil)
-	excluded, err := atlasfilter.ExcludeGenerated(scopeGeneratedFixture(), []string{"app.audit_log"})
+	excluded, err := atlasfilter.ExcludeGenerated(ownerSelections(), scopeGeneratedFixture(), []string{"app.audit_log"})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(scoped, qt.DeepEquals, excluded)
@@ -363,6 +372,7 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 	t.Run("foreign key to unselected table", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Include:       []string{"audit_log"},
 			DefaultSchema: "public",
 		})
@@ -389,7 +399,7 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 				{StructName: "Order", Name: "orders_user_fk", Type: "FOREIGN KEY", Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id"},
 			},
 		}
-		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{Include: []string{"orders"}})
+		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"orders"}})
 		var crossScope *atlasfilter.CrossScopeError
 		c.Assert(err, qt.ErrorAs, &crossScope)
 		c.Assert(crossScope.Diagnostics, qt.DeepEquals, []string{
@@ -408,7 +418,7 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 				"outer_fn": {"inner_fn"},
 			},
 		}
-		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{Include: []string{"outer_fn"}})
+		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"outer_fn"}})
 		var crossScope *atlasfilter.CrossScopeError
 		c.Assert(err, qt.ErrorAs, &crossScope)
 		c.Assert(crossScope.Diagnostics, qt.DeepEquals, []string{
@@ -423,7 +433,7 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 			Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "INTEGER"}},
 			Views:  []schemamodel.View{{Name: "active_users", Body: "SELECT * FROM users WHERE active"}},
 		}
-		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{Include: []string{"active_users"}})
+		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"active_users"}})
 		var crossScope *atlasfilter.CrossScopeError
 		c.Assert(err, qt.ErrorAs, &crossScope)
 		c.Assert(crossScope.Diagnostics, qt.DeepEquals, []string{
@@ -434,6 +444,7 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 	t.Run("excluded enum still used by selected table", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Include:       []string{"users"},
 			Exclude:       []string{"user_status"},
 			DefaultSchema: "public",
@@ -457,6 +468,7 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 			},
 		}
 		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Include:       []string{"app.users"},
 			Exclude:       []string{"app.color"},
 			DefaultSchema: "public",
@@ -537,6 +549,7 @@ func TestScopeDatabase_SchemaUniverse(t *testing.T) {
 	schema := scopeDatabaseFixture()
 
 	got, err := atlasfilter.ScopeDatabase(schema, atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Schemas:       []string{"billing"},
 		DefaultSchema: "public",
 	})
@@ -553,6 +566,7 @@ func TestScopeDatabase_IncludeTableRideAlongs(t *testing.T) {
 	c := qt.New(t)
 
 	got, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"users"},
 		DefaultSchema: "public",
 	})
@@ -609,7 +623,7 @@ func TestScopeDatabase_QualifiedFunctionAndEnumRetainOwningSchema(t *testing.T) 
 				Schemas:   []catalog.Schema{{Name: "app"}},
 				Functions: []catalog.Function{{Schema: "app", Name: "fn_app"}},
 				Enums:     []catalog.Enum{{Schema: "app", Name: "color"}},
-			}, atlasfilter.Scope{Include: []string{test.include}, DefaultSchema: "public"})
+			}, atlasfilter.Scope{Selections: ownerSelections(), Include: []string{test.include}, DefaultSchema: "public"})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, test.functions)
@@ -628,7 +642,7 @@ func TestScopeDatabase_WrongQualifiedFunctionAndEnumMatchNothing(t *testing.T) {
 				Schemas:   []catalog.Schema{{Name: "app"}},
 				Functions: []catalog.Function{{Schema: "app", Name: "fn_app"}},
 				Enums:     []catalog.Enum{{Schema: "app", Name: "color"}},
-			}, atlasfilter.Scope{Include: []string{include}, DefaultSchema: "public"})
+			}, atlasfilter.Scope{Selections: ownerSelections(), Include: []string{include}, DefaultSchema: "public"})
 
 			c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: ".*"`)
 			c.Assert(got.Functions, qt.HasLen, 0)
@@ -693,7 +707,7 @@ func TestScopeGenerated_QualifiedFunctionAndEnumRetainOwningSchema(t *testing.T)
 					{Schema: "app", Name: "color"},
 					{Name: "legacy.state"},
 				},
-			}, atlasfilter.Scope{Include: []string{test.include}, DefaultSchema: "public"})
+			}, atlasfilter.Scope{Selections: ownerSelections(), Include: []string{test.include}, DefaultSchema: "public"})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(generatedFunctionNames(got.Functions), qt.DeepEquals, test.functions)
@@ -712,7 +726,7 @@ func TestScopeGenerated_WrongQualifiedFunctionAndEnumMatchNothing(t *testing.T) 
 				Schemas:   []schemamodel.Schema{{Name: "app"}},
 				Functions: []schemamodel.Function{{Name: "app.fn_app"}},
 				Enums:     []schemamodel.Enum{{Schema: "app", Name: "color"}},
-			}, atlasfilter.Scope{Include: []string{include}, DefaultSchema: "public"})
+			}, atlasfilter.Scope{Selections: ownerSelections(), Include: []string{include}, DefaultSchema: "public"})
 
 			c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: ".*"`)
 			c.Assert(got.Functions, qt.HasLen, 0)
@@ -726,6 +740,7 @@ func TestScopeDatabase_EmptyMatchProjectsNothing(t *testing.T) {
 	c := qt.New(t)
 
 	got, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{
+		Selections:    ownerSelections(),
 		Include:       []string{"does_not_exist"},
 		DefaultSchema: "public",
 	})
@@ -743,10 +758,11 @@ func TestScopeDatabase_NonPositiveDelegatesToExclude(t *testing.T) {
 	c := qt.New(t)
 
 	scoped, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{
-		Exclude: []string{"app.audit_log"},
+		Selections: ownerSelections(),
+		Exclude:    []string{"app.audit_log"},
 	})
 	c.Assert(err, qt.IsNil)
-	excluded, err := atlasfilter.ExcludeDatabase(scopeDatabaseFixture(), []string{"app.audit_log"})
+	excluded, err := atlasfilter.ExcludeDatabase(ownerSelections(), scopeDatabaseFixture(), []string{"app.audit_log"})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(scoped, qt.DeepEquals, excluded)
@@ -756,6 +772,7 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 	t.Run("foreign key to unselected table", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Include:       []string{"audit_log"},
 			DefaultSchema: "public",
 		})
@@ -770,6 +787,7 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 	t.Run("excluded enum still used by selected table", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Include:       []string{"users"},
 			Exclude:       []string{"user_status"},
 			DefaultSchema: "public",
@@ -798,6 +816,7 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 			},
 		}
 		_, err := atlasfilter.ScopeDatabase(schema, atlasfilter.Scope{
+			Selections:    ownerSelections(),
 			Include:       []string{"app.users"},
 			Exclude:       []string{"app.color"},
 			DefaultSchema: "public",

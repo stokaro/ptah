@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/dialect/timescaledb/tsast"
 	"ptah.run/dialect/timescaledb/tscompare"
 	"ptah.run/dialect/timescaledb/tsconvert"
@@ -37,6 +38,7 @@ func timescaleProvider() engine.Provider {
 		Codecs:      append(append(tsschema.Codecs(), tsdiff.Codecs()...), tsast.Codecs()...),
 		Annotations: []annotation.Extension{tssource.Annotations()},
 		HCL:         []hclext.Extension{tssource.HCL()},
+		Selections:  []selectext.Extension{tssource.Selections()},
 	}
 	for _, target := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
 		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: models, Service: tsconvert.Service{}})
