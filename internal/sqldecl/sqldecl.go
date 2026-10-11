@@ -106,6 +106,12 @@ func objects(db *schemamodel.Database) []sqlext.Declaration {
 	// row-security owner as it is read. A SQL file's policies are handed over
 	// once the whole directory is read, so they are listed above.
 	for _, ref := range db.FeatureObjects.Refs() {
+		// A data type an owner's object defines is listed with the common
+		// types below, as a type: it takes its name from the namespace an
+		// enum and a common type take theirs from.
+		if definesType(db.FeatureObjects, ref) {
+			continue
+		}
 		listed = append(listed, Owned(ref))
 	}
 	listed = append(listed, declaredTypes(db)...)
@@ -173,8 +179,21 @@ func ownerGuards(db *schemamodel.Database) []sqlext.Declaration {
 	return guarded
 }
 
-// declaredTypes lists the four object kinds that share one type namespace, so a
+// definesType reports whether the object ref names in objects defines a data
+// type ([schemaext.TypeDefiner]). An object the collection cannot hand back
+// is listed as its owner's, as every other object is.
+func definesType(objects schemaext.Objects, ref objectidentity.ID) bool {
+	object, found, err := objects.Get(ref)
+	if err != nil || !found {
+		return false
+	}
+	_, defines := object.Value.(schemaext.TypeDefiner)
+	return defines
+}
+
+// declaredTypes lists the object kinds that share one type namespace, so a
 // domain and an enum spelled the same collide the way the engine collides them.
+// A type a feature owner's object defines is one of them.
 func declaredTypes(db *schemamodel.Database) []sqlext.Declaration {
 	listed := make([]sqlext.Declaration, 0,
 		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes)+len(db.Ranges))
@@ -189,6 +208,11 @@ func declaredTypes(db *schemamodel.Database) []sqlext.Declaration {
 	}
 	for _, rangeType := range db.Ranges {
 		listed = append(listed, declaration(Type, schemamodel.QualifyTableName(rangeType.Schema, rangeType.Name)))
+	}
+	// A type a feature owner's object defines takes a name in the same
+	// namespace, and collides with an enum or a common type the same way.
+	for _, defined := range schemaext.DefinedTypes(db.FeatureObjects) {
+		listed = append(listed, declaration(Type, schemamodel.QualifyTableName(defined.ID.Schema.Authored(), defined.ID.Name.Source)))
 	}
 	return listed
 }

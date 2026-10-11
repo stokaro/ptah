@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
@@ -1623,7 +1624,10 @@ func (r *renderer) enumTypeRef(typeName string) (string, bool) {
 	}
 	if slices.ContainsFunc(r.db.Domains, func(d schemamodel.Domain) bool { return d.Name == enum.Name }) ||
 		slices.ContainsFunc(r.db.CompositeTypes, func(ct schemamodel.CompositeType) bool { return ct.Name == enum.Name }) ||
-		slices.ContainsFunc(r.db.Ranges, func(rg schemamodel.Range) bool { return rg.Name == enum.Name }) {
+		slices.ContainsFunc(r.db.Ranges, func(rg schemamodel.Range) bool { return rg.Name == enum.Name }) ||
+		slices.ContainsFunc(schemaext.DefinedTypes(r.db.FeatureObjects), func(defined schemaext.DefinedType) bool {
+			return defined.ID.Name.Source == enum.Name
+		}) {
 		return "", false
 	}
 	if schema := r.schemaFor(enum.Schema); schema != "" && r.enumNameIsAmbiguous(enum.Name) {
