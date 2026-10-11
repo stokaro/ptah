@@ -392,19 +392,20 @@ func ownedObjects(extension Extension, declared schemaext.Objects) ([]schemaext.
 }
 
 // checkValue refuses a value that does not fit its claim's site: a statement
-// carries the owner's statement, only a statement declares or amends
-// objects, and every such object is of one of the extension's Kinds.
+// carries the owner's statement or the table it declares, one and not both,
+// only a statement declares a table or declares or amends objects, a
+// statement that declares a table names it and declares and amends nothing
+// else, and every object is of one of the extension's Kinds.
 func checkValue(extension Extension, claim Claim, value Value) error {
 	if claim.Site != Statement {
-		if value.Statement != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
+		if value.Statement != nil || value.Table != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 		}
 		return nil
 	}
-	if value.Statement == nil {
-		return fmt.Errorf("%w: SQL parser of %s answered its statement claim %q with no statement",
-			schemaext.ErrInvalidValue, extension.Owner, claim.Pattern)
+	if err := checkStatementValue(extension, claim, value); err != nil {
+		return err
 	}
 	for _, object := range slices.Concat(value.Objects, value.Replaces) {
 		if !slices.Contains(extension.Kinds, schemaext.Kind(object.Ref.Kind)) {
@@ -413,6 +414,27 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 		}
 	}
 	return nil
+}
+
+// checkStatementValue refuses a statement's value that carries neither the
+// owner's statement nor a table, or both, and a table without a name or with
+// objects beside it.
+func checkStatementValue(extension Extension, claim Claim, value Value) error {
+	var problem string
+	switch {
+	case value.Statement == nil && value.Table == nil:
+		problem = "no statement"
+	case value.Statement != nil && value.Table != nil:
+		problem = "both a statement and a table"
+	case value.Table != nil && strings.TrimSpace(value.Table.Name) == "":
+		problem = "a table without a name"
+	case value.Table != nil && (len(value.Objects) > 0 || len(value.Replaces) > 0):
+		problem = "a table and objects beside it"
+	default:
+		return nil
+	}
+	return fmt.Errorf("%w: SQL parser of %s answered its statement claim %q with %s",
+		schemaext.ErrInvalidValue, extension.Owner, claim.Pattern, problem)
 }
 
 // Coverage combines the claims of the extensions that read documents of

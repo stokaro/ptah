@@ -2850,6 +2850,12 @@ reader refuses it, leading with the statement: `COMMENT ON EXTENSION citext IS
 alone, such as migration lint, which reads each statement by itself, then never
 sees a refusal for what other statements declare.
 
+A statement may declare, instead of objects, a common table its owner
+defines with no column list, as a `TableDeclaration`: its name, IF NOT EXISTS
+and the owner's facets. The parse places a CREATE TABLE of them where the
+statement stood, so every reader of a table reads it, and the statement
+declares nothing else.
+
 `engine.Provider.SQL` registers an extension, and `engine.Runtime.SQL` returns
 the frozen set. An extension reads targets its provider registers. A provider
 that does not register a target may still read statements of its own there:
@@ -2879,6 +2885,12 @@ document of the load declares with an error wrapping `sqlext.ErrUndeclared`,
 so a reader that loaded sources in another format beside the load can say the
 object may be theirs: a document of the load changes only what the load
 declares.
+
+`sqlitetable.SQL` reads `CREATE VIRTUAL TABLE` in a SQLite document and in one
+that names no target, as a table its `DesiredVirtual` facet defines, and claims
+virtual tables complete for a SQLite document unless its header names
+`sqlitetable.VirtualDirective`. The claim is a second extension with no syntax,
+so a document that names no target reads the statement and claims nothing.
 
 `chsource.SQL` reads ClickHouse's data-skipping index inside a column list and
 in ALTER TABLE ... ADD INDEX, and a materialized view's refresh schedule and

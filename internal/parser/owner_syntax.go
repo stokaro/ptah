@@ -213,11 +213,25 @@ func (p *Parser) claimOwnerAlterOperation(table string) (ast.AlterOperation, boo
 
 // claimOwnerStatement claims a whole statement an owner's pattern opens. It
 // stands where the statement stood, as the owner's statement, and what the
-// statement declares and amends is a note of the parse.
+// statement declares and amends is a note of the parse. A statement that
+// declares a table stands there as the CREATE TABLE instead, once the owner
+// has read it; see [Parser.placeOwnerTables].
 func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 	statement := &ast.ExtensionStatement{}
 	note := &OwnerStatement{}
 	claimed := p.claimOwnerSyntax(sqlext.Statement, "", func(value sqlext.Value) error {
+		if value.Table != nil {
+			table := ast.NewCreateTable(value.Table.Name)
+			if value.Table.IfNotExists {
+				table.SetIfNotExists()
+			}
+			table.Facets = value.Table.Facets
+			if p.ownerTables == nil {
+				p.ownerTables = make(map[*ast.ExtensionStatement]*ast.CreateTableNode)
+			}
+			p.ownerTables[statement] = table
+			return nil
+		}
 		statement.Payload = value.Statement
 		note.Objects, note.Replaces = value.Objects, value.Replaces
 		return nil
@@ -284,6 +298,24 @@ func (p *Parser) OwnerStatement(statement *ast.ExtensionStatement) (OwnerStateme
 	return *note, true
 }
 
+// placeOwnerTables puts each table an owner's statement declares where the
+// statement stood. An owner's statement is always one of the document's
+// top-level statements, so the list holds every one.
+func (p *Parser) placeOwnerTables(statements *ast.StatementList) {
+	if len(p.ownerTables) == 0 {
+		return
+	}
+	for i, node := range statements.Statements {
+		statement, ok := node.(*ast.ExtensionStatement)
+		if !ok {
+			continue
+		}
+		if table, declared := p.ownerTables[statement]; declared {
+			statements.Statements[i] = table
+		}
+	}
+}
+
 // ParseContext is [Parser.Parse] with the context the owners' parsers run
 // under.
 func (p *Parser) ParseContext(ctx context.Context) (*ast.StatementList, error) {
@@ -294,5 +326,6 @@ func (p *Parser) ParseContext(ctx context.Context) (*ast.StatementList, error) {
 	if err := p.readOwnerClaims(ctx); err != nil {
 		return nil, err
 	}
+	p.placeOwnerTables(statements)
 	return statements, nil
 }

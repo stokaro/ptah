@@ -58,7 +58,7 @@ const (
 	// Statement is a whole top-level statement. A span ends at the semicolon
 	// that ends the statement or at the end of the document. Its [Value] is
 	// the owner's statement, and may declare objects of the owner or amend
-	// objects declared before it.
+	// objects declared before it, or it is a table the statement declares.
 	Statement Site = "statement"
 )
 
@@ -114,6 +114,19 @@ type Index struct {
 	Facets schemaext.Facets
 }
 
+// TableDeclaration is a table an owner's statement declares and defines by
+// the owner's facets alone, with no column list, such as a SQLite virtual
+// table, which its module defines.
+type TableDeclaration struct {
+	// Name is the table's name as the statement writes it, qualified where
+	// the statement qualifies it.
+	Name string
+	// IfNotExists reports a declaration under IF NOT EXISTS.
+	IfNotExists bool
+	// Facets are the owner's settings that define the table.
+	Facets schemaext.Facets
+}
+
 // Value is the owner's reading of one claim.
 type Value struct {
 	// Index is the index a table element or an ALTER TABLE operation
@@ -125,10 +138,16 @@ type Value struct {
 	// Facets are the owner's settings of the subject, such as a materialized
 	// view's refresh schedule.
 	Facets schemaext.Facets
-	// Statement is the owner's payload of a statement, which a statement
-	// requires. The parse places it where the statement stood, for the
-	// readers of syntax such as lint.
+	// Statement is the owner's payload of a statement. A statement carries
+	// it or a Table, never both. The parse places it where the statement
+	// stood, for the readers of syntax such as lint.
 	Statement ast.ExtensionPayload
+	// Table is the common table a statement declares, which the parse places
+	// where the statement stood, as the CREATE TABLE of that name, flag and
+	// facets, so every reader of a table reads it. A statement carries it or
+	// a Statement, never both, and a statement that declares a table declares
+	// and amends no object besides it.
+	Table *TableDeclaration
 	// Objects are the objects a statement declares, each of one of the
 	// extension's Kinds. The reader adds them to the document and refuses an
 	// object the document declares twice.

@@ -45,7 +45,7 @@ func TestSeverities_APolicyReplacesARuleSeverity(t *testing.T) {
 
 			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Severities: row.severities},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Severities: row.severities},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -92,7 +92,7 @@ func TestSeverities_APolicyThisLinterCannotHonorIsRefused(t *testing.T) {
 
 			_, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Severities: row.severities},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Severities: row.severities},
 			)
 
 			c.Assert(err, qt.IsNotNil)
@@ -109,7 +109,7 @@ func TestSeverities_AParsePathCodeMayBeSetToWhatItAlreadyIs(t *testing.T) {
 
 	_, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "t.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
-		sqllint.Options{Bodies: builtintest.Runtime(),
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 			Dialect:    platform.Postgres,
 			Severities: map[string]sqllint.Severity{"SQL001": sqllint.SeverityError},
 		},

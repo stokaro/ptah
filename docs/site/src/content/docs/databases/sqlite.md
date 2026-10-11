@@ -195,7 +195,9 @@ annotations, HCL and YAML have no syntax for one.
 
 The module arguments are preserved verbatim — the text between the module's
 parentheses, quotes and embedded commas included — because SQLite stores and
-compares them as written.
+compares them as written. The SQLite owner reads the statement in a document
+of the `sqlite` target and in one that names no target; a document of another
+target refuses it as a CREATE target it does not know.
 
 Each name either side calls virtual is classified, and only the answers a plan
 cannot express are refused:

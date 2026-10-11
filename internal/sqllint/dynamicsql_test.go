@@ -16,7 +16,7 @@ func dynamicCodes(c *qt.C, dialect, sql string) []string {
 	c.Helper()
 
 	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "x.sql", SQL: sql},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: dialect})
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: dialect})
 	c.Assert(err, qt.IsNil)
 	codes := make([]string, 0, len(findings))
 	for _, finding := range findings {
@@ -154,7 +154,7 @@ func TestLintSource_MySQLSaysWhichStatementComposes(t *testing.T) {
 			findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "x.sql", SQL: "CREATE PROCEDURE p()\nBEGIN\n" +
 				"  SET @s = 'DROP TABLE t';\n  PREPARE stmt FROM @s;\n  EXECUTE stmt;\n  DEALLOCATE PREPARE stmt;\n" +
 				"  DROP PREPARE stmt;\nEND"},
-				sqllint.Options{Bodies: builtintest.Runtime(), Dialect: dialect})
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(dynamicMessages(findings), qt.DeepEquals, []string{
@@ -176,7 +176,7 @@ func TestLintSource_TSQLSaysWhichStatementComposes(t *testing.T) {
 	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "x.sql", SQL: "CREATE PROCEDURE p AS\nBEGIN\n" +
 		"  EXEC sp_executesql N'DROP TABLE t';\n  EXECUTE ('DROP TABLE t');\n  EXEC sys.sp_executesql @s;\n" +
 		"  EXEC [sys].[sp_executesql] @s;\n  EXEC @rc = sp_executesql @s;\n  EXEC dbo.other_proc;\nEND"},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: "sqlserver"})
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "sqlserver"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(dynamicMessages(findings), qt.DeepEquals, []string{

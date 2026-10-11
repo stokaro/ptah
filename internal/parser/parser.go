@@ -20,7 +20,6 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/spanner/spannerschema"
-	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -106,6 +105,9 @@ type Parser struct {
 	// ownerStatements are the notes of the owners' statements; see
 	// [Parser.OwnerStatement].
 	ownerStatements map[*ast.ExtensionStatement]*OwnerStatement
+	// ownerTables are the tables owners' statements declare, each standing
+	// where its statement stood once the owners have read the document.
+	ownerTables map[*ast.ExtensionStatement]*ast.CreateTableNode
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -367,8 +369,6 @@ func (p *Parser) parseCreateModifier(target string, statementStart int) (ast.Nod
 		return p.parseCreateTemporary(target, statementStart)
 	case "UNIQUE":
 		return p.parseCreateUniqueIndexStatement()
-	case "VIRTUAL":
-		return p.parseCreateVirtualTable()
 	case "UNLOGGED":
 		return p.parseCreateUnloggedTable()
 	default:
@@ -410,7 +410,7 @@ func (p *Parser) parseCreateUnloggedTable() (ast.Node, error) {
 }
 
 // createTargetList names the CREATE targets the grammar recognizes.
-const createTargetList = "TABLE, UNLOGGED TABLE, VIRTUAL TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, " +
+const createTargetList = "TABLE, UNLOGGED TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, " +
 	"TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION, SEQUENCE, ROLE, POLICY"
 
 // parseCreateSchemaObject parses the CREATE targets for standalone PostgreSQL
@@ -2069,102 +2069,6 @@ func (p *Parser) parseCreateTableHeader() (*ast.CreateTableNode, error) {
 	}
 
 	return table, nil
-}
-
-// parseCreateVirtualTable reads `CREATE VIRTUAL TABLE name USING module(args)`.
-//
-// The reader already emits this statement and the SQLite renderer already
-// writes it, so refusing to parse it made Ptah unable to read its own output:
-// `ptah db read` on a database holding an FTS5 index produced a file that
-// `ptah schema diff --from file://...` rejected with "unsupported CREATE
-// target: VIRTUAL". Nothing else in the pipeline was missing -- the AST carries
-// the declaration as the SQLite owner's facet and the conversions both ways
-// already existed.
-//
-// The arguments are kept verbatim, as the byte range between the module's outer
-// parentheses. They are not a column list: fts5 takes tokenizer settings,
-// quoted values and commas inside quotes, and re-rendering a parsed structure
-// would change text SQLite stores and compares as written.
-func (p *Parser) parseCreateVirtualTable() (ast.Node, error) {
-	// The dispatch leaves VIRTUAL as the current token, the way it does for
-	// UNIQUE before INDEX.
-	p.advance()
-	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "TABLE"); err != nil {
-		return nil, err
-	}
-	p.skipWhitespace()
-
-	ifNotExists, err := p.parseOptionalIfNotExists()
-	if err != nil {
-		return nil, err
-	}
-	p.skipWhitespace()
-
-	tableName, err := p.parseQualifiedIdentifier("virtual table name")
-	if err != nil {
-		return nil, err
-	}
-	p.skipWhitespace()
-
-	if err := p.expect(lexer.TokenIdentifier, "USING"); err != nil {
-		return nil, err
-	}
-	p.skipWhitespace()
-
-	module, err := p.parseQualifiedIdentifier("virtual table module")
-	if err != nil {
-		return nil, err
-	}
-
-	table := ast.NewCreateTable(tableName)
-	if ifNotExists {
-		table.SetIfNotExists()
-	}
-
-	arguments, err := p.parseVirtualTableArguments()
-	if err != nil {
-		return nil, err
-	}
-	// The declaration is the SQLite owner's facet: it is what the table is,
-	// and the renderer writes it in place of a column list.
-	table.Facets, err = table.Facets.With(&sqlitetable.DesiredVirtual{Virtual: sqlitetable.Virtual{Module: module, Arguments: arguments}})
-	if err != nil {
-		return nil, err
-	}
-	return table, nil
-}
-
-// parseVirtualTableArguments returns the text between the module's outer
-// parentheses, verbatim, or "" when the module takes none.
-//
-// Nesting and quoting are tracked rather than parsed: an argument list may
-// carry parentheses inside a quoted default and commas inside a tokenizer
-// string, and both belong to the text SQLite stores.
-func (p *Parser) parseVirtualTableArguments() (string, error) {
-	p.skipWhitespace()
-	if !p.current.MatchOperatorValue("(") {
-		return "", nil
-	}
-	start := p.current.End
-	depth := 0
-	for p.current.Type != lexer.TokenEOF {
-		if p.current.Type == lexer.TokenOperator {
-			switch p.current.Value {
-			case "(":
-				depth++
-			case ")":
-				depth--
-				if depth == 0 {
-					arguments := strings.TrimSpace(p.input[start:p.current.Start])
-					p.advance()
-					return arguments, nil
-				}
-			}
-		}
-		p.advance()
-	}
-	return "", fmt.Errorf("unterminated virtual table arguments at position %d", start)
 }
 
 func (p *Parser) parseCreateTableBeforeColumnList(table *ast.CreateTableNode) (bool, error) {

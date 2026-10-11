@@ -42,7 +42,7 @@ func TestLintSource_AnIndexIsCheckedAgainstTheSuppliedSchema(t *testing.T) {
 
 	findings, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "index.sql", SQL: "CREATE INDEX idx ON users (nickname);"},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -60,7 +60,7 @@ func TestLintSource_AnIndexOverDeclaredColumnsIsSilent(t *testing.T) {
 
 	findings, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "index.sql", SQL: "CREATE INDEX idx ON users (email);"},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -79,7 +79,7 @@ func TestLintSource_AnIndexResolvesAgainstItsOwnFile(t *testing.T) {
 	findings, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "schema.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
 			"CREATE INDEX idx ON users (email);"},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -97,7 +97,7 @@ func TestLintSource_AnIndexOnAnUnknownTableIsSilent(t *testing.T) {
 
 	findings, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "index.sql", SQL: "CREATE INDEX idx ON elsewhere (email);"},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -114,7 +114,7 @@ func TestLintSource_AnExpressionIndexNamesNoColumn(t *testing.T) {
 
 	findings, err := sqllint.LintSource(t.Context(),
 		sqllint.Source{Name: "index.sql", SQL: "CREATE INDEX idx ON users (lower(email));"},
-		sqllint.Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, Schema: usersSchema()},
 	)
 
 	c.Assert(err, qt.IsNil)

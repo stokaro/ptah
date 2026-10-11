@@ -52,7 +52,7 @@ func TestLintSource_ReadsEveryBodyInOneCall(t *testing.T) {
 			calls, bodies := 0, 0
 
 			findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "m.sql", SQL: test.sql},
-				sqllint.Options{Dialect: platform.Postgres, Bodies: countingBodies{calls: &calls, bodies: &bodies}})
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres, Bodies: countingBodies{calls: &calls, bodies: &bodies}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert([]int{calls, bodies}, qt.DeepEquals, []int{test.wantCalls, test.wantBodies})
@@ -69,7 +69,7 @@ func TestLintSource_AnOwnerThatReadsNoBodies(t *testing.T) {
 	withoutReader := must.Must(engine.New(engine.Provider{ID: "example.org/postgres", Targets: []engine.Target{{Name: "postgres"}}}))
 
 	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "m.sql", SQL: twoRoutines},
-		sqllint.Options{Dialect: platform.Postgres, Bodies: withoutReader})
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres, Bodies: withoutReader})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{sqllint.RuleUnsupportedStatement, sqllint.RuleUnsupportedStatement})
@@ -91,7 +91,7 @@ func TestLintSource_RoutinesWithoutAReader_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "m.sql", SQL: twoRoutines},
-		sqllint.Options{Dialect: platform.Postgres})
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.ErrorMatches, `sql lint reads the routine bodies the file defines and was given no routine body reader`)
 	c.Assert(findings, qt.IsNil)
@@ -109,7 +109,7 @@ func TestLintSource_AFunctionWithNoRoutineBodyIsNotRead(t *testing.T) {
 
 	findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "m.sql",
 		SQL: "CREATE FUNCTION f() RETURNS integer AS $$ EXECUTE 'x' $$ LANGUAGE sql;"},
-		sqllint.Options{Dialect: platform.Oracle, Bodies: runtime})
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Dialect: platform.Oracle, Bodies: runtime})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(asked, qt.HasLen, 0)
@@ -154,7 +154,7 @@ func TestLintSource_ADynamicStatementIsNamedByItsLabel(t *testing.T) {
 
 			findings, err := sqllint.LintSource(c.Context(), sqllint.Source{Name: "m.sql",
 				SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\nEXECUTE 'TRUNCATE a';\nEND;\n$$ LANGUAGE plpgsql;\n"},
-				sqllint.Options{Dialect: platform.Postgres, Bodies: runtime})
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres, Bodies: runtime})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(asked, qt.HasLen, 1)

@@ -166,14 +166,10 @@ func convert(
 func describe(database *schemamodel.Database, data []byte, dialect string, opts Options) error {
 	target := ownerTarget(dialect)
 	var owned []schemacoverage.Object
-	var virtual sqliteVirtualLimits
 	extension := func(object schemacoverage.Object) (bool, error) {
 		if opts.Owners.ReadsHeader(target, object.Kind) {
 			owned = append(owned, object)
 			return true, nil
-		}
-		if target == platform.SQLite {
-			return virtual.consume(object)
 		}
 		return false, nil
 	}
@@ -191,20 +187,16 @@ func describe(database *schemamodel.Database, data []byte, dialect string, opts 
 		// An index states its KEY_BLOCK_SIZE in its own definition, so an
 		// index without one declares none.
 		database.FeatureCoverage, err = mysqlsource.BlockSizeCoverage()
-	case platform.SQLite:
-		// SQLite SQL spells a virtual table as CREATE VIRTUAL TABLE, so a
-		// table declared with CREATE TABLE is an ordinary one, and a document
-		// that leaves a live virtual table out asks for it to go, unless its
-		// header declines virtual tables.
-		database.FeatureCoverage, err = virtual.coverage()
 	}
 	if err != nil {
 		return err
 	}
 	// What a document of the dialect states about an owner's models is the
 	// owner's claim, such as a ClickHouse materialized view's refresh
-	// schedule, which its CREATE statement states, or the YDB objects a YQL
-	// document declares except those its header leaves unmanaged.
+	// schedule, which its CREATE statement states, the YDB objects a YQL
+	// document declares except those its header leaves unmanaged, or the
+	// virtual tables a SQLite document declares unless its header declines
+	// them.
 	// It joins the dialect's own claim, since a Spanner document carries
 	// both its row deletion policies and its extensions.
 	claim, claimed, err := opts.Owners.Coverage(target, owned)

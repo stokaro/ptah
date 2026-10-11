@@ -16,7 +16,7 @@ func TestLintSource_TableWithoutPrimaryKey(t *testing.T) {
 	findings, err := LintSource(t.Context(), Source{
 		Name: "schema.sql",
 		SQL:  "CREATE TABLE users (email TEXT NOT NULL);",
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -31,7 +31,7 @@ func TestLintSource_TablePrimaryKeyPasses(t *testing.T) {
 	findings, err := LintSource(t.Context(), Source{
 		Name: "schema.sql",
 		SQL:  "CREATE TABLE users (id BIGINT PRIMARY KEY, email TEXT NOT NULL);",
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)
@@ -43,7 +43,7 @@ func TestLintSource_DisabledRules(t *testing.T) {
 	findings, err := LintSource(t.Context(), Source{
 		Name: "schema.sql",
 		SQL:  "CREATE TABLE users (email TEXT NOT NULL);",
-	}, Options{Bodies: builtintest.Runtime(),
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 		Dialect:       platform.Postgres,
 		DisabledRules: []string{RuleTableWithoutPrimaryKey},
 	})
@@ -58,7 +58,7 @@ func TestLintSource_UnsupportedStatementIsExplicit(t *testing.T) {
 	findings, err := LintSource(t.Context(), Source{
 		Name: "query.sql",
 		SQL:  "SELECT 1;",
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -73,7 +73,7 @@ func TestLintSource_UnsupportedStatementLocationSkipsLeadingComments(t *testing.
 	findings, err := LintSource(t.Context(), Source{
 		Name: "query.sql",
 		SQL:  "-- heading comment\nSELECT 1;",
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -91,7 +91,7 @@ func TestLintSource_UnsupportedParserErrorIsExplicit(t *testing.T) {
 	findings, err := LintSource(t.Context(), Source{
 		Name: "publication.sql",
 		SQL:  "CREATE PUBLICATION p FOR ALL TABLES;",
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -114,7 +114,7 @@ func TestLintSource_CreatePolicyIsSupported(t *testing.T) {
 	findings, err := LintSource(t.Context(), Source{
 		Name: "policy.sql",
 		SQL:  "CREATE POLICY p ON users USING (true);",
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	for _, finding := range findings {
@@ -153,7 +153,7 @@ func TestLintSource_RawSQLNodesAreExplicitUnsupportedFindings(t *testing.T) {
 			findings, err := LintSource(t.Context(), Source{
 				Name: "raw.sql",
 				SQL:  tt.sql,
-			}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+			}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(findings, qt.HasLen, 1)
@@ -177,7 +177,7 @@ BEGIN
   SELECT 1;
 END//
 DELIMITER ;`,
-		}, Options{Bodies: builtintest.Runtime(), Dialect: dialect})
+		}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: dialect})
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(findings, qt.HasLen, 1)
@@ -196,7 +196,7 @@ func TestLintSource_SQLServerRoutineNodesAreExplicitUnsupportedFindings(t *testi
 BEGIN
   SELECT 1;
 END`,
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.SQLServer})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.SQLServer})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -212,7 +212,7 @@ func TestLintSource_UnsupportedStatementDoesNotMaskLaterDDL(t *testing.T) {
 		Name: "mixed.sql",
 		SQL: `CREATE PUBLICATION p FOR ALL TABLES;
 CREATE TABLE audit_log (message TEXT NOT NULL);`,
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 2)
@@ -231,7 +231,7 @@ SELECT 1 AS [first];
 SELECT 2 AS [second];
 GO /* deploy */
 CREATE TABLE after_proc (id int);`,
-	}, Options{Bodies: builtintest.Runtime(), Dialect: platform.SQLServer})
+	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.SQLServer})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 2)
@@ -248,14 +248,14 @@ func TestLintSource_CapabilityAwareCreateIndexConcurrently(t *testing.T) {
 		SQL:  "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);",
 	}
 
-	postgresFindings, err := LintSource(t.Context(), source, Options{Bodies: builtintest.Runtime(),
+	postgresFindings, err := LintSource(t.Context(), source, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 		Dialect:      platform.Postgres,
 		Capabilities: capability.Postgres16(),
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresFindings, qt.HasLen, 0)
 
-	cockroachFindings, err := LintSource(t.Context(), source, Options{Bodies: builtintest.Runtime(),
+	cockroachFindings, err := LintSource(t.Context(), source, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 		Dialect:      platform.CockroachDB,
 		Capabilities: capability.CockroachDB23(),
 	})
