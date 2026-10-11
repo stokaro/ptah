@@ -1543,7 +1543,7 @@ func (p *Planner) plannedUserTypes(
 	// writes after the CREATE, because the drop took the old one with it. The
 	// DROP before it already says why the type is being recreated.
 	for _, domainDiff := range diff.DomainsModified {
-		if domainIsAlterableInPlace(domainDiff) {
+		if domainIsAlteredInPlace(domainDiff, rebuiltForAdd) {
 			// Paired with the same guard in dropModifiedUserTypes: no drop was
 			// emitted, so there is nothing to put back.
 			continue
@@ -1651,7 +1651,7 @@ func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *difftypes.Schem
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	var unresolved []ast.Node
 	for _, domainDiff := range diff.DomainsModified {
-		if domainIsAlterableInPlace(domainDiff) {
+		if domainIsAlteredInPlace(domainDiff, rebuilt) {
 			// alterModifiedDomains reconciles this one with ALTER DOMAIN.
 			// Dropping it here as well would take the domain apart to apply a
 			// change that needed no such thing -- and would fail outright on

@@ -41,6 +41,23 @@ func domainIsAlterableInPlace(domainDiff difftypes.DomainDiff) bool {
 	return true
 }
 
+// domainIsAlteredInPlace reports whether this domain is changed with ALTER
+// DOMAIN rather than rebuilt.
+//
+// Both halves have to hold, as for a composite: every change has an ALTER
+// DOMAIN form, and the domain does not name a type this plan rebuilds. A
+// domain over a rebuilt composite has to go too, whatever its own change: the
+// composite's DROP is non-CASCADE, and PostgreSQL 18.6 refuses it with
+// `cannot drop type c because other objects depend on it / DETAIL: type d
+// depends on type c` while the domain still names it.
+func domainIsAlteredInPlace(domainDiff difftypes.DomainDiff, rebuilt map[string]struct{}) bool {
+	if !domainIsAlterableInPlace(domainDiff) {
+		return false
+	}
+	_, mustRebuild := rebuilt[bareTypeName(domainDiff.DomainName)]
+	return !mustRebuild
+}
+
 // compositeIsAlterableInPlace reports whether this composite may be changed
 // with ALTER TYPE rather than rebuilt.
 //
@@ -66,8 +83,9 @@ func compositeIsAlterableInPlace(
 // applied at all on any domain in use, which is every domain that matters
 // (stokaro/ptah#1717).
 func (p *Planner) alterModifiedDomains(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	rebuilt := rebuiltUserTypes(diff)
 	for _, domainDiff := range diff.DomainsModified {
-		if !domainIsAlterableInPlace(domainDiff) {
+		if !domainIsAlteredInPlace(domainDiff, rebuilt) {
 			continue
 		}
 		// The domain travels WITH the change (stokaro/ptah#2315).

@@ -202,3 +202,50 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesInCallerOrderWithout
 	assertBefore(t, sql, "DROP DOMAIN IF EXISTS dd", "DROP TYPE IF EXISTS cc")
 	assertBefore(t, sql, "DROP TYPE IF EXISTS cc", "CREATE DOMAIN dd AS")
 }
+
+// TestPlanner_GenerateMigrationAST_RebuildsADomainOverARebuiltComposite pins a
+// domain changed in place over a composite the plan rebuilds.
+//
+// The database holds `CREATE TYPE c AS (a int, b int)` with `CREATE DOMAIN d
+// AS c` over it, and the desired schema swaps the attributes and makes the
+// domain NOT NULL. The swap has no ALTER TYPE form, so `c` is dropped and
+// created again, and the drop is non-CASCADE. Altering `d` in place left it
+// naming `c`, and PostgreSQL 18.6 refused the drop with `cannot drop type c
+// because other objects depend on it / DETAIL: type d depends on type c` --
+// measured through `ptah-compat schema apply --auto-approve`, exit 1. Rebuilt
+// with the composite, the same apply exits 0 and a second plan is empty.
+func TestPlanner_GenerateMigrationAST_RebuildsADomainOverARebuiltComposite(t *testing.T) {
+	c := qt.New(t)
+	planner := postgres.New()
+
+	diff := &difftypes.SchemaDiff{
+		DomainsModified: []difftypes.DomainDiff{{
+			DomainName:      "d",
+			Changes:         map[string]string{"not_null": "false -> true"},
+			CurrentBaseType: "c",
+			Desired:         schemamodel.Domain{Name: "d", BaseType: "c", NotNull: true},
+		}},
+		CompositeTypesModified: []difftypes.CompositeTypeDiff{{
+			TypeName:          "c",
+			Changes:           map[string]string{"fields": "a integer, b integer -> b integer, a integer"},
+			CurrentFieldTypes: []string{"integer", "integer"},
+			Desired: schemamodel.CompositeType{Name: "c", Fields: []schemamodel.CompositeField{
+				{Name: "b", Type: "int"}, {Name: "a", Type: "int"},
+			}},
+		}},
+	}
+
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
+
+	assertBefore(t, sql, "DROP DOMAIN IF EXISTS d;", "DROP TYPE IF EXISTS c;")
+	assertBefore(t, sql, "DROP TYPE IF EXISTS c;", "CREATE TYPE c AS")
+	assertBefore(t, sql, "CREATE TYPE c AS", "CREATE DOMAIN d AS c NOT NULL")
+	c.Assert(sql, qt.Not(qt.Contains), "ALTER DOMAIN")
+}
