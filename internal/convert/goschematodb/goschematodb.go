@@ -817,6 +817,10 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 			Body:        view.Body,
 			CheckOption: checkOption,
 			Comment:     view.Comment,
+			// The view's own WITH clause, which the comparison compares.
+			// Without it, a view declaring SCHEMABINDING compared with its
+			// own conversion was replaced on every run.
+			Attributes: slices.Clone(view.Attributes),
 		})
 	}
 	return out
