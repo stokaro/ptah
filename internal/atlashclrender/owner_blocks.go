@@ -12,20 +12,23 @@ import (
 	"ptah.run/internal/systemschema"
 )
 
-// encodeOwnerBlocks hands the owners the document: its objects, its tables'
-// facets and its coverage. The writers take no context yet; the owners
-// encode in process.
+// encodeOwnerBlocks hands the owners the document: its objects, the facets
+// of its tables and of the blocks it writes in them, and its coverage. The
+// writers take no context yet; the owners encode in process.
 func (r *renderer) encodeOwnerBlocks(owners hclext.Set) (hclext.EncodeResult, error) {
 	objects, err := r.db.FeatureObjects.All()
 	if err != nil {
 		return hclext.EncodeResult{}, err
 	}
-	tables := make([]hclext.TableFacets, 0, len(r.db.Tables))
-	for _, table := range r.db.Tables {
-		tables = append(tables, hclext.TableFacets{Table: hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName},
-			Facets: table.Facets})
+	request, err := r.slotRequest()
+	if err != nil {
+		return hclext.EncodeResult{}, err
 	}
-	return owners.Encode(context.Background(), hclext.EncodeRequest{Objects: objects, Tables: tables, Coverage: r.db.FeatureCoverage})
+	request.Objects, request.Coverage = objects, r.db.FeatureCoverage
+	for _, table := range r.db.Tables {
+		request.Tables = append(request.Tables, hclext.TableFacets{Table: slotTable(table), Facets: table.Facets})
+	}
+	return owners.Encode(context.Background(), request)
 }
 
 // renderAfterTables writes the blocks that stand for a table or are attached
@@ -158,14 +161,19 @@ func (r *renderer) writeOwnerSchema(block hclext.EncodedBlock, schema string) {
 	}
 }
 
-// ownerValue writes an encoded value: a string quoted, a bool bare, a
-// reference to a table as the reference this document resolves, and a list
-// of roles element by element, a role the document declares as a reference
-// and any other element as a string. Set.Encode admits no other value.
+// ownerValue writes an encoded value: a string quoted, a bool and digits
+// bare, SQL text as an sql() call it never evaluates, a reference to a table
+// as the reference this document resolves, and a list of roles element by
+// element, a role the document declares as a reference and any other element
+// as a string. Set.Encode admits no other value.
 func (r *renderer) ownerValue(value hclext.Value) string {
 	switch value.Kind {
 	case hclext.Bool:
 		return strconv.FormatBool(value.Bool)
+	case hclext.Number:
+		return value.Text
+	case hclext.SQL:
+		return sqlCall(value.Text)
 	case hclext.Ref:
 		return r.tableRef(schemamodel.QualifyTableName(value.Reference.Schema, value.Reference.Name))
 	case hclext.Refs:
