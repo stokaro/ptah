@@ -1512,6 +1512,53 @@ func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
 	}
 }
 
+// TestPlanner_GenerateMigrationAST_ExtensionMoveCreatesItsSchema pins the
+// order of a move: the schema it goes to is created first, and the version
+// moves before the extension does. ALTER EXTENSION ... SET SCHEMA into a
+// schema nothing created answers `schema "ext" does not exist`, measured on
+// PostgreSQL 18; the plan once ran it ahead of every schema precondition.
+// A move to the connection's default schema, where a declaration naming no
+// schema puts the extension, needs no precondition, as an addition naming
+// none does not.
+func TestPlanner_GenerateMigrationAST_ExtensionMoveCreatesItsSchema(t *testing.T) {
+	tests := []struct {
+		name   string
+		change difftypes.ExtensionDiff
+		want   string
+	}{{
+		name: "a move to a new schema",
+		change: difftypes.ExtensionDiff{Name: "pg_trgm", FromSchema: "public", ToSchema: "ext",
+			FromVersion: "1.5", ToVersion: "1.6", Relocatable: true},
+		want: "CREATE SCHEMA IF NOT EXISTS \"ext\";\n" +
+			"-- Update extension pg_trgm from 1.5 to 1.6\nALTER EXTENSION \"pg_trgm\" UPDATE TO '1.6';\n" +
+			"-- Move extension pg_trgm from schema public to ext\nALTER EXTENSION \"pg_trgm\" SET SCHEMA \"ext\";\n",
+	}, {
+		name:   "a move to the default schema",
+		change: difftypes.ExtensionDiff{Name: "pg_trgm", FromSchema: "ext", ToSchema: "public", Relocatable: true},
+		want:   "-- Move extension pg_trgm from schema ext to public\nALTER EXTENSION \"pg_trgm\" SET SCHEMA \"public\";\n",
+	}, {
+		name:   "an update that stays",
+		change: difftypes.ExtensionDiff{Name: "pg_trgm", FromSchema: "ext", ToSchema: "ext", FromVersion: "1.5", ToVersion: "1.6"},
+		want:   "-- Update extension pg_trgm from 1.5 to 1.6\nALTER EXTENSION \"pg_trgm\" UPDATE TO '1.6';\n",
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
+			)
+			c.Assert(err, qt.IsNil)
+
+			rendered, renderErr := builtin.RenderSQL(platform.Postgres, nodes...)
+			c.Assert(renderErr, qt.IsNil)
+			c.Assert(rendered, qt.Equals, test.want)
+		})
+	}
+}
+
 // TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals covers the two
 // shapes that stay refused.
 //

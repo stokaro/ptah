@@ -1215,18 +1215,21 @@ and a policy on each is two policies.
 
 `//ptah:schema:extension` manages `CREATE EXTENSION`. Some extensions are
 pre-installed and should not be migration-managed, so Ptah keeps an ignore
-list, with `plpgsql` ignored by default. An ignored extension can still be
-created when your schema declares it, but it is never dropped and never
-appears in a diff. Embedders can replace or extend the ignore list through the
+list, with `plpgsql` ignored by default. An ignored extension is neither
+created nor dropped, even when your schema declares it, and never appears in a
+diff. Embedders can replace or extend the ignore list through the
 Go API — see [Reusable components](../../extend/components/).
 
 Set the annotation's `schema` attribute, or the equivalent HCL/YAML field, to
 install an extension outside the default schema. Ptah creates the schema first
 and renders `CREATE EXTENSION ... WITH SCHEMA ...`; live inspection preserves
 that placement, so a second comparison is synced. Moving an existing extension
-between schemas is detected but currently refused before SQL is emitted,
-because Ptah does not yet plan `ALTER EXTENSION ... SET SCHEMA`. Creation,
-removal, and identical-placement comparisons remain supported.
+to another schema plans `ALTER EXTENSION ... SET SCHEMA`, after creating that
+schema when it is new. An extension the server marks as not relocatable, such
+as `plpgsql`, is refused before SQL is emitted, because the server refuses the
+move too. A declared version the extension does not have plans `ALTER
+EXTENSION ... UPDATE TO`; a lower one is refused, because an extension updates
+in one direction only.
 
 ```go
 //ptah:schema:extension name="pgcrypto" schema="extensions" if_not_exists="true"

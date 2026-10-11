@@ -121,6 +121,53 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), moved, relocated, platform.Postgres, must.Must(builtin.New()))).ExtensionsModified, qt.HasLen, 0)
 }
 
+// TestExtensionMovesIntoASchemaThePlanCreatesLive pins that a move into a
+// schema nothing created yet runs. The plan once wrote ALTER EXTENSION ...
+// SET SCHEMA ahead of every schema precondition and created no schema for a
+// move, and the server answered `schema "..." does not exist` (SQLSTATE
+// 3F000), measured on PostgreSQL 18.
+func TestExtensionMovesIntoASchemaThePlanCreatesLive(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	home := fmt.Sprintf("ptah_ext_%d", time.Now().UnixNano())
+	away := home + "_new"
+	c.Assert(conn.Writer().ExecuteSQL(ctx, "CREATE SCHEMA "+home), qt.IsNil)
+	defer func() {
+		_ = conn.Writer().ExecuteSQL(ctx, "DROP EXTENSION IF EXISTS pg_trgm")
+		for _, schema := range []string{home, away} {
+			_ = conn.Writer().ExecuteSQL(ctx, "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+		}
+	}()
+	// The drop first for the reason TestExtensionVersionAndSchemaConvergeLive
+	// gives: the extension is database-wide and the database is shared.
+	c.Assert(conn.Writer().ExecuteSQL(ctx, "DROP EXTENSION IF EXISTS pg_trgm"), qt.IsNil)
+	c.Assert(conn.Writer().ExecuteSQL(ctx, "CREATE EXTENSION pg_trgm WITH SCHEMA "+home), qt.IsNil)
+
+	moved := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pg_trgm", Schema: away}}}
+	live, err := conn.Reader().ReadSchemaContext(ctx)
+	c.Assert(err, qt.IsNil)
+	move := must.Must(schemadiff.CompareWithDialect(t.Context(), moved, live, platform.Postgres, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()), move, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 2)
+	c.Assert(statements[0], qt.Contains, `CREATE SCHEMA IF NOT EXISTS "`+away+`"`)
+	c.Assert(statements[1], qt.Contains, `SET SCHEMA "`+away+`"`)
+	for _, statement := range statements {
+		c.Assert(conn.Writer().ExecuteSQL(ctx, statement), qt.IsNil, qt.Commentf("statement:\n%s", statement))
+	}
+
+	relocated, err := conn.Reader().ReadSchemaContext(ctx)
+	c.Assert(err, qt.IsNil)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), moved, relocated, platform.Postgres, must.Must(builtin.New())))
+	c.Assert(settled.ExtensionsModified, qt.HasLen, 0)
+}
+
 // TestExtensionAlterationRefusalsMatchTheServerLive pins that the two shapes
 // the planner refuses are ones the server refuses too.
 //

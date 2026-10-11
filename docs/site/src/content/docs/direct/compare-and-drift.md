@@ -590,8 +590,9 @@ selectable with a dotted spelling.
 When the desired side is a live PostgreSQL database, a selected extension keeps
 its installation schema. Creating a non-default placement emits `CREATE SCHEMA`
 and `CREATE EXTENSION ... WITH SCHEMA ...`; an identical placement is synced,
-and extension drops remain supported. A placement change exits 2 before SQL
-output because Ptah does not yet plan `ALTER EXTENSION ... SET SCHEMA`.
+and extension drops remain supported. A placement change plans `ALTER
+EXTENSION ... SET SCHEMA`, after `CREATE SCHEMA IF NOT EXISTS` when the schema
+is new; an extension that is not relocatable exits 2 before SQL output.
 
 ## Failure modes
 
