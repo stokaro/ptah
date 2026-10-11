@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
@@ -478,9 +479,11 @@ type Index struct {
 	// resolution when set).
 	TableName string
 
-	// RequiresExtensions names the extensions this index cannot be built
-	// without, as the catalog resolved them rather than as the index's own DDL
-	// spells them. It is filled in when the schema was read from a live
+	// Requires names the objects this index cannot be built without, under a
+	// common kind, so the model names them without importing their owners:
+	// the extensions it needs, as [objectidentity.KindExtension] identities of
+	// their exact names, sorted. They are the catalog's answer rather than the
+	// index's own DDL spelling, filled in when the schema was read from a live
 	// PostgreSQL catalog.
 	//
 	// An operator class is printed only when it is not the default for its key's
@@ -496,7 +499,7 @@ type Index struct {
 	//
 	// Empty means not measured or nothing to report. Annotation and YAML sources
 	// have no catalog to ask and leave it unset.
-	RequiresExtensions []string
+	Requires []objectidentity.ID
 }
 
 // Constraint represents a table-level constraint definition parsed from Go struct annotations.
@@ -584,16 +587,16 @@ type Constraint struct {
 	// table created with it has no rows to leave unchecked.
 	NotValid bool
 
-	// RequiresExtensions names the extensions the index backing this constraint
-	// cannot be built without, as the catalog resolved them rather than as
+	// Requires names the objects the index backing this constraint cannot be
+	// built without, as the catalog resolved them rather than as
 	// ExcludeElements spells them. It is filled in for EXCLUDE constraints read
 	// from a live PostgreSQL catalog, where an element prints its operator and
 	// prints its operator class only when that class is not the default:
 	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
 	// needs btree_gist and says so nowhere, while
 	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and does name
-	// the class (stokaro/ptah#1286). See [Index.RequiresExtensions].
-	RequiresExtensions []string
+	// the class (stokaro/ptah#1286). See [Index.Requires].
+	Requires []objectidentity.ID
 
 	Comment string // Constraint comment/description
 }

@@ -6,8 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -585,7 +587,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNoIndexResolvesTo(t *testing.
 
 	db := implicitOpclassIndexDatabase()
 	db.Fields[1].Type = "jsonb"
-	db.Indexes[0].RequiresExtensions = nil
+	db.Indexes[0].Requires = nil
 
 	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
@@ -800,11 +802,11 @@ func implicitOpclassIndexDatabase() *schemamodel.Database {
 			{StructName: "T", Name: "n", Type: "integer"},
 		},
 		Indexes: []schemamodel.Index{{
-			StructName:         "T",
-			Name:               "t_gin",
-			Fields:             []string{"n"},
-			Type:               "gin",
-			RequiresExtensions: []string{"btree_gin"},
+			StructName: "T",
+			Name:       "t_gin",
+			Fields:     []string{"n"},
+			Type:       "gin",
+			Requires:   []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))},
 		}},
 	}
 }
@@ -826,13 +828,13 @@ func implicitOpclassConstraintDatabase() *schemamodel.Database {
 			{StructName: "Booking", Name: "during", Type: "tsrange"},
 		},
 		Constraints: []schemamodel.Constraint{{
-			StructName:         "Booking",
-			Name:               "booking_room_during_excl",
-			Type:               "EXCLUDE",
-			Table:              "booking",
-			UsingMethod:        "gist",
-			ExcludeElements:    "room WITH =, during WITH &&",
-			RequiresExtensions: []string{"btree_gist"},
+			StructName:      "Booking",
+			Name:            "booking_room_during_excl",
+			Type:            "EXCLUDE",
+			Table:           "booking",
+			UsingMethod:     "gist",
+			ExcludeElements: "room WITH =, during WITH &&",
+			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 		}},
 	}
 }
@@ -846,7 +848,7 @@ func implicitOpclassConstraintDatabase() *schemamodel.Database {
 // 17.10, trimmed to the entries that matter here: both operator classes are in
 // it, because neither name is shadowed by a pg_catalog class.
 //
-// RequiresExtensions is set as well, because the reader records the edge whether
+// Requires is set as well, because the reader records the edge whether
 // or not the class is printed. Both answers are therefore available for this
 // fixture, which is exactly what makes it the test of which one is reported.
 func printedOpclassIndexDatabase() *schemamodel.Database {
@@ -861,11 +863,11 @@ func printedOpclassIndexDatabase() *schemamodel.Database {
 			{StructName: "W", Name: "txt", Type: "text"},
 		},
 		Indexes: []schemamodel.Index{{
-			StructName:         "W",
-			Name:               "w_trgm",
-			Type:               "gin",
-			Parts:              []schemamodel.IndexPart{{Name: "txt", Operator: "gin_trgm_ops"}},
-			RequiresExtensions: []string{"pg_trgm"},
+			StructName: "W",
+			Name:       "w_trgm",
+			Type:       "gin",
+			Parts:      []schemamodel.IndexPart{{Name: "txt", Operator: "gin_trgm_ops"}},
+			Requires:   []objectidentity.ID{pgextension.Subject(pgextension.Ref("pg_trgm"))},
 		}},
 	}
 }
@@ -886,13 +888,13 @@ func printedOpclassConstraintDatabase() *schemamodel.Database {
 			{StructName: "Y", Name: "txt", Type: "text"},
 		},
 		Constraints: []schemamodel.Constraint{{
-			StructName:         "Y",
-			Name:               "y_txt_excl",
-			Type:               "EXCLUDE",
-			Table:              "y",
-			UsingMethod:        "gist",
-			ExcludeElements:    "txt gist_trgm_ops WITH =",
-			RequiresExtensions: []string{"pg_trgm"},
+			StructName:      "Y",
+			Name:            "y_txt_excl",
+			Type:            "EXCLUDE",
+			Table:           "y",
+			UsingMethod:     "gist",
+			ExcludeElements: "txt gist_trgm_ops WITH =",
+			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("pg_trgm"))},
 		}},
 	}
 }
@@ -923,12 +925,12 @@ func orphanOpclassIndexDatabase() *schemamodel.Database {
 			Body:       "SELECT id, n FROM src",
 		}},
 		Indexes: []schemamodel.Index{{
-			StructName:         "Mv",
-			Name:               "mv_gin",
-			TableName:          "public.mv",
-			Fields:             []string{"n"},
-			Type:               "gin",
-			RequiresExtensions: []string{"btree_gin"},
+			StructName: "Mv",
+			Name:       "mv_gin",
+			TableName:  "public.mv",
+			Fields:     []string{"n"},
+			Type:       "gin",
+			Requires:   []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))},
 		}},
 	}
 }

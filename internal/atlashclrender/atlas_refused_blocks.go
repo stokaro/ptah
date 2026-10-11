@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/envbool"
@@ -312,7 +313,7 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 //
 // The evidence therefore comes from the reader, which resolved the index's
 // operator classes and access method against pg_depend; see
-// [schemamodel.Index.RequiresExtensions]. Asking the document instead -- treating
+// [schemamodel.Index.Requires]. Asking the document instead -- treating
 // `USING gin` as a reference to btree_gin -- is the wrong answer to the same
 // question: `gin` is a core access method, and tsvector, jsonb and array columns
 // have core GIN operator classes, so that rule would pin btree_gin to indexes
@@ -479,10 +480,12 @@ func (r *renderer) documentRequiresExtension(name string) bool {
 // while both documents applied at exit 0.
 func collectRequiredExtensions(db *schemamodel.Database) map[string]bool {
 	required := make(map[string]bool)
-	add := func(names []string) {
-		for _, name := range names {
-			name = strings.ToLower(strings.TrimSpace(name))
-			if name != "" {
+	add := func(refs []objectidentity.ID) {
+		for _, ref := range refs {
+			if ref.Kind != objectidentity.KindExtension {
+				continue
+			}
+			if name := strings.ToLower(strings.TrimSpace(ref.Name.Source)); name != "" {
 				required[name] = true
 			}
 		}
@@ -491,13 +494,13 @@ func collectRequiredExtensions(db *schemamodel.Database) map[string]bool {
 		if resolveTable(db.Tables, index.StructName, index.TableName) == nil {
 			continue
 		}
-		add(index.RequiresExtensions)
+		add(index.Requires)
 	}
 	for _, constraint := range db.Constraints {
 		if resolveTable(db.Tables, constraint.StructName, constraint.Table) == nil {
 			continue
 		}
-		add(constraint.RequiresExtensions)
+		add(constraint.Requires)
 	}
 	return required
 }

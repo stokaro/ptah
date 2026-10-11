@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 )
 
@@ -12,7 +13,7 @@ func mutableIndexDeclaration() schemamodel.Index {
 	return schemamodel.Index{
 		Name: "by_label", TableName: "items", Fields: []string{"label"},
 		Parts: []schemamodel.IndexPart{{Name: "label", Prefix: "20"}}, IncludeColumns: []string{"id"},
-		StorageParams: map[string]string{"fillfactor": "70"}, RequiresExtensions: []string{"bloom"},
+		StorageParams: map[string]string{"fillfactor": "70"}, Requires: []objectidentity.ID{{Kind: objectidentity.KindExtension, Name: objectidentity.Part{Source: "bloom", Normalized: "bloom"}}},
 		NullsDistinct: new(false),
 	}
 }
@@ -23,7 +24,7 @@ func TestIndexCloneIsolatesTheDeclaredDefinition(t *testing.T) {
 	clone := original.Clone()
 	c.Assert(clone, qt.DeepEquals, original)
 	clone.Fields[0], clone.Parts[0].Name, clone.IncludeColumns[0] = "changed", "changed", "changed"
-	clone.StorageParams["fillfactor"], clone.RequiresExtensions[0] = "20", "changed"
+	clone.StorageParams["fillfactor"], clone.Requires[0].Name.Source = "20", "changed"
 	*clone.NullsDistinct = true
 	c.Assert(original, qt.DeepEquals, mutableIndexDeclaration())
 }

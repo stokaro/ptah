@@ -31,7 +31,7 @@ func (c Constraint) Clone() Constraint {
 	c.ForeignColumns = slices.Clone(c.ForeignColumns)
 	c.OnDeleteColumns = slices.Clone(c.OnDeleteColumns)
 	c.IncludeColumns = slices.Clone(c.IncludeColumns)
-	c.RequiresExtensions = slices.Clone(c.RequiresExtensions)
+	c.Requires = slices.Clone(c.Requires)
 	c.ForeignTable = cloneScalar(c.ForeignTable)
 	c.ForeignColumn = cloneScalar(c.ForeignColumn)
 	c.DeleteRule = cloneScalar(c.DeleteRule)

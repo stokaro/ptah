@@ -409,7 +409,7 @@ migration nobody asked for.
 | `schemamodel.Constraint.OnDelete` | `ddl` | — |
 | `schemamodel.Constraint.OnDeleteColumns` | `ddl` | — |
 | `schemamodel.Constraint.OnUpdate` | `ddl` | — |
-| `schemamodel.Constraint.RequiresExtensions` | `planning` | which extensions must exist before this constraint can be created; it orders the statements and appears in none of them |
+| `schemamodel.Constraint.Requires` | `planning` | the objects, such as extensions, that must exist before this constraint can be created; it orders the statements and appears in none of them |
 | `schemamodel.Constraint.StructName` | `ddl` | — |
 | `schemamodel.Constraint.Table` | `ddl` | — |
 | `schemamodel.Constraint.Type` | `ddl` | — |
@@ -578,7 +578,7 @@ migration nobody asked for.
 | `schemamodel.Index.Operator` | `ddl` | — |
 | `schemamodel.Index.Overrides` | `ddl` | — |
 | `schemamodel.Index.Parts` | `ddl` | — |
-| `schemamodel.Index.RequiresExtensions` | `planning` | the same ordering fact for an index |
+| `schemamodel.Index.Requires` | `planning` | the same ordering fact for an index |
 | `schemamodel.Index.StorageParams` | `ddl` | — |
 | `schemamodel.Index.StructName` | `ddl` | — |
 | `schemamodel.Index.TableName` | `ddl` | — |

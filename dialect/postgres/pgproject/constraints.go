@@ -120,7 +120,7 @@ func addBacking(state *schemaprojection.TableState, constraint catalog.Constrain
 		Name: constraint.Name, TableName: state.Table.Name, Schema: state.Table.Schema,
 		Columns: slices.Clone(constraint.ColumnNamesOrDefault()), Method: "btree", IsUnique: true,
 		IsPrimary: constraint.Type == "PRIMARY KEY", IncludeColumns: slices.Clone(constraint.IncludeColumns),
-		RequiresExtensions: slices.Clone(constraint.RequiresExtensions),
+		Requires: slices.Clone(constraint.Requires),
 	}
 	if constraint.NullsDistinct != nil {
 		index.NullsDistinct = new(*constraint.NullsDistinct)

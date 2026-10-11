@@ -329,21 +329,21 @@ func toDBIndexes(
 	for _, index := range indexes {
 		tableName, schema := indexTable(index.StructName, index.TableName, tables)
 		out = append(out, catalog.Index{
-			Facets:             index.Facets,
-			Name:               index.Name,
-			TableName:          tableName,
-			Schema:             schema,
-			Columns:            append([]string(nil), index.Fields...),
-			Parts:              toDBIndexParts(index.Parts, index.Operator),
-			IsUnique:           index.Unique,
-			Condition:          index.Condition,
-			Comment:            index.Comment,
-			Invisible:          index.Invisible,
-			NullsDistinct:      clonePtr(index.NullsDistinct),
-			Method:             indexAccessMethod(index.Type, dialect),
-			IncludeColumns:     append([]string(nil), index.IncludeColumns...),
-			StorageParams:      maps.Clone(index.StorageParams),
-			RequiresExtensions: slices.Clone(index.RequiresExtensions),
+			Facets:         index.Facets,
+			Name:           index.Name,
+			TableName:      tableName,
+			Schema:         schema,
+			Columns:        append([]string(nil), index.Fields...),
+			Parts:          toDBIndexParts(index.Parts, index.Operator),
+			IsUnique:       index.Unique,
+			Condition:      index.Condition,
+			Comment:        index.Comment,
+			Invisible:      index.Invisible,
+			NullsDistinct:  clonePtr(index.NullsDistinct),
+			Method:         indexAccessMethod(index.Type, dialect),
+			IncludeColumns: append([]string(nil), index.IncludeColumns...),
+			StorageParams:  maps.Clone(index.StorageParams),
+			Requires:       slices.Clone(index.Requires),
 		})
 	}
 	return out
@@ -459,14 +459,14 @@ func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamod
 			ExcludeElements: optionalStringPtr(
 				constraint.ExcludeElements,
 			),
-			WhereCondition:     optionalStringPtr(constraint.WhereCondition),
-			NotValid:           constraint.NotValid,
-			Comment:            constraint.Comment,
-			Deferrable:         constraint.Deferrable,
-			Initially:          constraint.Initially,
-			Match:              constraint.Match,
-			NotEnforced:        constraint.NotEnforced,
-			RequiresExtensions: slices.Clone(constraint.RequiresExtensions),
+			WhereCondition: optionalStringPtr(constraint.WhereCondition),
+			NotValid:       constraint.NotValid,
+			Comment:        constraint.Comment,
+			Deferrable:     constraint.Deferrable,
+			Initially:      constraint.Initially,
+			Match:          constraint.Match,
+			NotEnforced:    constraint.NotEnforced,
+			Requires:       slices.Clone(constraint.Requires),
 		}
 		if constraint.ForeignTable != "" {
 			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -51,7 +52,7 @@ func numbers() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables:  []schemamodel.Table{{StructName: "Number", Name: "numbers"}},
 		Fields:  []schemamodel.Field{{StructName: "Number", Name: "n", Type: "INTEGER", Primary: true}},
-		Indexes: []schemamodel.Index{{StructName: "Number", Name: "numbers_gin", Fields: []string{"n"}, Type: "gin", RequiresExtensions: []string{"btree_gin"}}},
+		Indexes: []schemamodel.Index{{StructName: "Number", Name: "numbers_gin", Fields: []string{"n"}, Type: "gin", Requires: []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))}}},
 	}
 }
 

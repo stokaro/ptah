@@ -48,8 +48,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -1144,7 +1146,7 @@ func TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn(t *testing.T) 
 			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(index.RequiresExtensions, qt.DeepEquals, test.want)
+			c.Assert(index.Requires, qt.DeepEquals, extensionSubjects(test.want))
 		})
 	}
 }
@@ -1464,4 +1466,14 @@ func TestReadIndexesForSchema_KeepsAHashShardedIndexAsDeclared(t *testing.T) {
 			c.Assert(index.HashShardBuckets, qt.Equals, test.wantBuckets)
 		})
 	}
+}
+
+// extensionSubjects is the identity the extension owner gives each name
+// outside its own package, which is what the reader records.
+func extensionSubjects(names []string) []objectidentity.ID {
+	var subjects []objectidentity.ID
+	for _, name := range names {
+		subjects = append(subjects, pgextension.Subject(pgextension.Ref(name)))
+	}
+	return subjects
 }

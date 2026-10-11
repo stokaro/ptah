@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -779,8 +780,11 @@ type Index struct {
 	// docs/conformance.md for the ones a PostgreSQL reader deliberately omits.
 	StorageParams map[string]string `json:"storage_params,omitempty"`
 
-	// RequiresExtensions names the extensions this index cannot be built
-	// without, as the catalog resolved them rather than as the DDL spells them.
+	// Requires names the objects this index cannot be built without, under a
+	// common kind, so the model names them without importing their owners:
+	// the extensions it needs, as [objectidentity.KindExtension] identities of
+	// their exact names, sorted. They are the catalog's answer, not the DDL's
+	// spelling.
 	//
 	// An index key names an operator class only when that class is not the
 	// default for its type on its access method, so an index whose default
@@ -808,7 +812,7 @@ type Index struct {
 	// Empty means the reader found no such edge, which is the ordinary case:
 	// core supplies the default operator class for every core type its access
 	// methods index. Readers with no catalog to ask leave it unset.
-	RequiresExtensions []string `json:"requires_extensions,omitempty"`
+	Requires []objectidentity.ID `json:"requires,omitempty"`
 
 	// PartitionAttached reports that this index is a partition's copy of an
 	// index on its partitioned parent, attached to that parent index rather
@@ -908,9 +912,8 @@ type Constraint struct {
 	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
 	WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
 
-	// RequiresExtensions names the extensions the index backing this constraint
-	// cannot be built without, read from that index exactly as
-	// [Index.RequiresExtensions] is.
+	// Requires names the objects the index backing this constraint cannot be
+	// built without, read from that index exactly as [Index.Requires] is.
 	//
 	// It is a separate field rather than a lookup because the backing index is
 	// not part of the entity model: a constraint owns its index, and the
@@ -922,7 +925,7 @@ type Constraint struct {
 	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
 	// the class, because a class is printed exactly when it is not the default
 	// (stokaro/ptah#1286).
-	RequiresExtensions []string `json:"requires_extensions,omitempty"`
+	Requires []objectidentity.ID `json:"requires,omitempty"`
 
 	// Comment is the constraint's description, empty when it has none. A
 	// reader fills it where the target stores one against the constraint:

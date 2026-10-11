@@ -7,11 +7,13 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -767,30 +769,30 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 		Tables: []catalog.Table{{Schema: "public", Name: "booking"}},
 		Indexes: []catalog.Index{
 			{
-				Schema:             "public",
-				TableName:          "booking",
-				Name:               "booking_room_gin",
-				Columns:            []string{"room"},
-				Method:             "gin",
-				RequiresExtensions: []string{"btree_gin"},
+				Schema:    "public",
+				TableName: "booking",
+				Name:      "booking_room_gin",
+				Columns:   []string{"room"},
+				Method:    "gin",
+				Requires:  []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))},
 			},
 			{
-				Schema:             "public",
-				TableName:          "booking",
-				Name:               "booking_room_during_excl",
-				Columns:            []string{"room", "during"},
-				Method:             "gist",
-				RequiresExtensions: []string{"btree_gist"},
+				Schema:    "public",
+				TableName: "booking",
+				Name:      "booking_room_during_excl",
+				Columns:   []string{"room", "during"},
+				Method:    "gist",
+				Requires:  []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 			},
 		},
 		Constraints: []catalog.Constraint{{
-			Schema:             "public",
-			TableName:          "booking",
-			Name:               "booking_room_during_excl",
-			Type:               "EXCLUDE",
-			UsingMethod:        &usingMethod,
-			ExcludeElements:    &elements,
-			RequiresExtensions: []string{"btree_gist"},
+			Schema:          "public",
+			TableName:       "booking",
+			Name:            "booking_room_during_excl",
+			Type:            "EXCLUDE",
+			UsingMethod:     &usingMethod,
+			ExcludeElements: &elements,
+			Requires:        []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 		}},
 	}
 
@@ -798,9 +800,9 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "booking_room_gin")
-	c.Assert(result.Indexes[0].RequiresExtensions, qt.DeepEquals, []string{"btree_gin"})
+	c.Assert(result.Indexes[0].Requires, qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gin"))})
 	c.Assert(result.Constraints, qt.HasLen, 1)
-	c.Assert(result.Constraints[0].RequiresExtensions, qt.DeepEquals, []string{"btree_gist"},
+	c.Assert(result.Constraints[0].Requires, qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("btree_gist"))},
 		qt.Commentf("the constraint-backed index is dropped here, so its requirement rides the constraint"))
 }
 
