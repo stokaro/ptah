@@ -67,7 +67,7 @@ func planFormsDocument(
 	c.Helper()
 	declared, err := schemafile.LoadSources(
 		[]schemafile.Source{{URL: writeFormsDocument(c, schemaName, files)}},
-		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres},
+		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres},
 	)
 	c.Assert(err, qt.IsNil)
 	return planDocumentAgainstLive(c, conn, declared, schemaName)

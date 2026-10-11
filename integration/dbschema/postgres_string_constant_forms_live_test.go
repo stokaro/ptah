@@ -122,7 +122,7 @@ func TestPostgresLiveRefusedStringConstantSpellings(t *testing.T) {
 				[]schemafile.Source{{URL: writeFormsDocument(c, schemaName, map[string]string{
 					"schema.sql": fmt.Sprintf(stringConstantFormsDocument, "%[1]s", test.spelling),
 				})}},
-				schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres},
+				schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres},
 			)
 
 			c.Assert(err, qt.IsNotNil)

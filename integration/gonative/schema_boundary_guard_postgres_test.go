@@ -548,8 +548,8 @@ func boundaryParseBack(c *qt.C, document string, compatibility bool) *schemamode
 	c.Helper()
 
 	parsed, err := schemafile.LoadAll([]string{"file://" + boundaryDocumentFile(c, document)}, schemafile.Options{
-		YAML:                  builtintest.Runtime().YAML(),
-		SQL:                   builtintest.Runtime().SQL(),
+		YAML: builtintest.Runtime().YAML(),
+		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               "postgres",
 		IgnoreUnknownHCLNames: compatibility,
 	})

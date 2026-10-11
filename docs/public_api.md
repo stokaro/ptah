@@ -41,6 +41,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/engine`
 - `ptah.run/engine/builtin`
 - `ptah.run/core/schemasource`
+- `ptah.run/core/hclext`
 - `ptah.run/core/sqlext`
 - `ptah.run/core/sqlutil`
 - `ptah.run/core/yamlext`
@@ -2663,6 +2664,33 @@ declares less the objects its header leaves unmanaged.
 zero value reads the shared grammar alone. A lint run reads statements with the
 SQL owners of its `lint.Runtime`.
 
+`core/hclext` is the HCL schema reader's contract with the owners whose blocks
+an HCL document carries. An `Extension` registers each block as a `Block`
+shape: the site it stands at, its type, how its labels name the object
+(`SchemaAndName`), and the attributes it takes and of which `Kind`.
+
+- The reader checks a block against its shape with the refusals it gives its
+  own blocks, including the tolerance for unknown names.
+- The reader evaluates every attribute in its own context. An owner receives
+  values, never expressions: a `String` is a string and a `Text` is the text
+  the reader produced. Variables, locals, functions and the confinement of
+  `file()` stay the reader's.
+- Once a document is read, the owner's `Decoder` gets every block of its in one
+  call and returns the objects each declares. A `ClaimError` refuses one block,
+  positioned at it.
+- `Extension.Coverage` is the claim every HCL document makes, since a document
+  names no target.
+
+`engine.Provider.HCL` registers an extension, and `engine.Runtime.HCL` returns
+the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
+`hclext.None` reads the reader's own blocks.
+
+`synonym.HCL` reads the `synonym` block. `atlascompat.ParseAtlasHCL` and
+`ParseAtlasHCLFile` select no owner, so a synonym block is refused there as an
+unsupported block; `ParseAtlasHCLWithOptions` takes the owners in
+`ParseHCLOptions.HCL`. This changes behavior; pre-v1, so no compatibility is
+owed.
+
 `schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
@@ -3373,8 +3401,8 @@ and terminal-safe. Embedders can use the same external desired-schema contract
 as the CLI without depending on Cobra or any command-tree package. `Run` takes
 a `schemasource.Formats`, the readers of each output format, because the SQL
 and HCL readers decode owner syntax and the package links no owner:
-`sourceformats.New` returns the bundled readers, with YAML read by the owners
-it is given.
+`sourceformats.New` returns the bundled readers, with YAML, SQL and HCL read by
+the owners it is given.
 
 `migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning

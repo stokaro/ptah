@@ -22,10 +22,10 @@ import (
 func materializedArtifact(c *qt.C, db *schemamodel.Database) string {
 	store := memory.New()
 	_, err := schemaartifact.PushTo(
-		context.Background(), store, db, schemaartifact.PushOptions{Latest: true},
+		context.Background(), store, db, schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(), Latest: true},
 	)
 	c.Assert(err, qt.IsNil)
-	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{})
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNil)
 	written, err := schemaartifact.Materialize(pulled, filepath.Join(c.TempDir(), "schema.hcl"))
 	c.Assert(err, qt.IsNil)

@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/builtintest"
 )
 
 // referenceEnv names the environment variable holding the path to the pinned
@@ -330,7 +331,7 @@ table "t" {
 			tolerant, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
-				atlashcl.Options{IgnoreUnknownNames: true},
+				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.IsNil)
 			without, err := atlashcl.Parse([]byte(tt.equivalent), "schema.hcl")
@@ -702,7 +703,7 @@ table "t" {
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
-				atlashcl.Options{IgnoreUnknownNames: true},
+				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.IsNotNil, qt.Commentf("reference refused this file: %s", out))
 		})
@@ -804,7 +805,7 @@ table "t" {
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
-				atlashcl.Options{IgnoreUnknownNames: true},
+				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.ErrorMatches, `.*unknown variable .*`)
 		})
@@ -837,7 +838,7 @@ annotation "gql" {
 	_, err := atlashcl.ParseWithOptions(
 		[]byte(bare),
 		"schema.hcl",
-		atlashcl.Options{IgnoreUnknownNames: true},
+		atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 	)
 	c.Assert(err, qt.ErrorMatches, `.*unknown variable "HASH"`)
 }

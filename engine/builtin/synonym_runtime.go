@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"ptah.run/core/annotation"
+	"ptah.run/core/hclext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
@@ -18,6 +19,7 @@ func synonymProvider() engine.Provider {
 	provider := engine.Provider{
 		ID:          synonym.Owner,
 		Annotations: []annotation.Extension{synonym.Annotations()},
+		HCL:         []hclext.Extension{synonym.HCL()},
 		Codecs:      synonym.Codecs(),
 	}
 	for _, target := range synonym.Targets() {

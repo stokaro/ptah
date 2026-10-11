@@ -19,7 +19,7 @@ func TestYQLReplicationChangesAcrossFiles(t *testing.T) {
 	second := "ALTER ASYNC REPLICATION `archive/mirror` SET (ENDPOINT='moved:2136'); ALTER TRANSFER `archive/ingest` SET (BATCH_SIZE_BYTES=4096);"
 	c.Assert(os.WriteFile(filepath.Join(directory, "01.sql"), []byte(first), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(directory, "02.sql"), []byte(second), 0o600), qt.IsNil)
-	database, err := schemafile.LoadPath(directory, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "ydb"})
+	database, err := schemafile.LoadPath(directory, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	replication, found, err := database.FeatureObjects.Get(ydbreplication.ReplicationRef("archive", "mirror"))
 	c.Assert(err, qt.IsNil)

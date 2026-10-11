@@ -92,6 +92,7 @@ func verifyAtlasSchemaPlanFile(
 	desired, err := schemafile.LoadSources(atlasSchemaPlanSources(transition), schemafile.Options{
 		YAML:                  runtime.YAML(),
 		SQL:                   runtime.SQL(),
+		HCL:                   runtime.HCL(),
 		CoverageVocabulary:    runtime.CoverageVocabulary(),
 		Dialect:               conn.Info().Dialect,
 		IgnoreUnknownHCLNames: true,

@@ -16,13 +16,13 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlsource"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/feature/synonym"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/pgpolicysource"
@@ -105,18 +105,28 @@ type Options struct {
 	// run's selected owners, such as a YDB changefeed. The zero value holds
 	// the common kinds only, so a header naming an owner's kind is refused.
 	CoverageVocabulary coverage.Vocabulary
+
+	// HCL selects the owners whose blocks the document may carry, usually
+	// the HCL set of the runtime the caller renders and compares with. The
+	// zero value is refused; hclext.None reads this package's own blocks
+	// alone.
+	HCL hclext.Set
 }
 
 // ParseFile parses an HCL schema file into the same Database IR used by
-// Go annotations and YAML schema files.
+// Go annotations and YAML schema files. It selects no owner, so it reads this
+// package's own blocks alone; [ParseFileWithOptions] takes the owners whose
+// blocks a document carries.
 func ParseFile(path string) (*schemamodel.Database, error) {
-	return ParseFileWithOptions(path, Options{})
+	return ParseFileWithOptions(path, Options{HCL: hclext.None()})
 }
 
 // Parse parses HCL schema text into the same Database IR used by Go
-// annotations and YAML schema files.
+// annotations and YAML schema files. It selects no owner, so it reads this
+// package's own blocks alone; [ParseWithOptions] takes the owners whose
+// blocks a document carries.
 func Parse(data []byte, filename string) (*schemamodel.Database, error) {
-	return ParseWithOptions(data, filename, Options{})
+	return ParseWithOptions(data, filename, Options{HCL: hclext.None()})
 }
 
 // ParseFileWithOptions parses an HCL schema file under the given options.
@@ -131,6 +141,9 @@ func ParseFileWithOptions(path string, opts Options) (*schemamodel.Database, err
 
 // ParseWithOptions parses HCL schema text under the given options.
 func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.Database, error) {
+	if !opts.HCL.Selected() {
+		return nil, hclext.ErrUnselected
+	}
 	if filename == "" {
 		filename = "schema.hcl"
 	}
@@ -154,6 +167,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		refContext:      columnRefContext(body),
 		declaredSchemas: schemaBlockNames(schemaBlocks),
 		vocabulary:      opts.CoverageVocabulary,
+		owners:          opts.HCL,
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -197,11 +211,9 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	// sql() call and an unresolved var. reference before either can reach DDL,
 	// and a `print` call would otherwise fire once per pass -- three lines for
 	// one call. That binary prints one (stokaro/ptah#1627).
-	p.emitting = true
-	if err := p.parseBody(body); err != nil {
+	if err := p.walk(body); err != nil {
 		return nil, err
 	}
-	p.emitting = false
 	// After the walk, because a reference may name a block declared further
 	// down the file, and before Finalize, which reads schemas off the same
 	// blocks for the positions it covers.
@@ -248,21 +260,29 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
 	}
 	p.db.NotDescribed = notDescribed
-	if p.db.FeatureCoverage, err = documentCoverage(string(data), limits, p.db.FeatureObjects); err != nil {
+	if p.db.FeatureCoverage, err = documentCoverage(string(data), limits, p.db.FeatureObjects, p.owners); err != nil {
 		return nil, err
 	}
 	return p.db, nil
 }
 
 // documentCoverage is what a document knows about the owned models: the YDB
-// limits its directives record, the models its own blocks declare, and the
-// row-security policies it claims.
-func documentCoverage(data string, limits ydbsource.Limits, objects schemaext.Objects) (schemaext.Coverage, error) {
+// limits its directives record, the models its own blocks declare, the claims
+// of the owners whose blocks it may carry, and the row-security policies it
+// claims.
+func documentCoverage(data string, limits ydbsource.Limits, objects schemaext.Objects, owners hclext.Set) (schemaext.Coverage, error) {
 	known, _, err := ydbsource.ReadHCLCoverage(data, limits)
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
 	if known, err = withBlockCoverage(known); err != nil {
+		return schemaext.Coverage{}, err
+	}
+	claims, err := owners.Coverage()
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if known, err = known.Combine(claims); err != nil {
 		return schemaext.Coverage{}, err
 	}
 	return pgpolicysource.Claim(known, objects)
@@ -358,6 +378,12 @@ type parser struct {
 	// evaluations produce the document. See [parser.printLine].
 	emitting bool
 
+	// owners are the owners whose blocks the document may carry, and
+	// ownerClaims the blocks of theirs the walk claimed; see
+	// [parser.claimOwnerBlock].
+	owners      hclext.Set
+	ownerClaims []ownerClaim
+
 	// dynamicIterators names the iteration roots bound by the dynamic blocks
 	// currently being expanded, outermost first. See [parser.expandDynamic].
 	dynamicIterators []string
@@ -366,6 +392,18 @@ type parser struct {
 	// declared, recorded at the block because a single-column key leaves no
 	// distinguishable trace in the IR; see [parser.recordForeignKey].
 	declaredForeignKeys []declaration
+}
+
+// walk is the body walk, the one pass whose evaluations are the document's
+// own, followed by the owners' reading of the blocks the walk claimed: after
+// the walk, so each owner reads every block of its in one call.
+func (p *parser) walk(body *hclsyntax.Body) error {
+	p.emitting = true
+	if err := p.parseBody(body); err != nil {
+		return err
+	}
+	p.emitting = false
+	return p.readOwnerClaims()
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -399,7 +437,6 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"range":                (*parser).parseRange,
 	"hypertable":           (*parser).parseHypertable,
 	"continuous_aggregate": (*parser).parseContinuousAggregate,
-	"synonym":              (*parser).parseSynonym,
 	"coordination_node":    (*parser).parseCoordinationNode,
 	"extended_property":    (*parser).parseExtendedProperty,
 	"table":                (*parser).parseTable,
@@ -452,6 +489,9 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		// Reaching them again here would parse a type constraint as a value.
 		return nil
 	default:
+		if shape, owned := p.owners.Lookup(hclext.TopLevel, block.Type); owned {
+			return p.claimOwnerBlock(block, shape)
+		}
 		return p.rejectUnsupportedBlock(block, TopLevelScope)
 	}
 }
@@ -2651,8 +2691,8 @@ func targetProperties(overrides map[string]map[string]string, targets []string, 
 }
 
 // withBlockCoverage adds the knowledge the format's own blocks give: one for
-// each TimescaleDB model, one for a SQL Server extended property and one for a
-// synonym, so a document without one describes a database without one. It
+// each TimescaleDB model and one for a SQL Server extended property, so a
+// document without one describes a database without one. It
 // adds the claim of the MySQL index block size too, which the format has no
 // spelling for: an index a document declares has none, and applying the
 // document removes a hint the table holds, as the HCL export warns.
@@ -2666,15 +2706,11 @@ func withBlockCoverage(known schemaext.Coverage) (schemaext.Coverage, error) {
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	synonyms, err := synonym.Coverage(schemaext.Desired, complete, nil)
-	if err != nil {
-		return schemaext.Coverage{}, err
-	}
 	blockSizes, err := mysqlsource.BlockSizeCoverage()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	for _, claim := range []schemaext.Coverage{timescale, properties, synonyms, blockSizes} {
+	for _, claim := range []schemaext.Coverage{timescale, properties, blockSizes} {
 		if known, err = known.Combine(claim); err != nil {
 			return schemaext.Coverage{}, err
 		}

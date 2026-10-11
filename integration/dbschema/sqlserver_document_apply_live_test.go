@@ -73,7 +73,7 @@ func TestSQLServerLiveDocumentAppliesEveryPropertyScope(t *testing.T) {
 	path := writeFourScopeDocument(c, schemaName)
 	declared, err := schemafile.LoadSources(
 		[]schemafile.Source{{URL: path}},
-		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.SQLServer},
+		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer},
 	)
 	c.Assert(err, qt.IsNil)
 	// Non-vacuity: the merge really carries them, so an empty plan below cannot

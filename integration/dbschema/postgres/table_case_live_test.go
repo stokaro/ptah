@@ -88,7 +88,7 @@ func (f tableCaseFixture) load(c *qt.C) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(f.body), 0o600), qt.IsNil)
-	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: f.dialect})
+	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: f.dialect})
 	c.Assert(err, qt.IsNil)
 	return desired
 }

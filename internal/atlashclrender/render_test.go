@@ -44,7 +44,7 @@ func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `options = "START WITH 100 INCREMENT BY 5"`)
 	c.Assert(hcl, qt.Contains, `unique_expr = "lower(email)"`)
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(fieldByName(parsed.Fields, "id").IdentityOptions, qt.Equals, "START WITH 100 INCREMENT BY 5")
 	c.Assert(fieldByName(parsed.Fields, "email").UniqueExpr, qt.Equals, "lower(email)")
@@ -61,7 +61,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	c.Assert(string(neutral.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
 	c.Assert(string(neutral.Data), qt.Not(qt.Contains), `schema = schema.pg_catalog`)
 	c.Assert(string(neutral.Data), qt.Contains, `schema = "pg_catalog"`)
-	parsedNeutral, err := atlashcl.Parse(neutral.Data, "schema.hcl")
+	parsedNeutral, err := atlashcl.ParseWithOptions(neutral.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", neutral.Data))
 	c.Assert(parsedNeutral.Schemas, qt.HasLen, 0)
 	c.Assert(parsedNeutral.Extensions, qt.DeepEquals, db.Extensions)
@@ -72,7 +72,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	c.Assert(string(inspected.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
 	c.Assert(string(inspected.Data), qt.Not(qt.Contains), `schema = schema.pg_catalog`)
 	c.Assert(string(inspected.Data), qt.Contains, `schema = "pg_catalog"`)
-	parsedInspected, err := atlashcl.Parse(inspected.Data, "schema.hcl")
+	parsedInspected, err := atlashcl.ParseWithOptions(inspected.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", inspected.Data))
 	c.Assert(parsedInspected.Schemas, qt.HasLen, 0)
 	c.Assert(parsedInspected.Extensions, qt.DeepEquals, db.Extensions)
@@ -82,7 +82,7 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	c.Assert(string(authored.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
 	c.Assert(string(authored.Data), qt.Contains, `schema = "pg_catalog"`)
 
-	parsed, err := atlashcl.Parse(authored.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(authored.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", authored.Data))
 	c.Assert(parsed.Schemas, qt.HasLen, 0)
 	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
@@ -104,7 +104,7 @@ func TestRenderExtensionInstallationSchemaRoundTrip(t *testing.T) {
 	c.Assert(string(rendered.Data), qt.Contains, `schema "Extension Store" {`)
 	c.Assert(string(rendered.Data), qt.Contains, `schema = schema["Extension Store"]`)
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", rendered.Data))
 	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
 }
@@ -120,7 +120,7 @@ func TestRenderExtensionWhitespaceOnlyInstallationSchemaRoundTrip(t *testing.T) 
 	c.Assert(string(rendered.Data), qt.Contains, `schema " " {`)
 	c.Assert(string(rendered.Data), qt.Contains, `schema = schema[" "]`)
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", rendered.Data))
 	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
 }
@@ -145,7 +145,7 @@ func TestRenderPrimaryKeyColumnIsNotNullable(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "null = true")
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Fields, qt.HasLen, 1)
 	c.Assert(parsed.Fields[0].Nullable, qt.IsFalse)
@@ -208,7 +208,7 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c.Assert(strings.Count(string(first.Data), `foreign_key "users_account_fk"`), qt.Equals, 1)
 	c.Assert(first.Diagnostics, qt.HasLen, 0)
 
-	parsed, err := atlashcl.Parse(first.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(first.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(first.Data)))
 	c.Assert(parsed.Tables, qt.HasLen, 3)
 	c.Assert(parsed.Enums, qt.HasLen, 1)
@@ -308,7 +308,7 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 
 	rendered, err := atlashclrender.Render(db)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 
 	c.Assert(parsed.Tables, qt.HasLen, 2)
@@ -362,7 +362,7 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `permission {`)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Extensions, qt.HasLen, 1)
 	c.Assert(parsed.Extensions[0].Name, qt.Equals, "pg_trgm")
@@ -443,7 +443,7 @@ func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t 
 		`triggers["users"]["bad_event"]`,
 		"grants.app_user",
 	})
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 	c.Assert(parsed.Roles, qt.HasLen, 1)
 	c.Assert(parsed.Roles[0].Password, qt.Equals, "secret")
@@ -493,7 +493,7 @@ func TestRenderPreservesTableChecksAndManagedDataWhileReportingOrphans(t *testin
 			Message:  "constraint cannot be rendered because the target table is absent from the exported schema",
 		},
 	})
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].Checks, qt.DeepEquals, []string{"id > 0"})
@@ -526,7 +526,7 @@ func TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy(t *testing.T) {
 	hcl := string(rendered.Data)
 	c.Assert(hcl, qt.Not(qt.Contains), "refresh_strategy")
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)
 	c.Assert(parsed.MaterializedViews[0].Body, qt.Equals, "SELECT count(*) FROM users")
@@ -570,7 +570,7 @@ func TestRenderIndexCommentRoundTrip(t *testing.T) {
 	hcl := string(rendered.Data)
 	c.Assert(hcl, qt.Contains, `comment = "lookup by email"`)
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
 	c.Assert(parsed.Indexes[0].Comment, qt.Equals, "lookup by email")
@@ -600,7 +600,7 @@ func TestRenderIndexGranularityRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `override "granularity"`)
 	c.Assert(hcl, qt.Not(qt.Contains), `granularity =`)
 
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
 	c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, db.Indexes[0].Overrides)
@@ -668,7 +668,7 @@ func TestRenderColumnParityExtensionsRoundTrip(t *testing.T) {
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
 	c.Assert(string(rendered.Data), qt.Contains, `table "users"`)
 	c.Assert(string(rendered.Data), qt.Contains, `column "id"`)
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].Overrides, qt.DeepEquals, db.Tables[0].Overrides)
@@ -708,7 +708,7 @@ func TestRenderStringTemplateIntroducersRoundTrip(t *testing.T) {
 	c.Assert(string(rendered.Data), qt.Contains, `$${tenant}`)
 	c.Assert(string(rendered.Data), qt.Contains, `%%{if enabled}`)
 	c.Assert(string(rendered.Data), qt.Contains, `$${literal}`)
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Tables[0].Comment, qt.Equals, db.Tables[0].Comment)
 	c.Assert(parsed.Fields[0].Default, qt.Equals, db.Fields[0].Default)
@@ -745,7 +745,7 @@ func TestRenderQuotedIdentifiersRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `schema["tenant.data"]`)
 	c.Assert(hcl, qt.Contains, `column["tenant-id"]`)
 	c.Assert(hcl, qt.Contains, `column["display.name"]`)
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Tables[0].Schema, qt.Equals, "tenant.data")
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant-id"})
@@ -801,7 +801,7 @@ func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `for = table.users`)
 	c.Assert(hcl, qt.Contains, `table "users" {`)
 	c.Assert(hcl, qt.Contains, `schema = schema.auth`)
-	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(roleByName(parsed.Roles, "inheriting").Inherit, qt.IsTrue)
 	c.Assert(roleByName(parsed.Roles, "isolated").Inherit, qt.IsFalse)
@@ -830,7 +830,7 @@ func TestRenderSkipsIncompleteObjectsWithDiagnostics(t *testing.T) {
 		`triggers[""]["missing_table"]`,
 		"rls_policies.missing_table",
 	})
-	_, err = atlashcl.Parse(rendered.Data, "schema.hcl")
+	_, err = atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 }
 

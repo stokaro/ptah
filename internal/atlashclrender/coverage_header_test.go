@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // The compatibility surface omits three block types the pinned Atlas community
@@ -122,7 +123,7 @@ func TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser(t *testing.T)
 	)
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 		IgnoreUnknownNames: true,
 	})
 
@@ -141,7 +142,7 @@ func TestNativeDocumentCarriesNoLimitsBackThroughTheParser(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{})
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.NotDescribed.IsZero(), qt.IsTrue)

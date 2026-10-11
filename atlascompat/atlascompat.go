@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
@@ -39,14 +40,37 @@ const AtlasSumFileName = "atlas.sum"
 // schema file, and is refused with an error naming the block and its position.
 // Parsing one as a schema would yield an empty IR, which a caller diffing
 // against a live database cannot tell apart from "drop everything".
+//
+// It selects no feature owner, so a block only an owner reads, such as a
+// synonym, is refused as an unsupported block; [ParseAtlasHCLWithOptions]
+// takes the owners.
 func ParseAtlasHCL(data []byte, filename string) (*schemamodel.Database, error) {
 	return atlashcl.Parse(data, filename)
 }
 
 // ParseAtlasHCLFile parses an Atlas schema HCL file into Ptah's Go schema IR.
-// It refuses project files on the same terms as [ParseAtlasHCL].
+// It refuses project files, and selects no owner, on the same terms as
+// [ParseAtlasHCL].
 func ParseAtlasHCLFile(path string) (*schemamodel.Database, error) {
 	return atlashcl.ParseFile(path)
+}
+
+// ParseHCLOptions configures [ParseAtlasHCLWithOptions].
+type ParseHCLOptions struct {
+	// HCL selects the feature owners whose blocks the document may carry,
+	// usually the HCL set of the caller's runtime, such as a SQL Server
+	// synonym. The zero value selects none, as [ParseAtlasHCL] does.
+	HCL hclext.Set
+}
+
+// ParseAtlasHCLWithOptions is [ParseAtlasHCL] with the owners whose blocks
+// the document may carry.
+func ParseAtlasHCLWithOptions(data []byte, filename string, opts ParseHCLOptions) (*schemamodel.Database, error) {
+	owners := opts.HCL
+	if !owners.Selected() {
+		owners = hclext.None()
+	}
+	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{HCL: owners})
 }
 
 // ParseSQLOptions configures ParseSQL.

@@ -32,7 +32,7 @@ func TestLoadPathAltersAnEarlierTableFromALaterFile(t *testing.T) {
 			"ALTER TABLE users DROP COLUMN legacy;\n",
 	})
 
-	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "postgres"})
+	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fieldNames(db), qt.DeepEquals, []string{"id", "note"})
@@ -50,7 +50,7 @@ func TestLoadPathAltersATableFromAnImportedFile(t *testing.T) {
 		"alter.sql": "ALTER TABLE users ADD PRIMARY KEY (id), DROP COLUMN legacy;\n",
 	})
 
-	db, err := schemafile.LoadPath(filepath.Join(dir, "main.sql"), schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "postgres"})
+	db, err := schemafile.LoadPath(filepath.Join(dir, "main.sql"), schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fieldNames(db), qt.DeepEquals, []string{"id"})
@@ -65,7 +65,7 @@ func TestLoadPathAltersAnEarlierTableFromALaterFile_FailurePath(t *testing.T) {
 		"2_b.sql": "ALTER TABLE users ALTER COLUMN note SET NOT NULL;\n",
 	})
 
-	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "postgres"})
+	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches,
 		`read SQL schema file .*2_b\.sql: ALTER TABLE users ALTER COLUMN note names a column the table does not declare`)

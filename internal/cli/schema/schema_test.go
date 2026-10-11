@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/goannotationexport"
 )
@@ -45,7 +46,7 @@ func TestSchemaExportCommandWritesHCL(t *testing.T) {
 	c.Assert(string(content), qt.Contains, `table "users"`)
 	c.Assert(string(content), qt.Contains, `column "created_at"`)
 	c.Assert(string(content), qt.Contains, `primary_key {`)
-	parsed, err := atlashcl.Parse(content, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
@@ -182,7 +183,7 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 
 	content, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(content, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
 	c.Assert(parsed.Extensions, qt.HasLen, 1)
 	c.Assert(parsed.Extensions[0].IfNotExists, qt.IsTrue)
@@ -394,7 +395,7 @@ type User struct {
 	c.Assert(string(modelAfter), qt.Not(qt.Contains), "ptah:schema")
 	hclData, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(hclData, "schema.hcl")
+	parsed, err := atlashcl.ParseWithOptions(hclData, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", hclData))
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].APIName, qt.Equals, "Account")

@@ -670,6 +670,12 @@
       "claimed_by": "docs/site/src/content/docs/schema/go-annotations.md"
     },
     {
+      "id": "gopkg-core-hclext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/hclext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-lintext",
       "kind": "public-package",
       "surface": "ptah.run/core/lintext",

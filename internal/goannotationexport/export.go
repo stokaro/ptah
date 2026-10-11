@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
+	"ptah.run/core/hclext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/atlashcl"
@@ -64,6 +65,11 @@ type Options struct {
 	// reads and cleans up beside the frontend's own. The zero value is
 	// refused; pass annotation.None for the frontend's own directives only.
 	Annotations annotation.Set
+	// HCL selects the owners whose blocks the exported HCL may carry, which
+	// the export reads back to prove the round trip, usually the HCL set of
+	// the same runtime. The zero value is refused; pass hclext.None for the
+	// HCL reader's own blocks only.
+	HCL hclext.Set
 }
 
 // Result describes a completed export.
@@ -265,7 +271,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	}
 	diagnostics = append(diagnostics, normalization...)
 	sortDiagnostics(diagnostics)
-	canonicalHCL, exportedDB, err := canonicalRoundTrip(rendered.Data, plan.options.Annotations.CoverageVocabulary())
+	canonicalHCL, exportedDB, err := canonicalRoundTrip(rendered.Data, plan.options.Annotations.CoverageVocabulary(), plan.options.HCL)
 	if err != nil {
 		return renderedExport{}, err
 	}
@@ -457,8 +463,8 @@ func resolvePaths(opts Options) (rootDir, outputPath string, err error) {
 	return rootDir, outputPath, nil
 }
 
-func canonicalRoundTrip(data []byte, vocabulary coverage.Vocabulary) ([]byte, *schemamodel.Database, error) {
-	hclOptions := atlashcl.Options{CoverageVocabulary: vocabulary}
+func canonicalRoundTrip(data []byte, vocabulary coverage.Vocabulary, hcl hclext.Set) ([]byte, *schemamodel.Database, error) {
+	hclOptions := atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl}
 	parsed, err := atlashcl.ParseWithOptions(data, "schema.hcl", hclOptions)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: parse generated schema: %v", ErrInvalidHCL, err)

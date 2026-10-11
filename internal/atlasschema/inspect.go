@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
@@ -41,6 +42,7 @@ type InspectRuntime interface {
 	atlasreport.InspectRuntime
 	yamlext.Runtime
 	sqlext.Runtime
+	hclext.Runtime
 }
 
 // InspectOptions configures Atlas-compatible schema inspection.

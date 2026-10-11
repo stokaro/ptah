@@ -17,6 +17,7 @@ import (
 	"oras.land/oras-go/v2"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
@@ -94,6 +95,9 @@ type PushOptions struct {
 	// usually the vocabulary of the runtime the caller compares with. The
 	// snapshot is read back with it to prove it lossless.
 	CoverageVocabulary coverage.Vocabulary
+	// HCL is the owners whose blocks the snapshot may carry, usually the HCL
+	// set of the same runtime. The snapshot is read back with them too.
+	HCL hclext.Set
 }
 
 // PushResult describes a published immutable schema artifact.
@@ -132,8 +136,9 @@ type preparedPush struct {
 // checks is the release-assertion source, empty for an artifact that carries
 // none. It is taken here rather than read from db for the reason
 // [PushOptions.Checks] gives. vocabulary is the coverage kinds the snapshot's
-// header may name; the snapshot is read back with it to prove it lossless.
-func Capture(db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabulary) (fs.FS, error) {
+// header may name and hcl the owners whose blocks it may carry; the snapshot is
+// read back with them to prove it lossless.
+func Capture(db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabulary, hcl hclext.Set) (fs.FS, error) {
 	if db == nil {
 		return nil, fmt.Errorf("schema database is required")
 	}
@@ -160,7 +165,7 @@ func Capture(db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabu
 			formatDiagnostics(rendered.Diagnostics),
 		)
 	}
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary})
+	parsed, err := atlashcl.ParseWithOptions(rendered.Data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl})
 	if err != nil {
 		return nil, fmt.Errorf("validate canonical schema HCL: %w", err)
 	}
@@ -249,10 +254,11 @@ func push(
 	return PushResult{PushResult: result, Version: prepared.Version}, nil
 }
 
-// Pull retrieves and validates a canonical schema through client. vocabulary
-// is the coverage kinds the schema's header may name, usually the vocabulary
+// Pull retrieves and validates a canonical schema through client. hcl is the
+// owners whose blocks the schema may carry. vocabulary is the coverage kinds
+// the schema's header may name, usually the vocabulary
 // of the runtime the caller compares with.
-func Pull(ctx context.Context, client *ociartifact.Client, reference string, vocabulary coverage.Vocabulary) (Artifact, error) {
+func Pull(ctx context.Context, client *ociartifact.Client, reference string, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
 	if client == nil {
 		return Artifact{}, fmt.Errorf("OCI client is required")
 	}
@@ -263,12 +269,12 @@ func Pull(ctx context.Context, client *ociartifact.Client, reference string, voc
 	if err != nil {
 		return Artifact{}, err
 	}
-	return validatePulled(pulled, vocabulary)
+	return validatePulled(pulled, vocabulary, hcl)
 }
 
 // PullFrom retrieves and validates a canonical schema from target, reading its
-// header with vocabulary as [Pull] does.
-func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, vocabulary coverage.Vocabulary) (Artifact, error) {
+// header with vocabulary and its blocks with hcl as [Pull] does.
+func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
 	pulled, err := ociartifact.PullFrom(ctx, target, selector, ociartifact.PullOptions{
 		ExpectedArtifactTypes:   []string{ociartifact.SchemaArtifactType},
 		AcceptedLayerMediaTypes: acceptedLayerMediaTypes,
@@ -276,13 +282,13 @@ func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, 
 	if err != nil {
 		return Artifact{}, err
 	}
-	return validatePulled(pulled, vocabulary)
+	return validatePulled(pulled, vocabulary, hcl)
 }
 
 // PullToFile retrieves reference and materializes it at output. It returns the
-// paths it created, the canonical HCL first. The schema's header is read with
-// vocabulary as [Pull] does.
-func PullToFile(ctx context.Context, reference, output string, plainHTTP bool, vocabulary coverage.Vocabulary) (Artifact, []string, error) {
+// paths it created, the canonical HCL first. The schema is read with
+// vocabulary and hcl as [Pull] does.
+func PullToFile(ctx context.Context, reference, output string, plainHTTP bool, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, []string, error) {
 	if strings.TrimSpace(output) == "" {
 		return Artifact{}, nil, fmt.Errorf("schema artifact output file is required")
 	}
@@ -299,7 +305,7 @@ func PullToFile(ctx context.Context, reference, output string, plainHTTP bool, v
 	if err != nil {
 		return Artifact{}, nil, err
 	}
-	artifact, err := Pull(ctx, client, reference, vocabulary)
+	artifact, err := Pull(ctx, client, reference, vocabulary, hcl)
 	if err != nil {
 		return Artifact{}, nil, err
 	}
@@ -351,7 +357,7 @@ func prepare(
 	db *schemamodel.Database,
 	opts PushOptions,
 ) (preparedPush, error) {
-	snapshot, err := Capture(db, opts.Checks, opts.CoverageVocabulary)
+	snapshot, err := Capture(db, opts.Checks, opts.CoverageVocabulary, opts.HCL)
 	if err != nil {
 		return preparedPush{}, err
 	}
@@ -380,7 +386,7 @@ func prepare(
 	}, nil
 }
 
-func validatePulled(pulled ociartifact.Artifact, vocabulary coverage.Vocabulary) (Artifact, error) {
+func validatePulled(pulled ociartifact.Artifact, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
 	if pulled.Annotations[annotationFormat] != canonicalFormat {
 		return Artifact{}, fmt.Errorf("unsupported schema artifact format %q", pulled.Annotations[annotationFormat])
 	}
@@ -416,7 +422,7 @@ func validatePulled(pulled ociartifact.Artifact, vocabulary coverage.Vocabulary)
 	if err != nil {
 		return Artifact{}, fmt.Errorf("read schema artifact: %w", err)
 	}
-	db, err := atlashcl.ParseWithOptions(data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary})
+	db, err := atlashcl.ParseWithOptions(data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl})
 	if err != nil {
 		return Artifact{}, fmt.Errorf("parse schema artifact: %w", err)
 	}

@@ -335,9 +335,9 @@ func TestInspect_ReadsTheRowsTheDeclarationCarries(t *testing.T) {
 	c.Assert(schemaload.ReadManagedRows(published), qt.IsNil)
 
 	store := memory.New()
-	_, err := schemaartifact.PushTo(ctx, store, published, schemaartifact.PushOptions{Tags: []string{"stable"}})
+	_, err := schemaartifact.PushTo(ctx, store, published, schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(), Tags: []string{"stable"}})
 	c.Assert(err, qt.IsNil)
-	pulled, err := schemaartifact.PullFrom(ctx, store, "stable", coverage.Vocabulary{})
+	pulled, err := schemaartifact.PullFrom(ctx, store, "stable", coverage.Vocabulary{}, builtintest.Runtime().HCL())
 	c.Assert(err, qt.IsNil)
 	// What the artifact carries and what it does not: the declared rows, and no
 	// path into the working copy that published them. What the declaration

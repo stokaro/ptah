@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/builtintest"
 )
 
 // A schema file's `variable` and `locals` blocks bind values that var. and
@@ -237,7 +238,7 @@ table "t" {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			db, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl), "schema.hcl", atlashcl.Options{Vars: tt.vars},
+				[]byte(tt.hcl), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Vars: tt.vars},
 			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)

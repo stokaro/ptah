@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
+	"ptah.run/core/hclext"
 	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
@@ -37,6 +38,7 @@ type Owners interface {
 	annotation.Runtime
 	yamlext.Runtime
 	sqlext.Runtime
+	hclext.Runtime
 	coverage.Runtime
 }
 
@@ -338,7 +340,7 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if o.Owners == nil {
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
-	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.CoverageVocabulary()), command)
+	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary()), command)
 }
 
 func commandDisplay(command schemasource.Command) string {
@@ -505,6 +507,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 		Dialect:            o.Dialect,
 		YAML:               o.yaml(),
 		SQL:                o.sql(),
+		HCL:                o.hcl(),
 		CoverageVocabulary: o.vocabulary(),
 		Vars:               o.Vars,
 		VarValues:          o.VarValues,
@@ -631,7 +634,7 @@ func (o Options) loadOCIResult(ctx context.Context, raw string) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
-	artifact, err := schemaartifact.Pull(ctx, client, ref.String(), o.vocabulary())
+	artifact, err := schemaartifact.Pull(ctx, client, ref.String(), o.vocabulary(), o.hcl())
 	if err != nil {
 		return nil, fmt.Errorf("resolve schema artifact: %w", err)
 	}
@@ -670,6 +673,15 @@ func (o Options) yaml() yamlext.Set {
 		return yamlext.Set{}
 	}
 	return o.Owners.YAML()
+}
+
+// hcl is the HCL owners of the load, or the zero set, which an HCL read
+// refuses, when the caller selected no owners.
+func (o Options) hcl() hclext.Set {
+	if o.Owners == nil {
+		return hclext.Set{}
+	}
+	return o.Owners.HCL()
 }
 
 // sql is the SQL owners of the load, or the zero set, which a SQL read

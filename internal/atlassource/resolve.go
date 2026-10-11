@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
@@ -50,6 +51,7 @@ type Runtime interface {
 	schemacomparison.Runtime
 	yamlext.Runtime
 	sqlext.Runtime
+	hclext.Runtime
 	coverage.Runtime
 }
 
@@ -356,6 +358,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 			Dialect:               opts.Dialect,
 			YAML:                  opts.Runtime.YAML(),
 			SQL:                   opts.Runtime.SQL(),
+			HCL:                   opts.Runtime.HCL(),
 			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			ReportIgnored:         opts.ReportIgnored,
@@ -417,7 +420,7 @@ func (s Set) resolveRemoteSchema(ctx context.Context, opts ResolveOptions) (Stat
 	// Pull validates the artifact type, the format annotation and the single
 	// expected file, and parses the schema, so it returns either a schema or an
 	// error.
-	artifact, err := schemaartifact.Pull(ctx, client, reference, opts.Runtime.CoverageVocabulary())
+	artifact, err := schemaartifact.Pull(ctx, client, reference, opts.Runtime.CoverageVocabulary(), opts.Runtime.HCL())
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, reference, err)
 	}
@@ -432,7 +435,7 @@ func (s Set) resolveRemoteSchema(ctx context.Context, opts ResolveOptions) (Stat
 func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (State, error) {
 	command := s.Sources[0].Command
 	command.Dialect = opts.Dialect
-	schema, err := schemasource.Run(ctx, sourceformats.New(opts.Runtime.YAML(), opts.Runtime.SQL(), opts.Runtime.CoverageVocabulary()), command)
+	schema, err := schemasource.Run(ctx, sourceformats.New(opts.Runtime.YAML(), opts.Runtime.SQL(), opts.Runtime.HCL(), opts.Runtime.CoverageVocabulary()), command)
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, s.Sources[0].Raw, err)
 	}

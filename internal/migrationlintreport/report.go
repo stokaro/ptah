@@ -24,6 +24,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/lintext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacomparison"
@@ -106,6 +107,7 @@ type Runtime interface {
 	renderer.SchemaService
 	yamlext.Runtime
 	sqlext.Runtime
+	hclext.Runtime
 	coverage.Runtime
 }
 

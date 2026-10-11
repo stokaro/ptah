@@ -63,7 +63,7 @@ func TestYDBDesiredYQL_StreamingQueries(t *testing.T) {
 func loadStreamingYQL(c *qt.C, path, source string) *schemamodel.Database {
 	c.Helper()
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
-	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "ydb"})
+	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	return desired
 }

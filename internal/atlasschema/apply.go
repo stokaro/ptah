@@ -723,6 +723,7 @@ func loadDesiredApplySchema(
 		desired, err := schemafile.LoadSources(localApplySources(opts), schemafile.Options{
 			YAML:                  opts.Runtime.YAML(),
 			SQL:                   opts.Runtime.SQL(),
+			HCL:                   opts.Runtime.HCL(),
 			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
 			DatabaseURL:           conn.Info().URL,
 			Dialect:               conn.Info().Dialect,
@@ -918,7 +919,7 @@ func PrepareApply(
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
-	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL, desiredApplySet(opts)); err != nil {
+	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL, desiredApplySet(opts), opts.Runtime.HCL()); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 

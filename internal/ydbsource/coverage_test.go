@@ -53,7 +53,9 @@ func TestEmptySourcesRecordSupportedFeatureNamespaces(t *testing.T) {
 			db, _, err := sqlschema.ReadWith(t.Context(), nil, "ydb", nil, yqlOwners())
 			return &db, err
 		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
-		{name: "HCL", parse: func() (*schemamodel.Database, error) { return atlashcl.Parse(nil, "empty.hcl") }, changefeeds: schemaext.Uninspected},
+		{name: "HCL", parse: func() (*schemamodel.Database, error) {
+			return atlashcl.ParseWithOptions(nil, "empty.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+		}, changefeeds: schemaext.Uninspected},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -101,7 +103,7 @@ func TestExportsDoNotTurnCoordinationLimitsIntoAbsence(t *testing.T) {
 			c.Assert(goErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(hclErr, qt.IsNil)
 			c.Assert(files, qt.IsNil)
-			parsed, err := atlashcl.Parse(hcl.Data, "export.hcl")
+			parsed, err := atlashcl.ParseWithOptions(hcl.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, db.FeatureCoverage)), qt.IsTrue)
 		})
@@ -212,7 +214,7 @@ func TestExportsPreserveOrRefuseCompleteSubjectsInUnmanagedNamespaces(t *testing
 	}}))
 	result, err := atlashclrender.RenderForDialect(&schemamodel.Database{FeatureCoverage: withNode}, "ydb")
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.Parse(result.Data, "export.hcl")
+	parsed, err := atlashcl.ParseWithOptions(result.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, withNode.SelectKinds([]schemaext.Kind{ydbcoordination.Kind}))), qt.IsTrue)
 }

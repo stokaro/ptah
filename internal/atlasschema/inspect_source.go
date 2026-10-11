@@ -352,6 +352,7 @@ func inspectOnDev(
 		desired, err = schemafile.LoadSources(set.SchemaFileSources(), schemafile.Options{
 			YAML:                  opts.Runtime.YAML(),
 			SQL:                   opts.Runtime.SQL(),
+			HCL:                   opts.Runtime.HCL(),
 			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
 			DatabaseURL:           devURL,
 			Dialect:               dialect,

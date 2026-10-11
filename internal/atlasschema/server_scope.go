@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
@@ -38,7 +39,10 @@ var ErrServerDevDatabase = errors.New(
 // schema when dev-url is limited to schema "devdb"`. A document declaring one
 // database the binary plans, and Ptah refuses with [ErrServerDevDatabase],
 // because its plan is rehearsed and the rehearsal needs a whole dev server.
-func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string, desired atlassource.Set) error {
+//
+// hcl is the owners whose blocks an HCL document may carry, which the count of
+// its databases reads past.
+func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string, desired atlassource.Set, hcl hclext.Set) error {
 	devDatabase, beside := devDatabaseBesideServer(info, devURL)
 	switch {
 	case !beside:
@@ -47,7 +51,7 @@ func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string, desired atl
 		return ErrServerDevDatabase
 	case runsSQL(desired):
 		return &ServerScopeMismatchError{Database: devDatabase}
-	case declaresSeveralDatabases(info.Dialect, desired):
+	case declaresSeveralDatabases(info.Dialect, desired, hcl):
 		return &OneDatabaseBesideDocumentError{Flag: "dev-url", Database: devDatabase}
 	default:
 		return ErrServerDevDatabase
@@ -58,13 +62,14 @@ func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string, desired atl
 // than one database. It reads the files, which needs no dev database. A
 // document that does not read answers false, and the refusal is
 // [ErrServerDevDatabase] either way.
-func declaresSeveralDatabases(dialect string, desired atlassource.Set) bool {
+func declaresSeveralDatabases(dialect string, desired atlassource.Set, hcl hclext.Set) bool {
 	if !desired.DeclarativeLocalFiles() {
 		return false
 	}
 	// The load only counts the databases the files name, which no owner's
-	// claim changes, so it selects no YAML owner.
-	schema, err := schemafile.LoadSources(desired.SchemaFileSources(), schemafile.Options{Dialect: dialect, YAML: yamlext.None(), SQL: sqlext.None()})
+	// claim changes, so it selects no YAML owner. An HCL document's owner
+	// blocks are read, so a document that carries one is counted as before.
+	schema, err := schemafile.LoadSources(desired.SchemaFileSources(), schemafile.Options{Dialect: dialect, YAML: yamlext.None(), SQL: sqlext.None(), HCL: hcl})
 	return err == nil && len(schema.Schemas) > 1
 }
 

@@ -50,6 +50,7 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		opts.output,
 		opts.plainHTTP,
 		owners.CoverageVocabulary(),
+		owners.HCL(),
 	)
 	if err != nil {
 		return err

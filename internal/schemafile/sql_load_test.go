@@ -47,7 +47,7 @@ func grammarOptions(requests *[]sqlext.GrammarRequest) schemafile.Options {
 		Targets: []engine.Target{{Name: "custom"}},
 		SQL:     []sqlext.Extension{{Owner: "example.org/custom", Targets: []string{"custom"}, Grammar: tableGrammar{requests: requests}}},
 	}))
-	return schemafile.Options{YAML: yamlext.None(), SQL: runtime.SQL(), Dialect: "custom"}
+	return schemafile.Options{YAML: yamlext.None(), SQL: runtime.SQL(), HCL: runtime.HCL(), Dialect: "custom"}
 }
 
 // requestedFiles lists each file of request by its base name and its text.
@@ -137,7 +137,7 @@ func TestLoadAll_AYQLFileChangesWhatTheLoadDeclares(t *testing.T) {
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 	writeFiles(c, dir, map[string]string{"001.sql": yqlUsers})
 	writeFiles(c, root, map[string]string{"feed.sql": yqlFeed})
-	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "ydb"}
+	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"}
 
 	database, err := schemafile.LoadAll([]string{dir, filepath.Join(root, "feed.sql")}, opts)
 
@@ -154,7 +154,7 @@ func TestLoadAll_AYQLFileCannotChangeWhatAnHCLSourceDeclares(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
 	writeFiles(c, root, map[string]string{"users.hcl": hclUsersYDB, "feed.sql": yqlFeed})
-	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "ydb"}
+	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"}
 
 	database, err := schemafile.LoadAll([]string{filepath.Join(root, "users.hcl"), filepath.Join(root, "feed.sql")}, opts)
 

@@ -71,7 +71,7 @@ func planDeleteListDocument(c *qt.C, conn *dbschema.DatabaseConnection, schemaNa
 	c.Assert(os.WriteFile(path, []byte(fmt.Sprintf(document, schemaName)), 0o600), qt.IsNil)
 	declared, err := schemafile.LoadSources(
 		[]schemafile.Source{{URL: path}},
-		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres},
+		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres},
 	)
 	c.Assert(err, qt.IsNil)
 	return planDocumentAgainstLive(c, conn, declared, schemaName)

@@ -45,7 +45,7 @@ func planFromFile(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnectio
 	c.Helper()
 	path := filepath.Join(c.TempDir(), name)
 	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
-	desired, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.ClickHouse})
+	desired, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.ClickHouse})
 	c.Assert(err, qt.IsNil)
 	return atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 }

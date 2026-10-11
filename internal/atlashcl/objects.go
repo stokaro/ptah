@@ -24,7 +24,6 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/feature/pgpolicy"
-	"ptah.run/feature/synonym"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/pgpolicysource"
 	"ptah.run/internal/tableref"
@@ -1940,51 +1939,6 @@ func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int
 		return nil, p.blockError(block, "%s attribute %q must be an integer within the int64 range", label, name)
 	}
 	return &result, nil
-}
-
-// parseSynonym parses a top-level synonym block into a declared synonym of
-// the synonym owner.
-//
-// `target` is required: a synonym that stands for nothing is not one, and the
-// server has no default. The name and optional schema come from the block
-// labels or the schema attribute, like every other object here.
-func (p *parser) parseSynonym(block *hclsyntax.Block) error {
-	schema, name, err := p.objectSchemaAndName(block, "synonym")
-	if err != nil {
-		return err
-	}
-	if err := p.rejectNestedBlocks(block, "synonym"); err != nil {
-		return err
-	}
-	if err := p.rejectUnsupportedSynonymAttrs(block); err != nil {
-		return err
-	}
-	target, err := p.stringAttr(block, "target", "synonym")
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(target) == "" {
-		return p.blockError(block, "synonym %q requires a target", name)
-	}
-	declared := synonym.DesiredSynonym{Comment: p.optionalString(block.Body.Attributes["comment"]),
-		Synonym: synonym.Synonym{Schema: schema, Name: name, Target: target}}
-	if err := synonym.ValidateDesired(&declared); err != nil {
-		return p.blockError(block, "%v", err)
-	}
-	objects, err := p.db.FeatureObjects.With(synonym.DeclaredObject(declared))
-	if err != nil {
-		return p.blockError(block, "synonym %s is declared twice: %v", declared.QualifiedName(), err)
-	}
-	p.db.FeatureObjects = objects
-	return nil
-}
-
-func (p *parser) rejectUnsupportedSynonymAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"schema":  true,
-		"target":  true,
-		"comment": true,
-	}, "synonym")
 }
 
 // parseCoordinationNode parses a top-level coordination_node block into a
