@@ -25,8 +25,6 @@ CREATE TABLE orders (
 );
 -- Modify table: users
 ALTER TABLE users ADD (created_at TIMESTAMP);
--- Modify column users.id: type: integer -> number(19)
-ALTER TABLE users MODIFY (id NUMBER(19));
 CREATE INDEX orders_user_ix ON orders (user_id);
 CREATE INDEX users_created_ix ON users (created_at);
 CREATE UNIQUE INDEX users_email_uq ON users (email);
