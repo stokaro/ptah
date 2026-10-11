@@ -28,6 +28,10 @@ import (
 // is, and a declaration is the only place the language can come from.
 const Language = "plsql"
 
+// Security is the mode an Oracle routine that states no AUTHID runs with: its
+// definer's rights, AUTHID DEFINER. See [SecurityClause].
+const Security = "DEFINER"
+
 // Volatility values, spelled as [ptah.run/core/schemamodel.Function.Canonicalize] leaves them.
 const (
 	Immutable = "IMMUTABLE"

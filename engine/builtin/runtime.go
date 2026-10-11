@@ -224,13 +224,13 @@ func routineBodyReader(name string) routineext.Reader {
 func routineDefaults(name string) schemacomparison.Routines {
 	switch {
 	case platform.IsPostgresFamily(name):
-		return schemacomparison.RoutineDefaults{Language: pgroutine.Language}
+		return schemacomparison.RoutineDefaults{Language: pgroutine.Language, Security: pgroutine.Security}
 	case name == platform.MySQL, name == platform.MariaDB:
-		return schemacomparison.RoutineDefaults{Language: mysqlrules.Language}
+		return schemacomparison.RoutineDefaults{Language: mysqlrules.Language, Security: mysqlrules.Security}
 	case name == platform.SQLServer:
-		return schemacomparison.RoutineDefaults{Language: mssqlroutine.Language}
+		return schemacomparison.RoutineDefaults{Language: mssqlroutine.Language, Security: mssqlroutine.Security}
 	case name == platform.Oracle:
-		return schemacomparison.RoutineDefaults{Language: oracleroutine.Language}
+		return schemacomparison.RoutineDefaults{Language: oracleroutine.Language, Security: oracleroutine.Security}
 	default:
 		return nil
 	}

@@ -1547,10 +1547,10 @@ func deduplicateNamedDefinitions[T any, K comparable](definitions []T, identity 
 	return deduplicated
 }
 
-// deduplicateFunctions keeps the first declaration of each routine, with the
-// language a later declaration states where the first states none. The
-// conflict check has already refused declarations that differ in anything
-// else; see [compositeDefinitionValidator.functions].
+// deduplicateFunctions keeps the first declaration of each routine, with what
+// a later declaration states where the first states nothing, as
+// [withStatedAttributes] allows. The conflict check refuses declarations that
+// differ in anything else; see [compositeDefinitionValidator.functions].
 func deduplicateFunctions(functions []Function) []Function {
 	index := make(map[routineIdentity]int, len(functions))
 	deduplicated := make([]Function, 0, len(functions))
@@ -1562,9 +1562,7 @@ func deduplicateFunctions(functions []Function) []Function {
 			deduplicated = append(deduplicated, function)
 			continue
 		}
-		if deduplicated[kept].Language == "" {
-			deduplicated[kept].Language = function.Language
-		}
+		deduplicated[kept], _ = withStatedAttributes(deduplicated[kept], function)
 	}
 	return deduplicated
 }

@@ -709,7 +709,7 @@ Declares a database function.
 | `params` | No | Function parameter list. |
 | `returns` | No | Return type. |
 | `schema` | No | Target schema/namespace. |
-| `security` | No | Security mode, such as DEFINER. |
+| `security` | No | Security mode: DEFINER or INVOKER. Omitted means the target's own: INVOKER on PostgreSQL and SQL Server, DEFINER on MySQL, MariaDB and Oracle. |
 | `settings` | No | Routine configuration settings, `name=value`, separated by `;`. |
 | `strict` | No | Marks the function `STRICT`. `true`/`false`. |
 | `volatility` | No | Volatility class. |
@@ -763,7 +763,7 @@ type ArchiveTenant struct{}
 | `name` | No | Procedure name. |
 | `params` | No | Procedure parameter list. |
 | `schema` | No | Target schema/namespace. |
-| `security` | No | Security mode, such as DEFINER. |
+| `security` | No | Security mode: DEFINER or INVOKER. Omitted means the target's own: INVOKER on PostgreSQL and SQL Server, DEFINER on MySQL, MariaDB and Oracle. |
 | `volatility` | No | Volatility class. |
 
 ### `//ptah:schema:trigger`

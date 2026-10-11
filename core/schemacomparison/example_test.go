@@ -46,23 +46,24 @@ func ExampleRules() {
 }
 
 // ExampleRoutineDefaults shows a target stating the language its routines are
-// in. A routine declared with no language is compared as one in SQL, so it
-// matches the routine the target's catalog reports and nothing is planned.
+// in and the rights they run with. A routine declared with neither is compared
+// as a SQL routine that runs with its definer's rights, so it matches the
+// routine the target's catalog reports and nothing is planned.
 func ExampleRoutineDefaults() {
 	runtime, err := engine.New(engine.Provider{ID: "example.org/custom", Targets: []engine.Target{{
 		Name:        "custom",
 		Preparation: schemapreparation.Identity{},
-		Comparison:  schemacomparison.Rules{Routines: schemacomparison.RoutineDefaults{Language: "sql"}},
+		Comparison:  schemacomparison.Rules{Routines: schemacomparison.RoutineDefaults{Language: "sql", Security: "DEFINER"}},
 	}}})
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	desired := &schemamodel.Database{Functions: []schemamodel.Function{
-		{Name: "touch", Kind: "procedure", Security: "INVOKER", Volatility: "VOLATILE", Body: "UPDATE t SET c = 1"},
+		{Name: "touch", Kind: "procedure", Volatility: "VOLATILE", Body: "UPDATE t SET c = 1"},
 	}}
 	current := &catalog.Database{Functions: []catalog.Function{
-		{Name: "touch", Kind: "procedure", Language: "sql", Security: "INVOKER", Volatility: "VOLATILE", Body: "UPDATE t SET c = 1"},
+		{Name: "touch", Kind: "procedure", Language: "sql", Security: "DEFINER", Volatility: "VOLATILE", Body: "UPDATE t SET c = 1"},
 	}}
 
 	diff, err := schemadiff.CompareWithDialect(context.Background(), desired, current, "custom", runtime)

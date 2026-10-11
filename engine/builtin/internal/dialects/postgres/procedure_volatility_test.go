@@ -48,7 +48,7 @@ func TestRenderSQL_AProcedureCarriesNoVolatility(t *testing.T) {
 	c := qt.New(t)
 
 	out := renderedSQL(c, "postgres",
-		"CREATE PROCEDURE p() LANGUAGE plpgsql AS $$ BEGIN UPDATE t SET c = 1; END; $$;")
+		"CREATE PROCEDURE p() LANGUAGE plpgsql SECURITY INVOKER AS $$ BEGIN UPDATE t SET c = 1; END; $$;")
 
 	c.Assert(out, qt.Contains, "CREATE PROCEDURE")
 	c.Assert(out, qt.Contains, "SECURITY INVOKER")

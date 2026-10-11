@@ -1483,8 +1483,10 @@ func (f Function) IsProcedure() bool {
 //     target's, and only a target can say which that is. A comparison reads
 //     it through the target's rules (schemacomparison.Routines), and each
 //     renderer writes its own.
-//   - Security: empty → "INVOKER"; otherwise uppercased. pg_proc surfaces
-//     this as either "DEFINER" or "INVOKER".
+//   - Security: uppercased and never defaulted. A routine that states no
+//     mode runs with its caller's rights on PostgreSQL and SQL Server and with
+//     its definer's on MySQL, MariaDB and Oracle, so an omitted mode means the
+//     target's, read through the target's rules as the language is.
 //   - Volatility: empty → "VOLATILE"; otherwise uppercased. pg_proc surfaces
 //     this as "IMMUTABLE", "STABLE", or "VOLATILE".
 //   - Kind: trimmed and lowercased but never defaulted. Empty already means
@@ -1511,9 +1513,6 @@ func (f *Function) Canonicalize() {
 	f.Kind = strings.ToLower(strings.TrimSpace(f.Kind))
 	f.Language = strings.ToLower(f.Language)
 	f.Security = strings.ToUpper(f.Security)
-	if f.Security == "" {
-		f.Security = "INVOKER"
-	}
 	f.Volatility = strings.ToUpper(f.Volatility)
 	if f.Volatility == "" {
 		f.Volatility = "VOLATILE"

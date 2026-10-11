@@ -23,6 +23,11 @@ import (
 // clause, so a routine declares none, and the reader reports this one.
 const Language = "sql"
 
+// Security is the security mode of a SQL Server routine that states none, as
+// the reader reports it: the routine runs as EXECUTE AS CALLER, with its
+// caller's rights.
+const Security = "INVOKER"
+
 // Reader reads the routine bodies of SQL Server. Its zero value is ready to
 // use.
 type Reader struct{}

@@ -69,18 +69,26 @@ func TestSchemaRenderCreatesAProcedureThatDeclaresNoLanguageFS(t *testing.T) {
 // TestSchemaApplyCreatesAProcedureThatDeclaresNoLanguageLiveE2E applies the
 // document to a server, reads the procedure back from the catalog, and plans
 // again: the second plan is empty.
+//
+// The document states no security mode either, so the procedure runs with the
+// rights the engine gives one: its definer's on MySQL and MariaDB, its
+// caller's on SQL Server.
 func TestSchemaApplyCreatesAProcedureThatDeclaresNoLanguageLiveE2E(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		engine dbtarget.Engine
-		count  string
+		// security reads the rights the procedure runs with, and want is the
+		// engine's own answer for a procedure that states no mode.
+		security string
+		want     string
 	}{
-		{name: "mysql", engine: dbtarget.MySQLAdmin,
-			count: "SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = 'language_probe'"},
-		{name: "mariadb", engine: dbtarget.MariaDBAdmin,
-			count: "SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = 'language_probe'"},
-		{name: "sqlserver", engine: dbtarget.SQLServer,
-			count: "SELECT COUNT(*) FROM sys.procedures WHERE name = 'language_probe'"},
+		{name: "mysql", engine: dbtarget.MySQLAdmin, want: "DEFINER",
+			security: "SELECT SECURITY_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = 'language_probe'"},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin, want: "DEFINER",
+			security: "SELECT SECURITY_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = 'language_probe'"},
+		{name: "sqlserver", engine: dbtarget.SQLServer, want: "CALLER",
+			security: "SELECT CASE WHEN m.execute_as_principal_id IS NULL THEN 'CALLER' ELSE 'OWNER' END " +
+				"FROM sys.sql_modules m JOIN sys.procedures p ON p.object_id = m.object_id WHERE p.name = 'language_probe'"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -92,9 +100,9 @@ func TestSchemaApplyCreatesAProcedureThatDeclaresNoLanguageLiveE2E(t *testing.T)
 			out, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", document, "--auto-approve")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			var count int
-			c.Assert(db.QueryRowContext(ctx, test.count).Scan(&count), qt.IsNil)
-			c.Assert(count, qt.Equals, 1)
+			var security string
+			c.Assert(db.QueryRowContext(ctx, test.security).Scan(&security), qt.IsNil)
+			c.Assert(security, qt.Equals, test.want)
 			second, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", document, "--dry-run")
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", second))
 			c.Assert(second, qt.Contains, "Schema is synced")

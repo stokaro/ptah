@@ -6,6 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -91,31 +94,29 @@ func TestFunctionDefinitions_NoChangeWhenIdentical(t *testing.T) {
 	c.Assert(diff.Changes, qt.HasLen, 0)
 }
 
-func TestFunctionDefinitions_EmptyAnnotationDefaultsMatchPostgresDefaults(t *testing.T) {
+// TestFunctionsWithSemantics_EmptyAnnotationDefaultsMatchPostgresDefaults
+// pins an annotation that omits the language, the security mode and the
+// volatility against the routine PostgreSQL reports for it: plpgsql, INVOKER
+// and VOLATILE. The model fills in the volatility, and the target's rules give
+// the comparison the other two, so no spurious diff is reported.
+func TestFunctionsWithSemantics_EmptyAnnotationDefaultsMatchPostgresDefaults(t *testing.T) {
 	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
 
-	// The annotation omits security and volatility; PostgreSQL reports the
-	// implicit defaults (INVOKER, VOLATILE for a typical trigger/RLS helper).
-	// The comparator must normalize the Go side so no spurious diff is
-	// reported. The language an annotation omits is the target's, which the
-	// PostgreSQL lowering gives it before the comparator runs.
-	gen := schemamodel.Function{
-		Name:     "f",
-		Returns:  "integer",
-		Language: "plpgsql",
-		Body:     "BEGIN RETURN 1; END;",
-	}
-	db := catalog.Function{
-		Name:       "f",
-		Returns:    "integer",
-		Language:   "plpgsql",
-		Security:   "INVOKER",
-		Volatility: "VOLATILE",
-		Body:       "BEGIN RETURN 1; END;",
-	}
+	compare.FunctionsWithSemantics(
+		&schemamodel.Database{Functions: []schemamodel.Function{{
+			Name: "f", Returns: "integer", Body: "BEGIN RETURN 1; END;",
+		}}},
+		&catalog.Database{Functions: []catalog.Function{{
+			Schema: "public", Name: "f", Returns: "integer", Language: "plpgsql",
+			Security: "INVOKER", Volatility: "VOLATILE", Body: "BEGIN RETURN 1; END;",
+		}}},
+		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), nil,
+		schemacomparison.RoutineDefaults{Language: "plpgsql", Security: "INVOKER"},
+	)
 
-	diff := compare.FunctionDefinitions(gen, db)
-	c.Assert(diff.Changes, qt.HasLen, 0)
+	c.Assert(diff.FunctionsModified, qt.HasLen, 0)
+	c.Assert(diff.FunctionsAdded, qt.HasLen, 0)
 }
 
 func TestFunctionDefinitions_LowercaseAnnotationDoesNotDiff(t *testing.T) {
@@ -171,6 +172,7 @@ func TestFunctionDefinitions_ExplicitNonDefaultLanguage(t *testing.T) {
 		Name:     "f",
 		Returns:  "INTEGER",
 		Language: "sql",
+		Security: "INVOKER",
 		Body:     "SELECT 1;",
 	}
 	db := catalog.Function{

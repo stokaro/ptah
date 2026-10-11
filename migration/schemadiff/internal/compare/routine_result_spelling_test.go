@@ -9,6 +9,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -17,7 +18,8 @@ import (
 
 // routineWithResult compares one declared function that takes no arguments
 // against a catalog function of the same name, with the spellings a server
-// answered.
+// answered. The declaration states no security mode, which PostgreSQL reads as
+// INVOKER.
 func routineWithResult(
 	declared, observed string,
 	spellings map[string]config.RoutineArguments,
@@ -30,7 +32,7 @@ func routineWithResult(
 			Language: "sql", Security: "INVOKER", Volatility: "VOLATILE",
 		}}},
 		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), spellings,
-		nil,
+		schemacomparison.RoutineDefaults{Security: "INVOKER"},
 	)
 	return diff
 }

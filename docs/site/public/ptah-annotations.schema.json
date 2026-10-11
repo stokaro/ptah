@@ -1232,7 +1232,7 @@
               "type": "string"
             },
             "security": {
-              "description": "Security mode, such as DEFINER.",
+              "description": "Security mode: DEFINER or INVOKER. Omitted means the target's own: INVOKER on PostgreSQL and SQL Server, DEFINER on MySQL, MariaDB and Oracle.",
               "type": "string"
             },
             "settings": {
@@ -1732,7 +1732,7 @@
               "type": "string"
             },
             "security": {
-              "description": "Security mode, such as DEFINER.",
+              "description": "Security mode: DEFINER or INVOKER. Omitted means the target's own: INVOKER on PostgreSQL and SQL Server, DEFINER on MySQL, MariaDB and Oracle.",
               "type": "string"
             },
             "volatility": {

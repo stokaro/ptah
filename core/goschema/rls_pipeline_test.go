@@ -140,10 +140,10 @@ type Product struct {
 	c.Assert(sqlOutput, qt.Contains, "PERFORM set_config('app.current_tenant_id', tenant_id_param, false)")
 
 	c.Assert(sqlOutput, qt.Contains, "CREATE FUNCTION get_current_tenant_id()")
-	// The annotation omits security=, so the parser canonicalizes it to
-	// INVOKER (PostgreSQL's default). Emitting it explicitly is harmless and
-	// makes a later DEFINER → INVOKER switch work via CREATE OR REPLACE.
-	c.Assert(sqlOutput, qt.Contains, "LANGUAGE plpgsql SECURITY INVOKER STABLE")
+	// The annotation omits security=, which on PostgreSQL is INVOKER, so no
+	// clause is written. A later DEFINER → INVOKER switch still works: CREATE
+	// OR REPLACE gives every attribute it does not state the server's default.
+	c.Assert(sqlOutput, qt.Contains, "LANGUAGE plpgsql STABLE")
 	c.Assert(sqlOutput, qt.Contains, "current_setting('app.current_tenant_id', true)")
 
 	// Verify RLS enablement SQL

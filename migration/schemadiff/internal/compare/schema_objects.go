@@ -678,7 +678,7 @@ func functionDefinitions(
 	// The DB-side read path already returns canonical case by construction,
 	// so we only normalize the gen side.
 	genFunction.Canonicalize()
-	genFunction.Language, dbFunction.Language = withTargetLanguage(genFunction.Language, dbFunction.Language, routines)
+	withTargetDefaults(&genFunction, &dbFunction, routines)
 
 	// The server's spelling of the declared arguments and result, where one
 	// answered, replaces the declaration, and after Canonicalize: the server
@@ -1106,19 +1106,27 @@ func stripSimpleComparisonParentheses(body string) string {
 	return simpleComparisonParenthesesPattern.ReplaceAllString(body, "$1")
 }
 
-// withTargetLanguage reads an omitted routine language as the target's, on
-// both sides.
+// withTargetDefaults reads an attribute a routine leaves out as the target's,
+// on both sides: its language and its security mode.
 //
-// A declaration that states no language is in the target's own, which only
-// the target can name: plpgsql on PostgreSQL, SQL on MySQL. The catalog side
-// is folded too, because a document converted to stand for a database can
-// leave it out as well. The fold is for the comparison alone: the diff carries
-// the declaration as written, so the renderer writes what the author wrote.
-func withTargetLanguage(declared, reported string, routines schemacomparison.Routines) (language, current string) {
+// A declaration that states neither is in the target's own language and runs
+// with the rights the target gives a routine that says nothing, which only the
+// target can name: plpgsql and the caller's rights on PostgreSQL, SQL and the
+// definer's on MySQL. The catalog side is folded too, because a document
+// converted to stand for a database can leave them out as well. The fold is
+// for the comparison alone: the diff carries the declaration as written, so
+// the renderer writes what the author wrote.
+func withTargetDefaults(declared *schemamodel.Function, reported *catalog.Function, routines schemacomparison.Routines) {
 	if routines == nil {
-		return declared, reported
+		return
 	}
-	target := routines.Defaults().Language
+	defaults := routines.Defaults()
+	declared.Language, reported.Language = omittedAs(defaults.Language, declared.Language, reported.Language)
+	declared.Security, reported.Security = omittedAs(defaults.Security, declared.Security, reported.Security)
+}
+
+// omittedAs reads an empty value on either side as the target's.
+func omittedAs(target, declared, reported string) (folded, current string) {
 	if declared == "" {
 		declared = target
 	}

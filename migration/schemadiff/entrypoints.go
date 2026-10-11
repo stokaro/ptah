@@ -210,6 +210,10 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if len(caps) == 0 {
 		caps = comparisonCapabilities(info.Dialect)
 	}
+	rules, err := runtime.ComparisonRules(info.Dialect)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	if err := compare.ValidateRoutineDefinerReplacements(
 		desired,
 		database,
@@ -217,6 +221,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		info.Dialect,
 		caps,
 		semantics,
+		rules.Routines,
 	); err != nil {
 		return nil, Diagnostics{}, err
 	}

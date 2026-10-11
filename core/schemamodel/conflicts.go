@@ -427,19 +427,17 @@ func (v compositeDefinitionValidator) extensions() error {
 
 // functions refuses two declarations of one routine that differ.
 //
-// A routine that declares no language is in the language of the target's
-// engine, which is not known here: the sources are merged before a target is
-// chosen. So an omitted language does not conflict with a stated one. On
-// PostgreSQL the two are one routine, and the stated language is the one kept
-// (see [deduplicateFunctions]); two stated languages that differ still
-// conflict.
+// The sources are merged before a target is chosen, so what an omitted
+// language or security mode means is not known here; see
+// [withStatedAttributes] for how an omitted value meets a stated one. Two
+// stated values that differ always conflict.
 func (v compositeDefinitionValidator) functions() error {
 	seen := make(map[routineIdentity]Function, len(v.database.Functions))
 	for _, function := range v.database.Functions {
 		identity := routineIdentityOf(function)
 		canonical := canonicalFunctionDefinition(function)
 		if previous, exists := seen[identity]; exists {
-			previous, canonical = withStatedLanguage(previous, canonical)
+			previous, canonical = withStatedAttributes(previous, canonical)
 			if !equivalentDefinitions(previous, canonical) {
 				return fmt.Errorf("conflicting %s %q definitions", identity.kind(), identity.signature())
 			}
@@ -449,14 +447,35 @@ func (v compositeDefinitionValidator) functions() error {
 	return nil
 }
 
-// withStatedLanguage gives the routine of the two that declares no language
-// the language the other states, so they compare on what they both say.
-func withStatedLanguage(left, right Function) (filledLeft, filledRight Function) {
+// withStatedAttributes gives each of two declarations of one routine what the
+// other states where it states nothing, so they compare on what they both say.
+//
+// A routine that declares no language is in its target's, and the language
+// decides only how the body is read: a stated one is taken, and on PostgreSQL
+// an omitted language and an explicit plpgsql are one routine.
+//
+// A routine that states no security mode runs with its caller's rights on
+// PostgreSQL and SQL Server and with its definer's on MySQL, MariaDB and
+// Oracle. An omitted mode takes a stated INVOKER, the narrower of the two. It
+// does not take a stated DEFINER: that would give the routine its definer's
+// rights on a target where the declaration that says nothing means its
+// caller's, and nothing would report it. So an omitted mode and a stated
+// DEFINER conflict, and the author states the mode on both.
+func withStatedAttributes(left, right Function) (filledLeft, filledRight Function) {
+	left.Language, right.Language = withStated(left.Language, right.Language)
+	if !strings.EqualFold(left.Security, "DEFINER") && !strings.EqualFold(right.Security, "DEFINER") {
+		left.Security, right.Security = withStated(left.Security, right.Security)
+	}
+	return left, right
+}
+
+// withStated gives an empty value of the two the other's.
+func withStated(left, right string) (filledLeft, filledRight string) {
 	switch {
-	case left.Language == "":
-		left.Language = right.Language
-	case right.Language == "":
-		right.Language = left.Language
+	case left == "":
+		left = right
+	case right == "":
+		right = left
 	}
 	return left, right
 }

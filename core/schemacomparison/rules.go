@@ -97,6 +97,9 @@ type Routines interface {
 type RoutineDefaults struct {
 	// Language is the routine language, such as plpgsql or sql.
 	Language string
+	// Security is the security mode, DEFINER or INVOKER: whose rights the
+	// routine runs with.
+	Security string
 }
 
 // Defaults returns d.

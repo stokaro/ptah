@@ -21,13 +21,19 @@ import (
 // DROP followed by CREATE. Recreating another account's SQL SECURITY DEFINER
 // routine as the connected account silently changes the principal under which
 // its body executes.
+//
+// A routine that states no security mode is a definer routine on these
+// engines, as one created by hand is, and is refused the same way.
 func TestCompareWithDatabaseInfoRefusesAForeignDefinerReplacement(t *testing.T) {
 	tests := []struct {
-		name    string
-		dialect string
+		name     string
+		dialect  string
+		security string
 	}{
-		{name: "mysql", dialect: "mysql"},
-		{name: "mariadb", dialect: "mariadb"},
+		{name: "mysql", dialect: "mysql", security: "DEFINER"},
+		{name: "mariadb", dialect: "mariadb", security: "DEFINER"},
+		{name: "mysql, no mode stated", dialect: "mysql", security: ""},
+		{name: "mariadb, no mode stated", dialect: "mariadb", security: ""},
 	}
 
 	for _, test := range tests {
@@ -35,7 +41,7 @@ func TestCompareWithDatabaseInfoRefusesAForeignDefinerReplacement(t *testing.T) 
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				t.Context(), mysqlDefinerDesired("RETURN 2", "DEFINER"),
+				t.Context(), mysqlDefinerDesired("RETURN 2", test.security),
 				mysqlDefinerCurrent("RETURN 1", "DEFINER", "owner_a@%", "migrator_a@%"),
 				mysqlDefinerInfo(test.dialect),
 				nil, must.Must(builtin.New()),

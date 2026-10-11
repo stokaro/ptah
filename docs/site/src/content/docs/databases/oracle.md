@@ -125,7 +125,9 @@ Their body is PL/SQL, which is what the declaration says:
 //ptah:schema:function name="fn_double" params="p IN NUMBER" returns="NUMBER" language="plsql" body="BEGIN RETURN p * 2; END;"
 ```
 
-A declaration that omits `language=` is in PL/SQL, the target's own language.
+A declaration that omits `language=` is in PL/SQL, the target's own language,
+and one that omits `security=` runs as `AUTHID DEFINER`, the server's own
+default.
 One that declares another language, such as `plpgsql`, is named by the renderer,
 which creates nothing rather than writing a body this server cannot run.
 Two other shapes are named the same way: a parameter default, because
