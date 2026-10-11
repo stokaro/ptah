@@ -358,7 +358,9 @@ models, models without an encoder, and a model the extension does not declare.
   of the primary key exactly where the declaration is one. `Slot.String` names
   a declaration in these refusals.
 - `AfterPolicies` places a directive beside a table, after the table's own
-  row-level security policies, such as a ClickHouse row policy.
+  row-level security policies, such as a ClickHouse row policy or a
+  PostgreSQL policy. `AfterSwitches` places one after the table's own
+  `rls:enable` directives, such as the switch of a PostgreSQL table.
 - The writer reports no losses. A value an owner cannot write is the owner's
   to refuse with an error, which refuses the export.
 - `Table.QualifiedName` is the spelling a `table` attribute names a table by,

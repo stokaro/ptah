@@ -121,6 +121,11 @@ const (
 	// security policies: a policy of the owner's own, such as a ClickHouse
 	// row policy.
 	AfterPolicies Placement = "after-policies"
+	// AfterSwitches places a directive in the comment of the struct of the
+	// table [EncodedDirective.Table] names, after the table's own row-level
+	// security switches: the switch of the owner's own, such as a
+	// PostgreSQL table's.
+	AfterSwitches Placement = "after-switches"
 )
 
 // EncodedDirective is one directive an owner writes.
@@ -273,7 +278,7 @@ func (s Set) checkEncodedDirective(index int, request EncodeRequest, directive E
 // any other placement.
 func checkPlacement(owner string, request EncodeRequest, directive EncodedDirective) error {
 	switch directive.Placement {
-	case AfterTable, AfterPolicies:
+	case AfterTable, AfterPolicies, AfterSwitches:
 		if directive.Table == nil || !slices.Contains(request.Tables, *directive.Table) {
 			return fmt.Errorf("%w: Go annotation encoder of %s placed directive %q at a table the schema does not declare",
 				schemaext.ErrInvalidValue, owner, directive.Directive)

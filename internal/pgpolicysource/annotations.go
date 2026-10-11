@@ -33,7 +33,8 @@ func Family() []string {
 // that name no target, or only PostgreSQL-family targets, as policies and
 // a table's switches, and claims that a Go annotation source describes both
 // models completely: a policy the source leaves out is absent, and so is the
-// row-level security of a table it declares no policy and no switch for.
+// row-level security of a table it declares no policy and no switch for. Its
+// encoder writes both back for the Go annotation writer.
 func Annotations() annotation.Extension {
 	scope := func(directive string) annotation.TargetScope {
 		return annotation.TargetScope{Directive: directive, Targets: Family(), Unscoped: true, Label: "PostgreSQL-family targets"}
@@ -46,6 +47,8 @@ func Annotations() annotation.Extension {
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) {
 			return pgpolicy.CompleteCoverage(schemaext.Desired)
 		},
+		Encoder: annotationEncoder{},
+		Encodes: []schemaext.Kind{pgpolicy.PolicyKind, pgpolicy.TableStateKind},
 	}
 }
 
