@@ -900,6 +900,7 @@ func indexDefinitionAttrs(index schemamodel.Index) []attr {
 		{name: "fields", value: strings.Join(index.Fields, ","), set: len(index.Fields) > 0},
 		{name: "include", value: strings.Join(index.IncludeColumns, ","), set: len(index.IncludeColumns) > 0},
 		{name: "unique", value: strconv.FormatBool(index.Unique), set: index.Unique},
+		nullsDistinctAttr(index.NullsDistinct),
 		{name: "type", value: index.Type, set: index.Type != ""},
 		{name: "condition", value: index.Condition, set: index.Condition != ""},
 		{name: "ops", value: index.Operator, set: index.Operator != ""},
@@ -910,6 +911,17 @@ func indexDefinitionAttrs(index schemamodel.Index) []attr {
 	}
 }
 
+// nullsDistinctAttr writes whether a unique index or constraint treats NULLs
+// as distinct, where the declaration states it. Left out, the parser reads no
+// statement and the server's default holds, so a NULLS NOT DISTINCT read from
+// a database would be rebuilt without it wherever the source is applied.
+func nullsDistinctAttr(value *bool) attr {
+	if value == nil {
+		return attr{name: "nulls_distinct"}
+	}
+	return attr{name: "nulls_distinct", value: strconv.FormatBool(*value), set: true}
+}
+
 func constraintAnnotation(constraint schemamodel.Constraint) string {
 	return annotation("ptah:schema:constraint",
 		attr{name: "name", value: constraint.Name, set: true},
@@ -917,6 +929,7 @@ func constraintAnnotation(constraint schemamodel.Constraint) string {
 		attr{name: "table", value: constraint.Table, set: constraint.Table != ""},
 		attr{name: "columns", value: strings.Join(constraint.Columns, ","), set: len(constraint.Columns) > 0},
 		attr{name: "include", value: strings.Join(constraint.IncludeColumns, ","), set: len(constraint.IncludeColumns) > 0},
+		nullsDistinctAttr(constraint.NullsDistinct),
 		blockSizeAttr("key_block_size", constraint.Facets),
 		attr{name: "using", value: constraint.UsingMethod, set: constraint.UsingMethod != ""},
 		attr{name: "elements", value: constraint.ExcludeElements, set: constraint.ExcludeElements != ""},
