@@ -50,15 +50,25 @@ type EncodeResult struct {
 	Header []string
 }
 
-// Placement is where among the writer's own top-level blocks an encoded
-// block stands. Within one placement the writer orders blocks by type,
-// schema and name, so the order of a document does not depend on the order
-// owners were registered in.
+// Placement is where among the writer's own blocks an encoded block stands.
+// Within one placement the writer orders blocks by type, schema, scope and
+// name, so the order of a document does not depend on the order owners were
+// registered in.
 type Placement string
 
-// AfterTables places a block after the tables: a block that stands for a
-// table or is attached to one comes after the structure it points at.
-const AfterTables Placement = "after-tables"
+const (
+	// AfterTables places a block after the tables: a block that stands for
+	// a table or is attached to one comes after the structure it points at.
+	AfterTables Placement = "after-tables"
+	// AfterTriggers places a block after the triggers, where the writer's
+	// own access-control blocks begin, such as a row-security policy.
+	AfterTriggers Placement = "after-triggers"
+	// WithinTable places a block inside the table [EncodedBlock.Table]
+	// names, after the table's own attributes and before its columns, as a
+	// block the frontend reads at the [InTable] site. Such a block takes no
+	// label.
+	WithinTable Placement = "within-table"
+)
 
 // EncodedBlock is one top-level block an owner writes.
 type EncodedBlock struct {
@@ -75,11 +85,28 @@ type EncodedBlock struct {
 	// as a SQL Server extended property of the database, which the writer
 	// leaves empty.
 	SchemaIsAddress bool
-	// Name is the block's label.
+	// Name is the block's label. A block [WithinTable] has none.
 	Name string
+	// Scope is the name of the object the block's object is named inside,
+	// such as the table of a policy; the writer orders blocks by it before
+	// the name, and writes nothing for it.
+	Scope string
+	// Table is the table a [WithinTable] block stands in.
+	Table *Table
 	// Attributes are the attributes the block writes, in order. An attribute
 	// the owner leaves out is not written.
 	Attributes []EncodedAttribute
+	// Path names the block in a diagnostic: the writer reports Losses at it,
+	// and the Atlas-compatible surface's decision to leave the block out. It
+	// is the owner's display path, such as `rls_policies.users.tenant`, and
+	// not an identity: nothing parses it.
+	Path string
+	// Losses are what the document cannot say about the block's object. The
+	// writer reports each at Path, where the block stands, before the block.
+	Losses []string
+	// Unwritten leaves the block out, and only its Losses are reported: an
+	// object the format cannot spell at all.
+	Unwritten bool
 	// Object is the object the block writes, and Targets the targets reading
 	// the block back binds that object to. An object whose declared target
 	// scope is exactly Targets keeps its scope through the document; the
@@ -92,8 +119,11 @@ type EncodedBlock struct {
 type EncodedAttribute struct {
 	// Name is the attribute's name.
 	Name string
-	// Value is its value, a [String] or a [Bool]. The writer quotes a
-	// String.
+	// Value is its value. The writer quotes a [String], writes a [Bool] bare,
+	// writes a [Ref] to a table as the reference the document resolves, and
+	// writes a [Refs] list element by element: a role it declares as
+	// `role.<name>`, any other role and an element of no Kind, such as a
+	// role keyword, as a string.
 	Value Value
 }
 
@@ -179,12 +209,8 @@ func checkEncodeResult(extension Extension, result EncodeResult) error {
 
 // checkEncodedBlock refuses a block the writer cannot write.
 func checkEncodedBlock(extension Extension, block EncodedBlock) error {
-	if strings.TrimSpace(block.Type) == "" || block.Name == "" {
-		return fmt.Errorf("%w: HCL encoder of %s wrote a block without a type or a name", schemaext.ErrInvalidValue, extension.Owner)
-	}
-	if block.Placement != AfterTables {
-		return fmt.Errorf("%w: HCL encoder of %s placed block %q at unknown placement %q",
-			schemaext.ErrInvalidValue, extension.Owner, block.Type, block.Placement)
+	if err := checkPlacement(extension, block); err != nil {
+		return err
 	}
 	if block.Object.Kind != "" && !slices.Contains(extension.Kinds, schemaext.Kind(block.Object.Kind)) {
 		return fmt.Errorf("%w: HCL encoder of %s wrote an object of kind %q, which its extension does not declare",
@@ -197,10 +223,53 @@ func checkEncodedBlock(extension Extension, block EncodedBlock) error {
 				schemaext.ErrInvalidValue, extension.Owner, block.Type, attribute.Name)
 		}
 		names[attribute.Name] = true
-		if attribute.Value.Kind != String && attribute.Value.Kind != Bool {
+		if !writable(attribute.Value) {
 			return fmt.Errorf("%w: HCL encoder of %s wrote attribute %q of block %q as %q, which the writer cannot write",
 				schemaext.ErrInvalidValue, extension.Owner, attribute.Name, block.Type, attribute.Value.Kind)
 		}
 	}
 	return nil
+}
+
+// checkPlacement refuses a block without a type, at an unknown placement, a
+// top-level block without a name or with a table, and a block in a table
+// without the table or with a name.
+func checkPlacement(extension Extension, block EncodedBlock) error {
+	switch {
+	case strings.TrimSpace(block.Type) == "":
+		return fmt.Errorf("%w: HCL encoder of %s wrote a block without a type or a name", schemaext.ErrInvalidValue, extension.Owner)
+	case block.Placement == WithinTable:
+		if block.Table == nil || block.Name != "" {
+			return fmt.Errorf("%w: HCL encoder of %s wrote block %q in a table without the table or with a name",
+				schemaext.ErrInvalidValue, extension.Owner, block.Type)
+		}
+	case block.Placement == AfterTables || block.Placement == AfterTriggers:
+		if block.Name == "" {
+			return fmt.Errorf("%w: HCL encoder of %s wrote a block without a type or a name", schemaext.ErrInvalidValue, extension.Owner)
+		}
+		if block.Table != nil {
+			return fmt.Errorf("%w: HCL encoder of %s wrote top-level block %q with a table", schemaext.ErrInvalidValue, extension.Owner, block.Type)
+		}
+	default:
+		return fmt.Errorf("%w: HCL encoder of %s placed block %q at unknown placement %q",
+			schemaext.ErrInvalidValue, extension.Owner, block.Type, block.Placement)
+	}
+	return nil
+}
+
+// writable reports whether the writer can write value: a string, a bool, a
+// reference to a table, or a list of roles and of names of no kind.
+func writable(value Value) bool {
+	switch value.Kind {
+	case String, Bool:
+		return true
+	case Ref:
+		return value.Reference != nil && value.Reference.Kind == "table" && value.Reference.Name != ""
+	case Refs:
+		return !slices.ContainsFunc(value.References, func(element Reference) bool {
+			return element.Name == "" || (element.Kind != "" && element.Kind != "role")
+		})
+	default:
+		return false
+	}
 }

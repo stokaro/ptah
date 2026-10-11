@@ -21,7 +21,7 @@ const (
 // declares PostgreSQL's row-level security only, so a `policy` block is a
 // policy on the table its `on` names, and a table's `row_security` block is
 // the switches facet of that table. The claim is [Coverage] of the policies
-// the document declares.
+// the document declares. The writer writes both back as the same blocks.
 func HCL() hclext.Extension {
 	return hclext.Extension{
 		Owner: pgpolicy.Owner,
@@ -46,6 +46,7 @@ func HCL() hclext.Extension {
 		Coverage: func(request hclext.CoverageRequest) (schemaext.Coverage, error) {
 			return Coverage(request.Declared)
 		},
+		Encoder: hclEncoder{},
 	}
 }
 
