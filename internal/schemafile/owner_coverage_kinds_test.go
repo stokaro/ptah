@@ -50,7 +50,7 @@ func TestOwnerCoverageKinds_RoundTripThroughEachHeader(t *testing.T) {
 				c := qt.New(t)
 				path, directive := ownerKindDocument(c, format, kind)
 
-				database, err := schemafile.LoadPath(path, schemafile.Options{YAML: runtime.YAML(), CoverageVocabulary: runtime.CoverageVocabulary()})
+				database, err := schemafile.LoadPath(path, schemafile.Options{YAML: runtime.YAML(), SQL: runtime.SQL(), CoverageVocabulary: runtime.CoverageVocabulary()})
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(database.NotDescribed.Directives(), qt.Contains, directive)
@@ -70,7 +70,7 @@ func TestOwnerCoverageKinds_RefusedWithoutTheirOwner(t *testing.T) {
 				c := qt.New(t)
 				path, _ := ownerKindDocument(c, format, kind)
 
-				database, err := schemafile.LoadPath(path, schemafile.Options{YAML: runtime.YAML()})
+				database, err := schemafile.LoadPath(path, schemafile.Options{YAML: runtime.YAML(), SQL: runtime.SQL()})
 
 				c.Assert(err, qt.ErrorMatches, `(?s).*unknown coverage kind "`+string(kind)+`".*`)
 				c.Assert(database, qt.IsNil)

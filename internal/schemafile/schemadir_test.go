@@ -85,7 +85,7 @@ func TestLoadPathReadsSchemaDirectory(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaDir(c, test.files)
 
-			db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"})
+			db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "sqlite"})
 
 			c.Assert(err, qt.IsNil)
 			names := tableNames(db)
@@ -144,7 +144,7 @@ func TestLoadPathRefusesAnUnusableSchemaDirectory(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaDir(c, test.files)
 
-			_, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"})
+			_, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "sqlite"})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -161,7 +161,7 @@ func TestLoadAllMixesDirectoriesAndFiles(t *testing.T) {
 	extra := filepath.Join(c.TempDir(), "extra.sql")
 	c.Assert(os.WriteFile(extra, []byte("CREATE TABLE extra (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	db, err := schemafile.LoadAll([]string{"file://" + dir, "file://" + extra}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "sqlite"})
+	db, err := schemafile.LoadAll([]string{"file://" + dir, "file://" + extra}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(db), qt.Contains, "users")

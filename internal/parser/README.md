@@ -198,6 +198,18 @@ structured yet, the parser returns an `ast.OpaqueRoutineNode`: renderers emit it
 SQL through the raw-SQL visitor contract, while parser consumers can still
 distinguish it from arbitrary raw SQL.
 
+### Owner Syntax
+
+The parser reads the grammar every target shares. A feature owner adds its own
+syntax through `ptah.run/core/sqlext`, and `WithSQL` selects the owners a parse
+reads with. At each site a pattern may stand, such as an element of a `CREATE
+TABLE` column list or an `ALTER TABLE` operation, the parser asks the selected
+owners first, matches their opening words against the words at hand, and
+records the span a matching pattern claims. Once the document is parsed it
+hands every span to its owner in one call and applies what the owner returns.
+ClickHouse's data-skipping index and a materialized view's `REFRESH` clause
+are read this way. Without `WithSQL` the parse reads the shared grammar alone.
+
 ### Parsing Multiple Statements
 
 ```go

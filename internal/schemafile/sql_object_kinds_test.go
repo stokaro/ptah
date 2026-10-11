@@ -19,7 +19,7 @@ import (
 func loadRenderedPostgresSQL(c *qt.C, body string) string {
 	dir := c.TempDir()
 	path := writeSchemaFile(c, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+body+"\n")
-	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
+	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return strings.Join(renderPostgres(c, db), "\n")
 }
@@ -154,7 +154,7 @@ func TestLoadAll_SQLSchemaFileStillRefusesStatementsOutsideTheGrammar(t *testing
 			dir := c.TempDir()
 			path := writeSchemaFile(c, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+tc.statement+"\n")
 
-			_, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
+			_, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.ErrorMatches, ".*"+tc.wantError+".*")
 		})

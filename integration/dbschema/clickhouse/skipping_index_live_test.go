@@ -39,7 +39,8 @@ func TestSkippingIndexRenderingPreservesServerGranularityLive(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			conn, name := skippingIndexFixture(c)
-			parsed, err := parser.NewParser(fmt.Sprintf(test.source, name), parser.WithDialect("clickhouse")).Parse()
+			parsed, err := parser.NewParser(fmt.Sprintf(test.source, name), parser.WithDialect("clickhouse"),
+				parser.WithSQL(must.Must(builtin.New()).SQL())).Parse()
 			c.Assert(err, qt.IsNil)
 			assertSkippingIndex(c, conn, name, parsed.Statements, test.granularity)
 		})

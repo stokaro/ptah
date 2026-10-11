@@ -29,6 +29,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/parser"
 )
 
@@ -60,12 +61,15 @@ func TestTableElementTypoRefusesNothingTheCorpusHoldsFS(t *testing.T) {
 		platform.ClickHouse, platform.SQLServer, platform.Oracle,
 	}
 
+	// The owners the built-in runtime registers, so a dialect's owner syntax
+	// is read the way a schema file of that dialect is.
+	owners := builtintest.Runtime().SQL()
 	var refused []string
 	parsed := 0
 	for _, path := range files {
 		document := readTrackedFile(c, path)
 		for _, dialect := range dialects {
-			_, err := parser.NewParser(document, parser.WithDialect(dialect)).Parse()
+			_, err := parser.NewParser(document, parser.WithDialect(dialect), parser.WithSQL(owners)).Parse()
 			parsed++
 			refused = append(refused, typoRefusalOf(path, dialect, err)...)
 		}

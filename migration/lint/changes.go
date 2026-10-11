@@ -107,9 +107,9 @@ func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]Sche
 // left alone -- silence there is absence of evidence, and it must not be able to
 // drop a finding.
 func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) ([]SchemaChange, bool) {
-	var opts []parser.Option
+	opts := []parser.Option{parser.WithSQL(file.owners)}
 	if strings.TrimSpace(dialect) != "" {
-		opts = []parser.Option{parser.WithDialect(dialect)}
+		opts = append(opts, parser.WithDialect(dialect))
 	}
 	list, err := parser.NewParser(stmt.SQL, opts...).Parse()
 	if err != nil || list == nil {

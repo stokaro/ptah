@@ -3,6 +3,7 @@ package parser
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -14,8 +15,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/sqlutil"
-	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
@@ -88,6 +89,15 @@ type Parser struct {
 	// usedDatabase is the database the last MySQL-family USE selected; see
 	// parseUse.
 	usedDatabase string
+
+	// owners are the owners whose syntax the parse reads; see [WithSQL].
+	owners sqlext.Set
+	// ownerClaims are the spans the owners' patterns claimed, read once the
+	// document is parsed; see [Parser.ParseContext].
+	ownerClaims []ownerClaim
+	// declaredIndexes are the indexes owners' ALTER TABLE operations declare;
+	// see [Parser.DeclaredIndex].
+	declaredIndexes map[*ast.ExtensionAlterOperation]sqlext.Index
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -145,8 +155,16 @@ func lexerOptions(dialect string) lexer.Options {
 // them as a StatementList. Each statement is parsed according to its type
 // (CREATE TABLE, ALTER TABLE, etc.).
 //
-// Returns an error if the SQL syntax is invalid or unsupported.
+// Returns an error if the SQL syntax is invalid or unsupported. The owners
+// selected with [WithSQL] read their syntax in process, so Parse runs them
+// without a deadline; [Parser.ParseContext] takes one.
 func (p *Parser) Parse() (*ast.StatementList, error) {
+	return p.ParseContext(context.Background())
+}
+
+// parseStatements reads the document's statements, recording the spans the
+// owners' patterns claim.
+func (p *Parser) parseStatements() (*ast.StatementList, error) {
 	if p.dialect == platform.YDB {
 		return yqlparse.Parse(p.input)
 	}
@@ -2430,22 +2448,18 @@ func (p *Parser) parseCreateTableSelectBody(table *ast.CreateTableNode) error {
 // parseTableElement parses a column definition or table constraint.
 func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 	p.skipWhitespace()
+	if p.claimOwnerTableElement(table) {
+		return nil
+	}
 
 	// Check if this is a constraint (starts with CONSTRAINT, PRIMARY, UNIQUE, FOREIGN, CHECK, EXCLUDE, SPATIAL, INDEX, KEY)
 	if p.current.Type == lexer.TokenIdentifier {
 		keyword := strings.ToUpper(p.current.Value)
 		switch keyword {
 		case "INDEX":
-			// ClickHouse declares a data-skipping index inside the column
-			// list. Only ClickHouse does: MySQL spells a table-level index the
-			// same way, `INDEX name (cols)`, and the two are told apart by
-			// whether a parenthesis or an expression follows the name, which the
-			// dialect answers without scanning ahead. Reading the keyword by
-			// dialect costs a caller nothing, because a ClickHouse file parsed
-			// with no dialect at all fails here too (stokaro/ptah#1574).
-			if p.dialect == platform.ClickHouse {
-				return p.parseInlineSkippingIndex(table)
-			}
+			// ClickHouse's data-skipping index stands here too, and the
+			// ClickHouse owner claims it before this point, from a document
+			// that names ClickHouse (stokaro/ptah#1574).
 			if !p.tableBodyReadsKeywordAsIndex(keyword) {
 				break
 			}
@@ -5865,7 +5879,7 @@ func (p *Parser) parseAlterTable() (ast.Node, error) {
 			break
 		}
 
-		operations, err := p.parseAlterOperation()
+		operations, err := p.parseAlterOperation(tableName)
 		if err != nil {
 			return nil, err
 		}
@@ -6121,8 +6135,11 @@ func (p *Parser) rejectSQLServerTableQualifiedIndex(name string) error {
 //
 // A clause is one operation, except the one [Parser.parseAddOperation]
 // describes, so the answer is a list.
-func (p *Parser) parseAlterOperation() ([]ast.AlterOperation, error) {
+func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error) {
 	p.skipWhitespace()
+	if operation, claimed := p.claimOwnerAlterOperation(table); claimed {
+		return []ast.AlterOperation{operation}, nil
+	}
 
 	if p.current.Type != lexer.TokenIdentifier {
 		return nil, fmt.Errorf("expected ALTER operation, got %s at position %d", p.current.Type, p.current.Start)
@@ -6316,15 +6333,6 @@ func (p *Parser) parseAddOperation() ([]ast.AlterOperation, error) {
 		return operations, nil
 	}
 
-	// ClickHouse's data-skipping index. Without this the statement falls
-	// through to the column parser, which reads the indexed expression as a
-	// type and TYPE as a column attribute -- and the statement it refuses is
-	// the one this repository's own ClickHouse renderer writes
-	// (stokaro/ptah#1574).
-	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "INDEX" {
-		return oneOperation(p.parseAddSkippingIndex())
-	}
-
 	// Optional COLUMN keyword, and after it the PostgreSQL IF NOT EXISTS.
 	// Without the keyword an IF is read as the column's name, which is what
 	// the grammar makes it there.
@@ -6361,109 +6369,6 @@ func oneOperation(operation ast.AlterOperation, err error) ([]ast.AlterOperation
 		return nil, err
 	}
 	return []ast.AlterOperation{operation}, nil
-}
-
-// parseInlineSkippingIndex reads a ClickHouse data-skipping index declared
-// inside the column list and hangs it on the table.
-//
-// It is the same grammar the ALTER form takes, so it is read by the same
-// function; only where the result is stored differs. The renderer writes every
-// skipping index as an ALTER, so a table read from this form is written back in
-// the other one -- semantically the same index, and stable from the first
-// render onwards.
-func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
-	index, err := p.parseSkippingIndex()
-	if err != nil {
-		return err
-	}
-	// The type and granularity are the ClickHouse owner's settings, not the
-	// common index type, so they travel as its declaration.
-	facets, err := index.DeclaredFacets()
-	if err != nil {
-		return err
-	}
-	table.AddIndex(&ast.IndexNode{
-		Facets:  facets,
-		Name:    index.Name,
-		Table:   table.Name,
-		Columns: []string{index.Expression},
-	})
-	return nil
-}
-
-func (p *Parser) parseAddSkippingIndex() (ast.AlterOperation, error) {
-	index, err := p.parseSkippingIndex()
-	if err != nil {
-		return nil, err
-	}
-	return &ast.ExtensionAlterOperation{Payload: index}, nil
-}
-
-// parseSkippingIndex reads
-// `INDEX <name> <expression> TYPE <type> [GRANULARITY <n>]`.
-//
-// The expression and the type are both captured as source text: an expression
-// is arbitrary, and a type carries its own parameters -- `set(100)`,
-// `bloom_filter(0.01)`, `tokenbf_v1(256, 2, 0)` -- so neither survives being
-// rebuilt from tokens. GRANULARITY is optional and, when present, a positive
-// unsigned 64-bit number; a missing one is zero here, which the operation reads
-// as ClickHouse defines it: one granule, for a new index and an existing one.
-func (p *Parser) parseSkippingIndex() (*chast.AddSkippingIndex, error) {
-	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
-		return nil, err
-	}
-	p.skipWhitespace()
-	name, err := p.expectIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("expected an index name after ADD INDEX: %w", err)
-	}
-
-	expression, start := p.captureExpression(func() bool {
-		return p.current.Type == lexer.TokenSemicolon ||
-			p.matchesKeyword("TYPE")
-	})
-	if expression == "" {
-		return nil, fmt.Errorf("expected an indexed expression after ADD INDEX %s at position %d", name, start)
-	}
-
-	if err := p.expect(lexer.TokenIdentifier, "TYPE"); err != nil {
-		return nil, fmt.Errorf("expected TYPE after the expression of index %s: %w", name, err)
-	}
-	indexType, typeStart := p.captureExpression(func() bool {
-		return p.current.Type == lexer.TokenSemicolon ||
-			p.matchesKeyword("GRANULARITY")
-	})
-	if indexType == "" {
-		return nil, fmt.Errorf("expected an index type after TYPE at position %d", typeStart)
-	}
-
-	operation := &chast.AddSkippingIndex{
-		Name:       name,
-		Expression: expression,
-		IndexType:  indexType,
-	}
-	p.skipWhitespace()
-	if !p.matchesKeyword("GRANULARITY") {
-		return operation, nil
-	}
-	p.advance()
-	p.skipWhitespace()
-	granularity, err := p.expectIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("expected a value after GRANULARITY on index %s: %w", name, err)
-	}
-	parsed, err := strconv.ParseUint(granularity, 10, 64)
-	if err != nil || parsed == 0 {
-		return nil, fmt.Errorf("GRANULARITY on index %s must be a positive number, got %q", name, granularity)
-	}
-	operation.Granularity = parsed
-	return operation, nil
-}
-
-// matchesKeyword reports whether the current token is the given bare keyword.
-func (p *Parser) matchesKeyword(keyword string) bool {
-	return p.current.Type == lexer.TokenIdentifier &&
-		strings.ToUpper(p.current.Value) == keyword
 }
 
 func (p *Parser) isAlterAddConstraintStart() bool {

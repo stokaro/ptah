@@ -20,7 +20,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -1173,7 +1172,7 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 
 func lintPendingDestructive(
 	ctx context.Context,
-	runtime lintext.Runtime,
+	runtime lint.Runtime,
 	fsys fs.FS,
 	pending []int64,
 	dialect,
@@ -1183,7 +1182,7 @@ func lintPendingDestructive(
 }
 
 func lockedDestructiveLintHook(
-	runtime lintext.Runtime,
+	runtime lint.Runtime,
 	fsys fs.FS,
 	policy migrationlintgate.Policy,
 	pathPrefix string,

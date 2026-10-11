@@ -317,7 +317,7 @@ func loadYAMLDocument(c *qt.C) *schemamodel.Database {
 		"        type: INTEGER\n" +
 		"        primary: true\n"
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
-	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
+	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return parsed
 }
@@ -550,7 +550,7 @@ func loadPostgresDocument(c *qt.C, document []byte) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TB.(*testing.T).TempDir(), "sweep.hcl")
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
-	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
+	parsed, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return parsed
 }

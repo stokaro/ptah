@@ -670,6 +670,12 @@
       "claimed_by": "docs/site/src/content/docs/schema/go-annotations.md"
     },
     {
+      "id": "gopkg-core-lintext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/lintext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-manageddata",
       "kind": "public-package",
       "surface": "ptah.run/core/manageddata",
@@ -775,6 +781,12 @@
       "id": "gopkg-core-schemavalidation",
       "kind": "public-package",
       "surface": "ptah.run/core/schemavalidation",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-core-sqlext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/sqlext",
       "claimed_by": null
     },
     {

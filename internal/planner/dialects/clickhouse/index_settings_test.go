@@ -185,8 +185,9 @@ func TestSQLSkippingIndexWithoutGranularityMeansOneGranule(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			runtime := must.Must(builtin.New())
-			source, _, err := sqlschema.Read([]byte("CREATE TABLE events (id UInt64, payload String, "+
-				"INDEX idx_payload lower(payload) TYPE minmax) ENGINE = MergeTree ORDER BY tuple();"), "clickhouse")
+			source, _, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE events (id UInt64, payload String, "+
+				"INDEX idx_payload lower(payload) TYPE minmax) ENGINE = MergeTree ORDER BY tuple();"), "clickhouse", nil,
+				sqlschema.Options{Owners: runtime.SQL()})
 			c.Assert(err, qt.IsNil)
 			current := indexedCatalog(&chschema.ObservedIndex{IndexType: "minmax", Granularity: test.granularity})
 			current.Tables[0].Facets = must.Must(schemaext.NewFacets(&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "tuple()"}))
@@ -213,11 +214,13 @@ func TestSQLSkippingIndexWithoutGranularityIsOneGranuleAsTheCurrentDocument(t *t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			runtime := must.Must(builtin.New())
-			current, _, err := sqlschema.Read([]byte("CREATE TABLE events (id UInt64, payload String, "+
-				"INDEX idx_payload lower(payload) TYPE minmax) ENGINE = MergeTree ORDER BY tuple();"), "clickhouse")
+			current, _, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE events (id UInt64, payload String, "+
+				"INDEX idx_payload lower(payload) TYPE minmax) ENGINE = MergeTree ORDER BY tuple();"), "clickhouse", nil,
+				sqlschema.Options{Owners: runtime.SQL()})
 			c.Assert(err, qt.IsNil)
-			desired, _, err := sqlschema.Read([]byte("CREATE TABLE events (id UInt64, payload String, "+
-				"INDEX idx_payload lower(payload) TYPE minmax GRANULARITY "+test.granularity+") ENGINE = MergeTree ORDER BY tuple();"), "clickhouse")
+			desired, _, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE events (id UInt64, payload String, "+
+				"INDEX idx_payload lower(payload) TYPE minmax GRANULARITY "+test.granularity+") ENGINE = MergeTree ORDER BY tuple();"), "clickhouse", nil,
+				sqlschema.Options{Owners: runtime.SQL()})
 			c.Assert(err, qt.IsNil)
 			diff, err := schemadiff.CompareSchemas(t.Context(), &desired, &current, "clickhouse", runtime)
 			c.Assert(err, qt.IsNil)

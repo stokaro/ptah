@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 )
 
@@ -71,6 +72,11 @@ type Provider struct {
 	// provider's models. Each extension names this provider as its owner, and
 	// the provider owns the desired codec of every model it claims.
 	YAML []yamlext.Extension
+	// SQL contributes the syntax a SQL schema document of the provider's
+	// targets carries for its models, and the knowledge such a document
+	// holds about them. Each extension names this provider as its owner and
+	// reads documents of targets the provider registers.
+	SQL []sqlext.Extension
 	// CoverageKinds are the not-described coverage kinds the provider's reader
 	// records for state Ptah does not model, such as a YDB changefeed. A
 	// document's coverage header and a Go notdescribed declaration may name
@@ -155,6 +161,7 @@ type Runtime struct {
 	probeServices       []Normalization
 	annotations         annotation.Set
 	yaml                yamlext.Set
+	sql                 sqlext.Set
 	vocabulary          coverage.Vocabulary
 	limits              []schemaext.LimitMapping
 	lintRules           map[string]ownedLintRule
@@ -230,19 +237,24 @@ func New(providers ...Provider) (*Runtime, error) {
 			}
 		}
 	}
-	if err := runtime.registerCoverageKinds(providers); err != nil {
-		return nil, err
-	}
-	if err := runtime.registerCoverageLimits(providers); err != nil {
-		return nil, err
-	}
-	if err := runtime.registerAnnotations(providers); err != nil {
-		return nil, err
-	}
-	if err := runtime.registerYAML(providers); err != nil {
+	if err := runtime.registerSources(providers); err != nil {
 		return nil, err
 	}
 	return runtime, nil
+}
+
+// registerSources freezes what the providers contribute to the desired-schema
+// sources: the coverage kinds and limits a source may record, and the Go
+// annotation, YAML and SQL extensions.
+func (r *Runtime) registerSources(providers []Provider) error {
+	for _, register := range []func([]Provider) error{
+		r.registerCoverageKinds, r.registerCoverageLimits, r.registerAnnotations, r.registerYAML, r.registerSQL,
+	} {
+		if err := register(providers); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Runtime) registerServices(provider Provider) error {

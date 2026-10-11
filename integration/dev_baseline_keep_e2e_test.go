@@ -204,7 +204,7 @@ func TestRehearsePlanStatementsVerifiesBesideAnExtensionInThePinnedDevSchemaLive
 		"DROP TABLE kept;\nCREATE EXTENSION citext SCHEMA public;\n"), qt.IsNil)
 	target := newDevIdentityTarget(c, dbtarget.PostgreSQL, " WITH (FORCE)")
 	schemaFile, _ := writeDevIdentitySources(c)
-	desired, err := schemafile.LoadPath(schemaFile, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: "postgres"})
+	desired, err := schemafile.LoadPath(schemaFile, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
 	err = atlasschema.RehearsePlanStatements(c.Context(), target.conn,

@@ -28,6 +28,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
@@ -104,6 +105,7 @@ type Runtime interface {
 	schemaext.ReportingRuntime
 	renderer.SchemaService
 	yamlext.Runtime
+	sqlext.Runtime
 	coverage.Runtime
 }
 
@@ -586,7 +588,7 @@ type lintOutcome struct {
 // both.
 func analysisWithLearnedTarget(
 	ctx context.Context,
-	runtime lintext.Runtime,
+	runtime lint.Runtime,
 	fsys fs.FS,
 	opts lint.Options,
 	analysis lint.Analysis,

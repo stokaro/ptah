@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 )
 
@@ -100,4 +101,38 @@ func (r *Runtime) registerYAML(providers []Provider) error {
 // without owners.
 func (r *Runtime) YAML() yamlext.Set {
 	return r.yaml
+}
+
+// registerSQL freezes every provider's SQL extensions into one set. An
+// extension must name its provider as the owner and read only targets that
+// provider registers, under their canonical names.
+func (r *Runtime) registerSQL(providers []Provider) error {
+	var extensions []sqlext.Extension
+	for _, provider := range providers {
+		for _, extension := range provider.SQL {
+			if extension.Owner != provider.ID {
+				return fmt.Errorf("%w: provider %q registers SQL syntax owned by %q", ErrInvalidRegistration, provider.ID, extension.Owner)
+			}
+			for _, target := range extension.Targets {
+				selected, found := r.targets[target]
+				if !found || selected.owner != provider.ID || selected.name != target {
+					return fmt.Errorf("%w: provider %q registers SQL syntax for target %q it does not register", ErrInvalidRegistration, provider.ID, target)
+				}
+			}
+			extensions = append(extensions, extension)
+		}
+	}
+	set, err := sqlext.NewSet(extensions...)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
+	}
+	r.sql = set
+	return nil
+}
+
+// SQL returns the SQL extensions of the runtime's providers as one frozen
+// set. A runtime whose providers contribute none returns a selected set
+// without owners.
+func (r *Runtime) SQL() sqlext.Set {
+	return r.sql
 }

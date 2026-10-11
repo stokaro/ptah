@@ -217,7 +217,7 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 
-	loaded, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML()})
+	loaded, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL()})
 	c.Assert(err, qt.IsNil)
 
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)

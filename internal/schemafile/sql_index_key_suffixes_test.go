@@ -50,7 +50,7 @@ func TestToDBSchema_SQLDocumentCarriesIndexKeySuffixes(t *testing.T) {
 
 	dir := t.TempDir()
 	path := writeSchemaFile(c, dir, "inspected.sql", postgresIndexSuffixSQL)
-	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), Dialect: platform.Postgres})
+	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	parts := make(map[string][]catalog.IndexPart)
