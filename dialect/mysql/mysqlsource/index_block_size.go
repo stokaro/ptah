@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dialect/mysql/mysqlschema"
@@ -73,6 +74,15 @@ func Annotations() annotation.Extension {
 // claim and reads no key.
 func YAML() yamlext.Extension {
 	return yamlext.Extension{Owner: mysqlschema.Owner, Kinds: []schemaext.Kind{mysqlschema.IndexBlockSizeKind}, Coverage: BlockSizeCoverage}
+}
+
+// HCL returns the owner's extension of the HCL frontend. An HCL document has
+// no spelling for the block size of an index or a primary key, so one it
+// declares has none, and applying it removes the hint, as its export warns.
+// The extension makes that claim and reads no block.
+func HCL() hclext.Extension {
+	return hclext.Extension{Owner: mysqlschema.Owner, Kinds: []schemaext.Kind{mysqlschema.IndexBlockSizeKind},
+		Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) { return BlockSizeCoverage() }}
 }
 
 // BlockSizeCoverage is the claim of a source that describes the block size of

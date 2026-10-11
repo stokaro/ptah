@@ -47,9 +47,10 @@ const AtlasSumFileName = "atlas.sum"
 // `policy`, and a `row_security` block inside a table. So is an attribute
 // only an owner reads, such as a YDB vector or partitioning setting on an
 // `index`, and a `ptah:feature-coverage` header, which only the YDB owner
-// reads. Read a document carrying one with [ParseAtlasHCLWithOptions] and the
-// HCL set of a runtime, such as the bundled one engine/builtin.Bundled
-// returns.
+// reads. The result carries no owner's claim either, such as that the
+// document's indexes have no MySQL block size. Read a document with
+// [ParseAtlasHCLWithOptions] and the HCL set of a runtime, such as the bundled
+// one engine/builtin.Bundled returns, for both.
 func ParseAtlasHCL(data []byte, filename string) (*schemamodel.Database, error) {
 	return atlashcl.Parse(data, filename)
 }
