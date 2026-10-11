@@ -40,7 +40,7 @@ func rowPolicySchema(coverage schemaext.Knowledge) *schemamodel.Database {
 
 func renderClickHouse(c *qt.C, db *schemamodel.Database) (string, error) {
 	c.Helper()
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "clickhouse", Runtime: must.Must(builtin.New())})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "clickhouse", Runtime: must.Must(builtin.New())})
 	var source strings.Builder
 	for _, file := range files {
 		source.Write(file.Data)
@@ -100,7 +100,7 @@ func TestRender_SharedRowSecurityKeepsRestrictiveAndForce(t *testing.T) {
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "Order", Table: "orders", Forced: true, Dialects: []string{"mysql"}}},
 	}
 
-	files, err := goschematogo.Render(c.Context(), declared, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), declared, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	source := string(files[0].Data)

@@ -33,7 +33,7 @@ func TestRender_Topic_RoundTrip(t *testing.T) {
 	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
 		ydbtopic.DesiredObject("app", "events", "", spec), ydbtopic.DesiredObject("", "plain.v1", "", ydbtopic.Spec{})))}
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)

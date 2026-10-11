@@ -122,6 +122,7 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	}
 
 	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{
+		Annotations:     builtintest.Annotations(),
 		PackageName:     "models",
 		AddJSONTags:     true,
 		AddDBTags:       true,
@@ -354,7 +355,7 @@ func TestRenderSingleFileUsesOneSchemaFile(t *testing.T) {
 			Nullable:   false,
 			Primary:    true,
 		}},
-	}, goschematogo.Options{PackageName: "models", SingleFile: true})
+	}, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
@@ -398,7 +399,7 @@ func TestRenderRejectsUnrepresentableIndexIncludeColumns(t *testing.T) {
 				IncludeColumns: []string{"created_at", test.column},
 			}}}
 
-			files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
+			files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 			c.Assert(files, qt.IsNil)
 			c.Assert(err, qt.ErrorMatches, test.err)
@@ -418,7 +419,7 @@ func TestRenderAcceptsRepresentableIndexIncludeColumns(t *testing.T) {
 		}},
 	}
 
-	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
@@ -437,7 +438,7 @@ func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {
 			{StructName: "BillingUser", Schema: "billing", Name: "users"},
 			{StructName: "AuthUser", Schema: "auth", Name: "users"},
 		},
-	}, goschematogo.Options{PackageName: "models"})
+	}, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fileNames(files), qt.DeepEquals, []string{"schema_objects.go", "auth_users.go", "billing_users.go"})
@@ -446,7 +447,7 @@ func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {
 func TestRenderRejectsInvalidPackageName(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschematogo.Render(c.Context(), &schemamodel.Database{}, goschematogo.Options{PackageName: "type"})
+	_, err := goschematogo.Render(c.Context(), &schemamodel.Database{}, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "type"})
 
 	c.Assert(err, qt.ErrorMatches, `invalid package name "type"`)
 }
@@ -473,7 +474,7 @@ func renderAndParseGrants(c *qt.C, dir string, grants []schemamodel.Grant) []sch
 	c.Helper()
 	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{Grants: grants},
-		goschematogo.Options{PackageName: "models", SingleFile: true},
+		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
@@ -490,7 +491,7 @@ func renderAndParseDefaultPrivileges(
 	c.Helper()
 	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{DefaultPrivileges: privileges},
-		goschematogo.Options{PackageName: "models", SingleFile: true},
+		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
@@ -503,7 +504,7 @@ func renderDefaultPrivilegeSource(c *qt.C, privileges []schemamodel.DefaultPrivi
 	c.Helper()
 	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{DefaultPrivileges: privileges},
-		goschematogo.Options{PackageName: "models", SingleFile: true},
+		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
 	)
 	c.Assert(err, qt.IsNil)
 	var source strings.Builder
@@ -555,7 +556,7 @@ func TestRenderRolesRoundTripThroughParser(t *testing.T) {
 
 	files, err := goschematogo.Render(c.Context(),
 		&schemamodel.Database{Roles: before.Roles, RevokedGrants: before.RevokedGrants},
-		goschematogo.Options{PackageName: "models", SingleFile: true},
+		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
 	)
 	c.Assert(err, qt.IsNil)
 	dir := t.TempDir()

@@ -58,6 +58,7 @@ func ydbTable() *catalog.Database {
 // from dialect, and returns the one generated file.
 func introspect(c *qt.C, db *catalog.Database, dialect string) string {
 	files, err := goschematogo.Render(c.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), db, dialect, must.Must(builtin.New()))), goschematogo.Options{
+		Annotations: builtintest.Annotations(),
 		PackageName: "models",
 		SingleFile:  true,
 		Dialect:     dialect,
@@ -100,7 +101,7 @@ func TestRender_YDBFieldsTakeTheTypeTheDriverScansInto(t *testing.T) {
 func TestRender_WithoutADialectTypeNamesReadAsSQL(t *testing.T) {
 	c := qt.New(t)
 	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ydbTable(), platform.Postgres, must.Must(builtin.New())))
-	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{PackageName: "models", SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	source := string(files[0].Data)
@@ -161,7 +162,7 @@ func TestRender_FailurePath_YDBNullableKeyColumn(t *testing.T) {
 			c := qt.New(t)
 			db := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), test.db(), platform.YDB, must.Must(builtin.New())))
 
-			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Dialect: platform.YDB})
+			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), Dialect: platform.YDB})
 
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(files, qt.IsNil)

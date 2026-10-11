@@ -33,7 +33,7 @@ func TestRenderExternalObjectsRoundTripThroughParser(t *testing.T) {
 		ydbexternal.DesiredSourceObject("", "bucket", "", bucket),
 		ydbexternal.DesiredTableObject("ext", "events", "", events),
 	))}
-	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{PackageName: "models", SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	dir := t.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)

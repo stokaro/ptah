@@ -52,7 +52,7 @@ func TestCockroachDBRowTTL_GoExportRoundTrip(t *testing.T) {
 
 	declared, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observedRowTTL(policy), "cockroachdb", runtime)
 	c.Assert(err, qt.IsNil)
-	files, err := goschematogo.Render(t.Context(), declared, goschematogo.Options{SingleFile: true, Dialect: "cockroachdb", Runtime: runtime})
+	files, err := goschematogo.Render(t.Context(), declared, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "cockroachdb", Runtime: runtime})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	c.Assert(string(files[0].Data), qt.Contains, `platform.cockroachdb.ttl_expire_after="72:00:00"`)

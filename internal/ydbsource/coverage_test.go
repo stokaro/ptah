@@ -99,7 +99,7 @@ func TestExportsDoNotTurnCoordinationLimitsIntoAbsence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, test.namespace, test.subjects))}
-			files, goErr := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+			files, goErr := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 			hcl, hclErr := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 			c.Assert(goErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(hclErr, qt.IsNil)
@@ -123,7 +123,7 @@ func TestGoExportDoesNotTurnStreamingLimitsIntoAbsence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{FeatureCoverage: must.Must(ydbstreaming.Coverage(schemaext.Desired, test.namespace, test.subjects))}
-			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+			files, err := goschematogo.Render(t.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(files, qt.IsNil)
 		})
@@ -155,7 +155,7 @@ func TestGoExportRefusesDifferentSourceModels(t *testing.T) {
 				captured := must.Must(schemaext.NewCoverage(test.model.Representation,
 					[]schemaext.KindCoverage{{Model: test.model, Knowledge: complete}}, nil))
 				files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: captured},
-					goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+					goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(files, qt.IsNil)
 			})
@@ -204,7 +204,7 @@ func TestExportsPreserveOrRefuseCompleteSubjectsInUnmanagedNamespaces(t *testing
 				Kind: schemaext.Kind(ref.Kind), Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Complete},
 			}}))
 			files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: captured},
-				goschematogo.Options{SingleFile: true, Dialect: "ydb"})
+				goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(files, qt.IsNil)
 		})

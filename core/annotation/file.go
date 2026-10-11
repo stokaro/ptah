@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/tableref"
 )
 
 // FileDecoder reads one owner's declarations of one Go file, for an owner
@@ -61,6 +62,14 @@ type Table struct {
 	Name string
 	// Struct is the Go struct the table directive is attached to.
 	Struct string
+}
+
+// QualifiedName is the spelling a declaration's table attribute names the
+// table by: the name, after the schema and a dot where the table has one,
+// each in double quotes where it holds a dot, a quote or a bracket. [QualifiedName]
+// and [Tables.Owning] read it back as this table.
+func (t Table) QualifiedName() string {
+	return tableref.Canonical(t.Schema, t.Name)
 }
 
 // Tables are the tables one Go file declares, in the order the file writes

@@ -163,7 +163,7 @@ func TestLiveTableIdentity_IntrospectedModelsCompareEqual(t *testing.T) {
 	c := qt.New(t)
 	f := newLiveTableIdentityFixture(c)
 	files, err := goschematogo.Render(c.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), f.read(c), f.dialect, must.Must(builtin.New()))),
-		goschematogo.Options{PackageName: "models", PerTable: true})
+		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", PerTable: true})
 	c.Assert(err, qt.IsNil)
 	dir := c.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)

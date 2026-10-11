@@ -2,8 +2,9 @@
 // owner's models: a hypertable, which partitions the table it names, and a
 // continuous aggregate, a materialized view TimescaleDB keeps up to date.
 //
-// The Go annotation frontend reads these directives only when the caller
-// selects this owner, through [Annotations] in the runtime's annotation set.
+// The Go annotation frontend reads these directives, and the Go annotation
+// writer writes them, only when the caller selects this owner, through
+// [Annotations] in the runtime's annotation set.
 package tssource
 
 import (
@@ -21,9 +22,9 @@ const (
 )
 
 // Annotations is the owner's contribution to the Go annotation frontend: both
-// directives, their decoder, and the claim that a Go annotation source
-// describes every hypertable and continuous aggregate it holds, so an omitted
-// one is absent.
+// directives, their decoder, their encoder, and the claim that a Go annotation
+// source describes every hypertable and continuous aggregate it holds, so an
+// omitted one is absent.
 //
 // There is no dialect scope on either directive: both belong to TimescaleDB
 // and to nothing else.
@@ -33,6 +34,8 @@ func Annotations() annotation.Extension {
 		Directives: []annotation.Directive{continuousAggregateDirective(), hypertableDirective()},
 		Kinds:      []schemaext.Kind{tsschema.ContinuousAggregateKind, tsschema.HypertableKind},
 		Decode:     decode,
+		Encoder:    annotationEncoder{},
+		Encodes:    []schemaext.Kind{tsschema.ContinuousAggregateKind, tsschema.HypertableKind},
 		Coverage:   annotation.Unlimited(func() (schemaext.Coverage, error) { return tsschema.CompleteCoverage(schemaext.Desired) }),
 	}
 }

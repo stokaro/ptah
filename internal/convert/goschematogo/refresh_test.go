@@ -29,7 +29,7 @@ func TestRenderWritesTheRefreshScheduleOfAMaterializedView(t *testing.T) {
 		Facets: must.Must(must.Must(schemaext.NewFacets(schedule)).WithTargetScope(chschema.RefreshKind, "clickhouse")),
 	}}}
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(files[0].Data), qt.Contains, `refresh="EVERY 1 DAY OFFSET 2 HOUR DEPENDS ON analytics.source APPEND"`)
@@ -48,7 +48,7 @@ func TestRenderRefusesAMaterializedViewSettingItCannotWrite_FailurePath(t *testi
 		Name: "daily", Body: "SELECT 1", Facets: must.Must(schemaext.NewFacets(settings)),
 	}}}
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `.*: materialized view "daily" carries setting "ptah.run/clickhouse/table", which a Go annotation cannot represent`)
@@ -70,7 +70,7 @@ func TestRenderRefusesAScheduleItCouldNotCapture_FailurePath(t *testing.T) {
 					[]schemaext.SubjectCoverage{{Kind: chschema.RefreshKind, Subject: view, Knowledge: schemaext.Knowledge{State: state, Reason: "not read"}}})),
 			}
 
-			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*materialized view analytics.daily: its refresh schedule was not captured \(not read\).*`)

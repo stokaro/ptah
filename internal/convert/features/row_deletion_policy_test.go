@@ -66,7 +66,7 @@ func TestSpannerRowDeletion_GoExportRoundTrip(t *testing.T) {
 
 	declared, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), spannerRead(policy), "spanner", runtime)
 	c.Assert(err, qt.IsNil)
-	files, err := goschematogo.Render(t.Context(), declared, goschematogo.Options{SingleFile: true, Dialect: "spanner", Runtime: runtime})
+	files, err := goschematogo.Render(t.Context(), declared, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "spanner", Runtime: runtime})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	c.Assert(string(files[0].Data), qt.Contains, `platform.spanner.row_deletion_column="created_at"`)
@@ -90,7 +90,7 @@ func TestYDBTTL_GoExportRoundTrip(t *testing.T) {
 
 	declared, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ydbRead(policy), "ydb", runtime)
 	c.Assert(err, qt.IsNil)
-	files, err := goschematogo.Render(t.Context(), declared, goschematogo.Options{SingleFile: true, Dialect: "ydb", Runtime: runtime})
+	files, err := goschematogo.Render(t.Context(), declared, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb", Runtime: runtime})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	c.Assert(string(files[0].Data), qt.Contains, `platform.ydb.row_deletion_unit="SECONDS"`)

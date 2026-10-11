@@ -1,6 +1,7 @@
 package goschematogo
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,7 +14,6 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlschema"
-	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/dialect/ydb/ydbreplication"
@@ -34,16 +34,23 @@ func changefeedTableRef(table schemamodel.Table) objectidentity.ID {
 // Capture once before writing any files. A named object that has no matching
 // table, an unknown kind, or a facet without an annotation must not disappear
 // from a successful export.
-func (ctx *renderContext) captureFeatureObjects() error {
+func (ctx *renderContext) captureFeatureObjects(requestContext context.Context) error {
 	limits, err := ydbsource.ExportLimits(ctx.db.FeatureCoverage)
 	if err != nil {
 		return err
 	}
 	for _, limit := range limits {
+		// A limit no selected owner reads would be refused on the way back,
+		// and says nothing a parse with this selection could know: without
+		// the owner, its models are unknown rather than absent.
+		if _, read := ctx.opts.Annotations.LimitOwner(string(limit.Kind)); !read {
+			continue
+		}
 		ctx.featureLimitAnnotations = append(ctx.featureLimitAnnotations,
 			annotation("ptah:schema:notdescribed", attr{name: "kind", value: string(limit.Kind), set: true},
 				attr{name: "name", value: limit.Name, set: limit.Name != ""}))
 	}
+	ctx.owned = ctx.collectOwnerSlots()
 	if err := ctx.refuseUnwrittenFacets(); err != nil {
 		return err
 	}
@@ -59,7 +66,7 @@ func (ctx *renderContext) captureFeatureObjects() error {
 	if err := ctx.captureIndexPartitioning(); err != nil {
 		return err
 	}
-	if err := ctx.captureHypertables(); err != nil {
+	if err := ctx.encodeOwners(requestContext); err != nil {
 		return err
 	}
 	if err := ctx.captureSwitches(); err != nil {
@@ -85,6 +92,10 @@ func (ctx *renderContext) captureFeatureObjects() error {
 }
 
 func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents map[objectidentity.Key]struct{}) error {
+	if ctx.opts.Annotations.Encodes(schemaext.Kind(object.Ref.Kind)) {
+		// Its owner writes it, or refuses it, in encodeOwners.
+		return nil
+	}
 	if handled, err := ctx.capturePathObject(object); handled {
 		return err
 	}
@@ -126,9 +137,6 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 	}
 	if policy, ok := object.Value.(*chschema.DesiredRowPolicy); ok {
 		return ctx.captureRowPolicy(object, policy)
-	}
-	if aggregate, ok := object.Value.(*tsschema.DesiredContinuousAggregate); ok && isTimescaleObject(object.Ref) {
-		return ctx.captureContinuousAggregate(object, aggregate)
 	}
 	if node, ok := object.Value.(*ydbcoordination.Desired); ok {
 		if err := ydbcoordination.ValidateRef(object.Ref); err != nil {
@@ -238,12 +246,13 @@ func (ctx *renderContext) capturePathObject(object schemaext.Object) (bool, erro
 }
 
 // refuseUnwrittenFacets refuses a facet no annotation writes, so it cannot
-// disappear from a successful export: a table facet with an annotation of its
-// own, a YDB vector index's settings, which the index annotation writes, a
-// primary key's MySQL block-size hint, which the directive declaring the key
-// writes, and a materialized view's refresh schedule, its `refresh`
-// attribute, are the ones written. Render has refused any other view setting
-// already.
+// disappear from a successful export: a facet of a model a selected owner
+// encodes, which the owner writes or refuses, a table facet with an
+// annotation of its own, a YDB vector index's settings, which the index
+// annotation writes, a primary key's MySQL block-size hint, which the
+// directive declaring the key writes, and a materialized view's refresh
+// schedule, its `refresh` attribute, are the ones written. Render has refused
+// any other view setting already.
 func (ctx *renderContext) refuseUnwrittenFacets() error {
 	writers := ctx.facetWriters()
 	for _, facets := range ctx.db.FacetSlots() {
@@ -252,8 +261,12 @@ func (ctx *renderContext) refuseUnwrittenFacets() error {
 			continue
 		}
 		for _, kind := range facets.DeclaredKinds() {
-			writes := writer != nil && slices.Contains(facets.Kinds(), kind) && writer.accepts(kind)
-			if !writes {
+			held := slices.Contains(facets.Kinds(), kind)
+			if held && ctx.owned.handed[facets] && ctx.opts.Annotations.Encodes(kind) {
+				// Its owner writes it, or refuses it, in encodeOwners.
+				continue
+			}
+			if !held || writer == nil || !writer.accepts(kind) {
 				return fmt.Errorf("%w: Go annotations cannot represent feature facet %q", ptaherr.ErrUnsupportedFeature, kind)
 			}
 			if writer.validate == nil {

@@ -165,6 +165,16 @@ type Extension struct {
 	// where a limit leaves it unmanaged. It is required, so the claim is
 	// always the owner's to make.
 	Coverage func(limits []coverage.Object) (schemaext.Coverage, error)
+	// Encoder writes the models of Encodes a schema holds as directives, for
+	// the Go annotation writer; see [Set.Encode]. It is optional; without it
+	// the writer refuses an object or a facet of Kinds it has no spelling of
+	// its own for.
+	Encoder Encoder
+	// Encodes are the models of Kinds the Encoder writes. It is required with
+	// an Encoder and refused without one. A model of Kinds it leaves out, such
+	// as a setting the writer spells as a platform property, is not handed
+	// to the Encoder.
+	Encodes []schemaext.Kind
 }
 
 // Set is the frozen collection of extensions one parse selects. The zero
@@ -195,10 +205,12 @@ func None() Set {
 
 // NewSet validates and freezes extensions. It refuses an extension without
 // an owner or a coverage claim, one that declares directives and not exactly
-// one decoder, a directive without a name, attributes on a directive without a
-// decoder or a name, a limit kind that is empty, not in lower case or one of
-// the frontend's own, and a directive name, an attribute of one directive, a
-// limit kind or a model two extensions claim.
+// one decoder, an encoder without models to encode or models without an
+// encoder, a model it encodes and does not declare, a directive without a
+// name, attributes on a directive without a decoder or a name, a limit kind
+// that is empty, not in lower case or one of the frontend's own, and a
+// directive name, an attribute of one directive, a limit kind or a model two
+// extensions claim.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true, owners: make(map[string]int), limits: make(map[string]int),
 		attributes: make(map[string]map[string]int), routes: make(map[string]*targetscope.Routes)}
@@ -242,6 +254,13 @@ func checkExtension(index int, extension Extension) error {
 		return fmt.Errorf("annotation extension of %s declares directives and no decoder", extension.Owner)
 	case extension.Decode != nil && extension.File != nil:
 		return fmt.Errorf("annotation extension of %s declares both a decoder and a file decoder", extension.Owner)
+	case (extension.Encoder == nil) != (len(extension.Encodes) == 0):
+		return fmt.Errorf("annotation extension of %s declares an encoder without models to encode, or models without an encoder", extension.Owner)
+	}
+	for _, kind := range extension.Encodes {
+		if !slices.Contains(extension.Kinds, kind) {
+			return fmt.Errorf("annotation extension of %s encodes model %q, which it does not declare", extension.Owner, kind)
+		}
 	}
 	return nil
 }
@@ -552,6 +571,7 @@ func cloneExtension(extension Extension) Extension {
 	}
 	extension.Directives = directives
 	extension.Kinds = slices.Clone(extension.Kinds)
+	extension.Encodes = slices.Clone(extension.Encodes)
 	extension.Limits = slices.Clone(extension.Limits)
 	scopes := make([]TargetScope, 0, len(extension.TargetScopes))
 	for _, scope := range extension.TargetScopes {

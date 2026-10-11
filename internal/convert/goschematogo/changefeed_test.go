@@ -41,7 +41,7 @@ func TestRender_Changefeed(t *testing.T) {
 		Fields:          []schemamodel.Field{{StructName: "Item", FieldName: "ID", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	reparsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))

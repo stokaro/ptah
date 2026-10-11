@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
 
@@ -42,7 +43,7 @@ func rowSecuritySchema() *schemamodel.Database {
 
 func renderOneFile(c *qt.C, db *schemamodel.Database) (string, error) {
 	c.Helper()
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "postgres", Runtime: must.Must(builtin.New())})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "postgres", Runtime: must.Must(builtin.New())})
 	var source strings.Builder
 	for _, file := range files {
 		source.Write(file.Data)

@@ -314,6 +314,37 @@ directive it does not know. It refuses the owner's attributes and
 not-described kinds as unknown, and it does not enroll the owner's models in
 coverage, so they stay unknown rather than absent.
 
+`Extension.Encoder` is the mirror for the Go annotation writer, and
+`Extension.Encodes` lists the models of `Kinds` it writes. A model the
+extension declares and does not encode, such as a setting written as a
+platform property, is not handed to it. `NewSet` refuses an encoder without
+models, models without an encoder, and a model the extension does not declare.
+
+- `Set.Encode` hands each encoder what the schema holds of its models: the
+  objects and the facets of its `Encodes`, every table the source declares,
+  and the coverage of its `Kinds`. A facet arrives on the `Slot` that holds it:
+  the declaration of the frontend's own directive, such as a table, its primary
+  key, or an index of it, with its `Table` and `Name`. Every encoder is asked,
+  also for a schema that holds none of its models, since an owner may refuse a
+  coverage record a source cannot carry.
+- The encoder returns `EncodedDirective` values as data: the directive, its
+  `Placement` (`AfterSchemas` or `AfterPrivileges` among the standalone
+  objects, `AfterTable` beside the `Table` it names), its attributes as name
+  and value, and the `Targets` its dialects attribute scopes it to. The writer
+  quotes every value and writes the dialects attribute last. `Set.Encode`
+  returns the directives owner by owner in the order of the owners' names,
+  and the writer keeps that order at each placement, so the order of a source
+  does not depend on registration.
+- `Set.Encode` refuses a directive that reading the source back would hand to
+  another owner, or to none: one the owner does not declare, or a frontend
+  directive whose targets route it elsewhere. It also refuses an unknown
+  placement, a table the schema does not declare, an attribute without a name
+  or written twice, and the dialects attribute, which `Targets` writes.
+- The writer reports no losses. A value an owner cannot write is the owner's
+  to refuse with an error, which refuses the export.
+- `Table.QualifiedName` is the spelling a `table` attribute names a table by,
+  which `QualifiedName` and `Tables.Owning` read back as that table.
+
 `core/schemacapture` holds complete table declarations and observations for
 contextual services. Both include common children, named feature objects, and
 feature coverage. `Clone` isolates mutable common definitions; feature containers
@@ -2092,7 +2123,10 @@ not drop it while a declaration uses it.
 `//ptah:schema:hypertable` and `//ptah:schema:continuousaggregate`, through
 `Annotations`, an `annotation.Extension` the bundled runtime registers. A parse
 that does not select it reads neither directive and claims no knowledge of
-either model.
+either model. Its encoder writes a hypertable directive after its table's
+directive and an aggregate after the schema's other standalone objects, and
+refuses a hypertable on anything but a table, an invalid value, and a coverage
+limit the source cannot spell.
 
 The common schema, catalog, AST, coverage and diff types carry no TimescaleDB
 field. `CompleteCoverage` is the claim a source makes when it

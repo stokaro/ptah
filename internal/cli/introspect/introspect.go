@@ -118,6 +118,7 @@ func run(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	files, err := goschematogo.Render(cmd.Context(), goSchema, goschematogo.Options{
+		Annotations:     runtime.Annotations(),
 		Runtime:         runtime,
 		PackageName:     opts.packageName,
 		PerTable:        opts.perTable,

@@ -35,7 +35,7 @@ func TestRender_ResourcePool_RoundTrip(t *testing.T) {
 	}
 	db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(want...))}
 
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true, Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)
@@ -59,7 +59,7 @@ func TestRender_ResourcePool_AloneKeepsItsStruct(t *testing.T) {
 		t.Run(string(object.Value.Kind()), func(t *testing.T) {
 			c := qt.New(t)
 			db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(object))}
-			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{PackageName: "models", SingleFile: true, Dialect: "ydb"})
+			files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true, Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.HasLen, 1)
 			parsed, err := goschema.ParseSource(builtintest.Annotations(), files[0].Name, files[0].Data)

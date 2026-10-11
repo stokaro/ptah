@@ -38,7 +38,7 @@ func securityPolicySchema(policy mssqlschema.DesiredSecurityPolicy) *schemamodel
 // renderSQLServerFile writes db as one Go file for SQL Server.
 func renderSQLServerFile(c *qt.C, db *schemamodel.Database) (string, error) {
 	c.Helper()
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true, Dialect: "sqlserver", Runtime: must.Must(builtin.New())})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "sqlserver", Runtime: must.Must(builtin.New())})
 	var source strings.Builder
 	for _, file := range files {
 		source.Write(file.Data)

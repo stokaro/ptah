@@ -33,7 +33,7 @@ tables:
         filter_ngram_max_length: 4
 `))
 	c.Assert(err, qt.IsNil)
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{SingleFile: true})
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
 	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
