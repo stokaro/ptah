@@ -256,7 +256,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	if err := rebaseManagedDataFiles(db.ManagedData, plan.outputPath); err != nil {
 		return renderedExport{}, err
 	}
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: plan.options.HCL})
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("render HCL schema: %w", err)
 	}
@@ -469,7 +469,7 @@ func canonicalRoundTrip(data []byte, vocabulary coverage.Vocabulary, hcl hclext.
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: parse generated schema: %v", ErrInvalidHCL, err)
 	}
-	canonical, err := atlashclrender.Render(parsed)
+	canonical, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: hcl})
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: render canonical schema: %v", ErrInvalidHCL, err)
 	}
@@ -483,7 +483,7 @@ func canonicalRoundTrip(data []byte, vocabulary coverage.Vocabulary, hcl hclext.
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: parse canonical schema: %v", ErrInvalidHCL, err)
 	}
-	stable, err := atlashclrender.Render(reparsed)
+	stable, err := atlashclrender.Render(reparsed, atlashclrender.Options{HCL: hcl})
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: verify canonical schema: %v", ErrInvalidHCL, err)
 	}

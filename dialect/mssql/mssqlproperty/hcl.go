@@ -1,11 +1,14 @@
 package mssqlproperty
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/hclext"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 )
 
@@ -19,7 +22,8 @@ const propertyBlock = "extended_property"
 //
 // It is a Ptah extension of the format. Its claim is that every HCL document
 // describes the extended properties of the database, so one without such a
-// block describes a database without one.
+// block describes a database without one. The writer writes each property
+// back as the same block.
 func HCL() hclext.Extension {
 	return hclext.Extension{
 		Owner: Owner,
@@ -33,6 +37,7 @@ func HCL() hclext.Extension {
 		Coverage: func(hclext.CoverageRequest) (schemaext.Coverage, error) {
 			return Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 		},
+		Encoder: hclEncoder{},
 	}
 }
 
@@ -86,4 +91,65 @@ func hclProperty(claim hclext.Claim) (DesiredProperty, error) {
 		return DesiredProperty{}, err
 	}
 	return property, nil
+}
+
+// hclEncoder writes the extended properties of one document.
+type hclEncoder struct{}
+
+// EncodeHCL writes one extended_property block for each property, after the
+// tables a property is attached to, in the order of their labels.
+//
+// The address is written as plain strings rather than as `table.users` and
+// `column.title` references, and that is a decision rather than an omission.
+// SQL Server addresses a property by name -- `@level1name = N'users'` -- so
+// the string is what the statement carries; and a reference would resolve to
+// nothing the moment selection removed the table, leaving a document that
+// names a block it does not contain.
+//
+// The schema is written as the property holds it: an empty schema is the
+// DATABASE scope, a fourth address beside schema, table and column, and
+// writing the document's default schema for it would move a database
+// property onto a schema. [Property.Label] spells that address `(database)`.
+func (hclEncoder) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (hclext.EncodeResult, error) {
+	type labeled struct {
+		label string
+		block hclext.EncodedBlock
+	}
+	properties := make([]labeled, 0, len(request.Objects))
+	for _, object := range request.Objects {
+		if err := ctx.Err(); err != nil {
+			return hclext.EncodeResult{}, err
+		}
+		property, ok := object.Value.(*DesiredProperty)
+		if !ok {
+			return hclext.EncodeResult{}, fmt.Errorf("%w: HCL requires desired extended property values", schemaext.ErrInvalidValue)
+		}
+		if err := ValidateDesired(property); err != nil {
+			return hclext.EncodeResult{}, err
+		}
+		properties = append(properties, labeled{label: property.Label(), block: hclext.EncodedBlock{
+			Type: propertyBlock, Placement: hclext.AfterTables,
+			Schema: property.Schema, SchemaIsAddress: true, Name: property.Name,
+			Object: object.Ref, Targets: []string{platform.SQLServer},
+			Attributes: hclStrings("table", property.Table, "column", property.Column, "value", property.Value, "comment", property.Comment),
+		}})
+	}
+	slices.SortStableFunc(properties, func(a, b labeled) int { return cmp.Compare(a.label, b.label) })
+	blocks := make([]hclext.EncodedBlock, 0, len(properties))
+	for _, property := range properties {
+		blocks = append(blocks, property.block)
+	}
+	return hclext.EncodeResult{Blocks: blocks}, nil
+}
+
+// hclStrings writes each named string a block sets, in order, and leaves out
+// one it leaves empty.
+func hclStrings(pairs ...string) []hclext.EncodedAttribute {
+	attributes := make([]hclext.EncodedAttribute, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if pairs[i+1] != "" {
+			attributes = append(attributes, hclext.EncodedAttribute{Name: pairs[i], Value: hclext.Value{Kind: hclext.String, Text: pairs[i+1]}})
+		}
+	}
+	return attributes
 }

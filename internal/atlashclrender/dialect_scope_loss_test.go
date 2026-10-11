@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_ADialectScopeIsReportedAsAnExportLoss holds the one thing that
@@ -71,7 +72,7 @@ func TestRender_ADialectScopeIsReportedAsAnExportLoss(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := atlashclrender.Render(test.db)
+			result, err := atlashclrender.Render(test.db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(scopeLossDiagnostics(result.Diagnostics), qt.DeepEquals, test.want)

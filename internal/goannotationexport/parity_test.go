@@ -168,7 +168,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.HasLen, 1)
 
-	stable, err := atlashclrender.Render(after)
+	stable, err := atlashclrender.Render(after, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(stable.Diagnostics, qt.HasLen, 0)
 	c.Assert(stable.Data, qt.DeepEquals, hclData)

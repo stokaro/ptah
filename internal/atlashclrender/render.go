@@ -3,6 +3,7 @@ package atlashclrender
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -15,14 +16,13 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/feature/pgpolicy"
-	"ptah.run/feature/synonym"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/schemaprep"
@@ -89,25 +89,31 @@ type Result struct {
 	NotDescribed coverage.Set
 }
 
-// Render renders a finalized Ptah schema IR as deterministic HCL schema text.
-//
-// It renders every column type as the IR spells it. Use [RenderForDialect] when
-// the schema came out of a database rather than out of HCL: an inspected type
-// carries no record of how it was written, and some of them have to be written
-// as a sql() call to be readable at all.
-func Render(db *schemamodel.Database) (Result, error) {
-	return RenderForDialect(db, "")
+// Options configures a render.
+type Options struct {
+	// HCL selects the feature owners whose objects the document writes as
+	// their own blocks, usually the HCL set of the caller's runtime. It is
+	// required: the zero value is refused with [hclext.ErrUnselected], and
+	// [hclext.None] writes this package's own blocks alone, reporting an
+	// owner's object as one HCL does not represent.
+	HCL hclext.Set
+	// Dialect writes a column type that dialect's Atlas HCL schema does not
+	// model as a sql() call. Empty writes every column type as the IR spells
+	// it.
+	//
+	// The dialect matters only for that decision. A caller whose schema came
+	// out of HCL leaves it empty: the raw-SQL marker the parser set is
+	// already right, and re-deciding it from the type name would
+	// second-guess the author. A caller whose schema came out of a database
+	// names it: an inspected type carries no record of how it was written,
+	// and some of them have to be written as a sql() call to be readable at
+	// all.
+	Dialect string
 }
 
-// RenderForDialect renders the IR for a named dialect, writing a column type
-// that dialect's Atlas HCL schema does not model as a sql() call.
-//
-// The dialect matters only for that decision. An empty dialect renders exactly
-// what [Render] renders, which is what the parse-and-re-render callers want:
-// their input was HCL, so the raw-SQL marker the parser set is already right and
-// re-deciding it from the type name would second-guess the author.
-func RenderForDialect(db *schemamodel.Database, dialect string) (Result, error) {
-	return render(db, dialect, "", false)
+// Render renders a finalized Ptah schema IR as deterministic HCL schema text.
+func Render(db *schemamodel.Database, opts Options) (Result, error) {
+	return render(db, opts, "", false)
 }
 
 // RenderInspected renders a schema that was read out of a database, declaring
@@ -129,11 +135,11 @@ func RenderForDialect(db *schemamodel.Database, dialect string) (Result, error) 
 // because it is not derivable: a PostgreSQL connection's search_path can name
 // any schema, and the caller is the only one that knows which one was read.
 //
-// [RenderForDialect] is deliberately left alone. Its callers parsed HCL to get
-// here, so their IR already carries whatever the author wrote, and synthesizing
-// a schema there would invent one the author did not declare.
-func RenderInspected(db *schemamodel.Database, dialect, defaultSchema string) (Result, error) {
-	return render(db, dialect, strings.TrimSpace(defaultSchema), false)
+// [Render] is deliberately left alone. Its callers parsed HCL to get here, so
+// their IR already carries whatever the author wrote, and synthesizing a
+// schema there would invent one the author did not declare.
+func RenderInspected(db *schemamodel.Database, defaultSchema string, opts Options) (Result, error) {
+	return render(db, opts, strings.TrimSpace(defaultSchema), false)
 }
 
 // RenderInspectedForAtlasCLI renders an inspected schema for the
@@ -151,14 +157,18 @@ func RenderInspected(db *schemamodel.Database, dialect, defaultSchema string) (R
 //
 // The capability is not deleted by the default. Setting
 // [KeepAtlasRefusedBlocksEnvVar] restores every block on this same surface.
-func RenderInspectedForAtlasCLI(db *schemamodel.Database, dialect, defaultSchema string) (Result, error) {
-	return render(db, dialect, strings.TrimSpace(defaultSchema), true)
+func RenderInspectedForAtlasCLI(db *schemamodel.Database, defaultSchema string, opts Options) (Result, error) {
+	return render(db, opts, strings.TrimSpace(defaultSchema), true)
 }
 
-func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRefusedBlocks bool) (Result, error) {
+func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAtlasRefusedBlocks bool) (Result, error) {
+	if !opts.HCL.Selected() {
+		return Result{}, hclext.ErrUnselected
+	}
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
+	dialect := opts.Dialect
 	// Atlas HCL has no attribute for the column list of ON DELETE SET NULL or
 	// SET DEFAULT. Writing the key without it would set every referencing
 	// column where the schema sets some, so the export refuses instead
@@ -202,14 +212,16 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 		defaultSchema:          defaultSchema,
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
 		carryStorageParams:     carryStorageParams,
+		owners:                 opts.HCL,
 	}
 	if err := r.captureCoordinationNodes(); err != nil {
 		return Result{}, err
 	}
-	if err := r.captureExtendedProperties(); err != nil {
-		return Result{}, err
-	}
-	if err := r.captureSynonyms(); err != nil {
+	// The owners write their objects as data, which this package writes
+	// and places. A value an owner cannot write refuses the export, as a
+	// value this package cannot write does. The writers take no context
+	// yet; the owners encode in process.
+	if r.ownerBlocks, err = opts.HCL.Encode(context.Background(), db.FeatureObjects); err != nil {
 		return Result{}, err
 	}
 	if err := r.captureTimescale(); err != nil {
@@ -231,8 +243,6 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 
 type renderer struct {
 	coordinationNodes      []coordinationNode
-	extendedProperties     []mssqlproperty.DesiredProperty
-	synonyms               []synonym.DesiredSynonym
 	coordinationDirectives []string
 	hypertables            []hypertableBlock
 	aggregates             []aggregateBlock
@@ -281,7 +291,11 @@ type renderer struct {
 	// schemaRefs collects the name of every `schema.<name>` reference the body
 	// wrote, filled by [renderer.schemaRef] as the body is rendered and read
 	// afterwards by [renderer.referencedSchemas].
-	schemaRefs  map[string]bool
+	schemaRefs map[string]bool
+	// owners are the feature owners whose objects this render writes, and
+	// ownerBlocks the blocks they wrote; see [renderer.writeOwnerBlock].
+	owners      hclext.Set
+	ownerBlocks []hclext.EncodedBlock
 	builder     strings.Builder
 	diagnostics []Diagnostic
 }
@@ -530,12 +544,12 @@ func (r *renderer) render() {
 // cleanup would remove the only place the scope was ever written down and the
 // schema would silently go back to reaching every dialect.
 //
-// A SQL Server extended property and a synonym are bound to their targets by
-// their kind rather than by anything the declaration wrote, and reading the
-// block back binds them again, so their scope is not a loss.
+// An owner's object whose block binds it, on reading back, to exactly the
+// targets it is scoped to keeps its scope through the document, so that scope
+// is not a loss: a SQL Server extended property, bound to SQL Server, is one.
 func (r *renderer) reportDialectScopes() {
 	for _, scoped := range schemamodel.ScopedObjects(r.db) {
-		if boundByKind(scoped) {
+		if r.ownerBlockBinds(scoped) {
 			continue
 		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
@@ -549,22 +563,14 @@ func (r *renderer) reportDialectScopes() {
 	}
 }
 
-// boundByKind reports whether an object's scope is the one its kind binds it
-// to, which reading the block back restores.
-func boundByKind(scoped schemamodel.ScopedObject) bool {
-	var bound []string
-	switch scoped.Kind {
-	case string(mssqlproperty.Kind):
-		bound = []string{platform.SQLServer}
-	case string(synonym.Kind):
-		bound = synonym.Targets()
-	default:
-		return false
-	}
-	dialects := slices.Clone(scoped.Dialects)
-	slices.Sort(dialects)
-	slices.Sort(bound)
-	return slices.Equal(dialects, bound)
+// ownerBlockBinds reports whether an owner's block writes the scoped object
+// and binds it, on reading back, to exactly the targets of its scope.
+func (r *renderer) ownerBlockBinds(scoped schemamodel.ScopedObject) bool {
+	dialects := slices.Sorted(slices.Values(scoped.Dialects))
+	return slices.ContainsFunc(r.ownerBlocks, func(block hclext.EncodedBlock) bool {
+		return block.Object.Kind != "" && block.Object.Key() == scoped.Ref.Key() &&
+			slices.Equal(slices.Sorted(slices.Values(block.Targets)), dialects)
+	})
 }
 
 // reportExportMetadata names every export-only attribute this document carries
@@ -620,13 +626,7 @@ func (r *renderer) renderBody() {
 	r.renderEnums()
 	r.renderRoles()
 	r.renderTables()
-	// After the tables: a synonym stands for one and a property is attached to
-	// one, so a reader meets the structure before the things that point at it.
-	r.renderHypertables()
-	r.renderContinuousAggregates()
-	r.renderSynonyms()
-	r.renderCoordinationNodes()
-	r.renderExtendedProperties()
+	r.renderAfterTables()
 	r.renderFunctions()
 	r.renderViews()
 	r.renderMaterializedViews()

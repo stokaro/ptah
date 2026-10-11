@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // twoSchemaEnumRealm is the realm stokaro/ptah#1360's second half is about: one
@@ -161,7 +162,7 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 			db := test.db
 			schemamodel.Finalize(db)
 
-			rendered, err := atlashclrender.RenderInspected(db, "postgres", "public")
+			rendered, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(enumBlockHeaders(string(rendered.Data)), qt.DeepEquals, test.wantBlocks)
@@ -186,14 +187,14 @@ func TestInspectedTwoSchemaEnumsRoundTrip(t *testing.T) {
 
 	inspected := twoSchemaEnumRealm()
 	schemamodel.Finalize(inspected)
-	first, err := atlashclrender.RenderInspected(inspected, "postgres", "public")
+	first, err := atlashclrender.RenderInspected(inspected, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
 	reparsed, err := atlashcl.Parse(first.Data, "inspected.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(reparsed.Enums, qt.HasLen, 2)
 
-	second, err := atlashclrender.RenderInspected(reparsed, "postgres", "public")
+	second, err := atlashclrender.RenderInspected(reparsed, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(second.Data), qt.Equals, string(first.Data))
 }
@@ -211,7 +212,7 @@ func TestInspectedTwoSchemaEnumsAreRefusedByDefault(t *testing.T) {
 
 	inspected := twoSchemaEnumRealm()
 	schemamodel.Finalize(inspected)
-	rendered, err := atlashclrender.RenderInspected(inspected, "postgres", "public")
+	rendered, err := atlashclrender.RenderInspected(inspected, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
 	_, err = atlashcl.Parse(rendered.Data, "inspected.hcl")

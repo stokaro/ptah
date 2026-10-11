@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -42,7 +43,7 @@ func TestPrefixIndexReachesTheDocument(t *testing.T) {
 		}},
 	}, "mysql", must.Must(builtin.New())))
 
-	rendered, err := atlashclrender.Render(database)
+	rendered, err := atlashclrender.Render(database, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	document := string(rendered.Data)
@@ -72,7 +73,7 @@ func TestWholeColumnIndexKeepsTheCompactSpelling(t *testing.T) {
 		}},
 	}, "mysql", must.Must(builtin.New())))
 
-	rendered, err := atlashclrender.Render(database)
+	rendered, err := atlashclrender.Render(database, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	document := string(rendered.Data)

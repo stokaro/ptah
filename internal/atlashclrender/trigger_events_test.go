@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // triggerEventsDatabase is a table and one trigger on it firing on event.
@@ -45,7 +46,7 @@ func TestRenderTriggerEvents_RoundTrip(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			rendered, err := atlashclrender.Render(triggerEventsDatabase(test.event))
+			rendered, err := atlashclrender.Render(triggerEventsDatabase(test.event), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 			c.Assert(string(rendered.Data), qt.Contains, "  before {\n"+test.want+"\n  }\n")

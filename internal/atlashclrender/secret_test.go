@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_ReportsTheSecretsItCannotRecord names each secret the document
@@ -51,7 +52,7 @@ func TestRender_ReportsTheSecretsItCannotRecord(t *testing.T) {
 				FeatureCoverage: must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, test.limits)),
 			}
 
-			result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.DeepEquals, test.want)
@@ -68,7 +69,7 @@ func TestRender_LeavesOtherKindsLimitsAlone(t *testing.T) {
 		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the read could not decode it"}}}
 	db := &schemamodel.Database{FeatureCoverage: must.Must(ydbstreaming.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, limits))}
 
-	result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)

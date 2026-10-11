@@ -159,7 +159,7 @@ func TestRenderWritesEveryBlockBodyAsEvaluableHCL(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(test.db(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			rendered := string(result.Data)
@@ -288,7 +288,7 @@ func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
 // which is the round trip each case above inspects one construct of.
 func renderAndParse(c *qt.C, db *schemamodel.Database) *schemamodel.Database {
 	c.Helper()
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
@@ -322,17 +322,17 @@ func renderAndParse(c *qt.C, db *schemamodel.Database) *schemamodel.Database {
 func TestRenderedSchemaIsStableAcrossAParseAndRerender(t *testing.T) {
 	c := qt.New(t)
 
-	first, err := atlashclrender.RenderInspected(everyTouchedConstruct(), platform.Postgres, "public")
+	first, err := atlashclrender.RenderInspected(everyTouchedConstruct(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	parsedOnce, err := atlashcl.ParseWithOptions(first.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", first.Data))
-	second, err := atlashclrender.RenderInspected(parsedOnce, platform.Postgres, "public")
+	second, err := atlashclrender.RenderInspected(parsedOnce, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	parsedTwice, err := atlashcl.ParseWithOptions(second.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", second.Data))
-	third, err := atlashclrender.RenderInspected(parsedTwice, platform.Postgres, "public")
+	third, err := atlashclrender.RenderInspected(parsedTwice, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(third.Data), qt.Equals, string(second.Data))
@@ -397,7 +397,7 @@ func TestEnumTypedColumnKeepsANameThatIsAlsoAnotherDeclaration(t *testing.T) {
 			db := inspectedEnumTable()
 			test.declare(db)
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Not(qt.Contains), "type = enum.status\n")
@@ -417,7 +417,7 @@ func TestRenderInspectedDeclaresTheSchemaAnEnumOnlyReadReferences(t *testing.T) 
 
 	db := &schemamodel.Database{Enums: []schemamodel.Enum{{Name: "status", Values: []string{"active"}}}}
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "schema \"public\" {\n}\n")

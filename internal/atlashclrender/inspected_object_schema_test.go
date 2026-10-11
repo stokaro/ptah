@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderInspectedAttributesEverySchemaScopedBlock pins that an inspected
@@ -144,7 +145,7 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 			db := inspectedTable("")
 			test.declare(db)
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
@@ -265,7 +266,7 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 			db := inspectedTable("")
 			test.declare(db)
 
-			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)

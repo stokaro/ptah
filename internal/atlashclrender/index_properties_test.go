@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 func TestRenderIndexPropertiesRoundTrip(t *testing.T) {
@@ -31,7 +32,7 @@ func TestRenderIndexPropertiesRoundTrip(t *testing.T) {
 					},
 				}},
 			}
-			rendered, err := atlashclrender.Render(db)
+			rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 			parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
@@ -39,7 +40,7 @@ func TestRenderIndexPropertiesRoundTrip(t *testing.T) {
 			c.Assert(parsed.Indexes, qt.HasLen, 1)
 			c.Assert(parsed.Indexes[0].Overrides, qt.DeepEquals, db.Indexes[0].Overrides)
 			c.Assert(parsed.Indexes[0].Fields, qt.DeepEquals, test.fields)
-			again, err := atlashclrender.Render(parsed)
+			again, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(again.Data, qt.DeepEquals, rendered.Data)
 		})

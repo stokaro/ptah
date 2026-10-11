@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestReferenceReadsTheReferenceSpellingPtahRenders measures the rendered document
@@ -53,7 +54,7 @@ func TestReferenceReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 			devURL := requireDevURL(t, dialect)
 			schema := schemaNameByDialect[dialect]
 
-			rendered, err := atlashclrender.RenderForDialect(referenceSchema(schema), dialect)
+			rendered, err := atlashclrender.Render(referenceSchema(schema), atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: dialect})
 			c.Assert(err, qt.IsNil)
 			short := string(rendered.Data)
 			c.Assert(short, qt.Contains, "ref_columns = [table.users.column.id]")

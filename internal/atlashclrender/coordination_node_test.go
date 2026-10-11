@@ -34,7 +34,7 @@ func TestRenderedCoordinationNodeRoundTrips(t *testing.T) {
 	}
 	db.FeatureObjects = must.Must(schemaext.NewObjects(nodes...))
 
-	result, err := atlashclrender.RenderInspected(db, platform.YDB, "")
+	result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
@@ -56,12 +56,12 @@ func TestHCLCoordinationSourceLimitsSurviveRepeatedExport(t *testing.T) {
 			c := qt.New(t)
 			original, err := atlashcl.ParseWithOptions([]byte(source), "source.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
-			first, err := atlashclrender.RenderForDialect(original, platform.YDB)
+			first, err := atlashclrender.Render(original, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 			c.Assert(err, qt.IsNil)
 			parsed, err := atlashcl.ParseWithOptions(first.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.FeatureCoverage.Equal(original.FeatureCoverage), qt.IsTrue)
-			second, err := atlashclrender.RenderForDialect(parsed, platform.YDB)
+			second, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 			c.Assert(err, qt.IsNil)
 			c.Assert(second.Data, qt.DeepEquals, first.Data)
 		})
@@ -83,7 +83,7 @@ func TestRenderedHCLPreservesCoordinationEnrollment(t *testing.T) {
 		} {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
-				result, err := atlashclrender.RenderInspected(&schemamodel.Database{FeatureCoverage: test.known}, dialect, "")
+				result, err := atlashclrender.RenderInspected(&schemamodel.Database{FeatureCoverage: test.known}, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: dialect})
 				c.Assert(err, qt.IsNil)
 				parsed, err := atlashcl.ParseWithOptions(result.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 				c.Assert(err, qt.IsNil)
@@ -97,7 +97,7 @@ func TestRenderedHCLPreservesCoordinationEnrollment(t *testing.T) {
 
 func TestHCLRefusesIncompatibleAndDuplicateCapturedModels(t *testing.T) {
 	known := must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	source := must.Must(atlashclrender.RenderForDialect(&schemamodel.Database{FeatureCoverage: known}, "ydb"))
+	source := must.Must(atlashclrender.Render(&schemamodel.Database{FeatureCoverage: known}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"}))
 	for _, test := range []struct {
 		name string
 		text string

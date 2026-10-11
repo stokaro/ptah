@@ -75,7 +75,7 @@ func TestCockroachDBRowTTL_HCLExportReportsTheLoss(t *testing.T) {
 
 	declared, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), observedRowTTL(crdbschema.Policy{ExpireAfter: "3 days"}), "cockroachdb", runtime)
 	c.Assert(err, qt.IsNil)
-	result, err := atlashclrender.Render(declared)
+	result, err := atlashclrender.Render(declared, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 1)

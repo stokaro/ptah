@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // clauseDatabase is `p (id)` and `c (id, p_id, n)` whose column CHECK and
@@ -72,7 +73,7 @@ func TestRender_EnforcementAndMatch_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(test.database, "postgres", "public")
+			result, err := atlashclrender.RenderInspected(test.database, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(result, qt.DeepEquals, atlashclrender.Result{})
@@ -85,7 +86,7 @@ func TestRender_EnforcementAndMatch_FailurePath(t *testing.T) {
 func TestRender_EnforcementAndMatch_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspected(clauseDatabase(false, false, ""), "postgres", "public")
+	result, err := atlashclrender.RenderInspected(clauseDatabase(false, false, ""), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, `foreign_key "c_p_fkey"`)

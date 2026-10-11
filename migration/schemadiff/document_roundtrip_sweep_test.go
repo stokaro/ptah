@@ -541,7 +541,7 @@ func roundTripFixture() *schemamodel.Database {
 
 func renderPostgresDocument(c *qt.C, db *schemamodel.Database) []byte {
 	c.Helper()
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return result.Data
 }

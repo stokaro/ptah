@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_ReportsTheTopicsItCannotRecord names each topic the document
@@ -46,7 +47,7 @@ func TestRender_ReportsTheTopicsItCannotRecord(t *testing.T) {
 				FeatureCoverage: must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, test.limits)),
 			}
 
-			result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.DeepEquals, test.want)

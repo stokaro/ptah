@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbexternal"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_ReportsTheExternalObjectsItLeavesOut names each YDB external data
@@ -36,7 +37,7 @@ func TestRender_ReportsTheExternalObjectsItLeavesOut(t *testing.T) {
 		FeatureCoverage: coverage,
 	}
 
-	result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{

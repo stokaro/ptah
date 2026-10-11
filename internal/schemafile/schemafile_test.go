@@ -78,7 +78,7 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 			File:   "users.yaml",
 		}},
 	}
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 	c.Assert(os.WriteFile(path, rendered.Data, 0o600), qt.IsNil)

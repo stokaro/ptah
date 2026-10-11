@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // familyTable is a YDB table declaring the column families given, as the YDB
@@ -57,7 +58,7 @@ func TestRender_ReportsTheColumnFamiliesItLeavesOut(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result, err := atlashclrender.RenderForDialect(test.db, platform.YDB)
+			result, err := atlashclrender.Render(test.db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.DeepEquals, test.want)
 		})

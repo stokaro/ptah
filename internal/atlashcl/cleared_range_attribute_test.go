@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // clearedRangeHCL is a range that writes one attribute empty on purpose and
@@ -57,7 +58,7 @@ func TestRender_AnEmptyRangeAttributeSurvivesTheRoundTrip(t *testing.T) {
 	db, err := atlashcl.Parse([]byte(clearedRangeHCL), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `subtype_diff = ""`)
 
@@ -86,7 +87,7 @@ range "measurement" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "subtype_diff")

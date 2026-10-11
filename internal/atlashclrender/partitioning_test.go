@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // HCL has no spelling for a YDB table's settings, so the render names every
@@ -31,7 +32,7 @@ func TestRender_TablePartitioningIsALoss(t *testing.T) {
 		},
 	}
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, platform.YDB, "")
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Not(qt.Contains), "PARTITION")

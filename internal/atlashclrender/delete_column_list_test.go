@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // Atlas HCL has no attribute for an ON DELETE column list, so a key that
@@ -32,7 +33,7 @@ func TestRender_NarrowedDeleteAction(t *testing.T) {
 		}},
 	}
 
-	result, err := atlashclrender.RenderInspected(database, "postgres", "public")
+	result, err := atlashclrender.RenderInspected(database, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches,
 		`foreign key "fk_children_parent" limits ON DELETE SET NULL to columns parent_id, which Atlas HCL cannot represent`)

@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderIndexPartNullsOrderRoundTrip closes the loop issue #1272 opened.
@@ -40,7 +41,7 @@ func TestRenderIndexPartNullsOrderRoundTrip(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	hcl := string(rendered.Data)
 	c.Assert(hcl, qt.Contains, "nulls_last = true")
@@ -78,7 +79,7 @@ func TestRenderIndexPartNullsOrderKeepsOnBlocks(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	hcl := string(rendered.Data)
 	c.Assert(hcl, qt.Contains, "on {")

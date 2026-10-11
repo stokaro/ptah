@@ -145,7 +145,7 @@ func describedSQLServerSchema() *schemamodel.Database {
 
 func renderInspectedDocument(c *qt.C, db *schemamodel.Database) []byte {
 	c.Helper()
-	result, err := atlashclrender.RenderInspected(db, platform.SQLServer, "dbo")
+	result, err := atlashclrender.RenderInspected(db, "dbo", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
 	c.Assert(err, qt.IsNil)
 	return result.Data
 }

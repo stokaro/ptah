@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // The planner attributes and the settings survive an export to HCL and back
@@ -23,7 +24,7 @@ func TestRender_RoutineAttributesRoundTrip(t *testing.T) {
 		Body:     "SELECT t = current_setting('app.tenant')::uuid",
 	}}}
 
-	result, err := atlashclrender.RenderForDialect(database, "postgres")
+	result, err := atlashclrender.Render(database, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.Parse(result.Data, "schema.hcl")
 

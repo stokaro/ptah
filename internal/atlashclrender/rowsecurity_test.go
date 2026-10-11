@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // rowSecurityDocument declares orders with the given switches and two
@@ -45,7 +46,7 @@ func TestRenderInspected_WritesRowSecurity(t *testing.T) {
 	db := rowSecurityDocument(&pgpolicy.DesiredTableState{Enabled: true, Forced: true, Comment: "isolated"},
 		pgpolicy.RoleSelector{Name: "reader"}, pgpolicy.RoleSelector{Keyword: pgpolicy.CurrentUser})
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
@@ -81,7 +82,7 @@ func TestRenderInspected_ReportsRowSecurityItCannotWrite(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(test.database(), platform.Postgres, "public")
+			result, err := atlashclrender.RenderInspected(test.database(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.HasLen, 1)
@@ -99,7 +100,7 @@ func TestRenderInspected_RefusesRowSecurityCoverageItCannotWrite(t *testing.T) {
 	db := rowSecurityDocument(nil)
 	db.FeatureCoverage = must.Must(pgpolicy.Coverage(pgpolicy.PolicyKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "partial"}, nil))
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(result.Data, qt.IsNil)
@@ -112,7 +113,7 @@ func TestRenderInspected_ReportsAScopedSwitch(t *testing.T) {
 	db := rowSecurityDocument(&pgpolicy.DesiredTableState{Enabled: true})
 	db.Tables[0].Facets = must.Must(db.Tables[0].Facets.WithTargetScope(pgpolicy.TableStateKind, "postgres"))
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 1)

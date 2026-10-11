@@ -47,9 +47,7 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result, err := atlashclrender.RenderInspectedForAtlasCLI(
-				test.db(), platform.Postgres, "public",
-			)
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(test.db(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.NotDescribed, qt.DeepEquals, suppressedBlocks(
@@ -74,13 +72,13 @@ func TestNativeRenderDeclaresNoCommonLimits(t *testing.T) {
 		{
 			name: "inspected",
 			render: func() (atlashclrender.Result, error) {
-				return atlashclrender.RenderInspected(inspectedRichDatabase(), platform.Postgres, "public")
+				return atlashclrender.RenderInspected(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			},
 		},
 		{
 			name: "parse and re-render",
 			render: func() (atlashclrender.Result, error) {
-				return atlashclrender.RenderForDialect(inspectedRichDatabase(), platform.Postgres)
+				return atlashclrender.Render(inspectedRichDatabase(), atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			},
 		},
 	}
@@ -102,9 +100,7 @@ func TestNativeRenderDeclaresNoCommonLimits(t *testing.T) {
 func TestCompatibilityRenderDeclaresNoCommonLimitsOnSQLite(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(
-		inspectedRichDatabase(), platform.SQLite, "main",
-	)
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedRichDatabase(), "main", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLite})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.NotDescribed.IsZero(), qt.IsTrue)
@@ -118,9 +114,7 @@ func TestCompatibilityRenderDeclaresNoCommonLimitsOnSQLite(t *testing.T) {
 func TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspectedForAtlasCLI(
-		inspectedRichDatabase(), platform.Postgres, "public",
-	)
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
@@ -137,9 +131,7 @@ func TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser(t *testing.T)
 func TestNativeDocumentCarriesNoLimitsBackThroughTheParser(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.RenderInspected(
-		inspectedRichDatabase(), platform.Postgres, "public",
-	)
+	result, err := atlashclrender.RenderInspected(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
@@ -202,7 +194,7 @@ func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
 		coverage.Object{Kind: ydbschema.CoverageReplicaTable, Name: "replica.accounts", Reason: coverage.Unsupported, Provenance: coverage.Observed},
 	)
 
-	result, err := atlashclrender.RenderInspected(db, platform.YDB, "")
+	result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{

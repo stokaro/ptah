@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // A document leaves a YDB async replication and a transfer out, since Atlas
@@ -27,7 +28,7 @@ func TestRenderForDialect_Replications(t *testing.T) {
 			Lambda: "($m) -> { return []; }"}),
 	))}
 
-	result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/pgindexstorage"
 )
 
@@ -24,7 +25,7 @@ func TestRender_AMalformedToggleFailsEvenWithNothingToCarry(t *testing.T) {
 	_, err := atlashclrender.Render(&schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
 		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INTEGER", Primary: true}},
-	})
+	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.ErrorMatches, `.*PTAH_POSTGRES_INDEX_STORAGE_PARAMS.*`)
 }
@@ -46,7 +47,7 @@ func TestRender_AValidToggleStillRenders(t *testing.T) {
 			result, err := atlashclrender.Render(&schemamodel.Database{
 				Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
 				Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INTEGER", Primary: true}},
-			})
+			}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, `table "t"`)

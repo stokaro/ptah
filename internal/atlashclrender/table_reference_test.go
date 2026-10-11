@@ -108,7 +108,7 @@ func withoutTargetTable(db *schemamodel.Database) *schemamodel.Database {
 func TestRenderShortensTableReferenceWhenDocumentDeclaresTheTarget(t *testing.T) {
 	c := qt.New(t)
 
-	rendered, err := atlashclrender.Render(crossSchemaDocument())
+	rendered, err := atlashclrender.Render(crossSchemaDocument(), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	hcl := string(rendered.Data)
@@ -140,7 +140,7 @@ func TestRenderCrossSchemaReferencesRoundTripToTheSameIR(t *testing.T) {
 	c := qt.New(t)
 	db := crossSchemaDocument()
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
@@ -217,7 +217,7 @@ func TestRenderKeepsQualifiedReferenceWhenDocumentCannotResolveIt(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			rendered, err := atlashclrender.Render(test.db())
+			rendered, err := atlashclrender.Render(test.db(), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			hcl := string(rendered.Data)
@@ -269,7 +269,7 @@ func TestRenderKeepsQualifiedSequenceTarget(t *testing.T) {
 		}},
 	}
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	hcl := string(rendered.Data)

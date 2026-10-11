@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRenderedColumnGrantRoundTrips carries a column list through `schema
@@ -20,7 +21,7 @@ func TestRenderedColumnGrantRoundTrips(t *testing.T) {
 	db.Grants = []schemamodel.Grant{{Role: "app", Privileges: []string{"UPDATE"}, OnTable: "public.t", Columns: []string{"state", "note"}}}
 	db.RevokedGrants = []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "public.t", Columns: []string{"secret"}}}
 
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
 	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")

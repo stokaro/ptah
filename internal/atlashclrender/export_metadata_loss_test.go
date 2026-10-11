@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 func exportMetadataDatabase() *schemamodel.Database {
@@ -46,7 +47,7 @@ func exportMetadataDatabase() *schemamodel.Database {
 func TestRender_ExportMetadataRoundTripsWithoutLoss(t *testing.T) {
 	c := qt.New(t)
 
-	first, err := atlashclrender.Render(exportMetadataDatabase())
+	first, err := atlashclrender.Render(exportMetadataDatabase(), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(first.Diagnostics, qt.HasLen, 0)
 	c.Assert(string(first.Data), qt.Contains, `api_name = "Account"`)
@@ -72,7 +73,7 @@ func TestRender_ExportMetadataRoundTripsWithoutLoss(t *testing.T) {
 	c.Assert(parsed.Fields[0].APIType, qt.Equals, "string")
 	c.Assert(parsed.Fields[0].APIExpose, qt.Equals, "read")
 
-	second, err := atlashclrender.Render(parsed)
+	second, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(second.Diagnostics, qt.HasLen, 0)
 	c.Assert(second.Data, qt.DeepEquals, first.Data)
@@ -88,7 +89,7 @@ func TestRender_ASchemaWithoutExportMetadataReportsNothing(t *testing.T) {
 	db.Fields[0].APIType = ""
 	db.Fields[0].APIExpose = ""
 
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)

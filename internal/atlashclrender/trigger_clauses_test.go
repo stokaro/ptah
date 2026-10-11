@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_LeavesOutATriggerItCannotSpell reports a trigger whose clauses the
@@ -63,7 +64,7 @@ func TestRender_LeavesOutATriggerItCannotSpell(t *testing.T) {
 				Triggers: []schemamodel.Trigger{trigger},
 			}
 
-			result, err := atlashclrender.Render(db)
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{test.want})

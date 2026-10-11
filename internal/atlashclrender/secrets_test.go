@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/builtintest"
 )
 
 // TestRender_ReportsTheSecretsItLeavesOut names each YDB secret the document
@@ -41,7 +42,7 @@ func TestRender_ReportsTheSecretsItLeavesOut(t *testing.T) {
 				Fields:         []schemamodel.Field{{Name: "id", StructName: "Events", Type: "Int64", Primary: true}},
 				FeatureObjects: must.Must(schemaext.NewObjects(test.secrets...)),
 			}
-			result, err := atlashclrender.RenderForDialect(db, platform.YDB)
+			result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.DeepEquals, test.want)
 			c.Assert(string(result.Data), qt.Not(qt.Contains), "PTAH_SECRET_")
