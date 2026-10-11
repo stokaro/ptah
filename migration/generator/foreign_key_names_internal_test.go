@@ -33,7 +33,7 @@ func TestGenerateUpMigrationSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T
 		schema, &catalog.Database{}, platform.MySQL, must.Must(builtin.New()),
 	))
 
-	sql, err := generateUpMigrationSQL(
+	sql, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		diff, schema, platform.MySQL,
 	)
@@ -60,7 +60,7 @@ func TestGenerateUpMigrationSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollisio
 		schema, &catalog.Database{}, platform.MySQL, must.Must(builtin.New()),
 	))
 
-	sql, err := generateUpMigrationSQL(
+	sql, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		diff, schema, platform.MySQL,
 	)

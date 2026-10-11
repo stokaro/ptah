@@ -141,14 +141,14 @@ func TestGenerateDownMigrationSQL_RecreatesATriggerTheUpDirectionDropped(t *test
 	c.Assert(upDiff.TriggersRemoved, qt.HasLen, 1)
 	c.Assert(upDiff.TriggersAdded, qt.HasLen, 0)
 
-	up, err := generateUpMigrationSQL(
+	up, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		upDiff, desired, platform.Postgres, capability.Postgres17(),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, "DROP TRIGGER")
 
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, database, platform.Postgres, capability.Postgres17())
 	c.Assert(err, qt.IsNil)
 	c.Assert(down, qt.Contains, "CREATE TRIGGER",
@@ -200,7 +200,7 @@ func TestGenerateDownMigrationSQL_LeavesASharedTriggerFunctionInPlace(t *testing
 	))
 	c.Assert(upDiff.TriggersAdded, qt.HasLen, 2)
 
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, database, platform.Postgres, capability.Postgres17())
 
 	c.Assert(err, qt.IsNil)
@@ -247,7 +247,7 @@ func TestGenerateUpMigrationSQL_DropsATriggerButNotTheFunctionItShares(t *testin
 	))
 	c.Assert(upDiff.TriggersRemoved, qt.HasLen, 2)
 
-	up, err := generateUpMigrationSQL(
+	up, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		upDiff, desired, platform.Postgres, capability.Postgres17(),
 	)

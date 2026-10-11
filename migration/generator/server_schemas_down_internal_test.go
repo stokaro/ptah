@@ -3,7 +3,7 @@ package generator
 // White-box testing required: the down migration of a whole MySQL-family
 // server is reached through the exported API only by a generator run over a
 // live connection to a server. The rule under test is the reversal of the
-// database changes, which generateDownMigrationSQL renders from a diff alone.
+// database changes, which downMigrationSQL renders from a diff alone.
 
 import (
 	"testing"
@@ -44,7 +44,7 @@ func TestGenerateDownMigrationSQL_RestoresTheDatabasesOfAWholeServer(t *testing.
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				up, desired, server, dialect)
 
 			c.Assert(err, qt.IsNil)

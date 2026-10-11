@@ -1,7 +1,7 @@
 package generator
 
 // White-box testing required: the subject is priorTableCreation as it is
-// rendered by the unexported generateDownMigrationSQL. The exported
+// rendered by the unexported downMigrationSQL. The exported
 // migration-file API reaches the same code only through a filesystem and a
 // live connection, which would put the failure somewhere other than the rule
 // under test.
@@ -44,7 +44,7 @@ func TestGenerateDownMigration_RecreatesDroppedTablesInDependencyOrder(t *testin
 	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "aaa_orders")
 	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "zzz_customers")
 
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, target, prior, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := legacyRenderedSQL(down)

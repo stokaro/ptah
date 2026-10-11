@@ -1,6 +1,6 @@
 package generator
 
-// White-box testing required: generateDownMigrationSQL is package-local, and
+// White-box testing required: downMigrationSQL is package-local, and
 // the property is about what the reversal renders rather than about any
 // exported entry point.
 
@@ -70,7 +70,7 @@ func TestGenerateDownMigrationSQL_RestoresAColumnsForeignKeyOnce(t *testing.T) {
 	c.Assert(upDiff.TablesModified, qt.HasLen, 1)
 	c.Assert(upDiff.TablesModified[0].ColumnsRemoved.Names(), qt.DeepEquals, []string{"owner_id"})
 
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, database, platform.Postgres, capability.Postgres17())
 
 	c.Assert(err, qt.IsNil)

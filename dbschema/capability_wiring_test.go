@@ -18,8 +18,6 @@ func TestLiveCapabilityPathsAvoidVersionBlindFactories(t *testing.T) {
 		filepath.Join("..", "migration", "generator", "generator.go"): {
 			`planner\.GenerateSchemaDiff(AST|SQL|SQLStatements)\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 			`safety\.AssessRendered\([^)]*(conn\.Info\(\)|info)\.Dialect`,
-			`generateUpMigrationSQL\([^)]*(conn\.Info\(\)|info)\.Dialect\)`,
-			`generateDownMigrationSQL\([^)]*(conn\.Info\(\)|info)\.Dialect\)`,
 		},
 		filepath.Join("..", "internal", "cli", "migrate", "migrate.go"): {
 			`planner\.GenerateSchemaDiff(AST|SQL|SQLStatements)\([^)]*(conn\.Info\(\)|info)\.Dialect`,

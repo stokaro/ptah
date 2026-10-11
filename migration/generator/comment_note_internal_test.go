@@ -33,7 +33,7 @@ func TestGenerateUpMigrationSQL_EndsANoteWithoutASemicolon(t *testing.T) {
 		}},
 	}
 
-	sql, err := generateUpMigrationSQL(
+	sql, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		diff, &schemamodel.Database{}, platform.Postgres,
 	)

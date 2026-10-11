@@ -269,7 +269,7 @@ func TestReverseSchemaDiff_EveryModifiedCategoryReachesTheRenderedRollback(t *te
 			c.Assert(exists, qt.IsTrue,
 				qt.Commentf("SchemaDiff has no field %s; this gate is naming something that moved", test.field))
 
-			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				test.diff, schema, dbSchema, "postgres")
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)

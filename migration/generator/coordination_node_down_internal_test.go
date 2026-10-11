@@ -54,7 +54,7 @@ func TestGenerateDownMigration_CoordinationNodes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			sql, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				&difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbcoordination.Ref("app", "locks"), Value: test.change}}}, &schemamodel.Database{}, &catalog.Database{},
 				platform.YDB, capability.YDB262())
 

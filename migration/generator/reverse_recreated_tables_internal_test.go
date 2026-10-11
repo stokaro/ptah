@@ -2,7 +2,7 @@ package generator
 
 // White-box testing required: the subject is the unexported reverse plan
 // builder (reverseSchemaDiffWithPrior -> dropReverseConstraintsRestoredByTableCreation)
-// as it is rendered by the unexported generateDownMigrationSQL. The exported
+// as it is rendered by the unexported downMigrationSQL. The exported
 // migration-file API reaches the same code only through a filesystem and a live
 // connection, which would put the failure somewhere other than the rule under
 // test.
@@ -88,7 +88,7 @@ func TestGenerateDownMigration_DropTable_RollbackSaysEachConstraintOnce(t *testi
 			))
 			c.Assert(upDiff.TablesRemoved.Names(), qt.DeepEquals, []string{"gadgets"})
 
-			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				upDiff, target, prior, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			down = legacyRenderedSQL(down)
@@ -129,7 +129,7 @@ func TestGenerateDownMigration_DropTable_KeepsWhatTableCreationCannotRestore(t *
 	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "nodes")
 	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "pairs")
 
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, target, prior, "postgres")
 	c.Assert(err, qt.IsNil)
 	down = legacyRenderedSQL(down)

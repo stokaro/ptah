@@ -1,6 +1,6 @@
 package generator
 
-// White-box testing required: generateDownMigrationSQL is package-local, and
+// White-box testing required: downMigrationSQL is package-local, and
 // the property is about what the reversal renders rather than about any
 // exported entry point.
 
@@ -61,14 +61,14 @@ func TestGenerateDownMigrationSQL_RestoresTheColumnThePriorDatabaseHeld(t *testi
 	c.Assert(upDiff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(upDiff.TablesModified[0].ColumnsModified[0].Desired.Type, qt.Equals, "BIGINT")
 
-	up, err := generateUpMigrationSQL(
+	up, err := upMigrationSQL(
 		context.Background(), must.Must(builtin.New()),
 		upDiff, desired, platform.Postgres, capability.Postgres17(),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, "BIGINT")
 
-	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, database, platform.Postgres, capability.Postgres17())
 	c.Assert(err, qt.IsNil)
 	// The server's own spelling, because prior is the database read: a rollback

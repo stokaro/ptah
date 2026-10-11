@@ -1,6 +1,6 @@
 package generator
 
-// White-box testing required: generateDownMigrationSQL is package-local, and
+// White-box testing required: downMigrationSQL is package-local, and
 // the reversal it performs has no exported entry point that takes a diff.
 
 import (
@@ -47,7 +47,7 @@ func TestGenerateDownMigrationSQL_RecreatesASynonymTheUpMigrationDropped(t *test
 	))
 	c.Assert(upDiff.FeatureChanges, qt.HasLen, 1)
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "sqlserver")
 
 	c.Assert(err, qt.IsNil)

@@ -1,7 +1,7 @@
 package generator
 
 // White-box testing required: these tests drive the unexported up/down
-// generation entry points (generateUpMigrationSQL / generateDownMigrationSQL)
+// generation entry points (upMigrationSQL / downMigrationSQL)
 // over the real schemadiff comparator, which the exported migration-file API
 // does not expose without a filesystem and database connection.
 
@@ -145,14 +145,14 @@ func TestGenerateMigration_ConstraintBackedIndexReplacement_DownRestoresTheConst
 			))
 			c.Assert(diff.ConstraintBackedIndexRemovals, qt.HasLen, 1)
 
-			up, err := generateUpMigrationSQL(
+			up, err := upMigrationSQL(
 				context.Background(), must.Must(builtin.New()),
 				diff, desired, test.name,
 			)
 			c.Assert(err, qt.IsNil)
 			assertOrderedPair(c, up, test.upDrop, test.create)
 
-			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				diff, desired, database, test.name)
 			c.Assert(err, qt.IsNil)
 			assertOrderedPair(c, down, test.downDro, test.restore)
@@ -181,7 +181,7 @@ func TestGenerateMigration_PlainIndexReplacement_DownRebuildsTheIndex(t *testing
 			))
 			c.Assert(diff.ConstraintBackedIndexRemovals, qt.HasLen, 0)
 
-			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+			down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 				diff, desired, database, test.name)
 			c.Assert(err, qt.IsNil)
 			c.Assert(down, qt.Not(qt.Contains), "ADD CONSTRAINT")

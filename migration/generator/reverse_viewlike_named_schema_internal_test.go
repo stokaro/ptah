@@ -1,7 +1,7 @@
 package generator
 
 // White-box testing required: the rollback under test is produced by the
-// unexported generateDownMigrationSQL from the unexported reverse plan builder,
+// unexported downMigrationSQL from the unexported reverse plan builder,
 // and the point of the test is what the down SQL says, which the exported
 // GenerateMigration API only surfaces by writing files to disk.
 
@@ -83,7 +83,7 @@ func TestGenerateDownMigrationSQL_RestoresModifiedViewInANamedSchema(t *testing.
 	c.Assert(err, qt.IsNil)
 	c.Assert(upDiff.ViewsModified, qt.HasLen, 1)
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 

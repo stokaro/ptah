@@ -26,7 +26,7 @@ import (
 // ConstraintsAdded from the introspected (pre-change) DB so the DOWN
 // add-path fans out per host and restores each host's PRIOR action.
 //
-// These run the REAL generator down-path (generateDownMigrationSQL ->
+// These run the REAL generator down-path (downMigrationSQL ->
 // reverseSchemaDiffWithPrior -> reverseConstraintAdditions), not a hand-rolled
 // reversal, which is the gap that let the original bug ship.
 
@@ -106,7 +106,7 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost
 	c.Assert(countConstraint(upDiff.ConstraintsAdded.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
 	c.Assert(countConstraint(upDiff.ConstraintsRemoved.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, gen, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
@@ -141,11 +141,11 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_MySQLRejectsDuplicateNames
 		desired, dbSchema, "mysql", must.Must(builtin.New()),
 	))
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		diff, desired, dbSchema, "mysql")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `error generating down migration SQL: invalid foreign key: foreign-key name "fk_entity_tenant" is duplicated in database constraint namespace`)
+	c.Assert(err, qt.ErrorMatches, `error planning reverse migration: invalid foreign key: foreign-key name "fk_entity_tenant" is duplicated in database constraint namespace`)
 	c.Assert(downSQL, qt.Equals, "")
 }
 
@@ -164,7 +164,7 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_NameOnlyCounterfactual(t *
 		gen, dbSchema, "postgres", must.Must(builtin.New()),
 	))
 
-	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+	downSQL, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, gen, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
