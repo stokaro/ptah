@@ -26,6 +26,13 @@ type equalViews struct{}
 
 func (equalViews) QueryEqual(_, _ string) bool { return true }
 
+// sqlRoutines gives a routine that states no language SQL.
+type sqlRoutines struct{}
+
+func (sqlRoutines) Defaults() schemacomparison.RoutineDefaults {
+	return schemacomparison.RoutineDefaults{Language: "sql"}
+}
+
 func rulesProvider(rules schemacomparison.Rules) engine.Provider {
 	return engine.Provider{ID: "example.org/comparison", Targets: []engine.Target{{Name: "custom", Aliases: []string{"alternate"}, Comparison: rules}}}
 }
@@ -33,7 +40,7 @@ func rulesProvider(rules schemacomparison.Rules) engine.Provider {
 func TestComparisonRules_HappyPath(t *testing.T) {
 	t.Run("the registered rules under an alias", func(t *testing.T) {
 		c := qt.New(t)
-		rules := schemacomparison.Rules{Indexes: equalIndexes{}, Views: equalViews{}}
+		rules := schemacomparison.Rules{Indexes: equalIndexes{}, Views: equalViews{}, Routines: sqlRoutines{}}
 		runtime := mustRuntime(c, rulesProvider(rules))
 
 		got, err := runtime.ComparisonRules("alternate")
@@ -67,6 +74,7 @@ func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 	var columns *sequenceColumns
 	var indexes *equalIndexes
 	var views *equalViews
+	var routines *sqlRoutines
 	tests := []struct {
 		name    string
 		rules   schemacomparison.Rules
@@ -75,6 +83,7 @@ func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 		{name: "column rules", rules: schemacomparison.Rules{Columns: columns}, message: `.*typed-nil column comparison service`},
 		{name: "index rules", rules: schemacomparison.Rules{Indexes: indexes}, message: `.*typed-nil index comparison service`},
 		{name: "view rules", rules: schemacomparison.Rules{Views: views}, message: `.*typed-nil view comparison service`},
+		{name: "routine rules", rules: schemacomparison.Rules{Routines: routines}, message: `.*typed-nil routine comparison service`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

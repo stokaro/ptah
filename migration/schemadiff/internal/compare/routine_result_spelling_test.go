@@ -30,6 +30,7 @@ func routineWithResult(
 			Language: "sql", Security: "INVOKER", Volatility: "VOLATILE",
 		}}},
 		diff, platform.Postgres, identifier.ForDialect(platform.Postgres), spellings,
+		nil,
 	)
 	return diff
 }

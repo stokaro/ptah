@@ -557,13 +557,12 @@ func liveRoutineOfKind(c *qt.C, routines []catalog.Function, kind string) catalo
 // acceptance for the one outcome that must never ship: a drop whose paired
 // create is skipped.
 //
-// The shape is reachable without an exotic schema. A function exists on the
-// server. The desired declaration omits `language=`, which
-// [schemamodel.Function.Canonicalize] defaults to `plpgsql`. The comparator sees
-// `language: sql -> plpgsql` and reports a MODIFICATION, the planner emits
-// DROP + CREATE for it, and the renderer answers the CREATE with a skip comment
-// because neither engine runs plpgsql. Applying that plan executes the drop and
-// creates nothing: the operator asked for a change and got a deletion.
+// A function exists on the server, and the desired declaration states
+// `language="plpgsql"`. The comparator sees `language: sql -> plpgsql` and
+// reports a MODIFICATION, the planner emits DROP + CREATE for it, and the
+// renderer answers the CREATE with a skip comment because neither engine runs
+// plpgsql. Applying that plan executes the drop and creates nothing: the
+// operator asked for a change and got a deletion.
 //
 // The regression was introduced by splitting the drop out of the CREATE
 // visitor. While the visitor emitted its own leading drop, the language skip
@@ -578,11 +577,6 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 		name     string
 		language string
 	}{
-		{
-			// The realistic one: no language written at all.
-			name:     "omitted language canonicalizes to plpgsql",
-			language: "",
-		},
 		{
 			name:     "explicit plpgsql",
 			language: "plpgsql",
@@ -605,19 +599,12 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 				c.Assert(queryRoutineCount(c, dsn, "ptah_prop_fn"), qt.Equals, 1)
 
 				// Same function, but declared in a language this target cannot
-				// run. Canonicalize is called explicitly because the annotation
-				// parser calls it on every parsed function, and it is what turns
-				// an omitted `language=` into plpgsql. Without it this test
-				// would carry an empty language the renderer treats as SQL, and
-				// the omitted-language row would not model production at all.
-				declared := schemamodel.Function{
+				// run.
+				desired := propertyFunction(schemamodel.Function{
 					Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 					Language: test.language, Volatility: "IMMUTABLE", Security: "INVOKER",
 					Body: "RETURN a + 2",
-				}
-				declared.Canonicalize()
-				c.Assert(declared.Language, qt.Equals, "plpgsql")
-				desired := propertyFunction(declared)
+				})
 
 				statements := applyPropertySQL(c, db, target.dialect, desired)
 
@@ -636,6 +623,40 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 				c.Check(value, qt.Equals, 42)
 			})
 		}
+	}
+}
+
+// TestFunctionWithoutALanguageIsTheTargetsOwn_Integration pins that a function
+// declaring no language is in the target's, SQL, and is replaced like any
+// other.
+//
+// The model filled an omitted language in as plpgsql, so the declaration below
+// compared as `language: sql -> plpgsql`, and the renderer skipped its CREATE
+// as a language this target does not run: the change was never applied, and
+// the next plan asked for it again.
+func TestFunctionWithoutALanguageIsTheTargetsOwn_Integration(t *testing.T) {
+	for _, target := range mysqlFamilyTargets {
+		t.Run(target.name, func(t *testing.T) {
+			dsn := target.dsn(t)
+			c := qt.New(t)
+			db := newPropertyDatabase(c, dsn)
+			applyPropertySQL(c, db, target.dialect, propertyFunction(schemamodel.Function{
+				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
+				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
+				Body: "RETURN a + 1",
+			}))
+			desired := propertyFunction(schemamodel.Function{
+				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
+				Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 2",
+			})
+
+			applyPropertySQL(c, db, target.dialect, desired)
+
+			var value int
+			c.Assert(db.QueryRow("SELECT ptah_prop_fn(41)").Scan(&value), qt.IsNil)
+			c.Assert(value, qt.Equals, 43)
+			c.Assert(propertyDiff(c, db, target.dialect, desired).FunctionsModified, qt.HasLen, 0)
+		})
 	}
 }
 

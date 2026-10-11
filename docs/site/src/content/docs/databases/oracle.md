@@ -125,8 +125,9 @@ Their body is PL/SQL, which is what the declaration says:
 //ptah:schema:function name="fn_double" params="p IN NUMBER" returns="NUMBER" language="plsql" body="BEGIN RETURN p * 2; END;"
 ```
 
-A declaration that omits `language=` is defaulted to `plpgsql`, and the renderer
-names it and creates nothing rather than writing a body this server cannot run.
+A declaration that omits `language=` is in PL/SQL, the target's own language.
+One that declares another language, such as `plpgsql`, is named by the renderer,
+which creates nothing rather than writing a body this server cannot run.
 Two other shapes are named the same way: a parameter default, because
 `ALL_ARGUMENTS` reports that one exists and never what it is, so a routine
 created with one would be replanned on every run. And `volatility="STABLE"` is

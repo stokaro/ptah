@@ -425,15 +425,40 @@ func (v compositeDefinitionValidator) extensions() error {
 	)
 }
 
+// functions refuses two declarations of one routine that differ.
+//
+// A routine that declares no language is in the language of the target's
+// engine, which is not known here: the sources are merged before a target is
+// chosen. So an omitted language does not conflict with a stated one. On
+// PostgreSQL the two are one routine, and the stated language is the one kept
+// (see [deduplicateFunctions]); two stated languages that differ still
+// conflict.
 func (v compositeDefinitionValidator) functions() error {
-	return validateNamedDefinitions(
-		v.database.Functions,
-		routineIdentityOf,
-		canonicalFunctionDefinition,
-		func(function Function, identity routineIdentity) error {
-			return fmt.Errorf("conflicting %s %q definitions", identity.kind(), identity.signature())
-		},
-	)
+	seen := make(map[routineIdentity]Function, len(v.database.Functions))
+	for _, function := range v.database.Functions {
+		identity := routineIdentityOf(function)
+		canonical := canonicalFunctionDefinition(function)
+		if previous, exists := seen[identity]; exists {
+			previous, canonical = withStatedLanguage(previous, canonical)
+			if !equivalentDefinitions(previous, canonical) {
+				return fmt.Errorf("conflicting %s %q definitions", identity.kind(), identity.signature())
+			}
+		}
+		seen[identity] = canonical
+	}
+	return nil
+}
+
+// withStatedLanguage gives the routine of the two that declares no language
+// the language the other states, so they compare on what they both say.
+func withStatedLanguage(left, right Function) (filledLeft, filledRight Function) {
+	switch {
+	case left.Language == "":
+		left.Language = right.Language
+	case right.Language == "":
+		right.Language = left.Language
+	}
+	return left, right
 }
 
 func (v compositeDefinitionValidator) sequences() error {

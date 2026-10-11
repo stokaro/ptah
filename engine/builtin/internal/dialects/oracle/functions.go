@@ -44,10 +44,8 @@ import (
 // written here, because the planner has to reach the same answer -- it must not
 // plan a drop whose create this branch is about to skip.
 //
-// The trap that costs an afternoon is worth naming, and the message names it:
-// [schemamodel.Function.Canonicalize] defaults an unset language to plpgsql, so a
-// routine annotated without `language=` lands in this branch and is skipped
-// when it looks like it should have been generated.
+// Only a declared language lands here. A routine that declares none is in this
+// target's own, PL/SQL, and is generated.
 func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	if node.IsProcedure() {
 		if r.refuses(capability.Procedures, "CREATE PROCEDURE", node.Name) {
@@ -62,9 +60,7 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 			"-- ORACLE: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
 			escapeIdentifier(node.Name), language)
 		r.w.WriteLinef(
-			"--   If this body is PL/SQL, declare language=\"plsql\": an annotation that omits the")
-		r.w.WriteLinef(
-			"--   language is defaulted to plpgsql and is skipped here for the same reason.")
+			"--   If this body is PL/SQL, declare language=\"plsql\" or no language.")
 		return nil
 	}
 	// A parameter default is accepted by the engine and then invisible to

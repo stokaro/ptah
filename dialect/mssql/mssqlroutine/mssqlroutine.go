@@ -19,6 +19,10 @@ import (
 	"ptah.run/core/routineext"
 )
 
+// Language is the language of every SQL Server routine. T-SQL has no LANGUAGE
+// clause, so a routine declares none, and the reader reports this one.
+const Language = "sql"
+
 // Reader reads the routine bodies of SQL Server. Its zero value is ready to
 // use.
 type Reader struct{}

@@ -3,6 +3,8 @@
 package integration_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -162,4 +164,31 @@ func TestSchemaApplyCreatesARoutineWithTheDeclaredDefaultE2E(t *testing.T) {
 	).Scan(&score, &touch), qt.IsNil)
 	c.Assert(score, qt.Equals, "a integer, b text DEFAULT 'X'::text")
 	c.Assert(touch, qt.Equals, "IN a integer, IN b text DEFAULT 'Y'::text")
+}
+
+// TestSchemaApplyFindsAnHCLRoutineWithoutALanguageSyncedE2E declares a routine
+// in HCL with no language, which on PostgreSQL is plpgsql, and with a default
+// the server prints back with a cast.
+//
+// The server's spelling of the arguments is found by a key that holds the
+// routine's language, and the comparison reads a routine with no language in
+// the one the target's lowering gives it. Probed without that language, the
+// spelling was never found, and the routine was planned again on every run.
+func TestSchemaApplyFindsAnHCLRoutineWithoutALanguageSyncedE2E(t *testing.T) {
+	c := qt.New(t)
+	schema := filepath.Join(c.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(schema, []byte(`schema "public" {}
+function "score" {
+  schema = schema.public
+  params = "a integer, b text DEFAULT 'X'"
+  return = integer
+  as     = "BEGIN RETURN 1; END;"
+}
+`), 0o600), qt.IsNil)
+	target := databaseBuiltFrom(c,
+		`CREATE FUNCTION score(a integer, b text DEFAULT 'X') RETURNS integer LANGUAGE plpgsql AS $$BEGIN RETURN 1; END;$$;`)
+
+	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
+
+	c.Assert(out, qt.Contains, "Schema is synced")
 }

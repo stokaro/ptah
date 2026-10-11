@@ -1186,9 +1186,7 @@ file, exactly as any other command reaching the same URL would.
   in front of a CREATE the renderer answered with a comment: `schema apply`
   deleted the live routine, created nothing, and reported success. Measured on
   MySQL 26.7.0 and MariaDB 12.3.2, zero rows in `information_schema.ROUTINES`
-  afterwards. The shape needs no exotic schema — `Function.Canonicalize`
-  defaults an omitted `language=` to `plpgsql`, so an ordinary annotation
-  reaches it. The predicate the renderer and the planner share lives in one
+  afterwards. The predicate the renderer and the planner share lives in one
   place so the two cannot drift apart again.
 
   **A foreign definer is not adopted silently.** MySQL and MariaDB execute a
@@ -1223,14 +1221,13 @@ file, exactly as any other command reaching the same URL would.
   in `ptah.yaml`, which is an operator-side filter at invocation rather than a
   property of the declaration.
 
-  The skip does say more than it used to. `Function.Canonicalize` defaults an
-  unset language to `plpgsql`, so an annotation that omits `language=` lands on
-  this branch as well and is passed over when it should have been generated —
-  `schema apply` exits 0 having created nothing and the diff asks for the same
-  function on every run. The renderer cannot tell that case apart from a
-  deliberate `plpgsql` declaration, because both arrive as the same value, so
-  the comment names both readings and the one word that settles it,
-  `language="sql"`.
+  Only a declared language reaches the skip. A routine that declares none is in
+  the target's own language: SQL on MySQL, MariaDB and SQL Server, PL/SQL on
+  Oracle and plpgsql on PostgreSQL. A comparison reads it in that language, and
+  the renderer generates it. An Atlas HCL `procedure` block has no attribute
+  for a language, so this is what lets one be created on these engines at all.
+  The skip comment names the one word that settles a declaration in the wrong
+  language: `language="sql"`, or no language.
 
   **Routine identity is the engine's, not the table rules'.** Stored-routine
   names are case-insensitive on both engines — with `foo` in the catalog,

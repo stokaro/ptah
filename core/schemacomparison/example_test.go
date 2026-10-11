@@ -44,3 +44,33 @@ func ExampleRules() {
 	// Output:
 	// 1
 }
+
+// ExampleRoutineDefaults shows a target stating the language its routines are
+// in. A routine declared with no language is compared as one in SQL, so it
+// matches the routine the target's catalog reports and nothing is planned.
+func ExampleRoutineDefaults() {
+	runtime, err := engine.New(engine.Provider{ID: "example.org/custom", Targets: []engine.Target{{
+		Name:        "custom",
+		Preparation: schemapreparation.Identity{},
+		Comparison:  schemacomparison.Rules{Routines: schemacomparison.RoutineDefaults{Language: "sql"}},
+	}}})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	desired := &schemamodel.Database{Functions: []schemamodel.Function{
+		{Name: "touch", Kind: "procedure", Security: "INVOKER", Volatility: "VOLATILE", Body: "UPDATE t SET c = 1"},
+	}}
+	current := &catalog.Database{Functions: []catalog.Function{
+		{Name: "touch", Kind: "procedure", Language: "sql", Security: "INVOKER", Volatility: "VOLATILE", Body: "UPDATE t SET c = 1"},
+	}}
+
+	diff, err := schemadiff.CompareWithDialect(context.Background(), desired, current, "custom", runtime)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(len(diff.FunctionsModified))
+	// Output:
+	// 0
+}

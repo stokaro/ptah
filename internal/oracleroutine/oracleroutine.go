@@ -38,10 +38,8 @@ const (
 // RunsLanguage reports whether a routine declared in this language becomes real
 // DDL on an Oracle target.
 //
-// Oracle runs exactly one routine language, PL/SQL. An empty value is accepted
-// because an [ptah.run/core/ast.CreateFunctionNode] built directly
-// carries no language; a declaration parsed from an annotation never arrives
-// empty, because Canonicalize defaults an unset language to plpgsql.
+// Oracle runs exactly one routine language, PL/SQL. An empty value is a
+// routine that declares no language, which is a routine in the target's.
 //
 // It lives here, beside the rest of Oracle's routine rules, because TWO callers
 // must agree on it and they are in different packages. The renderer uses it to

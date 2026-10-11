@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
@@ -2465,12 +2466,15 @@ func renderRoutineSetting(setting string) string {
 //
 // A clause the routine does not state is not written. UNSAFE is the server's
 // default PARALLEL level, so emitting it would change the DDL of every routine
-// that never asked about parallelism.
+// that never asked about parallelism. LANGUAGE is the exception: the server
+// refuses a routine without one ("no language specified"), so a routine that
+// declares none is written in plpgsql, the language PostgreSQL routines are in.
 func routineAttributes(node *ast.CreateFunctionNode) []string {
-	var attributes []string
-	if node.Language != "" {
-		attributes = append(attributes, fmt.Sprintf("LANGUAGE %s", node.Language))
+	language := node.Language
+	if language == "" {
+		language = pgroutine.Language
 	}
+	attributes := []string{fmt.Sprintf("LANGUAGE %s", language)}
 	if node.Security != "" {
 		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
 	}

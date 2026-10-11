@@ -178,17 +178,19 @@ func FunctionsWithDialect(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
-	functionsWithDialect(desired, database, diff, dialect, nil)
+	functionsWithDialect(desired, database, diff, dialect, nil, nil)
 }
 
 // functionsWithDialect is [FunctionsWithDialect] with the argument lists a
-// server spelled, nil when none did.
+// server spelled, nil when none did, and the target's routine rules, nil for a
+// target with none.
 func functionsWithDialect(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	arguments map[string]config.RoutineArguments,
+	routines schemacomparison.Routines,
 ) {
 	// Build lookup maps for function comparison
 	generatedFunctionMap := make(map[string]schemamodel.Function)
@@ -235,7 +237,7 @@ func functionsWithDialect(
 		// qualified name, and a match on one would otherwise mark the other as
 		// matched and silently keep it (stokaro/ptah#1722).
 		matchedDatabaseFunctions[routineKeyWithKind(databaseFunction.Kind, databaseFunction.QualifiedName())] = struct{}{}
-		functionComparison := functionDefinitions(generatedFunction, databaseFunction, dialect, arguments)
+		functionComparison := functionDefinitions(generatedFunction, databaseFunction, dialect, arguments, routines)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
 		}
@@ -267,7 +269,8 @@ func functionsWithDialect(
 // can resolve the exact source objects they received.
 //
 // arguments is [config.CompareOptions.RoutineArguments], nil when no server
-// spelled the declared argument lists.
+// spelled the declared argument lists. routines are the target's routine
+// rules, nil for a target with none.
 func FunctionsWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -275,10 +278,11 @@ func FunctionsWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	arguments map[string]config.RoutineArguments,
+	routines schemacomparison.Routines,
 ) {
 	semantics = semantics.Normalize("")
 	if semantics.DefaultSchema == "" {
-		functionsWithDialect(desired, database, diff, dialect, arguments)
+		functionsWithDialect(desired, database, diff, dialect, arguments, routines)
 		return
 	}
 
@@ -298,7 +302,7 @@ func FunctionsWithSemantics(
 				declaredRoutineNamed(declaration, generatedNames[identity]))
 		}
 		for _, pair := range pairs {
-			functionComparison := functionDefinitions(pair.declared, pair.recorded, dialect, arguments)
+			functionComparison := functionDefinitions(pair.declared, pair.recorded, dialect, arguments, routines)
 			if len(functionComparison.Changes) > 0 {
 				diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
 			}
@@ -637,16 +641,18 @@ func FunctionDefinitionsWithDialect(
 	dbFunction catalog.Function,
 	dialect string,
 ) difftypes.FunctionDiff {
-	return functionDefinitions(genFunction, dbFunction, dialect, nil)
+	return functionDefinitions(genFunction, dbFunction, dialect, nil, nil)
 }
 
 // functionDefinitions is [FunctionDefinitionsWithDialect] with the argument
-// lists a server spelled, nil when none did.
+// lists a server spelled, nil when none did, and the target's routine rules,
+// nil for a target with none.
 func functionDefinitions(
 	genFunction schemamodel.Function,
 	dbFunction catalog.Function,
 	dialect string,
 	arguments map[string]config.RoutineArguments,
+	routines schemacomparison.Routines,
 ) difftypes.FunctionDiff {
 	// The key is the declaration as the caller holds it, before the folding
 	// below, because that is the text the resolver was given.
@@ -671,6 +677,7 @@ func functionDefinitions(
 	// The DB-side read path already returns canonical case by construction,
 	// so we only normalize the gen side.
 	genFunction.Canonicalize()
+	genFunction.Language, dbFunction.Language = withTargetLanguage(genFunction.Language, dbFunction.Language, routines)
 
 	// The server's spelling of the declared arguments and result, where one
 	// answered, replaces the declaration, and after Canonicalize: the server
@@ -1096,6 +1103,28 @@ func stripDefaultColumnAliases(body string) string {
 
 func stripSimpleComparisonParentheses(body string) string {
 	return simpleComparisonParenthesesPattern.ReplaceAllString(body, "$1")
+}
+
+// withTargetLanguage reads an omitted routine language as the target's, on
+// both sides.
+//
+// A declaration that states no language is in the target's own, which only
+// the target can name: plpgsql on PostgreSQL, SQL on MySQL. The catalog side
+// is folded too, because a document converted to stand for a database can
+// leave it out as well. The fold is for the comparison alone: the diff carries
+// the declaration as written, so the renderer writes what the author wrote.
+func withTargetLanguage(declared, reported string, routines schemacomparison.Routines) (language, current string) {
+	if routines == nil {
+		return declared, reported
+	}
+	target := routines.Defaults().Language
+	if declared == "" {
+		declared = target
+	}
+	if reported == "" {
+		reported = target
+	}
+	return declared, reported
 }
 
 // declaredRoutine carries a routine the desired schema declares.

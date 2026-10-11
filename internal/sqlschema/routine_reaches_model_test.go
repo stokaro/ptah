@@ -78,7 +78,7 @@ func TestToDatabase_ACreateProcedureReachesTheModel(t *testing.T) {
 // TestToDatabase_ANonPostgresRoutineDoesNotClaimPLpgSQL keeps a diagnostic from
 // describing a body that never said it.
 //
-// A routine reaching the model with no language is defaulted to plpgsql, and
+// A routine reaching the model with no language was defaulted to plpgsql, and
 // the SQL Server renderer then skipped it saying it "declares language
 // plpgsql" -- a sentence about T-SQL that is simply untrue.
 func TestToDatabase_ANonPostgresRoutineDoesNotClaimPLpgSQL(t *testing.T) {

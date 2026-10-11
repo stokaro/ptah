@@ -120,9 +120,8 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 			Returns: returns[key.name],
 			// PL/SQL is the engine's own routine language, and it is named
 			// rather than left empty so that a declaration saying the same
-			// compares equal. An annotation that omits `language=` is
-			// defaulted to plpgsql by schemamodel.Function.Canonicalize and is
-			// skipped by the renderer, which says so.
+			// compares equal. A comparison reads a declaration that omits the
+			// language as this one, through the target's routine rules.
 			Language:   oracleroutine.Language,
 			Security:   oracleroutine.SecurityFromCatalog(authID),
 			Volatility: oracleroutine.VolatilityFromCatalog(deterministic),

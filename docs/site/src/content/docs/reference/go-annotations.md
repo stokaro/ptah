@@ -702,7 +702,7 @@ Declares a database function.
 | `body` | No | Function body SQL. |
 | `comment` | No | Function comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
-| `language` | No | Function language. |
+| `language` | No | Function language. Omitted means the target's own: plpgsql on PostgreSQL, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle. |
 | `leakproof` | No | Marks the function `LEAKPROOF`. `true`/`false`. |
 | `name` | No | Function name. |
 | `parallel` | No | Parallel level: `SAFE`, `RESTRICTED` or `UNSAFE`. |
@@ -759,7 +759,7 @@ type ArchiveTenant struct{}
 | `body` | No | Procedure body SQL. |
 | `comment` | No | Procedure comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
-| `language` | No | Procedure language. |
+| `language` | No | Procedure language. Omitted means the target's own: plpgsql on PostgreSQL, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle. |
 | `name` | No | Procedure name. |
 | `params` | No | Procedure parameter list. |
 | `schema` | No | Target schema/namespace. |

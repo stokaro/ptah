@@ -727,13 +727,13 @@ func TestParseFunctionComment(t *testing.T) {
 			},
 		},
 		{
-			name:    "Empty language defaults to plpgsql",
+			// The language is the target's, which no annotation can know.
+			name:    "Empty language stays empty",
 			comment: `//ptah:schema:function name="no_lang" returns="VOID" body="BEGIN END;"`,
 			expected: schemamodel.Function{
 				StructName: "TestStruct",
 				Name:       "no_lang",
-				Returns:    "void",    // lowercased
-				Language:   "plpgsql", // defaulted
+				Returns:    "void", // lowercased
 				Security:   "INVOKER",
 				Volatility: "VOLATILE",
 				Body:       "BEGIN END;",

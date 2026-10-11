@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/mssql/mssqlroutine"
 )
 
 // readFunctions recovers the functions the connected database declares.
@@ -76,9 +77,9 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 			Returns: procedureAwareReturns(objectType, returns[key]),
 			// The language is the engine's own. T-SQL has no LANGUAGE clause --
 			// `LANGUAGE SQL` is `Incorrect syntax near 'LANGUAGE'` -- so there
-			// is nothing to read, and reporting "sql" is what lets a
-			// declaration that says the same compare equal.
-			Language: "sql",
+			// is nothing to read, and reporting the owner's language is what
+			// lets a declaration that says the same, or nothing, compare equal.
+			Language: mssqlroutine.Language,
 			// Both of these are read rather than assumed, because the catalog
 			// carries them and a default written in here would be a claim about
 			// somebody else's function. execute_as_principal_id is NULL for
