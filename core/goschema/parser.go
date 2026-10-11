@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema/internal/parseutils"
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -484,6 +485,39 @@ func parseBoolPtr(value string) *bool {
 // extension owner reads by its target scope.
 const extensionDirective = "ptah:schema:extension"
 
+// refuseUnhostedScope refuses a scope that names a target no selected owner
+// reads declarations of directive for, naming the targets one does. It
+// refuses nothing when no selected owner reads the directive at all: the
+// declaration then stays in the shared model, as it did before an owner
+// read it.
+func (s *schemaParseState) refuseUnhostedScope(directive string, scope []string) error {
+	if len(scope) == 0 || !slices.Contains(s.annotations.TargetScopedDirectives(), directive) {
+		return nil
+	}
+	var hosts, unhosted []string
+	for _, spelling := range platform.DialectSpellings() {
+		if platform.NormalizeDialect(spelling) != spelling {
+			continue
+		}
+		if _, owned, err := s.annotations.TargetOwner(directive, []string{spelling}); err == nil && owned {
+			hosts = append(hosts, spelling)
+		}
+	}
+	for _, target := range scope {
+		if !slices.Contains(hosts, platform.NormalizeDialect(target)) {
+			unhosted = append(unhosted, target)
+		}
+	}
+	if len(unhosted) == 0 {
+		return nil
+	}
+	slices.Sort(hosts)
+	return fmt.Errorf("%w: the scope names %s, which cannot host an %s; scope the declaration to %s, "+
+		"or leave %s out to declare it for every target",
+		ptaherr.ErrInvalidAttributeValue, strings.Join(unhosted, ","), strings.TrimPrefix(directive, "ptah:schema:"),
+		strings.Join(hosts, ","), dialectscope.Attribute)
+}
+
 func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:extension", kv["name"])
@@ -494,9 +528,18 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	if err != nil {
 		return err
 	}
-	// An extension a selected owner reads by its target scope is the
-	// extension owner's: one without a scope, or scoped to PostgreSQL-family
-	// targets only. One scoped to other targets only stays shared.
+	// An extension a selected owner reads is the owner's: one without a
+	// scope, or scoped to the targets the owner reads. A declaration without
+	// a scope reaches every target, and a target that cannot host an
+	// extension skips it with a note, or refuses it where skipping would let
+	// an apply succeed without it: a tree shared by several targets may
+	// declare an extension only some of them host. A scope is different. It
+	// is the author naming the targets, and one that names a target no owner
+	// reads an extension for asks for an extension where none can exist, so
+	// it is refused here rather than skipped there.
+	if err := s.refuseUnhostedScope(extensionDirective, scope); err != nil {
+		return s.targetScopeError(ctx, dialectscope.Attribute, err)
+	}
 	_, owned, err := s.annotations.TargetOwner(extensionDirective, scope)
 	if err != nil {
 		return s.targetScopeError(ctx, dialectscope.Attribute, err)

@@ -1247,9 +1247,20 @@ render, in a plan and beside a `schema apply` result:
 ```
 
 YDB refuses the declaration instead, because a skipped object would let an
-apply exit 0 without it. Add `dialects="postgres,yugabytedb"` to the
-annotation, or the equivalent scope in another source, to keep an extension
-off the other targets.
+apply exit 0 without it. Add `dialects="postgres,yugabytedb"` to a Go
+annotation to keep an extension off the other targets. YAML and HCL
+declarations carry no scope.
+
+A scope is the author naming targets, so it is held to what they can host. A
+Go declaration whose `dialects` names a target outside the PostgreSQL family
+is refused, and so is a `CREATE EXTENSION` in a SQL document read for one:
+
+```text
+CREATE EXTENSION pg_trgm: an extension is a PostgreSQL object, and mysql refuses the statement
+```
+
+MySQL refuses the statement too, and an Atlas-compatible `schema apply` runs
+the document on the dev database first, where it fails the same way.
 
 Two Go packages, or a Go package and a YAML file, may each declare the same
 extension. Two equal declarations are one extension, and two that differ in

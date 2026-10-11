@@ -59,6 +59,34 @@ extension "pg_trgm" {}
 	c.Assert(strings.Index(second, skipped) < strings.Index(second, "Schema is synced"), qt.IsTrue, qt.Commentf("%s", second))
 }
 
+// TestCompatSchemaApplyRefusesACreateExtensionInAMySQLDocument pins the other
+// side of the skip above. A SQL document read for MySQL is written for MySQL,
+// and its CREATE EXTENSION is a statement MySQL refuses: the pinned community
+// binary v1.3.0 runs the document on the dev database and exits 1 on the
+// server's 1064. So the apply refuses before it changes anything, rather than
+// skipping the statement and creating the table.
+func TestCompatSchemaApplyRefusesACreateExtensionInAMySQLDocument(t *testing.T) {
+	c := qt.New(t)
+	adminURL := dbtarget.URL(t, dbtarget.MySQLAdmin)
+	targetURL := createSkipMySQLDatabase(c, adminURL, "ptah4140_refuse_target")
+	devURL := createSkipMySQLDatabase(c, adminURL, "ptah4140_refuse_dev")
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte("CREATE EXTENSION IF NOT EXISTS pg_trgm;\nCREATE TABLE docs (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	out, err := runCompatSchemaApply(targetURL, devURL, path)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*CREATE EXTENSION pg_trgm: an extension is a PostgreSQL object, and mysql refuses the statement`,
+		qt.Commentf("%s", out))
+	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE")
+	target, err := dbschema.ConnectToDatabase(context.Background(), targetURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+	var tables int
+	c.Assert(target.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()").
+		Scan(&tables), qt.IsNil)
+	c.Assert(tables, qt.Equals, 0)
+}
+
 // createSkipMySQLDatabase creates a database for the test through the
 // administrative connection and returns its URL, dropping it on cleanup.
 func createSkipMySQLDatabase(c *qt.C, adminURL, prefix string) string {

@@ -29,6 +29,7 @@ import (
 
 	"ptah.run/core/ast"
 	sqlplatform "ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/mysqlindex"
@@ -513,6 +514,25 @@ func toSchemaIndexParts(parts []ast.IndexPart, sourcePlatform string) []schemamo
 	return schemaParts
 }
 
+// refuseUnhostedExtension refuses a CREATE EXTENSION in a document read for a
+// named target outside the PostgreSQL family, whose owner does not read the
+// statement there. The target's own server refuses the statement, and an
+// Atlas-compatible apply runs the document on the dev database, which fails
+// there too, so skipping it would make the read looser than both. A document
+// that names no target is different: the extension owner reads its
+// statements, and a target that cannot host the extension skips it, as it
+// does an extension declared without a scope in any other source.
+func refuseUnhostedExtension(node *ast.ExtensionNode, sourcePlatform string) error {
+	target := sqlplatform.NormalizeDialect(sourcePlatform)
+	if target == "" || sqlplatform.IsPostgresFamily(target) {
+		return nil
+	}
+	return statementRefusal{
+		text: fmt.Sprintf("CREATE EXTENSION %s: an extension is a PostgreSQL object, and %s refuses the statement", node.Name, target),
+		err:  ptaherr.ErrUnsupportedFeature,
+	}
+}
+
 // ToExtension converts an ast.ExtensionNode to a schemamodel.Extension for database extension definitions.
 //
 // This function extracts extension metadata from an AST node, including the extension name,
@@ -735,6 +755,9 @@ func appendStatement(
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.ExtensionNode:
+		if err := refuseUnhostedExtension(node, sourcePlatform); err != nil {
+			return err
+		}
 		database.Extensions = append(database.Extensions, ToExtension(node, sourcePlatform))
 	case *ast.CreateFunctionNode:
 		database.Functions = append(database.Functions, toFunction(node, sourcePlatform))

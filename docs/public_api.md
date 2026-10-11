@@ -2446,8 +2446,11 @@ one, so an installation schema and every alteration are refused there. The
 builtin runtime selects the owner, its reports included, on every
 PostgreSQL-family target and composes the handlers there. The Go annotation,
 YAML, HCL and SQL sources hand an extension declaration to the owner, and the
-PostgreSQL reader hands it the installed extensions. A SQL document of a target
-outside the family reads CREATE EXTENSION through the shared grammar.
+PostgreSQL reader hands it the installed extensions. A declaration without a
+target scope reaches every target, and one outside the family skips or refuses
+it by the off-target policy. A scope is different: a Go declaration whose
+`dialects` names a target outside the family is refused, and so is a CREATE
+EXTENSION in a SQL document read for one, which that target refuses as well.
 
 `feature/pgextension/extensioncompare` compares extensions by name. The
 installation schema is compared under the target's default schema, the version
