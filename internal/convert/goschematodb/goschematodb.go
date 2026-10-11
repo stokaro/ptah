@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
+	"ptah.run/internal/oracletype"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
@@ -202,6 +203,15 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 			field.Nullable = false
 		}
 		column := toDBColumn(field, i+1)
+		if dialect == platform.Oracle {
+			// Oracle stores few declared type names as written: a TEXT
+			// column is a CLOB and a BIGINT a NUMBER(19). The reader reports
+			// what Oracle stores, and the comparison folds the declared side
+			// through the same mapping, so a declared type kept here compared
+			// unequal to itself and planned a MODIFY for every column.
+			column.DataType = oracletype.Map(field.Type)
+			column.ColumnType = column.DataType
+		}
 		if platform.IsPostgresFamily(dialect) {
 			column.OwnedSequence, _ = columnsequence.Declared(table.Name, field)
 		}
