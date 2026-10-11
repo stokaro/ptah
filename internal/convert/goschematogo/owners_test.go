@@ -15,6 +15,8 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine"
 	"ptah.run/internal/builtintest"
@@ -503,4 +505,99 @@ func TestRender_HandsAnOwnerEveryDeclarationOfItsModel(t *testing.T) {
 		{Directive: "ptah:schema:field", Table: loose, Name: "x"},
 		{Directive: "ptah:schema:index", Table: loose, Name: "j"},
 	})
+}
+
+// slotWriter adds the paint owner's attribute to every declaration it is
+// handed.
+type slotWriter struct{}
+
+func (slotWriter) EncodeAnnotations(_ context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
+	var result annotation.EncodeResult
+	for _, slot := range request.Slots {
+		painted, _, err := schemaext.FacetAs[*shade](slot.Facets, shadeKind)
+		if err != nil {
+			return annotation.EncodeResult{}, err
+		}
+		result.Attributes = append(result.Attributes, annotation.SlotAttributes{Slot: slot.Slot,
+			Attributes: []annotation.EncodedAttribute{{Name: "shade", Value: painted.Name}}})
+	}
+	return result, nil
+}
+
+// shadingProvider is the paint owner adding a shade attribute to the table
+// and the materialized view directives.
+func shadingProvider() engine.Provider {
+	provider := paintProvider("example.org/paint", slotWriter{})
+	decode := func(attributes map[string]string) (schemaext.Facets, error) {
+		return schemaext.NewFacets(&shade{Name: attributes["shade"]})
+	}
+	shadeAttribute := []annotation.Attribute{{Name: "shade", Description: "The shade.", Value: "string"}}
+	provider.Annotations[0].Attributes = []annotation.DirectiveAttributes{
+		{Directive: "ptah:schema:table", Attributes: shadeAttribute, Decode: decode},
+		{Directive: "ptah:schema:matview", Attributes: shadeAttribute, Decode: decode},
+	}
+	return provider
+}
+
+// TestRender_AnOwnersAttributeOfAViewPrecedesItsDialects pins where the
+// writer places an attribute an owner adds to a materialized view: after the
+// directive's own attributes and before its dialects, and the source reads
+// back to the same setting through the same owner.
+func TestRender_AnOwnersAttributeOfAViewPrecedesItsDialects(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(shadingProvider()))
+	db := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "hourly", Body: "SELECT 1", Comment: "by hour",
+		Dialects: []string{"postgres"}, Facets: must.Must(schemaext.NewFacets(&shade{Name: "teal"}))}}}
+
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: runtime.Annotations(), SingleFile: true})
+	c.Assert(err, qt.IsNil)
+	parsed, err := goschema.ParseSource(runtime.Annotations(), files[0].Name, files[0].Data)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(files[0].Data), qt.Contains,
+		`//ptah:schema:matview name="hourly" body="SELECT 1" comment="by hour" shade="teal" dialects="postgres"`+"\n")
+	c.Assert(parsed.MaterializedViews[0].Facets, qt.DeepEquals, db.MaterializedViews[0].Facets)
+}
+
+// TestRender_RefusesAnOwnersAttributeWhereTheWriterPlacesNone pins that an
+// attribute an owner adds to a declaration the writer has no place for is
+// refused rather than left out.
+func TestRender_RefusesAnOwnersAttributeWhereTheWriterPlacesNone(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(shadingProvider()))
+	db := &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Room", Name: "rooms",
+		Facets: must.Must(schemaext.NewFacets(&shade{Name: "teal"}))}}}
+
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: runtime.Annotations(), SingleFile: true})
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `.*an owner wrote attributes of table "rooms", where the writer places none`)
+	c.Assert(files, qt.IsNil)
+}
+
+// TestRender_OwnersPoliciesFollowTheTablesOwn pins the order beside a table:
+// the table's own row-level security policies, then the owners' policies in
+// the order of the owners' names, the ClickHouse owner's row policy before
+// the SQL Server owner's security policy.
+func TestRender_OwnersPoliciesFollowTheTablesOwn(t *testing.T) {
+	c := qt.New(t)
+	security := must.Must(mssqlschema.DesiredSecurityPolicyObject(mssqlschema.SecurityPolicyRef("rls", "tenancy"), mssqlschema.DesiredSecurityPolicy{
+		Predicates: []mssqlschema.Predicate{{Type: mssqlschema.Filter, Function: mssqlschema.ObjectName{Schema: "rls", Name: "fn"},
+			Arguments: []string{"tenant_id"}, Table: mssqlschema.ObjectName{Schema: "dbo", Name: "orders"}}}}))
+	security.Targets = []string{"sqlserver"}
+	db := &schemamodel.Database{
+		Tables:      []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{StructName: "Order", Name: "common", Table: "orders", UsingExpression: "true"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(security,
+			must.Must(chschema.DesiredRowPolicyObject(chschema.RowPolicyRef("", "orders", "tenant"), chschema.DesiredRowPolicy{})))),
+	}
+
+	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(files[0].Data), qt.Contains, `//ptah:schema:rls:policy name="common" table="orders" using="true"
+//ptah:schema:rowpolicy name="tenant" table="orders"
+//ptah:schema:rls:policy name="rls.tenancy" table="orders" using="[rls].[fn](tenant_id)" dialects="sqlserver"
+//ptah:schema:table name="orders"
+`)
 }

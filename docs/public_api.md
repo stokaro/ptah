@@ -343,6 +343,16 @@ models, models without an encoder, and a model the extension does not declare.
   directive whose targets route it elsewhere. It also refuses an unknown
   placement, a table the schema does not declare, an attribute without a name
   or written twice, and the dialects attribute, which `Targets` writes.
+- The encoder also returns `SlotAttributes`: attributes it adds to a
+  declaration of the frontend's own that it was handed, such as a
+  materialized view's refresh schedule. The writer writes them after the
+  directive's own attributes and before its dialects attribute. `Set.Encode`
+  refuses attributes of a declaration the owner was not handed, or of one
+  twice, and an attribute the owner does not add to that directive, in a group
+  of the primary key exactly where the declaration is one. `Slot.String` names
+  a declaration in these refusals.
+- `AfterPolicies` places a directive beside a table, after the table's own
+  row-level security policies, such as a ClickHouse row policy.
 - The writer reports no losses. A value an owner cannot write is the owner's
   to refuse with an error, which refuses the export.
 - `Table.QualifiedName` is the spelling a `table` attribute names a table by,
@@ -1362,8 +1372,15 @@ The ClickHouse provider registers the row policy services, and row policies
 are the owner's alone. `chsource.Annotations` adds the Go directive
 `chsource.RowPolicyDirective` (`//ptah:schema:rowpolicy`), whose policies are
 bound to the clickhouse target, and `chsource.RowPolicyCoverage` is the claim a
-desired source that declares them makes. A YAML `rls_policies` entry scoped to
-ClickHouse is one too, and `chsource.YAML` makes the same claim on a YAML
+desired source that declares them makes.
+
+The extension's encoder writes each policy beside the table it filters and
+each refresh schedule as the view's `refresh` attribute. It refuses a policy
+on a table the schema does not declare, and a schedule or a policy a read
+could not describe.
+
+A YAML `rls_policies` entry scoped to
+ClickHouse declares a row policy too, and `chsource.YAML` makes the same claim on a YAML
 document. The ClickHouse reader reports each policy on a table of
 the database as an `ObservedRowPolicy`, and a read the account may not make as
 uninspected. A shared row-level security declaration or diff entry is refused

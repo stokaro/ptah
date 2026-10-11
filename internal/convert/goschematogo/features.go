@@ -11,7 +11,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -134,9 +133,6 @@ func (ctx *renderContext) captureFeatureObject(object schemaext.Object, parents 
 	}
 	if policy, ok := object.Value.(*mssqlschema.DesiredSecurityPolicy); ok {
 		return ctx.captureSecurityPolicy(object, policy)
-	}
-	if policy, ok := object.Value.(*chschema.DesiredRowPolicy); ok {
-		return ctx.captureRowPolicy(object, policy)
 	}
 	if node, ok := object.Value.(*ydbcoordination.Desired); ok {
 		if err := ydbcoordination.ValidateRef(object.Ref); err != nil {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	annotationext "ptah.run/core/annotation"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
@@ -56,6 +57,33 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 		}
 		ctx.ownerDirectives[place] = append(ctx.ownerDirectives[place],
 			annotation(directive.Directive, append(attrs, dialectsAttr(directive.Targets))...))
+	}
+	// Set.Encode has checked that each attribute is one its owner adds to the
+	// directive. The writer places them on a materialized view alone.
+	ctx.ownerAttributes = make(map[annotationext.Slot][]attr)
+	for _, slot := range encoded.Attributes {
+		if slot.Slot.Directive != matviewDirective {
+			return fmt.Errorf("%w: an owner wrote attributes of %s, where the writer places none", schemaext.ErrInvalidValue, slot.Slot)
+		}
+		for _, attribute := range slot.Attributes {
+			ctx.ownerAttributes[slot.Slot] = append(ctx.ownerAttributes[slot.Slot], attr{name: attribute.Name, value: attribute.Value, set: true})
+		}
+	}
+	return nil
+}
+
+// validateMaterializedViewFacets refuses a materialized view setting no
+// selected owner writes. The matview directive carries only the attributes an
+// owner adds to it, such as a ClickHouse refresh schedule, and the owner
+// writes, or refuses, the settings of its models.
+func validateMaterializedViewFacets(views []schemamodel.MaterializedView, owners annotationext.Set) error {
+	for _, view := range views {
+		for _, kind := range view.Facets.DeclaredKinds() {
+			if !owners.Encodes(kind) {
+				return fmt.Errorf("%w: materialized view %q carries setting %q, which a Go annotation cannot represent",
+					ptaherr.ErrUnsupportedFeature, view.Name, kind)
+			}
+		}
 	}
 	return nil
 }

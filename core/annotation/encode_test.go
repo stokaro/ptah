@@ -156,6 +156,8 @@ func TestSet_Encode_FailurePath(t *testing.T) {
 			wantErr: `.*placed directive "ptah:schema:level" at a table the schema does not declare`},
 		{name: "a table the schema does not declare", directive: directive("ptah:schema:level", annotation.AfterTable, &other),
 			wantErr: `.*placed directive "ptah:schema:level" at a table the schema does not declare`},
+		{name: "a policy without a table", directive: directive("ptah:schema:level", annotation.AfterPolicies, nil),
+			wantErr: `.*placed directive "ptah:schema:level" at a table the schema does not declare`},
 		{name: "a table on a directive of the standalone objects", directive: directive("ptah:schema:level", annotation.AfterPrivileges, &table),
 			wantErr: `.*placed directive "ptah:schema:level" at after-privileges with a table`},
 		{name: "an attribute without a name", directive: directive("ptah:schema:level", annotation.AfterSchemas, nil, annotation.EncodedAttribute{Name: ""}),
@@ -285,6 +287,111 @@ func TestTable_QualifiedName(t *testing.T) {
 
 			c.Assert(got, qt.Equals, test.want)
 			c.Assert([]string{schema, name}, qt.DeepEquals, []string{test.table.Schema, test.table.Name})
+		})
+	}
+}
+
+// attributing is a levels extension that adds the level attribute to the
+// table directive and key_level to its primary key, and whose encoder
+// writes result.
+func attributing(handed *[]annotation.EncodeRequest, result annotation.EncodeResult) annotation.Extension {
+	extension := encoding("example.org/levels", "ptah:schema:level", []schemaext.Kind{levelKind}, handed, result)
+	decode := func(map[string]string) (schemaext.Facets, error) { return schemaext.Facets{}, nil }
+	extension.Attributes = []annotation.DirectiveAttributes{
+		{Directive: "ptah:schema:table", Attributes: []annotation.Attribute{{Name: "level"}}, Decode: decode},
+		{Directive: "ptah:schema:table", Attributes: []annotation.Attribute{{Name: "key_level"}}, Decode: decode, PrimaryKey: true},
+	}
+	return extension
+}
+
+func TestSet_Encode_SlotAttributes_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	var handed []annotation.EncodeRequest
+	rooms := annotation.Table{Name: "rooms", Struct: "Room"}
+	table := annotation.Slot{Directive: "ptah:schema:table", Table: rooms}
+	key := annotation.Slot{Directive: "ptah:schema:table", Table: rooms, PrimaryKey: true}
+	written := []annotation.SlotAttributes{
+		{Slot: table, Attributes: []annotation.EncodedAttribute{{Name: "level", Value: "high"}}},
+		{Slot: key, Attributes: []annotation.EncodedAttribute{{Name: "key_level", Value: "low"}}},
+	}
+	set := must.Must(annotation.NewSet(attributing(&handed, annotation.EncodeResult{Attributes: written})))
+	levels := must.Must(schemaext.NewFacets(&level{Value: "high"}))
+
+	result, err := set.Encode(c.Context(), annotation.EncodeRequest{Tables: annotation.Tables{rooms},
+		Slots: []annotation.SlotFacets{{Slot: table, Facets: levels}, {Slot: key, Facets: levels}}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Attributes, qt.DeepEquals, written)
+}
+
+func TestSet_Encode_SlotAttributes_FailurePath(t *testing.T) {
+	rooms := annotation.Table{Name: "rooms", Struct: "Room"}
+	table := annotation.Slot{Directive: "ptah:schema:table", Table: rooms}
+	key := annotation.Slot{Directive: "ptah:schema:table", Table: rooms, PrimaryKey: true}
+	halls := annotation.Slot{Directive: "ptah:schema:table", Table: annotation.Table{Name: "halls", Struct: "Hall"}}
+	index := annotation.Slot{Directive: "ptah:schema:index", Table: rooms, Name: "i"}
+	levelOf := func(value string) []annotation.EncodedAttribute {
+		return []annotation.EncodedAttribute{{Name: "level", Value: value}}
+	}
+	tests := []struct {
+		name    string
+		written []annotation.SlotAttributes
+		wantErr string
+	}{
+		{name: "a declaration the owner was not handed", written: []annotation.SlotAttributes{{Slot: halls, Attributes: levelOf("high")}},
+			wantErr: `.*encoder of example.org/levels wrote attributes of table "halls", which it was not handed or wrote twice`},
+		{name: "a declaration twice", written: []annotation.SlotAttributes{{Slot: table, Attributes: levelOf("high")}, {Slot: table, Attributes: levelOf("low")}},
+			wantErr: `.*encoder of example.org/levels wrote attributes of table "rooms", which it was not handed or wrote twice`},
+		{name: "an attribute without a name", written: []annotation.SlotAttributes{{Slot: table, Attributes: []annotation.EncodedAttribute{{Name: " "}}}},
+			wantErr: `.*wrote attribute " " of table "rooms" unnamed, twice or as one it does not add`},
+		{name: "an attribute twice", written: []annotation.SlotAttributes{{Slot: table, Attributes: append(levelOf("high"), levelOf("low")...)}},
+			wantErr: `.*wrote attribute "level" of table "rooms" unnamed, twice or as one it does not add`},
+		{name: "an attribute the owner does not add", written: []annotation.SlotAttributes{{Slot: table,
+			Attributes: []annotation.EncodedAttribute{{Name: "colour", Value: "red"}}}},
+			wantErr: `.*wrote attribute "colour" of table "rooms" unnamed, twice or as one it does not add`},
+		{name: "a table attribute on an index", written: []annotation.SlotAttributes{{Slot: index, Attributes: levelOf("high")}},
+			wantErr: `.*wrote attribute "level" of index "i" of table "rooms" unnamed, twice or as one it does not add`},
+		{name: "a table attribute on the primary key", written: []annotation.SlotAttributes{{Slot: key, Attributes: levelOf("high")}},
+			wantErr: `.*wrote attribute "level" of the primary key of table "rooms" unnamed, twice or as one it does not add`},
+		{name: "a primary key attribute on the table", written: []annotation.SlotAttributes{{Slot: table,
+			Attributes: []annotation.EncodedAttribute{{Name: "key_level", Value: "low"}}}},
+			wantErr: `.*wrote attribute "key_level" of table "rooms" unnamed, twice or as one it does not add`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var handed []annotation.EncodeRequest
+			set := must.Must(annotation.NewSet(attributing(&handed, annotation.EncodeResult{Attributes: test.written})))
+			levels := must.Must(schemaext.NewFacets(&level{Value: "high"}))
+
+			result, err := set.Encode(c.Context(), annotation.EncodeRequest{Tables: annotation.Tables{rooms},
+				Slots: []annotation.SlotFacets{{Slot: table, Facets: levels}, {Slot: key, Facets: levels}, {Slot: index, Facets: levels}}})
+
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(result.Attributes, qt.IsNil)
+		})
+	}
+}
+
+func TestSlot_String(t *testing.T) {
+	rooms := annotation.Table{Schema: "app", Name: "rooms", Struct: "Room"}
+	tests := []struct {
+		name string
+		slot annotation.Slot
+		want string
+	}{
+		{name: "a table", slot: annotation.Slot{Directive: "ptah:schema:table", Table: rooms}, want: `table "app.rooms"`},
+		{name: "a primary key", slot: annotation.Slot{Directive: "ptah:schema:table", Table: rooms, PrimaryKey: true},
+			want: `the primary key of table "app.rooms"`},
+		{name: "an index", slot: annotation.Slot{Directive: "ptah:schema:index", Table: rooms, Name: "i"}, want: `index "i" of table "app.rooms"`},
+		{name: "a materialized view", slot: annotation.Slot{Directive: "ptah:schema:matview", Name: "hourly"}, want: `matview "hourly"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.slot.String(), qt.Equals, test.want)
 		})
 	}
 }
