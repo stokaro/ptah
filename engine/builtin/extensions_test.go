@@ -48,6 +48,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/astrouteguard"
@@ -208,7 +209,8 @@ func mysqlReplaceIndexFixture() extensionFixture {
 
 func allExtensionFixtures() []extensionFixture {
 	return append(extensionFixtures(), mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture())
+		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
+		pgExtensionFixture(), pgExtensionCommentFixture())
 }
 
 // synonymFixture creates a synonym for a table in another database.
@@ -259,6 +261,16 @@ func tableStateFixture() extensionFixture {
 		Before: &pgpolicy.ObservedTableState{Forced: true}, After: &pgpolicy.DesiredTableState{Enabled: true},
 		Access: schemaext.AccessEffect{Access: schemaext.AccessNarrows, Reason: "enabling row security hides every row no policy admits"}}},
 		wantSQL: "ALTER TABLE \"app\".\"orders\" ENABLE ROW LEVEL SECURITY;\nALTER TABLE \"app\".\"orders\" NO FORCE ROW LEVEL SECURITY;\n"}
+}
+
+func pgExtensionFixture() extensionFixture {
+	return extensionFixture{payload: &pgextension.Operation{Name: "postgis", Action: pgextension.Create, Version: "3.0", IfNotExists: true},
+		wantSQL: "CREATE EXTENSION IF NOT EXISTS \"postgis\" VERSION '3.0';\n"}
+}
+
+func pgExtensionCommentFixture() extensionFixture {
+	return extensionFixture{payload: &pgextension.CommentOperation{Name: "postgis", Comment: "it's geography"},
+		wantSQL: "COMMENT ON EXTENSION \"postgis\" IS 'it''s geography';\n"}
 }
 
 func defaultPoolFixture() extensionFixture {
@@ -504,6 +516,44 @@ func TestRowSecurityExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 	sql, err := builtin.RenderSQL("cockroachdb", &ast.ExtensionStatement{Payload: policyCommentFixture().payload})
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, "-- COCKROACHDB: policy comment tenant on app.orders is not supported by this target; skipped.\n")
+}
+
+// TestPostgreSQLExtensionOwnerRendersAndNonownersRefuse pins the extension
+// owner's payloads on the PostgreSQL family, the comment skipped where a
+// target stores none, and a refusal everywhere else.
+func TestPostgreSQLExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
+	for _, fixture := range []extensionFixture{pgExtensionFixture(), pgExtensionCommentFixture()} {
+		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
+			c := qt.New(t)
+			node := &ast.ExtensionStatement{Payload: fixture.payload}
+			for _, dialect := range []string{"postgres", "yugabytedb"} {
+				sql, err := builtin.RenderSQL(dialect, node)
+				c.Assert(err, qt.IsNil)
+				c.Assert(sql, qt.Equals, fixture.wantSQL)
+			}
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+				sql, err := builtin.RenderSQL(dialect, node)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(sql, qt.Equals, "")
+			}
+		})
+	}
+	t.Run("a target that stores no extension comment skips it", func(t *testing.T) {
+		c := qt.New(t)
+
+		sql, err := builtin.RenderSQL("cockroachdb", &ast.ExtensionStatement{Payload: pgExtensionCommentFixture().payload})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, "-- COCKROACHDB: extension comment postgis is not supported by this target; skipped.\n")
+	})
+	t.Run("a creation without a schema renders where alterations are refused", func(t *testing.T) {
+		c := qt.New(t)
+
+		sql, err := builtin.RenderSQL("cockroachdb", &ast.ExtensionStatement{Payload: pgExtensionFixture().payload})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, pgExtensionFixture().wantSQL)
+	})
 }
 
 // TestRowSecurityTableFacetsFollowTheirTable pins the lowering of a new table's

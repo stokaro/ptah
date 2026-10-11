@@ -1336,6 +1336,18 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgextension",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgextension",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgextension-extensionrender",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgextension/extensionrender",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgpolicy",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgpolicy",
