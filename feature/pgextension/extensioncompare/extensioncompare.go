@@ -72,7 +72,7 @@ func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectCompa
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	scope := comparisonScope{request: request, semantics: defaultSchemaSemantics(request.Identifiers),
-		excluded: excludedNames(request.Exclusions), needed: neededExtensions(request.DeclaredColumns)}
+		excluded: excludedNames(request.Exclusions), needed: neededExtensions(request.DeclaredColumns, request.Required)}
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
@@ -166,14 +166,21 @@ func excludedNames(exclusions []schemaext.Exclusion) map[string]bool {
 	return names
 }
 
-// neededExtensions are the extensions a declared column's type comes from.
+// neededExtensions are the extensions a declared column's type comes from,
+// and the ones a desired value requires under the common extension kind.
 // `vector(384)` declares that pgvector is needed, as a foreign key declares
-// that another table is (stokaro/ptah#2389).
-func neededExtensions(columns []schemaext.DeclaredColumn) map[string]bool {
+// that another table is (stokaro/ptah#2389), and a hypertable declares that
+// timescaledb is.
+func neededExtensions(columns []schemaext.DeclaredColumn, required []objectidentity.ID) map[string]bool {
 	needed := make(map[string]bool)
 	for _, column := range columns {
 		if extension, found := pgtypeext.ExtensionFor(column.Type); found {
 			needed[extension] = true
+		}
+	}
+	for _, ref := range required {
+		if ref.Kind == objectidentity.KindExtension {
+			needed[ref.Name.Source] = true
 		}
 	}
 	return needed

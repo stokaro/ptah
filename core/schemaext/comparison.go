@@ -44,7 +44,9 @@ type ParentState struct {
 //
 // Exclusions and DeclaredColumns are the context [ComparisonRequest] gives an
 // owner: the subjects the run's configuration leaves out, and the columns the
-// desired schema declares.
+// desired schema declares. Required is what the desired values of every owner
+// need, ordered by identity and each named once; see [Requirer]. An owner does
+// not plan the removal of an object Required names.
 type ObjectComparisonRequest struct {
 	Target            string
 	Identifiers       identifier.Semantics
@@ -58,6 +60,7 @@ type ObjectComparisonRequest struct {
 	DatabasePath      string
 	Exclusions        []Exclusion
 	DeclaredColumns   []DeclaredColumn
+	Required          []objectidentity.ID
 }
 
 // Exclusion is one subject the run's configuration leaves out of a

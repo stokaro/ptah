@@ -19,6 +19,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -32,6 +33,15 @@ const (
 	// ContinuousAggregateKind identifies one continuous aggregate.
 	ContinuousAggregateKind schemaext.Kind = "ptah.run/timescaledb/continuous-aggregate"
 )
+
+// extension is the PostgreSQL extension that holds every TimescaleDB object.
+const extension = "timescaledb"
+
+// requiresExtension names the extension under the common extension kind, so
+// the extension's owner reads the requirement without this package naming it.
+func requiresExtension() []objectidentity.ID {
+	return []objectidentity.ID{{Kind: objectidentity.KindExtension, Name: objectidentity.Part{Source: extension, Normalized: extension}}}
+}
 
 // validText refuses text a statement or a catalog cannot carry faithfully.
 func validText(field, value string) error {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
@@ -22,11 +24,30 @@ func (f conversionFunc) ConvertFeatures(ctx context.Context, request schemaext.C
 type conversionValue struct {
 	ID     schemaext.Kind
 	Number int
+	// Needs lists, space-separated, the extensions the value requires; see
+	// [conversionValue.Requires].
+	Needs string
 }
 
 func (v *conversionValue) Kind() schemaext.Kind { return v.ID }
 func (v *conversionValue) Clone() schemaext.Value {
-	return &conversionValue{ID: v.ID, Number: v.Number}
+	return &conversionValue{ID: v.ID, Number: v.Number, Needs: v.Needs}
+}
+
+// Requires names the extensions Needs lists under the common extension kind,
+// and nothing for a value that lists none.
+func (v *conversionValue) Requires() []objectidentity.ID {
+	var required []objectidentity.ID
+	for name := range strings.FieldsSeq(v.Needs) {
+		required = append(required, requiredExtension(name))
+	}
+	return required
+}
+
+// requiredExtension is the identity a requirement of the extension name
+// carries.
+func requiredExtension(name string) objectidentity.ID {
+	return objectidentity.ID{Kind: objectidentity.KindExtension, Name: objectidentity.Part{Source: name, Normalized: name}}
 }
 func (v *conversionValue) Equal(other schemaext.Value) bool {
 	w, ok := other.(*conversionValue)
