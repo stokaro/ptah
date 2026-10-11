@@ -76,6 +76,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mssql/mssqlcompare`
 - `ptah.run/dialect/mssql/mssqlconvert`
 - `ptah.run/dialect/mssql/mssqldiff`
+- `ptah.run/dialect/mssql/mssqllint`
 - `ptah.run/dialect/mssql/mssqlplan`
 - `ptah.run/dialect/mssql/mssqlprobe`
 - `ptah.run/dialect/mssql/mssqlproperty`
@@ -457,6 +458,14 @@ every reading reports its column reads as attributable. The bundled runtime
 registers it on the sqlserver target. `Language` is the language of every SQL
 Server routine, as the reader reports it.
 
+`dialect/mssql/mssqllint` is the SQL Server owner's part of what reads
+migration SQL. `Splitter` splits a migration as the lint scanner does for the
+sqlserver target and judges PolyBase's `DROP EXTERNAL TABLE` and `DROP EXTERNAL
+DATA SOURCE` as behavioral (`lintext.FactSafetyEffect`), with the reasons
+`DropExternalTableReason` and `DropExternalDataSourceReason`: neither removes
+data SQL Server stores, and both break what reads through them. The bundled
+runtime registers it on the sqlserver target.
+
 `dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
 publishes the PG and TX families and the online rules ON101 and ON103 as data,
 and `Service` checks them, rules that read the starting schema state included.
@@ -470,10 +479,11 @@ each rule names the targets it judges.
 `dialect/ydb/ydblint` is the YDB owner's part of migration lint: `Rules`
 publishes the YD family as data and `Service` checks it, reading what a table
 looks like from the directory's own history. `Splitter` reads YDB migrations as
-YQL and reports each statement's effects, and `Annotator` judges dropped
-topics, transfers, coordination nodes, streaming queries and async
-replications over the split of a run that names no dialect. The bundled
-runtime registers all four on the ydb target.
+YQL and reports each statement's effects, its safety judgment included, and
+`Annotator` judges dropped topics, transfers, coordination nodes, streaming
+queries and async replications, and those judgments, over the split of a run
+that names no dialect. The bundled runtime registers all four on the ydb
+target.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and

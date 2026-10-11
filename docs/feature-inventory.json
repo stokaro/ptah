@@ -994,6 +994,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mssql-mssqllint",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mssql/mssqllint",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mssql-mssqlplan",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mssql/mssqlplan",
