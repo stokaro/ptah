@@ -2721,10 +2721,15 @@ and `CatalogPredicate` reads one row of `sys.security_predicates`.
 
 The owner's services are registered for SQL Server in the bundled runtime. The
 Go source declares a row-level security annotation scoped to SQL Server as a
-security policy, and the SQL Server reader reports the policies a database
-holds, recording one whose predicate it cannot read as uninspected. The shared
-row-level security model holds no SQL Server policy: a shared policy or switch
-node that reaches the SQL Server renderer is named and skipped.
+security policy, and the owner's annotation encoder writes each policy back as
+those annotations beside the tables it binds. It refuses a policy the
+annotations cannot say: one turned off, not schema bound or not for
+replication, one with a BEFORE UPDATE block predicate, and one binding no
+table or a table the schema does not declare. The SQL Server reader reports
+the policies a database holds, recording one whose predicate it cannot read as
+uninspected. The shared row-level security model holds no SQL Server policy: a
+shared policy or switch node that reaches the SQL Server renderer is named and
+skipped.
 
 - `mssqlcompare` pairs policies by schema and name. It plans a creation, a drop
   or a change carrying `mssqldiff.Assess`'s access effect, and reports a pair
