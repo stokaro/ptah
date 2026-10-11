@@ -73,6 +73,13 @@ func New() (*engine.Runtime, error) {
 				Splitter: lintscan.Splitter{Dialect: name},
 			}},
 		}
+		if name == platform.YDB {
+			// YDB answers nothing it cannot hold with a skip comment, since
+			// a comment lets an apply exit 0 without the object; see the
+			// YDB renderer's dispatch table. An object an owner would skip
+			// is refused here as well.
+			provider.Targets[0].RefusesSkips = true
+		}
 		if name == platform.Postgres {
 			provider.Targets[0].Constraints = pgproject.Constraints{}
 			provider.Lint = []engine.Lint{{Rules: pglint.Rules(), Service: pglint.Service{}}}

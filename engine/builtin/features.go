@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -372,12 +371,14 @@ func validateDeclaredFacets(dialect string, database *schemamodel.Database) erro
 	return nil
 }
 
-// validateDeclaredRowSecurity refuses PostgreSQL row-level security on a
-// target the row-security owner is not registered for, before any other
+// validateDeclaredRowSecurity refuses PostgreSQL row-level security switches
+// on a target the row-security owner is not registered for, before any other
 // declaration is checked. The refusal names the declaration and the scope that
-// keeps it to the targets that host it: a policy written without one is
+// keeps it to the targets that host it: switches written without one are
 // offered to every target, and SQL Server's security policy and ClickHouse's
-// row policy are declared with their own scope.
+// row policy are declared with their own scope. A policy is refused the same
+// way before the schema reaches this validation, by the owner's off-target
+// answer ([engine.OffTargetPolicy]).
 func validateDeclaredRowSecurity(dialect string, database *schemamodel.Database) error {
 	if platform.IsPostgresFamily(dialect) {
 		if err := refuseSharedRowSecurity(dialect, database); err != nil {
@@ -393,12 +394,6 @@ func validateDeclaredRowSecurity(dialect string, database *schemamodel.Database)
 		return nil
 	}
 	var subject string
-	for _, ref := range database.FeatureObjects.Refs() {
-		if ref.Kind == objectidentity.Kind(pgpolicy.PolicyKind) {
-			subject = fmt.Sprintf("policy %q on %s", ref.Name.Source, pgpolicy.Table(ref))
-			break
-		}
-	}
 	for _, table := range database.Tables {
 		if subject == "" && slices.Contains(table.Facets.Kinds(), pgpolicy.TableStateKind) {
 			subject = fmt.Sprintf("row-level security on table %q", table.QualifiedName())

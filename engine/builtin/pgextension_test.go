@@ -109,8 +109,8 @@ func TestPostgresFamilyRendersDeclaredExtensions(t *testing.T) {
 }
 
 // TestDeclaredExtensionRefusals pins where a declared extension cannot go: an
-// installation schema on a target without one, and any target outside the
-// family, which no extension owner serves.
+// installation schema on a target of the family without one, and YDB, which
+// refuses what the owner skips elsewhere outside the family.
 func TestDeclaredExtensionRefusals(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -121,8 +121,8 @@ func TestDeclaredExtensionRefusals(t *testing.T) {
 			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
 		{name: "a schema on Spanner", target: platform.Spanner,
 			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
-		{name: "MySQL", target: platform.MySQL, want: `unsupported feature: feature objects are not registered for target "mysql"`},
-		{name: "SQLite", target: platform.SQLite, want: `unsupported feature: feature objects are not registered for target "sqlite"`},
+		{name: "YDB", target: platform.YDB, want: `PostgreSQL extension "pg_trgm" cannot be planned on ydb; scope its declaration to the ` +
+			`targets that host it, as dialects="cockroachdb,postgres,spanner,yugabytedb" does in a Go annotation`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -135,4 +135,50 @@ func TestDeclaredExtensionRefusals(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// TestOffFamilyTargetsSkipADeclaredExtension pins every target outside the
+// family that skips a declared extension, on the render and the plan: one
+// comment says so ahead of the statements, and the table is created as
+// before. A comparison that differs only in the extension has no changes.
+func TestOffFamilyTargetsSkipADeclaredExtension(t *testing.T) {
+	for _, target := range []string{platform.MySQL, platform.MariaDB, platform.SQLite, platform.ClickHouse, platform.SQLServer, platform.Oracle} {
+		t.Run(target, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			declared := docsWithTrigrams(pgextension.DesiredExtension{})
+			skipped := "-- " + strings.ToUpper(target) + `: PostgreSQL extension "pg_trgm" is not supported by this target; skipped.`
+
+			rendered, err := builtin.GetOrderedCreateStatements(declared, target)
+			c.Assert(err, qt.IsNil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, &catalog.Database{}, catalog.ServerInfo{Dialect: target}, nil, runtime)
+			c.Assert(err, qt.IsNil)
+			planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, target, planner.Options{})
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(rendered[0], qt.Equals, skipped)
+			c.Assert(strings.Join(rendered, "\n"), qt.Contains, "docs")
+			c.Assert(strings.SplitN(planned[0], "\n", 2)[0], qt.Equals, skipped)
+			c.Assert(strings.Join(planned, "\n"), qt.Contains, "docs")
+			c.Assert(diff.SkippedFeatures, qt.DeepEquals, []schemaext.SkippedObject{{Subject: pgextension.Ref("pg_trgm"),
+				Label: "PostgreSQL extension", Target: target}})
+		})
+	}
+}
+
+// TestOffFamilyTargetSkipIsNotAChange pins that an extension a target skips
+// is not a difference: against a database that holds the table, nothing
+// changes, and the skip is still reported.
+func TestOffFamilyTargetSkipIsNotAChange(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	current := &catalog.Database{Tables: []catalog.Table{{Name: "docs", Columns: []catalog.Column{{Name: "id", DataType: "int",
+		IsPrimaryKey: true}}}}}
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), docsWithTrigrams(pgextension.DesiredExtension{}), current,
+		catalog.ServerInfo{Dialect: platform.MySQL}, nil, runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
+	c.Assert(diff.SkippedFeatures, qt.HasLen, 1)
 }

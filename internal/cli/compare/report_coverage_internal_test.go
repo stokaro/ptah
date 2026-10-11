@@ -15,6 +15,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/cli/internal/diffreport"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/migration/schemadiff"
@@ -49,6 +51,7 @@ var nonCategoryFields = map[string]string{
 	"Features":                   "every owned feature object on each side and the read's coverage, carried so a YDB plan can keep the replica tables a replication owns and the tables and topics a transfer depends on. It is an input to planning rather than a difference: the differences are FeatureChanges, which the report prints",
 	"CurrentNotDescribed":        "what the read of the database declined to describe, carried so a planner that rebuilds a table can refuse to drop a setting nobody compared. It is an input to planning rather than a difference: a comparison concludes nothing about what was not described, and reporting it would print every undescribed setting as though it had changed",
 	"CurrentGrants":              "every grant the read of the database reported, carried so a plan that rebuilds a table can give the new table the grants the old one held. It is an input to planning rather than a difference: the grants that differ are the categories above, and reporting this would print every grant the database holds as though it had changed",
+	"SkippedFeatures":            "the objects the comparison left out because the target does not serve their model and their owner skips them there. They are not differences: the report writes one line for each beside its result, and the diff does not count them as changes",
 	"RLSPolicyIdentityConflicts": "two declared policies that resolve to one identity, which is a defect in the declaration rather than a difference between the two schemas; the planner refuses the diff on it, so reporting it as a change would tell the operator the databases differ when what differs is the document they wrote (stokaro/ptah#2440)",
 }
 
@@ -227,4 +230,21 @@ func diffWithOnlyCategory(field reflect.StructField) *difftypes.SchemaDiff {
 func diffCategoryJSONName(field reflect.StructField) string {
 	name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 	return name
+}
+
+// TestWriteComparisonWritesASkippedObjectBesideNoDifferences pins that an
+// object the target skipped is reported, though it is not a difference: the
+// result says the schemas agree, and the line saying what was skipped stands
+// beside it.
+func TestWriteComparisonWritesASkippedObjectBesideNoDifferences(t *testing.T) {
+	c := qt.New(t)
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	diff := &difftypes.SchemaDiff{SkippedFeatures: []schemaext.SkippedObject{{
+		Subject: objectidentity.ID{Kind: "example.org/extension", Name: objectidentity.Part{Source: "pg_trgm", Normalized: "pg_trgm"}},
+		Label:   "PostgreSQL extension", Target: "mysql"}}}
+
+	writeComparison(stdout, stderr, diff, schemadiff.Diagnostics{}, "", "mysql")
+
+	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
+	c.Assert(stderr.String(), qt.Equals, "MYSQL: PostgreSQL extension \"pg_trgm\" is not supported by this target; skipped.\n")
 }

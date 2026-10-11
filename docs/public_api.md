@@ -2655,6 +2655,24 @@ model uninspected. A record naming one object leaves each subject it names
 uninspected. A mapping onto a facet model, or onto a model the provider does
 not own, is an invalid registration.
 
+A declaration written without a target scope reaches every target, including
+ones where no owner serves its model. The owner states once, in
+`engine.Provider.OffTarget` (an `engine.OffTargetPolicy` per set of models),
+what such a target does with one of its objects: `schemaext.OffTargetSkip`
+leaves it out and reports one line, and `schemaext.OffTargetRefuse` refuses it,
+naming the targets that host the model. A target serves a model when an owner
+compares it or plans its declarations there. The runtime applies the statement
+before validation, the whole-schema render, comparison and conversion
+(`Runtime.ScopeOffTarget`, which a runtime offers as `schemaext.OffTargetScoper`).
+
+A skipped object is a `schemaext.SkippedObject`: a render writes its
+`Note` as a comment statement and an omission, a comparison returns it in
+`ComparisonResult.Skipped`, and a schema diff carries it in
+`SchemaDiff.SkippedFeatures`, which `HasChanges` does not count and a plan
+writes as a comment. `engine.Target.RefusesSkips` makes a target refuse what an
+owner would skip there. A model without a statement reaches the target's
+services as before.
+
 The constants of `core/coverage` are the common kinds. An owner that records
 state it does not model declares its own kinds, such as `ydbschema.CoverageChangefeed`
 or `spannerschema.CoverageChangeStream`, and registers the ones a document may

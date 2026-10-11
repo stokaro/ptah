@@ -127,6 +127,10 @@ func reverseSchemaDiffWithPrior(
 		EnumsRemoved:  diff.EnumsAdded,   // Enums to add become enums to remove
 		EnumsModified: reverseEnumDiffs(diff.EnumsModified, prior),
 
+		// An object the target skipped in the forward direction is skipped
+		// in the rollback too, and its down file says so the same way.
+		SkippedFeatures: slices.Clone(diff.SkippedFeatures),
+
 		// Reverse extension operations
 		ExtensionsAdded:    diff.ExtensionsRemoved, // Extensions to remove become extensions to add
 		ExtensionsRemoved:  diff.ExtensionsAdded,   // Extensions to add become extensions to remove

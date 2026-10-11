@@ -44,6 +44,11 @@ func Provider() engine.Provider {
 		// whose policy blocks the compatibility surface left out, describes
 		// none of the owner's policies either.
 		CoverageLimits: []schemaext.LimitMapping{{Header: coverage.Policy, Model: pgpolicy.PolicyKind, Names: policyNames}},
+		// A policy on a target without row security is refused, naming the
+		// scope that keeps it to the targets that have it: leaving access
+		// control out in silence would leave the rows readable.
+		OffTarget: []engine.OffTargetPolicy{{Kinds: []schemaext.Kind{pgpolicy.PolicyKind}, Action: schemaext.OffTargetRefuse,
+			Label: "PostgreSQL policy"}},
 	}
 	models := []schemaext.Kind{pgpolicy.PolicyKind, pgpolicy.TableStateKind}
 	changes := []schemaext.Kind{pgpolicy.PolicyChangeKind, pgpolicy.TableStateChangeKind}

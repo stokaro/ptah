@@ -567,7 +567,22 @@ func GenerateSchemaDiffASTWithOptions(
 	if err := ctx.Err(); err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
-	return nodes, nil
+	return append(skippedComments(diff), nodes...), nil
+}
+
+// skippedComments writes one comment ahead of the plan for each object the
+// comparison left out because the target does not serve its model and its
+// owner answers [schemaext.OffTargetSkip], as the whole-schema render does:
+// the plan has nothing to run for it, and a reader is told why.
+func skippedComments(diff *difftypes.SchemaDiff) []ast.Node {
+	if diff == nil || len(diff.SkippedFeatures) == 0 {
+		return nil
+	}
+	comments := make([]ast.Node, 0, len(diff.SkippedFeatures))
+	for _, object := range diff.SkippedFeatures {
+		comments = append(comments, ast.NewComment(strings.ToUpper(object.Target)+": "+object.Note()))
+	}
+	return comments
 }
 
 // requireIsolatedOwnerOperations refuses a plan in which an owner operation

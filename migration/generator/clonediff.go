@@ -29,6 +29,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
 	clone.ExtensionsModified = slices.Clone(diff.ExtensionsModified)
+	clone.SkippedFeatures = slices.Clone(diff.SkippedFeatures)
 	clone.FunctionsAdded = slices.Clone(diff.FunctionsAdded)
 	clone.FunctionsRemoved = slices.Clone(diff.FunctionsRemoved)
 	clone.FunctionsModified = slices.Clone(diff.FunctionsModified)

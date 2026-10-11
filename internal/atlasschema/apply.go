@@ -440,6 +440,12 @@ func computeApplyPlan(
 	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
+	// A skipped object is not a change, so a plan with nothing else to run
+	// has no statement to carry its comment; the line goes beside the
+	// result instead, so "synced" never stands alone over it.
+	if !diff.HasChanges() {
+		reportSkipped(opts.Diagnostics, diff.SkippedFeatures)
+	}
 	if diff.HasChanges() {
 		planOptions := planner.Options{
 			Capabilities:         info.Capabilities,
@@ -1152,4 +1158,16 @@ func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor
 		}
 	}
 	return nil
+}
+
+// reportSkipped writes one line for each object the comparison left out
+// because the target does not serve its model and its owner skips it there,
+// as a plan writes it.
+func reportSkipped(diagnostics io.Writer, skipped []schemaext.SkippedObject) {
+	if diagnostics == nil {
+		return
+	}
+	for _, object := range skipped {
+		_, _ = fmt.Fprintln(diagnostics, strings.ToUpper(object.Target)+": "+object.Note())
+	}
 }
