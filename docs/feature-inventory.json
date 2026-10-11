@@ -1270,6 +1270,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-ydb-ydblint",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydblint",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-ydb-ydbplan",
       "kind": "public-package",
       "surface": "ptah.run/dialect/ydb/ydbplan",

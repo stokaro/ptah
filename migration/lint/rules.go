@@ -102,7 +102,6 @@ func builtinRules() []Rule {
 	rules = append(rules, injectionRules()...)
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, atlasGapRules()...)
-	rules = append(rules, ydbRules()...)
 	return rules
 }
 
@@ -267,7 +266,7 @@ func tableDroppedRule() Rule {
 					created[ref] = true
 					continue
 				}
-				if rebuilds.drops[i] {
+				if rebuilds.Drops[i] {
 					continue
 				}
 				if ref, isReplace := replacedTableRef(stmt.Words, stmt.sourceWords); isReplace {
@@ -280,7 +279,7 @@ func tableDroppedRule() Rule {
 				if !lintkit.HasWordPrefix(stmt.Words, "DROP", "TABLE") {
 					continue
 				}
-				unsafeTables, complete := droppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
+				unsafeTables, complete := lintkit.DroppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
 				if complete && len(unsafeTables) == 0 {
 					continue
 				}
@@ -915,7 +914,7 @@ func databaseObjectDroppedRule() Rule {
 		Title:    "database object dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !scanDestructiveObjectDrop(stmt.Words) && !scanPrincipalDrop(stmt.Words, stmt.Target) {
+			if !scanDestructiveObjectDrop(stmt.Words) && !stmt.hasEffect(lintext.FactStatefulDrop) && !scanPrincipalDrop(stmt.Words, stmt.Target) {
 				return false, ""
 			}
 			return true, "dropping a database object removes existing schema behavior, principals or data; verify all dependent code and data paths are retired first"
@@ -1391,6 +1390,10 @@ func scanEnumValueRemoval(w []string) bool {
 	return lintkit.HasWordPrefix(w, "ALTER", "TYPE") && lintkit.HasWordSeq(w, "DROP", "VALUE")
 }
 
+// scanDestructiveObjectDrop reports a DROP of an object kind every dialect
+// that has it spells alike. A drop that loses state only one engine's objects
+// hold -- a YDB topic's messages, say -- is that engine's owner's to
+// recognize, and reaches DS107 as a [lintext.FactStatefulDrop] effect.
 func scanDestructiveObjectDrop(w []string) bool {
 	if len(w) < 2 || w[0] != "DROP" {
 		return false
@@ -1399,28 +1402,8 @@ func scanDestructiveObjectDrop(w []string) bool {
 	// PROCEDURE and TRIGGER are here for the reason FUNCTION is: dropping one
 	// removes behavior a caller depends on, and this is the family that decides
 	// whether an apply proceeds (stokaro/ptah#2358).
-	// TOPIC is YDB's: dropping one drops every message it holds and every
-	// consumer's position in it.
-	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA", "TOPIC":
+	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA":
 		return true
-	// TRANSFER and ASYNC REPLICATION are YDB's. Dropping a transfer stops it
-	// and drops the topic consumer YDB created for it, with its position; an
-	// async replication dropped with CASCADE drops its replica tables, and one
-	// dropped without it is YD115's question.
-	case "TRANSFER":
-		return true
-	case "ASYNC":
-		return len(w) > 2 && w[2] == "REPLICATION" && w[len(w)-1] == "CASCADE"
-	// A coordination node is YDB's too, dropped through Ptah's own statement
-	// (see dialect/ydb/ydbcoordination). Measured on 26.2.1.14 and 25.1.4.7:
-	// DropNode succeeds while a session holds a semaphore on the node, the
-	// holder's session and lease end about five seconds later, and a node
-	// created again under the same path holds none of the persistent
-	// semaphores the dropped one held. Its rate limiter resources go with it.
-	case "COORDINATION":
-		return len(w) > 2 && w[2] == "NODE"
-	case "STREAMING":
-		return len(w) > 2 && w[2] == "QUERY"
 	default:
 		return false
 	}
@@ -1435,38 +1418,6 @@ func scanPrincipalDrop(w []string, target Target) bool {
 		return false
 	}
 	return w[1] == "USER" || w[1] == "GROUP"
-}
-
-// droppedTablesNotCreated returns tables that were not created earlier in the
-// same file and whether every target was parsed. An incomplete parse must remain
-// destructive because treating an unknown target as safe would be fail-open.
-func droppedTablesNotCreated(
-	w,
-	sourceWords []string,
-	created map[string]bool,
-) ([]lintkit.TableReference, bool) {
-	var unsafe []lintkit.TableReference
-	j := lintkit.SkipIfExists(w, 2)
-	for {
-		if j < len(w) && w[j] == "ONLY" {
-			j++
-		}
-		ref, next := lintkit.TableRefAt(w, sourceWords, j)
-		if ref.Normalized == "" {
-			return unsafe, false
-		}
-		if !lintkit.RefersToCreated(created, ref.Normalized) {
-			unsafe = append(unsafe, ref)
-		}
-		if next < len(w) && w[next] == "*" {
-			next++
-		}
-		if next < len(w) && w[next] == "," {
-			j = next + 1
-			continue
-		}
-		return unsafe, true
-	}
 }
 
 // Describe renders one finding as a single human-readable line naming the

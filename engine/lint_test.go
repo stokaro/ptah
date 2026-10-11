@@ -149,6 +149,8 @@ func TestNew_LintFailurePath(t *testing.T) {
 		}, `.*lint rule XY101 is published by "example.org/one" and "example.org/two"`},
 		{"a typed-nil splitter", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha", Splitter: (*upperSplitter)(nil)}}}},
 			`.*target "alpha" has a typed-nil statement splitter service`},
+		{"a typed-nil annotator", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha", Annotator: (*wordAnnotator)(nil)}}}},
+			`.*target "alpha" has a typed-nil statement annotator service`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -339,6 +341,112 @@ func TestRuntime_SplitStatements_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, test.wantIs)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(result, qt.DeepEquals, lintext.SplitResult{})
+		})
+	}
+}
+
+// wordAnnotator reports effects for every statement whose first word is
+// word, declines every statement whose first word is decline, and counts its
+// calls.
+type wordAnnotator struct {
+	word, decline string
+	calls         *int
+	effects       []lintext.Effect
+}
+
+func (a *wordAnnotator) AnnotateStatements(_ context.Context, request lintext.AnnotateRequest) (lintext.AnnotateResult, error) {
+	*a.calls++
+	result := lintext.AnnotateResult{Files: make([][]lintext.Annotation, len(request.Files))}
+	for i, statements := range request.Files {
+		result.Files[i] = make([]lintext.Annotation, len(statements))
+		for j, statement := range statements {
+			first := strings.Fields(statement.SQL)[0]
+			result.Files[i][j].Declined = first == a.decline
+			result.Files[i][j].Effects = map[bool][]lintext.Effect{true: a.effects}[first == a.word]
+		}
+	}
+	return result, nil
+}
+
+// annotatedRuntime holds targets beta and alpha (alias a), each annotating
+// with its own annotator, and gamma, which annotates nothing.
+func annotatedRuntime(c *qt.C, alpha, beta lintext.Annotator) *engine.Runtime {
+	c.Helper()
+	return must.Must(engine.New(engine.Provider{ID: "example.org/one", Targets: []engine.Target{
+		{Name: "beta", Annotator: beta}, {Name: "alpha", Aliases: []string{"a"}, Annotator: alpha}, {Name: "gamma"},
+	}}))
+}
+
+// annotateRequest asks about stateful drops over two files.
+func annotateRequest() lintext.AnnotateRequest {
+	return lintext.AnnotateRequest{Facts: []lintext.Fact{lintext.FactStatefulDrop},
+		Sources: []lintext.Source{{Name: "1.up.sql", SQL: "x"}, {Name: "2.up.sql", SQL: "y"}},
+		Files: [][]lintext.Statement{
+			{{Start: 0, End: 1, Line: 1, SQL: "topic t"}, {Start: 2, End: 3, Line: 2, SQL: "transfer u"}},
+			{{Start: 0, End: 1, Line: 1, SQL: "select 1"}},
+		}}
+}
+
+// AnnotateStatements asks each annotating target once, in name order, and
+// joins the answers: every effect, and every declined statement with the
+// target that declined it.
+func TestRuntime_AnnotateStatements_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	alpha := &wordAnnotator{word: "topic", decline: "select", calls: new(0),
+		effects: []lintext.Effect{{Fact: lintext.FactStatefulDrop, Object: "alpha"}}}
+	beta := &wordAnnotator{word: "topic", decline: "transfer", calls: new(0),
+		effects: []lintext.Effect{{Fact: lintext.FactStatefulDrop, Object: "beta"}}}
+
+	result, err := annotatedRuntime(c, alpha, beta).AnnotateStatements(t.Context(), annotateRequest())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, lintext.AnnotateResult{
+		Files: [][]lintext.Annotation{
+			{{Effects: []lintext.Effect{{Fact: lintext.FactStatefulDrop, Object: "alpha"}, {Fact: lintext.FactStatefulDrop, Object: "beta"}}},
+				{Declined: true}},
+			{{Declined: true}},
+		},
+		Declined: []lintext.Declined{{Target: "alpha", File: 1, Statement: 0}, {Target: "beta", File: 0, Statement: 1}},
+	})
+	c.Assert([]int{*alpha.calls, *beta.calls}, qt.DeepEquals, []int{1, 1})
+}
+
+// A runtime with no annotator answers every statement with nothing.
+func TestRuntime_AnnotateStatements_NoAnnotator(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(engine.New(engine.Provider{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha"}}}))
+
+	result, err := runtime.AnnotateStatements(t.Context(), annotateRequest())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, lintext.AnnotateResult{Files: [][]lintext.Annotation{{{}, {}}, {{}}}})
+}
+
+func TestRuntime_AnnotateStatements_FailurePath(t *testing.T) {
+	unpaired := annotateRequest()
+	unpaired.Sources = unpaired.Sources[:1]
+	for _, test := range []struct {
+		name    string
+		ctx     context.Context
+		request lintext.AnnotateRequest
+		beta    *wordAnnotator
+		wantErr string
+	}{
+		{name: "no context", request: annotateRequest(), beta: &wordAnnotator{calls: new(0)}, wantErr: `.*annotating requires a context`},
+		{name: "statements without their source", ctx: context.Background(), request: unpaired,
+			beta: &wordAnnotator{calls: new(0)}, wantErr: `.*an annotation request holds 1 sources and 2 statement lists`},
+		{name: "an effect the request did not ask about", ctx: context.Background(), request: annotateRequest(),
+			beta:    &wordAnnotator{word: "topic", calls: new(0), effects: []lintext.Effect{{Fact: lintext.FactUniqueIndex}}},
+			wantErr: `statement annotator of "example.org/one": .*statement 0 of file 0 reports "unique-index", which the request did not ask about`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := annotatedRuntime(c, &wordAnnotator{calls: new(0)}, test.beta).AnnotateStatements(test.ctx, test.request)
+
+			c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(result, qt.DeepEquals, lintext.AnnotateResult{})
 		})
 	}
 }

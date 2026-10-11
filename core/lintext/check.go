@@ -36,6 +36,9 @@ type File struct {
 	HasPair bool `json:"has_pair,omitempty"`
 	// NoTransaction reports that the file runs outside a transaction.
 	NoTransaction bool `json:"no_transaction,omitempty"`
+	// Repeatable reports a repeatable migration rather than an ordered
+	// version.
+	Repeatable bool `json:"repeatable,omitempty"`
 	// Statements are the file's statements, split by the target's owner, or
 	// by the host where the run names no target. A statement's Line counts
 	// the lines of the file as written, which differ from the lines of the

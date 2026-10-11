@@ -2217,7 +2217,11 @@ runs with an effect the statement does not state:
 
 `DS107` reports a dropped user or group as it reports a dropped role
 elsewhere, a dropped topic or coordination node, a dropped transfer and an
-async replication dropped with `CASCADE`.
+async replication dropped with `CASCADE`. A run without `--dialect` reports
+these drops too: the YDB owner reads each file again as YQL and judges them
+itself. Where YQL splits a statement's text differently, for example because
+it reads a backslash inside a string as an escape, the owner does not guess,
+and the run names that statement on stderr as one it did not judge.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 

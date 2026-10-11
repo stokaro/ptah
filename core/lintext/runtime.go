@@ -16,6 +16,13 @@ type Runtime interface {
 	// ptaherr.ErrUnsupportedDialect, and a reply that does not answer the
 	// request wraps [ErrInvalid].
 	SplitStatements(ctx context.Context, request SplitRequest) (SplitResult, error)
+	// AnnotateStatements asks every target that registers an [Annotator]
+	// for the facts of statements the host split, one call per annotator,
+	// and joins the answers: each statement's effects from every annotator,
+	// and every declined statement with its target. A request whose sources
+	// and statement lists do not pair up, and a reply that does not answer
+	// its request, wrap [ErrInvalid].
+	AnnotateStatements(ctx context.Context, request AnnotateRequest) (AnnotateResult, error)
 	// CheckMigrations sends the request's codes to the owners that publish
 	// them, one call per owner, and joins their findings, sorted by file,
 	// statement and code, and their baseline subjects, sorted by file and

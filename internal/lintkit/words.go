@@ -618,3 +618,35 @@ func ColumnConstraintWord(word string) bool {
 		return false
 	}
 }
+
+// DroppedTablesNotCreated returns tables that were not created earlier in the
+// same file and whether every target was parsed. An incomplete parse must remain
+// destructive because treating an unknown target as safe would be fail-open.
+func DroppedTablesNotCreated(
+	w,
+	sourceWords []string,
+	created map[string]bool,
+) ([]TableReference, bool) {
+	var unsafe []TableReference
+	j := SkipIfExists(w, 2)
+	for {
+		if j < len(w) && w[j] == "ONLY" {
+			j++
+		}
+		ref, next := TableRefAt(w, sourceWords, j)
+		if ref.Normalized == "" {
+			return unsafe, false
+		}
+		if !RefersToCreated(created, ref.Normalized) {
+			unsafe = append(unsafe, ref)
+		}
+		if next < len(w) && w[next] == "*" {
+			next++
+		}
+		if next < len(w) && w[next] == "," {
+			j = next + 1
+			continue
+		}
+		return unsafe, true
+	}
+}

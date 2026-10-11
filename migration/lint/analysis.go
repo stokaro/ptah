@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/fsnapshot"
@@ -150,6 +150,14 @@ type Statement struct {
 	Target          Target
 	sourceWords     []string
 	suppressedRules []atlaslint.Target
+	// effects are the facts the statement's owner reported about it; see
+	// [lintext.Effect].
+	effects []lintext.Effect
+}
+
+// hasEffect reports whether the statement's owner reported fact about it.
+func (s *Statement) hasEffect(fact lintext.Fact) bool {
+	return slices.ContainsFunc(s.effects, func(effect lintext.Effect) bool { return effect.Fact == fact })
 }
 
 // File is one migration file prepared for linting.
@@ -255,10 +263,6 @@ type File struct {
 	baseline lintkit.State
 	// dependents is what reads each column in that same starting state.
 	dependents baselineDependents
-	// ydbBefore is the YDB schema the directory's own up migrations leave
-	// before this file runs, for the YD rules that read it; see
-	// [ydbHistory]. It is nil on every other dialect.
-	ydbBefore *ydbSchema
 	// split reports a file whose SQL is split into statements: an up or a
 	// down file. lineOffset is the line of Source its SQL starts on, which a
 	// statement's line in the SQL is moved by.
@@ -268,6 +272,9 @@ type File struct {
 	// line moved by lineOffset: what a check request carries, and what the
 	// recognizers this package shares with the owners take.
 	contract []lintext.Statement
+	// judged are the facts the run's split judged for every statement: for
+	// those, a statement's effects are the whole answer.
+	judged []lintext.Fact
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -292,6 +299,7 @@ type Analysis struct {
 	snapshot         fsnapshot.Snapshot
 	baselineVersions []int64
 	unmetInputs      []UnmetInput
+	unjudged         []UnjudgedStatement
 	target           Target
 }
 
@@ -349,6 +357,30 @@ func (a Analysis) UnmetInputs() []UnmetInput {
 	return slices.Clone(a.unmetInputs)
 }
 
+// UnjudgedStatements returns the statements of the selected files an engine
+// owner declined to judge on a run that names no dialect, in file and line
+// order.
+//
+// Such a run splits with a scanner that knows no dialect, and asks every
+// owner for the facts only it recognizes, such as a drop that loses state a
+// new object does not get back. An owner whose own lexing would split a text
+// differently declines it rather than guess, so a rule reading those facts
+// knows nothing about the statement. That is a gap in the analysis, not a
+// clean statement, and naming it is how it stays visible.
+func (a Analysis) UnjudgedStatements() []UnjudgedStatement {
+	return slices.Clone(a.unjudged)
+}
+
+// UnjudgedStatement is one statement an engine owner declined to judge.
+type UnjudgedStatement struct {
+	// Target is the target whose owner declined.
+	Target string
+	// File is the migration file as findings name it, and Line the line of
+	// the statement's first token.
+	File string
+	Line int
+}
+
 // SnapshotFS returns a read-only filesystem containing the SQL sources,
 // integrity files, and lint configuration captured for this analysis. Each call
 // returns an independent snapshot view.
@@ -370,6 +402,7 @@ func cloneFile(file File) File {
 	file.Changes = slices.Clone(file.Changes)
 	file.scopeExcluded = maps.Clone(file.scopeExcluded)
 	file.contract = slices.Clone(file.contract)
+	file.judged = slices.Clone(file.judged)
 	statements := file.Statements
 	file.Statements = make([]Statement, len(statements))
 	for i := range statements {
@@ -382,6 +415,7 @@ func cloneStatement(statement Statement) Statement {
 	statement.Target = statement.Target.clone()
 	statement.Words = slices.Clone(statement.Words)
 	statement.sourceWords = slices.Clone(statement.sourceWords)
+	statement.effects = slices.Clone(statement.effects)
 	statement.suppressedRules = slices.Clone(statement.suppressedRules)
 	return statement
 }
@@ -521,9 +555,6 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	}
 	withOwners(files, runtime.SQL())
 	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope)
-	if opts.Dialect == platform.YDB {
-		ydbHistory(files)
-	}
 	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
 	if err != nil {
 		return Analysis{}, err
@@ -554,6 +585,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		snapshot:         snapshot,
 		baselineVersions: baselineVersions(files, opts, rules),
 		unmetInputs:      unmetInputs(files, opts, rules),
+		unjudged:         unjudgedStatements(files, split),
 		target:           target,
 	}, nil
 }
@@ -774,14 +806,29 @@ func prepareFile(
 	return file, nil
 }
 
+// splitOutcome is a run's split: each file's statements, the facts the split
+// judged for every statement, and the statements an owner declined to judge.
+type splitOutcome struct {
+	files    [][]lintext.Statement
+	judged   []lintext.Fact
+	declined []lintext.Declined
+}
+
+// hybridFacts are the facts a run that names no target asks the owners about
+// over the dialect-blind split: the ones such a run reported before the owners
+// recognized them, so it reports what it did.
+var hybridFacts = []lintext.Fact{lintext.FactStatefulDrop}
+
 // splitFiles splits the SQL of every file that holds statements in one
 // call: by the run's target's owner where the run names a target, and by the
-// dialect-blind scanner where it names none.
-func splitFiles(ctx context.Context, runtime lintext.Runtime, dialect string, files []File) ([][]lintext.Statement, error) {
+// dialect-blind scanner where it names none, whose statements every owner
+// then annotates in one call.
+func splitFiles(ctx context.Context, runtime lintext.Runtime, dialect string, files []File) (splitOutcome, error) {
 	var sources []lintext.Source
 	for _, file := range files {
 		if file.split {
-			sources = append(sources, lintext.Source{Name: file.Name, SQL: file.SQL})
+			sources = append(sources, lintext.Source{Name: file.Name, SQL: file.SQL, Version: file.Version, Up: file.IsUp,
+				Down: file.IsDown, Repeatable: file.Repeatable})
 		}
 	}
 	if dialect == "" {
@@ -789,13 +836,45 @@ func splitFiles(ctx context.Context, runtime lintext.Runtime, dialect string, fi
 		for _, source := range sources {
 			split = append(split, lintscan.Split(source.SQL, lintscan.ForDialect("")))
 		}
-		return split, nil
+		annotated, err := runtime.AnnotateStatements(ctx, lintext.AnnotateRequest{Facts: hybridFacts, Sources: sources, Files: split})
+		if err != nil {
+			return splitOutcome{}, fmt.Errorf("annotate the statements: %w", err)
+		}
+		for i := range split {
+			for j := range split[i] {
+				split[i][j].Effects = annotated.Files[i][j].Effects
+			}
+		}
+		return splitOutcome{files: split, declined: annotated.Declined}, nil
 	}
 	result, err := runtime.SplitStatements(ctx, lintext.SplitRequest{Target: dialect, Sources: sources})
 	if err != nil {
-		return nil, fmt.Errorf("split the statements for %s: %w", dialect, err)
+		return splitOutcome{}, fmt.Errorf("split the statements for %s: %w", dialect, err)
 	}
-	return result.Files, nil
+	return splitOutcome{files: result.Files, judged: result.Judged}, nil
+}
+
+// unjudgedStatements are the declined statements of the selected files, in
+// file and line order.
+func unjudgedStatements(files []File, split splitOutcome) []UnjudgedStatement {
+	var splitFiles []*File
+	for i := range files {
+		if files[i].split {
+			splitFiles = append(splitFiles, &files[i])
+		}
+	}
+	var unjudged []UnjudgedStatement
+	for _, declined := range split.declined {
+		file := splitFiles[declined.File]
+		if !file.Selected {
+			continue
+		}
+		unjudged = append(unjudged, UnjudgedStatement{Target: declined.Target, File: file.Path, Line: file.Statements[declined.Statement].Line})
+	}
+	slices.SortStableFunc(unjudged, func(a, b UnjudgedStatement) int {
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Target, b.Target))
+	})
+	return unjudged
 }
 
 // attachStatements gives each file that holds statements its share of a
@@ -803,7 +882,7 @@ func splitFiles(ctx context.Context, runtime lintext.Runtime, dialect string, fi
 // an up file's schema changes.
 func attachStatements(
 	files []File,
-	split [][]lintext.Statement,
+	split splitOutcome,
 	dialect string,
 	target Target,
 	compatibility CompatibilityProfile,
@@ -816,7 +895,8 @@ func attachStatements(
 		if !file.split {
 			continue
 		}
-		for index, statement := range split[next] {
+		file.judged = split.judged
+		for index, statement := range split.files[next] {
 			statement.Line += file.lineOffset
 			file.contract = append(file.contract, statement)
 			var suppressed []atlaslint.Target
@@ -837,6 +917,7 @@ func attachStatements(
 				Routine:         routine,
 				Line:            statement.Line,
 				sourceWords:     statement.SourceWords,
+				effects:         statement.Effects,
 				suppressedRules: suppressed,
 			})
 		}

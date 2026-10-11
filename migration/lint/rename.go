@@ -188,7 +188,7 @@ func fileRenames(file *File) []statementRename {
 			created[ref] = true
 			continue
 		}
-		if rebuilds.renames[i] {
+		if rebuilds.Renames[i] {
 			// A table rebuild moves the old table aside and its copy into
 			// place, so the name is back when the file ends.
 			continue

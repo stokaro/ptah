@@ -1,10 +1,12 @@
-package lint
+package ydblint
 
 import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/dialect/ydb/ydbexternal"
+	"ptah.run/internal/lintkit"
 )
 
 // ydbDeprecatedSecretRule reports an external data source that names a
@@ -18,15 +20,17 @@ import (
 // a YDB secret instead, in the matching _SECRET_PATH option. The rule warns
 // rather than refuses: 25.1, the oldest line Ptah measured, has no other way
 // to give a data source a credential.
-func ydbDeprecatedSecretRule() Rule {
-	return Rule{
-		Code:          "YD141",
-		Title:         "external data source credential in a deprecated secret object",
-		Severity:      SeverityWarning,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbDeprecatedSecretRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD141",
+			Title:         "external data source credential in a deprecated secret object",
+			Severity:      lintext.Warning,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			path, options := ydbexternal.DeprecatedSecretNames(stmt.SQL)

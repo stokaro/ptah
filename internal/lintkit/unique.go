@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
-	"ptah.run/core/platform"
 )
 
 // UniqueIndexSite is one unique index or constraint a statement builds.
@@ -22,16 +21,19 @@ type UniqueIndexSite struct {
 	Concurrently     bool
 	NullsNotDistinct bool
 	// Spelled is the clause head for the message: CREATE UNIQUE INDEX,
-	// ADD UNIQUE, or YQL's ADD INDEX.
+	// ADD UNIQUE, or a dialect's own, such as YQL's ADD INDEX.
 	Spelled string
-	// YQL records YQL's spelling, whose failure YDB words its own way.
-	YQL bool
+	// Failure is the engine's own words for the error a failed build ends
+	// with, where the dialect's owner reported them; empty for the
+	// spellings this package reads itself.
+	Failure string
 }
 
 // UniqueIndexSites finds every unique index a file's statements build, in
-// file order. dialect is the run's target, which decides whether YQL's own
-// unique index spelling is read.
-func UniqueIndexSites(statements []lintext.Statement, dialect string) []UniqueIndexSite {
+// file order: the CREATE UNIQUE INDEX and ADD UNIQUE spellings, then, per
+// statement, each one its dialect's owner reported as a
+// [lintext.FactUniqueIndex] effect.
+func UniqueIndexSites(statements []lintext.Statement) []UniqueIndexSite {
 	var sites []UniqueIndexSite
 	for index := range statements {
 		stmt := &statements[index]
@@ -46,9 +48,6 @@ func UniqueIndexSites(statements []lintext.Statement, dialect string) []UniqueIn
 			table := AlterTableReference(w, stmt.SourceWords)
 			for _, i := range ClauseStarts(w) {
 				site, ok := AddUniqueSite(w, stmt.SourceWords, i)
-				if !ok && dialect == platform.YDB {
-					site, ok = YQLUniqueIndexSite(w, stmt.SourceWords, i)
-				}
 				if !ok {
 					continue
 				}
@@ -57,8 +56,44 @@ func UniqueIndexSites(statements []lintext.Statement, dialect string) []UniqueIn
 				sites = append(sites, site)
 			}
 		}
+		for _, effect := range stmt.Effects {
+			if effect.Fact != lintext.FactUniqueIndex {
+				continue
+			}
+			sites = append(sites, UniqueIndexSite{
+				Statement: index,
+				Name:      effect.Object,
+				Table:     TableReference{Name: effect.Table, Normalized: NormalizeReference(effect.Table)},
+				Columns:   effect.Columns,
+				Spelled:   effect.Clause,
+				Failure:   effect.Failure,
+			})
+		}
 	}
 	return sites
+}
+
+// NormalizeReference folds a dotted reference as written the way
+// [TableRefAt] folds the words it reads one from: each part stripped of its
+// double quotes or backquotes and uppercased, the parts joined with a dot. A
+// dot inside quotes belongs to its part.
+func NormalizeReference(reference string) string {
+	var parts []string
+	var quote rune
+	start := 0
+	for i, r := range reference {
+		switch {
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote == 0 && (r == '"' || r == '`'):
+			quote = r
+		case quote == 0 && r == '.':
+			parts = append(parts, NormalizeIdent(reference[start:i]))
+			start = i + 1
+		}
+	}
+	parts = append(parts, NormalizeIdent(reference[start:]))
+	return strings.Join(parts, ".")
 }
 
 // CreateUniqueIndexSite reads CREATE UNIQUE INDEX [CONCURRENTLY] [IF NOT
@@ -132,31 +167,6 @@ func AddUniqueSite(w, sourceWords []string, i int) (UniqueIndexSite, bool) {
 	site.Columns = columns
 	site.NullsNotDistinct = HasWordSeq(w[next:end], "NULLS", "NOT", "DISTINCT")
 	return site, true
-}
-
-// YQLUniqueIndexSite reads YQL's ADD INDEX name [GLOBAL] UNIQUE [SYNC] [USING
-// kind] ON (columns) at a clause start. YQL is the only dialect that writes
-// UNIQUE after the index name, and it is read only on a YDB run, where the
-// statement is lexed as YQL.
-func YQLUniqueIndexSite(w, sourceWords []string, i int) (UniqueIndexSite, bool) {
-	end := ClauseEnd(w, i)
-	site := UniqueIndexSite{Spelled: "ADD INDEX", YQL: true}
-	if i+2 >= end || w[i] != "ADD" || w[i+1] != "INDEX" || !IdentLike(w[i+2]) {
-		return site, false
-	}
-	site.Name = SourceWordAt(w, sourceWords, i+2)
-	unique := false
-	for j := i + 3; j < end; j++ {
-		switch w[j] {
-		case "UNIQUE":
-			unique = true
-		case "ON":
-			columns, _, ok := KeyColumnList(w[:end], sourceWords, j+1)
-			site.Columns = columns
-			return site, ok && unique
-		}
-	}
-	return site, false
 }
 
 // UniqueNameAndMethod reads the optional index name and USING method between

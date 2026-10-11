@@ -109,26 +109,112 @@ func TestValidateSplit_HappyPath(t *testing.T) {
 	c.Assert(lintext.ValidateSplit(request, result), qt.IsNil)
 }
 
+// A split may judge facts and report effects of them.
+func TestValidateSplit_Effects_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	request, result := splitOf("DROP TABLE a;", lintext.Statement{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a",
+		Effects: []lintext.Effect{{Fact: lintext.FactRebuildDrop}}})
+	result.Judged = []lintext.Fact{lintext.FactRebuildDrop, lintext.FactRebuildRename, lintext.FactStatefulDrop}
+
+	c.Assert(lintext.ValidateSplit(request, result), qt.IsNil)
+}
+
 func TestValidateSplit_FailurePath(t *testing.T) {
 	const sql = "DROP TABLE a;\nDROP TABLE b;"
+	dropA := lintext.Statement{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a"}
 	for _, test := range []struct {
 		name       string
 		statements []lintext.Statement
 		files      int
+		judged     []lintext.Fact
+		wantErr    string
 	}{
-		{"text other than the span", []lintext.Statement{{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE b"}}, 1},
-		{"a span past the source", []lintext.Statement{{Start: 14, End: 40, Line: 2, SQL: "DROP TABLE b;"}}, 1},
-		{"overlapping spans", []lintext.Statement{{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a"}, {Start: 5, End: 12, Line: 1, SQL: "TABLE a"}}, 1},
-		{"no line", []lintext.Statement{{Start: 0, End: 12, SQL: "DROP TABLE a"}}, 1},
-		{"a list per source missing", nil, 0},
+		{"text other than the span", []lintext.Statement{{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE b"}}, 1, nil,
+			`.*statement 0 of 1.up.sql does not match its source`},
+		{"a span past the source", []lintext.Statement{{Start: 14, End: 40, Line: 2, SQL: "DROP TABLE b;"}}, 1, nil,
+			`.*statement 0 of 1.up.sql does not match its source`},
+		{"overlapping spans", []lintext.Statement{dropA, {Start: 5, End: 12, Line: 1, SQL: "TABLE a"}}, 1, nil,
+			`.*statement 1 of 1.up.sql does not match its source`},
+		{"no line", []lintext.Statement{{Start: 0, End: 12, SQL: "DROP TABLE a"}}, 1, nil,
+			`.*statement 0 of 1.up.sql does not match its source`},
+		{"a list per source missing", nil, 0, nil, `.*a split of 1 sources returned 0`},
+		{"an unknown fact judged", []lintext.Statement{dropA}, 1, []lintext.Fact{"loses-sleep"},
+			`.*a split judges unknown fact "loses-sleep"`},
+		{"one rebuild fact judged without the other", []lintext.Statement{dropA}, 1, []lintext.Fact{lintext.FactRebuildDrop},
+			`.*a split judges "rebuild-drop" and "rebuild-rename" together or neither`},
+		{"an effect of a fact not judged", []lintext.Statement{{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a",
+			Effects: []lintext.Effect{{Fact: lintext.FactUniqueIndex}}}}, 1, []lintext.Fact{lintext.FactStatefulDrop},
+			`.*statement 0 of 1.up.sql reports "unique-index", which the split does not judge`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			request, result := splitOf(sql, test.statements...)
 			result.Files = result.Files[:test.files]
-			c.Assert(lintext.ValidateSplit(request, result), qt.ErrorIs, lintext.ErrInvalid)
+			result.Judged = test.judged
+			err := lintext.ValidateSplit(request, result)
+			c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// annotateRequest asks about stateful drops in one file of two statements.
+func annotateRequest() lintext.AnnotateRequest {
+	const sql = "DROP TOPIC t;\nSELECT 1;"
+	return lintext.AnnotateRequest{Facts: []lintext.Fact{lintext.FactStatefulDrop},
+		Sources: []lintext.Source{{Name: "1.up.sql", SQL: sql}},
+		Files: [][]lintext.Statement{{
+			{Start: 0, End: 12, Line: 1, SQL: "DROP TOPIC t"},
+			{Start: 14, End: 22, Line: 2, SQL: "SELECT 1"},
+		}}}
+}
+
+// An answer judges each statement: an effect the request asked about, or a
+// statement declined with none.
+func TestValidateAnnotate_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	request := annotateRequest()
+
+	c.Assert(lintext.ValidateAnnotateRequest(request), qt.IsNil)
+	c.Assert(lintext.ValidateAnnotate(request, lintext.AnnotateResult{Files: [][]lintext.Annotation{{
+		{Effects: []lintext.Effect{{Fact: lintext.FactStatefulDrop, Object: "t", Kind: "TOPIC"}}},
+		{Declined: true},
+	}}}), qt.IsNil)
+}
+
+func TestValidateAnnotate_FailurePath(t *testing.T) {
+	topic := []lintext.Effect{{Fact: lintext.FactStatefulDrop}}
+	for _, test := range []struct {
+		name    string
+		files   [][]lintext.Annotation
+		wantErr string
+	}{
+		{"a file missing", nil, `.*an annotation of 1 files returned 0`},
+		{"a statement missing", [][]lintext.Annotation{{{}}}, `.*file 0 holds 2 statements and 1 annotations`},
+		{"a declined statement with an effect", [][]lintext.Annotation{{{Effects: topic, Declined: true}, {}}},
+			`.*statement 0 of file 0 is declined and carries effects`},
+		{"an effect the request did not ask about", [][]lintext.Annotation{{{}, {Effects: []lintext.Effect{{Fact: lintext.FactUniqueIndex}}}}},
+			`.*statement 1 of file 0 reports "unique-index", which the request did not ask about`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := lintext.ValidateAnnotate(annotateRequest(), lintext.AnnotateResult{Files: test.files})
+			c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// Each statement list comes with the source it was split from.
+func TestValidateAnnotateRequest_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	request := annotateRequest()
+	request.Sources = nil
+
+	err := lintext.ValidateAnnotateRequest(request)
+
+	c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
+	c.Assert(err, qt.ErrorMatches, `.*an annotation request holds 0 sources and 1 statement lists`)
 }
 
 // checkRequest enables XY101 over one up file of two statements.

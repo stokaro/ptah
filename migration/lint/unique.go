@@ -55,7 +55,7 @@ import (
 func uniqueIndexStatements(file *File) []int {
 	var indexes []int
 	seen := -1
-	for _, site := range lintkit.UniqueIndexSites(file.contract, file.dialect) {
+	for _, site := range lintkit.UniqueIndexSites(file.contract) {
 		if site.Statement == seen {
 			continue
 		}
@@ -241,12 +241,11 @@ func duplicateQuery(site lintkit.UniqueIndexSite) string {
 
 // uniqueFailure is the failure both families report, and what it leaves.
 //
-// YDB words it its own way: measured on 26.2.1.14 with EnableAddUniqueIndex
-// on, ADD INDEX ... GLOBAL UNIQUE SYNC over two rows holding the same value
-// answers `Duplicate key found: (v=a)`.
+// An engine whose owner reports the site words the failure its own way, and
+// the site carries those words.
 func uniqueFailure(site lintkit.UniqueIndexSite) string {
-	if site.YQL {
-		return "fails on the first duplicate it meets (YDB: Duplicate key found), leaving the migration half applied"
+	if site.Failure != "" {
+		return "fails on the first duplicate it meets (" + site.Failure + "), leaving the migration half applied"
 	}
 	message := "fails on the first duplicate it meets (PostgreSQL: could not create unique index; MySQL and MariaDB: Duplicate entry for key), " +
 		"leaving the migration half applied"
@@ -295,7 +294,7 @@ func uniqueIndexAddedRule() Rule {
 				return nil
 			}
 			var findings []Finding
-			for _, site := range lintkit.UniqueIndexSites(file.contract, file.dialect) {
+			for _, site := range lintkit.UniqueIndexSites(file.contract) {
 				risk := classifyUniqueRisk(file, site)
 				if riskIsSettled(risk) {
 					continue
@@ -322,7 +321,7 @@ func indexMadeUniqueRule() Rule {
 				return nil
 			}
 			var findings []Finding
-			for _, site := range lintkit.UniqueIndexSites(file.contract, file.dialect) {
+			for _, site := range lintkit.UniqueIndexSites(file.contract) {
 				replaced, renamed, ok := replacedIndex(file, site)
 				if !ok {
 					continue

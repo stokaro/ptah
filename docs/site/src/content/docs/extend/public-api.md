@@ -136,6 +136,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/ydb/ydbcoordination` | Coordination-node models and codecs. |
 | `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
 | `dialect/ydb/ydbexternal` | External data source and external table declarations, observations, checks, statements, and codecs. |
+| `dialect/ydb/ydblint` | The YDB owner's migration lint rules and the YQL splitter that reports what each statement does. |
 | `dialect/ydb/ydbrender` | Rendering and validation of YDB feature operations. |
 | `dialect/ydb/ydbreplication` | Async replication and transfer declarations, observations, checks, statements, and codecs. |
 | `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |

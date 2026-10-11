@@ -150,6 +150,11 @@ type Target struct {
 	// Splitter splits the target's migration SQL into the statements
 	// migration lint reads. Nil leaves lint unable to run for the target.
 	Splitter lintext.Splitter
+	// Annotator judges the facts of statements a lint run with no target
+	// split with the host's dialect-blind scanner: the facts the target's
+	// splitter reports for its own split. Nil leaves those facts unjudged on
+	// such a run.
+	Annotator lintext.Annotator
 	// RefusesSkips makes the target refuse an object an owner would skip on
 	// it ([schemaext.OffTargetSkip]), as the owner's refusal does. It is for a
 	// target that answers nothing it cannot hold with a comment, because a
@@ -207,6 +212,7 @@ type target struct {
 	creations       schemaprojection.TableCreationService
 	constraints     schemaprojection.ConstraintService
 	splitter        lintext.Splitter
+	annotator       lintext.Annotator
 	refusesSkips    bool
 }
 
@@ -377,6 +383,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"index comparison", declared.Comparison.Indexes},
 		{"view comparison", declared.Comparison.Views},
 		{"statement splitter", declared.Splitter},
+		{"statement annotator", declared.Annotator},
 	} {
 		if service.value != nil && nilService(service.value) {
 			return fmt.Errorf("%w: target %q has a typed-nil %s service", ErrInvalidRegistration, declared.Name, service.name)
@@ -392,7 +399,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
-			splitter: declared.Splitter, refusesSkips: declared.RefusesSkips,
+			splitter: declared.Splitter, annotator: declared.Annotator, refusesSkips: declared.RefusesSkips,
 		}
 	}
 	return nil

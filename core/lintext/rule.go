@@ -10,6 +10,23 @@
 // as Go functions behind [Checks]; a remote one answers the same requests
 // over its transport.
 //
+// # Statement effects
+//
+// A rule shared by every dialect sometimes turns on something only one
+// dialect's owner can recognize: that DROP TOPIC loses messages, that YQL's
+// ADD INDEX ... GLOBAL UNIQUE builds a unique index over existing rows, that
+// four statements are a table rebuild rather than a drop. The owner reports
+// these as data, an [Effect] on the [Statement] its splitter returns, and
+// lists in [SplitResult.Judged] the facts it judged for every statement, so a
+// host reads the fact instead of naming the dialect.
+//
+// A run that names no target is split by the host's dialect-blind scanner, so
+// no owner splits it. The host then asks every owner that registers an
+// [Annotator] for the facts of that split, in one call per run, with the
+// sources it split. That annotation is best-effort: an owner may decline a
+// statement its own lexing would split differently, and a host reports a
+// declined statement as unjudged rather than treating it as safe.
+//
 // # Baseline rules
 //
 // Some rules cannot judge a statement from its text. Renaming a column says

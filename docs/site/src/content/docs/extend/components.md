@@ -606,8 +606,18 @@ owners, so an owner's syntax, such as ClickHouse's data-skipping index, counts
 as the change it makes. The bundled `builtin.New` runtime splits every
 built-in dialect.
 
+The owner's split also reports what each statement does where only the
+dialect can tell, such as a drop that loses state a new object does not get
+back, and the shared rules read those effects instead of naming a dialect. A
+run that names no dialect asks every owner that registers an annotator to
+judge them over the dialect-blind split, in one call through
+`Runtime.AnnotateStatements`; `Analysis.UnjudgedStatements` names each
+statement an owner declined because its own lexing splits the text
+differently.
+
 The runtime also holds the rules the engine owners check, such as the
-PostgreSQL owner's PG and TX families and the MySQL owner's MY family. `lint.Rules(runtime)` lists them after
+PostgreSQL owner's PG and TX families, the MySQL owner's MY family and the YDB
+owner's YD family. `lint.Rules(runtime)` lists them after
 the rules the lint package checks itself, and a run asks the owners for their
 findings through `Runtime.CheckMigrations`, once per run, then applies the
 same policy to them as to every other finding. The configuration loaders take

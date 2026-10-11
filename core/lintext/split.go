@@ -3,15 +3,26 @@ package lintext
 import (
 	"context"
 	"fmt"
+	"slices"
 )
 
 // Source is one migration file's executable SQL as a host hands it to a
 // splitter.
 type Source struct {
-	// Name identifies the file in diagnostics. It is not interpreted.
+	// Name identifies the file, as [File.Name] does in a check request. It
+	// is not interpreted.
 	Name string `json:"name"`
 	// SQL is the text to split.
 	SQL string `json:"sql"`
+	// Version, Up, Down and Repeatable place the file in the directory: its
+	// migration version, zero when its name carries none, which half of a
+	// migration it is, and whether it is a repeatable migration rather than
+	// an ordered version. A fact that depends on what earlier files did, such
+	// as a table rebuild that leaves a column out, reads them.
+	Version    int64 `json:"version,omitempty"`
+	Up         bool  `json:"up,omitempty"`
+	Down       bool  `json:"down,omitempty"`
+	Repeatable bool  `json:"repeatable,omitempty"`
 }
 
 // Statement is one statement of a source, in the forms rules read. Every
@@ -46,6 +57,57 @@ type Statement struct {
 	// line between them and the statement. A host reads its suppression
 	// directives from them.
 	Comments []string `json:"comments,omitempty"`
+	// Effects are what the statement does, as facts a rule reads instead of
+	// recognizing the dialect's spelling of them. A splitter reports the
+	// facts it lists in [SplitResult.Judged].
+	Effects []Effect `json:"effects,omitempty"`
+}
+
+// Fact names one kind of thing a statement does that a rule shared by every
+// dialect needs and only the dialect's owner can recognize.
+type Fact string
+
+const (
+	// FactStatefulDrop is a drop of an object whose state a new object of the
+	// same name does not get back: the messages of a topic and the positions
+	// of its consumers, the semaphores of a coordination node.
+	FactStatefulDrop Fact = "stateful-drop"
+	// FactUniqueIndex is a unique index built over the rows a table already
+	// holds, which fails on the first duplicate it meets, in a spelling only
+	// the owner's dialect uses. A host reads CREATE UNIQUE INDEX and ADD
+	// UNIQUE itself.
+	FactUniqueIndex Fact = "unique-index"
+	// FactRebuildDrop is a DROP TABLE of a table whose rows a table rebuild
+	// copied, and FactRebuildRename a rename that moves the replaced table
+	// aside or its copy into place: steps of a rebuild, not a drop or a rename
+	// of their own. Whether a copy keeps every column depends on what the old
+	// table holds, which an owner may know where a host does not, so a host
+	// that matches rebuilds itself takes the owner's answer where a split
+	// judged them. A split judges both or neither.
+	FactRebuildDrop   Fact = "rebuild-drop"
+	FactRebuildRename Fact = "rebuild-rename"
+)
+
+// Effect is one fact about what a statement does.
+type Effect struct {
+	// Fact is what the statement does.
+	Fact Fact `json:"fact"`
+	// Object is what the statement acts on, as written: the dropped object or
+	// the unique index. A rebuild step names none.
+	Object string `json:"object,omitempty"`
+	// Kind names what Object is in the dialect's words, such as TOPIC or
+	// COORDINATION NODE, empty where the fact implies it.
+	Kind string `json:"kind,omitempty"`
+	// Table and Columns are the table a unique index is built on and its key
+	// columns, as written.
+	Table   string   `json:"table,omitempty"`
+	Columns []string `json:"columns,omitempty"`
+	// Clause is the clause head a message names a unique index build by,
+	// such as ADD INDEX.
+	Clause string `json:"clause,omitempty"`
+	// Failure is the engine's own words for the error the statement fails
+	// with, for a message, such as "YDB: Duplicate key found".
+	Failure string `json:"failure,omitempty"`
 }
 
 // Routine is what a rule may read of the routine a statement defines.
@@ -67,6 +129,10 @@ type SplitRequest struct {
 type SplitResult struct {
 	// Files holds one statement list per source, in source order.
 	Files [][]Statement `json:"files"`
+	// Judged are the facts the splitter judged for every statement it
+	// returned: a statement without an effect of one of them does not have
+	// it. A fact not listed was not judged.
+	Judged []Fact `json:"judged,omitempty"`
 }
 
 // Splitter splits migration SQL for one dialect. A host calls it once per
@@ -79,12 +145,22 @@ type Splitter interface {
 }
 
 // ValidateSplit reports a result that does not answer request: a statement
-// count per source other than one list per source, or a statement whose span
+// count per source other than one list per source, a statement whose span
 // falls outside its source, overlaps the one before it, disagrees with its
-// text, or has no line. Each failure wraps [ErrInvalid].
+// text, or has no line, a judged fact this package does not define, one of
+// the two rebuild facts judged without the other, and an effect of a fact the
+// split does not list as judged. Each failure wraps [ErrInvalid].
 func ValidateSplit(request SplitRequest, result SplitResult) error {
 	if len(result.Files) != len(request.Sources) {
 		return fmt.Errorf("%w: a split of %d sources returned %d", ErrInvalid, len(request.Sources), len(result.Files))
+	}
+	for _, fact := range result.Judged {
+		if !slices.Contains(facts, fact) {
+			return fmt.Errorf("%w: a split judges unknown fact %q", ErrInvalid, fact)
+		}
+	}
+	if slices.Contains(result.Judged, FactRebuildDrop) != slices.Contains(result.Judged, FactRebuildRename) {
+		return fmt.Errorf("%w: a split judges %q and %q together or neither", ErrInvalid, FactRebuildDrop, FactRebuildRename)
 	}
 	for i, statements := range result.Files {
 		source := request.Sources[i]
@@ -94,8 +170,16 @@ func ValidateSplit(request SplitRequest, result SplitResult) error {
 				source.SQL[statement.Start:statement.End] != statement.SQL || statement.Line < 1 {
 				return fmt.Errorf("%w: statement %d of %s does not match its source", ErrInvalid, j, source.Name)
 			}
+			for _, effect := range statement.Effects {
+				if !slices.Contains(result.Judged, effect.Fact) {
+					return fmt.Errorf("%w: statement %d of %s reports %q, which the split does not judge", ErrInvalid, j, source.Name, effect.Fact)
+				}
+			}
 			end = statement.End
 		}
 	}
 	return nil
 }
+
+// facts are the facts this package defines.
+var facts = []Fact{FactStatefulDrop, FactUniqueIndex, FactRebuildDrop, FactRebuildRename}

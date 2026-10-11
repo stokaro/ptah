@@ -10,7 +10,7 @@
 //   - PG — PostgreSQL-specific hazards, which the PostgreSQL owner checks
 //   - MY — MySQL/MariaDB-specific hazards, which the MySQL owner checks
 //   - YD — YDB statements the server refuses, or runs with an effect the
-//     statement does not state
+//     statement does not state, which the YDB owner checks
 //
 // # How statements are matched
 //
@@ -18,9 +18,10 @@
 // string literals, quoted identifiers, comments (including the MySQL-family
 // # line comments and /*!...*/ executable comments) and PostgreSQL
 // dollar-quoted bodies never confuse the splitter, and Options.Dialect
-// selects which of those syntaxes apply. A YDB file is read by the YQL lexer
-// the migrator splits it with. Every statement is then checked through
-// the token form exposed to rules:
+// selects which of those syntaxes apply. A run that names a dialect asks its
+// owner to split the files, which on YDB reads them with the YQL lexer the
+// migrator splits them with. Every statement is then checked through the token
+// form exposed to rules:
 //
 //   - Statement.Words — the token-word sequence rules scan,
 //     anchored at ALTER TABLE clause boundaries; string literals and quoted
@@ -39,13 +40,27 @@
 //
 // An engine owner may publish rules of its own through the runtime a run is
 // given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes the
-// PG and TX families and the online rules ON101 and ON103 that way, and the
-// MySQL owner the MY family and ON102. [Rules] lists them after this
-// package's own. A run asks the owners for their findings once, over every
-// file, and applies the same policy to them as to every other finding:
-// suppression directives, severity overrides, excluded paths, subsumption and
-// the reviewed-schema filter. A run that names no dialect sends every owner's
-// rules over the dialect-blind split, as it runs every rule of this package.
+// PG and TX families and the online rules ON101 and ON103 that way, the MySQL
+// owner the MY family and ON102, and the YDB owner the YD family. [Rules]
+// lists them after this package's own. A run asks the owners for their
+// findings once, over every file, and applies the same policy to them as to
+// every other finding: suppression directives, severity overrides, excluded
+// paths, subsumption and the reviewed-schema filter. A run that names no
+// dialect sends every owner's rules over the dialect-blind split, as it runs
+// every rule of this package.
+//
+// # Facts only an owner recognizes
+//
+// Some rules of this package need to know what a statement does where only
+// its dialect's owner can tell: DS107 reports a drop that loses state a new
+// object does not get back, such as a YDB topic's messages; MF101 and MF102
+// read YQL's unique index; DS101, BC103 and the rename rules pass over the
+// steps of a table rebuild, which YDB's owner matches against the directory's
+// own history. The owner's split reports these as statement effects, and the
+// rules read the effects instead of naming a dialect. A run that names no
+// dialect asks every owner to judge the drops over the dialect-blind split, in
+// one call; a statement an owner declines is reported as unjudged
+// ([Analysis.UnjudgedStatements]).
 package lint
 
 import (

@@ -1,9 +1,11 @@
-package lint
+package ydblint
 
 import (
 	"fmt"
 
+	"ptah.run/core/lintext"
 	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/ydbsecretvalue"
 )
 
@@ -19,15 +21,17 @@ import (
 // `values_history`, both readable in clear by the database administrator.
 // The finding names the statement and the secret, never the value, so the
 // lint output does not repeat what it reports.
-func ydbSchemaSecretInClearRule() Rule {
-	return Rule{
-		Code:          "YD140",
-		Title:         "secret value written in the migration",
-		Severity:      SeverityError,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
+func ydbSchemaSecretInClearRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{
+			Code:          "YD140",
+			Title:         "secret value written in the migration",
+			Severity:      lintext.Error,
+			Targets:       ydbOnly,
+			AppliesToDown: true,
+		},
+		Statement: func(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+			if !ydbRun(file.Target) {
 				return false, ""
 			}
 			form, path, writes := ydbsecretvalue.ClearValue(stmt.SQL)
