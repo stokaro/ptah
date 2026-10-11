@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
@@ -130,14 +131,21 @@ func (p Policy) PrepareInspectedSchema(ctx context.Context, current *catalog.Dat
 	return inspected, nil
 }
 
+// isPLpgSQL reports the procedural language every PostgreSQL database
+// installs, which an inspection reads and no author declared.
+func isPLpgSQL(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), "plpgsql")
+}
+
 func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catalog.Database {
 	inspected := *current
 	inspected.Extensions = slices.DeleteFunc(
 		slices.Clone(current.Extensions),
 		func(extension catalog.Extension) bool {
-			return strings.EqualFold(strings.TrimSpace(extension.Name), "plpgsql")
+			return isPLpgSQL(extension.Name)
 		},
 	)
+	inspected.FeatureObjects = pgextension.Select(current.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) })
 	inspected.Grants = slices.DeleteFunc(
 		slices.Clone(current.Grants),
 		func(grant catalog.Grant) bool {
@@ -161,9 +169,10 @@ func schemaWithoutInspectedPostgresBaselines(database *schemamodel.Database) sch
 	inspected.Extensions = slices.DeleteFunc(
 		slices.Clone(database.Extensions),
 		func(extension schemamodel.Extension) bool {
-			return strings.EqualFold(strings.TrimSpace(extension.Name), "plpgsql")
+			return isPLpgSQL(extension.Name)
 		},
 	)
+	inspected.FeatureObjects = pgextension.Select(database.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) })
 	// PostgreSQL creates public with PUBLIC USAGE on current releases. The
 	// ordinary reader preserves that baseline because full inspection must be
 	// able to round-trip the server state. It is not authored Pro-only content,
@@ -626,7 +635,7 @@ type strictCEDesiredObject struct {
 
 func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictCEDesiredObject {
 	return []strictCEDesiredObject{
-		{name: "extensions", present: len(database.Extensions) > 0},
+		{name: "extensions", present: hasExtensions(database)},
 		// The two routine kinds are named apart. They share one collection --
 		// a procedure is a function with its return type removed -- and a
 		// refusal that called a procedure a function would send an operator
@@ -663,6 +672,12 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 	}
 }
 
+// hasExtensions reports an extension in the common model or of the
+// PostgreSQL extension owner.
+func hasExtensions(database *schemamodel.Database) bool {
+	return len(database.Extensions) > 0 || len(pgextension.Names(database.FeatureObjects)) > 0
+}
+
 // hasRowSecurityPolicies reports a policy in the common model or of the
 // PostgreSQL row-security owner.
 func hasRowSecurityPolicies(database *schemamodel.Database) bool {
@@ -687,7 +702,7 @@ func hasEnumComments(database *schemamodel.Database) bool {
 
 func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) []strictCEDesiredObject {
 	return []strictCEDesiredObject{
-		{name: "extensions", present: len(database.Extensions) > 0},
+		{name: "extensions", present: hasExtensions(database)},
 		{name: "triggers", present: len(database.Triggers) > 0},
 		{name: "row-level security policies", present: hasRowSecurityPolicies(database)},
 		{name: "row-level security settings", present: hasRowSecuritySettings(database)},

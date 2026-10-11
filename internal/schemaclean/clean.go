@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/dbschema"
+	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/revisiontable"
@@ -110,6 +112,17 @@ func SnapshotWithinWriterScope(
 			return strings.TrimSpace(extension.Schema) != writerSchema
 		},
 	)
+	// The extension owner's observations are scoped the same way. One that
+	// is not an observation names no schema to keep it by and stays, so the
+	// snapshot's validation still sees it.
+	owned.FeatureObjects = schema.FeatureObjects.Select(func(ref objectidentity.ID) bool {
+		if ref.Kind != objectidentity.Kind(pgextension.ExtensionKind) {
+			return true
+		}
+		object, _, err := schema.FeatureObjects.Get(ref)
+		installed, observed := object.Value.(*pgextension.ObservedExtension)
+		return err != nil || !observed || strings.TrimSpace(installed.Schema) == writerSchema
+	})
 	return &owned
 }
 

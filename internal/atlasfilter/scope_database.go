@@ -59,8 +59,11 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 
 	s.projectDatabaseTopLevel(db, out, keptTables)
 	s.projectDatabaseSupport(db, out)
-	s.projectDatabaseExtensions(db, out)
-	out.Schemas = s.keepDatabaseSchemas(db, out)
+	extensionSchemas, err := s.projectDatabaseExtensions(db, out)
+	if err != nil {
+		return nil, err
+	}
+	out.Schemas = s.keepDatabaseSchemas(db, out, extensionSchemas)
 	return out, nil
 }
 
@@ -125,17 +128,25 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 }
 
-func (s *scopeSelection) projectDatabaseExtensions(db, out *catalog.Database) {
+// projectDatabaseExtensions projects the common extension list and the
+// extension owner's objects, and returns the installation schemas of the
+// owner's extensions it kept.
+func (s *scopeSelection) projectDatabaseExtensions(db, out *catalog.Database) ([]string, error) {
+	var err error
+	if out.FeatureObjects, out.FeatureCoverage, err = s.selectExtensionFeatures(out.FeatureObjects, out.FeatureCoverage); err != nil {
+		return nil, err
+	}
 	if s.extensionSupport || s.nonExtensionMatched {
 		for _, extension := range db.Extensions {
 			s.selectedExtension(extension.Schema, extension.Name)
 		}
 		out.Extensions = slices.Clone(db.Extensions)
-		return
+	} else {
+		out.Extensions = keep(db.Extensions, func(extension catalog.Extension) bool {
+			return s.selectedExtension(extension.Schema, extension.Name)
+		})
 	}
-	out.Extensions = keep(db.Extensions, func(extension catalog.Extension) bool {
-		return s.selectedExtension(extension.Schema, extension.Name)
-	})
+	return s.ownedExtensionSchemas(out.FeatureObjects)
 }
 
 // projectDatabaseSupport retains type objects referenced by kept columns:
@@ -189,7 +200,7 @@ func (s *scopeSelection) databaseGrantSelected(
 
 // keepDatabaseSchemas keeps schema entries that own selected objects, so both
 // sides agree on which schemas stay in the comparison.
-func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database) []catalog.Schema {
+func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database, extensionSchemas []string) []catalog.Schema {
 	owning := make(map[string]struct{})
 	for _, table := range out.Tables {
 		owning[s.effectiveSchema(table.Schema)] = struct{}{}
@@ -220,6 +231,9 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database) []catalo
 	}
 	for _, extension := range out.Extensions {
 		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
+	}
+	for _, schema := range extensionSchemas {
+		owning[schema] = struct{}{}
 	}
 	return keep(db.Schemas, func(schema catalog.Schema) bool {
 		if !s.schemaAllowed(schema.Name) {

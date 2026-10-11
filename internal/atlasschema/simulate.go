@@ -516,13 +516,15 @@ func recreateCurrentSchema(
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
-	devCurrent = baseline.WithoutEnvironment(devCurrent, catalogExtensionNames(current))
+	devCurrent = baseline.WithoutEnvironment(devCurrent, devclean.ReadExtensions(current))
 	devCurrent = baseline.WithoutStartingPoint(devCurrent, current, defaultSchemaOf(devConn.Info()))
 	controlComments, err := extensionControlComments(ctx, devConn, current)
 	if err != nil {
 		return err
 	}
-	omitControlComments(target, devCurrent.Extensions, controlComments)
+	if err := omitControlComments(target, devclean.ReadExtensions(devCurrent), controlComments); err != nil {
+		return err
+	}
 	omitRealmRootGrants(devConn.Info(), target, devCurrent)
 	info := devConn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil, runtime)
@@ -663,27 +665,6 @@ func defaultSchemaOf(info catalog.ServerInfo) string {
 		return info.Schema
 	}
 	return dialectDefaultSchema(info.Dialect)
-}
-
-// catalogExtensionNames is the set of extensions a read database holds.
-func catalogExtensionNames(database *catalog.Database) map[string]bool {
-	names := make(map[string]bool, len(database.Extensions))
-	for _, extension := range database.Extensions {
-		names[extension.Name] = true
-	}
-	return names
-}
-
-// declaredExtensionNames is the set of extensions a desired state declares.
-func declaredExtensionNames(database *schemamodel.Database) map[string]bool {
-	names := make(map[string]bool)
-	if database == nil {
-		return names
-	}
-	for _, extension := range database.Extensions {
-		names[extension.Name] = true
-	}
-	return names
 }
 
 // normalizeBaselineSerialColumns rewrites introspected PostgreSQL-family

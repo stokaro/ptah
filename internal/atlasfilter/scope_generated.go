@@ -76,8 +76,11 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) (*schemamode
 
 	s.projectGeneratedTopLevel(db, out)
 	s.projectGeneratedSupport(db, out)
-	s.projectGeneratedExtensions(db, out)
-	out.Schemas = s.keepGeneratedSchemas(db, out)
+	extensionSchemas, err := s.projectGeneratedExtensions(db, out)
+	if err != nil {
+		return nil, err
+	}
+	out.Schemas = s.keepGeneratedSchemas(db, out, extensionSchemas)
 
 	out.Dependencies = nil
 	out.FunctionDependencies = nil
@@ -134,17 +137,24 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	})
 }
 
-func (s *scopeSelection) projectGeneratedExtensions(db, out *schemamodel.Database) {
+// projectGeneratedExtensions is [scopeSelection.projectDatabaseExtensions]
+// for a declared schema.
+func (s *scopeSelection) projectGeneratedExtensions(db, out *schemamodel.Database) ([]string, error) {
+	var err error
+	if out.FeatureObjects, out.FeatureCoverage, err = s.selectExtensionFeatures(out.FeatureObjects, out.FeatureCoverage); err != nil {
+		return nil, err
+	}
 	if s.extensionSupport || s.nonExtensionMatched {
 		for _, extension := range db.Extensions {
 			s.selectedExtension(extension.Schema, extension.Name)
 		}
 		out.Extensions = slices.Clone(db.Extensions)
-		return
+	} else {
+		out.Extensions = keep(db.Extensions, func(extension schemamodel.Extension) bool {
+			return s.selectedExtension(extension.Schema, extension.Name)
+		})
 	}
-	out.Extensions = keep(db.Extensions, func(extension schemamodel.Extension) bool {
-		return s.selectedExtension(extension.Schema, extension.Name)
-	})
+	return s.ownedExtensionSchemas(out.FeatureObjects)
 }
 
 // projectGeneratedSupport retains type objects used by selected tables even
@@ -250,7 +260,7 @@ func (s *scopeSelection) generatedGrantSelected(
 // keepGeneratedSchemas keeps schema declarations that own selected objects,
 // so CREATE SCHEMA statements survive for everything the projection kept.
 // Without include selectors every universe schema stays.
-func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database) []schemamodel.Schema {
+func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database, extensionSchemas []string) []schemamodel.Schema {
 	owning := make(map[string]struct{})
 	for _, table := range out.Tables {
 		owning[s.effectiveSchema(table.Schema)] = struct{}{}
@@ -285,6 +295,9 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database) []s
 	}
 	for _, extension := range out.Extensions {
 		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
+	}
+	for _, schema := range extensionSchemas {
+		owning[schema] = struct{}{}
 	}
 	return keep(db.Schemas, func(schema schemamodel.Schema) bool {
 		if !s.schemaAllowed(schema.Name) {
