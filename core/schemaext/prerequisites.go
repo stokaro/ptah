@@ -31,6 +31,21 @@ type SchemaPlacement interface {
 	PlacementSchema() string
 }
 
+// Requirer is a desired feature value that cannot exist without other
+// objects, such as a TimescaleDB hypertable, which needs the timescaledb
+// extension. Requires names those objects under a common kind, such as
+// [objectidentity.KindExtension], so the owner of the value does not import
+// the owner of the object. Every identity has a kind and a name.
+//
+// The runtime collects what the desired objects and facets require and hands
+// it to each object owner as [ObjectComparisonRequest.Required]. An owner does
+// not plan the removal of an object it names, whatever the desired source
+// claims to describe: a declaration that uses an object declares that the
+// object is needed.
+type Requirer interface {
+	Requires() []objectidentity.ID
+}
+
 // ProvidedByChanges returns caps widened by every change whose value is a
 // [CapabilityProvider], in order; any other change provides nothing. caps is
 // not changed.

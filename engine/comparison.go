@@ -175,10 +175,27 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	}
 	request.Exclusions = slices.Clone(request.Exclusions)
 	request.DeclaredColumns = slices.Clone(request.DeclaredColumns)
+	request.Required, err = snapshotRequired(request.Required)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, err
+	}
 	if err := comparisonInputSubjects(request); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
 	return request, nil
+}
+
+// snapshotRequired copies the objects the desired values require, ordered by
+// identity and each once, refusing an identity without a kind or a name.
+func snapshotRequired(refs []objectidentity.ID) ([]objectidentity.ID, error) {
+	refs = slices.Clone(refs)
+	for _, ref := range refs {
+		if ref.Kind == "" || ref.Name.Source == "" || ref.Name.Normalized == "" {
+			return nil, fmt.Errorf("%w: invalid required object %s", schemaext.ErrInvalidValue, ref)
+		}
+	}
+	slices.SortFunc(refs, schemaext.CompareRefs)
+	return slices.CompactFunc(refs, func(a, b objectidentity.ID) bool { return schemaext.CompareRefs(a, b) == 0 }), nil
 }
 
 // snapshotDeclaredRelations copies and orders the declared views and

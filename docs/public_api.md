@@ -2028,7 +2028,9 @@ a named object under `ContinuousAggregateKind` in `Database.FeatureObjects`,
 identified by `ContinuousAggregateRef`. `DesiredContinuousAggregate` keeps the
 body as written and a nil `MaterializedOnly` for the server's default;
 `Normalized` holds a connected server's spelling of the body and is set only by
-normalization.
+normalization. `DesiredHypertable` and `DesiredContinuousAggregate` require
+the timescaledb extension (`schemaext.Requirer`), so the extension's owner does
+not drop it while a declaration uses it.
 
 `dialect/timescaledb/tssource` declares both Go annotation directives,
 `//ptah:schema:hypertable` and `//ptah:schema:continuousaggregate`, through
@@ -2118,6 +2120,16 @@ refuses an exclusion of a kind it does not read. `config.CompareOptions.Exclusio
 turns the extension ignore list into exclusions. A `DeclaredColumn` is a
 column the desired schema declares, with its table and its type as spelled,
 for an owner whose objects a column may depend on.
+
+`schemaext.Requirer` is a desired value that cannot exist without other
+objects, such as a TimescaleDB hypertable without its extension. It names them
+under a common kind, such as `objectidentity.KindExtension`, so the owner of
+the value does not import the owner of the object. The runtime collects what
+the desired objects and facets require and sends it to every object owner as
+`schemaext.ObjectComparisonRequest.Required`, in identity order and each once.
+It refuses an identity without a kind or a name with `schemaext.ErrInvalidValue`.
+An owner does not plan the removal of an object `Required` names, even when the
+desired source claims to describe every object of its kind.
 
 `schemaext.ComparisonRequest.DatabasePath`,
 `schemaext.ObjectComparisonRequest.DatabasePath` and
@@ -2442,9 +2454,11 @@ installation schema is compared under the target's default schema, the version
 only where the declaration names one, and the comment only where the
 declaration states one and the target stores it. An extension the run excludes
 (`schemaext.Exclusion`) is never planned, in either direction. An extension a
-declared column's type needs, one the server installs in every database, and
-one the desired source did not describe is not dropped, and one the read could
-not establish is not created but reported undecided.
+declared column's type needs, one a desired value requires under
+`objectidentity.KindExtension` (`schemaext.ObjectComparisonRequest.Required`),
+one the server installs in every database, and one the desired source did not
+describe is not dropped. None of them is created for that reason. One the read
+could not establish is not created but reported undecided.
 
 `feature/pgextension/extensionconvert` projects a declaration to the
 observation it predicts and an observation to the declaration that keeps it. A

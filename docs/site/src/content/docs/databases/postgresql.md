@@ -1825,6 +1825,14 @@ Only HCL and a Go schema can declare a hypertable or a continuous aggregate. A
 YAML or `.sql` document records that it could not say so, and the comparison
 then withholds the removal its silence would otherwise mean.
 
+A declared hypertable or continuous aggregate needs the `timescaledb`
+extension, so the comparison does not drop the extension while the schema
+declares one. This holds when the schema names no extension at all, as a Go
+schema without an extension annotation does. It does not install the extension
+either: declare it, for example with
+`//ptah:schema:extension name="timescaledb" if_not_exists="true"`, when Ptah
+should create it.
+
 ## Next steps
 
 - Declaring these objects in Go sources: [Go annotation reference](../../reference/go-annotations/).

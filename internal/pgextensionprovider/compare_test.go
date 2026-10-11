@@ -56,14 +56,25 @@ func excluding(names ...string) []schemaext.Exclusion {
 	return exclusions
 }
 
+// requiring names extensions as a desired value of another owner requires
+// them, under the common extension kind; see [schemaext.Requirer].
+func requiring(names ...string) []objectidentity.ID {
+	refs := make([]objectidentity.ID, 0, len(names))
+	for _, name := range names {
+		refs = append(refs, pgextension.Subject(pgextension.Ref(name)))
+	}
+	return refs
+}
+
 func column(name, columnType string) schemaext.DeclaredColumn {
 	return schemaext.DeclaredColumn{Table: objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("", "documents"), Name: name, Type: columnType}
 }
 
 // TestCompareExtensions_LeavesWhatAgrees pins the declarations and reads that
 // plan nothing: an extension that agrees once the server's defaults are
-// resolved, one the run excludes, one a declared column's type needs, one the
-// server installs everywhere, and one the desired source did not describe.
+// resolved, one the run excludes, one a declared column's type needs, one a
+// desired value requires, one the server installs everywhere, and one the
+// desired source did not describe.
 func TestCompareExtensions_LeavesWhatAgrees(t *testing.T) {
 	commented := trgm()
 	commented.Comment = new("text similarity")
@@ -119,6 +130,11 @@ func TestCompareExtensions_LeavesWhatAgrees(t *testing.T) {
 			request.DeclaredColumns = []schemaext.DeclaredColumn{column("embedding", "VECTOR(384)[]")}
 			return request
 		}},
+		{name: "an extension a desired value requires", request: func() schemaext.ObjectComparisonRequest {
+			request := comparison(nil, []schemaext.Object{installed("timescaledb", pgextension.ObservedExtension{Schema: "public", Version: "2.30.2"})})
+			request.Required = requiring("timescaledb")
+			return request
+		}},
 		{name: "an extension YugabyteDB installs everywhere", request: func() schemaext.ObjectComparisonRequest {
 			request := comparison(nil, []schemaext.Object{installed("pg_stat_statements", pgextension.ObservedExtension{Schema: "pg_catalog", Version: "1.10"})})
 			request.Target = "yugabytedb"
@@ -147,8 +163,9 @@ func TestCompareExtensions_LeavesWhatAgrees(t *testing.T) {
 
 // TestCompareExtensions_FindsChanges pins each difference a comparison plans,
 // and the controls that show the rules above are narrow: a server's
-// everywhere-extension is its own only on that server, and a column's type
-// needs only the extension that supplies it.
+// everywhere-extension is its own only on that server, a column's type
+// needs only the extension that supplies it, and a requirement keeps only the
+// extension it names, spelled exactly, under the common extension kind.
 func TestCompareExtensions_FindsChanges(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -183,6 +200,18 @@ func TestCompareExtensions_FindsChanges(t *testing.T) {
 			request: func() schemaext.ObjectComparisonRequest {
 				request := comparison(nil, []schemaext.Object{installed("pg_trgm", trgm())})
 				request.DeclaredColumns = []schemaext.DeclaredColumn{column("embedding", "vector(3)"), column("tag", "vector_id")}
+				return request
+			}},
+		{name: "control: a requirement of another extension", want: &pgextension.Change{Before: new(trgm())},
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(nil, []schemaext.Object{installed("pg_trgm", trgm())})
+				request.Required = requiring("timescaledb", "PG_TRGM")
+				return request
+			}},
+		{name: "control: a requirement under the owner's own kind", want: &pgextension.Change{Before: new(trgm())},
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(nil, []schemaext.Object{installed("pg_trgm", trgm())})
+				request.Required = []objectidentity.ID{pgextension.Ref("pg_trgm")}
 				return request
 			}},
 		{name: "control: an exclusion spelled otherwise", want: &pgextension.Change{Before: new(trgm())},

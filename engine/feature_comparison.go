@@ -187,6 +187,10 @@ func (r *Runtime) requestKinds(request schemaext.ComparisonRequest, facets, all 
 }
 
 func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemaext.ComparisonRequest, objectKinds, facetKinds []schemaext.Kind) (schemaext.ObjectComparisonRequest, schemaext.FacetComparisonRequest, error) {
+	required, err := requiredBy(request.Desired)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, schemaext.FacetComparisonRequest{}, err
+	}
 	objects := schemaext.ObjectComparisonRequest{
 		Target: request.Target, Identifiers: request.Identifiers, Capabilities: request.Capabilities,
 		Desired:           schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: request.Desired.Coverage.SelectKinds(objectKinds)},
@@ -196,6 +200,7 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		DatabasePath:      request.DatabasePath,
 		Exclusions:        request.Exclusions,
 		DeclaredColumns:   request.DeclaredColumns,
+		Required:          required,
 	}
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind == objectidentity.KindTable {
@@ -208,7 +213,6 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		Desired: schemaext.FacetState{Records: request.Desired.Facets, Coverage: request.Desired.Coverage.SelectKinds(facetKinds)},
 		Current: schemaext.FacetState{Records: request.Current.Facets, Coverage: request.Current.Coverage.SelectKinds(facetKinds)},
 	}
-	var err error
 	objects, err = r.snapshotComparison(ctx, objects)
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, schemaext.FacetComparisonRequest{}, err
@@ -224,6 +228,36 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		return schemaext.ObjectComparisonRequest{}, schemaext.FacetComparisonRequest{}, err
 	}
 	return objects, facets, nil
+}
+
+// requiredBy collects what the desired objects and facets require, in no
+// particular order; see [schemaext.Requirer]. The comparison snapshot orders
+// the list and drops repeats. It is collected from the whole desired state,
+// because each owner receives only the objects of its own kinds and no facets.
+func requiredBy(desired schemaext.FeatureState) ([]objectidentity.ID, error) {
+	var required []objectidentity.ID
+	add := func(value schemaext.Value) {
+		if requirer, ok := value.(schemaext.Requirer); ok {
+			required = append(required, requirer.Requires()...)
+		}
+	}
+	objects, err := desired.Objects.All()
+	if err != nil {
+		return nil, err
+	}
+	for _, object := range objects {
+		add(object.Value)
+	}
+	for _, record := range desired.Facets {
+		values, err := record.Values.Values()
+		if err != nil {
+			return nil, err
+		}
+		for _, value := range values {
+			add(value)
+		}
+	}
+	return required, nil
 }
 
 // validateExclusions refuses an exclusion of a kind the runtime's documents

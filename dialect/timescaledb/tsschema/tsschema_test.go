@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine"
+	"ptah.run/feature/pgextension"
 )
 
 func registry(c *qt.C) schemaext.Registry {
@@ -220,4 +221,34 @@ func TestRequireNoLimits_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*hourly cannot be exported without losing its coverage record: unrepresentable not read`)
+}
+
+// TestDesiredValues_RequireTheExtension pins that a declared hypertable and a
+// declared continuous aggregate require timescaledb, under the identity the
+// extension's owner gives it outside its own package.
+func TestDesiredValues_RequireTheExtension(t *testing.T) {
+	for _, value := range []schemaext.Value{&tsschema.DesiredHypertable{Column: "time"}, &tsschema.DesiredContinuousAggregate{Body: "SELECT 1"}} {
+		t.Run(string(value.Kind()), func(t *testing.T) {
+			c := qt.New(t)
+
+			requirer, ok := value.(schemaext.Requirer)
+
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(requirer.Requires(), qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("timescaledb"))})
+		})
+	}
+}
+
+// TestObservedValues_RequireNothing pins that what a read reports states no
+// requirement: a requirement is a declaration's.
+func TestObservedValues_RequireNothing(t *testing.T) {
+	for _, value := range []schemaext.Value{&tsschema.ObservedHypertable{Column: "time"}, &tsschema.ObservedContinuousAggregate{Definition: "SELECT 1"}} {
+		t.Run(string(value.Kind()), func(t *testing.T) {
+			c := qt.New(t)
+
+			_, ok := value.(schemaext.Requirer)
+
+			c.Assert(ok, qt.IsFalse)
+		})
+	}
 }
