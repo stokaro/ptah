@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -14,7 +15,7 @@ import (
 // online mode's in the order reported.
 func scanRuleCodes(c *qt.C, sql string, online bool) []string {
 	c.Helper()
-	findings, err := lint.LintFS(
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
 		fixture(map[string]string{"0000000001_x.up.sql": sql + "\n", "0000000001_x.down.sql": "-- restore\n"}),
 		lint.Options{Dialect: "postgres", RequireOnline: online},
 	)
@@ -124,7 +125,7 @@ func TestLintFS_PostgresOnlineGenerationIsLintClean(t *testing.T) {
 		"ALTER TABLE \"accounts\" ADD CONSTRAINT \"accounts_plan_known\" CHECK (plan IN ('monthly', 'annual', 'trial')) NOT VALID;\n" +
 		"ALTER TABLE \"accounts\" VALIDATE CONSTRAINT \"accounts_plan_known\";\n"
 
-	findings, err := lint.LintFS(
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
 		fixture(map[string]string{"1790115827_plan_known.up.sql": up, "1790115827_plan_known.down.sql": "-- restore\n"}),
 		lint.Options{Dialect: "postgres"},
 	)

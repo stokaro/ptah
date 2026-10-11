@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -16,7 +17,7 @@ var snakeCase = &lint.NamingConfig{Match: "^[a-z][a-z0-9_]*$", Message: "use low
 
 func analyzeNaming(c *qt.C, dialect, migration string, naming *lint.NamingConfig) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"1_base.sql":   "CREATE TABLE orders (id int, email text);",
 		"2_change.sql": migration,
 	}), lint.Options{
@@ -299,7 +300,7 @@ func TestNamingRules_AKindsOwnPatternReplacesTheDefault(t *testing.T) {
 func TestNamingRules_SeverityComesFromTheBlock(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"1_base.sql":   "CREATE TABLE orders (id int);",
 		"2_change.sql": "CREATE TABLE Invoices (Id int);",
 	}), lint.Options{
@@ -322,7 +323,7 @@ func TestNamingRules_SeverityComesFromTheBlock(t *testing.T) {
 func TestNamingRules_AreSelectedByTheirCodes(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"1_base.sql":   "CREATE TABLE orders (id int);",
 		"2_change.sql": "CREATE TABLE Invoices (Id int);",
 	}), lint.Options{

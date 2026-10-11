@@ -3,6 +3,8 @@ package lint
 import (
 	"slices"
 	"strings"
+
+	"ptah.run/internal/lintscan"
 )
 
 // BaselineColumn is one column of the schema state a migration version starts
@@ -612,7 +614,7 @@ func ruleWantsRoutineBody(rule Rule, file *File, opts Options) bool {
 		return false
 	}
 	for i := range file.Statements {
-		if looksLikeRoutineDefinition(file.Statements[i].SQL) {
+		if lintscan.MayDefineRoutine(file.Statements[i].SQL) {
 			return true
 		}
 	}

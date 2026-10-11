@@ -16,6 +16,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -158,7 +159,7 @@ func analyzeMigrationsWithBaseline(
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
-	discovery, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{DirFormat: migrationfile.DirFormatAtlas})
+	discovery, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{DirFormat: migrationfile.DirFormatAtlas})
 	c.Assert(err, qt.IsNil)
 	seen := make(map[int64]struct{})
 	for _, file := range discovery.Files() {
@@ -176,7 +177,7 @@ func analyzeMigrationsWithBaseline(
 	}
 	slices.Sort(versions)
 
-	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
@@ -712,7 +713,7 @@ func TestWriteMigrateLintText_NilAnalysisErrors(t *testing.T) {
 
 func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
@@ -749,7 +750,7 @@ func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
 
 func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"R__drop_users.sql": {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
@@ -781,7 +782,7 @@ func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T)
 
 func TestWriteMigrateLintText_RendersMappedEmptyFlywayRepeatableVersion(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{

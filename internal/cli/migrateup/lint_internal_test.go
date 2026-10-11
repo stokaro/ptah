@@ -13,6 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/migrationsnapshot"
@@ -32,7 +33,7 @@ func TestLintPendingDestructive_DoesNotApplyAtlasFileSuppression(t *testing.T) {
 		},
 	}
 
-	findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -75,7 +76,7 @@ func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T)
 				"0000000001_drop.down.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 			}
 
-			findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "")
+			findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
 
 			c.Assert(err, qt.IsNil)
 			codes := make([]string, 0, len(findings))
@@ -101,7 +102,7 @@ func TestLintPendingDestructive_HonorsDirectoryPrefixedExclusion(t *testing.T) {
 		},
 	}
 
-	findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "migrations")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "migrations")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)
@@ -121,7 +122,7 @@ func TestLintPendingDestructive_RejectsConfiguredDialectMismatch(t *testing.T) {
 		},
 	}
 
-	findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
 
 	c.Assert(err, qt.ErrorMatches, `lint dialect "mysql" does not match database dialect "sqlite"`)
 	c.Assert(findings, qt.IsNil)
@@ -169,7 +170,7 @@ func TestCapturedMigrationsFeedProviderAndDestructiveGateFromSameBytes(t *testin
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatPtah),
 	)
 	c.Assert(err, qt.IsNil)
-	findings, err := lintPendingDestructive(snapshot, []int64{1}, "sqlite", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), snapshot, []int64{1}, "sqlite", "")
 	c.Assert(err, qt.IsNil)
 
 	migrations := provider.Migrations()
@@ -201,7 +202,7 @@ func TestLockedDestructiveLintHookUsesLockedPlanVersions(t *testing.T) {
 	}
 	policy, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
 	c.Assert(err, qt.IsNil)
-	hook := lockedDestructiveLintHook(fsys, policy, "")
+	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "")
 
 	err = hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{2},
@@ -228,7 +229,7 @@ func TestLockedDestructiveLintHookAllowsSafeLockedPlan(t *testing.T) {
 	}
 	policy, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
 	c.Assert(err, qt.IsNil)
-	hook := lockedDestructiveLintHook(fsys, policy, "")
+	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "")
 
 	err = hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{1},

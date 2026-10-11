@@ -25,6 +25,7 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
+	"ptah.run/internal/lintscan"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbcomparison"
 	"ptah.run/internal/ydbextensions"
@@ -65,6 +66,9 @@ func New() (*engine.Runtime, error) {
 				Rendering:   renderingService{},
 				Preparation: schemapreparation.Identity{},
 				Creations:   schemaprojection.IdentityCreations{},
+				// Every built-in dialect splits its migrations with the
+				// lint scanner in the dialect's mode.
+				Splitter: lintscan.Splitter{Dialect: name},
 			}},
 		}
 		if name == platform.Postgres {

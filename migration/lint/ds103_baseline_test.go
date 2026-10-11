@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -16,7 +17,7 @@ import (
 // inplace_test.go pins on its own.
 func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lint.BaselineColumn) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(costFS(alter)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(costFS(alter)), lint.Options{
 		Dialect:   dialect,
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},

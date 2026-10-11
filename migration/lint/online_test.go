@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/lint"
 )
@@ -18,7 +19,7 @@ import (
 // ON codes it reported.
 func onlineRuleCodes(c *qt.C, dialect, sql string) []string {
 	c.Helper()
-	findings, err := lint.LintFS(
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
 		fixture(map[string]string{"0000000001_x.up.sql": sql}),
 		lint.Options{Dialect: dialect, RequireOnline: true},
 	)
@@ -146,7 +147,7 @@ func TestOnlineMode_MySQLAsksTheServer(t *testing.T) {
 func TestOnlineMode_StaysSilentWhenNobodyAskedForIt(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := lint.LintFS(
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
 		fixture(map[string]string{"0000000001_x.up.sql": "CREATE INDEX idx ON users (email);"}),
 		lint.Options{Dialect: "postgres"},
 	)

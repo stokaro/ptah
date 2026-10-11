@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -20,7 +21,7 @@ func lintSelectorFS(c *qt.C, opts lint.Options) []lint.Finding {
 	c.Helper()
 	opts.Dialect = "mysql"
 	opts.DirFormat = migrationfile.DirFormatPtah
-	findings, err := lint.LintFS(fixture(selectorFS), opts)
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(selectorFS), opts)
 	c.Assert(err, qt.IsNil)
 	return findings
 }
@@ -118,7 +119,7 @@ func TestSelectors_ANoLintDirectiveFollowsTheSameRule(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			findings, err := lint.LintFS(fixture(map[string]string{"0000000001_index.up.sql": test.sql}), lint.Options{
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"0000000001_index.up.sql": test.sql}), lint.Options{
 				Dialect:   "mysql",
 				DirFormat: migrationfile.DirFormatPtah,
 			})
@@ -161,7 +162,7 @@ func TestSelectors_ANoLintCodeLeavesADeclaredNeighborReported(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			findings, err := lint.LintFS(fixture(map[string]string{
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"0000000001_drop.up.sql":   test.sql,
 				"0000000001_drop.down.sql": "-- restore\n",
 			}), lint.Options{

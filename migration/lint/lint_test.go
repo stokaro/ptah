@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -46,7 +47,7 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 		"0000000001_bad.down.sql": "-- restore\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{
@@ -80,7 +81,7 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 func TestLintFS_InvalidProgrammaticRuleSeverityFailsFast(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := lint.LintFS(fixture(map[string]string{
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_init.up.sql":   "CREATE TABLE users (id INTEGER);\n",
 		"0000000001_init.down.sql": "DROP TABLE users;\n",
 	}), lint.Options{
@@ -95,7 +96,7 @@ func TestLintFS_InvalidProgrammaticRuleSeverityFailsFast(t *testing.T) {
 func TestLintFS_InvalidProgrammaticRuleSelectorFailsFast(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := lint.LintFS(fixture(map[string]string{
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_init.up.sql":   "DROP TABLE users;\n",
 		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
 	}), lint.Options{
@@ -110,7 +111,7 @@ func TestLintFS_InvalidProgrammaticRuleSelectorFailsFast(t *testing.T) {
 func TestLintFS_WhitespacePaddedProgrammaticRuleSelectorFailsFast(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := lint.LintFS(fixture(map[string]string{
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_init.up.sql":   "DROP TABLE users;\n",
 		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
 	}), lint.Options{Disabled: []string{" DS101 "}})
@@ -121,7 +122,7 @@ func TestLintFS_WhitespacePaddedProgrammaticRuleSelectorFailsFast(t *testing.T) 
 func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := lint.LintFS(fixture(map[string]string{
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_init.up.sql":   "DROP TABLE users;\n",
 		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
 	}), lint.Options{
@@ -143,7 +144,7 @@ func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
 		"0000000002_next.down.sql": "ALTER TABLE users ADD COLUMN legacy TEXT;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Disabled: []string{"MF", "BC", "PG", "MY"},
 		Selection: lint.VersionSelection{
 			Versions:   []int64{2},
@@ -163,7 +164,7 @@ func TestLintFS_CleanMigrationHasNoFindings(t *testing.T) {
 		"0000000001_create_users.down.sql": "DROP TABLE IF EXISTS users;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "mysql"})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "mysql"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0,
 		qt.Commentf("a plain CREATE TABLE with a paired down file is clean; got: %v", findings))
@@ -178,7 +179,7 @@ func TestLintFS_DownMigrationStatementsAreNotLinted(t *testing.T) {
 		"0000000001_create_users.down.sql": "DROP TABLE users;\nALTER TABLE audit DROP COLUMN old;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0, qt.Commentf("got: %v", findings))
 }
@@ -193,7 +194,7 @@ func TestLintFS_MigrationFormRules(t *testing.T) {
 		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF103
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103"})
 	for _, f := range findings {
@@ -213,7 +214,7 @@ func TestLintFS_PairsByVersionLikeMigrator(t *testing.T) {
 		"0000000001_create_users_table.down.sql": "DROP TABLE users;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0,
 		qt.Commentf("version 1 has both an up and a down; no MF101P expected; got %v", findings))
@@ -227,7 +228,7 @@ func TestLintFS_AtlasImportedFlywayRepeatableIsContentLinted(t *testing.T) {
 		"3R_views.sql":   "DROP TABLE users;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(findings[0].File, qt.Equals, "3R_views.sql")
@@ -247,7 +248,7 @@ func lintOneDialect(c *qt.C, dialect, sql string) []string {
 		"0000000001_x.up.sql":   sql + "\n",
 		"0000000001_x.down.sql": "-- restore\n",
 	})
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: dialect})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: dialect})
 	c.Assert(err, qt.IsNil)
 	return rulesOf(findings)
 }
@@ -430,7 +431,7 @@ ALTER TABLE t ADD COLUMN c INT;
 `,
 		"0000000001_x.down.sql": "-- restore\n",
 	})
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG103", "TX101"})
 
@@ -464,7 +465,7 @@ ALTER TABLE t ADD COLUMN c INT;`,
 				"0000000001_x.up.sql":   tt.sql,
 				"0000000001_x.down.sql": "-- restore\n",
 			})
-			findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(findings), qt.HasLen, 0)
 		})
@@ -512,7 +513,7 @@ DROP INDEX idx;
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			findings, err := lint.LintFS(
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
 				fixture(map[string]string{"1_txmode.sql": test.sql}),
 				lint.Options{
 					Dialect:   "postgres",
@@ -527,7 +528,7 @@ DROP INDEX idx;
 
 func TestLintFS_AtlasTxtarFindingUsesSourceLine(t *testing.T) {
 	c := qt.New(t)
-	findings, err := lint.LintFS(
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
 		fixture(map[string]string{
 			"1_drop.sql": `-- atlas:txtar
 
@@ -582,7 +583,7 @@ ALTER TABLE t ADD COLUMN c INT;`,
 				"0000000001_x.up.sql":   tt.sql,
 				"0000000001_x.down.sql": "-- restore\n",
 			})
-			findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG103", "TX101"})
 		})
@@ -678,7 +679,7 @@ func TestLintFS_ScanningKeepsLineNumbers(t *testing.T) {
 		"0000000001_x.down.sql": "-- restore\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "mysql"})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "mysql"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "DS102"})
 	c.Assert(linesOf(findings), qt.DeepEquals, []int{3, 3},
@@ -842,7 +843,7 @@ func TestLintFS_NestedDirectoriesAreLinted(t *testing.T) {
 		"sub/0000000001_a.down.sql": "-- restore\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{PathPrefix: "db/migrations"})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{PathPrefix: "db/migrations"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(filesOf(findings), qt.DeepEquals, []string{
@@ -863,7 +864,7 @@ func TestLintFS_UpSuffixFallbackScansMalformedVersions(t *testing.T) {
 		"bad_version.down.sql": "-- restore\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103", "MF103", "BC103", "DS101"},
 		qt.Commentf("naming warnings for both files plus the hazard in the up file; got %v", findings))
@@ -881,7 +882,7 @@ func TestLintFS_SuffixlessNamesFollowTheMigrator(t *testing.T) {
 		"0000000002_teardown.sql": "DROP TABLE audit;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103", "MF103"},
@@ -898,7 +899,7 @@ func TestLintFS_AtlasMigrationNamesAreScanned(t *testing.T) {
 		"20220318104614_team_A.sql": "DROP TABLE users;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"},
 		qt.Commentf("Atlas files should be treated as runnable up migrations, not MF103-only noise; got %v", findings))
@@ -914,7 +915,7 @@ func TestLintFS_AtlasImportedMigrationNamesAreScanned(t *testing.T) {
 		"2.10.x-20_next.sql": "CREATE TABLE next_step (id INT);\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"},
 		qt.Commentf("Atlas-imported files should be treated as runnable migrations, not MF-only noise; got %v", findings))
@@ -938,7 +939,7 @@ CREATE TABLE users_{{ $ }} (id INT);
 `,
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"},
 		qt.Commentf("Atlas templates should be rendered before linting and shared definitions should not emit MF103; got %v", findings))
@@ -952,7 +953,7 @@ func TestLintFS_PromptPlaceholdersDoNotSelectTemplateRendering(t *testing.T) {
 		"002_template.sql": `{{ if eq .Env "" }}DROP TABLE old_settings;{{ end }}`,
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "BC103", "DS101"})
 }
@@ -966,7 +967,7 @@ func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
 		"0000000002_y.UP.SQL":   "DROP TABLE users;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103"},
 		qt.Commentf("a case-variant file the migrator will not run earns a naming warning instead of vanishing"))
@@ -983,22 +984,22 @@ ALTER TABLE users MODIFY COLUMN email VARCHAR(64);
 	})
 
 	// postgres: PG rules fire, MY rules do not (DS103 is generic and stays).
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG101", "DS103"})
 
 	// mariadb: MY rules fire, PG rules do not.
-	findings, err = lint.LintFS(fsys, lint.Options{Dialect: "mariadb"})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "mariadb"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103", "MY101"})
 
 	// mysql gates identically to mariadb.
-	findings, err = lint.LintFS(fsys, lint.Options{Dialect: "mysql"})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "mysql"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103", "MY101"})
 
 	// empty dialect: everything fires.
-	findings, err = lint.LintFS(fsys, lint.Options{})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG101", "DS103", "MY101"})
 }
@@ -1011,7 +1012,7 @@ func TestAnalyzeFS_CustomRuleUsesPublicScanner(t *testing.T) {
 		"0000000001_create_users.down.sql": "DROP TABLE users;\n",
 	})
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{})
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	files := analysis.Files()
 	c.Assert(files, qt.HasLen, 2)
@@ -1024,7 +1025,7 @@ func TestAnalyzeFS_CustomRuleUsesPublicScanner(t *testing.T) {
 		Severity:       lint.SeverityWarning,
 		CheckStatement: checkCustomCreateTable,
 	}
-	findings, err := lint.LintFS(fsys, lint.Options{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		ExtraRules: []lint.Rule{customRule},
 		RuleConfigs: map[string]lint.RuleConfig{
 			"XX001": {Severity: lint.SeverityError},
@@ -1046,7 +1047,7 @@ func checkCustomCreateTable(stmt *lint.Statement) (bool, string) {
 func TestLintFS_InvalidCustomRuleFailsFast(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := lint.LintFS(fixture(map[string]string{
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_x.up.sql":   "SELECT 1;\n",
 		"0000000001_x.down.sql": "-- restore\n",
 	}), lint.Options{ExtraRules: []lint.Rule{{Code: "XX001", Title: "broken"}}})
@@ -1057,7 +1058,7 @@ func TestLintFS_InvalidCustomRuleFailsFast(t *testing.T) {
 func TestLintFS_LowercaseCustomRuleCodeFailsFast(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := lint.LintFS(fixture(map[string]string{
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_x.up.sql":   "SELECT 1;\n",
 		"0000000001_x.down.sql": "-- restore\n",
 	}), lint.Options{ExtraRules: []lint.Rule{{
@@ -1082,7 +1083,7 @@ func TestLintFS_RuleConfigsOverrideSeverityAndExcludePaths(t *testing.T) {
 		"main/0000000002_main.down.sql":     "ALTER TABLE users ADD COLUMN old_main TEXT;\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		RuleConfigs: map[string]lint.RuleConfig{
 			"DS102": {
 				Severity: lint.SeverityWarning,
@@ -1122,7 +1123,7 @@ ALTER TABLE users ALTER COLUMN email TYPE TEXT;
 		"0000000001_suppress.down.sql": "-- restore\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	// Each directive names one rule, and each rule reports one consequence, so
 	// the rollout break of every dropped name survives a directive that accepts
@@ -1140,7 +1141,7 @@ ALTER TABLE users DROP COLUMN legacy;
 		"0000000001_trailing.down.sql": "-- restore\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103", "BC104", "DS102"})
 }
@@ -1157,17 +1158,17 @@ CREATE INDEX i ON b (c);
 	})
 
 	// Disable one exact code.
-	findings, err := lint.LintFS(fsys, lint.Options{Disabled: []string{"BC103", "DS101"}})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"BC103", "DS101"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "DS102", "PG101"})
 
 	// Disable a whole family by prefix.
-	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{"DS"}})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"DS"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "BC104", "PG101"})
 
 	// A stray empty entry must not disable everything.
-	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{""}})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{""}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102", "PG101"})
 }
@@ -1188,17 +1189,17 @@ ALTER TABLE users DROP CONSTRAINT uq_email;
 	// stays DS105. No statement is flagged by both a CD code and DS105. The
 	// primary key drop is also the table copy MY133 names, a different
 	// hazard from the guarantee CD103 names, so both report it.
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD101", "CD102", "CD103", "MY133", "DS105"})
 
 	// Disabling the CD family silences the typed codes but keeps the DS105 fallback.
-	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{"CD"}})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"CD"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MY133", "DS105"})
 
 	// Disabling one CD code silences only that constraint type.
-	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{"CD101"}})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"CD101"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD102", "CD103", "MY133", "DS105"})
 
@@ -1207,7 +1208,7 @@ ALTER TABLE users DROP CONSTRAINT uq_email;
 		"0000000001_fk.up.sql":   "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;\n",
 		"0000000001_fk.down.sql": "-- restore\n",
 	})
-	findings, err = lint.LintFS(fkOnly, lint.Options{
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fkOnly, lint.Options{
 		RuleConfigs: map[string]lint.RuleConfig{"CD101": {Severity: lint.SeverityWarning}},
 	})
 	c.Assert(err, qt.IsNil)
@@ -1230,7 +1231,7 @@ $ptah$ LANGUAGE plpgsql;
 		"0000000001_fn.down.sql": "DROP FUNCTION noop();\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	// The claim is that a statement INSIDE the body triggers no rule. AC101 is
 	// about the body not being read at all, which is the opposite of reading it
@@ -1249,7 +1250,7 @@ func TestLintFS_PathPrefixAppearsInFindings(t *testing.T) {
 		"0000000001_bad.down.sql": "-- restore\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{PathPrefix: "db/migrations"})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{PathPrefix: "db/migrations"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(filesOf(findings), qt.DeepEquals, []string{
 		"db/migrations/0000000001_bad.up.sql",
@@ -1260,7 +1261,7 @@ func TestLintFS_PathPrefixAppearsInFindings(t *testing.T) {
 func TestLintFS_NoMigrationFilesIsAnError(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := lint.LintFS(fixture(map[string]string{"README.md": "not sql"}), lint.Options{})
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"README.md": "not sql"}), lint.Options{})
 	c.Assert(err, qt.ErrorMatches, "no \\*\\.sql migration files found")
 }
 
@@ -1391,7 +1392,7 @@ func TestLintFS_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
 		"0000000001_drop.down.sql": "CREATE TABLE users (id INTEGER);\n",
 	})
 
-	findings, err := lint.LintFS(fsys, lint.Options{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		RuleConfigs: map[string]lint.RuleConfig{
 			"DS101": {Exclude: []string{"[legacy/**"}},
 		},

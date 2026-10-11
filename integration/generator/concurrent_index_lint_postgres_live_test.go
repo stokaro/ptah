@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrator"
@@ -222,7 +223,7 @@ type Member struct {
 // directory and returns the rule code of every finding, in report order.
 func lintGeneratedMigrations(c *qt.C, migrationsDir string) []string {
 	c.Helper()
-	findings, err := lint.LintFS(os.DirFS(migrationsDir), lint.Options{Dialect: platform.Postgres})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), os.DirFS(migrationsDir), lint.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	rules := make([]string, 0, len(findings))
 	for _, finding := range findings {

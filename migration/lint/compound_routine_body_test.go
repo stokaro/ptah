@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -55,7 +56,7 @@ func TestAnalyzeFS_ACompoundRoutineBodyIsOneStatement(t *testing.T) {
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   row.dialect,
 			})
@@ -100,7 +101,7 @@ func TestAnalyzeFS_ARoutineBodyIsNotAMigrationStatement(t *testing.T) {
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "mysql",
 			})
@@ -186,7 +187,7 @@ func TestAnalyzeFS_DS106ReadsTheStatementAndNotTheBody(t *testing.T) {
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "postgres",
 			})
@@ -230,7 +231,7 @@ func TestAnalyzeFS_DS107CoversEveryObjectItClaims(t *testing.T) {
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "postgres",
 			})
@@ -294,7 +295,7 @@ func TestAnalyzeFS_ARoutineWhoseBodyIsNotReadIsNotCleanEither(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   row.dialect,
 			})
@@ -313,7 +314,7 @@ func TestAnalyzeFS_ARoutineWhoseBodyIsNotReadIsNotCleanEither(t *testing.T) {
 func TestAnalyzeFS_TheRoutineCoverageFindingDoesNotBlock(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(routineFS(
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(
 		"CREATE FUNCTION f() RETURNS void AS $$ BEGIN DROP TABLE t; END; $$ LANGUAGE plpgsql;\n",
 	), lint.Options{DirFormat: migrationfile.DirFormatAtlas, Dialect: "postgres"})
 

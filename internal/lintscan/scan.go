@@ -1,4 +1,9 @@
-package lint
+// Package lintscan is the statement scanner of migration lint: where a
+// statement ends, what is a comment, and the word forms rules read, for each
+// built-in dialect. The built-in owners register it as their dialect's
+// [ptah.run/core/lintext.Splitter], and the lint host splits with its
+// dialect-blind mode a run that names no target.
+package lintscan
 
 import (
 	"strings"
@@ -8,14 +13,14 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// scanMode selects dialect-specific lexing behavior for the lint scanner.
+// Mode selects dialect-specific lexing behavior for the lint scanner.
 // SQL comment and string syntax differ between the supported dialects in
 // ways that change where statements begin and end, so the scanner cannot be
 // dialect-blind: under PostgreSQL's standard_conforming_strings a backslash
 // is a literal character (treating it as an escape lets 'C:\' swallow the
 // rest of the file), while MySQL treats backslash as an escape and adds the
 // # line-comment and /*!...*/ executable-comment forms.
-type scanMode struct {
+type Mode struct {
 	// dialect is the normalized target, carried so the statement splitter can
 	// read a compound routine body the way the dialect writes one. Empty is a
 	// target nobody named, which recognizes only the dialect-blind form.
@@ -48,7 +53,7 @@ type scanMode struct {
 	yql bool
 }
 
-// modeForDialect maps a lint target dialect to its lexing behavior. An empty
+// ForDialect maps a lint target dialect to its lexing behavior. An empty
 // or unknown dialect gets a hybrid whose overriding goal is to never HIDE a
 // hazard: every lexing rule it omits is one that could swallow a statement in
 // one of the supported dialects. It recognizes strings and PostgreSQL
@@ -69,16 +74,16 @@ type scanMode struct {
 //
 // The dialect-specific behaviors (MySQL '#' comments, PostgreSQL nested
 // comments) require an explicit --dialect.
-func modeForDialect(dialect string) scanMode {
+func ForDialect(dialect string) Mode {
 	switch dialect {
 	case "mysql", "mariadb":
-		return scanMode{dialect: dialect, hashComments: true, backslashEscapes: true, execComments: true}
+		return Mode{dialect: dialect, hashComments: true, backslashEscapes: true, execComments: true}
 	case "postgres":
-		return scanMode{dialect: dialect, dollarQuotes: true, nestedComments: true}
+		return Mode{dialect: dialect, dollarQuotes: true, nestedComments: true}
 	case platform.YDB:
-		return scanMode{dialect: dialect, yql: true}
+		return Mode{dialect: dialect, yql: true}
 	default:
-		return scanMode{dialect: dialect, execComments: true, dollarQuotes: true}
+		return Mode{dialect: dialect, execComments: true, dollarQuotes: true}
 	}
 }
 
@@ -111,7 +116,7 @@ type lintToken struct {
 
 // scanSQL tokenizes SQL under the given dialect mode. It never fails: an
 // unterminated string or comment consumes the rest of the input.
-func scanSQL(input string, mode scanMode) []lintToken {
+func scanSQL(input string, mode Mode) []lintToken {
 	if mode.yql {
 		return scanYQL(input)
 	}
@@ -136,7 +141,7 @@ func scanSQL(input string, mode scanMode) []lintToken {
 
 // nextLintToken scans one token starting at input[i] and returns its kind,
 // the offset past its end, and the updated executable-comment depth.
-func nextLintToken(input string, i int, mode scanMode, execDepth int) (kind lintTokenKind, end, depth int) {
+func nextLintToken(input string, i int, mode Mode, execDepth int) (kind lintTokenKind, end, depth int) {
 	c := input[i]
 	switch {
 	case isSpaceByte(c):
@@ -158,7 +163,7 @@ func nextLintToken(input string, i int, mode scanMode, execDepth int) (kind lint
 
 // nextPunctToken handles the punctuation-led tokens: comment forms, dollar
 // quotes and bare operator characters.
-func nextPunctToken(input string, i int, mode scanMode, execDepth int) (kind lintTokenKind, end, depth int) {
+func nextPunctToken(input string, i int, mode Mode, execDepth int) (kind lintTokenKind, end, depth int) {
 	n := len(input)
 	c := input[i]
 	switch {
@@ -220,7 +225,7 @@ func lineCommentEnd(input string, i int) int {
 // ends and whether it opened as an executable-comment marker rather than an
 // ordinary comment: MariaDB's /*M!NNNNN or the /*!NNNNN form MySQL and
 // MariaDB share. Neither marker is recognized unless mode.execComments is set.
-func blockCommentOpen(input string, i int, mode scanMode) (end int, opensExec bool) {
+func blockCommentOpen(input string, i int, mode Mode) (end int, opensExec bool) {
 	if mode.execComments && isMariaDBExecMarker(input, i) {
 		// The /*M!NNNNN marker is comment syntax, but MariaDB executes its
 		// content; scan it as code until the */.

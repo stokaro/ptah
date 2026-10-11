@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -53,7 +54,7 @@ func varcharFS() fstest.MapFS {
 func TestDeclaredRule_RunsFromConfiguration(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(varcharFS(), declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
@@ -78,7 +79,7 @@ func TestDeclaredRule_SilentOnAStatementItDoesNotMatch(t *testing.T) {
 		"1_init.sql": {Data: []byte("CREATE TABLE users (id integer, nick text);")},
 	}
 
-	analysis, err := lint.AnalyzeFS(fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.Findings(), qt.HasLen, 0)
@@ -91,7 +92,7 @@ func TestDeclaredRule_SeverityAndTitleAreHonored(t *testing.T) {
 	config.Severity = lint.SeverityError
 	config.Title = "varchar(n) instead of text"
 
-	analysis, err := lint.AnalyzeFS(varcharFS(), declaredRuleOptions("NOVARCHAR", config, "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("NOVARCHAR", config, "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
@@ -120,7 +121,7 @@ func TestDeclaredRule_DialectScope(t *testing.T) {
 			config := varcharRule()
 			config.Dialects = []string{"postgres"}
 
-			analysis, err := lint.AnalyzeFS(
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(),
 				varcharFS(), declaredRuleOptions("NOVARCHAR", config, test.running))
 
 			c.Assert(err, qt.IsNil)
@@ -136,9 +137,9 @@ func TestDeclaredRule_ReadsTheDialectItRunsUnder(t *testing.T) {
 	c := qt.New(t)
 	config := lint.RuleConfig{Match: `dialect == "postgres"`, Message: "postgres only"}
 
-	postgres, err := lint.AnalyzeFS(varcharFS(), declaredRuleOptions("PGONLY", config, "postgres"))
+	postgres, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("PGONLY", config, "postgres"))
 	c.Assert(err, qt.IsNil)
-	mysql, err := lint.AnalyzeFS(varcharFS(), declaredRuleOptions("PGONLY", config, "mysql"))
+	mysql, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("PGONLY", config, "mysql"))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(postgres.Findings(), qt.HasLen, 1)
@@ -172,7 +173,7 @@ func TestDeclaredRule_DownDirection(t *testing.T) {
 			opts := declaredRuleOptions("NOVARCHAR", config, "postgres")
 			opts.DirFormat = migrationfile.DirFormatPtah
 
-			analysis, err := lint.AnalyzeFS(fsys, opts)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, opts)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(findingsFor(analysis.Findings(), "NOVARCHAR"), qt.HasLen, test.want)
@@ -193,7 +194,7 @@ func TestDeclaredRule_HonorsNolint(t *testing.T) {
 			"-- ptah:nolint NOVARCHAR\nCREATE TABLE users (id integer, nick VARCHAR(20));")},
 	}
 
-	analysis, err := lint.AnalyzeFS(fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.Findings(), qt.HasLen, 0)
@@ -206,7 +207,7 @@ func TestDeclaredRule_HonorsDisable(t *testing.T) {
 	opts := declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres")
 	opts.Disabled = []string{"NOVARCHAR"}
 
-	analysis, err := lint.AnalyzeFS(varcharFS(), opts)
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), opts)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.Findings(), qt.HasLen, 0)
@@ -221,7 +222,7 @@ func TestDeclaredRule_EvaluationFailureIsReported(t *testing.T) {
 	c := qt.New(t)
 	config := lint.RuleConfig{Match: `upper(statement.sql)`, Message: "unused"}
 
-	analysis, err := lint.AnalyzeFS(varcharFS(), declaredRuleOptions("BROKEN", config, "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("BROKEN", config, "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
@@ -286,7 +287,7 @@ func TestDeclaredRule_RefusedDeclarations(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.message)
 			// The same refusal reaches an actual run, rather than only the gate.
-			_, analyzeErr := lint.AnalyzeFS(varcharFS(), opts)
+			_, analyzeErr := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), opts)
 			c.Assert(analyzeErr, qt.IsNotNil)
 		})
 	}
@@ -302,7 +303,7 @@ func TestDeclaredRule_ConfiguringAnExistingRuleStillWorks(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{"1_drop.sql": {Data: []byte("DROP TABLE users;")}}
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat:   migrationfile.DirFormatAtlas,
 		RuleConfigs: map[string]lint.RuleConfig{"DS101": {Severity: lint.SeverityError}},
 	})
@@ -360,7 +361,7 @@ func TestDeclaredRule_SuppressionIsPerStatementNotPerLine(t *testing.T) {
 				"CREATE TABLE a (x VARCHAR(1)); CREATE TABLE b (y VARCHAR(1));\n")},
 	}
 
-	analysis, err := lint.AnalyzeFS(fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	findings := findingsFor(analysis.Findings(), "NOVARCHAR")

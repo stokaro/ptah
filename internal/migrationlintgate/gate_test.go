@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/migration/lint"
 )
@@ -24,7 +25,7 @@ func TestAnalyze_HappyPath_AppliesPolicy(t *testing.T) {
 		},
 	}
 
-	findings, err := migrationlintgate.Analyze(fsys, []int64{1}, "sqlite", "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)
@@ -57,7 +58,7 @@ func TestAnalyze_FailurePath_InvalidPolicy(t *testing.T) {
 		},
 	}
 
-	findings, err := migrationlintgate.Analyze(fsys, []int64{1}, "sqlite", "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
 
 	c.Assert(err, qt.ErrorMatches, `.*rule DS101 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
 	c.Assert(findings, qt.IsNil)

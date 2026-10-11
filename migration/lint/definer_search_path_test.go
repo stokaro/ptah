@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -66,7 +67,7 @@ func TestAnalyzeFS_ADefinerRoutineWithoutSearchPathIsReported(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "postgres",
 			})
@@ -96,7 +97,7 @@ func TestAnalyzeFS_TheDefinerRuleIsPostgresOnly(t *testing.T) {
 		t.Run(row.dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(routineFS(sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   row.dialect,
 			})
@@ -134,7 +135,7 @@ func TestAnalyzeFS_APinnedRoutineStaysInTheChangeModel(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "postgres",
 			})

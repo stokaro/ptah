@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/lintext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacomparison"
@@ -84,6 +85,10 @@ type Provider struct {
 	// provider registers, and the provider owns both codecs of the model. One
 	// kind may limit several models; a pair is registered once.
 	CoverageLimits []schemaext.LimitMapping
+	// Lint publishes the migration lint rules the provider checks and the
+	// services that check them. A rule judges targets the runtime registers,
+	// whichever provider owns them, and a code belongs to one rule.
+	Lint []Lint
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -116,6 +121,9 @@ type Target struct {
 	// Comparison holds the rules the shared comparison takes from this
 	// target. A nil member keeps the shared rule for that area.
 	Comparison schemacomparison.Rules
+	// Splitter splits the target's migration SQL into the statements
+	// migration lint reads. Nil leaves lint unable to run for the target.
+	Splitter lintext.Splitter
 }
 
 // Runtime is a frozen selection of providers. It is safe for concurrent calls
@@ -149,6 +157,8 @@ type Runtime struct {
 	yaml                yamlext.Set
 	vocabulary          coverage.Vocabulary
 	limits              []schemaext.LimitMapping
+	lintRules           map[string]ownedLintRule
+	lintServices        []lintext.Service
 }
 
 type target struct {
@@ -163,6 +173,7 @@ type target struct {
 	comparison      schemacomparison.Rules
 	creations       schemaprojection.TableCreationService
 	constraints     schemaprojection.ConstraintService
+	splitter        lintext.Splitter
 }
 
 // New validates and freezes explicit provider ownership. Duplicate provider
@@ -178,6 +189,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		relations:      make(map[relationKey]int),
 		properties:     make(map[propertyKey]int),
 		probes:         make(map[conversionKey]int),
+		lintRules:      make(map[string]ownedLintRule),
 	}
 	owners := make(map[string]struct{}, len(providers))
 	var codecs []schemaext.OwnedCodec
@@ -209,6 +221,11 @@ func New(providers ...Provider) (*Runtime, error) {
 		}
 		for _, normalization := range provider.Normalizations {
 			if err := runtime.registerNormalization(provider.ID, normalization); err != nil {
+				return nil, err
+			}
+		}
+		for _, lint := range provider.Lint {
+			if err := runtime.registerLint(provider.ID, lint); err != nil {
 				return nil, err
 			}
 		}
@@ -305,6 +322,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"column comparison", declared.Comparison.Columns},
 		{"index comparison", declared.Comparison.Indexes},
 		{"view comparison", declared.Comparison.Views},
+		{"statement splitter", declared.Splitter},
 	} {
 		if service.value != nil && nilService(service.value) {
 			return fmt.Errorf("%w: target %q has a typed-nil %s service", ErrInvalidRegistration, declared.Name, service.name)
@@ -320,6 +338,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
+			splitter: declared.Splitter,
 		}
 	}
 	return nil

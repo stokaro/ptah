@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -106,7 +107,7 @@ func TestYDBSequenceRules_LeaveWhatTheServerKeeps(t *testing.T) {
 func TestYDBSequenceRules_SayWhatToDo(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0001_t.up.sql": serialTables +
 			"ALTER SEQUENCE `/local/counters/_serial_column_n` INCREMENT BY 2;\n" +
 			"ALTER SEQUENCE `/local/shop/orders/_serial_column_id` RESTART WITH 100;\n" +

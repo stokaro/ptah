@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -63,7 +64,7 @@ func destructiveSites(c *qt.C, test rebuildCase) []string {
 		c.Assert(err, qt.IsNil)
 		opts.Target = target
 	}
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_items.up.sql":  test.first,
 		"0000000002_change.up.sql": test.second,
 	}), opts)
@@ -195,7 +196,7 @@ func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 			for _, name := range test.baseline {
 				opts.Baseline = append(opts.Baseline, lint.BaselineColumn{Version: 2, Table: "items", Name: name})
 			}
-			analysis, err := lint.AnalyzeFS(fixture(map[string]string{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"0000000001_items.up.sql":  test.first,
 				"0000000002_change.up.sql": test.second,
 			}), opts)
@@ -214,7 +215,7 @@ func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 // drop: the analyzer it is compatible with was not measured on this shape.
 func TestTableRebuild_IsADropOnTheCompatibilitySurface(t *testing.T) {
 	c := qt.New(t)
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_items.up.sql":  sqliteItems,
 		"0000000002_change.up.sql": sqliteRebuild,
 	}), lint.Options{Dialect: "sqlite", Compatibility: lint.CompatibilityProfileAtlas})

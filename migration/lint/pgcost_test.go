@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -27,7 +28,7 @@ func pgColumn(name, columnType string, notNull bool) lint.BaselineColumn {
 
 func analyzePG(c *qt.C, alter string, baseline ...lint.BaselineColumn) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(pgFS(alter)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(pgFS(alter)), lint.Options{
 		Dialect:   "postgres",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
@@ -448,7 +449,7 @@ func TestPostgresCostRules_SubsumeAndKeepWhatTheyShould(t *testing.T) {
 func TestPostgresCostRules_RunOnlyForPostgreSQL(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(fixture(pgFS("ALTER TABLE orders ADD PRIMARY KEY (id);")), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(pgFS("ALTER TABLE orders ADD PRIMARY KEY (id);")), lint.Options{
 		Dialect:   "mysql",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},

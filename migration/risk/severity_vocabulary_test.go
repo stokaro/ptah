@@ -26,6 +26,8 @@ const canonicalPackage = "migration/risk"
 // called itself shared by every producer while five packages had quietly grown
 // their own, and nothing said so (stokaro/ptah#2395).
 var separateVocabularies = map[string]string{
+	"core/lintext": "the lint provider contract's level, which core declares because it imports no migration package; " +
+		"it spells the lint subset of this scale (info, warning, error), pinned by migration/lint's tests",
 	"internal/adoptpreflight": "scores a preflight outcome (ok, action, refuse), not a level",
 	"internal/embedverify":    "scores a gate outcome (blocking, advisory), not a level",
 }

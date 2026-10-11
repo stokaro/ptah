@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -50,7 +51,7 @@ func TestAnalyzeFS_ARoutineCreationCarriesItsName(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(),
 				fixture(map[string]string{"1_routine.sql": test.sql}),
 				lint.Options{DirFormat: migrationfile.DirFormatAtlas, Dialect: test.dialect},
 			)

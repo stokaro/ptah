@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -64,7 +65,7 @@ func analyzeEventsWithout(
 	disabled ...string,
 ) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(eventsFS(migration)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(eventsFS(migration)), lint.Options{
 		Dialect:             "postgres",
 		DirFormat:           migrationfile.DirFormatAtlas,
 		Selection:           lint.VersionSelection{Versions: []int64{2}, Restricted: true},

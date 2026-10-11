@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -36,7 +37,7 @@ func analyzeCostState(c *qt.C, dialect, alter string, columns []lint.BaselineCol
 	c.Helper()
 	opts := costOptions(dialect, columns)
 	opts.BaselineIndexes = indexes
-	analysis, err := lint.AnalyzeFS(fixture(costFS(alter)), opts)
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(costFS(alter)), opts)
 	c.Assert(err, qt.IsNil)
 	return analysis
 }

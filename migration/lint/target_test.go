@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -169,7 +170,7 @@ func TestAnalyzeFS_CarriesTheTargetToARule(t *testing.T) {
 		target, err := lint.ResolveTarget("postgres", "18")
 		c.Assert(err, qt.IsNil)
 
-		analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{
+		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{
 			Dialect:    "postgres",
 			Target:     target,
 			ExtraRules: []lint.Rule{versionedRule()},
@@ -185,7 +186,7 @@ func TestAnalyzeFS_CarriesTheTargetToARule(t *testing.T) {
 		target, err := lint.ResolveTarget("postgres", "17")
 		c.Assert(err, qt.IsNil)
 
-		analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{
+		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{
 			Dialect:    "postgres",
 			Target:     target,
 			ExtraRules: []lint.Rule{versionedRule()},
@@ -198,7 +199,7 @@ func TestAnalyzeFS_CarriesTheTargetToARule(t *testing.T) {
 	t.Run("a run that named no server plans against the dialect default", func(t *testing.T) {
 		c := qt.New(t)
 
-		analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{
+		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{
 			Dialect:    "postgres",
 			ExtraRules: []lint.Rule{versionedRule()},
 		})
@@ -272,7 +273,7 @@ func TestAnalyzeFS_HandsOutTargetCopies(t *testing.T) {
 		c := qt.New(t)
 		target, err := lint.ResolveTarget("postgres", "18")
 		c.Assert(err, qt.IsNil)
-		analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
+		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
 		c.Assert(err, qt.IsNil)
 
 		analysis.Target().Capabilities[capability.NamedNotNullConstraints] = false
@@ -284,7 +285,7 @@ func TestAnalyzeFS_HandsOutTargetCopies(t *testing.T) {
 		c := qt.New(t)
 		target, err := lint.ResolveTarget("postgres", "18")
 		c.Assert(err, qt.IsNil)
-		analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
+		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
 		c.Assert(err, qt.IsNil)
 		files := analysis.Files()
 		c.Assert(files, qt.Not(qt.HasLen), 0)
@@ -303,7 +304,7 @@ func TestAnalyzeFS_DoesNotStoreTheCallersTargetMap(t *testing.T) {
 	c := qt.New(t)
 	target, err := lint.ResolveTarget("postgres", "18")
 	c.Assert(err, qt.IsNil)
-	analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
 	c.Assert(err, qt.IsNil)
 
 	// The caller keeps its own Target and writes to the set it still holds.

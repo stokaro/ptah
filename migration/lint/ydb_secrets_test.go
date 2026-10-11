@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -64,7 +65,7 @@ func TestYD140_NamesTheSecretAndNeverTheValue(t *testing.T) {
 	target, err := lint.ResolveTarget("ydb", "")
 	c.Assert(err, qt.IsNil)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0001_s.up.sql": "CREATE SECRET `ext/pw` WITH (value = 's3cr3t-SENTINEL');\n",
 	}), lint.Options{Dialect: "ydb", Target: target})
 

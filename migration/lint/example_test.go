@@ -1,6 +1,7 @@
 package lint_test
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"testing/fstest"
@@ -8,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -26,7 +28,7 @@ func ExampleLintFS() {
 			"ALTER TABLE users ADD COLUMN email VARCHAR(255);\n")},
 	}
 
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+	findings, err := lint.LintFS(context.Background(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 	if err != nil {
 		fmt.Println("lint failed:", err)
 		return
@@ -55,7 +57,7 @@ func ExampleAnalyzeFS() {
 			"ALTER TABLE users ADD COLUMN legacy TEXT, DROP COLUMN preferences;\n")},
 	}
 
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{Dialect: "postgres"})
+	analysis, err := lint.AnalyzeFS(context.Background(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 	if err != nil {
 		fmt.Println("analysis failed:", err)
 		return
@@ -107,7 +109,7 @@ func ExampleLoadConfigFS() {
 	cfg := must.Must(lint.LoadConfigFS(fsys, lint.ConfigFileName))
 	fmt.Println("dialect:", cfg.Dialect)
 
-	findings := must.Must(lint.LintFS(fsys, lint.Options{
+	findings := must.Must(lint.LintFS(context.Background(), builtintest.Runtime(), fsys, lint.Options{
 		Dialect:     cfg.Dialect,
 		Disabled:    cfg.DisabledRules,
 		RuleConfigs: cfg.Rules,
@@ -148,7 +150,7 @@ func ExampleLintFS_extraRules() {
 			"DROP TABLE events;\n")},
 	}
 
-	findings := must.Must(lint.LintFS(fsys, lint.Options{
+	findings := must.Must(lint.LintFS(context.Background(), builtintest.Runtime(), fsys, lint.Options{
 		Dialect:    "postgres",
 		ExtraRules: []lint.Rule{plainTimestamp},
 	}))
@@ -199,7 +201,7 @@ func ExampleAnalyzeFS_baseline() {
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 	}
 
-	textOnly := must.Must(lint.AnalyzeFS(fsys, opts))
+	textOnly := must.Must(lint.AnalyzeFS(context.Background(), builtintest.Runtime(), fsys, opts))
 	fmt.Println("versions worth reading:", textOnly.BaselineVersions())
 	for _, finding := range textOnly.Findings() {
 		fmt.Println("without the state:", finding.Rule)
@@ -215,7 +217,7 @@ func ExampleAnalyzeFS_baseline() {
 	opts.BaselineIndexes = []lint.BaselineIndex{
 		{Version: 2, Table: "orders", Name: "orders_email_idx", Parts: []lint.BaselineIndexPart{{Column: "email"}}},
 	}
-	refined := must.Must(lint.AnalyzeFS(fsys, opts))
+	refined := must.Must(lint.AnalyzeFS(context.Background(), builtintest.Runtime(), fsys, opts))
 	for _, finding := range refined.Findings() {
 		fmt.Println("with the state:", finding.Rule)
 	}
@@ -250,7 +252,7 @@ func ExampleResolveTarget() {
 		fmt.Println("resolve failed:", err)
 		return
 	}
-	analysis, err := lint.AnalyzeFS(fsys, lint.Options{Dialect: "postgres", Target: target})
+	analysis, err := lint.AnalyzeFS(context.Background(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres", Target: target})
 	if err != nil {
 		fmt.Println("analyze failed:", err)
 		return

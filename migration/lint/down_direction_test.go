@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -16,7 +17,7 @@ func lintPair(c *qt.C, upSQL, downSQL string) []string {
 		"0000000001_x.up.sql":   upSQL,
 		"0000000001_x.down.sql": downSQL,
 	})
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	located := make([]string, 0, len(findings))
 	for _, finding := range findings {

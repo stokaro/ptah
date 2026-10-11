@@ -1,0 +1,25 @@
+package lintext
+
+import "context"
+
+// Runtime is what a lint host asks of the engine runtime it runs with: the
+// rules every owner publishes, each owner's split of its dialect, and each
+// owner's findings. The bundled runtime answers it for every engine it
+// holds, a plugin's included.
+type Runtime interface {
+	// LintRules returns the rules that judge target, every published rule
+	// for an empty target, sorted by code. An unregistered target wraps
+	// ptaherr.ErrUnsupportedDialect.
+	LintRules(target string) ([]Rule, error)
+	// SplitStatements splits a run's sources with the splitter of the
+	// request's target. A target without one wraps
+	// ptaherr.ErrUnsupportedDialect, and a reply that does not answer the
+	// request wraps [ErrInvalid].
+	SplitStatements(ctx context.Context, request SplitRequest) (SplitResult, error)
+	// CheckMigrations sends the request's codes to the owners that publish
+	// them, one call per owner, and joins their findings, sorted by file,
+	// statement and code. A code no owner publishes, a rule that does not
+	// judge the request's target, and a reply that does not answer its
+	// request wrap [ErrInvalid].
+	CheckMigrations(ctx context.Context, request CheckRequest) (CheckResult, error)
+}

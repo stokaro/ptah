@@ -24,6 +24,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/coverage"
+	"ptah.run/core/lintext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
@@ -94,8 +95,10 @@ type Report struct {
 }
 
 // Runtime supplies conversion, reporting, and schema rendering for replayed
-// schema captures.
+// schema captures, and the statement splitting and rules of each target's
+// owner.
 type Runtime interface {
+	lintext.Runtime
 	goschematodb.Runtime
 	schemacomparison.Runtime
 	schemaext.ReportingRuntime
@@ -490,7 +493,7 @@ func lintDirectory(
 	lintOptions lint.Options,
 ) (lintOutcome, error) {
 	dialect := lintOptions.Dialect
-	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
+	analysis, err := lint.AnalyzeFS(ctx, opts.Runtime, fsys, lintOptions)
 	if err != nil {
 		return lintOutcome{dialect: dialect}, err
 	}
@@ -518,7 +521,7 @@ func lintDirectory(
 		learned, learnedServer := server.learned()
 		learnedDialect := deferred.dialectFrom(server)
 		if learnedServer || learnedDialect != "" {
-			analysis = analysisWithLearnedTarget(fsys, lintOptions, analysis, learned, learnedDialect)
+			analysis = analysisWithLearnedTarget(ctx, opts.Runtime, fsys, lintOptions, analysis, learned, learnedDialect)
 		}
 		if learnedDialect != "" {
 			dialect = learnedDialect
@@ -556,7 +559,7 @@ func lintDirectory(
 	// The second pass re-reads the same files with the baseline facts in hand;
 	// it does not replay, so the schema pair the replay captured is still the
 	// one that belongs to this analysis.
-	reanalyzed, err := lint.AnalyzeFS(fsys, lintOptions)
+	reanalyzed, err := lint.AnalyzeFS(ctx, opts.Runtime, fsys, lintOptions)
 	return lintOutcome{reanalyzed, schemas, dialect}, err
 }
 
@@ -582,6 +585,8 @@ type lintOutcome struct {
 // is what this run reports, and replacing it would hide the input that caused
 // both.
 func analysisWithLearnedTarget(
+	ctx context.Context,
+	runtime lintext.Runtime,
 	fsys fs.FS,
 	opts lint.Options,
 	analysis lint.Analysis,
@@ -594,7 +599,7 @@ func analysisWithLearnedTarget(
 	if learnedDialect != "" {
 		opts.Dialect = learnedDialect
 	}
-	reanalyzed, err := lint.AnalyzeFS(fsys, opts)
+	reanalyzed, err := lint.AnalyzeFS(ctx, runtime, fsys, opts)
 	if err != nil {
 		return analysis
 	}

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -74,7 +75,7 @@ func TestAnalyzeFS_RenameAddSideNeedsTheBaseline(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), renameBaselineOptions(test.baseline))
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), renameBaselineOptions(test.baseline))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.want)
@@ -89,7 +90,7 @@ func TestAnalyzeFS_RenameAddSideNeedsTheBaseline(t *testing.T) {
 func TestAnalyzeFS_RenameAddSideSubjectCarriesTheIntroducedColumn(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), renameBaselineOptions(notNullBaseline()))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), renameBaselineOptions(notNullBaseline()))
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
@@ -204,7 +205,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(fixture(test.files), renameBaselineOptions(test.baseline))
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(test.files), renameBaselineOptions(test.baseline))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.want)
@@ -223,7 +224,7 @@ func TestAnalyzeFS_RenameAddSideIsCompatibilitySurfaceOnly(t *testing.T) {
 	options := renameBaselineOptions(notNullBaseline())
 	options.Compatibility = lint.CompatibilityProfileNative
 
-	analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), options)
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), options)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"BC101"})
@@ -243,7 +244,7 @@ func TestAnalyzeFS_RenameAddSideResolvesQualifiedReference(t *testing.T) {
 		"2_rename.sql": "ALTER TABLE public.users RENAME COLUMN id TO oid;",
 	}
 
-	analysis, err := lint.AnalyzeFS(fixture(files), renameBaselineOptions(notNullBaseline()))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(files), renameBaselineOptions(notNullBaseline()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DD101", "DS102"})
@@ -298,7 +299,7 @@ func TestAnalyzeFS_BaselineVersionsAsksOnlyForWhatItCanUse(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis, err := lint.AnalyzeFS(fixture(test.files), test.options)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(test.files), test.options)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(analysis.BaselineVersions(), qt.DeepEquals, test.want)
@@ -314,7 +315,7 @@ func TestAnalyzeFS_BaselineVersionsIsNativeSurfaceEmpty(t *testing.T) {
 	options := renameBaselineOptions(nil)
 	options.Compatibility = lint.CompatibilityProfileNative
 
-	analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), options)
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), options)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.BaselineVersions(), qt.HasLen, 0)

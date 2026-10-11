@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/migration/lint"
 )
@@ -110,7 +111,7 @@ func TestAnalyze_UnsupportedLintDialect_HappyPath(t *testing.T) {
 		},
 	}
 
-	findings, err := migrationlintgate.Analyze(fsys, []int64{1}, "oracle", "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "oracle", "")
 
 	c.Assert(err, qt.IsNil)
 	// The dialect-independent data-safety rule still protects the apply.

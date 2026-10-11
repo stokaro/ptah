@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/migration/lint"
 )
@@ -44,7 +45,7 @@ func TestAnalyze_YDB(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			findings, err := migrationlintgate.Analyze(ydbGateFS(test.policy), []int64{2}, "ydb", "")
+			findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), ydbGateFS(test.policy), []int64{2}, "ydb", "")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(gateRules(findings), qt.DeepEquals, test.want)

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -91,7 +92,7 @@ func TestYDBRules_SayWhatATopicStatementKeeps(t *testing.T) {
 			target, err := lint.ResolveTarget("ydb", "")
 			c.Assert(err, qt.IsNil)
 
-			findings, err := lint.LintFS(fixture(map[string]string{"0001_t.up.sql": test.sql + "\n"}),
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"0001_t.up.sql": test.sql + "\n"}),
 				lint.Options{Dialect: "ydb", Target: target})
 
 			c.Assert(err, qt.IsNil)

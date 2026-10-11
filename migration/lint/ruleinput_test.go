@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -54,7 +55,7 @@ func TestAnalyzeFS_BaselineVersionsComeFromTheRules(t *testing.T) {
 			opts := renameBaselineOptions(nil)
 			opts.Disabled = test.disabled
 
-			analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), opts)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), opts)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(analysis.BaselineVersions(), qt.DeepEquals, test.want)
@@ -74,7 +75,7 @@ func TestAnalyzeFS_NativeSurfaceAsksForNoBaseline(t *testing.T) {
 	opts := renameBaselineOptions(nil)
 	opts.Compatibility = lint.CompatibilityProfile("")
 
-	analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), opts)
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), opts)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.BaselineVersions(), qt.IsNil)
@@ -114,7 +115,7 @@ func TestAnalyzeFS_UnmetInputsNameTheRuleThatWentWithout(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), renameBaselineOptions(test.baseline))
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), renameBaselineOptions(test.baseline))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(analysis.UnmetInputs(), qt.DeepEquals, test.want)
@@ -130,7 +131,7 @@ func TestAnalyzeFS_UnmetInputsFollowRuleSelection(t *testing.T) {
 	opts := renameBaselineOptions(nil)
 	opts.Disabled = []string{"DD101"}
 
-	analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), opts)
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), opts)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.UnmetInputs(), qt.HasLen, 0)
@@ -232,7 +233,7 @@ func TestExtraRulesRefuseAnInconsistentInputDeclaration(t *testing.T) {
 		Input:     lint.InputBaselineSchema,
 	}}
 
-	_, err := lint.AnalyzeFS(fixture(renameBaselineFS()), opts)
+	_, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), opts)
 
 	c.Assert(err, qt.ErrorMatches, `.*rule ZZ904 declares the baseline schema input.*`)
 }
@@ -282,7 +283,7 @@ func TestAnalyzeFS_ReviewedScopeDecidesWhatIsWorthReading(t *testing.T) {
 			opts := renameBaselineOptions(nil)
 			opts.SchemaScope = test.scope
 
-			analysis, err := lint.AnalyzeFS(fixture(scopedFS), opts)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(scopedFS), opts)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(analysis.BaselineVersions(), qt.DeepEquals, test.wantRead)

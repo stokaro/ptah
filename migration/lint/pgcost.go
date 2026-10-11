@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"ptah.run/internal/lintscan"
 )
 
 // PostgreSQL applies an ALTER COLUMN ... TYPE in one of three ways: as a
@@ -291,7 +293,7 @@ func parsePGTypeSpelling(spelling string) (pgType, bool) {
 	if spelling == "" {
 		return pgType{}, false
 	}
-	words := tokenizeWords(spelling, modeForDialect("postgres"))
+	words := lintscan.Words(spelling, lintscan.ForDialect("postgres"))
 	return parsePGTypeAt(words, 0, len(words))
 }
 

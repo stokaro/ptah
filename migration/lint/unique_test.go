@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -21,7 +22,7 @@ func uniqueFS(migration string) map[string]string {
 
 func analyzeUnique(c *qt.C, dialect, migration string) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(uniqueFS(migration)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(uniqueFS(migration)), lint.Options{
 		Dialect:   dialect,
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
@@ -307,7 +308,7 @@ func TestUniqueRules_SitBesideTheLockRules(t *testing.T) {
 func TestFileFormRules_CarryTheConventionSuffix(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",
 		"0000000002_empty.up.sql":   "-- nothing\n",
 		"0000000002_empty.down.sql": "-- nothing\n",

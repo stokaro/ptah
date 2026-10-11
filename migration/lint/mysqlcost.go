@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"ptah.run/internal/lintscan"
 )
 
 // InnoDB applies some ALTER TABLE clauses to the table's metadata, rebuilds
@@ -442,7 +444,7 @@ func parseMySQLTypeSpelling(columnType, charset string) (mysqlType, bool) {
 	if spelling == "" {
 		return mysqlType{}, false
 	}
-	words := tokenizeWords(spelling, modeForDialect("mysql"))
+	words := lintscan.Words(spelling, lintscan.ForDialect("mysql"))
 	t, next, ok := parseMySQLTypeAt(words, 0, charset)
 	if !ok || next != len(words) {
 		return mysqlType{}, false

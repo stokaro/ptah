@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -26,7 +27,7 @@ func ordersColumn(name string, notNull bool) lint.BaselineColumn {
 
 func analyzeUniqueState(c *qt.C, dialect, migration string, columns []lint.BaselineColumn, indexes []lint.BaselineIndex) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(uniqueFS(migration)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(uniqueFS(migration)), lint.Options{
 		Dialect:         dialect,
 		DirFormat:       migrationfile.DirFormatAtlas,
 		Selection:       lint.VersionSelection{Versions: []int64{2}, Restricted: true},
@@ -274,7 +275,7 @@ func TestUniqueRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 // its own that pg101_hypertable_test.go and pg108_baseline_test.go pin.
 func TestUniqueRules_AskForNothingWhereNothingIsBuilt(t *testing.T) {
 	c := qt.New(t)
-	analysis, err := lint.AnalyzeFS(fixture(uniqueFS("CREATE INDEX orders_email_idx ON orders (email);")), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(uniqueFS("CREATE INDEX orders_email_idx ON orders (email);")), lint.Options{
 		Dialect:   "postgres",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},

@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
@@ -20,7 +21,7 @@ func ydbLint(c *qt.C, files map[string]string, version string) []string {
 	c.Helper()
 	target, err := lint.ResolveTarget("ydb", version)
 	c.Assert(err, qt.IsNil)
-	findings, err := lint.LintFS(fixture(files), lint.Options{Dialect: "ydb", Target: target})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(files), lint.Options{Dialect: "ydb", Target: target})
 	c.Assert(err, qt.IsNil)
 	return findingSites(findings)
 }
@@ -419,7 +420,7 @@ func TestYDBRules_ReadTheTargetCapabilities(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			target.Capabilities = target.Capabilities.With(capability.UniqueIndexOnExistingTable, true)
 
-			findings, err := lint.LintFS(fixture(map[string]string{"0001_t.up.sql": test.sql + "\n"}),
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"0001_t.up.sql": test.sql + "\n"}),
 				lint.Options{Dialect: "ydb", Target: target})
 
 			c.Assert(err, qt.IsNil)
@@ -460,7 +461,7 @@ func TestYDBRules_ReplaceTheUniqueFindings(t *testing.T) {
 func TestYDBRules_StaySilentWithoutADialect(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0001_t.up.sql": "ALTER TABLE t ADD COLUMN a Int64 NOT NULL;\nALTER TABLE t ADD INDEX t_v GLOBAL UNIQUE SYNC ON (v);\n" +
 			"ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
 	}), lint.Options{})
@@ -530,7 +531,7 @@ func TestYDBRules_SayWhatToDo(t *testing.T) {
 			target, err := lint.ResolveTarget("ydb", test.version)
 			c.Assert(err, qt.IsNil)
 
-			findings, err := lint.LintFS(fixture(map[string]string{"0001_t.up.sql": test.sql + "\n"}),
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"0001_t.up.sql": test.sql + "\n"}),
 				lint.Options{Dialect: "ydb", Target: target})
 
 			c.Assert(err, qt.IsNil)
@@ -544,7 +545,7 @@ func TestYDBRules_SayWhatToDo(t *testing.T) {
 func TestYDBRules_NameWhatTheStatementBreaks(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0001_users.up.sql": usersTable +
 			"CREATE VIEW `shop/active` WITH (security_invoker = TRUE) AS SELECT id FROM `shop/users`;\n" +
 			"CREATE VIEW `shop/named` WITH (security_invoker = TRUE) AS SELECT id, name FROM `shop/users`;\n",
@@ -569,7 +570,7 @@ func TestYDBRules_NameWhatTheStatementBreaks(t *testing.T) {
 func TestYDBRules_NameTheRenameThatOrphansAView(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := lint.LintFS(fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0001_users.up.sql": usersTable +
 			"CREATE VIEW `shop/active` WITH (security_invoker = TRUE) AS SELECT id FROM `shop/users`;\n",
 		"0002_rename.up.sql": "ALTER TABLE `shop/users` RENAME TO `shop/members`;\n",
@@ -589,7 +590,7 @@ func TestYDBRules_NameTheRenameThatOrphansAView(t *testing.T) {
 // directory into, as written.
 func statementTexts(c *qt.C, sql string) []string {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(map[string]string{"0001_t.up.sql": sql}), lint.Options{Dialect: "ydb"})
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{"0001_t.up.sql": sql}), lint.Options{Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
 	var texts []string
 	for _, file := range analysis.Files() {

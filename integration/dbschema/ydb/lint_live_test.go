@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/lint"
 )
@@ -43,7 +44,7 @@ func lintAgainst(c *qt.C, conn *dbschema.DatabaseConnection, setup []string, sta
 		"0000000001_setup.up.sql":  {Data: []byte(strings.Join(setup, ";\n") + ";\n")},
 		"0000000002_change.up.sql": {Data: []byte(statement + ";\n")},
 	}
-	findings, err := lint.LintFS(files, lint.Options{
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), files, lint.Options{
 		Dialect: info.Dialect,
 		Target:  lint.TargetFromServer(info.Dialect, info.Version, info.Capabilities, ""),
 	})

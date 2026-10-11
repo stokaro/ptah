@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -24,7 +25,7 @@ func notNullColumn(name, columnType string, notNull bool) lint.BaselineColumn {
 
 func analyzeNotNull(c *qt.C, dialect, migration string, baseline ...lint.BaselineColumn) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(notNullFS(migration)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(notNullFS(migration)), lint.Options{
 		Dialect:   dialect,
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
@@ -180,7 +181,7 @@ func TestNullableMadeNotNullRule_NamesItsInputWhenTheRunSuppliesNone(t *testing.
 func TestNullableMadeNotNullRule_AnswersTheAtlasCode(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(fixture(notNullFS("ALTER TABLE orders MODIFY total INT NOT NULL;")), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(notNullFS("ALTER TABLE orders MODIFY total INT NOT NULL;")), lint.Options{
 		Dialect:   "mysql",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},

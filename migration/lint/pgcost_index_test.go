@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -28,7 +29,7 @@ func pgIndex(name string, columns ...string) lint.BaselineIndex {
 
 func analyzePGState(c *qt.C, alter string, columns []lint.BaselineColumn, indexes []lint.BaselineIndex) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(pgFS(alter)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(pgFS(alter)), lint.Options{
 		Dialect:         "postgres",
 		DirFormat:       migrationfile.DirFormatAtlas,
 		Selection:       lint.VersionSelection{Versions: []int64{2}, Restricted: true},

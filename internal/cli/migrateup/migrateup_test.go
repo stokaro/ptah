@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/migratesum"
@@ -89,7 +90,7 @@ ALTER TABLE ledger NO FORCE ROW LEVEL SECURITY;
 		},
 	}
 
-	findings, err := lintPendingDestructive(fsys, []int64{2}, "postgres", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{2}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 6)
 	c.Assert(
@@ -124,12 +125,12 @@ rules:
 		"0000000003_drop_table.down.sql": &fstest.MapFile{Data: []byte("-- restore\n")},
 	}
 
-	findings, err := lintPendingDestructive(fsys, []int64{1, 2}, "postgres", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1, 2}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0,
 		qt.Commentf("DS103 is warning-grade and DS102 is disabled by config"))
 
-	findings, err = lintPendingDestructive(fsys, []int64{1, 2, 3}, "postgres", "")
+	findings, err = lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1, 2, 3}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
 	c.Assert(findings[0].Rule, qt.Equals, "DS101")

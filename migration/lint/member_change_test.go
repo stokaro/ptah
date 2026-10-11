@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -48,7 +49,7 @@ func analyzeMemberChange(c *qt.C, alter, columnType string) lint.Analysis {
 	if columnType != "" {
 		baseline = memberBaseline(columnType)
 	}
-	analysis, err := lint.AnalyzeFS(fixture(memberFS(alter)), memberOptions(baseline))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(memberFS(alter)), memberOptions(baseline))
 	c.Assert(err, qt.IsNil)
 	return analysis
 }
@@ -376,7 +377,7 @@ func TestMemberRules_RunOnlyForTheMySQLFamily(t *testing.T) {
 	opts := memberOptions(memberBaseline("enum('new','paid','shipped')"))
 	opts.Dialect = "postgres"
 
-	analysis, err := lint.AnalyzeFS(fixture(memberFS("ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid');")), opts)
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(memberFS("ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid');")), opts)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "MY110")

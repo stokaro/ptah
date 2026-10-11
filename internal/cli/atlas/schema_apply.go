@@ -676,7 +676,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		// The lint verdict covers the statements that would run, edits included,
 		// and lands before the --dry-run exit so a dry run reports the same refusal
 		// the real apply would.
-		if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+		if err := lintAtlasSchemaApplyPlan(cmd.Context(), opts, conn.Info().Dialect, statements); err != nil {
 			return "", err
 		}
 		// Both gates that can refuse this plan sit ABOVE the --dry-run exit, for
@@ -950,7 +950,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// against the target, so the project's lint policy applies to it too.
 		// Exempting it would make --skip-lint inert on the one path an operator is
 		// most likely to be scripting.
-		if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+		if err := lintAtlasSchemaApplyPlan(cmd.Context(), opts, conn.Info().Dialect, statements); err != nil {
 			return "", err
 		}
 		if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
@@ -1246,11 +1246,16 @@ func confirmAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions, f
 // --skip-lint has nothing to skip there. Where the block is present, the same
 // severities that decide `migrate lint` decide this, which is the point: one
 // policy, applied wherever SQL is about to reach a database.
-func lintAtlasSchemaApplyPlan(opts atlasSchemaApplyOptions, dialect string, statements []string) error {
+func lintAtlasSchemaApplyPlan(ctx context.Context, opts atlasSchemaApplyOptions, dialect string, statements []string) error {
 	if opts.skipLint || len(statements) == 0 {
 		return nil
 	}
-	findings, err := atlasschema.LintPlan(statements, atlasSchemaApplyLintOptions(opts, dialect))
+	// The plan's statements are split by the target's owner.
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
+	findings, err := atlasschema.LintPlan(ctx, runtime, statements, atlasSchemaApplyLintOptions(opts, dialect))
 	if err != nil {
 		return err
 	}

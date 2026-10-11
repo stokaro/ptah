@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -85,7 +86,7 @@ func TestAnalyzeFS_AnImmutableRoutineThatIsNotIsReported(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(row.sql), lint.Options{
 				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   row.dialect,
 			})
@@ -107,7 +108,7 @@ func TestAnalyzeFS_WithoutADialectTheRoutineRuleSaysSo(t *testing.T) {
 
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(routineFS(sql), lint.Options{DirFormat: migrationfile.DirFormatAtlas})
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(sql), lint.Options{DirFormat: migrationfile.DirFormatAtlas})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(unmetRules(analysis.UnmetInputs()), qt.Contains, "DD102")
@@ -120,7 +121,7 @@ func TestAnalyzeFS_WithADialectNothingIsUnmet(t *testing.T) {
 
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(routineFS(sql), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(sql), lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})

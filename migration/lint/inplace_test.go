@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -13,7 +14,7 @@ import (
 // state and keys the row supplies.
 func analyzeInPlace(c *qt.C, dialect, alter string, columns []lint.BaselineColumn, indexes []lint.BaselineIndex) lint.Analysis {
 	c.Helper()
-	analysis, err := lint.AnalyzeFS(fixture(costFS(alter)), lint.Options{
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(costFS(alter)), lint.Options{
 		Dialect:         dialect,
 		DirFormat:       migrationfile.DirFormatAtlas,
 		Selection:       lint.VersionSelection{Versions: []int64{2}, Restricted: true},

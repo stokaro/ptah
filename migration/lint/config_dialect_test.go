@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
 )
@@ -74,7 +75,7 @@ func findingCodes(c *qt.C, policyDialect string) []string {
 	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
 	c.Assert(err, qt.IsNil)
 
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: cfg.Dialect})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: cfg.Dialect})
 	c.Assert(err, qt.IsNil)
 
 	codes := make([]string, 0, len(findings))
