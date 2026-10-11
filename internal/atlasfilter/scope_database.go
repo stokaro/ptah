@@ -333,6 +333,17 @@ func databaseColumnTypeSet(tables []catalog.Table) map[string]struct{} {
 			if ref, ok := databaseEnumColumnRef(column); ok {
 				types[normalizeTypeReference(ref)] = struct{}{}
 			}
+			// A column declared with a domain reports the domain's base
+			// type in data_type and udt_name alike; only domain_name names
+			// the domain. Reading the other two alone left the domain out of
+			// a selection that kept its column, and a scoped comparison then
+			// planned CREATE DOMAIN for a domain the database holds.
+			if domain := strings.TrimSpace(column.DomainName); domain != "" {
+				types[normalizeTypeReference(domain)] = struct{}{}
+				if schema := strings.TrimSpace(column.DomainSchema); schema != "" {
+					types[normalizeTypeReference(schema+"."+domain)] = struct{}{}
+				}
+			}
 		}
 	}
 	return types
